@@ -3,7 +3,6 @@
 use crossterm::event::KeyEvent;
 
 use super::super::effect::ManagerEffect;
-use crate::console::effects::execute_manager_effect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use super::{InputOutcome, editor, global_mounts, list, prelude, save};
@@ -75,44 +74,24 @@ pub fn handle_key(
                 selector,
                 source,
             } => {
-                execute_manager_effect(
-                    state,
-                    config,
-                    paths,
-                    ManagerEffect::StartRoleRegistration {
-                        raw,
-                        key,
-                        selector,
-                        source,
-                    },
-                );
+                state.request_effect(ManagerEffect::StartRoleRegistration {
+                    raw,
+                    key,
+                    selector,
+                    source,
+                });
             }
             editor::EditorModalOutcome::PersistTrustedRoleSource { key, source } => {
-                execute_manager_effect(
-                    state,
-                    config,
-                    paths,
-                    ManagerEffect::PersistTrustedRoleSource { key, source },
-                );
+                state.request_effect(ManagerEffect::PersistTrustedRoleSource { key, source });
             }
             editor::EditorModalOutcome::ValidateOpRef(op_ref) => {
-                execute_manager_effect(
-                    state,
-                    config,
-                    paths,
-                    ManagerEffect::ValidateOpCommit {
-                        op_ref,
-                        is_settings: false,
-                    },
-                );
+                state.request_effect(ManagerEffect::ValidateOpCommit {
+                    op_ref,
+                    is_settings: false,
+                });
             }
         }
-        execute_manager_effect(
-            state,
-            config,
-            paths,
-            ConsoleEffect::RequestActiveMountInfoRefresh.into(),
-        );
+        state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
         if let Some(url) = open_url {
             return Ok(InputOutcome::OpenUrl(url));
         }
@@ -175,18 +154,13 @@ pub fn handle_key(
             modal_outcome,
             global_mounts::SettingsModalOutcome::SaveSettings
         ) {
-            execute_manager_effect(state, config, paths, ConsoleEffect::SaveSettings.into());
+            state.request_effect(ConsoleEffect::SaveSettings.into());
         }
         if matches!(
             modal_outcome,
             global_mounts::SettingsModalOutcome::OpenGlobalMountFileBrowser
         ) {
-            execute_manager_effect(
-                state,
-                config,
-                paths,
-                ManagerEffect::OpenGlobalMountFileBrowser,
-            );
+            state.request_effect(ManagerEffect::OpenGlobalMountFileBrowser);
         }
         global_mounts::after_settings_event(state);
         if let Some(url) = open_url {
@@ -213,15 +187,10 @@ pub fn handle_key(
             op_cache,
         );
         if let global_mounts::SettingsAuthOutcome::ValidateOpRef(op_ref) = auth_outcome {
-            execute_manager_effect(
-                state,
-                config,
-                paths,
-                ManagerEffect::ValidateOpCommit {
-                    op_ref,
-                    is_settings: true,
-                },
-            );
+            state.request_effect(ManagerEffect::ValidateOpCommit {
+                op_ref,
+                is_settings: true,
+            });
         }
         global_mounts::after_settings_event(state);
         return Ok(InputOutcome::Continue);
@@ -240,12 +209,7 @@ pub fn handle_key(
             };
             if !matches!(outcome, InputOutcome::Continue) {
                 if matches!(outcome, InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd) {
-                    execute_manager_effect(
-                        state,
-                        config,
-                        paths,
-                        ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd,
-                    );
+                    state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
                     return Ok(InputOutcome::Continue);
                 }
                 return Ok(outcome);
@@ -343,40 +307,20 @@ pub fn handle_key(
     }?;
     let outcome = match outcome {
         InputOutcome::OpenCreatePreludeFileBrowser => {
-            execute_manager_effect(
-                state,
-                config,
-                paths,
-                ManagerEffect::OpenCreatePreludeFileBrowser,
-            );
+            state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
             InputOutcome::Continue
         }
         InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd => {
-            execute_manager_effect(
-                state,
-                config,
-                paths,
-                ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd,
-            );
+            state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
             InputOutcome::Continue
         }
         InputOutcome::OpenEditorAddMountFileBrowser => {
-            execute_manager_effect(
-                state,
-                config,
-                paths,
-                ManagerEffect::OpenEditorAddMountFileBrowser,
-            );
+            state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
             InputOutcome::Continue
         }
         other => other,
     };
-    execute_manager_effect(
-        state,
-        config,
-        paths,
-        ConsoleEffect::RequestActiveMountInfoRefresh.into(),
-    );
+    state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
     Ok(outcome)
 }
 

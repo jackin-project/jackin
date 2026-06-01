@@ -9,6 +9,7 @@ use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::domain::{InstanceRefreshSnapshot, role_override_present};
+use crate::console::tui::effect::ManagerEffect;
 use jackin_console::tui::auth::AuthKind;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
@@ -167,6 +168,9 @@ pub struct ManagerState<'a> {
     /// startup) so the Secrets-tab editor can disable the
     /// source-picker's 1Password choice without re-probing.
     pub op_available: bool,
+    /// Typed non-TUI work requested by input/update code. The root run loop
+    /// drains and executes these outside the input dispatcher.
+    pending_effects: Vec<ManagerEffect>,
     /// Last known terminal size, updated at the top of every render
     /// frame. Used by keyboard handlers to compute `viewport_h` for
     /// cursor-to-viewport scroll adjustment without needing a render pass.
@@ -1373,6 +1377,7 @@ impl ManagerState<'_> {
             mount_info_cache: MountInfoCache::default(),
             op_cache,
             op_available,
+            pending_effects: Vec::new(),
             cached_term_size: Rect {
                 x: 0,
                 y: 0,
@@ -1392,6 +1397,14 @@ impl ManagerState<'_> {
             preview_focused: false,
             preview_pane_cursor: HashMap::new(),
         }
+    }
+
+    pub(crate) fn request_effect(&mut self, effect: ManagerEffect) {
+        self.pending_effects.push(effect);
+    }
+
+    pub(crate) fn drain_effects(&mut self) -> Vec<ManagerEffect> {
+        std::mem::take(&mut self.pending_effects)
     }
 
     // ── Tree navigation helpers ────────────────────────────────────
