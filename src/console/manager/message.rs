@@ -7,12 +7,13 @@
 use super::auth_kind::AuthKind;
 use super::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, GlobalMountModal,
-    InstanceRefreshSnapshot, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
-    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, SecretsScopeTag,
-    SettingsState, SettingsTab,
-    load_instance_refresh_snapshot,
+    ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, PendingDriftCheck,
+    PendingIsolationCleanup, PendingMountInfoRefresh, SecretsScopeTag, SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
+use crate::console::services::instances::{
+    InstanceRefreshSnapshot, load_instance_refresh_snapshot,
+};
 use jackin_console::focus::moved_selection;
 pub(crate) use jackin_console::tui::effect::ConsoleEffect as ManagerEffect;
 use jackin_console::tui::screens::editor::update::{

@@ -8,6 +8,9 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
+use crate::console::services::instances::{
+    InstanceRefreshSnapshot, load_instance_refresh_snapshot,
+};
 use crate::console::manager::auth_kind::{
     AuthKind, AuthMode, auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github,
     role_override_present,
@@ -246,14 +249,6 @@ pub enum ManagerStage<'a> {
         label: String,
         state: ConfirmState,
     },
-}
-
-#[derive(Debug)]
-pub(crate) struct InstanceRefreshSnapshot {
-    pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,
-    pub(crate) sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
-    pub(crate) session_errors: HashSet<String>,
-    pub(crate) snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
 }
 
 #[derive(Debug)]
@@ -2220,178 +2215,6 @@ impl ManagerState<'_> {
     }
 }
 
-pub(crate) fn load_instance_refresh_snapshot(
-    paths: &crate::paths::JackinPaths,
-) -> Result<InstanceRefreshSnapshot, String> {
-    let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
-        .map_err(|error| error.to_string())?;
-    let mut instances = index.instances;
-    reconcile_live_running_instances(paths, &mut instances);
-
-    let mut sessions = HashMap::new();
-    let mut session_errors = HashSet::new();
-    let mut snapshot_targets: Vec<String> = Vec::new();
-
-    for entry in &instances {
-        if matches!(
-            entry.status,
-            crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
-        ) {
-            let state_dir = paths.data_dir.join(&entry.container_base);
-            match crate::instance::InstanceManifest::read(&state_dir) {
-                Ok(manifest) if !manifest.sessions.is_empty() => {
-                    sessions.insert(entry.container_base.clone(), manifest.sessions);
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    crate::debug_log!(
-                        "console",
-                        "manifest read failed for {}: {e:#}",
-                        entry.container_base
-                    );
-                    session_errors.insert(entry.container_base.clone());
-                }
-            }
-            snapshot_targets.push(entry.container_base.clone());
-        }
-    }
-
-    let mut snapshots = HashMap::new();
-    let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
-    for (container, result) in snapshot_results {
-        match result {
-            Ok(Some(snapshot)) => {
-                snapshots.insert(container, snapshot);
-            }
-            Ok(None) => {}
-            Err(e) => {
-                crate::debug_log!("console", "snapshot fetch failed for {container}: {e:#}");
-            }
-        }
-    }
-
-    Ok(InstanceRefreshSnapshot {
-        instances,
-        sessions,
-        session_errors,
-        snapshots,
-    })
-}
-
-fn reconcile_live_running_instances(
-    paths: &crate::paths::JackinPaths,
-    instances: &mut Vec<crate::instance::InstanceIndexEntry>,
-) {
-    let running = match crate::console::services::instances::running_role_containers() {
-        Ok(running) => running,
-        Err(error) => {
-            crate::debug_log!(
-                "console",
-                "live instance reconciliation skipped: docker ps failed: {error:#}"
-            );
-            return;
-        }
-    };
-    overlay_running_instances(paths, instances, &running);
-}
-
-fn overlay_running_instances(
-    paths: &crate::paths::JackinPaths,
-    instances: &mut Vec<crate::instance::InstanceIndexEntry>,
-    running_containers: &[String],
-) {
-    if running_containers.is_empty() {
-        return;
-    }
-
-    let mut known: HashSet<String> = instances
-        .iter()
-        .map(|entry| entry.container_base.clone())
-        .collect();
-    for container in running_containers {
-        if let Some(entry) = instances
-            .iter_mut()
-            .find(|entry| entry.container_base == *container)
-        {
-            entry.status = crate::instance::InstanceStatus::Running;
-            continue;
-        }
-
-        let state_dir = paths.data_dir.join(container);
-        let Some(manifest) =
-            crate::instance::InstanceManifest::read_or_log(&state_dir, "overlay_running_instances")
-        else {
-            continue;
-        };
-        if !known.insert(container.clone()) {
-            continue;
-        }
-        let mut entry = crate::instance::InstanceIndexEntry::from_manifest(&manifest);
-        entry.status = crate::instance::InstanceStatus::Running;
-        instances.push(entry);
-    }
-}
-
-/// Fan-out snapshot fetches in parallel so the render thread's
-/// wall-clock cost stays bounded by the per-fetch `SOCKET_TIMEOUT`
-/// (2 s) regardless of how many active instances exist. A serial loop
-/// would stall the TUI for `N × SOCKET_TIMEOUT` on a host with several
-/// wedged containers. Chunks cap thread-creation churn so a host with
-/// dozens of active containers does not spawn dozens of OS threads
-/// per 500 ms refresh tick; each chunk's wall-clock cost is still
-/// bounded by the slowest fetch in that chunk.
-fn fetch_snapshots_parallel(
-    paths: &crate::paths::JackinPaths,
-    targets: &[String],
-) -> Vec<(
-    String,
-    anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>,
-)> {
-    const SNAPSHOT_FANOUT_CHUNK: usize = 8;
-    let mut results = Vec::with_capacity(targets.len());
-    for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
-        let chunk_results = std::thread::scope(|s| {
-            // Collect all `spawn` handles first so every thread starts
-            // before any join blocks; folding collect+join into one
-            // chain would serialise the work.
-            #[allow(clippy::needless_collect)]
-            let handles: Vec<_> = chunk
-                .iter()
-                .map(|container| {
-                    let container = container.clone();
-                    s.spawn(move || {
-                        let result = crate::runtime::snapshot::fetch_snapshot(paths, &container);
-                        (container, result)
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| match h.join() {
-                    Ok(pair) => pair,
-                    Err(panic_payload) => {
-                        // Name the panic payload so the caller's
-                        // debug_log routes it through the existing
-                        // failure-logging path instead of silently
-                        // dropping the slot.
-                        let detail = panic_payload
-                            .downcast_ref::<&'static str>()
-                            .map(|s| (*s).to_string())
-                            .or_else(|| panic_payload.downcast_ref::<String>().cloned())
-                            .unwrap_or_else(|| "<non-string panic payload>".to_string());
-                        (
-                            "<unknown-container>".to_string(),
-                            Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
-                        )
-                    }
-                })
-                .collect::<Vec<_>>()
-        });
-        results.extend(chunk_results);
-    }
-    results
-}
-
 impl<'a> EditorState<'a> {
     /// Open `child` as a sub-modal of the currently-visible modal. If
     /// a modal is already open it is stashed into `modal_parents`
@@ -2647,6 +2470,7 @@ impl CreatePreludeState<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::console::services::instances::overlay_running_instances;
     use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
 
     fn empty_ws(workdir: &str) -> WorkspaceConfig {
