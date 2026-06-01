@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use jackin_tui::HintSpan;
 
 use crate::config::AppConfig;
-use crate::console::tui::components::modal_footer::modal_footer_items;
+use crate::console::tui::render::footer::modal::modal_footer_items;
 use crate::console::tui::state::auth_flat_rows;
 use crate::console::tui::state::{
     AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow,

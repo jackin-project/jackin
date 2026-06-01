@@ -5,10 +5,7 @@
 //! migration proceeds.
 
 pub mod auth_panel;
-pub(crate) mod editor_footer;
-pub(crate) mod modal_footer;
 pub mod op_picker;
-pub(crate) mod settings_footer;
 
 #[cfg(test)]
 mod consistency_tests;

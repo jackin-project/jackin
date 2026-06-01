@@ -5,6 +5,7 @@ pub(crate) mod editor_geometry;
 mod frame;
 #[cfg(test)]
 mod frame_tests;
+pub(crate) mod footer;
 pub(crate) mod list;
 pub(crate) mod list_geometry;
 pub(crate) mod modal;
