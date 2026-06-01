@@ -17,9 +17,9 @@ use super::{
 };
 use jackin_console::tui::components::op_picker::{
     OpPickerAccountRef, OpPickerFieldDisplayRef, OpPickerItemRef, OpPickerRenderState,
-    OpPickerVaultRef, account_lines, field_display_rows_for_picker, field_lines,
-    filtered_accounts, filtered_fields, filtered_item_choices, filtered_items, filtered_vaults,
-    item_choice_lines, naming_stage_input_for_stage, section_choices_from_references,
+    OpPickerVaultRef, account_lines, build_op_picker_ref, field_display_rows_for_picker,
+    field_lines, filtered_accounts, filtered_fields, filtered_item_choices, filtered_items,
+    filtered_vaults, item_choice_lines, naming_stage_input_for_stage, section_choices_from_references,
     section_lines, selected_index_for_stage, vault_lines,
 };
 #[cfg(test)]
@@ -173,6 +173,73 @@ impl OpPickerState {
             &self.field_label_input,
             &self.section_name_input,
         )
+    }
+
+    /// Build an `OpRef` from the picker's currently-selected vault/item/field.
+    ///
+    /// The `op` field uses UUID-form identifiers from the picker's pane
+    /// selections. The `path` field uses human-readable names, with an
+    /// inline `Item[subtitle]` annotation when the item shares its name
+    /// with another item in the same vault.
+    ///
+    /// # Panics
+    ///
+    /// Panics if vault or item are not selected.
+    pub(crate) fn build_op_ref_on_commit(
+        &self,
+        field: &OpPickerField,
+    ) -> crate::operator_env::OpRef {
+        let vault = self
+            .selected_vault
+            .as_ref()
+            .expect("vault must be selected before commit");
+        let item = self
+            .selected_item
+            .as_ref()
+            .expect("item must be selected before commit");
+
+        let built = build_op_picker_ref(
+            OpPickerVaultRef {
+                id: &vault.id,
+                name: &vault.name,
+            },
+            OpPickerItemRef {
+                id: &item.id,
+                name: &item.name,
+                subtitle: &item.subtitle,
+            },
+            self.items.iter().map(|item| OpPickerItemRef {
+                id: &item.id,
+                name: &item.name,
+                subtitle: &item.subtitle,
+            }),
+            super::OpPickerFieldRef {
+                id: &field.id,
+                label: &field.label,
+                reference: &field.reference,
+            },
+            self.fields.iter().map(|field| super::OpPickerFieldRef {
+                id: &field.id,
+                label: &field.label,
+                reference: &field.reference,
+            }),
+        );
+
+        if built.empty_reference_with_sibling_refs {
+            crate::debug_log!(
+                "op_picker",
+                "empty field.reference for {}/{} (id {}); sibling fields have references — falling back to 3-segment URI",
+                vault.name,
+                item.name,
+                field.id
+            );
+        }
+
+        crate::operator_env::OpRef {
+            op: built.op,
+            path: built.path,
+            account: self.selected_account_id(),
+        }
     }
 }
 

@@ -12,7 +12,7 @@ use super::{
     ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError, OpPickerSelection,
     OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan,
     VaultStageBackPlan, VaultStageCommitPlan, account_stage_commit_plan,
-    account_stage_refresh_plan, build_op_ref_on_commit, existing_field_commit_plan,
+    account_stage_refresh_plan, existing_field_commit_plan,
     field_label_cancel_plan, field_label_commit_plan, field_stage_back_plan,
     field_stage_commit_plan, field_stage_refresh_plan, filter_reset_selection_for_stage,
     item_stage_back_plan, item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
@@ -618,7 +618,7 @@ impl OpPickerState {
                 },
             },
             ExistingFieldCommitPlan::ExistingReference => {
-                OpPickerSelection::Existing(build_op_ref_on_commit(self, field))
+                OpPickerSelection::Existing(self.build_op_ref_on_commit(field))
             }
         }
     }

@@ -1578,7 +1578,7 @@ fn picker_commit_writes_op_ref_with_uuid_form_and_clean_path_when_unique() {
         },
         field.clone(),
     );
-    let r = build_op_ref_on_commit(&state, &field);
+    let r = state.build_op_ref_on_commit(&field);
     assert_eq!(r.op, "op://v_uuid/i_uuid/f_uuid");
     assert_eq!(r.path, "Private/Stripe/api key");
 }
@@ -1611,7 +1611,7 @@ fn picker_commit_embeds_subtitle_when_item_name_collides_in_vault() {
         claude_a,
         field.clone(),
     );
-    let r = build_op_ref_on_commit(&state, &field);
+    let r = state.build_op_ref_on_commit(&field);
     // Section "security" must be preserved in both op and path.
     assert!(
         r.op.starts_with("op://v_uuid/i_uuid_a/"),
@@ -1654,7 +1654,7 @@ fn picker_commit_suppresses_subtitle_when_item_name_has_brackets() {
         weird_a,
         field.clone(),
     );
-    let r = build_op_ref_on_commit(&state, &field);
+    let r = state.build_op_ref_on_commit(&field);
     assert_eq!(
         r.path, "Private/Item [tag]/auth",
         "no subtitle embed for bracket-bearing item names"
@@ -1689,7 +1689,7 @@ fn picker_commit_skips_subtitle_when_subtitle_empty() {
         note_a,
         field.clone(),
     );
-    let r = build_op_ref_on_commit(&state, &field);
+    let r = state.build_op_ref_on_commit(&field);
     assert_eq!(
         r.path, "Private/Notes/notesPlain",
         "empty subtitle => no embed even on collision"
@@ -1735,7 +1735,7 @@ fn picker_commit_3seg_fallback_preserved_when_sibling_has_reference() {
     state.fields.push(sectioned_field);
 
     // Must not panic; must produce a 3-segment OpRef.
-    let r = build_op_ref_on_commit(&state, &no_ref_field);
+    let r = state.build_op_ref_on_commit(&no_ref_field);
     assert_eq!(r.op, "op://v_uuid/i_uuid/f_noref");
     assert_eq!(r.path, "Private/MyItem/notes");
 }
@@ -1854,7 +1854,7 @@ fn parity_unique_item_3seg_field_cli_matches_picker() {
         the_item,
         field.clone(),
     );
-    let picker_ref = build_op_ref_on_commit(&state, &field);
+    let picker_ref = state.build_op_ref_on_commit(&field);
 
     let stub = ParityStub::new()
         .with_vault("Private", "v_uuid")
@@ -1903,7 +1903,7 @@ fn parity_ambiguous_item_with_subtitle_cli_matches_picker() {
         item_a,
         field.clone(),
     );
-    let picker_ref = build_op_ref_on_commit(&state, &field);
+    let picker_ref = state.build_op_ref_on_commit(&field);
 
     let stub = ParityStub::new()
         .with_vault("Private", "v_uuid")
@@ -1951,7 +1951,7 @@ fn parity_sectioned_field_cli_matches_picker() {
         the_item,
         field.clone(),
     );
-    let picker_ref = build_op_ref_on_commit(&state, &field);
+    let picker_ref = state.build_op_ref_on_commit(&field);
 
     let stub = ParityStub::new()
         .with_vault("Private", "v_uuid")
@@ -2000,7 +2000,7 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
         the_item,
         field.clone(),
     );
-    let picker_ref = build_op_ref_on_commit(&state, &field);
+    let picker_ref = state.build_op_ref_on_commit(&field);
 
     // CLI path: 3-segment input, but field.reference has "Security"
     let stub = ParityStub::new()

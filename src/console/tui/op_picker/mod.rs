@@ -19,10 +19,8 @@
 
 mod input;
 mod load;
-mod selection;
 mod state;
 
-pub(crate) use selection::build_op_ref_on_commit;
 pub use state::OpPickerState;
 
 pub use jackin_console::tui::components::op_picker::{
