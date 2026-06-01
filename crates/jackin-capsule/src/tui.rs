@@ -7,6 +7,7 @@
 pub mod app;
 pub mod components;
 pub mod dialog;
+pub mod input;
 pub mod message;
 pub mod render;
 pub mod selection;
