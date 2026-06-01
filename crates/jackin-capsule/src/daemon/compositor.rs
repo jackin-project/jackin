@@ -8,7 +8,8 @@ use std::time::Instant;
 
 use crate::tui::components::branch_context_bar::render_branch_context_bar;
 use crate::tui::view::{
-    PaneScrollbar, draw_pane_chrome, hovered_menu, hovered_tab, pane_scrollbar,
+    CapsuleChromeHoverFrame, PaneScrollbar, draw_pane_chrome, hovered_menu, hovered_tab,
+    pane_scrollbar, render_capsule_chrome_hover_frame,
 };
 
 use super::*;
@@ -344,24 +345,23 @@ impl Multiplexer {
         self.refresh_tab_labels();
         let mut buf = b"\x1b7".to_vec();
         let states = self.snapshot_session_states();
-        self.status_bar.render(
+        let branch = self.context_bar_branch().map(str::to_string);
+        let pull_request = self.pull_request_context.clone();
+        let pull_request_loading = self.pull_request_context_loading();
+        render_capsule_chrome_hover_frame(
             &mut buf,
-            self.term_cols,
-            &self.tabs,
-            self.active_tab,
-            &states,
-            hovered_tab(self.hover_target),
-            hovered_menu(self.hover_target),
-        );
-        render_branch_context_bar(
-            &mut buf,
-            self.term_rows,
-            self.term_cols,
-            self.context_bar_branch(),
-            self.pull_request_context.as_deref(),
-            self.pull_request_context_loading(),
-            self.status_bar.instance_id_label(),
-            self.hover_target,
+            &mut self.status_bar,
+            CapsuleChromeHoverFrame {
+                term_rows: self.term_rows,
+                term_cols: self.term_cols,
+                tabs: &self.tabs,
+                active_tab: self.active_tab,
+                session_states: &states,
+                branch: branch.as_deref(),
+                pull_request: pull_request.as_deref(),
+                pull_request_loading,
+                hover_target: self.hover_target,
+            },
         );
         buf.extend_from_slice(b"\x1b8");
         buf

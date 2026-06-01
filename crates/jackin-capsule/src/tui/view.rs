@@ -2,11 +2,14 @@
 
 use std::collections::HashMap;
 
-use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
+use crate::protocol::AgentState;
+use crate::tui::components::branch_context_bar::{
+    BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
+};
 use crate::tui::layout::Tab;
 use crate::tui::render::draw_scrollbar;
-use crate::session::Session;
-use crate::tui::components::status_bar::draw_pane_box;
+use crate::session::{PullRequestInfo, Session};
+use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
 use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
@@ -132,6 +135,44 @@ pub(crate) fn draw_pane_chrome(
         scrollbar.offset,
         scrollbar.filled,
         pane.focused && highlight_focus,
+    );
+}
+
+pub(crate) struct CapsuleChromeHoverFrame<'a> {
+    pub(crate) term_rows: u16,
+    pub(crate) term_cols: u16,
+    pub(crate) tabs: &'a [Tab],
+    pub(crate) active_tab: usize,
+    pub(crate) session_states: &'a [(u64, AgentState)],
+    pub(crate) branch: Option<&'a str>,
+    pub(crate) pull_request: Option<&'a PullRequestInfo>,
+    pub(crate) pull_request_loading: bool,
+    pub(crate) hover_target: Option<HoverTarget>,
+}
+
+pub(crate) fn render_capsule_chrome_hover_frame(
+    buf: &mut Vec<u8>,
+    status_bar: &mut StatusBar,
+    view: CapsuleChromeHoverFrame<'_>,
+) {
+    status_bar.render(
+        buf,
+        view.term_cols,
+        view.tabs,
+        view.active_tab,
+        view.session_states,
+        hovered_tab(view.hover_target),
+        hovered_menu(view.hover_target),
+    );
+    render_branch_context_bar(
+        buf,
+        view.term_rows,
+        view.term_cols,
+        view.branch,
+        view.pull_request,
+        view.pull_request_loading,
+        status_bar.instance_id_label(),
+        view.hover_target,
     );
 }
 
