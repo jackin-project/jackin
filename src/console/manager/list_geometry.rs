@@ -516,38 +516,21 @@ pub(crate) fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> b
 }
 
 pub(crate) fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
-    let data_rows = if mounts.is_empty() {
-        1
-    } else {
-        mounts
-            .iter()
-            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
-            .sum()
-    };
-    (data_rows + 2 + 1).min(12) as u16
+    jackin_console::sidebar_layout::mount_block_height(
+        mounts.iter().map(|mount| mount.src == mount.dst),
+    )
 }
 
 fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
-    let content_height = if rows.is_empty() {
-        1
-    } else {
-        1 + rows
-            .iter()
-            .map(|row| if row.mount.src == row.mount.dst { 1 } else { 2 })
-            .sum::<usize>()
-    };
-    (content_height + 2).min(12) as u16
+    jackin_console::sidebar_layout::global_mount_rows_height(
+        rows.iter().map(|row| row.mount.src == row.mount.dst),
+    )
 }
 
 pub(crate) fn global_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    if mounts.is_empty() {
-        1
-    } else {
-        1 + mounts
-            .iter()
-            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
-            .sum::<usize>()
-    }
+    jackin_console::sidebar_layout::global_mounts_content_height(
+        mounts.iter().map(|mount| mount.src == mount.dst),
+    )
 }
 
 pub(crate) fn split_global_mount_rows(
@@ -581,8 +564,7 @@ pub(crate) fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceCon
 
     let workspace_keys = ws.env.len();
     let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
-    let total_rows = workspace_keys + agent_keys;
-    (total_rows + 2).min(20) as u16
+    jackin_console::sidebar_layout::env_block_height(workspace_keys, agent_keys)
 }
 
 pub(crate) fn agents_block_agent_count(

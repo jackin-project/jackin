@@ -83,6 +83,39 @@ pub fn agents_block_height(agent_count: usize) -> u16 {
     (2 + 1 + 1 + agent_rows).min(14) as u16
 }
 
+#[must_use]
+pub fn mount_block_height(same_path_rows: impl IntoIterator<Item = bool>) -> u16 {
+    let data_rows = mount_data_row_count(same_path_rows).unwrap_or(1);
+    (data_rows + 2 + 1).min(12) as u16
+}
+
+#[must_use]
+pub fn global_mount_rows_height(same_path_rows: impl IntoIterator<Item = bool>) -> u16 {
+    let content_height = global_mounts_content_height(same_path_rows);
+    (content_height + 2).min(12) as u16
+}
+
+#[must_use]
+pub fn global_mounts_content_height(same_path_rows: impl IntoIterator<Item = bool>) -> usize {
+    mount_data_row_count(same_path_rows).map_or(1, |data_rows| 1 + data_rows)
+}
+
+#[must_use]
+pub fn env_block_height(workspace_keys: usize, role_keys: usize) -> u16 {
+    let total_rows = workspace_keys + role_keys;
+    (total_rows + 2).min(20) as u16
+}
+
+fn mount_data_row_count(same_path_rows: impl IntoIterator<Item = bool>) -> Option<usize> {
+    let mut saw_row = false;
+    let mut lines = 0;
+    for same_path in same_path_rows {
+        saw_row = true;
+        lines += if same_path { 1 } else { 2 };
+    }
+    saw_row.then_some(lines)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,5 +142,14 @@ mod tests {
         assert_eq!(layout.role_global.expect("role global").y, 8);
         assert!(layout.env.is_none());
         assert_eq!(layout.roles.expect("roles").y, 12);
+    }
+
+    #[test]
+    fn mount_heights_match_empty_and_host_source_rows() {
+        assert_eq!(mount_block_height([]), 4);
+        assert_eq!(mount_block_height([true, false]), 6);
+        assert_eq!(global_mounts_content_height([]), 1);
+        assert_eq!(global_mounts_content_height([true, false]), 4);
+        assert_eq!(global_mount_rows_height([true, false]), 6);
     }
 }
