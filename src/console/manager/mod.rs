@@ -6,6 +6,7 @@ pub mod auth_kind;
 mod create;
 pub(crate) mod editor_footer;
 pub(crate) mod editor_geometry;
+pub(crate) mod file_browser;
 pub mod input;
 pub(crate) mod list_geometry;
 pub mod message;
