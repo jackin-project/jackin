@@ -13,6 +13,7 @@ use tui_widget_list::ListState;
 
 use super::EXCLUDED;
 use super::git_prompt::GitPromptFocus;
+use crate::widgets::{cycle_select, list_state_for_count, selected_choice};
 
 /// Does `path` contain a `.git` child? Dir (regular clone) OR file
 /// (submodule worktree, `.git` is a file pointing at the real gitdir).
@@ -218,10 +219,7 @@ impl FileBrowserState {
         // independently so downstream comparisons line up.
         let cwd = canonicalize_or_self(cwd);
         let entries = load_entries(&cwd, &root);
-        let mut list_state = ListState::default();
-        if !entries.is_empty() {
-            list_state.select(Some(0));
-        }
+        let list_state = list_state_for_count(entries.len());
         Self {
             root,
             cwd,
@@ -257,43 +255,22 @@ impl FileBrowserState {
     /// Re-read entries from disk and reset the selection to index 0.
     pub fn reload(&mut self) {
         self.entries = load_entries(&self.cwd, &self.root);
-        let sel = if self.entries.is_empty() {
-            None
-        } else {
-            Some(0)
-        };
-        self.list_state.select(sel);
+        self.list_state = list_state_for_count(self.entries.len());
     }
 
     /// Move selection down one, wrapping at the end.
     pub(super) fn select_next(&mut self) {
-        let n = self.entries.len();
-        if n == 0 {
-            return;
-        }
-        let next = self
-            .list_state
-            .selected
-            .map_or(0, |i| if i + 1 >= n { 0 } else { i + 1 });
-        self.list_state.select(Some(next));
+        cycle_select(&mut self.list_state, self.entries.len(), 1);
     }
 
     /// Move selection up one, wrapping at the start.
     pub(super) fn select_prev(&mut self) {
-        let n = self.entries.len();
-        if n == 0 {
-            return;
-        }
-        let prev = self
-            .list_state
-            .selected
-            .map_or(0, |i| if i == 0 { n - 1 } else { i - 1 });
-        self.list_state.select(Some(prev));
+        cycle_select(&mut self.list_state, self.entries.len(), -1);
     }
 
     /// The currently-highlighted entry, if any.
     pub(super) fn highlighted(&self) -> Option<&FolderEntry> {
-        self.list_state.selected.and_then(|i| self.entries.get(i))
+        selected_choice(&self.entries, self.list_state.selected)
     }
 
     /// Navigate up one level (`cwd` → `cwd.parent()`), clamped to `root`.
