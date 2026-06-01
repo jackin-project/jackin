@@ -1,6 +1,6 @@
 //! Editor geometry and scroll preparation owned by the manager update layer.
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::render::mount_display::{
@@ -11,6 +11,9 @@ use crate::console::tui::state::{
     AuthRow, EditorMode, EditorState, EditorTab, SecretsRow, SecretsScopeTag,
 };
 use crate::operator_env::EnvValue;
+use jackin_console::tui::screens::editor::view::{
+    editor_body_area, editor_row_width, padded_width, padded_width_cols, text_width,
+};
 
 pub(crate) fn prepare_editor_for_render(
     area: Rect,
@@ -164,10 +167,6 @@ fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGe
     }
 }
 
-fn editor_row_width(label: &str, value: &str) -> usize {
-    padded_width(&format!("  {label:15}{value}"))
-}
-
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     jackin_console::tui::screens::editor::update::secrets_flat_rows(
         &editor.pending.env,
@@ -294,32 +293,4 @@ fn op_reference_width(path: &str) -> Option<usize> {
     Some(jackin_console::op_breadcrumb::breadcrumb_display_width(
         &parts,
     ))
-}
-
-fn padded_width(text: &str) -> usize {
-    padded_width_cols(
-        text_width(text),
-        text.chars().take_while(|c| *c == ' ').count(),
-    )
-}
-
-fn padded_width_cols(width: usize, leading_spaces: usize) -> usize {
-    width + leading_spaces
-}
-
-fn text_width(text: &str) -> usize {
-    jackin_tui::display_cols(text)
-}
-
-fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(5),
-            Constraint::Length(footer_h),
-        ])
-        .split(area);
-    chunks[2]
 }

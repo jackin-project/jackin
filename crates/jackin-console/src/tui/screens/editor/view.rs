@@ -1,6 +1,7 @@
 //! Editor screen view helpers.
 
 use super::model::{EditorTab, SecretsScopeTag};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorScrollGeometry {
@@ -11,7 +12,7 @@ pub struct EditorScrollGeometry {
 }
 
 pub fn clamp_editor_scroll_for_frame(
-    body: ratatui::layout::Rect,
+    body: Rect,
     geometry: EditorScrollGeometry,
     tab_scroll_x: &mut u16,
     tab_scroll_y: &mut u16,
@@ -37,6 +38,38 @@ pub fn clamp_editor_scroll_for_frame(
         viewport_h,
         tab_scroll_y,
     );
+}
+
+pub fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(footer_h),
+        ])
+        .split(area);
+    chunks[2]
+}
+
+pub fn editor_row_width(label: &str, value: &str) -> usize {
+    padded_width(&format!("  {label:15}{value}"))
+}
+
+pub fn padded_width(text: &str) -> usize {
+    padded_width_cols(
+        text_width(text),
+        text.chars().take_while(|c| *c == ' ').count(),
+    )
+}
+
+pub fn padded_width_cols(width: usize, leading_spaces: usize) -> usize {
+    width + leading_spaces
+}
+
+pub fn text_width(text: &str) -> usize {
+    jackin_tui::display_cols(text)
 }
 
 #[must_use]
