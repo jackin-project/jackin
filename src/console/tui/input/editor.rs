@@ -3,6 +3,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
@@ -325,7 +326,8 @@ pub(super) fn handle_editor_key(
             EditorTab::Mounts => {
                 let FieldFocus::Row(n) = editor.active_field;
                 if n == editor.pending.mounts.len() {
-                    return Ok(InputOutcome::OpenEditorAddMountFileBrowser);
+                    state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
+                    return Ok(InputOutcome::Continue);
                 }
             }
             EditorTab::Secrets => {
@@ -395,7 +397,8 @@ pub(super) fn handle_editor_key(
             toggle_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
-            return Ok(InputOutcome::OpenEditorAddMountFileBrowser);
+            state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
+            return Ok(InputOutcome::Continue);
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
@@ -2440,8 +2443,21 @@ plugins = []
         let ws = WorkspaceConfig::default();
         let mut state = editor_on_mounts_tab(ws, 0);
         let mut config = AppConfig::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
 
-        press(&mut state, &mut config, KeyCode::Char('a')).unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('a')),
+        )
+        .unwrap();
+        for effect in state.drain_effects() {
+            crate::console::effects::execute_manager_effect(&mut state, &mut config, &paths, effect);
+        }
 
         let ManagerStage::Editor(editor) = &state.stage else {
             panic!("expected editor stage");

@@ -4,6 +4,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_tui::ModalOutcome;
+use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     EditorState, ManagerListRow, ManagerState, Modal, ProviderPickerState, SettingsState,
@@ -87,7 +88,10 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Enter => match state.selected_row() {
             ManagerListRow::CurrentDirectory => Ok(InputOutcome::LaunchCurrentDir),
-            ManagerListRow::NewWorkspace => Ok(InputOutcome::OpenCreatePreludeFileBrowser),
+            ManagerListRow::NewWorkspace => {
+                state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
+                Ok(InputOutcome::Continue)
+            }
             ManagerListRow::SavedWorkspace(i) => Ok(state
                 .workspaces
                 .get(i)
@@ -148,7 +152,7 @@ pub(super) fn handle_list_key(
                     );
                 }
             } else {
-                return Ok(InputOutcome::OpenCreatePreludeFileBrowser);
+                state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
             }
             Ok(InputOutcome::Continue)
         }

@@ -306,16 +306,8 @@ pub fn handle_key(
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
     }?;
     let outcome = match outcome {
-        InputOutcome::OpenCreatePreludeFileBrowser => {
-            state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
-            InputOutcome::Continue
-        }
         InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd => {
             state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
-            InputOutcome::Continue
-        }
-        InputOutcome::OpenEditorAddMountFileBrowser => {
-            state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
             InputOutcome::Continue
         }
         other => other,

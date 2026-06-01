@@ -308,9 +308,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 needs_redraw = true;
                             }
                         }
-                        crate::console::tui::InputOutcome::OpenCreatePreludeFileBrowser => {}
                         crate::console::tui::InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd => {}
-                        crate::console::tui::InputOutcome::OpenEditorAddMountFileBrowser => {}
                         crate::console::tui::InputOutcome::ExitJackin => {
                             break 'main Ok(None);
                         }
