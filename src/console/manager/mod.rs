@@ -11,7 +11,6 @@ pub mod message;
 pub(crate) mod modal_footer;
 pub(crate) mod modal_layout;
 pub(crate) mod mount_display;
-pub(crate) mod op_breadcrumb;
 mod pre_render;
 pub(crate) mod settings_footer;
 pub(crate) mod settings_geometry;

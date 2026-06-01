@@ -299,8 +299,10 @@ fn auth_source_width(
 }
 
 fn op_reference_width(path: &str) -> Option<usize> {
-    let parts = crate::console::manager::op_breadcrumb::parse_path_breadcrumb(path)?;
-    Some(crate::console::manager::op_breadcrumb::breadcrumb_display_width(&parts))
+    let parts = jackin_console::op_breadcrumb::parse_path_breadcrumb(path)?;
+    Some(jackin_console::op_breadcrumb::breadcrumb_display_width(
+        &parts,
+    ))
 }
 
 fn padded_width(text: &str) -> usize {
