@@ -195,7 +195,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
 }
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    jackin_console::settings::update::settings_env_flat_rows(
+    jackin_console::tui::screens::settings::update::settings_env_flat_rows(
         &state.env.pending,
         &state.env.expanded,
     )

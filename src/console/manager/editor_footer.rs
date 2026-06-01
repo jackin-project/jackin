@@ -236,7 +236,7 @@ pub(crate) fn contextual_row_items(
 }
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    jackin_console::editor::update::secrets_flat_rows(
+    jackin_console::tui::screens::editor::update::secrets_flat_rows(
         &editor.pending.env,
         &editor.pending.roles,
         &editor.secrets_expanded,

@@ -1,6 +1,5 @@
 //! Host console surface ownership and runtime helpers.
 
-pub mod editor;
 pub mod focus;
 pub mod github_mounts;
 pub mod mount_diff;
@@ -11,12 +10,10 @@ pub mod op_breadcrumb;
 pub mod op_cache;
 pub mod op_reference;
 pub mod provider_picker;
-pub mod settings;
 pub mod split;
 pub mod tui;
 pub mod widgets;
 pub mod workspace;
-pub mod workspaces;
 
 pub trait ConsoleHostTerminal: Send + Sync {
     fn begin_debug_buffering(&self);

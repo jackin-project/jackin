@@ -306,7 +306,7 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
 }
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    jackin_console::settings::update::settings_env_flat_rows(
+    jackin_console::tui::screens::settings::update::settings_env_flat_rows(
         &state.env.pending,
         &state.env.expanded,
     )

@@ -12,15 +12,15 @@ use super::state::{
     SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
-use jackin_console::editor::update::{
+use jackin_console::focus::moved_selection;
+use jackin_console::tui::screens::editor::update::{
     next_editor_tab, previous_editor_tab, set_role_expanded as set_editor_role_expanded,
     step_cursor_down, step_cursor_up, toggle_general_selected as toggle_editor_general_row,
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
-use jackin_console::focus::moved_selection;
-use jackin_console::settings::state::SettingsEnvRow;
-use jackin_console::settings::update::{
+use jackin_console::tui::screens::settings::state::SettingsEnvRow;
+use jackin_console::tui::screens::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
     set_role_expanded as set_settings_role_expanded, settings_env_flat_rows, step_cursor_down_by,
     step_cursor_up_by, toggle_general_selected, toggle_readonly as toggle_settings_readonly,
@@ -1021,7 +1021,7 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
     state.inline_role_picker = None;
     state.inline_agent_picker = None;
     state.inline_new_session_picker = None;
-    let selected = jackin_console::workspaces::update::moved_selection(
+    let selected = jackin_console::tui::screens::workspaces::update::moved_selection(
         state.selected,
         state.row_count(),
         delta,
@@ -1034,7 +1034,10 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
 
 fn select_list_row(state: &mut ManagerState<'_>, selected: usize) {
     state.inline_role_picker = None;
-    let selected = jackin_console::workspaces::update::selected_index(selected, state.row_count());
+    let selected = jackin_console::tui::screens::workspaces::update::selected_index(
+        selected,
+        state.row_count(),
+    );
     if selected != state.selected {
         state.reset_list_scroll();
         state.selected = selected;

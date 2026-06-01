@@ -19,7 +19,7 @@ use jackin_console::widgets::file_browser::FileBrowserState;
 use jackin_tui::components::{ConfirmState, TextInputState};
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    jackin_console::settings::update::settings_env_flat_rows(
+    jackin_console::tui::screens::settings::update::settings_env_flat_rows(
         &state.env.pending,
         &state.env.expanded,
     )
@@ -1044,7 +1044,8 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
-    let content_width = jackin_console::settings::update::trust_content_width(&settings.trust);
+    let content_width =
+        jackin_console::tui::screens::settings::update::trust_content_width(&settings.trust);
     match key.code {
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             dispatch_manager(

@@ -32,7 +32,7 @@ pub(crate) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
 }
 
 pub(crate) fn env_content_height(state: &SettingsState<'_>) -> usize {
-    let height = jackin_console::settings::update::settings_env_flat_rows(
+    let height = jackin_console::tui::screens::settings::update::settings_env_flat_rows(
         &state.env.pending,
         &state.env.expanded,
     )

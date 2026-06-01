@@ -1104,7 +1104,9 @@ fn scroll_active_panel(
                     );
                 }
                 SettingsTab::Trust => {
-                    let cw = jackin_console::settings::update::trust_content_width(&settings.trust);
+                    let cw = jackin_console::tui::screens::settings::update::trust_content_width(
+                        &settings.trust,
+                    );
                     apply_horizontal_scroll(&mut settings.trust.scroll_x, delta, content_area, cw);
                 }
                 _ => {}

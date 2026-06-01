@@ -21,7 +21,7 @@ use jackin_console::widgets::file_browser::FileBrowserState;
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    jackin_console::editor::update::secrets_flat_rows(
+    jackin_console::tui::screens::editor::update::secrets_flat_rows(
         &editor.pending.env,
         &editor.pending.roles,
         &editor.secrets_expanded,

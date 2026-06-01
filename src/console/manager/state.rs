@@ -29,7 +29,7 @@ use jackin_tui::runtime::{
 
 pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
-pub use jackin_console::workspaces::state::{ManagerListRow, WorkspaceSummary};
+pub use jackin_console::tui::screens::workspaces::state::{ManagerListRow, WorkspaceSummary};
 
 fn workspace_summary_from_config(
     name: &str,
@@ -38,7 +38,7 @@ fn workspace_summary_from_config(
     WorkspaceSummary::from_source(name, ws)
 }
 
-impl jackin_console::workspaces::state::WorkspaceSummarySource
+impl jackin_console::tui::screens::workspaces::state::WorkspaceSummarySource
     for crate::workspace::WorkspaceConfig
 {
     fn workdir(&self) -> &str {
@@ -299,36 +299,42 @@ pub struct SettingsState<'a> {
     pub cached_footer_h: u16,
 }
 
-pub use jackin_console::editor::state::{
+pub use jackin_console::tui::screens::editor::state::{
     AuthRow as GenericAuthRow, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus,
     FileBrowserTarget, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
-pub use jackin_console::settings::state::{
+pub use jackin_console::tui::screens::settings::state::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
     SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
     SettingsTrustRow, SettingsTrustState,
 };
-pub use jackin_console::settings::update::{settings_map_change_count, settings_vec_change_count};
+pub use jackin_console::tui::screens::settings::update::{
+    settings_map_change_count, settings_vec_change_count,
+};
 
 pub type SettingsEnvConfig =
-    jackin_console::settings::state::SettingsEnvConfig<crate::operator_env::EnvValue>;
+    jackin_console::tui::screens::settings::state::SettingsEnvConfig<crate::operator_env::EnvValue>;
 pub type PendingSaveCommit =
-    jackin_console::editor::state::PendingSaveCommit<crate::workspace::MountConfig>;
-pub type EditorSaveFlow = jackin_console::editor::state::EditorSaveFlow<PendingSaveCommit>;
-pub type AuthFormTarget =
-    jackin_console::settings::state::AuthFormTarget<crate::console::manager::auth_kind::AuthKind>;
+    jackin_console::tui::screens::editor::state::PendingSaveCommit<crate::workspace::MountConfig>;
+pub type EditorSaveFlow =
+    jackin_console::tui::screens::editor::state::EditorSaveFlow<PendingSaveCommit>;
+pub type AuthFormTarget = jackin_console::tui::screens::settings::state::AuthFormTarget<
+    crate::console::manager::auth_kind::AuthKind,
+>;
 pub type AuthRow = GenericAuthRow<crate::console::manager::auth_kind::AuthKind>;
-pub type SettingsAuthRow = jackin_console::settings::state::SettingsAuthRow<
+pub type SettingsAuthRow = jackin_console::tui::screens::settings::state::SettingsAuthRow<
     crate::console::manager::auth_kind::AuthKind,
     crate::console::manager::auth_kind::AuthMode,
 >;
-pub type ConfirmTarget =
-    jackin_console::editor::state::ConfirmTarget<crate::config::RoleSource, PendingSaveCommit>;
+pub type ConfirmTarget = jackin_console::tui::screens::editor::state::ConfirmTarget<
+    crate::config::RoleSource,
+    PendingSaveCommit,
+>;
 
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     let synthesized = synthesize_appconfig_for_auth(editor, config);
     let ws_name = workspace_name_for_panel(editor);
-    jackin_console::editor::update::auth_flat_rows(
+    jackin_console::tui::screens::editor::update::auth_flat_rows(
         editor.auth_selected_kind,
         [
             AuthKind::Claude,
@@ -1164,7 +1170,7 @@ impl SettingsEnvState<'_> {
     pub fn discard(&mut self) {
         self.pending = self.original.clone();
         self.selected = self.selected.min(
-            jackin_console::settings::update::settings_env_flat_row_count(
+            jackin_console::tui::screens::settings::update::settings_env_flat_row_count(
                 &self.pending,
                 &self.expanded,
             )
@@ -1716,8 +1722,8 @@ impl ManagerState<'_> {
     /// Instance rows appear immediately after their parent workspace row.
     fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
         let workspace_instance_counts = self.workspace_instance_counts();
-        jackin_console::workspaces::update::selectable_rows(
-            jackin_console::workspaces::update::WorkspaceRowLayout {
+        jackin_console::tui::screens::workspaces::update::selectable_rows(
+            jackin_console::tui::screens::workspaces::update::WorkspaceRowLayout {
                 current_dir_expanded: self.current_dir_expanded,
                 current_dir_instance_count: self.current_dir_active_instances().len(),
                 workspace_instance_counts: &workspace_instance_counts,
@@ -1730,8 +1736,8 @@ impl ManagerState<'_> {
     /// `None` spacer before `NewWorkspace` when saved workspaces exist.
     pub fn visual_rows_vec(&self) -> Vec<Option<ManagerListRow>> {
         let workspace_instance_counts = self.workspace_instance_counts();
-        jackin_console::workspaces::update::visual_rows(
-            jackin_console::workspaces::update::WorkspaceRowLayout {
+        jackin_console::tui::screens::workspaces::update::visual_rows(
+            jackin_console::tui::screens::workspaces::update::WorkspaceRowLayout {
                 current_dir_expanded: self.current_dir_expanded,
                 current_dir_instance_count: self.current_dir_active_instances().len(),
                 workspace_instance_counts: &workspace_instance_counts,
