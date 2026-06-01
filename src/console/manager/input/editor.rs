@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::FutureExt as _;
 
 use super::super::super::widgets::op_picker::OpPickerState;
-use super::super::message::{ManagerMessage, update_manager};
+use super::super::message::{ManagerMessage, execute_role_source_persist, update_manager};
 use super::super::mount_display::workspace_mounts_content_width_with_cache;
 use super::super::state::auth_flat_rows;
 use super::super::state::{
@@ -1786,9 +1786,7 @@ pub(crate) fn apply_role_load_completion(
 ) {
     match result {
         Ok(()) => {
-            if let Err(e) =
-                crate::console::services::config::upsert_role_source(config, paths, &load.key, &load.source)
-            {
+            if let Err(e) = execute_role_source_persist(config, paths, &load.key, &load.source) {
                 crate::debug_log!(
                     "role",
                     "role loader failed for key={key:?} raw={raw:?}: {e:?}",
@@ -1895,7 +1893,7 @@ async fn apply_role_input_with_runner(
                 crate::tui::is_debug_mode(),
             )
             .await?;
-            crate::console::services::config::upsert_role_source(
+            execute_role_source_persist(
                 config,
                 paths,
                 &key,
@@ -2116,7 +2114,7 @@ fn persist_trusted_role_add(
     mut source: crate::config::RoleSource,
 ) -> anyhow::Result<()> {
     source.trusted = true;
-    crate::console::services::config::upsert_role_source(config, paths, key, &source)?;
+    execute_role_source_persist(config, paths, key, &source)?;
     add_role_to_workspace_editor(editor, config, key);
     Ok(())
 }

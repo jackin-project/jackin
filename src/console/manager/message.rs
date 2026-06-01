@@ -406,6 +406,15 @@ pub(crate) fn execute_workspace_save_write(
     }
 }
 
+pub(crate) fn execute_role_source_persist(
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    key: &str,
+    source: &crate::config::RoleSource,
+) -> anyhow::Result<()> {
+    crate::console::services::config::upsert_role_source(config, paths, key, source)
+}
+
 fn execute_settings_save(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
