@@ -40,7 +40,7 @@ use crate::attach_protocol::{
 #[cfg(test)]
 use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
-use crate::tui::dialog::{
+use crate::tui::components::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
     PickerIntent, PullRequestStatus, SplitDirection,
 };

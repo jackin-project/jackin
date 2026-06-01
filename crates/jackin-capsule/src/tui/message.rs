@@ -4,10 +4,10 @@
 //! should the multiplexer do with it?" so dispatch can become testable without
 //! a live PTY or attach socket.
 
-use crate::tui::{
-    dialog::{DialogAction, PaletteCommand, PickerIntent, SplitDirection},
-    input::{ArrowDir, InputEvent, PrefixCommand},
+use crate::tui::components::dialog::{
+    DialogAction, PaletteCommand, PickerIntent, SplitDirection,
 };
+use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
@@ -208,7 +208,7 @@ mod tests {
     use super::{Action, InputDispatchContext, input_event_action, mouse_chrome_update_action};
     use crate::tui::input::InputEvent;
     use crate::tui::input::PrefixCommand;
-    use crate::tui::dialog::{PickerIntent, SplitDirection};
+    use crate::tui::components::dialog::{PickerIntent, SplitDirection};
     use super::prefix_command_action;
 
     #[test]

@@ -251,9 +251,9 @@ pub(crate) fn render_capsule_bottom_chrome(
         view.hover_target,
     );
 
-    let hint_spans = crate::tui::dialog::main_view_hint(view.scrollback_active);
+    let hint_spans = crate::tui::components::dialog::main_view_hint(view.scrollback_active);
     let hint_row = view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
-    crate::tui::dialog::render_hint_row(buf, hint_row, view.term_cols, hint_spans);
+    crate::tui::components::dialog::render_hint_row(buf, hint_row, view.term_cols, hint_spans);
 }
 
 pub(crate) struct CapsuleDialogBottomChrome<'a> {
@@ -281,7 +281,7 @@ pub(crate) fn render_capsule_dialog_bottom_chrome(
         None,
     );
     if let Some(spans) = view.hint_spans {
-        crate::tui::dialog::render_hint_row(
+        crate::tui::components::dialog::render_hint_row(
             buf,
             view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
             view.term_cols,
@@ -340,7 +340,7 @@ pub(crate) fn render_capsule_ratatui_frame(
         return;
     }
 
-    let hint_spans = crate::tui::dialog::main_view_hint(view.scrollback_active);
+    let hint_spans = crate::tui::components::dialog::main_view_hint(view.scrollback_active);
     let hint_area = RatatuiRect {
         x: 0,
         y: view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),

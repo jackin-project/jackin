@@ -20,8 +20,8 @@ use jackin_tui::components::filter_input::render_filter_input;
 use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use ratatui::style::Color;
 
-use crate::tui::dialog::Dialog;
 use crate::pull_request::PullRequestInfo;
+use crate::tui::components::dialog::Dialog;
 
 // ---------------------------------------------------------------------------
 // Snapshot type — fully owned so it outlives the Multiplexer borrow
@@ -93,7 +93,7 @@ impl Dialog {
                 filter,
                 close_label,
             } => {
-                use crate::tui::dialog::{PALETTE_ITEMS, PaletteCommand};
+                use crate::tui::components::dialog::{PALETTE_ITEMS, PaletteCommand};
                 let needle = filter.to_ascii_lowercase();
                 let items: Vec<PickerItem> = PALETTE_ITEMS
                     .iter()
@@ -124,7 +124,7 @@ impl Dialog {
                 intent,
                 filter,
             } => {
-                use crate::tui::dialog::PickerIntent;
+                use crate::tui::components::dialog::PickerIntent;
                 let title = match intent {
                     PickerIntent::NewTab => "New tab".to_string(),
                     PickerIntent::Split(dir) => format!("Split: {}", dir.label()),
@@ -164,7 +164,7 @@ impl Dialog {
             }
 
             Dialog::SplitDirectionPicker { selected, filter } => {
-                use crate::tui::dialog::SPLIT_DIRECTION_ITEMS;
+                use crate::tui::components::dialog::SPLIT_DIRECTION_ITEMS;
                 let needle = filter.to_ascii_lowercase();
                 let items: Vec<PickerItem> = SPLIT_DIRECTION_ITEMS
                     .iter()
@@ -182,7 +182,7 @@ impl Dialog {
             }
 
             Dialog::CloseTargetPicker { selected, filter } => {
-                use crate::tui::dialog::CLOSE_TARGET_ITEMS;
+                use crate::tui::components::dialog::CLOSE_TARGET_ITEMS;
                 let needle = filter.to_ascii_lowercase();
                 let items: Vec<PickerItem> = CLOSE_TARGET_ITEMS
                     .iter()
