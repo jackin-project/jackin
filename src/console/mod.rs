@@ -9,6 +9,7 @@ pub mod manager;
 mod preview;
 mod prompts;
 pub mod run;
+mod services;
 pub mod state;
 pub mod tui;
 

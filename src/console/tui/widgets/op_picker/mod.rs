@@ -63,9 +63,12 @@ fn ready_picker_load(result: LoadResult) -> BlockingSubscription<LoadResult> {
 }
 
 fn spawn_picker_load(
-    worker: impl FnOnce() -> LoadResult + Send + 'static,
+    request: LoadRequest,
+    runner: Arc<dyn OpStructRunner + Send + Sync>,
 ) -> BlockingSubscription<LoadResult> {
-    jackin_tui::runtime::spawn_named_blocking_subscription("jackin-op-picker-load", worker)
+    jackin_tui::runtime::spawn_named_blocking_subscription("jackin-op-picker-load", move || {
+        crate::console::services::op_picker::execute_load_request(runner, request)
+    })
 }
 
 pub struct OpPickerState {
@@ -269,10 +272,7 @@ impl OpPickerState {
             .borrow()
             .get_accounts()
             .map(|accounts| LoadResult::Accounts(Ok(accounts)));
-        let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, request, move || {
-            LoadResult::Accounts(runner.account_list())
-        });
+        self.start_worker_load(cached, request);
     }
 
     fn handle_accounts_loaded(&mut self, accounts: Vec<OpAccount>) {
@@ -315,12 +315,9 @@ impl OpPickerState {
             .get_vaults(account_id.as_deref())
             .map(|vaults| LoadResult::Vaults(Ok(vaults)));
         let request = LoadRequest::Vaults {
-            account_id: account_id.clone(),
+            account_id,
         };
-        let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, request, move || {
-            LoadResult::Vaults(runner.vault_list(account_id.as_deref()))
-        });
+        self.start_worker_load(cached, request);
     }
 
     fn start_item_load(&mut self, vault_id: String, account_id: Option<String>) {
@@ -333,13 +330,10 @@ impl OpPickerState {
             .get_items(account_id.as_deref(), &vault_id)
             .map(|items| LoadResult::Items(Ok(items)));
         let request = LoadRequest::Items {
-            account_id: account_id.clone(),
-            vault_id: vault_id.clone(),
+            account_id,
+            vault_id,
         };
-        let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, request, move || {
-            LoadResult::Items(runner.item_list(&vault_id, account_id.as_deref()))
-        });
+        self.start_worker_load(cached, request);
     }
 
     fn start_field_load(&mut self, item_id: String, vault_id: String, account_id: Option<String>) {
@@ -352,26 +346,21 @@ impl OpPickerState {
             .get_fields(account_id.as_deref(), &vault_id, &item_id)
             .map(|fields| LoadResult::Fields(Ok(fields)));
         let request = LoadRequest::Fields {
-            account_id: account_id.clone(),
-            vault_id: vault_id.clone(),
-            item_id: item_id.clone(),
+            account_id,
+            vault_id,
+            item_id,
         };
-        let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, request, move || {
-            LoadResult::Fields(runner.item_get(&item_id, &vault_id, account_id.as_deref()))
-        });
+        self.start_worker_load(cached, request);
     }
 
     fn start_worker_load(
         &mut self,
         cached: Option<LoadResult>,
         request: LoadRequest,
-        worker: impl FnOnce() -> LoadResult + Send + 'static,
     ) {
-        let _ = request;
         self.rx = Some(match cached {
             Some(cached) => ready_picker_load(cached),
-            None => spawn_picker_load(worker),
+            None => spawn_picker_load(request, self.runner_clone_for_worker()),
         });
     }
 
