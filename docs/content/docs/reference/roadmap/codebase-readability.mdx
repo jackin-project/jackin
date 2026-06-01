@@ -162,7 +162,7 @@ The original Phase 2 listed 4 files. The deep audit found **33 files exceed 800 
 The four Tier A files with the longest history under this program already have dedicated split-plan pages — they describe the proposed module shape, the existing call sites that block a naïve split, and the snapshot/test gates required before the move:
 
 - [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) — 7966L, the hardest file in the codebase
-- [Split `console/manager/input/editor.rs`](/reference/roadmap/split-input-editor/) — 4002L, one file per editor tab
+- [Split `console/tui/input/editor.rs`](/reference/roadmap/split-input-editor/) — 4002L, one file per editor tab
 - [Split `operator_env.rs`](/reference/roadmap/split-operator-env/) — 3573L, separate shared API, CLI client, env resolution, diagnostics, and picker metadata
 - [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) — 2932L, separate dispatch from workspace/config command handlers
 
@@ -173,25 +173,25 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 | File | LOC | Key risk | Mega-functions inside |
 |---|---|---|---|
 | <RepoFile path="src/runtime/launch.rs" /> | **7966** | Hardest file in the codebase. `fn load_role_with` is 751L. | `load_role_with` (751L), `launch_role_runtime` (407L), `resolve_restore_candidate` (118L) |
-| <RepoFile path="src/console/manager/input/editor.rs" /> | **4002** | 61-arm match on modal, 53-arm match on key.code. Deep nesting to 36+ spaces. | `role_input_resolves_then_persists...` (135L) |
+| <RepoFile path="src/console/tui/input/editor.rs" /> | **4002** | 61-arm match on modal, 53-arm match on key.code. Deep nesting to 36+ spaces. | `role_input_resolves_then_persists...` (135L) |
 | <RepoFile path="src/operator_env.rs" /> | **3573** | Cross-cutting; 4 production `unwrap()` calls. | `resolve_op_uri_with_dollar_var_errors` (401L), `item_create` (145L) |
 | <RepoFile path="src/console/tui/render/editor.rs" /> | **3331** | 25-arm match on tab. | `contextual_row_items` (205L), `render_secrets_tab` (104L) |
 | <RepoFile path="src/instance/auth.rs" /> | **3206** | 5 copy-pasted provision functions. 132 deeply nested lines. | — |
 | <RepoFile path="src/app/mod.rs" /> | **2932** | `fn run` is 1239L with a 51-arm match. | `fn run` (1239L), `render_workspace_show` (147L), `handle_claude_token` (117L) |
 | <RepoFile path="src/console/tui/render/list.rs" /> | **2920** | 41 `TestBackend::new()` calls. | `render_details_pane` (116L) |
-| <RepoFile path="src/console/manager/input/save.rs" /> | **2908** | Deep nesting to 36+ spaces. Inline color re-declarations. | `build_confirm_save_lines` (245L) |
+| <RepoFile path="src/console/tui/input/save.rs" /> | **2908** | Deep nesting to 36+ spaces. Inline color re-declarations. | `build_confirm_save_lines` (245L) |
 | <RepoFile path="src/console/manager/state.rs" /> | **2522** | State machine + modal definitions mixed. | — |
 | <RepoFile path="src/config/editor.rs" /> | **2412** | 51 `JackinPaths::for_tests()` calls. | — |
 | <RepoFile path="src/isolation/materialize.rs" /> | **2392** | `materialize_one` (245L), `materialize_clone` (210L). | `materialize_one` (245L), `materialize_clone` (210L) |
 | <RepoFile path="src/console/tui/components/op_picker/mod.rs" /> | **2331** | 4-level state machine + loader + key handler. | — |
-| <RepoFile path="src/console/manager/input/global_mounts.rs" /> | **2114** | 42-arm + 31-arm + 29-arm matches on modal. Deep nesting. Crossed the 2000L line since the previous re-bake. | — |
-| <RepoFile path="src/console/manager/input/mouse.rs" /> | **2068** | `handle_mouse_with_config` is 129L. Mouse + seam drag logic. | `handle_mouse_with_config` (129L) |
+| <RepoFile path="src/console/tui/input/global_mounts.rs" /> | **2114** | 42-arm + 31-arm + 29-arm matches on modal. Deep nesting. Crossed the 2000L line since the previous re-bake. | — |
+| <RepoFile path="src/console/tui/input/mouse.rs" /> | **2068** | `handle_mouse_with_config` is 129L. Mouse + seam drag logic. | `handle_mouse_with_config` (129L) |
 
 ### Tier B — files 1000–2000 lines (14 files, address after Tier A)
 
 | File | LOC | Key risk |
 |---|---|---|
-| <RepoFile path="src/console/manager/input/auth.rs" /> | **1841** | Auth tab form/modal handling. |
+| <RepoFile path="src/console/tui/input/auth.rs" /> | **1841** | Auth tab form/modal handling. |
 | <RepoFile path="src/isolation/finalize.rs" /> | **1823** | `assess_cleanup` is 204L. |
 | <RepoFile path="src/workspace/token_setup.rs" /> | **1610** | `run_setup_with_runner` is 126L. |
 | <RepoFile path="src/runtime/cleanup.rs" /> | **1475** | Cleanup + finalizer logic; crossed the 1000L line since the previous re-bake. |
@@ -203,7 +203,7 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 | <RepoFile path="src/derived_image.rs" /> | **1092** | `entrypoint_dispatches_on_jackin_agent` is 500L; crossed the 1000L line since the previous re-bake. |
 | <RepoFile path="src/workspace/mod.rs" /> | **1076** | Core workspace types; crossed the 1000L line since the previous re-bake. |
 | <RepoFile path="src/manifest/mod.rs" /> | **1047** | Manifest loading; crossed the 1000L line since the previous re-bake. |
-| <RepoFile path="src/console/manager/input/list.rs" /> | **1030** | List-stage key handling; crossed the 1000L line since the previous re-bake. |
+| <RepoFile path="src/console/tui/input/list.rs" /> | **1030** | List-stage key handling; crossed the 1000L line since the previous re-bake. |
 | <RepoFile path="src/console/tui/render/mod.rs" /> | **1025** | `fn render` is 201L. Central render orchestrator; crossed the 1000L line since the previous re-bake. |
 
 ### Tier C — files 800–1000 lines (5 files, lower priority)
@@ -254,8 +254,8 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 
 The re-analysis found 2 production-code dependencies from `console/` into `runtime/`:
 
-1. `src/console/manager/input/editor.rs:1504` — calls `crate::runtime::register_agent_repo(...)` when the operator types a role selector in the TUI editor
-2. `src/console/manager/input/editor.rs:1595-1606` — references `crate::runtime::RepoError` variants in `friendly_role_resolution_error()`
+1. `src/console/tui/input/editor.rs:1504` — calls `crate::runtime::register_agent_repo(...)` when the operator types a role selector in the TUI editor
+2. `src/console/tui/input/editor.rs:1595-1606` — references `crate::runtime::RepoError` variants in `friendly_role_resolution_error()`
 
 The Cargo workspace split will need these 2 sites addressed first.
 

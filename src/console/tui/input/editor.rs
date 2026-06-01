@@ -1744,7 +1744,7 @@ fn poll_role_load(
     true
 }
 
-pub(in crate::console::manager) fn poll_role_load_completion(
+pub(in crate::console) fn poll_role_load_completion(
     editor: &mut EditorState<'_>,
 ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
     let Some(load) = editor.pending_role_load.as_mut() else {
@@ -2241,7 +2241,7 @@ mod tests {
         env_key_input_state, handle_editor_modal, poll_role_load, secrets_flat_rows,
     };
     use crate::config::AppConfig;
-    use crate::console::manager::input::handle_key;
+    use crate::console::tui::input::handle_key;
     use crate::operator_env::OpCache;
     use crate::paths::JackinPaths;
     use crate::workspace::{MountConfig, WorkspaceConfig};

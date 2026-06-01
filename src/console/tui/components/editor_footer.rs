@@ -21,7 +21,7 @@ pub(crate) fn editor_footer_items(
     if let Some(modal) = &state.modal {
         let mut items = modal_footer_items(modal);
         if matches!(modal, Modal::AuthForm { .. })
-            && crate::console::manager::input::auth::auth_form_can_generate_token(state)
+            && crate::console::tui::input::auth::auth_form_can_generate_token(state)
         {
             items.extend([
                 HintSpan::GroupSep,

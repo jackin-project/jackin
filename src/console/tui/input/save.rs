@@ -852,7 +852,7 @@ mod tests {
     use super::super::test_support::{key, mount};
     use super::{begin_editor_save, commit_editor_save};
     use crate::config::AppConfig;
-    use crate::console::manager::input::handle_key;
+    use crate::console::tui::input::handle_key;
     use crate::paths::JackinPaths;
     use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;

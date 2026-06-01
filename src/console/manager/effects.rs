@@ -293,7 +293,7 @@ pub(crate) fn execute_workspace_save_write(
         }
         Err(e) => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
-                super::input::save::open_save_error_popup(editor, &e.to_string());
+                crate::console::tui::input::save::open_save_error_popup(editor, &e.to_string());
             }
         }
     }
@@ -358,7 +358,7 @@ pub(crate) fn poll_background_messages(
         ManagerBackgroundEvent::Message(ManagerMessage::PollPickerLoads),
     ];
     if let ManagerStage::Editor(editor) = &mut state.stage {
-        if let Some((load, result)) = super::input::editor::poll_role_load_completion(editor) {
+        if let Some((load, result)) = crate::console::tui::input::editor::poll_role_load_completion(editor) {
             messages.push(ManagerBackgroundEvent::RoleLoadFinished { load, result });
         }
     }

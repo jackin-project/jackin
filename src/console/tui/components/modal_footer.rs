@@ -85,7 +85,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
             let mut items = auth_form_footer_items(state.as_ref(), *focus);
-            if crate::console::manager::input::global_mounts::settings_auth_can_generate_token(auth)
+            if crate::console::tui::input::global_mounts::settings_auth_can_generate_token(auth)
             {
                 items.extend([
                     HintSpan::GroupSep,

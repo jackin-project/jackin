@@ -15,7 +15,7 @@ use super::identity::try_capture;
 /// Surfaced through `anyhow::Error` chains so the editor can downcast and
 /// pick a friendly translation without substring-matching free text. Add
 /// new variants here together with their `friendly_role_resolution_error`
-/// arm in `console::manager::input::editor`.
+/// arm in `console::tui::input::editor`.
 #[derive(Debug, thiserror::Error)]
 pub enum RepoError {
     /// `git clone` failed for any reason — host unreachable, auth required,

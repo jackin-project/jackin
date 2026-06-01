@@ -187,12 +187,12 @@ pub async fn run_console<H: InstanceActionHandler>(
                             // persist_form → editor save that writes config.
                             ManagerStage::Editor(ed) => match env_value {
                                 crate::operator_env::EnvValue::OpRef(op_ref) => {
-                                    crate::console::manager::input::auth::apply_op_picker_to_auth_form_committed(
+                                    crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
                                         ed, op_ref,
                                     );
                                 }
                                 crate::operator_env::EnvValue::Plain(value) => {
-                                    crate::console::manager::input::auth::apply_plain_text_to_auth_form(
+                                    crate::console::tui::input::auth::apply_plain_text_to_auth_form(
                                         ed, &value,
                                     );
                                 }
@@ -201,12 +201,12 @@ pub async fn run_console<H: InstanceActionHandler>(
                             // equivalents on the stashed settings auth form.
                             ManagerStage::Settings(s) => match env_value {
                                 crate::operator_env::EnvValue::OpRef(op_ref) => {
-                                    crate::console::manager::input::apply_op_picker_to_settings_auth_form_committed(
+                                    crate::console::tui::input::apply_op_picker_to_settings_auth_form_committed(
                                         &mut s.auth, op_ref,
                                     );
                                 }
                                 crate::operator_env::EnvValue::Plain(value) => {
-                                    crate::console::manager::input::apply_plain_text_to_settings_auth_form(
+                                    crate::console::tui::input::apply_plain_text_to_settings_auth_form(
                                         &mut s.auth, &value,
                                     );
                                 }
@@ -256,7 +256,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     }
                     manager::message::ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
                         if let manager::ManagerStage::Editor(editor) = &mut ms.stage {
-                            manager::input::editor::apply_role_load_completion(
+                            crate::console::tui::input::editor::apply_role_load_completion(
                                 editor,
                                 &mut config,
                                 paths,
@@ -270,7 +270,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         check,
                         detection,
                     } => {
-                        let _ = manager::input::save::continue_save_after_drift_check(
+                        let _ = crate::console::tui::input::save::continue_save_after_drift_check(
                             ms,
                             &mut config,
                             paths,
@@ -284,7 +284,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         cleanup,
                         result,
                     } => {
-                        let _ = manager::input::save::continue_save_after_isolation_cleanup(
+                        let _ = crate::console::tui::input::save::continue_save_after_isolation_cleanup(
                             ms,
                             &mut config,
                             paths,
@@ -660,7 +660,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         }
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        let outcome = manager::input::handle_mouse_with_config(
+                        let outcome = crate::console::tui::input::handle_mouse_with_config(
                             ms,
                             mouse,
                             term_size,
@@ -676,7 +676,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         // clickable element (and back off it), per the clickable
                         // affordance rule — only when the state changes.
                         let hand =
-                            manager::input::clickable_at(ms, mouse, term_size, Some(&config));
+                            crate::console::tui::input::clickable_at(ms, mouse, term_size, Some(&config));
                         if hand != pointer_is_hand {
                             pointer_is_hand = hand;
                             let seq = if hand {

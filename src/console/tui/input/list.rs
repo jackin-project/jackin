@@ -745,7 +745,7 @@ mod tests {
     use super::{InputOutcome, handle_new_session_picker, instance_action_accepts_status};
     use crate::agent::AgentChoiceState;
     use crate::config::AppConfig;
-    use crate::console::manager::input::handle_key;
+    use crate::console::tui::input::handle_key;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
     use crate::paths::JackinPaths;
     use crate::workspace::WorkspaceConfig;

@@ -12,7 +12,7 @@ pub(crate) mod prelude;
 pub mod save;
 
 pub use dispatch::handle_key;
-pub use mouse::{clickable_at, handle_mouse, handle_mouse_with_config};
+pub use mouse::{clickable_at, handle_mouse_with_config};
 
 // Re-exported for the `run_console` token-generate loop, which re-mounts
 // the settings auth form after a mint (the `global_mounts` module is

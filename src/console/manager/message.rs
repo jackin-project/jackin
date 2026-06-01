@@ -511,13 +511,13 @@ fn apply_op_commit_result(
         };
         match result {
             Ok(()) => {
-                crate::console::manager::input::apply_op_picker_to_settings_auth_form_committed(
+                crate::console::tui::input::apply_op_picker_to_settings_auth_form_committed(
                     &mut settings.auth,
                     op_ref,
                 );
             }
             Err(error) => {
-                crate::console::manager::input::apply_op_picker_settings_commit_failed(
+                crate::console::tui::input::apply_op_picker_settings_commit_failed(
                     &mut settings.auth,
                     &error,
                 );
@@ -531,12 +531,12 @@ fn apply_op_commit_result(
     };
     match result {
         Ok(()) => {
-            crate::console::manager::input::auth::apply_op_picker_to_auth_form_committed(
+            crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
                 editor, op_ref,
             );
         }
         Err(error) => {
-            crate::console::manager::input::auth::apply_op_picker_commit_failed(editor, &error);
+            crate::console::tui::input::auth::apply_op_picker_commit_failed(editor, &error);
         }
     }
 }

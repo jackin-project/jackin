@@ -64,7 +64,8 @@ const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 /// The caller (run-loop in `src/console/mod.rs`) is responsible for
 /// passing the current `terminal.size()?` as `term_size` so the handler
 /// can compute the seam column as `term_size.width * list_split_pct / 100`.
-pub fn handle_mouse(
+#[cfg(test)]
+fn handle_mouse(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,

@@ -1342,7 +1342,7 @@ pub(crate) fn active_instances_matching<'a>(
 }
 
 impl ManagerState<'_> {
-    pub(in crate::console::manager) const fn list_scroll_x_mut(
+    pub(in crate::console) const fn list_scroll_x_mut(
         &mut self,
         focus: MountScrollFocus,
     ) -> &mut u16 {
@@ -1354,7 +1354,7 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(in crate::console::manager) const fn list_scroll_y_mut(
+    pub(in crate::console) const fn list_scroll_y_mut(
         &mut self,
         focus: MountScrollFocus,
     ) -> &mut u16 {
@@ -1366,7 +1366,7 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(in crate::console::manager) const fn reset_list_scroll(&mut self) {
+    pub(in crate::console) const fn reset_list_scroll(&mut self) {
         self.list_mounts_scroll_x = 0;
         self.list_mounts_scroll_y = 0;
         self.list_global_mounts_scroll_x = 0;

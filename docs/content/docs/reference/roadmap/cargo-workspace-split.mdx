@@ -13,7 +13,7 @@ title: "Cargo Workspace Split"
 - Compile times on the CI `check` job exceed 5 minutes cold cache
 
 <Aside type="caution">
-**The original claim "`console/` has zero imports from `runtime/` in production code" is FALSE.** The re-analysis found 2 production-code dependencies: `crate::runtime::register_agent_repo` and `crate::runtime::RepoError` in `console/manager/input/editor.rs`. The Cargo workspace split will need these 2 sites addressed first — either through a trait abstraction or by moving the shared function to a common module.
+**The original claim "`console/` has zero imports from `runtime/` in production code" is FALSE.** The re-analysis found 2 production-code dependencies: `crate::runtime::register_agent_repo` and `crate::runtime::RepoError` in `console/tui/input/editor.rs`. The Cargo workspace split will need these 2 sites addressed first — either through a trait abstraction or by moving the shared function to a common module.
 </Aside>
 
 ## Target 6-crate structure
@@ -50,5 +50,5 @@ jackin/
 ## Related files
 
 - <RepoFile path="Cargo.toml" /> — target: convert to virtual workspace manifest
-- <RepoFile path="src/console/manager/input/editor.rs" /> — contains the 2 runtime dependencies that must be resolved
+- <RepoFile path="src/console/tui/input/editor.rs" /> — contains the 2 runtime dependencies that must be resolved
 - <RepoFile path="src/runtime/launch.rs" /> — the runtime entry point (7575L)
