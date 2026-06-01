@@ -16,8 +16,9 @@ use crate::workspace::resolve_path;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
-    env_scope_label, global_mount_confirm_prompt, settings_env_delete_confirm_prompt,
-    settings_env_key_input_state,
+    env_scope_label, global_mount_confirm_state, global_mount_scope_picker_state,
+    global_mount_text_input_state, settings_env_delete_confirm_prompt,
+    settings_env_key_input_state, settings_env_text_input_state,
 };
 use jackin_tui::components::{ConfirmState, TextInputState};
 
@@ -1917,15 +1918,13 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
 fn confirm_modal(action: GlobalMountConfirm) -> GlobalMountModal<'static> {
     GlobalMountModal::Confirm {
         action,
-        state: ConfirmState::new(global_mount_confirm_prompt(action)),
+        state: global_mount_confirm_state(action),
     }
 }
 
-const fn scope_picker_modal() -> GlobalMountModal<'static> {
+fn scope_picker_modal() -> GlobalMountModal<'static> {
     GlobalMountModal::ScopePicker {
-        state: jackin_console::tui::components::scope_picker::ScopePickerState::with_title(
-            " Which agent role do you want to add? ",
-        ),
+        state: global_mount_scope_picker_state(),
     }
 }
 
@@ -1969,7 +1968,7 @@ fn text_modal(
 ) -> GlobalMountModal<'static> {
     GlobalMountModal::Text {
         target,
-        state: Box::new(TextInputState::new(label, initial)),
+        state: Box::new(global_mount_text_input_state(label, initial)),
     }
 }
 
@@ -1978,11 +1977,7 @@ fn env_text_modal(
     label: &str,
     initial: &str,
 ) -> SettingsEnvModal<'static> {
-    let state = if matches!(target, SettingsEnvTextTarget::EnvValue { .. }) {
-        TextInputState::new_allow_empty(label, initial)
-    } else {
-        TextInputState::new(label, initial)
-    };
+    let state = settings_env_text_input_state(&target, label, initial);
     SettingsEnvModal::Text {
         target,
         state: Box::new(state),

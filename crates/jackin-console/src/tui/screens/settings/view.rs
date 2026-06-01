@@ -5,6 +5,7 @@ use super::model::SettingsAuthRow;
 use super::model::SettingsEnvConfig;
 use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
+use super::model::SettingsEnvTextTarget;
 use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
 use super::update::forbidden_settings_env_keys;
@@ -70,6 +71,39 @@ pub const fn global_mount_confirm_prompt(action: GlobalMountConfirm) -> &'static
         GlobalMountConfirm::Sensitive => "Sensitive global mount path detected. Save anyway?",
         GlobalMountConfirm::Remove => "Remove selected global mount?",
         GlobalMountConfirm::Discard => "Discard unsaved global mount changes?",
+    }
+}
+
+#[must_use]
+pub fn global_mount_confirm_state(action: GlobalMountConfirm) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::new(global_mount_confirm_prompt(action))
+}
+
+#[must_use]
+pub fn global_mount_scope_picker_state() -> crate::tui::components::scope_picker::ScopePickerState {
+    crate::tui::components::scope_picker::ScopePickerState::with_title(
+        " Which agent role do you want to add? ",
+    )
+}
+
+#[must_use]
+pub fn global_mount_text_input_state<'a>(
+    label: impl Into<String>,
+    initial: impl Into<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    jackin_tui::components::TextInputState::new(label, initial)
+}
+
+#[must_use]
+pub fn settings_env_text_input_state<'a>(
+    target: &SettingsEnvTextTarget,
+    label: impl Into<String>,
+    initial: impl Into<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    if matches!(target, SettingsEnvTextTarget::EnvValue { .. }) {
+        jackin_tui::components::TextInputState::new_allow_empty(label, initial)
+    } else {
+        jackin_tui::components::TextInputState::new(label, initial)
     }
 }
 
@@ -503,6 +537,43 @@ mod tests {
             global_mount_confirm_prompt(GlobalMountConfirm::Sensitive),
             "Sensitive global mount path detected. Save anyway?"
         );
+    }
+
+    #[test]
+    fn global_mount_confirm_state_uses_settings_prompt() {
+        let state = global_mount_confirm_state(GlobalMountConfirm::Discard);
+
+        assert_eq!(state.title(), "Confirm");
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
+        else {
+            panic!("expected default confirm state");
+        };
+        assert_eq!(prompt, "Discard unsaved global mount changes?");
+    }
+
+    #[test]
+    fn settings_env_text_input_state_allows_empty_values_only() {
+        let value_target = SettingsEnvTextTarget::EnvValue {
+            scope: SettingsEnvScope::Global,
+            key: "TOKEN".to_string(),
+        };
+        let key_target = SettingsEnvTextTarget::EnvKey {
+            scope: SettingsEnvScope::Global,
+        };
+
+        let value_state = settings_env_text_input_state(&value_target, "Edit TOKEN", "");
+        let key_state = settings_env_text_input_state(&key_target, "New key", "");
+
+        assert!(value_state.is_valid());
+        assert!(!key_state.is_valid());
+    }
+
+    #[test]
+    fn global_mount_text_input_state_names_label() {
+        let state = global_mount_text_input_state("Destination", "/workspace");
+
+        assert_eq!(state.label, "Destination");
+        assert_eq!(state.value(), "/workspace");
     }
 
     #[test]
