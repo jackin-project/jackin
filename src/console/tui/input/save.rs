@@ -5,7 +5,7 @@
 use super::super::effect::{
     WorkspaceSaveEffect, WorkspaceSaveWriteMode,
 };
-use crate::console::effects::{
+use crate::console::domain::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
 };
 use crate::console::tui::state::{
@@ -160,7 +160,7 @@ pub(super) fn begin_editor_save(
         },
     };
     let (effective_removals, final_mounts, has_collapses, collapse_lines) =
-        match crate::console::effects::plan_editor_save_preview(config, preview_input) {
+        match crate::console::domain::plan_editor_save_preview(config, preview_input) {
             Ok(EditorSavePreviewPlan::Edit {
                 effective_removals,
                 edit_driven_collapses,
