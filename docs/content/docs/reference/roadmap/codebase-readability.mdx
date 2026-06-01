@@ -30,7 +30,7 @@ Make AI-generated code verifiable and maintainable. The codebase has grown to ~9
 
 ### Weakest parts (highest duplication / entropy risk)
 
-- **TUI render layer** — `console/tui/render/` and all widget files: 296 `Style::default().fg()` calls, 357 `Span::styled()` calls, 27 `Block::default()` chains, inline color constants duplicated across 10+ files instead of using the centralized palette in `console/tui/widgets/mod.rs`
+- **TUI render layer** — `console/tui/render/` and all widget files: 296 `Style::default().fg()` calls, 357 `Span::styled()` calls, 27 `Block::default()` chains, inline color constants duplicated across 10+ files instead of using the centralized palette in `console/tui/components/mod.rs`
 - **Auth provisioning** — `instance/auth.rs` contains 5 near-identical provision functions; 7+ agent match-arm dispatch blocks across the codebase mean adding a new agent requires touching 7+ files
 - **String literal duplication** — `"FROM projectjackin/construct:trixie\n"` and related construct base FROM lines, `"jackin.role.toml"` (154), `"Dockerfile"` (227) — all inline instead of shared constants
 - **Test infrastructure** — 11 separate mock/fake struct definitions; 10 independent mount helper functions in 7 files; 4 byte-for-byte-identical `config_with_agents` test helpers; 20 inline `ResolvedWorkspace` constructions
@@ -106,7 +106,7 @@ The unified TUI scrollbar extraction has shipped: shared metrics, clamping, drag
 |---|---|---|---|
 | `fn titled_block(title, focused) -> Block` | 18 `Block::default().borders(ALL)` + 15 border_style chains + 13 title constructions (78 total sites) | `render/editor.rs`, `render/list.rs`, `render/settings.rs` | Collapses 78 boilerplate chains |
 | Named style constants (`BOLD_WHITE`, `DIM`, `GREEN`, `BORDER`, `DANGER`) | 296 `Style::default().fg(...)` chains across 22 files; `Style::default().fg(WHITE).add_modifier(BOLD)` alone appears 26+ times | All render files + all widget files + `input/save.rs` | Eliminates 296 inline style constructions |
-| Centralized color palette import | Inline `Color::Rgb(...)` values duplicated in `input/save.rs`, `scope_picker.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `file_browser/render.rs` instead of importing from `console/tui/widgets/mod.rs` | 6+ files | Removes ~20 inline magic color values |
+| Centralized color palette import | Inline `Color::Rgb(...)` values duplicated in `input/save.rs`, `scope_picker.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `file_browser/render.rs` instead of importing from `console/tui/components/mod.rs` | 6+ files | Removes ~20 inline magic color values |
 | `fn app_layout(area) -> Rc<[Rect]>` for header/body/footer | 4 identical `Layout::default()` splits with `[Length(3), Min(..), Length(2)]` | `render/mod.rs`, `render/settings.rs` | Removes 4 duplicate layout constructions |
 | Deduplicate breadcrumb logic | `push_op_breadcrumb_spans()` at `render/editor.rs:1427` is fully duplicated inline at lines 1058–1091 | `render/editor.rs` | One call replaces ~30 duplicated lines |
 | Extract `config_with_agents` to shared test utility | 4 copies of the same function (3 are byte-for-byte identical in `render/editor.rs`); 1 variant in `input/editor.rs` | `render/editor.rs`, `input/editor.rs` | 4 functions → 1 shared helper |
@@ -183,7 +183,7 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 | <RepoFile path="src/console/manager/state.rs" /> | **2522** | State machine + modal definitions mixed. | — |
 | <RepoFile path="src/config/editor.rs" /> | **2412** | 51 `JackinPaths::for_tests()` calls. | — |
 | <RepoFile path="src/isolation/materialize.rs" /> | **2392** | `materialize_one` (245L), `materialize_clone` (210L). | `materialize_one` (245L), `materialize_clone` (210L) |
-| <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | **2331** | 4-level state machine + loader + key handler. | — |
+| <RepoFile path="src/console/tui/components/op_picker/mod.rs" /> | **2331** | 4-level state machine + loader + key handler. | — |
 | <RepoFile path="src/console/manager/input/global_mounts.rs" /> | **2114** | 42-arm + 31-arm + 29-arm matches on modal. Deep nesting. Crossed the 2000L line since the previous re-bake. | — |
 | <RepoFile path="src/console/manager/input/mouse.rs" /> | **2068** | `handle_mouse_with_config` is 129L. Mouse + seam drag logic. | `handle_mouse_with_config` (129L) |
 

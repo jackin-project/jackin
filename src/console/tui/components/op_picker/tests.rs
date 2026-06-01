@@ -1221,7 +1221,7 @@ fn picker_loading_account_state_renders_spinner_immediately() {
     let area = Rect::new(0, 0, 60, 12);
     let backend = TestBackend::new(area.width, area.height);
     let mut term = Terminal::new(backend).unwrap();
-    term.draw(|f| crate::console::tui::widgets::op_picker::render::render(f, area, &s))
+    term.draw(|f| crate::console::tui::components::op_picker::render::render(f, area, &s))
         .unwrap();
     let buf = term.backend().buffer();
 

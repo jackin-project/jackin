@@ -13,7 +13,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::auth_panel::{AuthForm, CredentialInput};
-use crate::console::tui::widgets::op_picker::OpPickerState;
+use crate::console::tui::components::op_picker::OpPickerState;
 use super::super::auth_kind::{
     AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,
     auth_mode_to_auth_forward, auth_mode_to_github, role_override_present,

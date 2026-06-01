@@ -595,7 +595,7 @@ readonly = false
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.tab_bar_focused = false;
         editor.modal = Some(Modal::OpPicker {
-            state: Box::new(crate::console::tui::widgets::op_picker::OpPickerState::new()),
+            state: Box::new(crate::console::tui::components::op_picker::OpPickerState::new()),
         });
         editor_op_picker.stage = ManagerStage::Editor(editor);
         cases.push(("editor op picker", editor_op_picker));
@@ -774,7 +774,7 @@ readonly = false
                 &config,
                 &cwd,
                 SettingsEnvModal::OpPicker {
-                    state: Box::new(crate::console::tui::widgets::op_picker::OpPickerState::new()),
+                    state: Box::new(crate::console::tui::components::op_picker::OpPickerState::new()),
                 },
             ),
         ));
@@ -852,7 +852,7 @@ readonly = false
                 &config,
                 &cwd,
                 crate::console::manager::state::SettingsAuthModal::OpPicker {
-                    state: Box::new(crate::console::tui::widgets::op_picker::OpPickerState::new()),
+                    state: Box::new(crate::console::tui::components::op_picker::OpPickerState::new()),
                 },
             ),
         ));

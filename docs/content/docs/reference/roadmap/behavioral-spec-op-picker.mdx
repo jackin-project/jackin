@@ -6,9 +6,9 @@ title: "Behavioral spec: op_picker"
 
 ## Problem
 
-<RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> is now **~3,300 lines** total (was ~1,712L at the original analysis). It has a `//!` doc but no INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format, the absence of secret values in the picker path, and the collapsible-section navigation layer added to the field stage.
+<RepoFile path="src/console/tui/components/op_picker/mod.rs" /> is now **~3,300 lines** total (was ~1,712L at the original analysis). It has a `//!` doc but no INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format, the absence of secret values in the picker path, and the collapsible-section navigation layer added to the field stage.
 
-The render counterpart <RepoFile path="src/console/tui/widgets/op_picker/render.rs" /> is **~830 lines** (separate file).
+The render counterpart <RepoFile path="src/console/tui/components/op_picker/render.rs" /> is **~830 lines** (separate file).
 
 ## Key invariants
 
@@ -34,6 +34,6 @@ The field stage has an extra navigation layer: fields belonging to named 1Passwo
 
 ## Related files
 
-- <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> — ~3,300 lines (state machine + loader + key handler + `build_field_display_rows`)
-- <RepoFile path="src/console/tui/widgets/op_picker/render.rs" /> — ~830 lines (render logic including collapsible section headers)
+- <RepoFile path="src/console/tui/components/op_picker/mod.rs" /> — ~3,300 lines (state machine + loader + key handler + `build_field_display_rows`)
+- <RepoFile path="src/console/tui/components/op_picker/render.rs" /> — ~830 lines (render logic including collapsible section headers)
 - <RepoFile path="src/operator_env.rs" /> — uses `RawOpField`; exhaustive destructure test; `parse_op_reference` used by `build_field_display_rows`

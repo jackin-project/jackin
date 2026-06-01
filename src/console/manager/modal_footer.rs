@@ -35,7 +35,7 @@ pub(crate) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             CONFIRM_DISMISS_HINT.to_vec()
         }
         Modal::OpPicker { state }
-            if state.stage == crate::console::tui::widgets::op_picker::OpPickerStage::Section =>
+            if state.stage == crate::console::tui::components::op_picker::OpPickerStage::Section =>
         {
             op_section_footer_items()
         }
@@ -101,7 +101,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
             CONFIRM_DISMISS_HINT.to_vec()
         }
         SettingsAuthModal::OpPicker { state }
-            if state.stage == crate::console::tui::widgets::op_picker::OpPickerStage::Section =>
+            if state.stage == crate::console::tui::components::op_picker::OpPickerStage::Section =>
         {
             op_section_footer_items()
         }
