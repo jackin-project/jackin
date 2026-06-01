@@ -158,7 +158,10 @@ mod consistency_tests {
     }
 
     fn render_github_picker() -> (Buffer, Rect) {
-        use jackin_console::widgets::github_picker::{GithubChoice, GithubPickerState, render};
+        use jackin_console::{
+            github_mounts::GithubChoice,
+            tui::components::github_picker::{GithubPickerState, render},
+        };
         let area = Rect::new(0, 0, 60, 10);
         let state = GithubPickerState::new(vec![GithubChoice {
             src: "/home/user/app".into(),

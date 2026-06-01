@@ -17,9 +17,16 @@
 //! dedicated module under `launch/manager` lets both render and input
 //! call a neutral helper.
 
-use crate::widgets::github_picker::GithubChoice;
-
 use crate::mount_info::{GitBranch, GitOrigin, MountKind, inspect};
+
+/// GitHub-hosted mount row that can be shown in the TUI picker or opened
+/// directly when it is the only candidate.
+#[derive(Debug, Clone)]
+pub struct GithubChoice {
+    pub src: String,
+    pub branch: String,
+    pub url: String,
+}
 
 pub trait WorkspaceMounts {
     fn mount_sources(&self) -> impl Iterator<Item = &str>;

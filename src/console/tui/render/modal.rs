@@ -32,7 +32,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_console::tui::components::mount_dst_choice::render(frame, modal_area, state);
         }
         Modal::GithubPicker { state } => {
-            jackin_console::widgets::github_picker::render(frame, modal_area, state);
+            jackin_console::tui::components::github_picker::render(frame, modal_area, state);
         }
         Modal::ConfirmSave { state } => {
             jackin_console::tui::components::confirm_save::render(frame, modal_area, state);

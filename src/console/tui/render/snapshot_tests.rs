@@ -516,13 +516,13 @@ readonly = false
                 &config,
                 &cwd,
                 Modal::GithubPicker {
-                    state: jackin_console::widgets::github_picker::GithubPickerState::new(vec![
-                        jackin_console::widgets::github_picker::GithubChoice {
+                    state: jackin_console::tui::components::github_picker::GithubPickerState::new(
+                        vec![jackin_console::github_mounts::GithubChoice {
                             src: "/workspace".into(),
                             branch: "main".into(),
                             url: "https://github.com/example/repo".into(),
-                        },
-                    ]),
+                        }],
+                    ),
                 },
             ),
         ));

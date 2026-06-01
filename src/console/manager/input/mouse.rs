@@ -1667,8 +1667,8 @@ mod mouse_drag_tests {
         // Ensure the helper signature compiles (guards against future refactors).
         let _ = jackin_console::github_mounts::resolve_for_workspace(&ws);
         state.list_modal = Some(Modal::GithubPicker {
-            state: jackin_console::widgets::github_picker::GithubPickerState::new(vec![
-                jackin_console::widgets::github_picker::GithubChoice {
+            state: jackin_console::tui::components::github_picker::GithubPickerState::new(vec![
+                jackin_console::github_mounts::GithubChoice {
                     src: "/w".into(),
                     branch: "main".into(),
                     url: "https://github.com/o/r".into(),

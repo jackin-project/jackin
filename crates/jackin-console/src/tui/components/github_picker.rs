@@ -8,17 +8,8 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
+use crate::github_mounts::GithubChoice;
 use jackin_tui::{ModalOutcome, shorten_home};
-
-/// One picker row. `src` is the operator-facing host path; `branch` is
-/// the resolved HEAD/detached label (already formatted); `url` is the
-/// web URL to hand to `open::that_detached` on commit.
-#[derive(Debug, Clone)]
-pub struct GithubChoice {
-    pub src: String,
-    pub branch: String,
-    pub url: String,
-}
 
 #[derive(Debug)]
 pub struct GithubPickerState {
@@ -75,9 +66,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use super::{PHOSPHOR_DIM, WHITE};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
     // Title style matches WorkdirPick — Panel::block() applies the correct
@@ -140,6 +131,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::github_mounts::GithubChoice;
     use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
