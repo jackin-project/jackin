@@ -21,16 +21,8 @@ impl Multiplexer {
         env
     }
 
-    pub(super) fn palette_close_label(&self) -> PaletteCloseLabel {
-        if self.active_tab_pane_count() == 1 {
-            PaletteCloseLabel::CloseTab
-        } else {
-            PaletteCloseLabel::ChooseTarget
-        }
-    }
-
     pub(super) fn open_command_palette(&mut self) {
-        let close_label = self.palette_close_label();
+        let close_label = PaletteCloseLabel::for_pane_count(self.active_tab_pane_count());
         self.dialog_push(Dialog::new_command_palette(close_label));
     }
 

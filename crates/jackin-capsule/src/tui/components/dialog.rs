@@ -227,6 +227,14 @@ pub enum PaletteCloseLabel {
 }
 
 impl PaletteCloseLabel {
+    pub(crate) fn for_pane_count(count: usize) -> Self {
+        if count == 1 {
+            Self::CloseTab
+        } else {
+            Self::ChooseTarget
+        }
+    }
+
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::ChooseTarget => "Close",
@@ -2706,6 +2714,18 @@ mod tests {
         assert_eq!(
             palette_filtered_indices("close tab", PaletteCloseLabel::CloseTab).len(),
             1
+        );
+    }
+
+    #[test]
+    fn palette_close_label_derives_from_pane_count() {
+        assert_eq!(
+            PaletteCloseLabel::for_pane_count(1),
+            PaletteCloseLabel::CloseTab
+        );
+        assert_eq!(
+            PaletteCloseLabel::for_pane_count(2),
+            PaletteCloseLabel::ChooseTarget
         );
     }
 
