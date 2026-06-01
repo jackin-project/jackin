@@ -3,7 +3,8 @@
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, branch_context_bar_hit,
 };
-use crate::tui::view::{encode_osc52_clipboard_write, prefix_full_redraw_reason};
+use crate::tui::update::prefix_full_redraw_reason;
+use crate::tui::view::encode_osc52_clipboard_write;
 
 use super::*;
 

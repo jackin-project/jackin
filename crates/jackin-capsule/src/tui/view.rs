@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use crate::tui::input::PrefixCommand;
 use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
 use crate::tui::layout::Tab;
 use crate::tui::render::draw_scrollbar;
@@ -12,7 +11,6 @@ use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
-use crate::tui::update::FullRedrawReason;
 use ratatui::{Frame, layout::Rect as RatatuiRect};
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
@@ -24,23 +22,6 @@ pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 
 pub(crate) const fn hovered_menu(target: Option<HoverTarget>) -> bool {
     matches!(target, Some(HoverTarget::Menu))
-}
-
-pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
-    match cmd {
-        PrefixCommand::NewTab | PrefixCommand::Palette => FullRedrawReason::PaletteOverlay,
-        PrefixCommand::NextTab | PrefixCommand::PrevTab | PrefixCommand::JumpTab(_) => {
-            FullRedrawReason::TabSwitch
-        }
-        PrefixCommand::SplitTopBottom | PrefixCommand::SplitSideBySide => {
-            FullRedrawReason::LayoutChange
-        }
-        PrefixCommand::MoveFocus(_) => FullRedrawReason::FocusChange,
-        PrefixCommand::ZoomToggle => FullRedrawReason::ZoomChange,
-        PrefixCommand::KillPane | PrefixCommand::KillTab => FullRedrawReason::SplitClose,
-        PrefixCommand::ClearPane => FullRedrawReason::PaneClear,
-        PrefixCommand::Detach | PrefixCommand::Redraw => FullRedrawReason::ExplicitRedraw,
-    }
 }
 
 #[derive(Default)]

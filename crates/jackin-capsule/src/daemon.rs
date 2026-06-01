@@ -90,7 +90,9 @@ mod pane_layout;
 mod session_lifecycle;
 use crate::tui::view::spawn_failure_banner;
 #[cfg(test)]
-use crate::tui::view::{osc22_pointer_shape, prefix_full_redraw_reason};
+use crate::tui::update::prefix_full_redraw_reason;
+#[cfg(test)]
+use crate::tui::view::osc22_pointer_shape;
 
 struct SessionLaunch {
     label: String,

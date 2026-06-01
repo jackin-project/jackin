@@ -4,6 +4,8 @@
 //! being extracted. Redraw reasons live here because they describe visible
 //! invalidation causes, not PTY/session authority.
 
+use crate::tui::input::PrefixCommand;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FullRedrawReason {
     FirstAttach,
@@ -46,5 +48,22 @@ impl FullRedrawReason {
             Self::PaneCacheMiss => "pane-cache-miss",
             Self::UnsafePartial => "unsafe-partial",
         }
+    }
+}
+
+pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
+    match cmd {
+        PrefixCommand::NewTab | PrefixCommand::Palette => FullRedrawReason::PaletteOverlay,
+        PrefixCommand::NextTab | PrefixCommand::PrevTab | PrefixCommand::JumpTab(_) => {
+            FullRedrawReason::TabSwitch
+        }
+        PrefixCommand::SplitTopBottom | PrefixCommand::SplitSideBySide => {
+            FullRedrawReason::LayoutChange
+        }
+        PrefixCommand::MoveFocus(_) => FullRedrawReason::FocusChange,
+        PrefixCommand::ZoomToggle => FullRedrawReason::ZoomChange,
+        PrefixCommand::KillPane | PrefixCommand::KillTab => FullRedrawReason::SplitClose,
+        PrefixCommand::ClearPane => FullRedrawReason::PaneClear,
+        PrefixCommand::Detach | PrefixCommand::Redraw => FullRedrawReason::ExplicitRedraw,
     }
 }
