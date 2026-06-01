@@ -903,15 +903,11 @@ impl GlobalMountsState<'_> {
         &mut self,
         paths: &crate::paths::JackinPaths,
     ) -> anyhow::Result<AppConfig> {
-        AppConfig::validate_global_mount_rows(&self.pending)?;
-        let mut editor = crate::config::ConfigEditor::open(paths)?;
-        for row in &self.original {
-            editor.remove_mount(&row.name, row.scope.as_deref());
-        }
-        for row in &self.pending {
-            editor.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
-        }
-        let config = editor.save()?;
+        let config = crate::console::services::config::save_global_mounts(
+            paths,
+            &self.original,
+            &self.pending,
+        )?;
         self.original = self.pending.clone();
         self.mount_info_cache.clear();
         Ok(config)
