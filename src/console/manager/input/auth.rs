@@ -663,13 +663,12 @@ pub(super) fn open_op_picker_from_auth_source(
 /// set (i.e. the picker was opened from the auth form, not from the
 /// Secrets tab).
 ///
-/// On `try_commit_op_ref` failure (vault read error), the form is
-/// re-stashed into `pending_auth_form_return` and `Modal::ErrorPopup`
-/// is mounted; dismissing the popup invokes
-/// `restore_auth_form_after_op_picker_cancel` so the operator lands
-/// back on the form with the prior credential unchanged. The
-/// `read-then-commit` invariant on `try_commit_op_ref` guarantees a
-/// broken reference never lands in `editor.pending`.
+/// On vault read error, the form is re-stashed into
+/// `pending_auth_form_return` and `Modal::ErrorPopup` is mounted;
+/// dismissing the popup invokes `restore_auth_form_after_op_picker_cancel`
+/// so the operator lands back on the form with the prior credential
+/// unchanged. Root input validates with `op read` before mutating the
+/// form, so a broken reference never lands in `editor.pending`.
 pub(in crate::console) fn apply_op_picker_to_auth_form(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,
@@ -764,8 +763,7 @@ pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<
 }
 
 /// Inner helper split out so tests can inject a fake `OpRunner`
-/// without touching the real `op` binary. Mirrors the test pattern
-/// for `try_commit_op_ref` in `form.rs`.
+/// without touching the real `op` binary.
 fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?Sized>(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,
@@ -787,7 +785,7 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
         );
         return;
     };
-    let read_result = state.try_commit_op_ref(runner, op_ref);
+    let read_result = runner.read(&op_ref.op);
     if let Err(e) = read_result {
         // Re-push the form so the ErrorPopup dismiss handler can
         // restore it via restore_auth_form_after_op_picker_cancel.
@@ -802,6 +800,7 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
         });
         return;
     }
+    state.set_op_ref(op_ref);
     editor.modal = Some(Modal::AuthForm {
         target,
         state,
@@ -1823,10 +1822,10 @@ mod tests {
     }
 
     /// A failed vault read (e.g. biometric timeout) must NOT corrupt
-    /// the form's credential — `try_commit_op_ref` only mutates state
-    /// on Ok. The form is re-stashed into `pending_auth_form_return`
-    /// and `Modal::ErrorPopup` is mounted; dismissing the popup must
-    /// restore the form with the prior credential intact.
+    /// the form's credential. The form is re-stashed into
+    /// `pending_auth_form_return` and `Modal::ErrorPopup` is mounted;
+    /// dismissing the popup must restore the form with the prior
+    /// credential intact.
     #[test]
     fn auth_form_op_ref_picker_failed_read_does_not_apply_op_ref() {
         struct FailRunner;

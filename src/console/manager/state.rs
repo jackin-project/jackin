@@ -680,8 +680,8 @@ pub struct EditorState<'a> {
     ///   - `AuthSourcePicker` (1Password) → `OpPicker` → `AuthForm`
     ///
     /// On commit the form is reconstructed with the new credential
-    /// applied (literal text via `set_literal`, `OpRef` via
-    /// `try_commit_op_ref`); on cancel it's reconstructed pristine.
+    /// applied after root input code validates the `OpRef`; on cancel
+    /// it's reconstructed pristine.
     /// Threading the auth-form context through this single field
     /// (rather than via a payload on each side variant) keeps the
     /// picker/text-input variants orthogonal to their caller, at the

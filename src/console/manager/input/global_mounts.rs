@@ -864,8 +864,9 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
         );
         return;
     };
-    match state.try_commit_op_ref(runner, op_ref) {
-        Ok(()) => {
+    match runner.read(&op_ref.op) {
+        Ok(_) => {
+            state.set_op_ref(op_ref);
             auth.modal = Some(SettingsAuthModal::AuthForm {
                 target,
                 state,
@@ -874,9 +875,8 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
             });
         }
         Err(err) => {
-            // `try_commit_op_ref` mutates `state` only on Ok, so the
-            // credential is untouched; re-stash so a later restore lands
-            // the operator back on the form with the prior value.
+            // The form is only mutated after a successful read; re-stash so a
+            // later restore lands the operator back on the prior value.
             auth.push_auth_modal(SettingsAuthModal::AuthForm {
                 target,
                 state,
