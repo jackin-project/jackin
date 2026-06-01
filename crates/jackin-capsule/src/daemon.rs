@@ -117,8 +117,6 @@ mod session_lifecycle;
 use crate::tui::view::spawn_failure_banner;
 #[cfg(test)]
 use crate::tui::update::prefix_full_redraw_reason;
-#[cfg(test)]
-use crate::tui::view::osc22_pointer_shape;
 
 struct SessionLaunch {
     label: String,
@@ -3092,18 +3090,6 @@ mod tests {
         assert!(
             drained.iter().any(|bytes| bytes == b"\x1b[>4;0m"),
             "modifyOtherKeys reset missing from {drained:?}"
-        );
-    }
-
-    #[test]
-    fn osc22_pointer_shape_uses_css_names() {
-        assert_eq!(
-            osc22_pointer_shape(PointerShape::Pointer),
-            b"\x1b]22;pointer\x1b\\"
-        );
-        assert_eq!(
-            osc22_pointer_shape(PointerShape::EwResize),
-            b"\x1b]22;ew-resize\x1b\\"
         );
     }
 

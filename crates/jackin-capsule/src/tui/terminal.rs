@@ -2,6 +2,7 @@ use std::io::Write;
 
 use anyhow::{Context, Result};
 
+use crate::tui::app::PointerShape;
 use crate::tui::components::status_bar::STATUS_BAR_ROWS;
 
 pub const DEFAULT_ROWS: u16 = 24;
@@ -49,6 +50,10 @@ fn outer_terminal_reset_sequence() -> Vec<u8> {
 /// scrollback, PTY mouse forwarding, or a no-op owns it.
 pub(crate) fn client_owned_mode_state() -> &'static [u8] {
     b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
+}
+
+pub(crate) fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
+    format!("\x1b]22;{}\x1b\\", shape.as_osc22_name()).into_bytes()
 }
 
 pub(crate) fn enter_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGuard> {
@@ -114,6 +119,18 @@ mod tests {
                 "client_owned_mode_state missing {needle:?}; got {state:?}"
             );
         }
+    }
+
+    #[test]
+    fn osc22_pointer_shape_uses_css_names() {
+        assert_eq!(
+            osc22_pointer_shape(PointerShape::Pointer),
+            b"\x1b]22;pointer\x1b\\"
+        );
+        assert_eq!(
+            osc22_pointer_shape(PointerShape::EwResize),
+            b"\x1b]22;ew-resize\x1b\\"
+        );
     }
 
     #[test]

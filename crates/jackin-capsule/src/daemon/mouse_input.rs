@@ -1,7 +1,8 @@
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
 use crate::tui::components::branch_context_bar::branch_context_bar_hit;
-use crate::tui::view::{encode_osc52_clipboard_write, osc22_pointer_shape};
+use crate::tui::terminal::osc22_pointer_shape;
+use crate::tui::view::encode_osc52_clipboard_write;
 
 use super::*;
 

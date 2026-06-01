@@ -1,6 +1,6 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
-use crate::tui::app::{HoverTarget, PointerShape, VisibleAgentState, VisiblePane};
+use crate::tui::app::{HoverTarget, VisibleAgentState, VisiblePane};
 use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
 };
@@ -456,8 +456,4 @@ pub(crate) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
 /// one place stops the two copies from drifting.
 pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     jackin_tui::ansi::encode_osc52_clipboard_write(payload)
-}
-
-pub(crate) fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
-    format!("\x1b]22;{}\x1b\\", shape.as_osc22_name()).into_bytes()
 }
