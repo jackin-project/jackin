@@ -2,19 +2,10 @@
 
 use crate::console::manager::state::MountInfoCache;
 
+pub(crate) use jackin_console::mount_display::{MountDisplayRow, mount_path_width};
 pub(crate) use jackin_console::widgets::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
 };
-
-/// Pre-formatted mount row. `host_source` is `Some` only when src != dst.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct MountDisplayRow {
-    pub(crate) destination: String,
-    pub(crate) host_source: Option<String>,
-    pub(crate) mode: &'static str,
-    pub(crate) isolation: &'static str,
-    pub(crate) kind: String,
-}
 
 pub(crate) fn mount_display_paths(
     mount: &crate::workspace::MountConfig,
@@ -57,17 +48,6 @@ pub(crate) fn format_mount_rows_with_cache(
         .collect()
 }
 
-/// Width of the `Destination` column, sized to fit the widest path plus header.
-pub(crate) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
-    rows.iter()
-        .flat_map(|row| std::iter::once(&row.destination).chain(row.host_source.as_ref()))
-        .map(|p| jackin_tui::display_cols(p))
-        .max()
-        .unwrap_or(0)
-        .max(10)
-        .max("Destination".len())
-}
-
 #[cfg(test)]
 pub(crate) fn workspace_mounts_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
     let cache = MountInfoCache::default();
@@ -80,17 +60,7 @@ pub(crate) fn workspace_mounts_content_width_with_cache(
     cache: &MountInfoCache,
 ) -> usize {
     let rows = format_mount_rows_with_cache(mounts, cache);
-    let path_w = mount_path_width(&rows);
-    rows.iter()
-        .flat_map(|row| {
-            [
-                workspace_mount_row_width(path_w, row),
-                row.host_source.as_ref().map_or(0, |_| 2 + path_w),
-            ]
-        })
-        .chain([workspace_mount_header_width(path_w)])
-        .max()
-        .unwrap_or(0)
+    jackin_console::mount_display::workspace_mounts_content_width(&rows)
 }
 
 pub(crate) fn workspace_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
@@ -113,17 +83,7 @@ pub(crate) fn global_mounts_content_width_with_cache(
     cache: &MountInfoCache,
 ) -> usize {
     let rows = format_mount_rows_with_cache(mounts, cache);
-    let path_w = mount_path_width(&rows);
-    rows.iter()
-        .flat_map(|row| {
-            [
-                global_mount_row_width(path_w, row),
-                row.host_source.as_ref().map_or(0, |_| 2 + path_w),
-            ]
-        })
-        .chain([global_mount_header_width(path_w)])
-        .max()
-        .unwrap_or(0)
+    jackin_console::mount_display::global_mounts_content_width(&rows)
 }
 
 pub(crate) fn settings_global_mounts_content_width_with_cache(
@@ -132,18 +92,7 @@ pub(crate) fn settings_global_mounts_content_width_with_cache(
 ) -> usize {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_mount_rows_with_cache(&mounts, cache);
-    let path_w = mount_path_width(&display_rows);
-    display_rows
-        .iter()
-        .flat_map(|row| {
-            [
-                settings_global_mount_row_width(path_w, row),
-                row.host_source.as_ref().map_or(0, |_| 2 + path_w),
-            ]
-        })
-        .chain((!display_rows.is_empty()).then_some(settings_global_mount_header_width(path_w)))
-        .max()
-        .unwrap_or(0)
+    jackin_console::mount_display::settings_global_mounts_content_width(&display_rows)
 }
 
 pub(crate) fn settings_global_mounts_content_height(
@@ -157,34 +106,4 @@ pub(crate) fn settings_global_mounts_content_height(
         .map(|row| if row.mount.src == row.mount.dst { 1 } else { 2 })
         .sum::<usize>();
     row_lines + 3
-}
-
-fn workspace_mount_header_width(path_w: usize) -> usize {
-    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + MOUNT_ISOLATION_COL_WIDTH + 2 + "Type".len()
-}
-
-fn workspace_mount_row_width(path_w: usize, row: &MountDisplayRow) -> usize {
-    2 + path_w
-        + 2
-        + MOUNT_MODE_COL_WIDTH
-        + 2
-        + MOUNT_ISOLATION_COL_WIDTH
-        + 2
-        + jackin_tui::display_cols(&row.kind)
-}
-
-fn global_mount_header_width(path_w: usize) -> usize {
-    2 + path_w + 2 + "Mode".len()
-}
-
-fn global_mount_row_width(path_w: usize, _row: &MountDisplayRow) -> usize {
-    2 + path_w + 2 + 2
-}
-
-fn settings_global_mount_header_width(path_w: usize) -> usize {
-    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + "Type".len()
-}
-
-fn settings_global_mount_row_width(path_w: usize, row: &MountDisplayRow) -> usize {
-    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + jackin_tui::display_cols(&row.kind)
 }

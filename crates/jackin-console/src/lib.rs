@@ -5,6 +5,7 @@ pub mod focus;
 pub mod github_mounts;
 pub mod layout;
 pub mod mount_diff;
+pub mod mount_display;
 pub mod mount_info;
 pub mod mount_info_cache;
 pub mod op_breadcrumb;
