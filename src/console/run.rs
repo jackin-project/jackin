@@ -634,12 +634,24 @@ pub async fn run_console<H: InstanceActionHandler>(
                         }
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        manager::input::handle_mouse_with_config(
+                        let outcome = manager::input::handle_mouse_with_config(
                             ms,
                             mouse,
                             term_size,
                             Some(&config),
                         );
+                        if let manager::InputOutcome::OpenUrl(url) = outcome {
+                            if let Err(e) = crate::console::services::browser::open_url(&url) {
+                                let _ = manager::update_manager(
+                                    ms,
+                                    manager::ManagerMessage::OpenListErrorPopup {
+                                        title: "Failed to open URL".into(),
+                                        message: format!("{e}"),
+                                    },
+                                );
+                                needs_redraw = true;
+                            }
+                        }
                         // Switch the terminal pointer to the hand shape over any
                         // clickable element (and back off it), per the clickable
                         // affordance rule — only when the state changes.

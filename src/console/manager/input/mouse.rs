@@ -23,7 +23,6 @@ use super::super::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
-use jackin_console::services::file_browser::open_git_url;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
@@ -65,8 +64,12 @@ const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 /// The caller (run-loop in `src/console/mod.rs`) is responsible for
 /// passing the current `terminal.size()?` as `term_size` so the handler
 /// can compute the seam column as `term_size.width * list_split_pct / 100`.
-pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
-    handle_mouse_with_config(state, mouse, term_size, None);
+pub fn handle_mouse(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> super::InputOutcome {
+    handle_mouse_with_config(state, mouse, term_size, None)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -75,9 +78,9 @@ pub fn handle_mouse_with_config(
     mouse: MouseEvent,
     term_size: Rect,
     config: Option<&crate::config::AppConfig>,
-) {
+) -> super::InputOutcome {
     if term_size.width < MIN_DRAGGABLE_WIDTH {
-        return;
+        return super::InputOutcome::Continue;
     }
 
     // Pointer motion only repaints the hovered tab / row; it never selects or
@@ -86,24 +89,24 @@ pub fn handle_mouse_with_config(
         update_tab_hover(state, mouse);
         update_list_row_hover(state, mouse, term_size);
         update_row_hover(state, mouse, term_size);
-        return;
+        return super::InputOutcome::Continue;
     }
 
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_copy_container_info_value(state, mouse, term_size)
     {
-        return;
+        return super::InputOutcome::Continue;
     }
 
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_select_editor_tab(state, mouse)
     {
-        return;
+        return super::InputOutcome::Continue;
     }
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_select_settings_tab(state, mouse)
     {
-        return;
+        return super::InputOutcome::Continue;
     }
 
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
@@ -114,12 +117,12 @@ pub fn handle_mouse_with_config(
         MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left)
             if try_drag_horizontal_scrollbar(state, mouse, term_size, config) =>
         {
-            return;
+            return super::InputOutcome::Continue;
         }
         MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left)
             if try_drag_vertical_scrollbar(state, mouse, term_size, config) =>
         {
-            return;
+            return super::InputOutcome::Continue;
         }
         MouseEventKind::ScrollLeft => {
             scroll_active_panel(
@@ -129,7 +132,7 @@ pub fn handle_mouse_with_config(
                 config,
                 -(MOUSE_HORIZONTAL_SCROLL_STEP as i16),
             );
-            return;
+            return super::InputOutcome::Continue;
         }
         MouseEventKind::ScrollRight => {
             scroll_active_panel(
@@ -139,7 +142,7 @@ pub fn handle_mouse_with_config(
                 config,
                 MOUSE_HORIZONTAL_SCROLL_STEP as i16,
             );
-            return;
+            return super::InputOutcome::Continue;
         }
         MouseEventKind::ScrollUp => {
             scroll_active_panel_vertical(
@@ -149,7 +152,7 @@ pub fn handle_mouse_with_config(
                 config,
                 -MOUSE_VERTICAL_SCROLL_STEP,
             );
-            return;
+            return super::InputOutcome::Continue;
         }
         MouseEventKind::ScrollDown => {
             scroll_active_panel_vertical(
@@ -159,7 +162,7 @@ pub fn handle_mouse_with_config(
                 config,
                 MOUSE_VERTICAL_SCROLL_STEP,
             );
-            return;
+            return super::InputOutcome::Continue;
         }
         _ => {}
     }
@@ -167,31 +170,31 @@ pub fn handle_mouse_with_config(
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_select_editor_mount_row(state, mouse, term_size)
     {
-        return;
+        return super::InputOutcome::Continue;
     }
 
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_select_settings_trust_row(state, mouse, term_size)
     {
-        return;
+        return super::InputOutcome::Continue;
     }
 
     // Editor / CreatePrelude file-browser URL click: only on Down(Left),
     // only when the modal is a FileBrowser with a resolved git URL.
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
-        && try_open_file_browser_git_url(state, mouse, term_size)
+        && let Some(outcome) = try_open_file_browser_git_url(state, mouse, term_size)
     {
-        return;
+        return outcome;
     }
 
     // Stage + modal gate for the list-view seam drag. Only the List view
     // participates in drag; the Editor, CreatePrelude and ConfirmDelete
     // stages only observe the URL-click path above.
     if !matches!(state.stage, ManagerStage::List) {
-        return;
+        return super::InputOutcome::Continue;
     }
     if state.list_modal.is_some() {
-        return;
+        return super::InputOutcome::Continue;
     }
 
     match mouse.kind {
@@ -208,7 +211,7 @@ pub fn handle_mouse_with_config(
                         anchor_x: mouse.column,
                     })),
                 );
-                return;
+                return super::InputOutcome::Continue;
             }
             // Otherwise, treat as click-to-select if the click lands inside
             // the list pane's content area (excluding borders).
@@ -229,6 +232,7 @@ pub fn handle_mouse_with_config(
         }
         _ => {}
     }
+    super::InputOutcome::Continue
 }
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
@@ -1338,16 +1342,15 @@ fn try_open_file_browser_git_url(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-) -> bool {
+) -> Option<super::InputOutcome> {
     let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
-        return false;
+        return None;
     };
     let modal_area = modal_outer_rect(modal, term_size);
     let Some(url) = fb_state.url_to_open_on_click(modal_area, mouse.column, mouse.row) else {
-        return false;
+        return None;
     };
-    open_git_url(&url);
-    true
+    Some(super::InputOutcome::OpenUrl(url))
 }
 
 /// Return the logical list row the mouse is over, or `None` if the click
@@ -1736,8 +1739,8 @@ mod mouse_drag_tests {
     //
     // When a FileBrowser modal with a git-prompt + resolved URL is open
     // during the Editor or CreatePrelude stages, Down(Left) on the URL
-    // row must be consumed by the open-URL path (best-effort; silent on
-    // failure) — observable side-effect: the drag-anchor never latches.
+    // row must be consumed into a typed open-URL outcome for the run loop —
+    // observable state effect: the drag-anchor never latches.
 
     /// Term of 120x40 ⇒ `FileBrowser` modal at (18, 9, 84, 22); URL row at
     /// y = 17, column range ≈ 19..=100. Mirrors the reference geometry
@@ -1874,6 +1877,7 @@ mod mouse_drag_tests {
             kind: crossterm::event::KeyEventKind::Press,
             state: crossterm::event::KeyEventState::NONE,
         });
+        fb.pending_git_prompt = Some(repo);
         fb.pending_git_url = Some("file:///tmp/unreachable".to_string());
 
         let prelude = CreatePreludeState {
@@ -1885,8 +1889,29 @@ mod mouse_drag_tests {
         };
         state.stage = ManagerStage::CreatePrelude(prelude);
 
-        // URL row at y = 17 for this term size; centre column ≈ 60.
-        handle_mouse(&mut state, mouse_down_at(60, 17), term_120x40());
+        let term = term_120x40();
+        let mut hit = None;
+        for y in 0..term.height {
+            for x in 0..term.width {
+                let mouse = mouse_down_at(x, y);
+                if super::file_browser_url_row_at(&state, mouse, term) {
+                    hit = Some(mouse);
+                    break;
+                }
+            }
+            if hit.is_some() {
+                break;
+            }
+        }
+        let hit = hit.expect("URL row should have a clickable hitbox");
+
+        let outcome = handle_mouse(&mut state, hit, term);
+        match outcome {
+            super::super::InputOutcome::OpenUrl(url) => {
+                assert_eq!(url, "file:///tmp/unreachable");
+            }
+            other => panic!("expected OpenUrl outcome, got {other:?}"),
+        }
         // No drag latched — URL click is consumed before the seam path.
         assert!(
             state.drag_state.is_none(),
