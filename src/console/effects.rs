@@ -91,6 +91,9 @@ pub(crate) fn execute_manager_effect(
             execute_global_mount_file_browser_open(state);
             true
         }
+        ManagerEffect::ResolveFileBrowserGitUrl(path) => {
+            execute_file_browser_git_url_resolution(state, path)
+        }
         ManagerEffect::PollFileBrowserGitUrls => poll_file_browser_git_urls(state),
         ManagerEffect::PollPickerLoads => poll_picker_loads(state),
         ManagerEffect::OpenUrl(url) => execute_open_url(state, &url),
@@ -212,6 +215,81 @@ fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
         target: FileBrowserTarget::CreateFirstMountSrc,
         state: file_browser,
     });
+}
+
+fn execute_file_browser_git_url_resolution(
+    state: &mut ManagerState<'_>,
+    path: std::path::PathBuf,
+) -> bool {
+    if let Some(modal) = state.list_modal.as_mut()
+        && attach_modal_file_browser_git_url(modal, path.clone())
+    {
+        return true;
+    }
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            if let Some(modal) = editor.modal.as_mut()
+                && attach_modal_file_browser_git_url(modal, path.clone())
+            {
+                return true;
+            }
+            for modal in &mut editor.modal_parents {
+                if attach_modal_file_browser_git_url(modal, path.clone()) {
+                    return true;
+                }
+            }
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            if let Some(modal) = prelude.modal.as_mut()
+                && attach_modal_file_browser_git_url(modal, path.clone())
+            {
+                return true;
+            }
+        }
+        ManagerStage::Settings(settings) => {
+            if let Some(modal) = settings.mounts.modal.as_mut()
+                && attach_global_mount_file_browser_git_url(modal, path.clone())
+            {
+                return true;
+            }
+            for modal in &mut settings.mounts.modal_parents {
+                if attach_global_mount_file_browser_git_url(modal, path.clone()) {
+                    return true;
+                }
+            }
+        }
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
+    false
+}
+
+fn attach_modal_file_browser_git_url(modal: &mut Modal<'_>, path: std::path::PathBuf) -> bool {
+    match modal {
+        Modal::FileBrowser { state, .. } => {
+            crate::console::services::file_browser::request_file_browser_git_url_resolution(
+                state, path,
+            );
+            true
+        }
+        _ => false,
+    }
+}
+
+fn attach_global_mount_file_browser_git_url(
+    modal: &mut GlobalMountModal<'_>,
+    path: std::path::PathBuf,
+) -> bool {
+    match modal {
+        GlobalMountModal::FileBrowser { state } => {
+            crate::console::services::file_browser::request_file_browser_git_url_resolution(
+                state, path,
+            );
+            true
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {

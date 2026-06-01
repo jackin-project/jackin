@@ -869,6 +869,7 @@ pub(super) enum EditorModalOutcome {
         key: String,
         source: crate::config::RoleSource,
     },
+    ResolveFileBrowserGitUrl(std::path::PathBuf),
     ValidateOpRef(crate::operator_env::OpRef),
 }
 
@@ -934,7 +935,7 @@ pub(super) fn handle_editor_modal(
                     editor.pop_modal_chain();
                 }
                 FileBrowserOutcome::ResolveGitUrl(path) => {
-                    super::request_file_browser_git_url_resolution(state, path);
+                    return EditorModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
                 FileBrowserOutcome::OpenGitUrl(url) => *open_url = Some(url),
                 FileBrowserOutcome::Continue => {}

@@ -17,6 +17,7 @@ pub(super) enum PreludeModalOutcome {
     Continue,
     OpenUrl(String),
     ReopenFileBrowserAtLastCwd,
+    ResolveFileBrowserGitUrl(std::path::PathBuf),
 }
 
 pub(super) fn handle_prelude_key(
@@ -146,9 +147,7 @@ pub(super) fn handle_prelude_modal(
                     prelude.modal = None;
                 }
                 FileBrowserOutcome::ResolveGitUrl(path) => {
-                    if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
-                        super::request_file_browser_git_url_resolution(state, path);
-                    }
+                    return PreludeModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
                 FileBrowserOutcome::OpenGitUrl(url) => {
                     return PreludeModalOutcome::OpenUrl(url);

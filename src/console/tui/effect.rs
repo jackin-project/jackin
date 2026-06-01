@@ -21,6 +21,7 @@ pub(crate) enum ManagerEffect {
     OpenCreatePreludeFileBrowserAtLastCwd,
     OpenEditorAddMountFileBrowser,
     OpenGlobalMountFileBrowser,
+    ResolveFileBrowserGitUrl(std::path::PathBuf),
     PollFileBrowserGitUrls,
     PollPickerLoads,
     OpenUrl(String),

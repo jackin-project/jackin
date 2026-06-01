@@ -84,6 +84,9 @@ pub fn handle_key(
             editor::EditorModalOutcome::PersistTrustedRoleSource { key, source } => {
                 state.request_effect(ManagerEffect::PersistTrustedRoleSource { key, source });
             }
+            editor::EditorModalOutcome::ResolveFileBrowserGitUrl(path) => {
+                state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
+            }
             editor::EditorModalOutcome::ValidateOpRef(op_ref) => {
                 state.request_effect(ManagerEffect::ValidateOpCommit {
                     op_ref,
@@ -163,6 +166,9 @@ pub fn handle_key(
         ) {
             state.request_effect(ManagerEffect::OpenGlobalMountFileBrowser);
         }
+        if let global_mounts::SettingsModalOutcome::ResolveFileBrowserGitUrl(path) = modal_outcome {
+            state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
+        }
         global_mounts::after_settings_event(state);
         if let Some(url) = open_url {
             state.request_effect(ManagerEffect::OpenUrl(url));
@@ -217,6 +223,10 @@ pub fn handle_key(
                 }
                 prelude::PreludeModalOutcome::ReopenFileBrowserAtLastCwd => {
                     state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
+                    return Ok(InputOutcome::Continue);
+                }
+                prelude::PreludeModalOutcome::ResolveFileBrowserGitUrl(path) => {
+                    state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
                     return Ok(InputOutcome::Continue);
                 }
             }

@@ -28,11 +28,12 @@ const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
 const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum SettingsModalOutcome {
     Continue,
     SaveSettings,
     OpenGlobalMountFileBrowser,
+    ResolveFileBrowserGitUrl(std::path::PathBuf),
 }
 
 #[derive(Debug)]
@@ -1171,8 +1172,8 @@ pub(super) fn handle_settings_confirm_modal(
             }
         },
         GlobalMountModal::FileBrowser { mut state } => {
-            let outcome = state.handle_key(key);
-            match super::apply_file_browser_outcome(&mut state, outcome) {
+            let browser_outcome = state.handle_key(key);
+            match super::apply_file_browser_outcome(&mut state, browser_outcome) {
                 FileBrowserOutcome::Commit(path) => {
                     let src = path.display().to_string();
                     if let Some(draft) = settings.mounts.add_draft.as_mut() {
@@ -1194,8 +1195,8 @@ pub(super) fn handle_settings_confirm_modal(
                     }
                 }
                 FileBrowserOutcome::ResolveGitUrl(path) => {
-                    super::request_file_browser_git_url_resolution(&mut state, path);
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                    outcome = SettingsModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
                 FileBrowserOutcome::OpenGitUrl(url) => {
                     *open_url = Some(url);
