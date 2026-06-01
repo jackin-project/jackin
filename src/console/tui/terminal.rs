@@ -1,7 +1,9 @@
 //! Terminal raw-mode lifecycle and teardown helpers.
 
-pub use jackin_console::terminal::TerminalSession;
-pub(crate) use jackin_console::terminal::{MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS};
+pub use jackin_console::tui::terminal::TerminalSession;
+pub(crate) use jackin_console::tui::terminal::{
+    MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS,
+};
 
 struct HostConsoleTerminal;
 
@@ -33,12 +35,12 @@ pub(crate) fn host_console_terminal() -> &'static dyn jackin_console::ConsoleHos
 /// alt-screen and stop debug buffering, mirroring `TerminalGuard::drop`
 /// minus the input drain (the child reads stdin directly).
 pub(crate) fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
-    jackin_console::terminal::suspend_console_terminal(stdout, host_console_terminal());
+    jackin_console::tui::terminal::suspend_console_terminal(stdout, host_console_terminal());
 }
 
 /// Re-enter raw-mode + alt-screen after a [`suspend_console_terminal`]
 /// detour, mirroring `run_console`'s initial setup so the TUI resumes
 /// where it left off.
 pub(crate) fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
-    jackin_console::terminal::resume_console_terminal(stdout, host_console_terminal())
+    jackin_console::tui::terminal::resume_console_terminal(stdout, host_console_terminal())
 }

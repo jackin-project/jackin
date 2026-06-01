@@ -3,4 +3,6 @@
 pub mod components;
 pub mod layout;
 pub mod list_geometry;
+pub mod run;
 pub mod sidebar_layout;
+pub mod terminal;

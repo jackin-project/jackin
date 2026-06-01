@@ -11,7 +11,7 @@ use super::tui::terminal::{
 use super::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };
-use jackin_console::run::{quit_confirm_area, render_debug_bar, split_debug_area};
+use jackin_console::tui::run::{quit_confirm_area, render_debug_bar, split_debug_area};
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
