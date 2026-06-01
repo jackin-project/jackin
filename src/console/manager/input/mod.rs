@@ -126,13 +126,25 @@ pub fn handle_key(
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {
-        editor::handle_editor_modal(editor, key, op_available, op_cache, config, paths);
+        let mut open_url = None;
+        editor::handle_editor_modal(
+            editor,
+            key,
+            op_available,
+            op_cache,
+            config,
+            paths,
+            &mut open_url,
+        );
         execute_manager_effect(
             state,
             config,
             paths,
             ManagerEffect::RequestActiveMountInfoRefresh,
         );
+        if let Some(url) = open_url {
+            return Ok(InputOutcome::OpenUrl(url));
+        }
 
         // Drain the ConfirmSave → commit signal FIRST. The modal handler
         // only closes the modal and stashes the plan; this outer layer

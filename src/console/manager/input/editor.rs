@@ -16,7 +16,6 @@ use super::super::state::{
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
-use jackin_console::services::file_browser::open_git_url;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::tui::screens::editor::view::{secrets_forbidden_label, secrets_scope_label};
@@ -866,6 +865,7 @@ pub(super) fn handle_editor_modal(
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
     config: &mut AppConfig,
     paths: &JackinPaths,
+    open_url: &mut Option<String>,
 ) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
@@ -921,7 +921,7 @@ pub(super) fn handle_editor_modal(
                 FileBrowserOutcome::ResolveGitUrl(path) => {
                     super::request_file_browser_git_url_resolution(state, path);
                 }
-                FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
+                FileBrowserOutcome::OpenGitUrl(url) => *open_url = Some(url),
                 FileBrowserOutcome::Continue => {}
                 FileBrowserOutcome::NavigateTo(_)
                 | FileBrowserOutcome::NavigateUp
@@ -2310,6 +2310,7 @@ mod tests {
         config: &mut AppConfig,
         paths: &JackinPaths,
     ) {
+        let mut open_url = None;
         handle_editor_modal(
             editor,
             k,
@@ -2317,7 +2318,9 @@ mod tests {
             std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
             config,
             paths,
+            &mut open_url,
         );
+        assert!(open_url.is_none(), "test helper did not expect URL-open");
     }
 
     /// Test helper: invoke `apply_text_input_to_pending` with
