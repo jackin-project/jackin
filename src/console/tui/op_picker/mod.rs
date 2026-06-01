@@ -17,8 +17,6 @@
 //! yields. Probe / vault-list failures fork into four fatal panels
 //! (not installed, not signed in, no vaults, generic).
 
-use crate::operator_env::{OpAccount, OpField, OpItem, OpVault};
-
 mod input;
 mod load;
 mod query;
@@ -30,10 +28,11 @@ pub(crate) use selection::build_op_ref_on_commit;
 pub use state::OpPickerState;
 
 pub use jackin_console::tui::components::op_picker::{
-    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,
-    OpPickerFieldRef, OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
-    OpPickerStage, OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref,
-    create_field_display_rows, matches_filter, section_choices_from_references,
+    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerError,
+    OpPickerFatalState, OpPickerField, OpPickerFieldRef, OpPickerItem, OpPickerItemRef,
+    OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode, OpPickerStage, OpPickerVault,
+    OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref, create_field_display_rows,
+    matches_filter, section_choices_from_references,
 };
 
 pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<
@@ -44,9 +43,14 @@ pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPicke
     crate::operator_env::FieldTarget,
 >;
 
-type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
+type LoadResult = OpPickerLoadResult<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
 
 type LoadRequest = OpPickerLoadRequest;
+
+pub type OpAccount = OpPickerAccount;
+pub type OpVault = OpPickerVault;
+pub type OpItem = OpPickerItem;
+pub type OpField = OpPickerField;
 
 impl Default for OpPickerState {
     fn default() -> Self {

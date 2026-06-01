@@ -11,11 +11,11 @@ use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 use super::{
-    FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerError, OpPickerFatalState,
-    OpPickerMode, OpPickerStage, OpPickerState,
+    FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerAccount, OpPickerError,
+    OpPickerFatalState, OpPickerMode, OpPickerStage, OpPickerState,
 };
 use super::state::OpPickerPendingLoad;
-use crate::operator_env::{OpAccount, OpCache};
+use crate::operator_env::OpCache;
 #[cfg(test)]
 use crate::operator_env::OpStructRunner;
 
@@ -162,7 +162,7 @@ impl OpPickerState {
         self.start_worker_load(cached, request);
     }
 
-    fn handle_accounts_loaded(&mut self, accounts: Vec<OpAccount>) {
+    fn handle_accounts_loaded(&mut self, accounts: Vec<OpPickerAccount>) {
         self.op_cache.borrow_mut().put_accounts(accounts.clone());
         if accounts.is_empty() {
             // Empty list is functionally "not signed in"; same panel,

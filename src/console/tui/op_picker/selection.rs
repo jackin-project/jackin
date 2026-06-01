@@ -22,7 +22,7 @@ use jackin_console::tui::components::op_picker::build_op_picker_ref;
 /// Panics if vault or item are not selected.
 pub(crate) fn build_op_ref_on_commit(
     state: &OpPickerState,
-    field: &crate::operator_env::OpField,
+    field: &super::OpPickerField,
 ) -> crate::operator_env::OpRef {
     let vault = state
         .selected_vault

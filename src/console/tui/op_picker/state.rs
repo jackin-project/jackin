@@ -10,8 +10,11 @@ use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::BlockingSubscription;
 use tui_widget_list::ListState;
 
-use super::{FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerMode, OpPickerStage};
-use crate::operator_env::{OpAccount, OpCache, OpField, OpItem, OpVault};
+use super::{
+    FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerAccount, OpPickerField,
+    OpPickerItem, OpPickerMode, OpPickerStage, OpPickerVault,
+};
+use crate::operator_env::OpCache;
 #[cfg(test)]
 use crate::operator_env::OpStructRunner;
 
@@ -19,19 +22,19 @@ pub struct OpPickerState {
     pub stage: OpPickerStage,
     pub filter_buf: String,
 
-    pub accounts: Vec<OpAccount>,
+    pub accounts: Vec<OpPickerAccount>,
     pub account_list_state: ListState,
-    pub selected_account: Option<OpAccount>,
+    pub selected_account: Option<OpPickerAccount>,
 
-    pub vaults: Vec<OpVault>,
+    pub vaults: Vec<OpPickerVault>,
     pub vault_list_state: ListState,
-    pub selected_vault: Option<OpVault>,
+    pub selected_vault: Option<OpPickerVault>,
 
-    pub items: Vec<OpItem>,
+    pub items: Vec<OpPickerItem>,
     pub item_list_state: ListState,
-    pub selected_item: Option<OpItem>,
+    pub selected_item: Option<OpPickerItem>,
 
-    pub fields: Vec<OpField>,
+    pub fields: Vec<OpPickerField>,
     pub field_list_state: ListState,
     pub section_list_state: ListState,
     /// The section chosen on the Section stage (Create mode), scoping the

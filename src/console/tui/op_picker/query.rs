@@ -1,13 +1,13 @@
 //! Derived list/query helpers for the 1Password picker.
 
 use super::{
-    FieldDisplayRow, OpPickerStage, OpPickerState, browse_field_display_rows,
-    create_field_display_rows, matches_filter, section_choices_from_references,
+    FieldDisplayRow, OpPickerAccount, OpPickerField, OpPickerItem, OpPickerStage, OpPickerState,
+    OpPickerVault, browse_field_display_rows, create_field_display_rows, matches_filter,
+    section_choices_from_references,
 };
-use crate::operator_env::{OpAccount, OpField, OpItem, OpVault};
 
 impl OpPickerState {
-    pub fn filtered_accounts(&self) -> Vec<&OpAccount> {
+    pub fn filtered_accounts(&self) -> Vec<&OpPickerAccount> {
         self.accounts
             .iter()
             .filter(|account| {
@@ -19,14 +19,14 @@ impl OpPickerState {
             .collect()
     }
 
-    pub fn filtered_vaults(&self) -> Vec<&OpVault> {
+    pub fn filtered_vaults(&self) -> Vec<&OpPickerVault> {
         self.vaults
             .iter()
             .filter(|vault| matches_filter(&self.filter_buf, [vault.name.as_str()]))
             .collect()
     }
 
-    pub fn filtered_items(&self) -> Vec<&OpItem> {
+    pub fn filtered_items(&self) -> Vec<&OpPickerItem> {
         self.items
             .iter()
             .filter(|item| {
@@ -40,15 +40,16 @@ impl OpPickerState {
 
     /// Filtered items, followed by a trailing `None` sentinel (the
     /// `+ New item` row) in Create mode. Browse mode emits no sentinel.
-    pub fn filtered_item_choices(&self) -> Vec<Option<&OpItem>> {
-        let mut out: Vec<Option<&OpItem>> = self.filtered_items().into_iter().map(Some).collect();
+    pub fn filtered_item_choices(&self) -> Vec<Option<&OpPickerItem>> {
+        let mut out: Vec<Option<&OpPickerItem>> =
+            self.filtered_items().into_iter().map(Some).collect();
         if self.mode.is_create() {
             out.push(None);
         }
         out
     }
 
-    pub fn filtered_fields(&self) -> Vec<&OpField> {
+    pub fn filtered_fields(&self) -> Vec<&OpPickerField> {
         self.fields
             .iter()
             .filter(|field| {

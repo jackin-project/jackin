@@ -589,28 +589,14 @@ pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + 
 
 /// `id` is the `account_uuid` accepted by `op --account <id>`. `email`
 /// and `url` feed the picker's Account pane.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpAccount {
-    pub id: String,
-    pub email: String,
-    pub url: String,
-}
+pub type OpAccount = jackin_console::tui::components::op_picker::OpPickerAccount;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpVault {
-    pub id: String,
-    pub name: String,
-}
+pub type OpVault = jackin_console::tui::components::op_picker::OpPickerVault;
 
 /// `name` comes from JSON `title`; `subtitle` from
 /// `additional_information` (login username/email, empty on secure
 /// notes) — used to disambiguate items sharing a title.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpItem {
-    pub id: String,
-    pub name: String,
-    pub subtitle: String,
-}
+pub type OpItem = jackin_console::tui::components::op_picker::OpPickerItem;
 
 /// Field metadata only — the value is intentionally absent.
 ///
@@ -618,14 +604,7 @@ pub struct OpItem {
 /// the picker commits this rather than synthesizing a path from
 /// display names (synthesis was wrong for sections, names containing
 /// `/`, or whitespace).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpField {
-    pub id: String,
-    pub label: String,
-    pub field_type: String,
-    pub concealed: bool,
-    pub reference: String,
-}
+pub type OpField = jackin_console::tui::components::op_picker::OpPickerField;
 
 pub type OpCache = jackin_console::op_cache::OpCache<OpAccount, OpVault, OpItem, OpField>;
 

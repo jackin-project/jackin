@@ -8,10 +8,9 @@ use jackin_tui::ModalOutcome;
 use jackin_tui::components::TextInputState;
 
 use super::{
-    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerSelection,
-    OpPickerStage, OpPickerState, build_op_ref_on_commit,
+    FieldDisplayRow, FieldLabelOrigin, OpField, OpItem, OpLoadState, OpPickerError,
+    OpPickerSelection, OpPickerStage, OpPickerState, build_op_ref_on_commit,
 };
-use crate::operator_env::{OpField, OpItem};
 
 impl OpPickerState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
