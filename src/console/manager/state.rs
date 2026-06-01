@@ -14,12 +14,12 @@ use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
     auth_panel::AuthForm, op_picker::OpPickerState, role_picker::RolePickerState,
-    workdir_pick::WorkdirPickState,
 };
 use jackin_console::widgets::confirm_save::ConfirmSaveState;
 use jackin_console::widgets::file_browser::FileBrowserState;
 use jackin_console::widgets::github_picker::GithubPickerState;
 use jackin_console::widgets::mount_dst_choice::MountDstChoiceState;
+use jackin_console::widgets::workdir_pick::WorkdirPickState;
 use jackin_console::widgets::{scope_picker::ScopePickerState, source_picker::SourcePickerState};
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
 use jackin_tui::runtime::{

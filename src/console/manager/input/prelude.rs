@@ -4,12 +4,13 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::super::super::widgets::{ModalOutcome, workdir_pick::WorkdirPickState};
+use super::super::super::widgets::ModalOutcome;
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::widgets::workdir_pick::WorkdirPickState;
 
 pub(super) fn handle_prelude_key(
     state: &mut ManagerState<'_>,
@@ -470,7 +471,7 @@ mod tests {
         prelude.used_edit_dst = true;
         prelude.accept_mount_dst("/home/user/project".into(), false);
         prelude.modal = Some(Modal::WorkdirPick {
-            state: crate::console::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
+            state: jackin_console::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
                 crate::workspace::MountConfig {
                     src: "/home/user/project".into(),
                     dst: "/home/user/project".into(),

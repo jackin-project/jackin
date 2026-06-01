@@ -136,6 +136,12 @@ impl jackin_console::workspace::WorkspaceRoleAccess for WorkspaceConfig {
     }
 }
 
+impl jackin_console::widgets::workdir_pick::WorkdirMount for MountConfig {
+    fn dst(&self) -> &str {
+        &self.dst
+    }
+}
+
 /// Per-workspace power-management opt-in.
 ///
 /// macOS-only today: when `enabled = true`, jackin spawns

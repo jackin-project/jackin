@@ -497,7 +497,7 @@ readonly = false
                 &config,
                 &cwd,
                 Modal::WorkdirPick {
-                    state: crate::console::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
+                    state: jackin_console::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
                         crate::workspace::MountConfig {
                             src: "/workspace".into(),
                             dst: "/workspace".into(),

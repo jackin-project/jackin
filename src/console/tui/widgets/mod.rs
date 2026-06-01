@@ -19,7 +19,6 @@ pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
 pub mod role_picker;
-pub mod workdir_pick;
 
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`
 /// for Up, `+1` for Down. No-op when `count == 0`.
@@ -164,8 +163,8 @@ mod consistency_tests {
     }
 
     fn render_workdir_pick() -> (Buffer, Rect) {
-        use super::workdir_pick::{WorkdirPickState, render};
         use crate::workspace::MountConfig;
+        use jackin_console::widgets::workdir_pick::{WorkdirPickState, render};
         let area = Rect::new(0, 0, 60, 12);
         let mounts = [MountConfig {
             src: "/home/user/app".into(),
