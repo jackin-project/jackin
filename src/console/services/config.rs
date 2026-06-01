@@ -9,7 +9,7 @@ use crate::console::manager::auth_kind::{
 use crate::console::manager::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
-use crate::workspace::{WorkspaceConfig, WorkspaceEdit};
+use crate::workspace::WorkspaceConfig;
 
 /// Upsert one role source into the operator config and reload the saved model.
 pub fn upsert_role_source(
@@ -191,7 +191,7 @@ pub fn save_workspace(
                 rename_to = Some(new_name);
             }
 
-            let mut edit = build_workspace_edit(input.original, input.pending);
+            let mut edit = crate::console::domain::build_workspace_edit(input.original, input.pending);
             edit.remove_destinations = effective_removals;
             editor_doc.edit_workspace(&current_name, edit)?;
             apply_auth_forward_diff(
@@ -220,47 +220,6 @@ pub fn save_workspace(
         current_name,
         pending_rename,
     })
-}
-
-/// Build the config-editor patch for a workspace edit from original/pending UI state.
-pub(crate) fn build_workspace_edit(
-    original: &WorkspaceConfig,
-    pending: &WorkspaceConfig,
-) -> WorkspaceEdit {
-    let mut edit = WorkspaceEdit::default();
-    if pending.workdir != original.workdir {
-        edit.workdir = Some(pending.workdir.clone());
-    }
-    for m in &pending.mounts {
-        if !original.mounts.iter().any(|o| o == m) {
-            edit.upsert_mounts.push(m.clone());
-        }
-    }
-    for o in &original.mounts {
-        if !pending.mounts.iter().any(|p| p.dst == o.dst) {
-            edit.remove_destinations.push(o.dst.clone());
-        }
-    }
-    for a in &pending.allowed_roles {
-        if !original.allowed_roles.contains(a) {
-            edit.allowed_roles_to_add.push(a.clone());
-        }
-    }
-    for a in &original.allowed_roles {
-        if !pending.allowed_roles.contains(a) {
-            edit.allowed_roles_to_remove.push(a.clone());
-        }
-    }
-    if pending.default_role != original.default_role {
-        edit.default_role = Some(pending.default_role.clone());
-    }
-    if pending.keep_awake.enabled != original.keep_awake.enabled {
-        edit.keep_awake_enabled = Some(pending.keep_awake.enabled);
-    }
-    if pending.git_pull_on_entry != original.git_pull_on_entry {
-        edit.git_pull_on_entry_enabled = Some(pending.git_pull_on_entry);
-    }
-    edit
 }
 
 /// Reapply auth-forward deltas after `edit_workspace` rewrites the workspace table.

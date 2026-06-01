@@ -167,7 +167,7 @@ pub(super) fn begin_editor_save(
                 );
                 return Ok(());
             };
-            let edit_delta = crate::console::services::config::build_workspace_edit(
+            let edit_delta = crate::console::domain::build_workspace_edit(
                 &editor.original,
                 &editor.pending,
             );
@@ -1036,8 +1036,7 @@ mod tests {
 
         // No change → no field set.
         let pending_unchanged = original.clone();
-        let edit =
-            crate::console::services::config::build_workspace_edit(&original, &pending_unchanged);
+        let edit = crate::console::domain::build_workspace_edit(&original, &pending_unchanged);
         assert_eq!(edit.keep_awake_enabled, None);
 
         // Flip on → Some(true).
@@ -1045,7 +1044,7 @@ mod tests {
             keep_awake: KeepAwakeConfig { enabled: true },
             ..original.clone()
         };
-        let edit = crate::console::services::config::build_workspace_edit(&original, &pending_on);
+        let edit = crate::console::domain::build_workspace_edit(&original, &pending_on);
         assert_eq!(edit.keep_awake_enabled, Some(true));
 
         // Flip off (when original was on) → Some(false).
@@ -1057,8 +1056,7 @@ mod tests {
             keep_awake: KeepAwakeConfig { enabled: false },
             ..original
         };
-        let edit =
-            crate::console::services::config::build_workspace_edit(&original_on, &pending_off);
+        let edit = crate::console::domain::build_workspace_edit(&original_on, &pending_off);
         assert_eq!(edit.keep_awake_enabled, Some(false));
     }
 
