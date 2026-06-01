@@ -14,6 +14,7 @@ pub mod op_reference;
 pub mod provider_picker;
 pub mod run;
 pub mod settings;
+pub mod sidebar_layout;
 pub mod split;
 pub mod terminal;
 pub mod widgets;

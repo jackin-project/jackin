@@ -12,6 +12,7 @@ use crate::console::manager::state::{
 };
 use crate::isolation::MountIsolation;
 use crate::workspace::MountConfig;
+pub(crate) use jackin_console::sidebar_layout::SidebarLayout;
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_selected = state.visual_selected();
@@ -273,18 +274,6 @@ pub(crate) struct SidebarInputs<'a> {
     pub agent_count: usize,
 }
 
-/// Rect for each rendered block. `None` panels are skipped in both render
-/// and hit-test.
-pub(crate) struct SidebarLayout {
-    pub instances: Option<Rect>,
-    pub general: Rect,
-    pub mounts: Rect,
-    pub global: Option<Rect>,
-    pub role_global: Option<Rect>,
-    pub env: Option<Rect>,
-    pub roles: Option<Rect>,
-}
-
 #[derive(Clone, Copy)]
 pub(crate) struct SidebarScrollArea {
     pub area: Rect,
@@ -306,42 +295,19 @@ pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> 
     let show_role_global = !role_global_rows.is_empty();
     let show_roles = !inputs.inline_picker_active;
 
-    let mut constraints = Vec::new();
-    if inputs.instance_count > 0 {
-        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
-    }
-    constraints.push(Constraint::Length(3));
-    constraints.push(Constraint::Length(mount_block_height(inputs.mounts)));
-    if show_global {
-        constraints.push(Constraint::Length(global_mount_rows_height(&global_rows)));
-    }
-    if show_role_global {
-        constraints.push(Constraint::Length(global_mount_rows_height(
-            &role_global_rows,
-        )));
-    }
-    if inputs.show_envs {
-        constraints.push(Constraint::Length(env_block_height(inputs.ws_config)));
-    }
-    if show_roles {
-        constraints.push(Constraint::Length(agents_block_height(inputs.agent_count)));
-    }
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-    let mut iter = rows.iter().copied();
-
-    SidebarLayout {
-        instances: (inputs.instance_count > 0).then(|| iter.next().expect("instances slot")),
-        general: iter.next().expect("general slot"),
-        mounts: iter.next().expect("mounts slot"),
-        global: show_global.then(|| iter.next().expect("global slot")),
-        role_global: show_role_global.then(|| iter.next().expect("role-global slot")),
-        env: inputs.show_envs.then(|| iter.next().expect("env slot")),
-        roles: show_roles.then(|| iter.next().expect("roles slot")),
-    }
+    jackin_console::sidebar_layout::compute_sidebar_layout(
+        area,
+        jackin_console::sidebar_layout::SidebarLayoutMetrics {
+            instance_count: inputs.instance_count,
+            workspace_mount_height: mount_block_height(inputs.mounts),
+            global_mount_height: show_global.then(|| global_mount_rows_height(&global_rows)),
+            role_global_mount_height: show_role_global
+                .then(|| global_mount_rows_height(&role_global_rows)),
+            env_height: inputs.show_envs.then(|| env_block_height(inputs.ws_config)),
+            show_roles,
+            agent_count: inputs.agent_count,
+        },
+    )
 }
 
 pub(crate) fn compute_sidebar_scroll_areas(
@@ -631,20 +597,12 @@ pub(crate) fn agents_block_agent_count(
     }
 }
 
-pub(crate) fn agents_block_height(agent_count: usize) -> u16 {
-    let agent_rows = agent_count.max(1);
-    (2 + 1 + 1 + agent_rows).min(14) as u16
-}
-
 pub(crate) fn agents_block_content_width(
     _ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
     config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
 }
-
-/// Fixed height of the compact running-instances badge (borders + 1 text line).
-pub(crate) const COMPACT_INSTANCES_HEIGHT: u16 = 3;
 
 pub(crate) fn workspace_active_count(
     instances: &[crate::instance::InstanceIndexEntry],
