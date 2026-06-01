@@ -545,10 +545,13 @@ impl Multiplexer {
                 && let Some(session) = self.sessions.get(&fid)
             {
                 let screen = session.screen();
-                let live_input = session.received_output
-                    && session.scrollback_offset == 0
-                    && !screen.hide_cursor();
-                if live_input {
+                if cursor_visible_for_state(CursorVisibilityState {
+                    dialog_open: self.dialog_open(),
+                    focused_pane_available: true,
+                    focused_session_received_output: session.received_output,
+                    scrollback_active: session.scrollback_offset != 0,
+                    agent_cursor_hidden: screen.hide_cursor(),
+                }) {
                     let (vt_row, vt_col) = screen.cursor_position();
                     use std::io::Write as _;
                     let _ = write!(

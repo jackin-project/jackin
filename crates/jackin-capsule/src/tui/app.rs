@@ -160,6 +160,23 @@ pub(crate) fn hover_target_for_state(state: HoverState) -> Option<HoverTarget> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CursorVisibilityState {
+    pub(crate) dialog_open: bool,
+    pub(crate) focused_pane_available: bool,
+    pub(crate) focused_session_received_output: bool,
+    pub(crate) scrollback_active: bool,
+    pub(crate) agent_cursor_hidden: bool,
+}
+
+pub(crate) fn cursor_visible_for_state(state: CursorVisibilityState) -> bool {
+    !state.dialog_open
+        && state.focused_pane_available
+        && state.focused_session_received_output
+        && !state.scrollback_active
+        && !state.agent_cursor_hidden
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum VisibleAgentState {
     Idle,
@@ -197,9 +214,9 @@ mod tests {
     use crate::tui::layout::SplitOrient;
 
     use super::{
-        ChromeHitState, HoverState, HoverTarget, MuxMode, MuxModeState, PointerShape,
-        PointerShapeState, chrome_hover_target_for_state, hover_target_for_state,
-        mux_mode_for_state, pointer_shape_for_state,
+        ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
+        PointerShape, PointerShapeState, chrome_hover_target_for_state, cursor_visible_for_state,
+        hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
     };
 
     #[test]
@@ -371,5 +388,37 @@ mod tests {
             }),
             Some(HoverTarget::Menu)
         );
+    }
+
+    #[test]
+    fn cursor_visibility_requires_live_focused_pane() {
+        let visible = CursorVisibilityState {
+            dialog_open: false,
+            focused_pane_available: true,
+            focused_session_received_output: true,
+            scrollback_active: false,
+            agent_cursor_hidden: false,
+        };
+        assert!(cursor_visible_for_state(visible));
+        assert!(!cursor_visible_for_state(CursorVisibilityState {
+            dialog_open: true,
+            ..visible
+        }));
+        assert!(!cursor_visible_for_state(CursorVisibilityState {
+            focused_pane_available: false,
+            ..visible
+        }));
+        assert!(!cursor_visible_for_state(CursorVisibilityState {
+            focused_session_received_output: false,
+            ..visible
+        }));
+        assert!(!cursor_visible_for_state(CursorVisibilityState {
+            scrollback_active: true,
+            ..visible
+        }));
+        assert!(!cursor_visible_for_state(CursorVisibilityState {
+            agent_cursor_hidden: true,
+            ..visible
+        }));
     }
 }
