@@ -167,6 +167,93 @@ pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
     ]
 }
 
+#[must_use]
+pub fn editor_general_row_footer_items(row: usize, has_mounts: bool) -> Vec<HintSpan<'static>> {
+    match row {
+        0 => vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
+        1 if has_mounts => vec![HintSpan::Key("↵"), HintSpan::Text("pick working directory")],
+        2 | 3 => vec![HintSpan::Key("␣"), HintSpan::Text("toggle")],
+        _ => Vec::new(),
+    }
+}
+
+#[must_use]
+pub fn editor_role_row_footer_items(is_existing_role: bool) -> Vec<HintSpan<'static>> {
+    if is_existing_role {
+        vec![
+            HintSpan::Key("␣"),
+            HintSpan::Text("allow/disallow"),
+            HintSpan::Sep,
+            HintSpan::Key("*"),
+            HintSpan::Text("set/unset default"),
+            HintSpan::Sep,
+            HintSpan::Key("A"),
+            HintSpan::Text("load role"),
+        ]
+    } else {
+        vec![HintSpan::Key("↵/A"), HintSpan::Text("load role")]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthRowFooterMode {
+    ManageAuth,
+    EditMode,
+    RoleHeader,
+    AddOverride,
+    EditSource,
+    Empty,
+}
+
+#[must_use]
+pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> {
+    match mode {
+        AuthRowFooterMode::ManageAuth => vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")],
+        AuthRowFooterMode::EditMode => vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")],
+        AuthRowFooterMode::RoleHeader => vec![
+            HintSpan::Key("↵"),
+            HintSpan::Text("expand"),
+            HintSpan::Sep,
+            HintSpan::Key("←/→"),
+            HintSpan::Text("collapse/expand"),
+            HintSpan::Sep,
+            HintSpan::Key("D"),
+            HintSpan::Text("reset"),
+        ],
+        AuthRowFooterMode::AddOverride => {
+            vec![HintSpan::Key("↵/A"), HintSpan::Text("add override")]
+        }
+        AuthRowFooterMode::EditSource => vec![HintSpan::Key("↵"), HintSpan::Text("edit source")],
+        AuthRowFooterMode::Empty => Vec::new(),
+    }
+}
+
+#[must_use]
+pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("\u{2191}\u{2193}"),
+        HintSpan::Text("navigate"),
+        HintSpan::Sep,
+        HintSpan::Key("␣"),
+        HintSpan::Text("toggle"),
+    ]
+}
+
+#[must_use]
+pub fn settings_trust_row_footer_items(has_roles: bool) -> Vec<HintSpan<'static>> {
+    if has_roles {
+        vec![
+            HintSpan::Key("␣"),
+            HintSpan::Text("trust/untrust"),
+            HintSpan::Sep,
+            HintSpan::Key("H/L"),
+            HintSpan::Text("scroll"),
+        ]
+    } else {
+        Vec::new()
+    }
+}
+
 fn workspace_picker_footer_items(
     scroll_focused: bool,
     include_quit: bool,
@@ -704,6 +791,40 @@ mod tests {
         assert_eq!(
             labels(destructive_confirm_footer_items()),
             vec!["Y", "yes", "N", "no", "Esc", "cancel"]
+        );
+    }
+
+    #[test]
+    fn editor_general_footer_rows_match_expected_actions() {
+        assert_eq!(
+            labels(editor_general_row_footer_items(0, true)),
+            vec!["↵", "rename"]
+        );
+        assert_eq!(
+            labels(editor_general_row_footer_items(1, true)),
+            vec!["↵", "pick working directory"]
+        );
+        assert!(labels(editor_general_row_footer_items(1, false)).is_empty());
+        assert_eq!(
+            labels(editor_general_row_footer_items(2, true)),
+            vec!["␣", "toggle"]
+        );
+    }
+
+    #[test]
+    fn auth_footer_role_header_includes_reset() {
+        assert_eq!(
+            labels(auth_row_footer_items(AuthRowFooterMode::RoleHeader)),
+            vec!["↵", "expand", "←/→", "collapse/expand", "D", "reset"]
+        );
+    }
+
+    #[test]
+    fn settings_trust_footer_depends_on_roles() {
+        assert!(labels(settings_trust_row_footer_items(false)).is_empty());
+        assert_eq!(
+            labels(settings_trust_row_footer_items(true)),
+            vec!["␣", "trust/untrust", "H/L", "scroll"]
         );
     }
 }

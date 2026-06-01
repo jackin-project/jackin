@@ -11,9 +11,10 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    content_footer_items, global_mount_row_footer_items, secret_add_row_footer_items,
-    secret_op_ref_row_footer_items, secret_plain_row_footer_items, secret_role_header_footer_items,
-    tab_bar_footer_items,
+    AuthRowFooterMode, auth_row_footer_items, content_footer_items, global_mount_row_footer_items,
+    secret_add_row_footer_items, secret_op_ref_row_footer_items, secret_plain_row_footer_items,
+    secret_role_header_footer_items, settings_general_row_footer_items,
+    settings_trust_row_footer_items, tab_bar_footer_items,
 };
 
 pub(crate) fn settings_footer_items(
@@ -51,13 +52,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
 #[allow(clippy::too_many_lines)]
 fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     match state.active_tab {
-        SettingsTab::General => vec![
-            HintSpan::Key("\u{2191}\u{2193}"),
-            HintSpan::Text("navigate"),
-            HintSpan::Sep,
-            HintSpan::Key("␣"),
-            HintSpan::Text("toggle"),
-        ],
+        SettingsTab::General => settings_general_row_footer_items(),
         SettingsTab::Mounts => {
             let cursor = state.mounts.selected;
             let mount_count = state.mounts.pending.len();
@@ -96,26 +91,14 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
         }
         SettingsTab::Auth => {
             if state.auth.selected_kind.is_none() {
-                vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")]
+                auth_row_footer_items(AuthRowFooterMode::ManageAuth)
             } else if state.auth.selected == 0 {
-                vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")]
+                auth_row_footer_items(AuthRowFooterMode::EditMode)
             } else {
-                vec![HintSpan::Key("↵"), HintSpan::Text("edit source")]
+                auth_row_footer_items(AuthRowFooterMode::EditSource)
             }
         }
-        SettingsTab::Trust => {
-            if state.trust.pending.is_empty() {
-                Vec::new()
-            } else {
-                vec![
-                    HintSpan::Key("␣"),
-                    HintSpan::Text("trust/untrust"),
-                    HintSpan::Sep,
-                    HintSpan::Key("H/L"),
-                    HintSpan::Text("scroll"),
-                ]
-            }
-        }
+        SettingsTab::Trust => settings_trust_row_footer_items(!state.trust.pending.is_empty()),
     }
 }
 

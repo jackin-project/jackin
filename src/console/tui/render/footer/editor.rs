@@ -12,9 +12,10 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    content_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
-    secret_plain_row_footer_items, secret_role_header_footer_items, tab_bar_footer_items,
-    workspace_mount_row_footer_items,
+    AuthRowFooterMode, auth_row_footer_items, content_footer_items,
+    editor_general_row_footer_items, editor_role_row_footer_items, secret_add_row_footer_items,
+    secret_op_ref_row_footer_items, secret_plain_row_footer_items, secret_role_header_footer_items,
+    tab_bar_footer_items, workspace_mount_row_footer_items,
 };
 
 pub(crate) fn editor_footer_items(
@@ -58,14 +59,9 @@ pub(crate) fn contextual_row_items(
 ) -> Vec<HintSpan<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
-        EditorTab::General => match cursor {
-            0 => vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
-            1 if !state.pending.mounts.is_empty() => {
-                vec![HintSpan::Key("↵"), HintSpan::Text("pick working directory")]
-            }
-            2 | 3 => vec![HintSpan::Key("␣"), HintSpan::Text("toggle")],
-            _ => Vec::new(),
-        },
+        EditorTab::General => {
+            editor_general_row_footer_items(cursor, !state.pending.mounts.is_empty())
+        }
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
             match cursor.cmp(&mount_count) {
@@ -82,20 +78,7 @@ pub(crate) fn contextual_row_items(
             }
         }
         EditorTab::Roles => {
-            if cursor < config.roles.len() {
-                vec![
-                    HintSpan::Key("␣"),
-                    HintSpan::Text("allow/disallow"),
-                    HintSpan::Sep,
-                    HintSpan::Key("*"),
-                    HintSpan::Text("set/unset default"),
-                    HintSpan::Sep,
-                    HintSpan::Key("A"),
-                    HintSpan::Text("load role"),
-                ]
-            } else {
-                vec![HintSpan::Key("↵/A"), HintSpan::Text("load role")]
-            }
+            editor_role_row_footer_items(cursor < config.roles.len())
         }
         EditorTab::Secrets => {
             let rows = secrets_flat_rows(state);
@@ -133,28 +116,21 @@ pub(crate) fn contextual_row_items(
             let flat = auth_flat_rows(state, config);
             match flat.get(cursor) {
                 Some(AuthRow::AuthKindRow { .. }) => {
-                    vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")]
+                    auth_row_footer_items(AuthRowFooterMode::ManageAuth)
                 }
                 Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
-                    vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")]
+                    auth_row_footer_items(AuthRowFooterMode::EditMode)
                 }
-                Some(AuthRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("↵"),
-                    HintSpan::Text("expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("←/→"),
-                    HintSpan::Text("collapse/expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("D"),
-                    HintSpan::Text("reset"),
-                ],
+                Some(AuthRow::RoleHeader { .. }) => {
+                    auth_row_footer_items(AuthRowFooterMode::RoleHeader)
+                }
                 Some(AuthRow::AddSentinel { .. }) => {
-                    vec![HintSpan::Key("↵/A"), HintSpan::Text("add override")]
+                    auth_row_footer_items(AuthRowFooterMode::AddOverride)
                 }
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
-                    vec![HintSpan::Key("↵"), HintSpan::Text("edit source")]
+                    auth_row_footer_items(AuthRowFooterMode::EditSource)
                 }
-                Some(AuthRow::Spacer) | None => Vec::new(),
+                Some(AuthRow::Spacer) | None => auth_row_footer_items(AuthRowFooterMode::Empty),
             }
         }
     }
