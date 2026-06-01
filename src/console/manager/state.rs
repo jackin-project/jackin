@@ -769,18 +769,6 @@ enum MountInfoRefreshTarget {
     SettingsMounts,
 }
 
-fn load_mount_info_entries(
-    sources: Vec<String>,
-) -> Vec<(String, jackin_console::mount_info::MountKind)> {
-    sources
-        .into_iter()
-        .map(|src| {
-            let kind = jackin_console::mount_info::inspect(&src);
-            (src, kind)
-        })
-        .collect()
-}
-
 impl std::fmt::Debug for PendingOpCommit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PendingOpCommit")
@@ -2014,12 +2002,12 @@ impl ManagerState<'_> {
             return;
         };
         if tokio::runtime::Handle::try_current().is_err() {
-            let entries = load_mount_info_entries(sources);
+            let entries = jackin_console::services::mount_info::inspect_entries(sources);
             let _ = self.apply_mount_info_refresh(PendingMountInfoRefresh { target, entries });
             return;
         }
         let rx = spawn_blocking_subscription(move || {
-            let entries = load_mount_info_entries(sources);
+            let entries = jackin_console::services::mount_info::inspect_entries(sources);
             PendingMountInfoRefresh { target, entries }
         });
         self.mount_info_refresh_rx = Some(rx);
