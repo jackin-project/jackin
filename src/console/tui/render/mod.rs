@@ -6,6 +6,7 @@ mod frame;
 mod frame_tests;
 pub(crate) mod list;
 pub(crate) mod modal;
+pub(crate) mod modal_layout;
 pub(crate) mod settings;
 #[cfg(test)]
 mod snapshot_tests;

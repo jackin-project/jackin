@@ -8,7 +8,7 @@ use super::super::list_geometry::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::modal_layout::modal_outer_rect;
+use crate::console::tui::render::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use super::super::mount_display::global_mounts_content_width;
 #[cfg(test)]

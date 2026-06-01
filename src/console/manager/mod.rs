@@ -13,7 +13,6 @@ pub mod message;
 #[cfg(test)]
 mod message_tests;
 pub(crate) mod modal_footer;
-pub(crate) mod modal_layout;
 pub(crate) mod mount_display;
 mod pre_render;
 pub(crate) mod settings_footer;
