@@ -15,9 +15,10 @@ use crate::workspace::WorkspaceConfig;
 use crate::console::widgets::{
     auth_panel::AuthForm, confirm_save::ConfirmSaveState, file_browser::FileBrowserState,
     github_picker::GithubPickerState, mount_dst_choice::MountDstChoiceState,
-    op_picker::OpPickerState, role_picker::RolePickerState, scope_picker::ScopePickerState,
-    source_picker::SourcePickerState, workdir_pick::WorkdirPickState,
+    op_picker::OpPickerState, role_picker::RolePickerState, source_picker::SourcePickerState,
+    workdir_pick::WorkdirPickState,
 };
+use jackin_console::widgets::scope_picker::ScopePickerState;
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
 
 pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};

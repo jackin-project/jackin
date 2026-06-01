@@ -1412,7 +1412,7 @@ pub(super) fn handle_settings_env_modal(
         },
         SettingsEnvModal::ScopePicker { mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(choice) => match choice {
-                crate::console::widgets::scope_picker::ScopeChoice::AllAgents => {
+                jackin_console::widgets::scope_picker::ScopeChoice::AllAgents => {
                     let scope = SettingsEnvScope::Global;
                     let input_state =
                         settings_env_key_input_state(env, &scope, "New global environment key", "");
@@ -1425,7 +1425,7 @@ pub(super) fn handle_settings_env_modal(
                         state: Box::new(input_state),
                     });
                 }
-                crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent => {
+                jackin_console::widgets::scope_picker::ScopeChoice::SpecificAgent => {
                     open_settings_env_role_picker(env);
                 }
             },
@@ -1806,7 +1806,7 @@ fn open_settings_env_enter_modal(settings: &mut super::super::state::SettingsSta
         }
         SettingsEnvRow::GlobalAddSentinel => {
             settings.env.modal = Some(SettingsEnvModal::ScopePicker {
-                state: crate::console::widgets::scope_picker::ScopePickerState::new(),
+                state: jackin_console::widgets::scope_picker::ScopePickerState::new(),
             });
         }
         SettingsEnvRow::RoleHeader { role, expanded } => {
@@ -2094,7 +2094,7 @@ fn confirm_modal(action: GlobalMountConfirm) -> GlobalMountModal<'static> {
 
 const fn scope_picker_modal() -> GlobalMountModal<'static> {
     GlobalMountModal::ScopePicker {
-        state: crate::console::widgets::scope_picker::ScopePickerState::with_title(
+        state: jackin_console::widgets::scope_picker::ScopePickerState::with_title(
             " Which agent role do you want to add? ",
         ),
     }
@@ -2102,13 +2102,13 @@ const fn scope_picker_modal() -> GlobalMountModal<'static> {
 
 fn commit_add_scope_choice(
     settings: &mut super::super::state::SettingsState<'_>,
-    choice: crate::console::widgets::scope_picker::ScopeChoice,
+    choice: jackin_console::widgets::scope_picker::ScopeChoice,
 ) {
     match choice {
-        crate::console::widgets::scope_picker::ScopeChoice::AllAgents => {
+        jackin_console::widgets::scope_picker::ScopeChoice::AllAgents => {
             commit_text(&mut settings.mounts, &GlobalMountTextTarget::AddScope, "");
         }
-        crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent => {
+        jackin_console::widgets::scope_picker::ScopeChoice::SpecificAgent => {
             open_global_mount_role_picker(settings);
         }
     }
@@ -2286,7 +2286,7 @@ mod tests {
         else {
             panic!("expected scope picker");
         };
-        picker.focused = crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent;
+        picker.focused = jackin_console::widgets::scope_picker::ScopeChoice::SpecificAgent;
         handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
         assert!(matches!(
             settings.mounts.modal,
@@ -2335,7 +2335,7 @@ mod tests {
         else {
             panic!("expected scope picker");
         };
-        picker.focused = crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent;
+        picker.focused = jackin_console::widgets::scope_picker::ScopeChoice::SpecificAgent;
         handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
         assert!(matches!(
             settings.mounts.modal,
@@ -2920,7 +2920,7 @@ mod tests {
         else {
             panic!("expected scope picker");
         };
-        picker.focused = crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent;
+        picker.focused = jackin_console::widgets::scope_picker::ScopeChoice::SpecificAgent;
         handle_settings_env_modal(
             &mut settings.env,
             key(KeyCode::Enter),

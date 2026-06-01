@@ -561,7 +561,7 @@ readonly = false
                 &config,
                 &cwd,
                 Modal::ScopePicker {
-                    state: crate::console::widgets::scope_picker::ScopePickerState::new(),
+                    state: jackin_console::widgets::scope_picker::ScopePickerState::new(),
                 },
             ),
         ));
@@ -705,7 +705,7 @@ readonly = false
                 &config,
                 &cwd,
                 GlobalMountModal::ScopePicker {
-                    state: crate::console::widgets::scope_picker::ScopePickerState::new(),
+                    state: jackin_console::widgets::scope_picker::ScopePickerState::new(),
                 },
             ),
         ));
@@ -799,7 +799,7 @@ readonly = false
                 &config,
                 &cwd,
                 SettingsEnvModal::ScopePicker {
-                    state: crate::console::widgets::scope_picker::ScopePickerState::new(),
+                    state: jackin_console::widgets::scope_picker::ScopePickerState::new(),
                 },
             ),
         ));

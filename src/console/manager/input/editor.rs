@@ -609,7 +609,7 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
         SecretsRow::WorkspaceAddSentinel => {
             // Workspace sentinel asks the scope question first; the
             // per-role sentinel fast-path stays direct.
-            use crate::console::widgets::scope_picker::ScopePickerState;
+            use jackin_console::widgets::scope_picker::ScopePickerState;
             editor.modal = Some(Modal::ScopePicker {
                 state: ScopePickerState::new(),
             });
@@ -1075,7 +1075,7 @@ pub(super) fn handle_editor_modal(
         },
         Modal::StatusPopup { .. } | Modal::ContainerInfo { .. } => {}
         Modal::ScopePicker { state: scope_state } => {
-            use crate::console::widgets::scope_picker::ScopeChoice;
+            use jackin_console::widgets::scope_picker::ScopeChoice;
             match scope_state.handle_key(key) {
                 ModalOutcome::Commit(ScopeChoice::AllAgents) => {
                     let scope = SecretsScopeTag::Workspace;

@@ -23,7 +23,6 @@ pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
 pub mod role_picker;
-pub mod scope_picker;
 pub mod source_picker;
 pub mod workdir_pick;
 
