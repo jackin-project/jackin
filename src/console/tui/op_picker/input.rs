@@ -12,7 +12,8 @@ use super::{
     OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent,
     build_op_ref_on_commit, field_label_cancel_plan, field_stage_back_plan,
     filter_reset_selection_for_stage, new_item_name_commit_plan, new_section_name_commit_plan,
-    section_header_collapse_target,
+    section_header_collapse_target, section_stage_back_plan, section_stage_commit_plan,
+    SectionStageCommitPlan,
 };
 
 impl OpPickerState {
@@ -247,13 +248,21 @@ impl OpPickerState {
         let sentinel_idx = choices.len();
         match key.code {
             KeyCode::Esc => {
-                // Mirror the Field-stage Esc back to Item.
-                self.stage = OpPickerStage::Item;
+                let plan = section_stage_back_plan();
+                self.stage = plan.stage;
                 self.filter_buf.clear();
-                self.fields.clear();
-                self.collapsed_sections.clear();
-                self.selected_section = None;
-                self.selected_item = None;
+                if plan.clear_fields {
+                    self.fields.clear();
+                }
+                if plan.clear_collapsed_sections {
+                    self.collapsed_sections.clear();
+                }
+                if plan.clear_selected_section {
+                    self.selected_section = None;
+                }
+                if plan.clear_selected_item {
+                    self.selected_item = None;
+                }
                 ModalOutcome::Continue
             }
             KeyCode::Up => {
@@ -265,17 +274,19 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if self.section_list_state.selected.unwrap_or(0) == sentinel_idx {
-                    self.section_name_input = TextInputState::new("Section name", "");
-                    self.stage = OpPickerStage::NewSectionName;
-                } else if let Some(choice) =
-                    selected_choice(&choices, self.section_list_state.selected)
-                {
-                    self.selected_section.clone_from(choice);
-                    self.stage = OpPickerStage::Field;
-                    self.filter_buf.clear();
-                    let n = self.build_field_display_rows().len();
-                    self.field_list_state.select(first_selection(n));
+                match section_stage_commit_plan(self.section_list_state.selected, &choices) {
+                    SectionStageCommitPlan::NewSectionName => {
+                        self.section_name_input = TextInputState::new("Section name", "");
+                        self.stage = OpPickerStage::NewSectionName;
+                    }
+                    SectionStageCommitPlan::ExistingSection { selected_section } => {
+                        self.selected_section = selected_section;
+                        self.stage = OpPickerStage::Field;
+                        self.filter_buf.clear();
+                        let n = self.build_field_display_rows().len();
+                        self.field_list_state.select(first_selection(n));
+                    }
+                    SectionStageCommitPlan::NoSelection => {}
                 }
                 ModalOutcome::Continue
             }

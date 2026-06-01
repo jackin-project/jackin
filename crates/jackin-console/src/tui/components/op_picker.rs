@@ -338,6 +338,47 @@ pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SectionStageBackPlan {
+    pub stage: OpPickerStage,
+    pub clear_fields: bool,
+    pub clear_collapsed_sections: bool,
+    pub clear_selected_section: bool,
+    pub clear_selected_item: bool,
+}
+
+pub const fn section_stage_back_plan() -> SectionStageBackPlan {
+    SectionStageBackPlan {
+        stage: OpPickerStage::Item,
+        clear_fields: true,
+        clear_collapsed_sections: true,
+        clear_selected_section: true,
+        clear_selected_item: true,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SectionStageCommitPlan {
+    NewSectionName,
+    ExistingSection { selected_section: Option<String> },
+    NoSelection,
+}
+
+pub fn section_stage_commit_plan(
+    selected: Option<usize>,
+    choices: &[Option<String>],
+) -> SectionStageCommitPlan {
+    let selected = selected.unwrap_or(0);
+    if selected == choices.len() {
+        return SectionStageCommitPlan::NewSectionName;
+    }
+    choices
+        .get(selected)
+        .cloned()
+        .map(|selected_section| SectionStageCommitPlan::ExistingSection { selected_section })
+        .unwrap_or(SectionStageCommitPlan::NoSelection)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionCollapseIntent {
     Collapse,
     Expand,
@@ -1405,6 +1446,46 @@ mod tests {
                 clear_selected_item: true,
                 reset_section_list: false,
             }
+        );
+    }
+
+    #[test]
+    fn section_stage_back_plan_returns_to_item() {
+        assert_eq!(
+            section_stage_back_plan(),
+            SectionStageBackPlan {
+                stage: OpPickerStage::Item,
+                clear_fields: true,
+                clear_collapsed_sections: true,
+                clear_selected_section: true,
+                clear_selected_item: true,
+            }
+        );
+    }
+
+    #[test]
+    fn section_stage_commit_plan_resolves_sentinel_and_choices() {
+        let choices = vec![None, Some("api".to_string())];
+
+        assert_eq!(
+            section_stage_commit_plan(Some(0), &choices),
+            SectionStageCommitPlan::ExistingSection {
+                selected_section: None
+            }
+        );
+        assert_eq!(
+            section_stage_commit_plan(Some(1), &choices),
+            SectionStageCommitPlan::ExistingSection {
+                selected_section: Some("api".to_string())
+            }
+        );
+        assert_eq!(
+            section_stage_commit_plan(Some(2), &choices),
+            SectionStageCommitPlan::NewSectionName
+        );
+        assert_eq!(
+            section_stage_commit_plan(Some(3), &choices),
+            SectionStageCommitPlan::NoSelection
         );
     }
 
