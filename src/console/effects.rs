@@ -33,35 +33,36 @@ pub(crate) fn execute_manager_effect(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     effect: ManagerEffect,
-) {
+) -> bool {
     match effect {
         ManagerEffect::Console(ConsoleEffect::RequestActiveMountInfoRefresh) => {
             if state.mount_info_refresh_in_flight() {
-                return;
+                return false;
             }
             let Some((target, sources)) = state.active_mount_info_sources(config) else {
-                return;
+                return false;
             };
             if tokio::runtime::Handle::try_current().is_err() {
                 let entries = jackin_console::services::mount_info::inspect_entries(sources);
-                let _ = update_manager(
+                return update_manager(
                     state,
                     ManagerMessage::MountInfoRefreshed(PendingMountInfoRefresh {
                         target,
                         entries,
                     }),
-                );
-                return;
+                )
+                .is_dirty();
             }
             let rx = spawn_blocking_subscription(move || {
                 let entries = jackin_console::services::mount_info::inspect_entries(sources);
                 PendingMountInfoRefresh { target, entries }
             });
             state.begin_mount_info_refresh(rx);
+            false
         }
         ManagerEffect::Console(ConsoleEffect::RequestInstanceRefresh) => {
             let Some(generation) = state.next_instance_refresh_generation_if_due() else {
-                return;
+                return false;
             };
             let paths = paths.clone();
             let rx = spawn_blocking_subscription(move || {
@@ -69,33 +70,50 @@ pub(crate) fn execute_manager_effect(
                 (generation, result)
             });
             state.begin_instance_refresh(rx);
+            false
         }
-        ManagerEffect::Console(ConsoleEffect::SaveSettings) => execute_settings_save(state, config, paths),
+        ManagerEffect::Console(ConsoleEffect::SaveSettings) => {
+            execute_settings_save(state, config, paths);
+            true
+        }
         ManagerEffect::StartRoleRegistration {
             raw,
             key,
             selector,
             source,
-        } => execute_role_registration_start(state, paths, raw, key, selector, source),
+        } => {
+            execute_role_registration_start(state, paths, raw, key, selector, source);
+            true
+        }
         ManagerEffect::PersistTrustedRoleSource { key, source } => {
             execute_trusted_role_source_persist(state, config, paths, &key, source);
+            true
         }
         ManagerEffect::OpenCreatePreludeFileBrowser => {
             execute_create_prelude_file_browser_open(state);
+            true
         }
         ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd => {
             execute_create_prelude_file_browser_reopen(state);
+            true
         }
         ManagerEffect::OpenEditorAddMountFileBrowser => {
             execute_editor_add_mount_file_browser_open(state);
+            true
         }
         ManagerEffect::OpenGlobalMountFileBrowser => {
             execute_global_mount_file_browser_open(state);
+            true
         }
+        ManagerEffect::PollFileBrowserGitUrls => poll_file_browser_git_urls(state),
+        ManagerEffect::PollPickerLoads => poll_picker_loads(state),
         ManagerEffect::ValidateOpCommit {
             op_ref,
             is_settings,
-        } => execute_op_commit_validation(state, op_ref, is_settings),
+        } => {
+            execute_op_commit_validation(state, op_ref, is_settings);
+            true
+        }
     }
 }
 
@@ -913,7 +931,13 @@ pub(crate) fn apply_background_event(
     event: ManagerBackgroundEvent,
 ) -> bool {
     match event {
-        ManagerBackgroundEvent::Message(message) => update_manager(state, message).is_dirty(),
+        ManagerBackgroundEvent::Message(message) => {
+            let mut dirty = update_manager(state, message).is_dirty();
+            for effect in state.drain_effects() {
+                dirty |= execute_manager_effect(state, config, paths, effect);
+            }
+            dirty
+        }
         ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
                 apply_role_load_completion(editor, config, paths, load, result);

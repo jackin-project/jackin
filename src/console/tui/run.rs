@@ -286,13 +286,12 @@ pub async fn run_console<H: InstanceActionHandler>(
                     };
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         for effect in ms.drain_effects() {
-                            crate::console::effects::execute_manager_effect(
+                            needs_redraw |= crate::console::effects::execute_manager_effect(
                                 ms,
                                 &mut config,
                                 paths,
                                 effect,
                             );
-                            needs_redraw = true;
                         }
                     }
                     match outcome {

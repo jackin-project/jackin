@@ -21,6 +21,8 @@ pub(crate) enum ManagerEffect {
     OpenCreatePreludeFileBrowserAtLastCwd,
     OpenEditorAddMountFileBrowser,
     OpenGlobalMountFileBrowser,
+    PollFileBrowserGitUrls,
+    PollPickerLoads,
     ValidateOpCommit {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,

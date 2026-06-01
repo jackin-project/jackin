@@ -8,7 +8,6 @@ use jackin_console::tui::auth::AuthKind;
 #[cfg(test)]
 pub(crate) use crate::console::effects::ManagerBackgroundEvent;
 use super::effect::ManagerEffect;
-use crate::console::effects::{poll_file_browser_git_urls, poll_picker_loads};
 use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerListRow,
     ManagerStage, ManagerState, MountScrollFocus, PendingMountInfoRefresh, SecretsScopeTag,
@@ -236,14 +235,10 @@ pub(crate) fn update_manager(
             is_settings,
         } => apply_op_commit_result(state, op_ref, result, is_settings),
         ManagerMessage::PollPickerLoads => {
-            if poll_picker_loads(state) {
-                return ManagerUpdate::redraw();
-            }
+            state.request_effect(ManagerEffect::PollPickerLoads);
         }
         ManagerMessage::PollFileBrowserGitUrls => {
-            if poll_file_browser_git_urls(state) {
-                return ManagerUpdate::redraw();
-            }
+            state.request_effect(ManagerEffect::PollFileBrowserGitUrls);
         }
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
