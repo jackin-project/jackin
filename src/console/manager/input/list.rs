@@ -1665,9 +1665,8 @@ mod tests {
     #[test]
     fn picker_commit_closes_list_modal_and_clears_state() {
         // Seed the state directly with an open GithubPicker, then commit.
-        // We can't assert `open::that_detached` ran, but we *can* pin that
-        // the modal closes (no lingering state) and no ErrorPopup appears
-        // when the underlying call path doesn't error out synchronously.
+        // The input layer must not open the browser. It closes the modal and
+        // returns a typed URL-open outcome for the run loop.
         use jackin_console::{
             github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState,
         };
@@ -1676,9 +1675,6 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        // Use an unreachable file:// URL so `open::that_detached` is a
-        // cheap no-op on most platforms (still spawns the browser handler
-        // but doesn't block on network).
         state.list_modal = Some(Modal::GithubPicker {
             state: GithubPickerState::new(vec![GithubChoice {
                 src: "/tmp/a".into(),

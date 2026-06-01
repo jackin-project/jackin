@@ -572,9 +572,7 @@ mod tests {
 
     /// With `pending_git_url == None`, `O` must be a silent no-op: the
     /// prompt stays open, focus is unchanged, and no commit/cancel fires.
-    /// We can't assert that `open::that_detached` *didn't* run (it doesn't
-    /// run when the URL is None — that's the code path we're testing),
-    /// but we can pin the observable state.
+    /// No URL-open outcome is emitted when the URL is absent.
     #[test]
     fn o_shortcut_without_url_is_silent_noop() {
         let tmp = tempdir().unwrap();

@@ -56,7 +56,7 @@ const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 ///   list/details seam drag (anchor + drag + release) and click-to-select.
 /// - On `ManagerStage::Editor` / `CreatePrelude` with a `FileBrowser` modal
 ///   whose git-prompt overlay is active AND has a resolved URL: a
-///   `Down(Left)` on the URL row fires `open::that_detached` best-effort.
+///   `Down(Left)` on the URL row emits a typed URL-open outcome.
 /// - Ignores everything when the terminal is narrower than
 ///   [`MIN_DRAGGABLE_WIDTH`] — drag bounds would be absurd.
 /// - All other events are ignored.
