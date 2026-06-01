@@ -29,7 +29,8 @@ use tui_widget_list::ListState;
 
 use crate::operator_env::{OpAccount, OpCache, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
-use super::{ModalOutcome, cycle_select};
+use super::ModalOutcome;
+use jackin_console::widgets::cycle_select;
 use jackin_tui::components::TextInputState;
 
 pub mod render;
