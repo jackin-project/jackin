@@ -179,7 +179,7 @@ fn handle_global_mounts_key(
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return;
         };
-        if has_sensitive_mount(&settings.mounts.pending) {
+        if crate::console::domain::global_rows_have_sensitive_mount(&settings.mounts.pending) {
             settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
         } else {
             open_settings_save_preview(settings);
@@ -2155,11 +2155,6 @@ fn scope_value(value: &str) -> Option<String> {
     }
 }
 
-fn has_sensitive_mount(rows: &[crate::config::GlobalMountRow]) -> bool {
-    let mounts: Vec<MountConfig> = rows.iter().map(|row| row.mount.clone()).collect();
-    !crate::workspace::find_sensitive_mounts(&mounts).is_empty()
-}
-
 #[cfg(test)]
 mod tests {
     use crate::console::tui::state::{
@@ -2220,7 +2215,7 @@ mod tests {
             },
         }];
 
-        assert!(has_sensitive_mount(&rows));
+        assert!(crate::console::domain::global_rows_have_sensitive_mount(&rows));
     }
 
     #[test]

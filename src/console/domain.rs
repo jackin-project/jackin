@@ -196,6 +196,14 @@ pub(crate) fn build_workspace_edit(
     edit
 }
 
+pub(crate) fn global_rows_have_sensitive_mount(rows: &[crate::config::GlobalMountRow]) -> bool {
+    let mounts = rows
+        .iter()
+        .map(|row| row.mount.clone())
+        .collect::<Vec<MountConfig>>();
+    !crate::workspace::find_sensitive_mounts(&mounts).is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
