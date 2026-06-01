@@ -9,8 +9,9 @@ use jackin_tui::runtime::spawn_blocking_subscription;
 
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    EditorMode, EditorState, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
-    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
+    CreatePreludeState, EditorMode, EditorState, FileBrowserTarget, GlobalMountModal,
+    ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck, PendingIsolationCleanup,
+    PendingMountInfoRefresh, PendingRoleLoad,
 };
 
 pub(crate) fn execute_manager_effect(
@@ -65,10 +66,35 @@ pub(crate) fn execute_manager_effect(
         ManagerEffect::PersistTrustedRoleSource { key, source } => {
             execute_trusted_role_source_persist(state, config, paths, &key, source);
         }
+        ManagerEffect::OpenCreatePreludeFileBrowser => {
+            execute_create_prelude_file_browser_open(state);
+        }
         ManagerEffect::ValidateOpCommit {
             op_ref,
             is_settings,
         } => execute_op_commit_validation(state, op_ref, is_settings),
+    }
+}
+
+fn execute_create_prelude_file_browser_open(state: &mut ManagerState<'_>) {
+    match crate::console::services::file_browser::from_home() {
+        Ok(file_browser) => {
+            let mut prelude = CreatePreludeState::new();
+            prelude.modal = Some(Modal::FileBrowser {
+                target: FileBrowserTarget::CreateFirstMountSrc,
+                state: file_browser,
+            });
+            let _ = update_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
+        }
+        Err(error) => {
+            let _ = update_manager(
+                state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: "File browser failed".into(),
+                    message: format!("{error:#}"),
+                },
+            );
+        }
     }
 }
 

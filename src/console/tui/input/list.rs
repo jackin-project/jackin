@@ -6,8 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use jackin_tui::ModalOutcome;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    CreatePreludeState, EditorState, FileBrowserTarget, ManagerListRow, ManagerState, Modal,
-    ProviderPickerState, SettingsState,
+    EditorState, ManagerListRow, ManagerState, Modal, ProviderPickerState, SettingsState,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -88,15 +87,7 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Enter => match state.selected_row() {
             ManagerListRow::CurrentDirectory => Ok(InputOutcome::LaunchCurrentDir),
-            ManagerListRow::NewWorkspace => {
-                let mut prelude = CreatePreludeState::new();
-                prelude.modal = Some(Modal::FileBrowser {
-                    target: FileBrowserTarget::CreateFirstMountSrc,
-                    state: super::new_file_browser_from_home()?,
-                });
-                dispatch_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
-                Ok(InputOutcome::Continue)
-            }
+            ManagerListRow::NewWorkspace => Ok(InputOutcome::OpenCreatePreludeFileBrowser),
             ManagerListRow::SavedWorkspace(i) => Ok(state
                 .workspaces
                 .get(i)
@@ -157,12 +148,7 @@ pub(super) fn handle_list_key(
                     );
                 }
             } else {
-                let mut prelude = CreatePreludeState::new();
-                prelude.modal = Some(Modal::FileBrowser {
-                    target: FileBrowserTarget::CreateFirstMountSrc,
-                    state: super::new_file_browser_from_home()?,
-                });
-                dispatch_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
+                return Ok(InputOutcome::OpenCreatePreludeFileBrowser);
             }
             Ok(InputOutcome::Continue)
         }

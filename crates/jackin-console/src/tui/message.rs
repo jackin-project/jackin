@@ -47,6 +47,10 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     /// Remove a saved workspace. The root run loop executes config
     /// persistence and then reloads visible state.
     RemoveWorkspace(String),
+    /// Open the create-workspace prelude with the first mount source browser.
+    /// The root input dispatcher executes the filesystem-backed listing through
+    /// the file-browser service adapter.
+    OpenCreatePreludeFileBrowser,
     /// Operator selected an agent and provider for a new session.
     NewSessionWithProvider {
         container: String,

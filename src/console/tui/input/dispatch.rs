@@ -347,6 +347,18 @@ pub fn handle_key(
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
         StageDis::ConfirmDelete => Ok(handle_confirm_delete_key(state, key)),
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
+    }?;
+    let outcome = match outcome {
+        InputOutcome::OpenCreatePreludeFileBrowser => {
+            execute_manager_effect(
+                state,
+                config,
+                paths,
+                ManagerEffect::OpenCreatePreludeFileBrowser,
+            );
+            InputOutcome::Continue
+        }
+        other => other,
     };
     execute_manager_effect(
         state,
@@ -354,7 +366,7 @@ pub fn handle_key(
         paths,
         ConsoleEffect::RequestActiveMountInfoRefresh.into(),
     );
-    outcome
+    Ok(outcome)
 }
 
 fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {

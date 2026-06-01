@@ -17,6 +17,7 @@ pub(crate) enum ManagerEffect {
         key: String,
         source: crate::config::RoleSource,
     },
+    OpenCreatePreludeFileBrowser,
     ValidateOpCommit {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,
