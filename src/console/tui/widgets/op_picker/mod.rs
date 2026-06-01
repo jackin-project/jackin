@@ -30,7 +30,7 @@ use tui_widget_list::ListState;
 use crate::operator_env::{OpAccount, OpCache, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::ModalOutcome;
-use jackin_console::widgets::cycle_select;
+use jackin_console::widgets::{clamp_selection, cycle_select, first_selection};
 use jackin_tui::components::TextInputState;
 
 pub mod render;
@@ -467,7 +467,7 @@ impl OpPickerState {
                 );
                 self.items = items;
                 self.item_list_state
-                    .select(if self.items.is_empty() { None } else { Some(0) });
+                    .select(first_selection(self.items.len()));
                 self.load_state = OpLoadState::Ready;
                 true
             }
@@ -507,8 +507,7 @@ impl OpPickerState {
                     // section-scoped field rows, and stay on Field.
                     self.field_refresh_in_place = false;
                     let display_count = self.build_field_display_rows().len();
-                    self.field_list_state
-                        .select(if display_count == 0 { None } else { Some(0) });
+                    self.field_list_state.select(first_selection(display_count));
                 } else if self.mode.is_create() {
                     // Initial item-selection load (Create mode) inserts a
                     // Section stage between Item and Field; sections derive
@@ -522,8 +521,7 @@ impl OpPickerState {
                 } else {
                     self.selected_section = None;
                     let display_count = self.build_field_display_rows().len();
-                    self.field_list_state
-                        .select(if display_count == 0 { None } else { Some(0) });
+                    self.field_list_state.select(first_selection(display_count));
                 }
                 self.load_state = OpLoadState::Ready;
                 true
@@ -931,8 +929,7 @@ impl OpPickerState {
                     self.stage = OpPickerStage::Field;
                     self.filter_buf.clear();
                     let n = self.build_field_display_rows().len();
-                    self.field_list_state
-                        .select(if n == 0 { None } else { Some(0) });
+                    self.field_list_state.select(first_selection(n));
                 }
                 ModalOutcome::Continue
             }
@@ -1156,11 +1153,8 @@ impl OpPickerState {
             self.collapsed_sections.remove(name.as_str());
         }
         let new_len = self.build_field_display_rows().len();
-        if new_len == 0 {
-            self.field_list_state.select(None);
-        } else if self.field_list_state.selected.is_some_and(|s| s >= new_len) {
-            self.field_list_state.select(Some(new_len - 1));
-        }
+        self.field_list_state
+            .select(clamp_selection(self.field_list_state.selected, new_len));
     }
 
     /// Browse: commit the field's `op://` reference. Create: overwrite the
@@ -1193,23 +1187,19 @@ impl OpPickerState {
         match stage {
             OpPickerStage::Account => {
                 let n = self.filtered_accounts().len();
-                self.account_list_state
-                    .select(if n == 0 { None } else { Some(0) });
+                self.account_list_state.select(first_selection(n));
             }
             OpPickerStage::Vault => {
                 let n = self.filtered_vaults().len();
-                self.vault_list_state
-                    .select(if n == 0 { None } else { Some(0) });
+                self.vault_list_state.select(first_selection(n));
             }
             OpPickerStage::Item => {
                 let n = self.filtered_item_choices().len();
-                self.item_list_state
-                    .select(if n == 0 { None } else { Some(0) });
+                self.item_list_state.select(first_selection(n));
             }
             OpPickerStage::Field => {
                 let n = self.build_field_display_rows().len();
-                self.field_list_state
-                    .select(if n == 0 { None } else { Some(0) });
+                self.field_list_state.select(first_selection(n));
             }
             // Section stage does not filter (selection reset on entry);
             // naming sub-stages are text input — neither has a filterable list.

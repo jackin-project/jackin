@@ -30,3 +30,42 @@ pub fn cycle_select(list_state: &mut tui_widget_list::ListState, count: usize, d
     };
     list_state.select(Some(next));
 }
+
+#[must_use]
+pub const fn first_selection(count: usize) -> Option<usize> {
+    if count == 0 { None } else { Some(0) }
+}
+
+#[must_use]
+pub const fn clamp_selection(selected: Option<usize>, count: usize) -> Option<usize> {
+    if count == 0 {
+        None
+    } else if let Some(selected) = selected {
+        if selected >= count {
+            Some(count - 1)
+        } else {
+            Some(selected)
+        }
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clamp_selection, first_selection};
+
+    #[test]
+    fn first_selection_is_zero_only_when_nonempty() {
+        assert_eq!(first_selection(0), None);
+        assert_eq!(first_selection(3), Some(0));
+    }
+
+    #[test]
+    fn clamp_selection_handles_empty_missing_and_past_end() {
+        assert_eq!(clamp_selection(Some(2), 0), None);
+        assert_eq!(clamp_selection(None, 3), None);
+        assert_eq!(clamp_selection(Some(4), 3), Some(2));
+        assert_eq!(clamp_selection(Some(1), 3), Some(1));
+    }
+}
