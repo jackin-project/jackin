@@ -58,7 +58,7 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
     Disclosure, provider_picker_title, render_compact_instances_summary, render_picker_sidebar,
-    render_sentinel_description_pane,
+    render_general_subpanel, render_sentinel_description_pane,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -526,7 +526,11 @@ fn render_sidebar_body(
             inputs.instance_expanded,
         );
     }
-    render_general_subpanel(frame, layout.general, inputs.workdir);
+    render_general_subpanel(
+        frame,
+        layout.general,
+        &crate::tui::shorten_home(inputs.workdir),
+    );
     let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
     render_mounts_subpanel(
         frame,
@@ -754,28 +758,6 @@ fn render_instance_details_pane(
             .style(Style::default().fg(PHOSPHOR_GREEN)),
         area,
     );
-}
-
-fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir: &str) {
-    let block = Panel::new()
-        .title(" General ")
-        .focus(PanelFocus::Unfocused)
-        .block();
-
-    // Each content row is prefixed with two spaces to match the Mounts and
-    // Roles sub-panels (see `SUBPANEL_CONTENT_INDENT`). Without the prefix the
-    // label sat flush against the block's left border, breaking column
-    // alignment with the other two blocks in the same pane.
-    let lines = vec![Line::from(vec![
-        Span::raw("  "),
-        Span::styled("Working dir ", Style::default().fg(WHITE)),
-        Span::raw(crate::tui::shorten_home(workdir)),
-    ])];
-
-    let p = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
 }
 
 /// Number of leading spaces every content row in the General / Mounts /

@@ -205,6 +205,22 @@ pub fn render_picker_sidebar(
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
+pub fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir_display: &str) {
+    let block = jackin_tui::components::Panel::new()
+        .title(" General ")
+        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .block();
+    let lines = vec![Line::from(vec![
+        Span::raw("  "),
+        Span::styled("Working dir ", Style::default().fg(jackin_tui::theme::WHITE)),
+        Span::raw(workdir_display.to_string()),
+    ])];
+    let panel = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN));
+    frame.render_widget(panel, area);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
