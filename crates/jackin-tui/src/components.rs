@@ -7,6 +7,7 @@ pub mod container_info;
 pub mod error_dialog;
 pub mod filter_input;
 pub mod hint_bar;
+pub mod modal_backdrop;
 pub mod panel;
 pub mod save_discard_dialog;
 pub mod scrollable_panel;
@@ -34,6 +35,7 @@ pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
 pub use hint_bar::{
     HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
 };
+pub use modal_backdrop::ModalBackdrop;
 pub use panel::{FocusPalette, Panel, PanelFocus, modal_block, unfocused_block};
 pub use save_discard_dialog::{
     SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState, render_save_discard_dialog,

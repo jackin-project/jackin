@@ -10,7 +10,7 @@ expression: rendered
 │   + New workspace    │└──────────────────────────────────────────────────────┘
 │                      │┌ Mounts ──────────────────────────────────────────────┐
 │                      ││  Destination  Mode  Isolation  Type                  │
-│                      ││  /workspace   rw    shared     missing               │
+│                      ││  /workspace   rw    shared     unknown               │
 │                      │└──────────────────────────────────────────────────────┘
 │                      │┌ Roles ───────────────────────────────────────────────┐
 │                      ││  Default (none)                                      │

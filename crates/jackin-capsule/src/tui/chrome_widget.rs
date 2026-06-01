@@ -122,26 +122,7 @@ impl Widget for PaneBorderWidget {
     }
 }
 
-// ── Dialog backdrop ───────────────────────────────────────────────────────────
-
-/// Fills the entire terminal with the dialog backdrop color (opaque black).
-///
-/// Used in the dialog overlay path to hide pane content behind the dialog.
-pub struct DialogBackdrop;
-
-impl Widget for DialogBackdrop {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        for y in area.top()..area.bottom() {
-            for x in area.left()..area.right() {
-                let cell = &mut buf[(x, y)];
-                cell.set_char(' ');
-                cell.set_bg(Color::Black);
-                cell.set_fg(Color::Reset);
-                cell.modifier = Modifier::empty();
-            }
-        }
-    }
-}
+pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;
 
 #[cfg(test)]
 mod tests {
@@ -204,8 +185,9 @@ mod tests {
             })
             .unwrap();
         let buf = terminal.backend().buffer();
-        assert_eq!(buf[(0, 0)].bg, Color::Black);
-        assert_eq!(buf[(9, 4)].bg, Color::Black);
+        let expected = tc(jackin_tui::DIALOG_BACKDROP);
+        assert_eq!(buf[(0, 0)].bg, expected);
+        assert_eq!(buf[(9, 4)].bg, expected);
     }
 
     #[test]

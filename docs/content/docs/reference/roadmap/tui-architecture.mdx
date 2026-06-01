@@ -811,7 +811,7 @@ Concrete inconsistencies the audit found between host and capsule for the "same"
 | Agent-choice picker | internal hint row (pre-rule artifact) | hints in footer |
 | `SaveDiscardStrip` palette | re-declares `Color::Rgb(0,255,65)` locally | n/a |
 
-Plus the documented modal-backdrop-dim gap: the rule mandates dimming the whole surface behind a modal; neither implementation fully does today.
+The old modal-backdrop gap is resolved on this branch: host manager modals and capsule Ratatui dialogs now both render the shared `jackin_tui::components::ModalBackdrop` before dialog content, so underlying surface chrome never bleeds through modal overlays.
 
 ### The component selector (end state)
 

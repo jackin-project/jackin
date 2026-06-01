@@ -305,6 +305,10 @@ pub fn render(
         render_footer(frame, chunks[2], &footer_items);
     }
 
+    if has_modal_overlay(state) {
+        frame.render_widget(jackin_tui::components::ModalBackdrop, area);
+    }
+
     // List-anchored modal lives on `ManagerState`, not on a stage
     // variant, so the borrow splits separately from stage-anchored
     // modals.
@@ -371,6 +375,24 @@ pub fn render(
     if let Some(overlay) = &state.status_overlay {
         let overlay_area = centered_rect_fixed(area, 50, 7);
         jackin_tui::components::render_status_popup(frame, overlay_area, overlay);
+    }
+}
+
+fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
+    if state.status_overlay.is_some() {
+        return true;
+    }
+    match &state.stage {
+        ManagerStage::List => state.list_modal.is_some(),
+        ManagerStage::Editor(editor) => editor.modal.is_some(),
+        ManagerStage::Settings(settings) => {
+            settings.error_popup.is_some()
+                || settings.mounts.modal.is_some()
+                || settings.env.modal.is_some()
+                || settings.auth.modal.is_some()
+        }
+        ManagerStage::CreatePrelude(prelude) => prelude.modal.is_some(),
+        ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => true,
     }
 }
 
