@@ -13,7 +13,7 @@
 //! authored under rather than whichever happens to be the `op` default.
 //!
 //! `OpStructRunner` calls run through blocking workers, results routed
-//! through an `mpsc` channel; the spinner ticks until the receiver
+//! through one-shot subscriptions; the spinner ticks until the receiver
 //! yields. Probe / vault-list failures fork into four fatal panels
 //! (not installed, not signed in, no vaults, generic).
 
@@ -21,7 +21,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -89,14 +89,28 @@ enum LoadResult {
     Fields(anyhow::Result<Vec<OpField>>),
 }
 
-#[cfg(not(test))]
-fn spawn_picker_worker(worker: impl FnOnce() + Send + 'static) {
-    tokio::task::spawn_blocking(worker);
+fn ready_picker_load(result: LoadResult) -> oneshot::Receiver<LoadResult> {
+    let (tx, rx) = oneshot::channel();
+    let _ = tx.send(result);
+    rx
 }
 
 #[cfg(test)]
-fn spawn_picker_worker(worker: impl FnOnce() + Send + 'static) {
-    std::thread::spawn(worker);
+fn spawn_picker_load(
+    worker: impl FnOnce() -> LoadResult + Send + 'static,
+) -> oneshot::Receiver<LoadResult> {
+    let (tx, rx) = oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(worker());
+    });
+    rx
+}
+
+#[cfg(not(test))]
+fn spawn_picker_load(
+    worker: impl FnOnce() -> LoadResult + Send + 'static,
+) -> oneshot::Receiver<LoadResult> {
+    jackin_tui::runtime::spawn_blocking_subscription(worker)
 }
 
 pub struct OpPickerState {
@@ -152,7 +166,7 @@ pub struct OpPickerState {
     /// `Arc` so spawned worker threads share the same trait object
     /// (test injectees included).
     runner: Arc<dyn OpStructRunner + Send + Sync>,
-    rx: Option<mpsc::UnboundedReceiver<LoadResult>>,
+    rx: Option<oneshot::Receiver<LoadResult>>,
     /// Session-scoped cache shared with `ConsoleState`; the default
     /// constructor allocates a fresh empty one for unit tests.
     op_cache: Rc<RefCell<OpCache>>,
@@ -290,7 +304,7 @@ impl OpPickerState {
 
     /// Async (not synchronous in the constructor) so a network-stalled
     /// or biometric-blocked `op` doesn't freeze the TUI render loop.
-    /// Cache hits and misses both route through `mpsc` so `poll_load`
+    /// Cache hits and misses both route through one-shot subscriptions so `poll_load`
     /// stays the single completion path.
     fn start_account_load(&mut self) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
@@ -383,14 +397,9 @@ impl OpPickerState {
         cached: Option<LoadResult>,
         worker: impl FnOnce() -> LoadResult + Send + 'static,
     ) {
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.rx = Some(rx);
-        if let Some(cached) = cached {
-            let _ = tx.send(cached);
-            return;
-        }
-        spawn_picker_worker(move || {
-            let _ = tx.send(worker());
+        self.rx = Some(match cached {
+            Some(cached) => ready_picker_load(cached),
+            None => spawn_picker_load(worker),
         });
     }
 
@@ -1903,12 +1912,14 @@ mod tests {
         s.fields.clear();
         s.field_refresh_in_place = true;
         // Publish the reloaded fields through the same arm the worker uses.
-        let (tx, rx) = mpsc::unbounded_channel();
-        tx.send(LoadResult::Fields(Ok(vec![
-            field_with_reference("user", "op://Personal/login/user"),
-            field_with_reference("api", "op://Personal/login/auth/api"),
-        ])))
-        .unwrap();
+        let (tx, rx) = oneshot::channel();
+        assert!(
+            tx.send(LoadResult::Fields(Ok(vec![
+                field_with_reference("user", "op://Personal/login/user"),
+                field_with_reference("api", "op://Personal/login/auth/api"),
+            ])))
+            .is_ok()
+        );
         s.rx = Some(rx);
         s.poll_load();
 
