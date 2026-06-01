@@ -1,6 +1,6 @@
 //! List-pane geometry used outside the renderer.
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::render::mount_display::{
@@ -42,16 +42,11 @@ pub(crate) fn clamp_list_scroll_for_area(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    let left_pct = state.list_split_pct;
-    let right_pct = 100u16.saturating_sub(left_pct);
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(left_pct),
-            Constraint::Percentage(right_pct),
-        ])
-        .split(area);
-    let sidebar_areas = selected_sidebar_scroll_areas(columns[1], state, config, cwd);
+    let columns = jackin_console::tui::list_geometry::split_list_columns(
+        area,
+        state.list_split_pct,
+    );
+    let sidebar_areas = selected_sidebar_scroll_areas(columns.preview, state, config, cwd);
 
     if let Some(areas) = sidebar_areas.as_ref() {
         clamp_scroll_area(areas.workspace, &mut state.list_mounts_scroll_x);
@@ -96,20 +91,13 @@ pub(crate) fn clamp_list_scroll_for_area(
         state.list_names_focused = true;
     }
 
-    let left_viewport_w = scroll_viewport_width(columns[0]);
-    if left_viewport_w == 0 {
-        state.list_names_scroll_x = 0;
-    } else {
-        let name_content_w = list_names_content_width(state, left_viewport_w);
-        if is_scrollable(name_content_w, left_viewport_w) {
-            let max = max_scroll_offset(name_content_w, left_viewport_w);
-            if state.list_names_scroll_x > max {
-                state.list_names_scroll_x = max;
-            }
-        } else {
-            state.list_names_scroll_x = 0;
-        }
-    }
+    let left_viewport_w = scroll_viewport_width(columns.names);
+    let name_content_w = list_names_content_width(state, left_viewport_w);
+    jackin_console::tui::list_geometry::clamp_list_names_scroll(
+        columns.names,
+        name_content_w,
+        &mut state.list_names_scroll_x,
+    );
 }
 
 pub(crate) fn selected_sidebar_scroll_areas(
@@ -177,14 +165,6 @@ fn focused_block_still_scrollable(
 
 fn scroll_viewport_width(area: Rect) -> usize {
     jackin_tui::components::scrollable_panel::viewport_width(area)
-}
-
-fn is_scrollable(content: usize, viewport: usize) -> bool {
-    jackin_tui::components::scrollable_panel::is_scrollable(content, viewport)
-}
-
-fn max_scroll_offset(content: usize, viewport: usize) -> u16 {
-    jackin_tui::components::scrollable_panel::max_offset(content, viewport)
 }
 
 fn list_row_width(
