@@ -12,10 +12,11 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    AuthRowFooterMode, auth_row_footer_items, content_footer_items,
-    editor_general_row_footer_items, editor_role_row_footer_items, secret_add_row_footer_items,
-    secret_op_ref_row_footer_items, secret_plain_row_footer_items, secret_role_header_footer_items,
-    tab_bar_footer_items, workspace_mount_row_footer_items,
+    AuthRowFooterMode, add_row_footer_items, append_generate_token_footer_item,
+    auth_row_footer_items, content_footer_items, editor_general_row_footer_items,
+    editor_role_row_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
+    secret_plain_row_footer_items, secret_role_header_footer_items, tab_bar_footer_items,
+    workspace_mount_row_footer_items,
 };
 
 pub(crate) fn editor_footer_items(
@@ -28,11 +29,7 @@ pub(crate) fn editor_footer_items(
         if matches!(modal, Modal::AuthForm { .. })
             && crate::console::tui::input::auth::auth_form_can_generate_token(state)
         {
-            items.extend([
-                HintSpan::GroupSep,
-                HintSpan::Key("G"),
-                HintSpan::Text("generate"),
-            ]);
+            append_generate_token_footer_item(&mut items);
         }
         return items;
     }
@@ -73,7 +70,7 @@ pub(crate) fn contextual_row_items(
                         .and_then(|m| state.mount_info_cache.github_web_url(&m.src))
                         .is_some(),
                 ),
-                Ordering::Equal => vec![HintSpan::Key("↵/A"), HintSpan::Text("add")],
+                Ordering::Equal => add_row_footer_items("add"),
                 Ordering::Greater => Vec::new(),
             }
         }
@@ -124,9 +121,7 @@ pub(crate) fn contextual_row_items(
                 Some(AuthRow::RoleHeader { .. }) => {
                     auth_row_footer_items(AuthRowFooterMode::RoleHeader)
                 }
-                Some(AuthRow::AddSentinel { .. }) => {
-                    auth_row_footer_items(AuthRowFooterMode::AddOverride)
-                }
+                Some(AuthRow::AddSentinel { .. }) => add_row_footer_items("add override"),
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
                     auth_row_footer_items(AuthRowFooterMode::EditSource)
                 }

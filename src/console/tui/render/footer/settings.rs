@@ -11,9 +11,9 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    AuthRowFooterMode, auth_row_footer_items, content_footer_items, global_mount_row_footer_items,
-    secret_add_row_footer_items, secret_op_ref_row_footer_items, secret_plain_row_footer_items,
-    secret_role_header_footer_items, settings_general_row_footer_items,
+    AuthRowFooterMode, add_row_footer_items, auth_row_footer_items, content_footer_items,
+    global_mount_row_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
+    secret_plain_row_footer_items, secret_role_header_footer_items, settings_general_row_footer_items,
     settings_trust_row_footer_items, tab_bar_footer_items,
 };
 
@@ -57,7 +57,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
             let cursor = state.mounts.selected;
             let mount_count = state.mounts.pending.len();
             if cursor == mount_count {
-                vec![HintSpan::Key("↵/A"), HintSpan::Text("add")]
+                add_row_footer_items("add")
             } else {
                 global_mount_row_footer_items(
                     state

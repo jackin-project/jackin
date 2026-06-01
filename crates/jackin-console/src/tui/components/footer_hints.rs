@@ -254,6 +254,19 @@ pub fn settings_trust_row_footer_items(has_roles: bool) -> Vec<HintSpan<'static>
     }
 }
 
+#[must_use]
+pub fn add_row_footer_items(label: &'static str) -> Vec<HintSpan<'static>> {
+    vec![HintSpan::Key("↵/A"), HintSpan::Text(label)]
+}
+
+pub fn append_generate_token_footer_item(items: &mut Vec<HintSpan<'static>>) {
+    items.extend([
+        HintSpan::GroupSep,
+        HintSpan::Key("G"),
+        HintSpan::Text("generate"),
+    ]);
+}
+
 fn workspace_picker_footer_items(
     scroll_focused: bool,
     include_quit: bool,
@@ -826,5 +839,17 @@ mod tests {
             labels(settings_trust_row_footer_items(true)),
             vec!["␣", "trust/untrust", "H/L", "scroll"]
         );
+    }
+
+    #[test]
+    fn add_row_footer_uses_enter_or_a() {
+        assert_eq!(labels(add_row_footer_items("add override")), vec!["↵/A", "add override"]);
+    }
+
+    #[test]
+    fn generate_token_footer_appends_group() {
+        let mut items = vec![HintSpan::Key("Esc"), HintSpan::Text("cancel")];
+        append_generate_token_footer_item(&mut items);
+        assert_eq!(labels(items), vec!["Esc", "cancel", "G", "generate"]);
     }
 }

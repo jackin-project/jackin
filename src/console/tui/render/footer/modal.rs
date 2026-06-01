@@ -7,11 +7,11 @@ use crate::console::tui::state::{
     AuthFormFocus, GlobalMountModal, Modal, SettingsAuthModal, SettingsAuthState, SettingsEnvModal,
 };
 use jackin_console::tui::components::footer_hints::{
-    auth_form_footer_items as shared_auth_form_footer_items, confirm_save_footer_items,
-    container_info_footer_items, error_popup_footer_items, filtered_picker_footer_items,
-    mount_destination_footer_items, op_section_footer_items, pick_list_footer_items,
-    save_discard_cancel_footer_items, segmented_choice_footer_items, status_popup_footer_items,
-    yes_no_footer_items,
+    append_generate_token_footer_item, auth_form_footer_items as shared_auth_form_footer_items,
+    confirm_save_footer_items, container_info_footer_items, error_popup_footer_items,
+    filtered_picker_footer_items, mount_destination_footer_items, op_section_footer_items,
+    pick_list_footer_items, save_discard_cancel_footer_items, segmented_choice_footer_items,
+    status_popup_footer_items, yes_no_footer_items,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -87,11 +87,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
             let mut items = auth_form_footer_items(state.as_ref(), *focus);
             if crate::console::tui::input::global_mounts::settings_auth_can_generate_token(auth)
             {
-                items.extend([
-                    HintSpan::GroupSep,
-                    HintSpan::Key("G"),
-                    HintSpan::Text("generate"),
-                ]);
+                append_generate_token_footer_item(&mut items);
             }
             items
         }
