@@ -274,6 +274,8 @@ Latest console cleanup: agent-picker choice resolution now runs through the root
 
 Reusable console mount-row formatting and width/height calculations now live in <RepoFile path="crates/jackin-console/src/mount_display.rs" />. The root renderer keeps only adapters that translate root `MountConfig`, global-mount rows, and mount-info cache labels into the crate-owned display inputs.
 
+Modal size and placement rules now flow through the surface-local rect-spec helper in <RepoFile path="crates/jackin-console/src/tui/components/modal_rects.rs" />. Root modal layout code maps root `Modal` variants to those crate-owned specs instead of owning the generic centered-rect decisions itself.
+
 1. **Classify existing modules.** For each root-level file in the three surface crates, decide whether it is TUI, pure non-visual domain logic, or side-effect/service/runtime logic.
 2. **Capture the current behavior before moving code.** Identify the existing tests, snapshots, and manual-smoke checks that prove the affected workflow. Add focused coverage first if a workflow has no useful guard.
 3. **Move TUI files under `src/tui/`.** Preserve behavior while moving files into `app.rs`, `message.rs`, `update.rs`, `effect.rs`, `subscriptions.rs`, `run.rs`, `terminal.rs`, `view.rs`, `components/`, and `screens/` as appropriate.

@@ -4,6 +4,38 @@ use ratatui::layout::Rect;
 
 use crate::tui::layout::centered_rect_fixed;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModalRectSpec {
+    TextInput,
+    SourcePicker,
+    ScopePicker,
+    OpPicker,
+    RolePicker { filtered_len: usize },
+    Confirm { width_pct: u16, height: u16 },
+    MountChoice,
+    AuthForm { required_height: u16 },
+    Fixed { width_pct: u16, height: u16 },
+}
+
+#[must_use]
+pub fn modal_rect(outer: Rect, spec: ModalRectSpec) -> Rect {
+    match spec {
+        ModalRectSpec::TextInput => text_input_rect(outer),
+        ModalRectSpec::SourcePicker => source_picker_rect(outer),
+        ModalRectSpec::ScopePicker => scope_picker_rect(outer),
+        ModalRectSpec::OpPicker => op_picker_rect(outer),
+        ModalRectSpec::RolePicker { filtered_len } => role_picker_rect_for_count(outer, filtered_len),
+        ModalRectSpec::Confirm { width_pct, height } => {
+            centered_rect_fixed(outer, width_pct, height)
+        }
+        ModalRectSpec::MountChoice => mount_choice_rect(outer),
+        ModalRectSpec::AuthForm { required_height } => {
+            auth_form_rect_for_height(outer, required_height)
+        }
+        ModalRectSpec::Fixed { width_pct, height } => centered_rect_fixed(outer, width_pct, height),
+    }
+}
+
 #[must_use]
 pub fn text_input_rect(outer: Rect) -> Rect {
     centered_rect_fixed(outer, 60, 5)

@@ -4,38 +4,54 @@ use crate::console::tui::state::Modal;
 use crate::console::tui::auth_panel;
 use crate::selector::RolePickerState;
 use jackin_console::tui::components::confirm_save;
-use jackin_console::tui::components::modal_rects;
+use jackin_console::tui::components::modal_rects::{self, ModalRectSpec};
 
 pub(crate) fn text_input_rect(outer: Rect) -> Rect {
-    modal_rects::text_input_rect(outer)
+    modal_rects::modal_rect(outer, ModalRectSpec::TextInput)
 }
 
 pub(crate) fn source_picker_rect(outer: Rect) -> Rect {
-    modal_rects::source_picker_rect(outer)
+    modal_rects::modal_rect(outer, ModalRectSpec::SourcePicker)
 }
 
 pub(crate) fn scope_picker_rect(outer: Rect) -> Rect {
-    modal_rects::scope_picker_rect(outer)
+    modal_rects::modal_rect(outer, ModalRectSpec::ScopePicker)
 }
 
 pub(crate) fn op_picker_rect(outer: Rect) -> Rect {
-    modal_rects::op_picker_rect(outer)
+    modal_rects::modal_rect(outer, ModalRectSpec::OpPicker)
 }
 
 pub(crate) fn role_picker_rect(outer: Rect, state: &RolePickerState) -> Rect {
-    modal_rects::role_picker_rect_for_count(outer, state.filtered.len())
+    modal_rects::modal_rect(
+        outer,
+        ModalRectSpec::RolePicker {
+            filtered_len: state.filtered.len(),
+        },
+    )
 }
 
 pub(crate) fn confirm_rect(outer: Rect, state: &jackin_tui::components::ConfirmState) -> Rect {
-    modal_rects::confirm_rect(outer, state)
+    modal_rects::modal_rect(
+        outer,
+        ModalRectSpec::Confirm {
+            width_pct: jackin_tui::components::confirm_width_pct(state),
+            height: jackin_tui::components::confirm_required_height(state),
+        },
+    )
 }
 
 pub(crate) fn mount_choice_rect(outer: Rect) -> Rect {
-    modal_rects::mount_choice_rect(outer)
+    modal_rects::modal_rect(outer, ModalRectSpec::MountChoice)
 }
 
 pub(crate) fn auth_form_rect(outer: Rect, state: &auth_panel::AuthForm) -> Rect {
-    modal_rects::auth_form_rect_for_height(outer, auth_panel::required_height(state))
+    modal_rects::modal_rect(
+        outer,
+        ModalRectSpec::AuthForm {
+            required_height: auth_panel::required_height(state),
+        },
+    )
 }
 
 /// Single source of truth for modal size and placement.
@@ -86,5 +102,11 @@ pub(crate) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
         Modal::ScopePicker { .. } => return scope_picker_rect(outer),
         Modal::AuthForm { state, .. } => return auth_form_rect(outer, state.as_ref()),
     };
-    jackin_console::tui::layout::centered_rect_fixed(outer, pct_w, height_rows)
+    modal_rects::modal_rect(
+        outer,
+        ModalRectSpec::Fixed {
+            width_pct: pct_w,
+            height: height_rows,
+        },
+    )
 }
