@@ -702,8 +702,9 @@ pub(super) fn handle_settings_auth_modal(
                     // ID / the 1Password desktop dialog don't freeze the TUI
                     // reactor. The outer run_console loop polls the receiver
                     // each tick and applies the result via _committed / _failed.
+                    let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
                     auth.pending_op_commit = Some(
-                        crate::console::manager::state::PendingOpCommit::spawn(op_ref),
+                        crate::console::manager::state::PendingOpCommit::new(op_ref, rx),
                     );
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.

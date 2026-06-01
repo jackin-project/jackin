@@ -51,9 +51,12 @@ pub fn continue_save_after_drift_check(
             }
             if !detection.stopped_records.is_empty() {
                 if drift_check.plan.delete_isolated_acknowledged {
-                    editor.pending_isolation_cleanup = Some(PendingIsolationCleanup::spawn(
+                    let rx = crate::console::services::workspace_save::start_isolation_cleanup(
                         paths.clone(),
                         detection.stopped_records,
+                    );
+                    editor.pending_isolation_cleanup = Some(PendingIsolationCleanup::new(
+                        rx,
                         drift_check.plan,
                         drift_check.exit_on_success,
                     ));
@@ -332,10 +335,14 @@ pub(super) fn commit_editor_save_with_runner(
                 // so the TUI reactor stays responsive while Docker/git runs.
                 // The event loop polls editor.pending_drift_check each tick
                 // and calls continue_save_after_drift_check when done.
-                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::spawn(
+                let rx = crate::console::services::workspace_save::start_drift_check(
                     paths.clone(),
                     original_name.clone(),
                     prospective_mounts,
+                );
+                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::new(
+                    rx,
+                    original_name.clone(),
                     plan,
                     exit_on_success,
                 ));
@@ -417,10 +424,14 @@ pub(super) fn commit_editor_save_with_runner(
                     .is_ok_and(|r| !r.is_empty());
 
             if has_records2 {
-                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::spawn(
+                let rx = crate::console::services::workspace_save::start_drift_check(
                     paths.clone(),
                     original_name.clone(),
                     prospective_mounts,
+                );
+                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::new(
+                    rx,
+                    original_name.clone(),
                     plan,
                     exit_on_success,
                 ));

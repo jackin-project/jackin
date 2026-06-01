@@ -743,8 +743,10 @@ pub struct PendingOpCommit {
 
 impl PendingOpCommit {
     #[must_use]
-    pub fn spawn(op_ref: crate::operator_env::OpRef) -> Self {
-        let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
+    pub fn new(
+        op_ref: crate::operator_env::OpRef,
+        rx: BlockingSubscription<anyhow::Result<()>>,
+    ) -> Self {
         Self { op_ref, rx }
     }
 }
@@ -786,13 +788,11 @@ pub struct PendingIsolationCleanup {
 
 impl PendingIsolationCleanup {
     #[must_use]
-    pub fn spawn(
-        paths: crate::paths::JackinPaths,
-        records: Vec<crate::isolation::state::IsolationRecord>,
+    pub fn new(
+        rx: BlockingSubscription<anyhow::Result<()>>,
         plan: PendingSaveCommit,
         exit_on_success: bool,
     ) -> Self {
-        let rx = crate::console::services::workspace_save::start_isolation_cleanup(paths, records);
         Self {
             rx,
             plan,
@@ -811,18 +811,12 @@ impl std::fmt::Debug for PendingIsolationCleanup {
 
 impl PendingDriftCheck {
     #[must_use]
-    pub fn spawn(
-        paths: crate::paths::JackinPaths,
+    pub fn new(
+        rx: BlockingSubscription<anyhow::Result<crate::config::DriftDetection>>,
         original_name: String,
-        prospective_mounts: Vec<crate::workspace::MountConfig>,
         plan: PendingSaveCommit,
         exit_on_success: bool,
     ) -> Self {
-        let rx = crate::console::services::workspace_save::start_drift_check(
-            paths,
-            original_name.clone(),
-            prospective_mounts,
-        );
         Self {
             rx,
             plan,
