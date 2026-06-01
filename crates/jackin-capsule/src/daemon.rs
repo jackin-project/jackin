@@ -81,7 +81,7 @@ use crate::title::{
     append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
     session_agent_label,
 };
-use crate::tui::app::{HoverTarget, PointerShape};
+use crate::tui::app::{DragState, HoverTarget, PointerShape, VisiblePane};
 
 mod compositor;
 mod context_mgmt;
@@ -362,29 +362,6 @@ impl InitialFrameKind {
             Self::SpawnFailureBanner => "spawn-failure banner",
         }
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct VisiblePane {
-    id: u64,
-    outer: Rect,
-    inner: Rect,
-    focused: bool,
-    body_dim: PaneBodyDim,
-}
-
-#[derive(Debug, Clone)]
-struct DragState {
-    tab_idx: usize,
-    /// Tree path from the tab's root to the split node being resized
-    /// (`0` = left/top child, `1` = right/bottom). Empty path = root
-    /// split.
-    path: Vec<u8>,
-    orient: SplitOrient,
-    /// Outer rectangle of the split — stable for the duration of the
-    /// drag because spawns / closes block on dialog input and the
-    /// daemon does not reflow during a drag.
-    rect: Rect,
 }
 
 /// Mouse-driven text selection on a pane whose program never asked

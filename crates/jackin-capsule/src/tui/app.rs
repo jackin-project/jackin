@@ -4,6 +4,9 @@
 //! state enums live here so hover and pointer rendering share the TUI boundary
 //! instead of being defined in daemon internals.
 
+use crate::layout::{Rect, SplitOrient};
+use crate::render::PaneBodyDim;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PointerShape {
     Default,
@@ -34,4 +37,27 @@ pub(crate) enum HoverTarget {
     BranchContext,
     Container,
     DialogCopyTarget,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VisiblePane {
+    pub(crate) id: u64,
+    pub(crate) outer: Rect,
+    pub(crate) inner: Rect,
+    pub(crate) focused: bool,
+    pub(crate) body_dim: PaneBodyDim,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DragState {
+    pub(crate) tab_idx: usize,
+    /// Tree path from the tab's root to the split node being resized
+    /// (`0` = left/top child, `1` = right/bottom). Empty path = root
+    /// split.
+    pub(crate) path: Vec<u8>,
+    pub(crate) orient: SplitOrient,
+    /// Outer rectangle of the split - stable for the duration of the
+    /// drag because spawns / closes block on dialog input and the
+    /// daemon does not reflow during a drag.
+    pub(crate) rect: Rect,
 }
