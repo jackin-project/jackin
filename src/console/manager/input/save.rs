@@ -1,5 +1,5 @@
 //! Editor save flow: two-phase commit with planner validation, a
-//! `ConfirmSave` preview modal, and `ConfigEditor`-driven writes.
+//! `ConfirmSave` preview modal, and service-backed config writes.
 #![allow(clippy::items_after_test_module)]
 
 use super::super::message::{ManagerMessage, update_manager};
@@ -8,7 +8,6 @@ use super::super::state::{
     PendingDriftCheck, PendingIsolationCleanup,
 };
 use crate::config::AppConfig;
-use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
 
 /// Continue the editor save flow after an async drift check completes.
@@ -165,7 +164,10 @@ pub(super) fn begin_editor_save(
                 );
                 return Ok(());
             };
-            let edit_delta = build_workspace_edit(&editor.original, &editor.pending);
+            let edit_delta = crate::console::services::config::build_workspace_edit(
+                &editor.original,
+                &editor.pending,
+            );
             match crate::workspace::planner::plan_edit(
                 &current_ws,
                 &edit_delta.upsert_mounts,
@@ -433,76 +435,33 @@ pub(super) fn commit_editor_save_with_runner(
         }
     }
 
-    let ce_res = crate::config::ConfigEditor::open(paths);
-    let mut ce = match ce_res {
-        Ok(ce) => ce,
-        Err(e) => {
-            open_save_error_popup(editor, &e.to_string());
-            return Ok(());
-        }
-    };
-
-    // Defer `editor.mode` rename until ce.save() succeeds — a later
-    // failure would otherwise leave the UI advertising a name that
-    // never reached disk. `current_name` carries the post-rename name
-    // for the env-diff step.
-    let (pending_rename, current_name): (Option<String>, String) = match save_mode {
+    let service_mode = match save_mode {
         SaveMode::Edit { original_name } => {
-            let mut current_name = original_name.clone();
-            let mut rename_to: Option<String> = None;
-            let pending_name = editor.pending_name.clone();
-            if let Some(new_name) = pending_name
-                && new_name != original_name
-            {
-                if let Err(e) = ce.rename_workspace(&original_name, &new_name) {
-                    open_save_error_popup(editor, &e.to_string());
-                    return Ok(());
-                }
-                current_name.clone_from(&new_name);
-                rename_to = Some(new_name);
+            crate::console::services::config::WorkspaceSaveMode::Edit {
+                original_name,
+                pending_name: editor.pending_name.clone(),
+                effective_removals: plan.effective_removals,
             }
-
-            let mut edit = build_workspace_edit(&editor.original, &editor.pending);
-            edit.remove_destinations = plan.effective_removals;
-
-            if let Err(e) = ce.edit_workspace(&current_name, edit) {
-                open_save_error_popup(editor, &e.to_string());
-                return Ok(());
-            }
-
-            // `edit_workspace` re-renders the entire `[workspaces.<name>]`
-            // table from the parsed in-memory config — which preserves
-            // whatever per-agent auth blocks
-            // already lived on disk, NOT what's in `editor.pending`. Apply
-            // the diff against `editor.original` AFTER the table rewrite so
-            // mode changes survive the round-trip.
-            apply_auth_forward_diff(&mut ce, &current_name, &editor.original, &editor.pending);
-
-            (rename_to, current_name)
         }
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
                 open_save_error_popup(editor, "missing workspace name");
                 return Ok(());
             };
-            if let Err(e) = ce.create_workspace(&name, editor.pending.clone()) {
-                open_save_error_popup(editor, &e.to_string());
-                return Ok(());
-            }
-            // `create_workspace` serializes `editor.pending` whole, which
-            // already carries per-agent auth blocks
-            // — no separate diff needed for the create path.
-            (None, name)
+            crate::console::services::config::WorkspaceSaveMode::Create { name }
         }
     };
 
-    // `create_workspace`/`edit_workspace` don't touch env — TUI
-    // manages env exclusively through this diff loop.
-    apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending)?;
-
-    match ce.save() {
-        Ok(fresh) => {
-            *config = fresh;
+    match crate::console::services::config::save_workspace(
+        paths,
+        crate::console::services::config::WorkspaceSaveInput {
+            mode: service_mode,
+            original: &editor.original,
+            pending: &editor.pending,
+        },
+    ) {
+        Ok(saved) => {
+            *config = saved.config;
             // Refresh editor origin-of-truth; keep the operator on the
             // editor (direct `s` press) OR bounce to list (Esc→Save path).
             if let ManagerStage::Editor(editor) = &mut state.stage {
@@ -510,7 +469,7 @@ pub(super) fn commit_editor_save_with_runner(
                 // reached disk. Doing this BEFORE the `editor.original` /
                 // `editor.pending` refresh below means that refresh can
                 // look up the new name in `config.workspaces`.
-                if let Some(new_name) = pending_rename {
+                if let Some(new_name) = saved.pending_rename {
                     editor.mode = EditorMode::Edit { name: new_name };
                 }
                 if let EditorMode::Edit { name } = &editor.mode
@@ -539,7 +498,11 @@ pub(super) fn commit_editor_save_with_runner(
                 );
                 // Land on the workspace that was just saved.
                 let saved_count = state.workspaces.len();
-                if let Some(idx) = state.workspaces.iter().position(|w| w.name == current_name) {
+                if let Some(idx) = state
+                    .workspaces
+                    .iter()
+                    .position(|w| w.name == saved.current_name)
+                {
                     state.selected = ManagerListRow::SavedWorkspace(idx)
                         .to_screen_index(saved_count)
                         .unwrap_or(0);
@@ -941,231 +904,6 @@ fn build_prospective_mounts(
     out
 }
 
-/// Diff per-axis auth blocks and propagate each change via
-/// `ConfigEditor::set_*_auth_forward`.
-///
-/// `WorkspaceEdit` does not carry auth-forward fields, so
-/// `edit_workspace` re-renders the workspace table from disk (NOT from
-/// `editor.pending`). This helper runs after `edit_workspace` to
-/// reapply the pending diff.
-fn apply_auth_forward_diff(
-    ce: &mut crate::config::ConfigEditor,
-    workspace_name: &str,
-    original: &crate::workspace::WorkspaceConfig,
-    pending: &crate::workspace::WorkspaceConfig,
-) {
-    use crate::agent::Agent;
-    let original_claude = original.claude.as_ref().map(|c| c.auth_forward);
-    let pending_claude = pending.claude.as_ref().map(|c| c.auth_forward);
-    if original_claude != pending_claude {
-        ce.set_workspace_auth_forward(workspace_name, Agent::Claude, pending_claude);
-    }
-    let original_codex = original.codex.as_ref().map(|c| c.0.auth_forward);
-    let pending_codex = pending.codex.as_ref().map(|c| c.0.auth_forward);
-    if original_codex != pending_codex {
-        ce.set_workspace_auth_forward(workspace_name, Agent::Codex, pending_codex);
-    }
-    let original_amp = original.amp.as_ref().map(|c| c.0.auth_forward);
-    let pending_amp = pending.amp.as_ref().map(|c| c.0.auth_forward);
-    if original_amp != pending_amp {
-        ce.set_workspace_auth_forward(workspace_name, Agent::Amp, pending_amp);
-    }
-    let original_opencode = original.opencode.as_ref().map(|c| c.0.auth_forward);
-    let pending_opencode = pending.opencode.as_ref().map(|c| c.0.auth_forward);
-    if original_opencode != pending_opencode {
-        ce.set_workspace_auth_forward(workspace_name, Agent::Opencode, pending_opencode);
-    }
-    // Github has no `Agent` peer — its `[github]` block is parallel to
-    // `[claude]` / `[codex]` but agent-neutral by design.
-    let original_github = original.github.as_ref().map(|g| g.auth_forward);
-    let pending_github = pending.github.as_ref().map(|g| g.auth_forward);
-    if original_github != pending_github {
-        ce.set_workspace_github_auth_forward(workspace_name, pending_github);
-    }
-
-    // Union so roles on only one side are caught.
-    let role_keys: std::collections::BTreeSet<&String> =
-        original.roles.keys().chain(pending.roles.keys()).collect();
-    for role in role_keys {
-        let orig_override = original.roles.get(role);
-        let pend_override = pending.roles.get(role);
-        let orig_claude = orig_override
-            .and_then(|o| o.claude.as_ref())
-            .map(|c| c.auth_forward);
-        let pend_claude = pend_override
-            .and_then(|p| p.claude.as_ref())
-            .map(|c| c.auth_forward);
-        if orig_claude != pend_claude {
-            ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Claude, pend_claude);
-        }
-        let orig_codex = orig_override
-            .and_then(|o| o.codex.as_ref())
-            .map(|c| c.0.auth_forward);
-        let pend_codex = pend_override
-            .and_then(|p| p.codex.as_ref())
-            .map(|c| c.0.auth_forward);
-        if orig_codex != pend_codex {
-            ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Codex, pend_codex);
-        }
-        let orig_amp = orig_override
-            .and_then(|o| o.amp.as_ref())
-            .map(|c| c.0.auth_forward);
-        let pend_amp = pend_override
-            .and_then(|p| p.amp.as_ref())
-            .map(|c| c.0.auth_forward);
-        if orig_amp != pend_amp {
-            ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Amp, pend_amp);
-        }
-        let orig_opencode = orig_override
-            .and_then(|o| o.opencode.as_ref())
-            .map(|c| c.0.auth_forward);
-        let pend_opencode = pend_override
-            .and_then(|p| p.opencode.as_ref())
-            .map(|c| c.0.auth_forward);
-        if orig_opencode != pend_opencode {
-            ce.set_workspace_role_auth_forward(
-                workspace_name,
-                role,
-                Agent::Opencode,
-                pend_opencode,
-            );
-        }
-        let orig_github = orig_override
-            .and_then(|o| o.github.as_ref())
-            .map(|g| g.auth_forward);
-        let pend_github = pend_override
-            .and_then(|p| p.github.as_ref())
-            .map(|g| g.auth_forward);
-        if orig_github != pend_github {
-            ce.set_workspace_role_github_auth_forward(workspace_name, role, pend_github);
-        }
-    }
-}
-
-/// Roles present only in `original` get all keys removed.
-///
-/// Also diffs the kind-scoped `[github.env]` blocks at both the
-/// workspace and workspace × role layers so `GH_TOKEN` /
-/// `GH_HOST` / `GH_ENTERPRISE_TOKEN` set via the auth-form Github kind
-/// land on disk alongside the corresponding `[github]` block.
-fn apply_env_diff(
-    ce: &mut crate::config::ConfigEditor,
-    workspace_name: &str,
-    original: &crate::workspace::WorkspaceConfig,
-    pending: &crate::workspace::WorkspaceConfig,
-) -> anyhow::Result<()> {
-    let ws_scope = EnvScope::Workspace(workspace_name.to_string());
-    apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env)?;
-
-    // Workspace github env (`[workspaces.<ws>.github.env]`).
-    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-    let orig_ws_github_env = original.github.as_ref().map_or(&empty, |g| &g.env);
-    let pend_ws_github_env = pending.github.as_ref().map_or(&empty, |g| &g.env);
-    let ws_github_scope = EnvScope::WorkspaceGithub(workspace_name.to_string());
-    apply_env_map_diff(ce, &ws_github_scope, orig_ws_github_env, pend_ws_github_env)?;
-
-    // Union so roles on only one side are caught.
-    let agent_keys: std::collections::BTreeSet<&String> =
-        original.roles.keys().chain(pending.roles.keys()).collect();
-    for role in agent_keys {
-        let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
-        let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
-        let scope = EnvScope::WorkspaceRole {
-            workspace: workspace_name.to_string(),
-            role: role.clone(),
-        };
-        apply_env_map_diff(ce, &scope, orig_env, pend_env)?;
-
-        // Per-(workspace × role) github env block
-        // (`[workspaces.<ws>.roles.<role>.github.env]`).
-        let orig_role_github_env = original
-            .roles
-            .get(role)
-            .and_then(|o| o.github.as_ref())
-            .map_or(&empty, |g| &g.env);
-        let pend_role_github_env = pending
-            .roles
-            .get(role)
-            .and_then(|p| p.github.as_ref())
-            .map_or(&empty, |g| &g.env);
-        let role_github_scope = EnvScope::WorkspaceRoleGithub {
-            workspace: workspace_name.to_string(),
-            role: role.clone(),
-        };
-        apply_env_map_diff(
-            ce,
-            &role_github_scope,
-            orig_role_github_env,
-            pend_role_github_env,
-        )?;
-    }
-    Ok(())
-}
-
-fn apply_env_map_diff(
-    ce: &mut crate::config::ConfigEditor,
-    scope: &EnvScope,
-    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-) -> anyhow::Result<()> {
-    for (k, v) in pending {
-        match original.get(k) {
-            Some(ov) if ov == v => {}
-            _ => {
-                ce.set_env_var(scope, k, v.clone())?;
-            }
-        }
-    }
-    for k in original.keys() {
-        if !pending.contains_key(k) {
-            // `remove_env_var` returns false when the path is already
-            // missing — treat as a no-op success.
-            let _ = ce.remove_env_var(scope, k);
-        }
-    }
-    Ok(())
-}
-
-pub(super) fn build_workspace_edit(
-    original: &crate::workspace::WorkspaceConfig,
-    pending: &crate::workspace::WorkspaceConfig,
-) -> crate::workspace::WorkspaceEdit {
-    let mut edit = crate::workspace::WorkspaceEdit::default();
-    if pending.workdir != original.workdir {
-        edit.workdir = Some(pending.workdir.clone());
-    }
-    for m in &pending.mounts {
-        if !original.mounts.iter().any(|o| o == m) {
-            edit.upsert_mounts.push(m.clone());
-        }
-    }
-    for o in &original.mounts {
-        if !pending.mounts.iter().any(|p| p.dst == o.dst) {
-            edit.remove_destinations.push(o.dst.clone());
-        }
-    }
-    for a in &pending.allowed_roles {
-        if !original.allowed_roles.contains(a) {
-            edit.allowed_roles_to_add.push(a.clone());
-        }
-    }
-    for a in &original.allowed_roles {
-        if !pending.allowed_roles.contains(a) {
-            edit.allowed_roles_to_remove.push(a.clone());
-        }
-    }
-    if pending.default_role != original.default_role {
-        edit.default_role = Some(pending.default_role.clone());
-    }
-    if pending.keep_awake.enabled != original.keep_awake.enabled {
-        edit.keep_awake_enabled = Some(pending.keep_awake.enabled);
-    }
-    if pending.git_pull_on_entry != original.git_pull_on_entry {
-        edit.git_pull_on_entry_enabled = Some(pending.git_pull_on_entry);
-    }
-    edit
-}
-
 #[cfg(test)]
 #[allow(clippy::too_many_lines)]
 mod tests {
@@ -1173,7 +911,7 @@ mod tests {
         EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal,
     };
     use super::super::test_support::{key, mount};
-    use super::{apply_auth_forward_diff, begin_editor_save, commit_editor_save};
+    use super::{begin_editor_save, commit_editor_save};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
     use crate::paths::JackinPaths;
@@ -1253,7 +991,12 @@ mod tests {
         );
 
         let mut editor = crate::config::ConfigEditor::open(&paths).unwrap();
-        apply_auth_forward_diff(&mut editor, "proj", &original, &pending);
+        crate::console::services::config::apply_auth_forward_diff(
+            &mut editor,
+            "proj",
+            &original,
+            &pending,
+        );
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(paths.workspaces_dir.join("proj.toml")).unwrap();
@@ -1282,7 +1025,8 @@ mod tests {
 
         // No change → no field set.
         let pending_unchanged = original.clone();
-        let edit = super::build_workspace_edit(&original, &pending_unchanged);
+        let edit =
+            crate::console::services::config::build_workspace_edit(&original, &pending_unchanged);
         assert_eq!(edit.keep_awake_enabled, None);
 
         // Flip on → Some(true).
@@ -1290,7 +1034,7 @@ mod tests {
             keep_awake: KeepAwakeConfig { enabled: true },
             ..original.clone()
         };
-        let edit = super::build_workspace_edit(&original, &pending_on);
+        let edit = crate::console::services::config::build_workspace_edit(&original, &pending_on);
         assert_eq!(edit.keep_awake_enabled, Some(true));
 
         // Flip off (when original was on) → Some(false).
@@ -1302,7 +1046,8 @@ mod tests {
             keep_awake: KeepAwakeConfig { enabled: false },
             ..original
         };
-        let edit = super::build_workspace_edit(&original_on, &pending_off);
+        let edit =
+            crate::console::services::config::build_workspace_edit(&original_on, &pending_off);
         assert_eq!(edit.keep_awake_enabled, Some(false));
     }
 
