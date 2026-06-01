@@ -14,6 +14,7 @@ mod prompts;
 pub mod run;
 mod services;
 pub mod state;
+pub mod terminal;
 pub mod tui;
 
 #[cfg(test)]
@@ -26,7 +27,7 @@ pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
 pub use run::run_console;
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
-pub use tui::terminal::TerminalSession;
+pub use terminal::TerminalSession;
 pub use tui::widgets;
 
 #[cfg(test)]

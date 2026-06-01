@@ -1,4 +1,8 @@
-//! Terminal raw-mode lifecycle and teardown helpers.
+//! Host adapter for console terminal ownership.
+//!
+//! Terminal lifecycle lives in `jackin-console`'s TUI boundary. This root
+//! module only binds that generic terminal code to the root crate's host
+//! debug-buffering globals.
 
 pub use jackin_console::tui::terminal::TerminalSession;
 pub(crate) use jackin_console::tui::terminal::{
@@ -32,7 +36,7 @@ pub(crate) fn host_console_terminal() -> &'static dyn jackin_console::ConsoleHos
 }
 
 /// Hand the real terminal back to a child process: leave raw-mode +
-/// alt-screen and stop debug buffering, mirroring `TerminalGuard::drop`
+/// alt-screen and stop debug buffering, mirroring `TerminalSession::drop`
 /// minus the input drain (the child reads stdin directly).
 pub(crate) fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
     jackin_console::tui::terminal::suspend_console_terminal(stdout, host_console_terminal());

@@ -1,5 +1,4 @@
-//! Console-specific terminal rendering and terminal-session helpers.
+//! Transitional root-console render/widget facades.
 
 pub mod render;
-pub mod terminal;
 pub mod widgets;

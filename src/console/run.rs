@@ -4,7 +4,7 @@ use super::prompts::{
     key_debug_name, launch_with_committed_agent, prompt_committed_role,
 };
 use super::domain::build_workspace_choice;
-use super::tui::terminal::{
+use super::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
 };
