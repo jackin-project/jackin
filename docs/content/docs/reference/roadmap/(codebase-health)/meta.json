@@ -7,6 +7,7 @@
     "../structured-tracing-metrics",
     "../pr-verification",
     "../tui-architecture",
+    "../terminal-emulation-crate",
     "(phase-1-docs-setup)",
     "(phase-2-file-splits)",
     "(phase-3-deferred)"

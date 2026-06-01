@@ -1,0 +1,130 @@
+---
+title: "Terminal Emulation Crate (jackin-term)"
+---
+
+**Status**: open — research and design proposal (profile-gated; do not build until the trigger below is met)
+
+## Why this exists
+
+`jackin-capsule` is an in-container PTY multiplexer. Each agent session owns a [`vt100::Parser`](/reference/roadmap/jackin-capsule/) whose `Screen` mirrors the agent's view; when a session is the focused pane, the daemon diffs that screen and writes the minimal escape sequence to the host terminal. The terminal-model crate under that machinery is the single most load-bearing dependency in the multiplexer, and today it is a **single-author git fork pinned at a SHA**:
+
+```toml
+# crates/jackin-capsule/Cargo.toml
+vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715..." }
+```
+
+<RepoFile path="TODO.md" /> tracks this under `vt100-rust-fork` and frames the fork as *"waiting for the four OSC/CSI callbacks (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`) to land upstream."* **That framing is stale.** A research pass in June 2026 established the real picture:
+
+- All four callbacks **already shipped upstream** in canonical [`vt100` 0.16.2](https://docs.rs/vt100/latest/vt100/trait.Callbacks.html) (the `Callbacks` trait refactor landed in `doy/vt100-rust` in January 2025).
+- The fork's actual delta over upstream is **one additive method**: `Screen::clear_scrollback()`, added by the fork commit *"feat: support clearing scrollback"* (May 2026). The capsule calls it from `clear_scrollback_and_request_screen_clear` in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and from the focused-pane handler in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />. Upstream `set_scrollback()` exists; `clear_scrollback()` does not.
+
+So the cheapest correct fix for the fork is small and already in scope: upstream `clear_scrollback()` to `doy/vt100-rust` and pin `vt100 = "0.16"` from crates.io. That work belongs in <RepoFile path="TODO.md" />, not here.
+
+**This roadmap item asks the larger question the fork surfaced:** is `vt100` the right terminal model for a re-emitting multiplexer at all, or is there a performance- and architecture-correct design — possibly a jackin'-owned crate — that fits the capsule's hot path better than any off-the-shelf library? The sections below capture the full library survey and the design thesis so a future decision is made against evidence rather than re-litigated from scratch.
+
+## The decisive technical axis
+
+Every Rust terminal library splits into stages: **parse** (bytes → events), **model** (events → in-memory grid + scrollback), and **present** (grid → output). The capsule's workload makes one stage dominant, and it is not the one the famous-fast libraries optimize:
+
+- A **GPU terminal** (Alacritty, Rio, WezTerm, Ghostty) presents by reading the grid and drawing pixels. Its `present` stage is "upload cells to the GPU" — there is **no escape-sequence emission** at all.
+- A **re-emitting multiplexer** (tmux, Zellij, `jackin-capsule`) presents by *serializing the focused grid back into terminal escape bytes* and writing them to the host terminal's PTY. Its `present` stage is a **diff-to-escape** that must minimize bytes on the wire, because the wire may be an SSH link.
+
+The capsule lives in the diff-to-escape stage. That single fact reorders the entire library landscape: the throughput champions are fast at `parse`/`model` (stages the capsule is not bound on) and **structurally missing** the `present` stage the capsule actually runs.
+
+## Library survey (June 2026)
+
+| Library | Parser | Model | Diff-to-escape present? | Published / stable | Maintainer shape | Fit for capsule |
+| --- | --- | --- | --- | --- | --- | --- |
+| **[`vt100`](https://crates.io/crates/vt100)** (doy) | own state machine | `Screen` of fat cells, `Vec<Row>` | **Yes** — `contents_diff` / `contents_formatted`, purpose-built for tmux-style re-emit | crates.io, 0.16.x, steady | single author (reliable) | **Native fit.** Capsule already models its `Screen` + `Callbacks`. Only gap: `clear_scrollback()`. |
+| **[`alacritty_terminal`](https://crates.io/crates/alacritty_terminal)** | [`vte`](https://github.com/alacritty/vte) | `Term<T>` + ring-buffer `Grid`/`Storage`, line-level damage | **No** — built to feed a GPU; no escape emit | crates.io, but documents **no public-API stability guarantee** (exists for Alacritty's own use) | multi-maintainer | Fastest `parse`/`model`, but you would build the entire `present` stage yourself, and `cargo update` can break the API. Same "unstable upstream" pain as the fork, just published. |
+| **[`wezterm-term`](https://github.com/wezterm/wezterm)** / **[`termwiz`](https://docs.rs/termwiz)** | own (termwiz) | full `Surface` cell model, scrollback, OSC 8, images | **Yes** — `termwiz` `Surface`/`Change` diff render | `termwiz` published; **`wezterm-term` not published** ([issue #6663](https://github.com/wezterm/wezterm/issues/6663)) | multi-maintainer (wez) | Closest "batteries-included" with a real diff model. Heavy dependency tree; `wezterm-term` would itself be a git dep (same fork-risk class). Worth evaluating before any bespoke build. |
+| **[Rio](https://github.com/raphamorim/rio)** (`rio-backend` + [`copa`](https://lib.rs/crates/copa)) | `copa` (Alacritty `vte` fork: UTF-8 input, OSC `0x07` terminator, custom instructions) | `Crosswords` grid, GPU/WebGPU-oriented, SIMD UTF-8 (`simdutf8`, AVX2/NEON/WASM) | **No** — GPU present, no escape emit | `rio-backend` and `copa` on crates.io, but **app-internal infra** (ships a `winit` fork `rio-window`, `sugarloaf` renderer); `copa` is stale (0.12.0, Sept 2023, ~92 downloads/month) | single primary author | Impressive engine, but it is a GPU terminal *application's* backend, not a stable reusable library, and it is missing the `present` stage the capsule needs. Worse stability/popularity than Alacritty for our purpose. |
+| **[`avt`](https://github.com/asciinema/avt)** (asciinema) | own (Williams state machine) | primary/alt grid, color/attrs | **Partial** — full-screen `dump()` for recording/playback, but no *incremental* diff and no live OSC/title/clipboard callbacks | crates.io, benchmarked | asciinema org | Designed for record/replay, not interactive multiplexing. No incremental emit, no passthrough callbacks. Good reference for screen serialization, wrong shape for the focused-pane hot path. |
+| **[`vte`](https://crates.io/crates/vte)** (alacritty) | the canonical parser (`Perform` trait) | none (parser only) | n/a | crates.io, stable, canonical | multi-maintainer | **The reusable foundation.** Everyone forks or depends on it. This is the piece to *reuse*, never rebuild. |
+
+### What the survey establishes
+
+1. **The fast engines (Alacritty, Rio) are missing the capsule's stage.** Both are GPU-present; neither emits escapes. Adopting either means building the `present` diff-to-escape stage by hand — and that stage is exactly what `vt100` already ships and is tuned for.
+2. **The stable, reusable parser is `vte`.** `copa` is a stale `vte` fork whose improvements (UTF-8, OSC `0x07`) have largely been absorbed upstream. A bespoke crate should depend on `vte`, not hand-roll a parser (this also honors <RepoFile path="AGENTS.md" /> "Prefer libraries over hand-rolled parsers").
+3. **`termwiz` is the only off-the-shelf option that has both a real cell model and a diff-render present stage.** It is the strongest "buy" candidate and must be evaluated before any "build" decision.
+4. **`vt100` remains the best *fit* today** despite the single-author risk, because the capsule's entire render path is already its `Screen` + `Callbacks` shape and it is the only library whose `present` stage matches the hot path.
+
+## The bespoke-crate thesis (`jackin-term`)
+
+If jackin' chooses to own this layer, the performance- and architecture-correct design is **not** "rewrite a terminal emulator." It is a thin multiplexer-shaped crate that reuses the canonical parser and owns only the three things no general library gives a re-emitting multiplexer:
+
+```text
+vte (dependency — canonical parser, do not rebuild)
+   │  byte slices in, Perform events out (zero-copy borrow of the input buffer)
+   ▼
+DamageGrid          ← ring-buffer storage (Alacritty's Storage idea):
+   │                  O(1) scroll, packed cache-friendly Cell, scrollback in
+   │                  the same ring, dirty-span tracking recorded AS bytes
+   │                  arrive (not recomputed by full-screen compare)
+   ▼
+PassthroughEvents   ← typed stream: TitleChanged, IconName, ClipboardWrite,
+   │                  KittyPush(n)/KittyPop, FocusMode(bool), ModifyOtherKeys,
+   │                  CwdChanged (OSC 7), PassthroughCsi, ScrollbackCleared.
+   │                  First-class — replaces the OscCapture callback dance.
+   ▼
+WireDiff            ← present stage: emit the minimal escape byte sequence for
+                      the dirty spans only, into a reused output buffer
+                      (no per-frame String), optionally wrapped in DEC ?2026
+                      synchronized-output markers and frame-coalesced per refresh.
+```
+
+Cross-cutting: a **multi-session arena** so the daemon's N sessions share slab row storage and one scrollback ring instead of N independent heap grids.
+
+### Benefits this design brings
+
+The wins are **structural and latency-shaped**, not headline throughput (capsule data rates are agent-chat-paced, never `vtebench`-scale):
+
+1. **Per-frame focused-pane present drops from O(rows×cols) to O(Δ).** `vt100` diffs two full screens each frame; Alacritty tracks damage but only at line granularity and offers no emit. A source-damage grid walks only changed cell spans. This is the single biggest structural change — it lowers the complexity class of the only per-frame O(grid) cost in the focused path.
+2. **Zero per-frame allocation.** Emit straight from packed cells into a reused byte buffer; no intermediate `String` per frame. Lower jitter when an agent dumps hundreds of lines at once.
+3. **Fewest bytes on the wire.** The diff is tuned for escape-byte count (tight cursor-move + run-length), the metric that limits a host terminal reached over SSH — a metric no GPU-present library targets.
+4. **Passthrough becomes first-class, and the fork disappears.** The capsule's kitty-keyboard stack, `modifyOtherKeys`, focus-event mode, OSC 7 cwd, unhandled-CSI forwarding, and scrollback-clear are currently bolted onto `vt100` through `OscCapture` and the fork patch. As a typed event stream they are designed *for*, not patched *around* — and `clear_scrollback()` is just a method on the owned grid, retiring the `vt100-rust-fork` TODO permanently.
+5. **Scales to many panes.** Arena storage + cache locality make session spawn/teardown cheap and compositing many panes local-friendly — a dimension general single-terminal libraries do not optimize.
+6. **The API's types are the capsule's nouns.** `Session`, `FocusedEmit`, `PassthroughEvent` instead of impedance-matching a general-purpose library — the "more intuitive" half of the motivation.
+
+### Zero-copy / zero-alloc specifics
+
+- **Parse:** `vte` consumes borrowed input slices; no copy into the parser.
+- **Model:** cells store style as packed bitflags + indexed color; grapheme content references interned storage rather than a per-cell heap `String`.
+- **Present:** the `WireDiff` writes into a daemon-owned reusable `Vec<u8>` that is cleared, not reallocated, each frame.
+
+## Decision: buy vs. build, and the trigger
+
+This is **not ready to execute**, and may never need to. The honest sequence:
+
+1. **Now:** keep `vt100`; retire the fork via the cheap path (upstream `clear_scrollback()`, pin crates.io `vt100 = "0.16"`). Tracked in <RepoFile path="TODO.md" /> under `vt100-rust-fork`.
+2. **Profile before believing in a wall.** Add `cdebug!` timing around the parse, diff, and host-write stages in <RepoFile path="crates/jackin-capsule/src/session.rs" /> / <RepoFile path="crates/jackin-capsule/src/render.rs" /> and measure under worst real load (largest agent dump + fast scroll across many panes). Capsule's workload likely shows no parser/grid wall at all.
+3. **If a wall appears in the present/emit path:** add source-damage tracking to the existing render path first — a local change in jackin' code, no dependency move.
+4. **If a wall appears in parse:** swap only `vt100`'s internal parser concern for `vte` semantics, or evaluate **`termwiz`** as a "buy" before building.
+5. **Build `jackin-term` only if** steps 2–4 are exhausted *and* a profiler proves a structural wall *and* the operator accepts owning the layer. The design above is the shape to reach for at that point.
+
+**Build trigger (all must hold):** a profiled, reproducible per-frame cost wall in the focused-pane path that source-damage + `vte` cannot remove without owning the model; no published library (especially `termwiz`) offers both a stable API and a diff-to-escape present stage; and the passthrough-event consolidation (retiring the fork and the `OscCapture` bolt-ons) is judged worth a new crate on its own.
+
+## Host-side effects
+
+None. This item is entirely in-container / in-binary terminal modeling and emits only to the host terminal's own PTY that the operator already attached. It introduces no host-side writes and is unaffected by the never-mutate-host-silently rule in <RepoFile path="AGENTS.md" />.
+
+## Relationship to other roadmap work
+
+- **[jackin' Capsule control plane](/reference/roadmap/jackin-capsule/)** — owns the multiplexer this crate would sit under; the `vt100`-based renderer is its current substrate.
+- **[TUI architecture — Ratatui application patterns](/reference/roadmap/tui-architecture/)** — the present-layer restructuring this item describes should land inside that Model/Update/View boundary, not beside it.
+- **[Terminal observation and automation](/reference/roadmap/terminal-observation-automation/)** — a typed grid + frame model makes the snapshot/record surface that item wants cheaper to expose.
+- **`vt100-rust-fork`** in <RepoFile path="TODO.md" /> — the cheap, do-this-regardless fork retirement that this larger question must not block.
+
+## Related files
+
+- <RepoFile path="crates/jackin-capsule/Cargo.toml" /> — the pinned `vt100` git fork line.
+- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `OscCapture` (the `vt100::Callbacks` impl), the scrollback model, and `clear_scrollback_and_request_screen_clear`.
+- <RepoFile path="crates/jackin-capsule/src/render.rs" /> — the `vt100::Screen` → host-terminal present path.
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
+
+## Open questions
+
+1. Does a profiled capsule under worst real load show **any** parser/grid wall, or is the present/host-write stage always dominant?
+2. Can `termwiz`'s `Surface`/`Change` diff be driven as the capsule's present stage without dragging its image/hyperlink surface — making "buy" beat "build"?
+3. Is the passthrough-event consolidation (retiring the fork + `OscCapture` bolt-ons) valuable enough to justify a crate **independent** of any performance argument?
+4. If built, does `jackin-term` stay capsule-private, or is it shaped as a publishable crate (the only published Rust terminal model purpose-built for re-emitting multiplexers)?
