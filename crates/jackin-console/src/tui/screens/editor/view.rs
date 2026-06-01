@@ -160,6 +160,18 @@ pub fn role_trust_confirm_state(role: String, repository: String) -> jackin_tui:
     )
 }
 
+#[must_use]
+pub fn isolated_state_save_confirm_state(
+    affected_containers: &[String],
+) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::new(format!(
+        "Edit affects preserved isolated state for {} stopped container(s):\n  {}\n\n\
+         Delete the preserved state and save?",
+        affected_containers.len(),
+        affected_containers.join("\n  "),
+    ))
+}
+
 pub fn clamp_editor_scroll_for_frame(
     body: Rect,
     geometry: EditorScrollGeometry,
@@ -753,6 +765,19 @@ mod tests {
         assert!(rows
             .iter()
             .any(|(label, value)| label == "Repository" && value == "https://example.test/role"));
+    }
+
+    #[test]
+    fn isolated_state_save_confirm_state_lists_containers() {
+        let state = isolated_state_save_confirm_state(&["one".to_string(), "two".to_string()]);
+
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
+        else {
+            panic!("expected default confirm");
+        };
+        assert!(prompt.contains("2 stopped container(s)"));
+        assert!(prompt.contains("one"));
+        assert!(prompt.contains("two"));
     }
 
     #[test]

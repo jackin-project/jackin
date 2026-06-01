@@ -16,6 +16,7 @@ use crate::config::AppConfig;
 use crate::console::tui::render::save_preview::{
     build_confirm_save_lines, collapse_section_lines,
 };
+use jackin_console::tui::screens::editor::view::isolated_state_save_confirm_state;
 #[cfg(test)]
 pub(super) use crate::console::tui::render::save_preview::append_env_map_diff_lines;
 pub(super) use crate::console::tui::render::save_preview::build_settings_save_lines;
@@ -70,19 +71,14 @@ pub fn continue_save_after_drift_check(
                     .iter()
                     .map(|r| r.container_name.clone())
                     .collect();
-                let prompt = format!(
-                    "Edit affects preserved isolated state for {} stopped container(s):\n  {}\n\n\
-                     Delete the preserved state and save?",
-                    affected_containers.len(),
-                    affected_containers.join("\n  "),
-                );
+                let state = isolated_state_save_confirm_state(&affected_containers);
                 editor.modal = Some(Modal::Confirm {
                     target: crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave {
                         plan: drift_check.plan.clone(),
                         exit_on_success: drift_check.exit_on_success,
                         affected_containers,
                     },
-                    state: jackin_tui::components::ConfirmState::new(prompt),
+                    state,
                 });
                 editor.save_flow = EditorSaveFlow::Confirming {
                     exit_on_success: drift_check.exit_on_success,
