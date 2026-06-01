@@ -8,8 +8,10 @@ use crate::console::manager::state::{
 };
 use jackin_console::tui::components::footer_hints::{
     auth_form_footer_items as shared_auth_form_footer_items, confirm_save_footer_items,
-    filtered_picker_footer_items, mount_destination_footer_items, op_section_footer_items,
-    pick_list_footer_items, segmented_choice_footer_items, yes_no_footer_items,
+    container_info_footer_items, error_popup_footer_items, filtered_picker_footer_items,
+    mount_destination_footer_items, op_section_footer_items, pick_list_footer_items,
+    save_discard_cancel_footer_items, segmented_choice_footer_items, status_popup_footer_items,
+    yes_no_footer_items,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -25,25 +27,10 @@ pub(crate) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
         Modal::WorkdirPick { .. } => pick_list_footer_items("select"),
         Modal::GithubPicker { .. } => pick_list_footer_items("confirm"),
         Modal::ConfirmSave { state } => confirm_save_footer_items(!state.lines.is_empty()),
-        Modal::SaveDiscardCancel { .. } => vec![
-            HintSpan::Key("S"),
-            HintSpan::Text("save"),
-            HintSpan::GroupSep,
-            HintSpan::Key("D"),
-            HintSpan::Text("discard"),
-            HintSpan::GroupSep,
-            HintSpan::Key("C/Esc"),
-            HintSpan::Text("cancel"),
-        ],
-        Modal::ErrorPopup { .. } => vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")],
-        Modal::ContainerInfo { .. } => vec![
-            HintSpan::Key("↵/Esc"),
-            HintSpan::Text("dismiss"),
-            HintSpan::GroupSep,
-            HintSpan::Key("click"),
-            HintSpan::Text("copy value"),
-        ],
-        Modal::StatusPopup { .. } => vec![HintSpan::Text("working")],
+        Modal::SaveDiscardCancel { .. } => save_discard_cancel_footer_items(),
+        Modal::ErrorPopup { .. } => error_popup_footer_items(),
+        Modal::ContainerInfo { .. } => container_info_footer_items(),
+        Modal::StatusPopup { .. } => status_popup_footer_items(),
         Modal::OpPicker { state } if state.naming_stage_input().is_some() => {
             CONFIRM_DISMISS_HINT.to_vec()
         }

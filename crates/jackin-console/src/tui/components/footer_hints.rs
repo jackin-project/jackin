@@ -124,6 +124,41 @@ pub fn yes_no_footer_items() -> Vec<HintSpan<'static>> {
 }
 
 #[must_use]
+pub fn save_discard_cancel_footer_items() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("S"),
+        HintSpan::Text("save"),
+        HintSpan::GroupSep,
+        HintSpan::Key("D"),
+        HintSpan::Text("discard"),
+        HintSpan::GroupSep,
+        HintSpan::Key("C/Esc"),
+        HintSpan::Text("cancel"),
+    ]
+}
+
+#[must_use]
+pub fn error_popup_footer_items() -> Vec<HintSpan<'static>> {
+    vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")]
+}
+
+#[must_use]
+pub fn container_info_footer_items() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("↵/Esc"),
+        HintSpan::Text("dismiss"),
+        HintSpan::GroupSep,
+        HintSpan::Key("click"),
+        HintSpan::Text("copy value"),
+    ]
+}
+
+#[must_use]
+pub fn status_popup_footer_items() -> Vec<HintSpan<'static>> {
+    vec![HintSpan::Text("working")]
+}
+
+#[must_use]
 pub fn tab_bar_footer_items(
     save_label: &'static str,
     enter_content: bool,
