@@ -751,11 +751,7 @@ pub struct PendingOpCommit {
 impl PendingOpCommit {
     #[must_use]
     pub fn spawn(op_ref: crate::operator_env::OpRef) -> Self {
-        let runner = crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
-        let op = op_ref.op.clone();
-        let rx = spawn_blocking_subscription(move || {
-            crate::operator_env::OpRunner::read(&runner, &op).map(|_| ())
-        });
+        let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
         Self { op_ref, rx }
     }
 }
