@@ -312,14 +312,6 @@ enum PullRequestLookupMode {
     ForceRefresh,
 }
 
-/// Mouse-driven text selection on a pane whose program never asked
-/// for a mouse protocol (shells, post-exit agents). Modelled on
-/// zellij's behaviour: drag inside the pane body paints an inverse
-/// highlight; release base64-encodes the selected text and writes it
-/// to the operator's clipboard via OSC 52. Cleared on any focus
-/// change, tab swap, or dialog open.
-const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
-
 /// Hard cap on simultaneous tabs. 32 is well past any operator
 /// workflow but small enough that an accidental loop of new-tab
 /// requests cannot drive the container OOM.

@@ -21,6 +21,11 @@
 /// — so the bind collides with editing in those programs; set only
 /// when the trade-off is acceptable.
 
+/// A second click on the active tab cell within this window is a
+/// TUI double-click and opens the rename-tab dialog.
+pub(crate) const TAB_DOUBLE_CLICK_WINDOW: std::time::Duration =
+    std::time::Duration::from_millis(500);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputBindings {
     pub prefix: Option<u8>,

@@ -3,6 +3,7 @@
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, branch_context_bar_hit,
 };
+use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
 
@@ -408,7 +409,8 @@ impl Multiplexer {
                     let is_double = self
                         .last_tab_click
                         .filter(|(prev_idx, prev_t)| {
-                            *prev_idx == idx && now.duration_since(*prev_t) <= DOUBLE_CLICK_WINDOW
+                            *prev_idx == idx
+                                && now.duration_since(*prev_t) <= TAB_DOUBLE_CLICK_WINDOW
                         })
                         .is_some();
                     if is_double {
