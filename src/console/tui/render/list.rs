@@ -42,13 +42,20 @@ pub(super) use crate::console::tui::render::list_geometry::{
 #[cfg(test)]
 pub(super) use crate::console::tui::render::mount_display::format_mount_rows;
 pub(super) use crate::console::tui::render::mount_display::{
-    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows_with_cache,
-    mount_path_width,
+    format_mount_rows_with_cache, mount_path_width,
 };
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
-use jackin_console::tui::components::mount_rows::render_mount_header;
+pub(super) use jackin_console::tui::components::mount_rows::{
+    render_global_mount_header, render_global_mount_lines, render_mount_header, render_mount_lines,
+};
+#[cfg(test)]
+pub(super) use jackin_console::tui::components::mount_rows::{
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
+};
+#[cfg(test)]
+pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::Disclosure;
 
 #[allow(clippy::too_many_lines)]
@@ -568,65 +575,6 @@ fn render_agent_picker_sidebar(
             .position(|agent| *agent == picker.focused),
     );
     frame.render_stateful_widget(list, area, &mut list_state);
-}
-
-pub(super) fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    for row in rows {
-        lines.push(Line::from(vec![
-            Span::raw(format!("  {:<path_w$}  ", row.destination)),
-            Span::styled(
-                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                row.kind.clone(),
-                Style::default()
-                    .fg(PHOSPHOR_DIM)
-                    .add_modifier(Modifier::ITALIC),
-            ),
-        ]));
-        if let Some(host_source) = &row.host_source {
-            lines.push(Line::from(Span::styled(
-                format!("  {host_source:<path_w$}"),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-    }
-    lines
-}
-
-pub(super) fn render_global_mount_header(path_w: usize) -> Line<'static> {
-    Line::from(Span::styled(
-        format!("  {path:<path_w$}  Mode", path = "Destination"),
-        Style::default().fg(WHITE),
-    ))
-}
-
-pub(super) fn render_global_mount_lines(
-    rows: &[MountDisplayRow],
-    path_w: usize,
-) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    for row in rows {
-        lines.push(Line::from(vec![
-            Span::raw(format!("  {:<path_w$}  ", row.destination)),
-            Span::styled(row.mode, Style::default().fg(PHOSPHOR_DIM)),
-        ]));
-        if let Some(host_source) = &row.host_source {
-            lines.push(Line::from(Span::styled(
-                format!("  {host_source:<path_w$}"),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-    }
-    lines
 }
 
 fn render_sidebar_body(
