@@ -30,16 +30,11 @@ impl Multiplexer {
             .find(|(id, _)| *id == from_id)
             .map(|(_, r)| r)
             .unwrap_or(content_rect);
-        let (spawn_rows, spawn_cols) = match direction {
-            SplitDirection::Left | SplitDirection::Right => (
-                from_rect.rows.saturating_sub(2),
-                (from_rect.cols / 2).saturating_sub(2),
-            ),
-            SplitDirection::Above | SplitDirection::Below => (
-                (from_rect.rows / 2).saturating_sub(2),
-                from_rect.cols.saturating_sub(2),
-            ),
+        let split_geometry = match direction {
+            SplitDirection::Left | SplitDirection::Right => SplitDirectionGeometry::LeftRight,
+            SplitDirection::Above | SplitDirection::Below => SplitDirectionGeometry::TopBottom,
         };
+        let (spawn_rows, spawn_cols) = split_spawn_inner_size(split_geometry, from_rect);
         let env_passthrough = self.env_for_spawn(env_overrides);
         let launch = self.session_launch(agent_slug.as_deref(), provider_label, &env_passthrough);
         let agent_for_log = agent_slug.clone();

@@ -18,6 +18,12 @@ pub enum PaneTree {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitDirectionGeometry {
+    LeftRight,
+    TopBottom,
+}
+
 /// A concrete rectangle in terminal coordinates (1-based row/col).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
@@ -61,6 +67,19 @@ impl Rect {
             rows,
             cols,
         }
+    }
+}
+
+pub fn split_spawn_inner_size(direction: SplitDirectionGeometry, from_rect: Rect) -> (u16, u16) {
+    match direction {
+        SplitDirectionGeometry::LeftRight => (
+            from_rect.rows.saturating_sub(2),
+            (from_rect.cols / 2).saturating_sub(2),
+        ),
+        SplitDirectionGeometry::TopBottom => (
+            (from_rect.rows / 2).saturating_sub(2),
+            from_rect.cols.saturating_sub(2),
+        ),
     }
 }
 
@@ -364,7 +383,7 @@ pub enum SplitPosition {
 
 #[cfg(test)]
 mod rect_shrink_tests {
-    use super::Rect;
+    use super::{Rect, SplitDirectionGeometry, split_spawn_inner_size};
 
     #[test]
     fn shrink_inside_normal_rect() {
@@ -388,6 +407,32 @@ mod rect_shrink_tests {
         let r = Rect::new(2, 3, 7, 11);
         let s = r.shrink(0);
         assert_eq!((s.row, s.col, s.rows, s.cols), (2, 3, 7, 11));
+    }
+
+    #[test]
+    fn split_spawn_inner_size_uses_future_half_pane() {
+        let rect = Rect::new(0, 0, 24, 80);
+        assert_eq!(
+            split_spawn_inner_size(SplitDirectionGeometry::LeftRight, rect),
+            (22, 38)
+        );
+        assert_eq!(
+            split_spawn_inner_size(SplitDirectionGeometry::TopBottom, rect),
+            (10, 78)
+        );
+    }
+
+    #[test]
+    fn split_spawn_inner_size_saturates_tiny_panes() {
+        let rect = Rect::new(0, 0, 1, 3);
+        assert_eq!(
+            split_spawn_inner_size(SplitDirectionGeometry::LeftRight, rect),
+            (0, 0)
+        );
+        assert_eq!(
+            split_spawn_inner_size(SplitDirectionGeometry::TopBottom, rect),
+            (0, 1)
+        );
     }
 }
 

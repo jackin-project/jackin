@@ -290,6 +290,8 @@ Capsule visible multiplexer mode vocabulary (`Normal`, prefix-await, dialog, dra
 
 Capsule mux-mode priority, pointer-shape priority, and drag-resize ratio math now live under <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. Daemon mouse/dialog code supplies the current protocol/session facts and applies the resulting action, but no longer owns those visible-state decisions.
 
+Capsule split-spawn pane sizing now lives with visible pane geometry in <RepoFile path="crates/jackin-capsule/src/tui/layout.rs" />. The daemon still owns capacity checks, PTY/session spawn, and tab-tree mutation, but the future half-pane size calculation is a TUI layout helper.
+
 Capsule input binding data and key-binding parsing now live with terminal input parsing in <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />. The environment/logging resolver for those TUI-owned binding definitions lives under the non-TUI services boundary in <RepoFile path="crates/jackin-capsule/src/services/input_bindings.rs" />.
 
 Op-picker account/vault/item/field display metadata, query/filter helpers, field-row derivation, and the session cache type now live with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. Root `operator_env` keeps compatibility aliases while `op` CLI execution, blocking subscriptions, and cache invalidation remain in non-TUI service/root adapter code.
