@@ -37,6 +37,12 @@ use jackin_tui::runtime::spawn_blocking_subscription;
 #[derive(Debug)]
 pub(crate) enum ManagerEffect {
     Console(ConsoleEffect),
+    StartRoleRegistration {
+        raw: String,
+        key: String,
+        selector: crate::selector::RoleSelector,
+        source: crate::config::RoleSource,
+    },
     ValidateOpCommit {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,
@@ -273,10 +279,50 @@ pub(crate) fn execute_manager_effect(
             state.begin_instance_refresh(rx);
         }
         ManagerEffect::Console(ConsoleEffect::SaveSettings) => execute_settings_save(state, config, paths),
+        ManagerEffect::StartRoleRegistration {
+            raw,
+            key,
+            selector,
+            source,
+        } => execute_role_registration_start(state, paths, raw, key, selector, source),
         ManagerEffect::ValidateOpCommit {
             op_ref,
             is_settings,
         } => execute_op_commit_validation(state, op_ref, is_settings),
+    }
+}
+
+fn execute_role_registration_start(
+    state: &mut ManagerState<'_>,
+    paths: &crate::paths::JackinPaths,
+    raw: String,
+    key: String,
+    selector: crate::selector::RoleSelector,
+    source: crate::config::RoleSource,
+) {
+    crate::debug_log!(
+        "role",
+        "registering role repo for key={key:?} git={git:?}",
+        git = source.git.as_str()
+    );
+    let rx = crate::console::services::role_load::start_role_registration(
+        paths.clone(),
+        selector,
+        source.git.clone(),
+    );
+    if let ManagerStage::Editor(editor) = &mut state.stage {
+        editor.pending_role_load = Some(super::state::PendingRoleLoad {
+            raw,
+            key: key.clone(),
+            source,
+            rx,
+        });
+        editor.modal = Some(Modal::StatusPopup {
+            state: jackin_tui::components::StatusPopupState::new(
+                "Loading role",
+                format!("Loading role {key}"),
+            ),
+        });
     }
 }
 

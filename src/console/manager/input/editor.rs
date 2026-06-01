@@ -854,6 +854,12 @@ fn step_auth_cursor_up(rows: &[AuthRow], mut candidate: usize) -> usize {
 #[derive(Debug)]
 pub(super) enum EditorModalOutcome {
     Continue,
+    StartRoleRegistration {
+        raw: String,
+        key: String,
+        selector: crate::selector::RoleSelector,
+        source: crate::config::RoleSource,
+    },
     ValidateOpRef(crate::operator_env::OpRef),
 }
 
@@ -877,7 +883,7 @@ pub(super) fn handle_editor_modal(
                     let target = target.clone();
                     if target == TextInputTarget::Role {
                         editor.clear_modal_chain();
-                        apply_role_input(editor, config, paths, &value);
+                        return apply_role_input(editor, config, &value);
                     } else {
                         apply_text_input_to_pending(&target, editor, &value, op_available);
                     }
@@ -1667,9 +1673,8 @@ pub(super) fn apply_text_input_to_pending(
 fn apply_role_input(
     editor: &mut EditorState<'_>,
     config: &AppConfig,
-    paths: &JackinPaths,
     value: &str,
-) {
+) -> EditorModalOutcome {
     let raw = value.trim();
     crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
     let selector = match crate::selector::RoleSelector::parse(raw) {
@@ -1678,17 +1683,13 @@ fn apply_role_input(
             crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
             let err = anyhow::Error::new(e);
             open_role_resolution_error(editor, raw, None, &err);
-            return;
+            return EditorModalOutcome::Continue;
         }
     };
     crate::debug_log!("role", "parsed role selector: {selector}");
 
     let key = selector.key();
-    let result = (|| -> anyhow::Result<(
-        String,
-        crate::config::RoleSource,
-        jackin_tui::runtime::BlockingSubscription<anyhow::Result<()>>,
-    )> {
+    let result = (|| -> anyhow::Result<crate::config::RoleSource> {
         let source = crate::console::domain::candidate_role_source(config, &selector)?;
         crate::debug_log!(
             "role",
@@ -1696,34 +1697,16 @@ fn apply_role_input(
             git = source.git.as_str(),
             trusted = source.trusted
         );
-        crate::debug_log!(
-            "role",
-            "registering role repo for key={key:?} git={git:?}",
-            git = source.git.as_str()
-        );
-        let rx = crate::console::services::role_load::start_role_registration(
-            paths.clone(),
-            selector.clone(),
-            source.git.clone(),
-        );
-        Ok((key.clone(), source, rx))
+        Ok(source)
     })();
 
     match result {
-        Ok((key, source, rx)) => {
-            editor.pending_role_load = Some(PendingRoleLoad {
-                raw: raw.to_string(),
-                key: key.clone(),
-                source,
-                rx,
-            });
-            editor.modal = Some(Modal::StatusPopup {
-                state: jackin_tui::components::StatusPopupState::new(
-                    "Loading role",
-                    format!("Loading role {key}"),
-                ),
-            });
-        }
+        Ok(source) => EditorModalOutcome::StartRoleRegistration {
+            raw: raw.to_string(),
+            key,
+            selector,
+            source,
+        },
         Err(e) => {
             crate::debug_log!(
                 "role",
@@ -1738,10 +1721,11 @@ fn apply_role_input(
                          error while registering the repository.\n\n{panic_message}"
                     ),
                 );
-                return;
+                return EditorModalOutcome::Continue;
             }
             let source = crate::console::domain::candidate_role_source(config, &selector).ok();
             open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
+            EditorModalOutcome::Continue
         }
     }
 }

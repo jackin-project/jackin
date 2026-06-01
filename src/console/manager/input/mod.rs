@@ -142,16 +142,37 @@ pub fn handle_key(
             paths,
             &mut open_url,
         );
-        if let editor::EditorModalOutcome::ValidateOpRef(op_ref) = editor_outcome {
-            execute_manager_effect(
-                state,
-                config,
-                paths,
-                ManagerEffect::ValidateOpCommit {
-                    op_ref,
-                    is_settings: false,
-                },
-            );
+        match editor_outcome {
+            editor::EditorModalOutcome::Continue => {}
+            editor::EditorModalOutcome::StartRoleRegistration {
+                raw,
+                key,
+                selector,
+                source,
+            } => {
+                execute_manager_effect(
+                    state,
+                    config,
+                    paths,
+                    ManagerEffect::StartRoleRegistration {
+                        raw,
+                        key,
+                        selector,
+                        source,
+                    },
+                );
+            }
+            editor::EditorModalOutcome::ValidateOpRef(op_ref) => {
+                execute_manager_effect(
+                    state,
+                    config,
+                    paths,
+                    ManagerEffect::ValidateOpCommit {
+                        op_ref,
+                        is_settings: false,
+                    },
+                );
+            }
         }
         execute_manager_effect(
             state,
