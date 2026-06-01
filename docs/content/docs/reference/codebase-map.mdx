@@ -157,7 +157,7 @@ and extracted surface code in `crates/jackin-console/`:
 - <RepoFile path="src/console/mod.rs" /> and <RepoFile path="src/console/run.rs" /> — root integration for the `run_console` entrypoint, runtime/config prompts, and instance actions.
 - <RepoFile path="src/console/services.rs" /> and `src/console/services/` — root-console side-effect adapters that still depend on the root application crate: browser launch, config persistence for role/workspace/settings saves, Docker-backed instance discovery and instance-refresh snapshots, mount inspection, 1Password probing/read validation, op-picker metadata loading, role repository registration, and workspace-save drift/cleanup workers. <RepoFile path="src/console/domain.rs" /> owns pure console product rules such as role-source candidate derivation, workspace-choice construction, and workspace-edit delta construction. <RepoFile path="src/console/terminal.rs" /> binds the `jackin-console` terminal lifecycle to root crate host debug-buffering globals.
 - <RepoFile path="crates/jackin-console/src/tui/run.rs" /> and <RepoFile path="crates/jackin-console/src/tui/terminal.rs" /> — extracted event-loop shell helpers, mouse telemetry filters, debug-bar rendering, and terminal lifecycle abstractions used by the root integration layer.
-- <RepoFile path="src/console/state.rs" /> — `ConsoleState` and the active
+- <RepoFile path="src/console/tui/app.rs" /> — `ConsoleState` and the active
   console stage.
 - <RepoFile path="src/console/preview.rs" /> — workspace preview and
   detail lines.

@@ -13,7 +13,6 @@ mod preview;
 mod prompts;
 pub mod run;
 mod services;
-pub mod state;
 pub mod terminal;
 pub mod tui;
 
@@ -25,9 +24,8 @@ use run::is_on_main_screen;
 pub use domain::{WorkspaceChoice, build_workspace_choice};
 pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
 pub use run::run_console;
-pub use state::ConsoleStage;
-pub use state::ConsoleState;
 pub use terminal::TerminalSession;
+pub use tui::{ConsoleStage, ConsoleState};
 
 #[cfg(test)]
 mod quit_confirm_tests {
