@@ -8,6 +8,7 @@ use crate::console::tui::render::list_geometry::clamp_list_scroll_for_area;
 use crate::console::tui::render::modal_layout::modal_outer_rect;
 use crate::console::tui::render::settings_geometry::clamp_global_mounts_scroll_for_frame;
 use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
+use jackin_console::tui::view::footer_height;
 
 pub fn prepare_for_render(
     state: &mut ManagerState<'_>,
@@ -50,10 +51,6 @@ pub fn prepare_for_render(
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
     prepare_visible_modal(area, state);
-}
-
-fn footer_height(items: &[jackin_tui::HintSpan<'_>], width: u16) -> u16 {
-    jackin_tui::components::wrapped_height(items, width)
 }
 
 fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
