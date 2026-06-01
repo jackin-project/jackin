@@ -4558,7 +4558,7 @@ mod auth_cursor_step_tests {
     //! Spacer-skip tests for the Auth-tab cursor stepping helpers.
     //! `Spacer` rows are intentionally non-selectable so the cursor
     //! never lands on a blank line in the rendered list.
-    use crate::console::tui::auth_kind::AuthKind;
+    use jackin_console::tui::auth::AuthKind;
     use crate::console::tui::state::AuthRow;
     use super::{step_auth_cursor_down, step_auth_cursor_up};
 

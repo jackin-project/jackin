@@ -281,7 +281,7 @@ fn auth_row_width(row: &AuthRow, state: &EditorState<'_>, config: &AppConfig) ->
 fn auth_source_width(
     label: &str,
     indent: usize,
-    kind: crate::console::tui::auth_kind::AuthKind,
+    kind: jackin_console::tui::auth::AuthKind,
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> usize {

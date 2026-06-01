@@ -447,13 +447,13 @@ fn open_settings_auth_form(
     let existing_credential = kind
         .required_env_var(row.mode)
         .and_then(|name| match kind {
-            crate::console::tui::auth_kind::AuthKind::Github => auth.github_env.get(name),
-            crate::console::tui::auth_kind::AuthKind::Claude
-            | crate::console::tui::auth_kind::AuthKind::Codex
-            | crate::console::tui::auth_kind::AuthKind::Amp
-            | crate::console::tui::auth_kind::AuthKind::Kimi
-            | crate::console::tui::auth_kind::AuthKind::Opencode
-            | crate::console::tui::auth_kind::AuthKind::Zai => env.pending.env.get(name),
+            jackin_console::tui::auth::AuthKind::Github => auth.github_env.get(name),
+            jackin_console::tui::auth::AuthKind::Claude
+            | jackin_console::tui::auth::AuthKind::Codex
+            | jackin_console::tui::auth::AuthKind::Amp
+            | jackin_console::tui::auth::AuthKind::Kimi
+            | jackin_console::tui::auth::AuthKind::Opencode
+            | jackin_console::tui::auth::AuthKind::Zai => env.pending.env.get(name),
         })
         .cloned();
     let form = AuthForm::from_existing(kind, row.mode, existing_credential);
@@ -478,8 +478,8 @@ pub fn settings_auth_can_generate_token(auth: &crate::console::tui::state::Setti
     matches!(
         auth.modal.as_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
-            if state.kind == crate::console::tui::auth_kind::AuthKind::Claude
-                && state.mode == Some(crate::console::tui::auth_kind::AuthMode::OAuthToken)
+            if state.kind == jackin_console::tui::auth::AuthKind::Claude
+                && state.mode == Some(jackin_console::tui::auth::AuthMode::OAuthToken)
     )
 }
 
@@ -515,8 +515,8 @@ pub(super) fn handle_settings_auth_modal(
             // is disambiguated by the `generating_token` flag, which the
             // source-picker / op-picker commit arms check first.
             if matches!(key.code, KeyCode::Char('g' | 'G'))
-                && state.kind == crate::console::tui::auth_kind::AuthKind::Claude
-                && state.mode == Some(crate::console::tui::auth_kind::AuthMode::OAuthToken)
+                && state.kind == jackin_console::tui::auth::AuthKind::Claude
+                && state.mode == Some(jackin_console::tui::auth::AuthMode::OAuthToken)
             {
                 auth.generating_token = true;
                 // modal was taken from auth.modal at the start of this fn;
@@ -968,15 +968,15 @@ fn persist_settings_auth_form(
     }
     if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value) {
         match form.kind {
-            crate::console::tui::auth_kind::AuthKind::Github => {
+            jackin_console::tui::auth::AuthKind::Github => {
                 auth.github_env.insert(name.to_string(), value);
             }
-            crate::console::tui::auth_kind::AuthKind::Claude
-            | crate::console::tui::auth_kind::AuthKind::Codex
-            | crate::console::tui::auth_kind::AuthKind::Amp
-            | crate::console::tui::auth_kind::AuthKind::Kimi
-            | crate::console::tui::auth_kind::AuthKind::Opencode
-            | crate::console::tui::auth_kind::AuthKind::Zai => {
+            jackin_console::tui::auth::AuthKind::Claude
+            | jackin_console::tui::auth::AuthKind::Codex
+            | jackin_console::tui::auth::AuthKind::Amp
+            | jackin_console::tui::auth::AuthKind::Kimi
+            | jackin_console::tui::auth::AuthKind::Opencode
+            | jackin_console::tui::auth::AuthKind::Zai => {
                 env.pending.env.insert(name.to_string(), value);
             }
         }
@@ -993,20 +993,20 @@ fn clear_settings_auth_kind(
         return;
     };
     if let Some(row) = auth.pending.iter_mut().find(|row| row.kind == *kind) {
-        row.mode = crate::console::tui::auth_kind::AuthMode::Sync;
+        row.mode = jackin_console::tui::auth::AuthMode::Sync;
     }
     for mode in kind.supported_modes() {
         if let Some(env_var) = kind.required_env_var(*mode) {
             match kind {
-                crate::console::tui::auth_kind::AuthKind::Github => {
+                jackin_console::tui::auth::AuthKind::Github => {
                     auth.github_env.remove(env_var);
                 }
-                crate::console::tui::auth_kind::AuthKind::Claude
-                | crate::console::tui::auth_kind::AuthKind::Codex
-                | crate::console::tui::auth_kind::AuthKind::Amp
-                | crate::console::tui::auth_kind::AuthKind::Kimi
-                | crate::console::tui::auth_kind::AuthKind::Opencode
-                | crate::console::tui::auth_kind::AuthKind::Zai => {
+                jackin_console::tui::auth::AuthKind::Claude
+                | jackin_console::tui::auth::AuthKind::Codex
+                | jackin_console::tui::auth::AuthKind::Amp
+                | jackin_console::tui::auth::AuthKind::Kimi
+                | jackin_console::tui::auth::AuthKind::Opencode
+                | jackin_console::tui::auth::AuthKind::Zai => {
                     env.pending.env.remove(env_var);
                 }
             }
@@ -2606,7 +2606,7 @@ mod tests {
         };
         assert_eq!(
             settings.auth.pending[0].mode,
-            crate::console::tui::auth_kind::AuthMode::Sync
+            jackin_console::tui::auth::AuthMode::Sync
         );
         assert!(!settings.auth.is_dirty());
         assert!(settings.auth.modal.is_none());
@@ -2628,7 +2628,7 @@ mod tests {
     /// path. The storage-target choice happens at the source picker.
     #[test]
     fn settings_auth_generate_opens_source_picker_and_arms_flag() {
-        use crate::console::tui::auth_kind::{AuthKind, AuthMode};
+        use jackin_console::tui::auth::{AuthKind, AuthMode};
 
         let config = AppConfig::default();
         let mut settings = SettingsState::from_config(&config);
@@ -2687,7 +2687,7 @@ mod tests {
     /// injected stub `OpRunner` so no real `op` binary runs.
     #[test]
     fn settings_auth_generate_op_mint_remounts_form_focus_save() {
-        use crate::console::tui::auth_kind::{AuthKind, AuthMode};
+        use jackin_console::tui::auth::{AuthKind, AuthMode};
         use crate::operator_env::{OpRef, OpRunner};
 
         struct StubRunner;
@@ -2760,7 +2760,7 @@ mod tests {
     /// generate flag is not armed.
     #[test]
     fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
-        use crate::console::tui::auth_kind::{AuthKind, AuthMode};
+        use jackin_console::tui::auth::{AuthKind, AuthMode};
 
         let config = AppConfig::default();
         let mut settings = SettingsState::from_config(&config);

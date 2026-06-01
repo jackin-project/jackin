@@ -16,7 +16,7 @@ use crate::console::domain::{
     auth_mode_from_auth_forward, auth_mode_from_github, auth_mode_to_auth_forward,
     auth_mode_to_github, role_override_present,
 };
-use crate::console::tui::auth_kind::{AuthKind, AuthMode};
+use jackin_console::tui::auth::{AuthKind, AuthMode};
 use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
@@ -1112,7 +1112,7 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
 mod tests {
     use super::*;
     use crate::config::{AppConfig, AuthForwardMode, GithubAuthMode};
-    use crate::console::tui::auth_kind::AuthKind;
+    use jackin_console::tui::auth::AuthKind;
     use crate::console::tui::state::AuthRow;
     use crate::console::tui::state::auth_flat_rows;
     use crate::console::tui::state::{

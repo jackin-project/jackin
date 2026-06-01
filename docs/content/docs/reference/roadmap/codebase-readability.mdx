@@ -117,7 +117,7 @@ The unified TUI scrollbar extraction has shipped: shared metrics, clamping, drag
 |---|---|---|
 | Generic `fn provision_file_credential(target, host_path, mode)` | The Sync arm (read host file → write to role-state → `HostMissing` on `NotFound`) is copy-pasted across Codex, Amp, and GitHub provisioners in <RepoFile path="src/instance/auth.rs" />. The wipe-then-return for `ApiKey`/`Ignore` is identical across 4 agents. | <RepoFile path="src/instance/auth.rs" /> (3206L) |
 | `AgentRuntimeState::model()` accessor | 3 identical match-body methods (`claude_model()`, `codex_model()`, `kimi_model()`) in <RepoFile path="src/instance/mod.rs" /> | <RepoFile path="src/instance/mod.rs" /> |
-| Agent match-arm macro or trait dispatch | 7+ sites with `Agent::Claude => ..., Agent::Codex => ..., Agent::Amp => ...` match arms (`config/roles.rs` has three identical blocks, `instance/mod.rs` has 2, `launch.rs` has 4, `auth_kind.rs` 1, `agent_choice/mod.rs` 1, `derived_image.rs` 1). Adding a new agent requires touching all 7. | 7 files across config, runtime, instance, console, derived_image |
+| Agent match-arm macro or trait dispatch | 7+ sites with `Agent::Claude => ..., Agent::Codex => ..., Agent::Amp => ...` match arms (`config/roles.rs` has three identical blocks, `instance/mod.rs` has 2, `launch.rs` has 4, `domain.rs` 1, `agent_choice/mod.rs` 1, `derived_image.rs` 1). Adding a new agent requires touching all 7. | 7 files across config, runtime, instance, console, derived_image |
 
 ### 4. Docker command deduplication
 

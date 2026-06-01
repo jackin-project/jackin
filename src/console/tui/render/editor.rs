@@ -658,7 +658,7 @@ fn render_auth_source_line(
     synthesized: &AppConfig,
     workspace_name: &str,
     role: &str,
-    kind: crate::console::tui::auth_kind::AuthKind,
+    kind: jackin_console::tui::auth::AuthKind,
     indent: usize,
 ) -> ratatui::text::Line<'static> {
     use crate::console::tui::auth_panel::mode_str;
@@ -710,10 +710,10 @@ fn render_auth_source_line(
 /// Explicit workspace-level mode for a kind, if any.
 fn explicit_workspace_mode(
     ws: &crate::workspace::WorkspaceConfig,
-    kind: crate::console::tui::auth_kind::AuthKind,
-) -> Option<crate::console::tui::auth_kind::AuthMode> {
+    kind: jackin_console::tui::auth::AuthKind,
+) -> Option<jackin_console::tui::auth::AuthMode> {
     use crate::console::domain::{auth_mode_from_auth_forward, auth_mode_from_github};
-    use crate::console::tui::auth_kind::{AuthKind, AuthMode};
+    use jackin_console::tui::auth::{AuthKind, AuthMode};
     match kind {
         AuthKind::Claude => ws
             .claude
@@ -757,9 +757,9 @@ fn auth_source_value<'a>(
     workspace_name: &str,
     role: &str,
     env_name: &str,
-    kind: crate::console::tui::auth_kind::AuthKind,
+    kind: jackin_console::tui::auth::AuthKind,
 ) -> Option<&'a EnvValue> {
-    use crate::console::tui::auth_kind::AuthKind;
+    use jackin_console::tui::auth::AuthKind;
     match kind {
         AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
         AuthKind::Claude
@@ -2267,7 +2267,7 @@ mod eligible_agents_for_override_tests {
 mod auth_flat_rows_tests {
     use super::{AuthRow, auth_flat_rows, resolve_panel_mode};
     use crate::config::AppConfig;
-    use crate::console::tui::auth_kind::{AuthKind, AuthMode};
+    use jackin_console::tui::auth::{AuthKind, AuthMode};
     use crate::console::tui::state::EditorState;
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 

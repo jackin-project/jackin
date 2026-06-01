@@ -4,7 +4,7 @@ use crate::console::effects::{
     execute_manager_effect, poll_background_messages,
 };
 use jackin_console::tui::effect::ConsoleEffect;
-use crate::console::tui::auth_kind::AuthKind;
+use jackin_console::tui::auth::AuthKind;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
@@ -185,7 +185,7 @@ fn editor_auth_kind_messages_reset_local_view_state() {
         update_manager(
             &mut state,
             ManagerMessage::EnterEditorAuthKind {
-                kind: crate::console::tui::auth_kind::AuthKind::Claude,
+                kind: jackin_console::tui::auth::AuthKind::Claude,
             },
         )
         .is_dirty()
@@ -196,7 +196,7 @@ fn editor_auth_kind_messages_reset_local_view_state() {
     };
     assert_eq!(
         editor.auth_selected_kind,
-        Some(crate::console::tui::auth_kind::AuthKind::Claude)
+        Some(jackin_console::tui::auth::AuthKind::Claude)
     );
     assert_eq!(editor.active_field, FieldFocus::Row(0));
     assert_eq!(editor.tab_scroll_x, 0);
