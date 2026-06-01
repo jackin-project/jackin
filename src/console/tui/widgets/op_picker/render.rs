@@ -14,6 +14,7 @@ use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{
     FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState,
 };
+use jackin_console::widgets::op_picker::breadcrumb_title;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
 
@@ -26,50 +27,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         | OpLoadState::Ready
         | OpLoadState::Error(OpPickerError::Recoverable { .. }) => {
             render_pane(frame, area, state);
-        }
-    }
-}
-
-/// Multi-account titles lead with the chosen account's email so the
-/// operator can see which account they're drilling into; single-
-/// account titles omit it (no ambiguity to resolve).
-pub fn breadcrumb_title(
-    stage: OpPickerStage,
-    multi_account: bool,
-    account_email: &str,
-    vault_name: &str,
-    item_name: &str,
-) -> String {
-    match stage {
-        OpPickerStage::Account => "1Password".to_string(),
-        OpPickerStage::Vault => {
-            if multi_account {
-                account_email.to_string()
-            } else {
-                "1Password".to_string()
-            }
-        }
-        // Naming sub-stages render as a plain labelled input box (no
-        // breadcrumb); this arm exists only for match exhaustiveness and
-        // is reached for the Item list pane.
-        OpPickerStage::Item
-        | OpPickerStage::NewItemName
-        | OpPickerStage::FieldLabel
-        | OpPickerStage::NewSectionName => {
-            if multi_account {
-                format!("{account_email} \u{2192} {vault_name}")
-            } else {
-                vault_name.to_string()
-            }
-        }
-        // Section stage sits between Item and Field; its breadcrumb shows
-        // the chosen item (the section is the choice being made here).
-        OpPickerStage::Section | OpPickerStage::Field => {
-            if multi_account {
-                format!("{account_email} \u{2192} {vault_name} \u{2192} {item_name}")
-            } else {
-                format!("{vault_name} \u{2192} {item_name}")
-            }
         }
     }
 }
@@ -552,68 +509,10 @@ pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{OpPickerStage, breadcrumb_title};
+    use super::OpPickerStage;
+    use jackin_console::widgets::op_picker::breadcrumb_title;
 
     // ── Breadcrumb formatting ─────────────────────────────────────────
-
-    #[test]
-    fn breadcrumb_omits_pane_type_suffix_multi_account() {
-        // Multi-account: <email> for vault, <email> → <vault> for items,
-        // <email> → <vault> → <item> for fields. No trailing pane type.
-        let title = breadcrumb_title(
-            OpPickerStage::Vault,
-            true,
-            "alice@example.com",
-            "ignored",
-            "ignored",
-        );
-        assert_eq!(title, "alice@example.com");
-        assert!(!title.contains("Vaults"), "no `Vaults` suffix: {title}");
-
-        let title = breadcrumb_title(
-            OpPickerStage::Item,
-            true,
-            "alice@example.com",
-            "Personal",
-            "",
-        );
-        assert_eq!(title, "alice@example.com \u{2192} Personal");
-        assert!(!title.contains("Items"));
-
-        let title = breadcrumb_title(
-            OpPickerStage::Field,
-            true,
-            "alice@example.com",
-            "Personal",
-            "API Keys",
-        );
-        assert_eq!(
-            title,
-            "alice@example.com \u{2192} Personal \u{2192} API Keys"
-        );
-        assert!(!title.contains("Fields"));
-    }
-
-    #[test]
-    fn breadcrumb_single_account_uses_brand_or_bare_context() {
-        // Single-account: Vault pane shows the bare brand; Item/Field
-        // show the vault/item context without a leading email.
-        let v = breadcrumb_title(OpPickerStage::Vault, false, "", "Personal", "");
-        assert_eq!(v, "1Password");
-
-        let i = breadcrumb_title(OpPickerStage::Item, false, "", "Personal", "API Keys");
-        assert_eq!(i, "Personal");
-
-        let f = breadcrumb_title(OpPickerStage::Field, false, "", "Personal", "API Keys");
-        assert_eq!(f, "Personal \u{2192} API Keys");
-    }
-
-    #[test]
-    fn breadcrumb_account_pane_is_bare_brand() {
-        // Account pane never has an email prefix (it lists accounts).
-        let title = breadcrumb_title(OpPickerStage::Account, true, "ignored", "", "");
-        assert_eq!(title, "1Password");
-    }
 
     // ── Loading-panel breadcrumb ──────────────────────────────────────
 

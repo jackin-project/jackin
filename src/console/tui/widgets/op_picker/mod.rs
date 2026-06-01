@@ -446,7 +446,9 @@ impl OpPickerState {
             }
             SubscriptionPoll::Ready(LoadResult::Accounts(Err(e)) | LoadResult::Vaults(Err(e))) => {
                 self.rx = None;
-                self.load_state = OpLoadState::Error(classify_probe_error(&e));
+                self.load_state = OpLoadState::Error(
+                    jackin_console::widgets::op_picker::classify_probe_error_message(e.to_string()),
+                );
                 true
             }
             SubscriptionPoll::Ready(LoadResult::Items(Ok(items))) => {
@@ -1371,22 +1373,6 @@ pub(crate) fn build_op_ref_on_commit(
         op,
         path,
         account: state.selected_account_id(),
-    }
-}
-
-/// Classifies by stderr substring because `anyhow::Error` has no
-/// typed variants here.
-fn classify_probe_error(e: &anyhow::Error) -> OpPickerError {
-    let msg = e.to_string();
-    if msg.contains("failed to spawn") {
-        OpPickerError::Fatal(OpPickerFatalState::NotInstalled)
-    } else if msg.contains("not signed in")
-        || msg.contains("not currently signed")
-        || msg.contains("no accounts")
-    {
-        OpPickerError::Fatal(OpPickerFatalState::NotSignedIn)
-    } else {
-        OpPickerError::Fatal(OpPickerFatalState::GenericFatal { message: msg })
     }
 }
 
