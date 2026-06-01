@@ -31,6 +31,11 @@ pub enum Action {
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
     FocusReport(bool),
+    MouseChromeUpdate {
+        row: u16,
+        col: u16,
+        button: u8,
+    },
     Wheel {
         row: u16,
         col: u16,

@@ -260,6 +260,13 @@ impl Multiplexer {
                 }
                 None
             }
+            Action::MouseChromeUpdate { row, col, button } => {
+                if let Some(frame) = self.update_hover_for_mouse(row, col) {
+                    self.send_output(frame);
+                }
+                self.update_pointer_shape_for_mouse(row, col, button);
+                None
+            }
             Action::Wheel { row, col, button } => {
                 if self.dialog_open() {
                     return None;
@@ -469,10 +476,11 @@ impl Multiplexer {
         if let InputEvent::MousePress { col, row, button }
         | InputEvent::MouseRelease { col, row, button } = &event
         {
-            if let Some(frame) = self.update_hover_for_mouse(*row, *col) {
-                self.send_output(frame);
-            }
-            self.update_pointer_shape_for_mouse(*row, *col, *button);
+            self.apply_action(Action::MouseChromeUpdate {
+                row: *row,
+                col: *col,
+                button: *button,
+            });
         }
         match event {
             InputEvent::OpenPalette => self.apply_action(Action::OpenPalette),

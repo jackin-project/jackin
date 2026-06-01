@@ -3997,6 +3997,38 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_mouse_chrome_update_sets_pointer_shape() {
+        let mut mux = single_pane_tab_mux();
+        mux.pointer_shapes_supported = true;
+        let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.attached_out = Some(tx);
+        let tab_col = mux
+            .status_bar
+            .tab_regions
+            .first()
+            .map(|(start, _)| start.saturating_sub(1))
+            .expect("tab region should render");
+
+        mux.apply_action(Action::MouseChromeUpdate {
+            row: 0,
+            col: tab_col,
+            button: SGR_NO_BUTTON_MOTION,
+        });
+
+        let mut outputs = Vec::new();
+        while let Ok(output) = rx.try_recv() {
+            outputs.push(output);
+        }
+        assert!(
+            outputs
+                .iter()
+                .any(|output| output.ends_with(b"\x1b]22;pointer\x1b\\")),
+            "mouse chrome action should emit pointer shape update"
+        );
+    }
+
+    #[test]
     fn apply_action_wheel_scrolls_scrollback() {
         let mut mux = single_pane_tab_mux();
         let (mut session, mut input_rx) = test_shell_session(20, 78);
