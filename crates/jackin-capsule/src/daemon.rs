@@ -65,7 +65,7 @@ use crate::protocol::attach::{
 };
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode};
-use crate::tui::selection::{SelectionState, paint_selection_highlight, selection_text};
+use crate::tui::selection::{SelectionState, selection_text};
 use crate::session::{
     BranchName, GitContext, Oid, PullRequestInfo, PullRequestLookupOutcome,
     SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,

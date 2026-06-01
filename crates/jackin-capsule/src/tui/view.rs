@@ -7,8 +7,11 @@ use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
 };
 use crate::tui::layout::Tab;
-use crate::tui::render::{draw_scrollbar, fill_screen};
+use crate::tui::render::{
+    PaneBodyCache, PaneBodyRenderStats, RowSnapshot, draw_scrollbar, fill_screen,
+};
 use crate::session::{PullRequestInfo, Session};
+use crate::tui::selection::{SelectionState, paint_selection_highlight};
 use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
 use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
@@ -137,6 +140,49 @@ pub(crate) fn draw_pane_chrome(
         scrollbar.filled,
         pane.focused && highlight_focus,
     );
+}
+
+pub(crate) fn render_capsule_pane_body_snapshot(
+    buf: &mut Vec<u8>,
+    cache: &mut PaneBodyCache,
+    pane: &VisiblePane,
+    snapshot: Vec<RowSnapshot>,
+) -> PaneBodyRenderStats {
+    cache.render_full_snapshot(
+        snapshot,
+        pane.inner.row,
+        pane.inner.col,
+        pane.inner.rows,
+        pane.inner.cols,
+        pane.body_dim,
+        buf,
+    )
+}
+
+pub(crate) fn render_capsule_pane_body_partial(
+    buf: &mut Vec<u8>,
+    cache: &mut PaneBodyCache,
+    pane: &VisiblePane,
+    session: &Session,
+) -> PaneBodyRenderStats {
+    cache.render_partial(
+        session.screen(),
+        pane.inner.row,
+        pane.inner.col,
+        pane.inner.rows,
+        pane.inner.cols,
+        pane.body_dim,
+        buf,
+    )
+}
+
+pub(crate) fn render_capsule_selection_highlight(
+    buf: &mut Vec<u8>,
+    rows: &[RowSnapshot],
+    selection: &SelectionState,
+    dim: crate::tui::render::PaneBodyDim,
+) {
+    paint_selection_highlight(buf, rows, selection, dim);
 }
 
 pub(crate) struct CapsuleChromeHoverFrame<'a> {

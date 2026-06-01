@@ -11,7 +11,8 @@ use crate::tui::view::{
     CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar, draw_pane_chrome,
     pane_scrollbar, render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
     render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
-    render_capsule_raw_dialog_overlay,
+    render_capsule_pane_body_partial, render_capsule_pane_body_snapshot,
+    render_capsule_raw_dialog_overlay, render_capsule_selection_highlight,
     render_capsule_status_bar,
 };
 
@@ -243,19 +244,8 @@ impl Multiplexer {
                     selection_paint = Some((body_snapshot.clone(), sel, pane.body_dim));
                 }
                 let before = buf.len();
-                let stats = self
-                    .pane_body_caches
-                    .entry(pane.id)
-                    .or_default()
-                    .render_full_snapshot(
-                        body_snapshot,
-                        pane.inner.row,
-                        pane.inner.col,
-                        pane.inner.rows,
-                        pane.inner.cols,
-                        pane.body_dim,
-                        &mut buf,
-                    );
+                let cache = self.pane_body_caches.entry(pane.id).or_default();
+                let stats = render_capsule_pane_body_snapshot(&mut buf, cache, pane, body_snapshot);
                 pane_rows_emitted += stats.rows_emitted;
                 pane_body_bytes += buf.len() - before;
                 if pane.focused {
@@ -276,7 +266,7 @@ impl Multiplexer {
             // (but underneath the pane box so the inverse stops at
             // the inner edge). The row snapshot is the exact content
             // rendered above, including inline scrollback prefixes.
-            paint_selection_highlight(&mut buf, &rows, &sel, dim);
+            render_capsule_selection_highlight(&mut buf, &rows, &sel, dim);
         }
 
         let pull_request_loading = self.pull_request_context_loading();
@@ -426,19 +416,8 @@ impl Multiplexer {
                 scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(display_title(session));
                 let before = buf.len();
-                let stats = self
-                    .pane_body_caches
-                    .entry(pane.id)
-                    .or_default()
-                    .render_partial(
-                        session.screen(),
-                        pane.inner.row,
-                        pane.inner.col,
-                        pane.inner.rows,
-                        pane.inner.cols,
-                        pane.body_dim,
-                        &mut buf,
-                    );
+                let cache = self.pane_body_caches.entry(pane.id).or_default();
+                let stats = render_capsule_pane_body_partial(&mut buf, cache, pane, session);
                 if stats.mode == PaneBodyRenderMode::Full {
                     return self.compose_full_frame(FullRedrawReason::PaneCacheMiss);
                 }
