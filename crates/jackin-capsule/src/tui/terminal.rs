@@ -2,7 +2,19 @@ use std::io::Write;
 
 use anyhow::{Context, Result};
 
-use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
+use crate::tui::components::status_bar::STATUS_BAR_ROWS;
+
+pub const DEFAULT_ROWS: u16 = 24;
+pub const DEFAULT_COLS: u16 = 80;
+
+const MIN_ROWS: u16 = STATUS_BAR_ROWS + 3;
+const MIN_COLS: u16 = 3;
+
+pub fn normalize_size(rows: u16, cols: u16) -> (u16, u16) {
+    let rows = if rows == 0 { DEFAULT_ROWS } else { rows }.max(MIN_ROWS);
+    let cols = if cols == 0 { DEFAULT_COLS } else { cols }.max(MIN_COLS);
+    (rows, cols)
+}
 
 /// Terminal-reset escape bytes written when the attach client detaches, minus
 /// the alternate-screen leave (`?1049l`). The leave is appended only when this
@@ -125,5 +137,15 @@ mod tests {
         let mut full = OUTER_TERMINAL_RESET_BASE.to_vec();
         full.extend_from_slice(ALTERNATE_SCREEN_LEAVE);
         assert!(full.ends_with(ALTERNATE_SCREEN_LEAVE));
+    }
+
+    #[test]
+    fn normalize_size_replaces_zero_dimensions_with_defaults() {
+        assert_eq!(normalize_size(0, 0), (DEFAULT_ROWS, DEFAULT_COLS));
+    }
+
+    #[test]
+    fn normalize_size_clamps_tiny_dimensions_to_pty_safe_floor() {
+        assert_eq!(normalize_size(1, 1), (MIN_ROWS, MIN_COLS));
     }
 }

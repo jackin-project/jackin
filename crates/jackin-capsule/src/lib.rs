@@ -18,7 +18,6 @@ pub mod runtime_setup;
 pub mod session;
 pub mod services;
 pub mod socket;
-pub mod terminal_geometry;
 pub mod title;
 pub mod util;
 

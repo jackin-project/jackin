@@ -91,7 +91,7 @@ use crate::session::{
 };
 use crate::socket;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
-use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
+use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::title::{
     append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
     session_agent_label,
@@ -1407,10 +1407,7 @@ mod tests {
         mux.resize(0, 0);
         assert_eq!(
             (mux.term_rows, mux.term_cols),
-            (
-                crate::terminal_geometry::DEFAULT_ROWS,
-                crate::terminal_geometry::DEFAULT_COLS
-            )
+            (DEFAULT_ROWS, DEFAULT_COLS)
         );
     }
 
