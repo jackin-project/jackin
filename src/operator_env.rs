@@ -688,6 +688,8 @@ pub struct OpField {
     pub reference: String,
 }
 
+pub type OpCache = jackin_console::op_cache::OpCache<OpAccount, OpVault, OpItem, OpField>;
+
 // Accept either `id` or `account_uuid` so the probe works against
 // current and older op CLI shapes. `email` / `url` default to empty
 // because older `op` versions may omit them.
@@ -2101,6 +2103,34 @@ mod tests {
     use super::*;
 
     static LAUNCH_DIAGNOSTIC_OUTPUT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Trust-model guard: if `OpField` ever grows a value-bearing field,
+    /// this exhaustive destructure breaks and forces a cache review.
+    #[test]
+    fn op_cache_does_not_store_field_values() {
+        let mut cache = OpCache::default();
+        cache.put_fields(
+            None,
+            "v1",
+            "i1",
+            vec![OpField {
+                id: "f1".into(),
+                label: "password".into(),
+                field_type: "STRING".into(),
+                concealed: true,
+                reference: "op://v/i/f".into(),
+            }],
+        );
+        for field in cache.get_fields(None, "v1", "i1").unwrap() {
+            let OpField {
+                id: _,
+                label: _,
+                field_type: _,
+                concealed: _,
+                reference: _,
+            } = field;
+        }
+    }
 
     #[test]
     fn op_section_id_slugifies_labels() {

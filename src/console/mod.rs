@@ -6,14 +6,12 @@
 #![allow(irrefutable_let_patterns)]
 
 pub mod manager;
-pub mod op_cache;
 mod preview;
 mod prompts;
 pub mod run;
 pub mod state;
 pub mod tui;
 
-pub use op_cache::OpCache;
 #[cfg(test)]
 use prompts::{prompt_agent_for_launch, providers_for_launch};
 pub(super) use run::consumes_letter_input;
@@ -566,8 +564,8 @@ mod quit_confirm_tests {
 
 #[cfg(test)]
 mod op_cache_invalidation_tests {
-    use crate::console::op_cache::OpCache;
     use crate::console::prompts::invalidate_op_cache_for_ref;
+    use crate::operator_env::OpCache;
     use crate::operator_env::{OpField, OpItem, OpRef};
     use std::cell::RefCell;
     use std::rc::Rc;

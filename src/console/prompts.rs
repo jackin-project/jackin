@@ -188,7 +188,7 @@ where
 /// reopened in the same session re-fetches and shows the new entry. The
 /// ref's `op` field is UUID-form `op://<vault>/<item>/[<section>/]<field>`.
 pub(super) fn invalidate_op_cache_for_ref(
-    op_cache: &std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_cache: &std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
     op_ref: &crate::operator_env::OpRef,
 ) {
     let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {

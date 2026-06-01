@@ -27,8 +27,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use tui_widget_list::ListState;
 
-use crate::console::op_cache::OpCache;
-use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
+use crate::operator_env::{OpAccount, OpCache, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::{ModalOutcome, cycle_select};
 use jackin_tui::components::TextInputState;
@@ -2395,7 +2394,7 @@ mod tests {
 
     #[test]
     fn op_cache_hit_skips_account_list_subprocess() {
-        use crate::console::op_cache::OpCache;
+        use crate::operator_env::OpCache;
         use std::sync::Arc;
 
         let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
@@ -2435,7 +2434,7 @@ mod tests {
 
     #[test]
     fn op_cache_miss_calls_runner_and_stores() {
-        use crate::console::op_cache::OpCache;
+        use crate::operator_env::OpCache;
         use std::sync::Arc;
 
         let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
@@ -2472,7 +2471,7 @@ mod tests {
 
     #[test]
     fn op_cache_refresh_re_fires_subprocess() {
-        use crate::console::op_cache::OpCache;
+        use crate::operator_env::OpCache;
         use std::sync::Arc;
 
         let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));

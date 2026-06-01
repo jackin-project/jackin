@@ -467,7 +467,7 @@ pub(super) fn handle_settings_auth_modal(
     pending_token_generate: &mut Option<super::super::state::PendingTokenGenerate>,
     key: KeyEvent,
     op_available: bool,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let Some(mut modal) = auth.modal.take() else {
         return;
@@ -1270,7 +1270,7 @@ pub(super) fn handle_settings_confirm_modal(
 pub(super) fn handle_settings_env_modal(
     env: &mut super::super::state::SettingsEnvState<'_>,
     key: KeyEvent,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let Some(modal) = env.modal.take() else {
         return;
@@ -1888,7 +1888,7 @@ fn toggle_settings_env_mask(settings: &mut super::super::state::SettingsState<'_
 
 fn open_settings_env_picker_modal(
     settings: &mut super::super::state::SettingsState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let rows = settings_env_flat_rows(settings);
     let Some(row) = rows.get(settings.env.selected).cloned() else {
@@ -2626,7 +2626,7 @@ mod tests {
         assert!(settings_auth_can_generate_token(&settings.auth));
 
         let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-            crate::console::op_cache::OpCache::default(),
+            crate::operator_env::OpCache::default(),
         ));
         let mut pending = None;
         handle_settings_auth_modal(
@@ -2692,7 +2692,7 @@ mod tests {
 
         // Press `g` to start generate (stashes the form).
         let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-            crate::console::op_cache::OpCache::default(),
+            crate::operator_env::OpCache::default(),
         ));
         let mut pending = None;
         handle_settings_auth_modal(
@@ -2757,7 +2757,7 @@ mod tests {
         assert!(!settings_auth_can_generate_token(&settings.auth));
 
         let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-            crate::console::op_cache::OpCache::default(),
+            crate::operator_env::OpCache::default(),
         ));
         let mut pending = None;
         handle_settings_auth_modal(

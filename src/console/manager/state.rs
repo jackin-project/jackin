@@ -9,7 +9,7 @@ use anyhow::Context as _;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::op_cache::OpCache;
+use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{

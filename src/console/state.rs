@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::app::context::eligible_roles_for_workspace;
 use crate::config::{AppConfig, MountEntry};
-use crate::console::op_cache::OpCache;
+use crate::operator_env::OpCache;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 

@@ -27,8 +27,8 @@ use crate::config::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
     OpencodeAuthConfig,
 };
-use crate::console::op_cache::OpCache;
 use crate::operator_env::EnvValue;
+use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceRoleOverride;
 use jackin_tui::components::TextInputState;
 

@@ -861,7 +861,7 @@ pub(super) fn handle_editor_modal(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
     op_available: bool,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
     config: &mut AppConfig,
     paths: &JackinPaths,
 ) {
@@ -1306,7 +1306,7 @@ pub(super) fn handle_editor_modal(
 /// stashes path, opens `EnvKey` modal). Headers / spacers are no-ops.
 fn open_secrets_picker_modal(
     editor: &mut EditorState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
@@ -1385,7 +1385,7 @@ fn start_plain_token_generate(editor: &mut EditorState<'_>) {
 /// freshly minted token lands (this is the pre-source-picker behaviour).
 fn open_create_op_picker_for_generate(
     editor: &mut EditorState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
         editor.generating_token_target = None;
@@ -2312,7 +2312,7 @@ mod tests {
     };
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
-    use crate::console::op_cache::OpCache;
+    use crate::operator_env::OpCache;
     use crate::paths::JackinPaths;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
