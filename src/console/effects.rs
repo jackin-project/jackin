@@ -107,6 +107,10 @@ pub(crate) fn execute_manager_effect(
         }
         ManagerEffect::PollFileBrowserGitUrls => poll_file_browser_git_urls(state),
         ManagerEffect::PollPickerLoads => poll_picker_loads(state),
+        ManagerEffect::OpenUrl(url) => execute_open_url(state, &url),
+        ManagerEffect::RemoveWorkspace { name, cwd } => {
+            execute_remove_workspace(state, config, paths, &cwd, &name)
+        }
         ManagerEffect::ValidateOpCommit {
             op_ref,
             is_settings,

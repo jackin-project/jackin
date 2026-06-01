@@ -1,6 +1,7 @@
 use crate::console::tui::prompts::{
     dispatch_and_prompt_launch, launch_with_committed_agent, prompt_committed_role,
 };
+use crate::console::tui::effect::ManagerEffect;
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
@@ -457,17 +458,24 @@ pub async fn run_console<H: InstanceActionHandler>(
                         }
                         crate::console::tui::InputOutcome::OpenUrl(url) => {
                             if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                needs_redraw |= crate::console::effects::execute_open_url(ms, &url);
+                                needs_redraw |= crate::console::effects::execute_manager_effect(
+                                    ms,
+                                    &mut config,
+                                    paths,
+                                    ManagerEffect::OpenUrl(url),
+                                );
                             }
                         }
                         crate::console::tui::InputOutcome::RemoveWorkspace(name) => {
                             if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                needs_redraw |= crate::console::effects::execute_remove_workspace(
+                                needs_redraw |= crate::console::effects::execute_manager_effect(
                                     ms,
                                     &mut config,
                                     paths,
-                                    cwd,
-                                    &name,
+                                    ManagerEffect::RemoveWorkspace {
+                                        name,
+                                        cwd: cwd.to_path_buf(),
+                                    },
                                 );
                             }
                         }
@@ -525,7 +533,12 @@ pub async fn run_console<H: InstanceActionHandler>(
                             Some(&config),
                         );
                         if let crate::console::tui::InputOutcome::OpenUrl(url) = outcome {
-                            needs_redraw |= crate::console::effects::execute_open_url(ms, &url);
+                            needs_redraw |= crate::console::effects::execute_manager_effect(
+                                ms,
+                                &mut config,
+                                paths,
+                                ManagerEffect::OpenUrl(url),
+                            );
                         }
                         // Switch the terminal pointer to the hand shape over any
                         // clickable element (and back off it), per the clickable

@@ -23,6 +23,11 @@ pub(crate) enum ManagerEffect {
     OpenGlobalMountFileBrowser,
     PollFileBrowserGitUrls,
     PollPickerLoads,
+    OpenUrl(String),
+    RemoveWorkspace {
+        name: String,
+        cwd: std::path::PathBuf,
+    },
     ValidateOpCommit {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,
