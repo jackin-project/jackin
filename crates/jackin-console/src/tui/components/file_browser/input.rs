@@ -17,6 +17,7 @@ pub enum FileBrowserOutcome<T> {
     Commit(T),
     Cancel,
     OpenGitUrl(String),
+    ResolveGitUrl(PathBuf),
 }
 
 impl FileBrowserState {
@@ -81,8 +82,9 @@ impl FileBrowserState {
             return FileBrowserOutcome::Continue;
         }
         if entry.is_git {
-            self.open_git_prompt(entry.path);
-            return FileBrowserOutcome::Continue;
+            let path = entry.path;
+            self.open_git_prompt(path.clone());
+            return FileBrowserOutcome::ResolveGitUrl(path);
         }
         // Plain folder — navigate in. Canonicalize so a legitimate
         // symlinked-dir-inside-root still resolves to its real path;

@@ -23,7 +23,6 @@ use ratatui::{
 use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use crate::services::file_browser::resolve_git_url;
 use jackin_tui::components::{Panel, PanelFocus};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
@@ -47,15 +46,18 @@ impl FileBrowserState {
     }
 
     pub(super) fn open_git_prompt(&mut self, path: PathBuf) {
-        let worker_path = path.clone();
-        let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
-            "jackin-file-browser-git-url",
-            move || resolve_git_url(&worker_path),
-        );
         self.pending_git_url = None;
-        self.pending_git_url_rx = Some(rx);
+        self.pending_git_url_rx = None;
         self.pending_git_prompt = Some(path);
         self.pending_git_focus = GitPromptFocus::MountHere;
+    }
+
+    pub fn attach_git_url_resolution(
+        &mut self,
+        rx: jackin_tui::runtime::BlockingSubscription<Option<String>>,
+    ) {
+        self.pending_git_url = None;
+        self.pending_git_url_rx = Some(rx);
     }
 
     #[must_use]
@@ -327,6 +329,14 @@ mod tests {
         FileBrowserState::new_at(root, cwd)
     }
 
+    fn attach_git_url_resolution(state: &mut FileBrowserState, repo: PathBuf) {
+        let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
+            "jackin-file-browser-git-url-test",
+            move || crate::services::file_browser::resolve_git_url(&repo),
+        );
+        state.attach_git_url_resolution(rx);
+    }
+
     fn wait_for_git_url_resolution(state: &mut FileBrowserState) {
         for _ in 0..50 {
             if state.poll_git_url_resolution() {
@@ -350,7 +360,10 @@ mod tests {
         // Index 0 is `..`; advance to `repo`.
         state.handle_key(key(KeyCode::Down));
         let outcome = state.handle_key(key(KeyCode::Enter));
-        assert!(matches!(outcome, FileBrowserOutcome::Continue));
+        assert!(matches!(
+            outcome,
+            FileBrowserOutcome::ResolveGitUrl(path) if path == repo
+        ));
         assert!(state.pending_git_prompt.is_some());
         assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
     }
@@ -380,6 +393,7 @@ mod tests {
         state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         assert!(state.pending_git_url.is_none());
+        attach_git_url_resolution(&mut state, repo);
         wait_for_git_url_resolution(&mut state);
         let url = state
             .pending_git_url
@@ -397,7 +411,7 @@ mod tests {
         let repo = tmp.path().join("gitlab-repo");
         std::fs::create_dir_all(&repo).unwrap();
         seed_git_repo_with_origin(&repo, "git@gitlab.com:owner/repo.git");
-        assert!(resolve_git_url(&repo).is_none());
+        assert!(crate::services::file_browser::resolve_git_url(&repo).is_none());
     }
 
     #[test]
@@ -411,6 +425,7 @@ mod tests {
         state.handle_key(key(KeyCode::Down));
         state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
+        attach_git_url_resolution(&mut state, repo);
         wait_for_git_url_resolution(&mut state);
         assert!(state.pending_git_url.is_none());
     }

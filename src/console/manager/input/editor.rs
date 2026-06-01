@@ -914,6 +914,9 @@ pub(super) fn handle_editor_modal(
             FileBrowserOutcome::Cancel => {
                 editor.pop_modal_chain();
             }
+            FileBrowserOutcome::ResolveGitUrl(path) => {
+                super::request_file_browser_git_url_resolution(state, path);
+            }
             FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
             FileBrowserOutcome::Continue => {}
         },

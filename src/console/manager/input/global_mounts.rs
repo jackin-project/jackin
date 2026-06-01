@@ -1170,6 +1170,10 @@ pub(super) fn handle_settings_confirm_modal(
                     settings.mounts.add_draft = None;
                 }
             }
+            FileBrowserOutcome::ResolveGitUrl(path) => {
+                super::request_file_browser_git_url_resolution(&mut state, path);
+                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+            }
             FileBrowserOutcome::OpenGitUrl(url) => {
                 open_git_url(&url);
                 settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });

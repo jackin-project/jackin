@@ -17,6 +17,8 @@ use super::message::{ManagerEffect, ManagerMessage, execute_manager_effect, upda
 use super::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::services::file_browser::resolve_git_url;
+use jackin_console::tui::components::file_browser::FileBrowserState;
 
 pub use mouse::{clickable_at, handle_mouse, handle_mouse_with_config};
 
@@ -27,6 +29,17 @@ pub(in crate::console) use global_mounts::{
     apply_op_picker_settings_commit_failed, apply_op_picker_to_settings_auth_form,
     apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
 };
+
+pub(super) fn request_file_browser_git_url_resolution(
+    state: &mut FileBrowserState,
+    path: std::path::PathBuf,
+) {
+    let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
+        "jackin-file-browser-git-url",
+        move || resolve_git_url(&path),
+    );
+    state.attach_git_url_resolution(rx);
+}
 
 #[derive(Debug)]
 pub enum InputOutcome {

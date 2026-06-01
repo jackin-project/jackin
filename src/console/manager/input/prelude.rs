@@ -139,6 +139,11 @@ pub(super) fn handle_prelude_modal(
                     // and drops back to the workspace list.
                     prelude.modal = None;
                 }
+                FileBrowserOutcome::ResolveGitUrl(path) => {
+                    if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
+                        super::request_file_browser_git_url_resolution(state, path);
+                    }
+                }
                 FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
                 FileBrowserOutcome::Continue => {}
             }
