@@ -380,6 +380,27 @@ impl Dialog {
         }
     }
 
+    pub fn new_container_info(
+        container_name: String,
+        role: String,
+        focused_agent: Option<String>,
+        workdir: String,
+        diagnostics: ContainerDiagnostics,
+    ) -> Self {
+        Self::ContainerInfo {
+            container_name,
+            role,
+            focused_agent,
+            workdir,
+            diagnostics,
+            copied: false,
+        }
+    }
+
+    pub fn new_github_context() -> Self {
+        Self::GitHubContext { copied: false }
+    }
+
     pub fn new_provider_picker(
         agent: Option<String>,
         providers: Vec<jackin_protocol::Provider>,

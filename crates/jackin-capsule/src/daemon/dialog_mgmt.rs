@@ -47,18 +47,17 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .and_then(|s| s.agent.clone());
         let container_name = self.status_bar.container_name().to_string();
-        self.dialog_push(Dialog::ContainerInfo {
+        self.dialog_push(Dialog::new_container_info(
             container_name,
-            role: self.status_bar.role().to_string(),
+            self.status_bar.role().to_string(),
             focused_agent,
-            workdir: self.workdir.to_string_lossy().into_owned(),
-            diagnostics: crate::container_context::resolve_container_diagnostics(),
-            copied: false,
-        });
+            self.workdir.to_string_lossy().into_owned(),
+            crate::container_context::resolve_container_diagnostics(),
+        ));
     }
 
     pub(super) fn open_github_context_dialog(&mut self, now: Instant) {
-        self.dialog_push(Dialog::GitHubContext { copied: false });
+        self.dialog_push(Dialog::new_github_context());
         // Dialog overlay frame is composed by the caller; spawn-or-not
         // does not gate the visible state. The return value names
         // whether a worker was kicked off (consumed only by tests).
