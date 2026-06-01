@@ -140,7 +140,7 @@ impl Multiplexer {
         if row < STATUS_BAR_ROWS {
             return None;
         }
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         let (id, outer) = if let Some(zoom_id) = self.active_zoomed_id() {
             (zoom_id, content_rect)
         } else {
@@ -201,7 +201,7 @@ impl Multiplexer {
         if row < STATUS_BAR_ROWS || self.active_zoomed_id().is_some() {
             return None;
         }
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         let tab = self.tabs.get(self.active_tab)?;
         let (path, orient, rect) = tab.tree.border_at(content_rect, row, col)?;
         Some(DragState {

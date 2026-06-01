@@ -22,7 +22,7 @@ impl Multiplexer {
             return Ok(());
         };
         let from_id = tab.focused_id;
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         let from_rect = tab
             .tree
             .leaves(content_rect)
@@ -150,7 +150,7 @@ impl Multiplexer {
     }
 
     pub(super) fn resize_panes(&mut self) {
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         if let Some(zoom_id) = self.active_zoomed_id() {
             let inner = content_rect.shrink(1);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
@@ -175,7 +175,7 @@ impl Multiplexer {
         self.cancel_drag();
         self.term_rows = rows;
         self.term_cols = cols;
-        self.content_rows = self.available_content_rows();
+        self.content_rows = available_content_rows(self.term_rows);
         self.resize_panes();
         self.ratatui_terminal.backend_mut().resize(cols, rows);
         // A size change invalidates Ratatui's previous-buffer geometry. Clear
@@ -185,16 +185,8 @@ impl Multiplexer {
         let _ = self.ratatui_terminal.clear();
     }
 
-    pub(super) fn available_content_rows(&self) -> u16 {
-        self.term_rows
-            .saturating_sub(STATUS_BAR_ROWS)
-            .saturating_sub(BRANCH_CONTEXT_BAR_ROWS)
-            .saturating_sub(CAPSULE_HINT_BAR_ROWS)
-            .saturating_sub(CAPSULE_HINT_SEPARATOR_ROWS)
-    }
-
     pub(super) fn reconcile_content_rows(&mut self) -> bool {
-        let next = self.available_content_rows();
+        let next = available_content_rows(self.term_rows);
         if next == self.content_rows {
             return false;
         }
@@ -230,7 +222,7 @@ impl Multiplexer {
 
     pub(super) fn active_focused_outer_rect(&self) -> Option<Rect> {
         let focused = self.active_focused_id()?;
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         if let Some(zoom_id) = self.active_zoomed_id() {
             return (zoom_id == focused).then_some(content_rect);
         }
@@ -307,7 +299,7 @@ impl Multiplexer {
     }
 
     pub(super) fn visible_panes(&self) -> Vec<VisiblePane> {
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
         visible_panes_for_layout(
             content_rect,
@@ -339,7 +331,7 @@ impl Multiplexer {
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return;
         };
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         let d = match dir {
             ArrowDir::Left => Direction::Left,
             ArrowDir::Right => Direction::Right,
@@ -417,7 +409,7 @@ impl Multiplexer {
         if row < STATUS_BAR_ROWS {
             return false;
         }
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let content_rect = content_rect(self.content_rows, self.term_cols);
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return false;
         };

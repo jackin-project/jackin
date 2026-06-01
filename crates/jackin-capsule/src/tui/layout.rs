@@ -10,6 +10,9 @@ pub(crate) const CAPSULE_HINT_BAR_ROWS: u16 = 1;
 /// matching the console layout (hint → separator → chrome).
 pub(crate) const CAPSULE_HINT_SEPARATOR_ROWS: u16 = 1;
 
+use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
+use crate::tui::components::status_bar::STATUS_BAR_ROWS;
+
 #[derive(Debug, Clone)]
 pub enum PaneTree {
     Leaf(u64),
@@ -75,6 +78,18 @@ impl Rect {
             cols,
         }
     }
+}
+
+pub fn available_content_rows(term_rows: u16) -> u16 {
+    term_rows
+        .saturating_sub(STATUS_BAR_ROWS)
+        .saturating_sub(BRANCH_CONTEXT_BAR_ROWS)
+        .saturating_sub(CAPSULE_HINT_BAR_ROWS)
+        .saturating_sub(CAPSULE_HINT_SEPARATOR_ROWS)
+}
+
+pub fn content_rect(content_rows: u16, term_cols: u16) -> Rect {
+    Rect::new(STATUS_BAR_ROWS, 0, content_rows, term_cols)
 }
 
 pub fn split_spawn_inner_size(direction: SplitDirectionGeometry, from_rect: Rect) -> (u16, u16) {
@@ -401,7 +416,8 @@ pub enum SplitPosition {
 #[cfg(test)]
 mod rect_shrink_tests {
     use super::{
-        Rect, SplitDirectionGeometry, local_mouse_position, split_spawn_inner_size,
+        Rect, SplitDirectionGeometry, available_content_rows, content_rect,
+        local_mouse_position, split_spawn_inner_size,
     };
 
     #[test]
@@ -463,6 +479,12 @@ mod rect_shrink_tests {
         assert_eq!(local_mouse_position(inner, 12, 4), None);
         assert_eq!(local_mouse_position(inner, 2, 3), None);
         assert_eq!(local_mouse_position(inner, 2, 24), None);
+    }
+
+    #[test]
+    fn content_area_reserves_chrome_rows() {
+        assert_eq!(available_content_rows(24), 19);
+        assert_eq!(content_rect(19, 80), Rect::new(2, 0, 19, 80));
     }
 }
 

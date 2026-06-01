@@ -39,7 +39,6 @@ use crate::attach_protocol::{
 };
 #[cfg(test)]
 use crate::tui::components::branch_context_bar::branch_context_bar_layout;
-use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
 use crate::tui::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
     PickerIntent, PullRequestStatus, SplitDirection,
@@ -59,8 +58,8 @@ use crate::tui::input::{
     SGR_NO_BUTTON_MOTION,
 };
 use crate::tui::layout::{
-    CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS, Direction, Rect, SplitDirectionGeometry,
-    SplitPosition, Tab, local_mouse_position, split_spawn_inner_size,
+    Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, available_content_rows,
+    content_rect, local_mouse_position, split_spawn_inner_size,
 };
 #[cfg(test)]
 use crate::tui::layout::SplitOrient;
@@ -333,11 +332,7 @@ impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let content_rows = rows
-            .saturating_sub(STATUS_BAR_ROWS)
-            .saturating_sub(BRANCH_CONTEXT_BAR_ROWS)
-            .saturating_sub(CAPSULE_HINT_BAR_ROWS)
-            .saturating_sub(CAPSULE_HINT_SEPARATOR_ROWS);
+        let content_rows = available_content_rows(rows);
         let agents = launch_config.supported_agents();
         let zai_key = std::env::var("ZAI_API_KEY")
             .ok()
