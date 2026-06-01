@@ -11,6 +11,7 @@ mod launch;
 pub mod message;
 #[cfg(test)]
 mod message_tests;
+pub(crate) mod prompts;
 pub mod render;
 pub mod run;
 pub mod state;

@@ -1,5 +1,5 @@
 use crate::console::domain::build_workspace_choice;
-use crate::console::prompts::{
+use crate::console::tui::prompts::{
     dispatch_and_prompt_launch, launch_with_committed_agent, prompt_committed_role,
 };
 use crate::console::terminal::{

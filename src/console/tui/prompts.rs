@@ -1,13 +1,13 @@
 //! Agent and role prompting helpers for the workspace manager event loop.
 
 use crate::config::AppConfig;
-use crate::console::domain::providers_for_launch;
+use crate::console::domain::{build_workspace_choice, providers_for_launch};
+use crate::console::{ConsoleOutcome, preview};
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
-use super::preview;
-use super::{ConsoleOutcome, ConsoleStage, ConsoleState, build_workspace_choice, tui};
+use super::{ConsoleStage, ConsoleState};
 
 pub(super) async fn open_inline_agent_picker(
     state: &mut ConsoleState,
@@ -56,21 +56,21 @@ where
         format!("Loading and resolving {}", role.key()),
     ));
     terminal.draw(|frame| {
-        tui::render(frame, frame.area(), ms, config, cwd);
+        crate::console::tui::render(frame, frame.area(), ms, config, cwd);
     })?;
     ms.status_overlay = None;
     Ok(())
 }
 
-pub(super) fn show_role_resolution_error(
+pub(in crate::console) fn show_role_resolution_error(
     state: &mut ConsoleState,
     role: &RoleSelector,
     error: &anyhow::Error,
 ) {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    let _ = tui::update_manager(
+    let _ = crate::console::tui::update_manager(
         ms,
-        tui::ManagerMessage::OpenListErrorPopup {
+        crate::console::tui::ManagerMessage::OpenListErrorPopup {
             title: "Role resolution failed".into(),
             message: format!("Could not resolve {}.\n\n{error:#}", role.key()),
         },
@@ -109,7 +109,7 @@ where
 /// Outcome of `prompt_agent_for_launch`. Two states because callers
 /// only branch on "the helper already drives the next interaction"
 /// (`Defer`) vs "no prompt was needed, launch immediately" (`Launch`).
-pub(super) enum PromptOutcome {
+pub(in crate::console) enum PromptOutcome {
     Launch,
     Defer,
 }
@@ -119,13 +119,13 @@ pub(super) enum PromptOutcome {
 /// Arms that pinned `pending_launch` upstream pass `RestorePending`;
 /// arms that built `input` fresh from the key event pass `ClearPending`.
 #[derive(Clone, Copy)]
-pub(super) enum OnPromptFailure {
+pub(in crate::console) enum OnPromptFailure {
     ClearPending,
     RestorePending,
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn prompt_agent_for_launch<B>(
+pub(in crate::console) async fn prompt_agent_for_launch<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
     paths: &JackinPaths,

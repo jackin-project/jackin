@@ -9,7 +9,6 @@ mod domain;
 pub(crate) mod effects;
 mod outcome;
 mod preview;
-mod prompts;
 mod services;
 pub mod terminal;
 pub mod tui;
@@ -17,11 +16,11 @@ pub mod tui;
 #[cfg(test)]
 use domain::providers_for_launch;
 #[cfg(test)]
-use prompts::prompt_agent_for_launch;
-#[cfg(test)]
 pub(super) use tui::consumes_letter_input;
 #[cfg(test)]
 use tui::is_on_main_screen;
+#[cfg(test)]
+use tui::prompts::prompt_agent_for_launch;
 pub use domain::{WorkspaceChoice, build_workspace_choice};
 pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
 pub use terminal::TerminalSession;
@@ -31,8 +30,8 @@ pub use tui::{ConsoleStage, ConsoleState, run_console};
 mod quit_confirm_tests {
     //! Pin the gates for the Q-intercept and the
     //! `ConfirmState::handle_key` outcomes the run-loop dispatches.
-    use super::prompts::{OnPromptFailure, PromptOutcome, show_role_resolution_error};
     use super::tui::debug::{console_location_debug, key_debug_name};
+    use super::tui::prompts::{OnPromptFailure, PromptOutcome, show_role_resolution_error};
     use super::*;
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
