@@ -65,6 +65,18 @@ impl<T> Subscription for tokio::sync::oneshot::Receiver<T> {
     }
 }
 
+impl<T> Subscription for tokio::sync::mpsc::UnboundedReceiver<T> {
+    type Output = T;
+
+    fn poll_next(&mut self) -> SubscriptionPoll<Self::Output> {
+        match self.try_recv() {
+            Ok(value) => SubscriptionPoll::Ready(value),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => SubscriptionPoll::Pending,
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => SubscriptionPoll::Closed,
+        }
+    }
+}
+
 /// Result of applying one message to a TUI model.
 ///
 /// `dirty` tells the runtime whether to redraw. `effects` carries typed
@@ -140,6 +152,28 @@ mod tests {
     #[test]
     fn oneshot_subscription_reports_pending_then_closed() {
         let (tx, mut rx) = tokio::sync::oneshot::channel::<u8>();
+
+        assert_eq!(rx.poll_next(), SubscriptionPoll::Pending);
+
+        drop(tx);
+
+        assert_eq!(rx.poll_next(), SubscriptionPoll::Closed);
+    }
+
+    #[test]
+    fn mpsc_subscription_reports_ready_values() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(7).expect("receiver should be live");
+        tx.send(8).expect("receiver should be live");
+
+        assert_eq!(rx.poll_next(), SubscriptionPoll::Ready(7));
+        assert_eq!(rx.poll_next(), SubscriptionPoll::Ready(8));
+        assert_eq!(rx.poll_next(), SubscriptionPoll::Pending);
+    }
+
+    #[test]
+    fn mpsc_subscription_reports_closed() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
 
         assert_eq!(rx.poll_next(), SubscriptionPoll::Pending);
 

@@ -24,6 +24,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use tui_widget_list::ListState;
 
 use crate::console::op_cache::OpCache;
@@ -79,7 +80,7 @@ enum FieldLabelOrigin {
     NewSection,
 }
 
-/// Pane-specific so the `try_recv` drainer can route to the right
+/// Pane-specific so the async-result drainer can route to the right
 /// `Vec` without a separate "what was loading" tag.
 enum LoadResult {
     Accounts(anyhow::Result<Vec<OpAccount>>),
@@ -426,13 +427,13 @@ impl OpPickerState {
         let Some(rx) = self.rx.as_mut() else {
             return false;
         };
-        match rx.try_recv() {
-            Ok(LoadResult::Accounts(Ok(accounts))) => {
+        match rx.poll_next() {
+            SubscriptionPoll::Ready(LoadResult::Accounts(Ok(accounts))) => {
                 self.rx = None;
                 self.handle_accounts_loaded(accounts);
                 true
             }
-            Ok(LoadResult::Vaults(Ok(vaults))) => {
+            SubscriptionPoll::Ready(LoadResult::Vaults(Ok(vaults))) => {
                 self.rx = None;
                 if vaults.is_empty() {
                     self.load_state =
@@ -447,12 +448,12 @@ impl OpPickerState {
                 self.load_state = OpLoadState::Ready;
                 true
             }
-            Ok(LoadResult::Accounts(Err(e)) | LoadResult::Vaults(Err(e))) => {
+            SubscriptionPoll::Ready(LoadResult::Accounts(Err(e)) | LoadResult::Vaults(Err(e))) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(classify_probe_error(&e));
                 true
             }
-            Ok(LoadResult::Items(Ok(items))) => {
+            SubscriptionPoll::Ready(LoadResult::Items(Ok(items))) => {
                 self.rx = None;
                 let vault_id = self
                     .selected_vault
@@ -470,14 +471,14 @@ impl OpPickerState {
                 self.load_state = OpLoadState::Ready;
                 true
             }
-            Ok(LoadResult::Items(Err(e)) | LoadResult::Fields(Err(e))) => {
+            SubscriptionPoll::Ready(LoadResult::Items(Err(e)) | LoadResult::Fields(Err(e))) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
                     message: e.to_string(),
                 });
                 true
             }
-            Ok(LoadResult::Fields(Ok(mut fields))) => {
+            SubscriptionPoll::Ready(LoadResult::Fields(Ok(mut fields))) => {
                 self.rx = None;
                 // Concealed first; cache the sorted vec so cache hits
                 // are already presentation-ordered.
@@ -527,8 +528,8 @@ impl OpPickerState {
                 self.load_state = OpLoadState::Ready;
                 true
             }
-            Err(mpsc::error::TryRecvError::Empty) => false,
-            Err(mpsc::error::TryRecvError::Disconnected) => {
+            SubscriptionPoll::Pending => false,
+            SubscriptionPoll::Closed => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
                     message: "background worker disconnected".into(),
