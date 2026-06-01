@@ -222,14 +222,18 @@ fn list_row_width(
 }
 
 fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor: bool) -> usize {
-    jackin_console::list_geometry::workspace_row_width(name, has_instances, selected_with_cursor)
+    jackin_console::tui::list_geometry::workspace_row_width(
+        name,
+        has_instances,
+        selected_with_cursor,
+    )
 }
 
 fn instance_row_width(
     entry: &crate::instance::InstanceIndexEntry,
     selected_with_cursor: bool,
 ) -> usize {
-    jackin_console::list_geometry::instance_row_width(
+    jackin_console::tui::list_geometry::instance_row_width(
         &entry.instance_id,
         &entry.role_key,
         selected_with_cursor,
