@@ -8,6 +8,7 @@ use crate::console::tui::render::list_geometry::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
+use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::render::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use crate::console::tui::render::mount_display::global_mounts_content_width;
@@ -56,7 +57,7 @@ const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 ///   list/details seam drag (anchor + drag + release) and click-to-select.
 /// - On `ManagerStage::Editor` / `CreatePrelude` with a `FileBrowser` modal
 ///   whose git-prompt overlay is active AND has a resolved URL: a
-///   `Down(Left)` on the URL row emits a typed URL-open outcome.
+///   `Down(Left)` on the URL row queues a typed URL-open effect.
 /// - Ignores everything when the terminal is narrower than
 ///   [`MIN_DRAGGABLE_WIDTH`] — drag bounds would be absurd.
 /// - All other events are ignored.
@@ -183,9 +184,9 @@ pub fn handle_mouse_with_config(
     // Editor / CreatePrelude file-browser URL click: only on Down(Left),
     // only when the modal is a FileBrowser with a resolved git URL.
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
-        && let Some(outcome) = try_open_file_browser_git_url(state, mouse, term_size)
+        && try_open_file_browser_git_url(state, mouse, term_size)
     {
-        return outcome;
+        return super::InputOutcome::Continue;
     }
 
     // Stage + modal gate for the list-view seam drag. Only the List view
@@ -1340,18 +1341,19 @@ fn global_mount_rows_content_width(
 /// Modal geometry comes from the same helper `render_modal` uses, so mouse
 /// hit-testing can never drift out of sync with what was drawn.
 fn try_open_file_browser_git_url(
-    state: &ManagerState<'_>,
+    state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-) -> Option<super::InputOutcome> {
+) -> bool {
     let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
-        return None;
+        return false;
     };
     let modal_area = modal_outer_rect(modal, term_size);
     let Some(url) = fb_state.url_to_open_on_click(modal_area, mouse.column, mouse.row) else {
-        return None;
+        return false;
     };
-    Some(super::InputOutcome::OpenUrl(url))
+    state.request_effect(ManagerEffect::OpenUrl(url));
+    true
 }
 
 /// Return the logical list row the mouse is over, or `None` if the click
@@ -1481,6 +1483,7 @@ mod mouse_drag_tests {
     use super::{
         MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
     };
+    use crate::console::tui::effect::ManagerEffect;
     use crate::console::tui::state::{
         DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
         GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
@@ -1907,11 +1910,13 @@ mod mouse_drag_tests {
         let hit = hit.expect("URL row should have a clickable hitbox");
 
         let outcome = handle_mouse(&mut state, hit, term);
-        match outcome {
-            super::super::InputOutcome::OpenUrl(url) => {
+        assert!(matches!(outcome, super::super::InputOutcome::Continue));
+        let effects = state.drain_effects();
+        match effects.as_slice() {
+            [ManagerEffect::OpenUrl(url)] => {
                 assert_eq!(url, "file:///tmp/unreachable");
             }
-            other => panic!("expected OpenUrl outcome, got {other:?}"),
+            other => panic!("expected OpenUrl effect, got {other:?}"),
         }
         // No drag latched — URL click is consumed before the seam path.
         assert!(

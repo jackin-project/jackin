@@ -493,7 +493,10 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
         jackin_console::github_mounts::resolve_for_workspace_from_cache(ws, &state.mount_info_cache);
     match choices.len() {
         0 => InputOutcome::Continue,
-        1 => InputOutcome::OpenUrl(choices[0].url.clone()),
+        1 => {
+            state.request_effect(ManagerEffect::OpenUrl(choices[0].url.clone()));
+            InputOutcome::Continue
+        }
         _ => {
             dispatch_manager(
                 state,
@@ -517,7 +520,8 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
         Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(url) => {
                 dispatch_manager(state, ManagerMessage::DismissListModal);
-                InputOutcome::OpenUrl(url)
+                state.request_effect(ManagerEffect::OpenUrl(url));
+                InputOutcome::Continue
             }
             ModalOutcome::Cancel => {
                 dispatch_manager(state, ManagerMessage::DismissListModal);
@@ -736,6 +740,7 @@ mod tests {
     use super::{InputOutcome, handle_new_session_picker, instance_action_accepts_status};
     use crate::agent::AgentChoiceState;
     use crate::config::AppConfig;
+    use crate::console::tui::effect::ManagerEffect;
     use crate::console::tui::input::handle_key;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
     use crate::paths::JackinPaths;
@@ -1547,8 +1552,8 @@ mod tests {
 
     #[test]
     fn list_o_with_single_github_mount_has_one_resolved_url() {
-        // Input emits a typed URL-open outcome; browser side effects stay in
-        // the run loop.
+        // Input queues typed URL-open effect; browser side effects stay in
+        // the effect executor.
         let tmp = tempfile::tempdir().unwrap();
         let repo = make_github_repo(tmp.path(), "solo", "trunk");
         let ws = WorkspaceConfig {
@@ -1566,11 +1571,13 @@ mod tests {
         )
         .unwrap();
 
-        match outcome {
-            InputOutcome::OpenUrl(url) => {
+        assert!(matches!(outcome, InputOutcome::Continue));
+        let effects = state.drain_effects();
+        match effects.first() {
+            Some(ManagerEffect::OpenUrl(url)) => {
                 assert_eq!(url, "https://github.com/owner/solo/tree/trunk");
             }
-            other => panic!("expected OpenUrl outcome, got {other:?}"),
+            other => panic!("expected OpenUrl effect, got {other:?}"),
         }
     }
 
@@ -1686,15 +1693,17 @@ mod tests {
         )
         .unwrap();
 
-        // Browser side effects are no longer executed in the input handler.
-        // The modal closes and returns a URL-open outcome for the run loop.
+        // Browser side effects are not executed in the input handler. The
+        // modal closes and queues a URL-open effect for the run loop.
         assert!(
             !matches!(state.list_modal, Some(Modal::GithubPicker { .. })),
             "GithubPicker must be gone after Enter"
         );
-        match outcome {
-            InputOutcome::OpenUrl(url) => assert_eq!(url, "file:///dev/null"),
-            other => panic!("expected OpenUrl outcome, got {other:?}"),
+        assert!(matches!(outcome, InputOutcome::Continue));
+        let effects = state.drain_effects();
+        match effects.as_slice() {
+            [ManagerEffect::OpenUrl(url)] => assert_eq!(url, "file:///dev/null"),
+            other => panic!("expected OpenUrl effect, got {other:?}"),
         }
     }
 

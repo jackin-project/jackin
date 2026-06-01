@@ -93,7 +93,8 @@ pub fn handle_key(
         }
         state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
         if let Some(url) = open_url {
-            return Ok(InputOutcome::OpenUrl(url));
+            state.request_effect(ManagerEffect::OpenUrl(url));
+            return Ok(InputOutcome::Continue);
         }
 
         // After modal handling, check if an exit intent was signalled by
@@ -164,7 +165,8 @@ pub fn handle_key(
         }
         global_mounts::after_settings_event(state);
         if let Some(url) = open_url {
-            return Ok(InputOutcome::OpenUrl(url));
+            state.request_effect(ManagerEffect::OpenUrl(url));
+            return Ok(InputOutcome::Continue);
         }
         return Ok(InputOutcome::Continue);
     }
@@ -209,7 +211,10 @@ pub fn handle_key(
             };
             match outcome {
                 prelude::PreludeModalOutcome::Continue => {}
-                prelude::PreludeModalOutcome::OpenUrl(url) => return Ok(InputOutcome::OpenUrl(url)),
+                prelude::PreludeModalOutcome::OpenUrl(url) => {
+                    state.request_effect(ManagerEffect::OpenUrl(url));
+                    return Ok(InputOutcome::Continue);
+                }
                 prelude::PreludeModalOutcome::ReopenFileBrowserAtLastCwd => {
                     state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
                     return Ok(InputOutcome::Continue);
@@ -300,7 +305,10 @@ pub fn handle_key(
             let mut open_url = None;
             global_mounts::handle_settings_key_with_open_url(state, key, &mut open_url);
             global_mounts::after_settings_event(state);
-            Ok(open_url.map_or(InputOutcome::Continue, InputOutcome::OpenUrl))
+            if let Some(url) = open_url {
+                state.request_effect(ManagerEffect::OpenUrl(url));
+            }
+            Ok(InputOutcome::Continue)
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
         StageDis::ConfirmDelete => Ok(handle_confirm_delete_key(state, cwd, key)),

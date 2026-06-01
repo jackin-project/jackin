@@ -448,7 +448,8 @@ pub(super) fn handle_editor_key(
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
                 if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
-                    return Ok(InputOutcome::OpenUrl(web_url));
+                    state.request_effect(ManagerEffect::OpenUrl(web_url));
+                    return Ok(InputOutcome::Continue);
                 } else {
                     editor.modal = Some(Modal::ErrorPopup {
                         state: jackin_tui::components::ErrorPopupState::new(

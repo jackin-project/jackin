@@ -1,7 +1,6 @@
 use crate::console::tui::prompts::{
     dispatch_and_prompt_launch, launch_with_committed_agent, prompt_committed_role,
 };
-use crate::console::tui::effect::ManagerEffect;
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
@@ -453,16 +452,6 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 action,
                             }));
                         }
-                        crate::console::tui::InputOutcome::OpenUrl(url) => {
-                            if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                needs_redraw |= crate::console::effects::execute_manager_effect(
-                                    ms,
-                                    &mut config,
-                                    paths,
-                                    ManagerEffect::OpenUrl(url),
-                                );
-                            }
-                        }
                     }
                 }
                 Event::Mouse(mouse) => {
@@ -510,18 +499,18 @@ pub async fn run_console<H: InstanceActionHandler>(
                         }
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        let outcome = crate::console::tui::input::handle_mouse_with_config(
+                        let _outcome = crate::console::tui::input::handle_mouse_with_config(
                             ms,
                             mouse,
                             term_size,
                             Some(&config),
                         );
-                        if let crate::console::tui::InputOutcome::OpenUrl(url) = outcome {
+                        for effect in ms.drain_effects() {
                             needs_redraw |= crate::console::effects::execute_manager_effect(
                                 ms,
                                 &mut config,
                                 paths,
-                                ManagerEffect::OpenUrl(url),
+                                effect,
                             );
                         }
                         // Switch the terminal pointer to the hand shape over any
