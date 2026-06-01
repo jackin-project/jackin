@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use directories::BaseDirs;
+use jackin_tui::runtime::BlockingSubscription;
 
 /// Directories excluded from the listing when browsing $HOME.
 pub const EXCLUDED: &[&str] = &[
@@ -188,6 +189,13 @@ pub fn resolve_git_url(path: &Path) -> Option<String> {
         } => Some(web_url),
         _ => None,
     }
+}
+
+pub fn start_git_url_resolution(path: PathBuf) -> BlockingSubscription<Option<String>> {
+    jackin_tui::runtime::spawn_named_blocking_subscription(
+        "jackin-file-browser-git-url",
+        move || resolve_git_url(&path),
+    )
 }
 
 /// Open a resolved git web URL in the host browser.

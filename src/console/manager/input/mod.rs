@@ -42,10 +42,7 @@ pub(super) fn request_file_browser_git_url_resolution(
     state: &mut FileBrowserState,
     path: std::path::PathBuf,
 ) {
-    let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
-        "jackin-file-browser-git-url",
-        move || file_browser::resolve_git_url(&path),
-    );
+    let rx = file_browser::start_git_url_resolution(path);
     state.attach_git_url_resolution(rx);
 }
 
