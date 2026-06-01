@@ -121,6 +121,33 @@ pub fn env_block_height(workspace_keys: usize, role_keys: usize) -> u16 {
     (total_rows + 2).min(20) as u16
 }
 
+#[must_use]
+pub const fn workspace_has_any_env(workspace_keys: usize, role_keys: usize) -> bool {
+    workspace_keys > 0 || role_keys > 0
+}
+
+#[must_use]
+pub const fn agents_block_agent_count(
+    all_allowed: bool,
+    role_count: usize,
+    allowed_role_count: usize,
+) -> usize {
+    if all_allowed {
+        role_count
+    } else {
+        allowed_role_count
+    }
+}
+
+#[must_use]
+pub fn agents_block_content_width<'a>(role_keys: impl IntoIterator<Item = &'a str>) -> usize {
+    role_keys
+        .into_iter()
+        .map(|key| jackin_tui::display_cols(key) + 4)
+        .max()
+        .unwrap_or(0)
+}
+
 pub fn clamp_scroll_area_x(area: SidebarScrollArea, value: &mut u16) {
     clamp_scroll_x(area.content_width, scroll_viewport_width(area.area), value);
 }
@@ -200,6 +227,16 @@ mod tests {
         assert_eq!(global_mounts_content_height([]), 1);
         assert_eq!(global_mounts_content_height([true, false]), 4);
         assert_eq!(global_mount_rows_height([true, false]), 6);
+    }
+
+    #[test]
+    fn agent_and_env_metrics_are_data_only() {
+        assert!(!workspace_has_any_env(0, 0));
+        assert!(workspace_has_any_env(1, 0));
+        assert!(workspace_has_any_env(0, 1));
+        assert_eq!(agents_block_agent_count(true, 5, 2), 5);
+        assert_eq!(agents_block_agent_count(false, 5, 2), 2);
+        assert_eq!(agents_block_content_width(["a", "long-role"]), 13);
     }
 
     #[test]

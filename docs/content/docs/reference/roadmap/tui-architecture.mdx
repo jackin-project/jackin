@@ -1009,70 +1009,207 @@ Systematically audit every screen in the host console and settings for focus vio
 
 ### Phase 9 — TUI source directory convention migration
 
-**Complete on `feature/tui-architecture`.** Capsule-specific rendering files live under `crates/jackin-capsule/src/tui/`; console-specific rendering files live under `src/console/tui/`; `src/console/manager/` now owns the manager model/update code and re-exports only the manager-owned render entrypoint needed by existing callers.
+**Partially complete on `feature/tui-architecture`.** The remaining work is to finish applying one source layout to all three surface crates: `jackin-console`, `jackin-launch`, and `jackin-capsule`.
 
-**Industry reference: Elm Architecture / Model-Update-View.**
+**Industry reference: The Elm Architecture / Model-Update-View.**
 
-The TUI community (Ratatui, tui-rs, Elm, The Elm Architecture, Cursive, builtins in terminal frameworks) has converged on one structural pattern for complex TUI applications: **Model / Update / View** (MUV). jackin' follows this pattern explicitly:
+Ratatui is intentionally a rendering library: input handling, state updates, event loops, and side effects are application responsibilities. jackin' standardizes those responsibilities with The Elm Architecture (TEA):
 
-- **Model** — the application state structs (`ManagerState`, `EditorState`, `SettingsState`, `Multiplexer`). Pure data, no rendering, no I/O.
-- **Update** — the message handlers (`update_manager`, input dispatch, `handle_mouse`). Pure functions: take a model + event, return a new model + effect requests.
-- **View** — the rendering layer (`render`, widgets, raw ANSI paint functions). Pure reads of immutable model; no mutations, no I/O, no side effects.
+- **Model** — TUI application state: active screen, focus owner, modal stack, scroll positions, hover/click state, picker state, animation state, render-safe snapshots.
+- **Message** — semantic user/system events: key and mouse intent, background completion, tick, resize, dialog outcome, screen transition.
+- **Update** — deterministic state transition: apply a `Message` to the model and return typed effect requests.
+- **Effect / Subscription** — typed requests for non-UI work and long-lived event sources. Effects describe work; they do not execute Docker, git, `op`, `gh`, filesystem, network, or config operations inside the TUI module.
+- **View** — pure Ratatui/raw-ANSI composition from the current model to terminal pixels.
 
-This pattern is the industry standard for TUI correctness and testability. The `tui/` directory enforces the View boundary: it contains ONLY the View layer. Model lives in `state.rs`; Update lives in `input/` and `message.rs`. Mixing them is a design violation.
+The final directory convention follows that architecture: **`src/tui/` is the whole TUI application boundary, not just the View layer.** Everything related to terminal interaction for a surface lives there: TUI model, messages, update functions, effect types, subscriptions, event-loop wiring, terminal adapter, frame composition, screen modules, and local visual components.
 
-**Hard rule for the tui/ directory: rendering only, no business logic.**
+**Hard boundary: no business logic or external command execution in `src/tui/`.**
 
-The `tui/` directory is a strict rendering boundary. Every file inside it must satisfy this test: *"If this file were deleted, would any workspace resolution, role loading, Docker command, network call, config write, or data-model mutation be affected?"* If yes, the file does not belong in `tui/`. The separation maps directly to the Model/Update/View architecture: `tui/` is the View layer only.
+`src/tui/` must not execute Docker, git, `op`, `gh`, filesystem scans, config reads/writes, credential work, network calls, or capsule protocol/session authority. It may request that work through typed effects; non-TUI modules execute the work and return typed results as messages. A file belongs outside `src/tui/` if deleting it would remove workspace resolution, role loading, Docker/runtime behavior, config persistence, credential handling, protocol/session management, or any other non-visual product capability.
 
-**What belongs in `tui/`** (from [TUI Design Decisions](/reference/tui-design-decisions/#tui-source-code-location--mandatory-directory-convention)):
-- Ratatui widget implementations (`Widget` / `StatefulWidget` impls)
-- Raw ANSI escape rendering functions
-- Screen layout and geometry helpers
-- Color token application, border rendering, cursor management
-- Focus state rendering, hint bar rendering, lookbook stories
+**What belongs in `src/tui/`:**
+- TUI model structs and enums (`App`, screen models, focus/modal/hover state)
+- `Message` / `Action` enums used by the TUI update loop
+- `update` functions that mutate only TUI state and return typed effects
+- `Effect` and `Subscription` type definitions
+- Event-loop wiring that maps terminal events and background completions into messages
+- Terminal lifecycle/backend adapters, including raw-mode/alternate-screen/capsule socket backends
+- Ratatui `Widget` / `StatefulWidget` implementations and raw-ANSI rendering where still required
+- Frame composition, screen layout, geometry helpers, hitboxes, focus-visible rendering, hint bars, and local lookbook stories
 
-**What must NOT be in `tui/`** (stays alongside the business layer):
-- Business logic — workspace resolution, role loading, Docker commands, config parsing
-- Input event dispatch and key binding handlers
-- Network and I/O code
-- State mutation logic (update layer)
-
-The Model/Update/View contract guarantees this: the update layer (`input/`, `message.rs`, `state.rs`) mutates state in response to events; the view layer (`tui/`) reads immutable state and produces pixels. These two must never mix in the same file. A file that both handles input events and renders output is a violation.
-
-**Completed work:**
-- `src/console/manager/render/` moved to `src/console/tui/render/`.
-- `src/console/widgets/` moved to `src/console/tui/widgets/`.
-- `src/console/terminal.rs` moved to <RepoFile path="src/console/tui/terminal.rs" />.
-- `mod` declarations and `use` paths updated after the moves.
-- `cargo check` and `cargo fmt --check` pass locally after the migration.
-
-Move all terminal-rendering source files into designated TUI directories so the location of any visual component is unambiguous. The rule: TUI code lives in exactly three homes — `crates/jackin-tui/` (shared), `crates/<crate>/src/tui/` (crate-specific), or `src/console/tui/` (host console). A developer or agent changing a visual behavior must know the exact directory to open without searching.
-
-**Capsule migration** (`crates/jackin-capsule/src/tui/`): move `statusbar.rs`, `chrome_widget.rs`, `dialog.rs`, `dialog_widgets.rs`, `pane_widget.rs`, `socket_backend.rs`, `render.rs`, `branch_context_bar.rs` from the crate root into `src/tui/`. The `daemon/compositor.rs` render methods stay in `daemon/` since they are render+state boundary code, but their rendering primitives (helpers they call) move into `tui/`. Add a `tui/mod.rs` that re-exports what `lib.rs` currently exposes.
-
-**Console migration** (`src/console/tui/`): move `manager/render/` → `tui/render/`, `widgets/` → `tui/widgets/`, `terminal.rs` → `tui/terminal.rs`. Update all `use` paths. The manager input handlers and state structs remain in `manager/` — they are not rendering code.
-
-**Done when:** complete. All surface-specific rendering files live under the designated `tui/` subdirectory; CI still needs to run the normal full matrix before merge.
+**What must stay outside `src/tui/`:**
+- Docker/runtime command execution
+- Git, GitHub CLI, 1Password CLI, shell command, filesystem, and network operations
+- Config/schema loading, migration, and persistence
+- Workspace resolution, role loading, mount inspection, and durable state cleanup
+- Capsule PTY/session/control-plane authority and wire protocol definitions
+- Non-visual domain rules that do not depend on terminal interaction
 
 ### Planned crate landscape (full TUI ecosystem)
 
-When all phases complete, every TUI surface lives in its own crate with explicit MUV layers. This table is the target state:
+When all phases complete, every TUI surface lives in its own crate with the same `src/tui/` TEA boundary:
 
-| Crate | Screens | **Model** | **Update** | **View** | Status |
-|---|---|---|---|---|---|
-| `jackin-tui` | 0 — shared lib | — | — | `components/`, `theme.rs`, `scroll.rs`, `geometry.rs` | ✅ done |
-| `jackin-tui-lookbook` | 1 browser | `stories.rs` | `interactors.rs` | `main.rs` (terminal), `svg.rs` | ✅ done |
-| `jackin-capsule` | 1 multiplexer | `session.rs`, `mux_mode.rs` | `action.rs`, `input.rs`, `daemon/` | `tui/` (statusbar, chrome, dialog…) | ✅ done |
-| `jackin-console` | 3 screens | per-screen `state.rs` | per-screen `update.rs` | per-screen `tui/`, terminal lifecycle | Phase 10 partial |
-| `jackin-launch` | 1 cockpit | `state.rs` (LaunchView) | `update.rs` (stages, pickers) | `tui/` (rain, failure, build log, container info) | Phase 10 partial |
-| `jackin` binary | 0 | — | — | — routes CLI → crates | ongoing |
+| Crate | TUI role | Final TUI home | Non-TUI home |
+|---|---|---|---|
+| `jackin-tui` | Shared design system | `components/`, `tokens.rs`, `theme.rs`, `geometry.rs`, `scroll.rs` | No surface-specific product logic |
+| `jackin-tui-lookbook` | Shared component catalog | lookbook app + SVG/terminal preview code | No operator workflow logic |
+| `jackin-console` | Multi-screen host console | `crates/jackin-console/src/tui/` | domain/services modules outside `tui/` |
+| `jackin-launch` | Single-screen launch cockpit | `crates/jackin-launch/src/tui/` | launch orchestration/adapters outside `tui/` |
+| `jackin-capsule` | Single-screen in-container multiplexer | `crates/jackin-capsule/src/tui/` | daemon, protocol, runtime setup outside `tui/` |
+| `jackin` binary | CLI router | none | routes commands into the crates |
 
-**The one rule:** if it is about what the operator sees and interacts with → `tui/`. If it is about data, Docker, or disk → outside `tui/`.
+**`jackin-tui`** is the shared component library. It contains reusable visual primitives and design-system code only: panels, pickers, scrollable blocks, hint bars, confirm dialogs, tab strips, tokens, theme adapters, and geometry helpers. It never contains surface-specific console, launch, capsule, Docker, workspace, credential, or command-execution logic.
 
-`tui/` contains ALL THREE layers (Model, Update, View) plus event-loop wiring. The boundary is TUI experience vs. business logic, not View vs. Update+Model. For single-screen crates, `tui/` is flat. For multi-screen crates (console), screens are sub-folders inside `tui/screens/` — see [TUI Design Decisions](/reference/tui-design-decisions/#tui-source-code-location--mandatory-directory-convention) for the full layouts.
+### Final single-screen surface layout
 
-**`jackin-tui`** is the shared component library — consumed by every crate; never contains surface-specific code.
+Use this structure for `jackin-launch` and for `jackin-capsule` unless a surface gains multiple distinct screens later:
+
+```text
+crates/<surface>/src/
+├── lib.rs
+├── domain/                 # optional: pure non-visual product rules
+├── services/               # optional: side-effect adapters / external integrations
+└── tui/
+    ├── mod.rs
+    ├── app.rs              # TUI Model
+    ├── message.rs          # Message / Action vocabulary
+    ├── update.rs           # update(model, message) -> effects
+    ├── effect.rs           # typed effect requests only; no execution
+    ├── subscriptions.rs    # timers, background-result polling, long-lived streams
+    ├── run.rs              # event loop wiring
+    ├── terminal.rs         # terminal lifecycle/backend/capabilities
+    ├── view.rs             # top-level render composition
+    └── components/         # surface-local UI components
+```
+
+Concrete `jackin-launch` target:
+
+```text
+crates/jackin-launch/src/
+├── lib.rs
+├── progress.rs             # non-visual launch orchestration / host adapter boundary
+├── build_log.rs            # build-log capture/storage when not visual
+└── tui/
+    ├── mod.rs
+    ├── app.rs
+    ├── message.rs
+    ├── update.rs
+    ├── effect.rs
+    ├── subscriptions.rs
+    ├── run.rs
+    ├── terminal.rs
+    ├── view.rs
+    └── components/
+        ├── rain.rs
+        ├── progress_rail.rs
+        ├── failure_dialog.rs
+        ├── build_log_dialog.rs
+        ├── container_info_dialog.rs
+        └── prompts.rs
+```
+
+Concrete `jackin-capsule` target:
+
+```text
+crates/jackin-capsule/src/
+├── lib.rs
+├── main.rs
+├── protocol/               # wire protocol and frame types
+├── daemon/                 # PTY/session/control-plane authority
+├── runtime_setup.rs        # non-visual container setup
+└── tui/
+    ├── mod.rs
+    ├── app.rs              # visible multiplexer model
+    ├── message.rs
+    ├── update.rs
+    ├── effect.rs
+    ├── subscriptions.rs
+    ├── run.rs              # attach/client TUI loop when applicable
+    ├── terminal.rs
+    ├── socket_backend.rs
+    ├── view.rs
+    └── components/
+        ├── chrome.rs
+        ├── status_bar.rs
+        ├── branch_context_bar.rs
+        ├── pane.rs
+        ├── dialog.rs
+        ├── palette.rs
+        └── container_info_dialog.rs
+```
+
+### Final multi-screen surface layout
+
+Use this structure for `jackin-console`:
+
+```text
+crates/jackin-console/src/
+├── lib.rs
+├── domain/                 # optional: pure non-visual console/product rules
+├── services/               # optional: command/IO adapters
+└── tui/
+    ├── mod.rs
+    ├── app.rs              # ConsoleApp, active screen, modal stack
+    ├── message.rs          # top-level messages
+    ├── update.rs           # top-level routing/update
+    ├── effect.rs           # typed effect requests only
+    ├── subscriptions.rs
+    ├── run.rs
+    ├── terminal.rs
+    ├── view.rs             # top-level frame/chrome/modal composition
+    ├── components/         # console-local shared components
+    └── screens/            # exists only for multi-screen surfaces
+        ├── workspaces/
+        │   ├── mod.rs
+        │   ├── model.rs
+        │   ├── message.rs
+        │   ├── update.rs
+        │   ├── effect.rs
+        │   ├── view.rs
+        │   └── components/
+        ├── editor/
+        │   ├── mod.rs
+        │   ├── model.rs
+        │   ├── message.rs
+        │   ├── update.rs
+        │   ├── effect.rs
+        │   ├── view.rs
+        │   └── components/
+        └── settings/
+            ├── mod.rs
+            ├── model.rs
+            ├── message.rs
+            ├── update.rs
+            ├── effect.rs
+            ├── view.rs
+            └── components/
+```
+
+Do not create `screens/` for a single-screen crate. Do not create nested `tui/screens/<screen>/tui/`; once code is inside `src/tui/screens/<screen>/`, the screen's `model.rs`, `message.rs`, `update.rs`, `effect.rs`, `view.rs`, and `components/` already express the TEA layers.
+
+### Effect boundary example
+
+TUI code describes external work but does not perform it:
+
+```text
+tui/update.rs
+  -> returns Effect::RefreshInstances
+
+effect executor / run loop
+  -> calls non-TUI services::instances::refresh(...)
+
+services::instances
+  -> performs Docker/runtime work
+  -> returns Result<InstanceSnapshot, InstanceRefreshError>
+
+tui/message.rs
+  <- Message::InstancesRefreshed(result)
+
+tui/update.rs
+  -> updates App model
+```
+
+This gives jackin' one dependency direction: TUI modules may depend on shared components and pure domain rules; side-effect adapters may depend on domain rules; non-TUI modules return typed data back to the TUI through messages. No renderer, component, or update function calls an external command directly.
 
 ### Phase 10 — Extract `jackin-console` and `jackin-launch` crates
 
@@ -1100,7 +1237,7 @@ crates/jackin-console/src/
     └── tui/
 ```
 
-Partial extraction is underway. The `jackin-console` crate now exists and owns the terminal-session lifecycle in <RepoFile path="crates/jackin-console/src/terminal.rs" /> behind a `ConsoleHostTerminal` adapter and shared event-loop shell helpers in <RepoFile path="crates/jackin-console/src/run.rs" />. It also owns the reusable workspace role-access rule in <RepoFile path="crates/jackin-console/src/workspace.rs" />, workspace-list screen model/update helpers in <RepoFile path="crates/jackin-console/src/workspaces/state.rs" /> and <RepoFile path="crates/jackin-console/src/workspaces/update.rs" />, workspace-list row width helpers in <RepoFile path="crates/jackin-console/src/list_geometry.rs" />, the mount-source inspector in <RepoFile path="crates/jackin-console/src/mount_info.rs" />, the render-safe mount-source cache in <RepoFile path="crates/jackin-console/src/mount_info_cache.rs" />, the mount-diff classifier in <RepoFile path="crates/jackin-console/src/mount_diff.rs" />, mount display row data and width math in <RepoFile path="crates/jackin-console/src/mount_display.rs" />, sidebar layout allocation, block-height math, and scroll-area math in <RepoFile path="crates/jackin-console/src/sidebar_layout.rs" />, the GitHub mount projection helper in <RepoFile path="crates/jackin-console/src/github_mounts.rs" />, the structural 1Password metadata cache in <RepoFile path="crates/jackin-console/src/op_cache.rs" />, the 1Password reference parser in <RepoFile path="crates/jackin-console/src/op_reference.rs" />, the 1Password breadcrumb parser in <RepoFile path="crates/jackin-console/src/op_breadcrumb.rs" />, the generic provider-picker state in <RepoFile path="crates/jackin-console/src/provider_picker.rs" />, split-drag state in <RepoFile path="crates/jackin-console/src/split.rs" />, shared console chrome geometry constants in <RepoFile path="crates/jackin-console/src/layout.rs" />, scroll-focus/cursor-follow/selection movement helpers in <RepoFile path="crates/jackin-console/src/focus.rs" />, editor screen model/update helpers plus Auth/Secrets row models, tab metadata, and row projection in <RepoFile path="crates/jackin-console/src/editor/state.rs" /> and <RepoFile path="crates/jackin-console/src/editor/update.rs" />, settings screen model/update helpers and environment-row projection in <RepoFile path="crates/jackin-console/src/settings/state.rs" /> and <RepoFile path="crates/jackin-console/src/settings/update.rs" />, plus the extracted picker widgets, list cursor/selection/state/filter helpers, op-breadcrumb span renderer, mount-row header/column helpers, modal footer hint fragments, modal rect helpers, editor/settings row render helpers, and modal spinner frames in <RepoFile path="crates/jackin-console/src/widgets/source_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/scope_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/mount_dst_choice.rs" />, <RepoFile path="crates/jackin-console/src/widgets/mount_rows.rs" />, <RepoFile path="crates/jackin-console/src/widgets/footer_hints.rs" />, <RepoFile path="crates/jackin-console/src/widgets/modal_rects.rs" />, <RepoFile path="crates/jackin-console/src/widgets/editor_rows.rs" />, <RepoFile path="crates/jackin-console/src/widgets/github_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/workdir_pick.rs" />, <RepoFile path="crates/jackin-console/src/widgets/agent_choice.rs" />, <RepoFile path="crates/jackin-console/src/widgets/role_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/confirm_save.rs" />, <RepoFile path="crates/jackin-console/src/widgets/op_breadcrumb.rs" />, <RepoFile path="crates/jackin-console/src/widgets/op_picker.rs" />, and <RepoFile path="crates/jackin-console/src/widgets/file_browser/mod.rs" />. Host call sites now import the extracted workspace role-access rule, mount-source inspector, scope/source/mount-destination/GitHub/workdir/agent/role pickers, file browser, confirm-save dialog, mount-info cache, mount-diff classifier, mount display row data and width math, sidebar layout allocation, block-height math, scroll-area math, workspace-list row width helpers, workspace summaries, Auth row projection, structural 1Password metadata cache, op-path breadcrumb parsing/rendering, mount-row header/column helpers, modal footer hint fragments, modal rect helpers, editor/settings row render helpers, op-picker breadcrumbs/fatal classification/filtering/field-row projection/account-vault-item-section-field row styling/loading and fatal copy/stage classification/field-label origin/reference construction, shared list cursor/selection/state/filter helpers, modal spinner frames, 1Password reference parser, and GitHub mount projection directly from `jackin-console`; the remaining root adapter in <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> preserves the existing call sites. The root bridge in <RepoFile path="src/console/tui/terminal.rs" /> supplies jackin'-specific debug-buffering and host-screen globals while preserving the old terminal call sites. Remaining extraction work is the substantial part: moving the console event loop, screen model/update state, and remaining view modules out of `src/console/`.
+Partial extraction is underway. The `jackin-console` crate now exists and owns the terminal-session lifecycle in <RepoFile path="crates/jackin-console/src/terminal.rs" /> behind a `ConsoleHostTerminal` adapter and shared event-loop shell helpers in <RepoFile path="crates/jackin-console/src/run.rs" />. It also owns the reusable workspace role-access rule in <RepoFile path="crates/jackin-console/src/workspace.rs" />, workspace-list screen model/update helpers in <RepoFile path="crates/jackin-console/src/workspaces/state.rs" /> and <RepoFile path="crates/jackin-console/src/workspaces/update.rs" />, workspace-list row width helpers in <RepoFile path="crates/jackin-console/src/list_geometry.rs" />, the mount-source inspector in <RepoFile path="crates/jackin-console/src/mount_info.rs" />, the render-safe mount-source cache in <RepoFile path="crates/jackin-console/src/mount_info_cache.rs" />, the mount-diff classifier in <RepoFile path="crates/jackin-console/src/mount_diff.rs" />, mount display row data and width math in <RepoFile path="crates/jackin-console/src/mount_display.rs" />, sidebar layout allocation, block-height math, scroll-area math, and agent/env metric helpers in <RepoFile path="crates/jackin-console/src/sidebar_layout.rs" />, the GitHub mount projection helper in <RepoFile path="crates/jackin-console/src/github_mounts.rs" />, the structural 1Password metadata cache in <RepoFile path="crates/jackin-console/src/op_cache.rs" />, the 1Password reference parser in <RepoFile path="crates/jackin-console/src/op_reference.rs" />, the 1Password breadcrumb parser in <RepoFile path="crates/jackin-console/src/op_breadcrumb.rs" />, the generic provider-picker state in <RepoFile path="crates/jackin-console/src/provider_picker.rs" />, split-drag state in <RepoFile path="crates/jackin-console/src/split.rs" />, shared console chrome geometry constants in <RepoFile path="crates/jackin-console/src/layout.rs" />, scroll-focus/cursor-follow/selection movement helpers in <RepoFile path="crates/jackin-console/src/focus.rs" />, editor screen model/update helpers plus Auth/Secrets row models, tab metadata, and row projection in <RepoFile path="crates/jackin-console/src/editor/state.rs" /> and <RepoFile path="crates/jackin-console/src/editor/update.rs" />, settings screen model/update helpers and environment-row projection in <RepoFile path="crates/jackin-console/src/settings/state.rs" /> and <RepoFile path="crates/jackin-console/src/settings/update.rs" />, plus the extracted picker widgets, list cursor/selection/state/filter helpers, op-breadcrumb span renderer, mount-row header/column helpers, modal footer hint fragments, modal rect helpers, editor/settings row render helpers, and modal spinner frames in <RepoFile path="crates/jackin-console/src/widgets/source_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/scope_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/mount_dst_choice.rs" />, <RepoFile path="crates/jackin-console/src/widgets/mount_rows.rs" />, <RepoFile path="crates/jackin-console/src/widgets/footer_hints.rs" />, <RepoFile path="crates/jackin-console/src/widgets/modal_rects.rs" />, <RepoFile path="crates/jackin-console/src/widgets/editor_rows.rs" />, <RepoFile path="crates/jackin-console/src/widgets/github_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/workdir_pick.rs" />, <RepoFile path="crates/jackin-console/src/widgets/agent_choice.rs" />, <RepoFile path="crates/jackin-console/src/widgets/role_picker.rs" />, <RepoFile path="crates/jackin-console/src/widgets/confirm_save.rs" />, <RepoFile path="crates/jackin-console/src/widgets/op_breadcrumb.rs" />, <RepoFile path="crates/jackin-console/src/widgets/op_picker.rs" />, and <RepoFile path="crates/jackin-console/src/widgets/file_browser/mod.rs" />. Host call sites now import the extracted workspace role-access rule, mount-source inspector, scope/source/mount-destination/GitHub/workdir/agent/role pickers, file browser, confirm-save dialog, mount-info cache, mount-diff classifier, mount display row data and width math, sidebar layout allocation, block-height math, scroll-area math, agent/env metric helpers, workspace-list row width helpers, workspace summaries, Auth row projection, structural 1Password metadata cache, op-path breadcrumb parsing/rendering, mount-row header/column helpers, modal footer hint fragments, modal rect helpers, editor/settings row render helpers, op-picker breadcrumbs/fatal classification/filtering/field-row projection/account-vault-item-section-field row styling/loading and fatal copy/stage classification/field-label origin/reference construction, shared list cursor/selection/state/filter helpers, modal spinner frames, 1Password reference parser, and GitHub mount projection directly from `jackin-console`; the remaining root adapter in <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> preserves the existing call sites. The root bridge in <RepoFile path="src/console/tui/terminal.rs" /> supplies jackin'-specific debug-buffering and host-screen globals while preserving the old terminal call sites. Remaining extraction work is the substantial part: moving the console event loop, screen model/update state, and remaining view modules out of `src/console/`.
 
 **`jackin-launch`** — the launch progress cockpit (digital rain, stage rail, failure popup):
 

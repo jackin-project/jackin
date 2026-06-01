@@ -478,7 +478,9 @@ pub(crate) fn global_rows_for(
 }
 
 pub(crate) fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
-    !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
+    let workspace_keys = ws.env.len();
+    let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
+    jackin_console::sidebar_layout::workspace_has_any_env(workspace_keys, agent_keys)
 }
 
 pub(crate) fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
@@ -538,18 +540,21 @@ pub(crate) fn agents_block_agent_count(
     config: &AppConfig,
 ) -> usize {
     let all_allowed = ws_config.is_none_or(jackin_console::workspace::allows_all_agents);
-    if all_allowed {
-        config.roles.len()
-    } else {
-        ws_config.map_or(0, |w| w.allowed_roles.len())
-    }
+    let allowed_role_count = ws_config.map_or(0, |w| w.allowed_roles.len());
+    jackin_console::sidebar_layout::agents_block_agent_count(
+        all_allowed,
+        config.roles.len(),
+        allowed_role_count,
+    )
 }
 
 pub(crate) fn agents_block_content_width(
     _ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
-    config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
+    jackin_console::sidebar_layout::agents_block_content_width(
+        config.roles.keys().map(String::as_str),
+    )
 }
 
 pub(crate) fn workspace_active_count(
