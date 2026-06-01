@@ -5,7 +5,7 @@
 //! a live PTY or attach socket.
 
 use crate::{
-    dialog::{DialogAction, PaletteCommand},
+    dialog::{DialogAction, PaletteCommand, PickerIntent, SplitDirection},
     input::{ArrowDir, PrefixCommand},
 };
 
@@ -15,7 +15,18 @@ pub enum Action {
     OpenContainerInfo,
     OpenGithubContext,
     OpenRenameTab(usize),
+    OpenAgentPicker(PickerIntent),
     SwitchTab(usize),
+    NextTab,
+    PreviousTab,
+    JumpTab(usize),
+    SplitFocused(SplitDirection),
+    MoveFocus(ArrowDir),
+    ToggleZoom,
+    CloseFocusedPane,
+    CloseFocusedTab,
+    ClearFocusedPane,
+    Detach,
     Palette(PaletteCommand),
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),

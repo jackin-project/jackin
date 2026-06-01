@@ -3870,6 +3870,33 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_open_agent_picker_pushes_picker() {
+        let mut mux = single_pane_tab_mux();
+
+        mux.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
+
+        assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
+    }
+
+    #[test]
+    fn apply_action_detach_sets_detach_request() {
+        let mut mux = single_pane_tab_mux();
+
+        mux.apply_action(Action::Detach);
+
+        assert!(mux.detach_requested);
+    }
+
+    #[test]
+    fn prefix_new_tab_routes_through_action_picker() {
+        let mut mux = single_pane_tab_mux();
+
+        mux.handle_prefix_command(PrefixCommand::NewTab);
+
+        assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
+    }
+
+    #[test]
     fn apply_action_focus_pane_at_changes_focus() {
         let mut mux = split_tab_mux();
         let target = mux

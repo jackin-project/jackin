@@ -170,6 +170,11 @@ impl Multiplexer {
                 self.last_tab_click = None;
                 Some(self.compose_full_frame(FullRedrawReason::DialogChange))
             }
+            Action::OpenAgentPicker(intent) => {
+                let agents = self.available_agents.clone();
+                self.dialog_push(Dialog::new_agent_picker(agents, intent));
+                Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
+            }
             Action::SwitchTab(idx) => {
                 if idx >= self.tabs.len() || idx == self.active_tab {
                     return None;
@@ -179,6 +184,48 @@ impl Multiplexer {
                 self.active_tab = idx;
                 self.synthesise_focus_swap(prev, self.active_focused_id());
                 Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+            }
+            Action::NextTab => {
+                self.next_tab();
+                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+            }
+            Action::PreviousTab => {
+                self.prev_tab();
+                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+            }
+            Action::JumpTab(idx) => {
+                self.jump_tab(idx);
+                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+            }
+            Action::SplitFocused(direction) => {
+                if let Err(err) = self.split_focused(direction) {
+                    crate::clog!("split ({direction:?}) failed: {err:?}");
+                }
+                Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+            }
+            Action::MoveFocus(dir) => {
+                self.move_focus(dir);
+                Some(self.compose_full_frame(FullRedrawReason::FocusChange))
+            }
+            Action::ToggleZoom => {
+                self.toggle_zoom();
+                Some(self.compose_full_frame(FullRedrawReason::ZoomChange))
+            }
+            Action::CloseFocusedPane => {
+                self.close_focused_pane();
+                Some(self.compose_full_frame(FullRedrawReason::SplitClose))
+            }
+            Action::CloseFocusedTab => {
+                self.close_focused_tab();
+                Some(self.compose_full_frame(FullRedrawReason::SplitClose))
+            }
+            Action::ClearFocusedPane => {
+                self.clear_focused_pane();
+                Some(self.compose_full_frame(FullRedrawReason::PaneClear))
+            }
+            Action::Detach => {
+                self.detach_requested = true;
+                Some(self.compose_full_frame(FullRedrawReason::ExplicitRedraw))
             }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
@@ -566,36 +613,26 @@ impl Multiplexer {
         // includes any payload (`JumpTab(i)`, `MoveFocus(dir)`).
         crate::clog!("action: prefix={cmd:?}");
         let full_redraw_reason = prefix_full_redraw_reason(&cmd);
-        match cmd {
-            PrefixCommand::NewTab => {
-                let agents = self.available_agents.clone();
-                self.dialog_push(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
-            }
-            PrefixCommand::NextTab => self.next_tab(),
-            PrefixCommand::PrevTab => self.prev_tab(),
-            PrefixCommand::JumpTab(i) => self.jump_tab(i),
-            PrefixCommand::SplitTopBottom => {
-                if let Err(err) = self.split_focused(SplitDirection::Below) {
-                    crate::clog!("split (top/bottom) failed: {err:?}");
-                }
-            }
-            PrefixCommand::SplitSideBySide => {
-                if let Err(err) = self.split_focused(SplitDirection::Right) {
-                    crate::clog!("split (side by side) failed: {err:?}");
-                }
-            }
-            PrefixCommand::MoveFocus(dir) => self.move_focus(dir),
-            PrefixCommand::ZoomToggle => self.toggle_zoom(),
-            PrefixCommand::KillPane => self.close_focused_pane(),
-            PrefixCommand::KillTab => self.close_focused_tab(),
-            PrefixCommand::ClearPane => self.clear_focused_pane(),
-            PrefixCommand::Detach => {
-                self.detach_requested = true;
-            }
-            PrefixCommand::Palette => {
-                self.open_command_palette();
-            }
-            PrefixCommand::Redraw => {}
+        let action = match cmd {
+            PrefixCommand::NewTab => Some(Action::OpenAgentPicker(PickerIntent::NewTab)),
+            PrefixCommand::NextTab => Some(Action::NextTab),
+            PrefixCommand::PrevTab => Some(Action::PreviousTab),
+            PrefixCommand::JumpTab(i) => Some(Action::JumpTab(i)),
+            PrefixCommand::SplitTopBottom => Some(Action::SplitFocused(SplitDirection::Below)),
+            PrefixCommand::SplitSideBySide => Some(Action::SplitFocused(SplitDirection::Right)),
+            PrefixCommand::MoveFocus(dir) => Some(Action::MoveFocus(dir)),
+            PrefixCommand::ZoomToggle => Some(Action::ToggleZoom),
+            PrefixCommand::KillPane => Some(Action::CloseFocusedPane),
+            PrefixCommand::KillTab => Some(Action::CloseFocusedTab),
+            PrefixCommand::ClearPane => Some(Action::ClearFocusedPane),
+            PrefixCommand::Detach => Some(Action::Detach),
+            PrefixCommand::Palette => Some(Action::OpenPalette),
+            PrefixCommand::Redraw => None,
+        };
+        if let Some(action) = action
+            && let Some(frame) = self.apply_action(action)
+        {
+            return Some(frame);
         }
         Some(self.compose_full_frame(full_redraw_reason))
     }
