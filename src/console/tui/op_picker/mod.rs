@@ -19,7 +19,6 @@
 
 mod input;
 mod load;
-mod query;
 mod selection;
 mod state;
 
