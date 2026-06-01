@@ -75,8 +75,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::PHOSPHOR_DARK;
 use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::theme::PHOSPHOR_DARK;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
     let title = format!(" Source for {} ", state.key);

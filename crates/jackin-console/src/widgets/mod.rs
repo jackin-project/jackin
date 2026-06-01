@@ -7,7 +7,6 @@ pub mod file_browser;
 pub mod github_picker;
 pub mod op_picker;
 pub mod role_picker;
-pub mod source_picker;
 pub mod workdir_pick;
 
 /// Braille spinner animation shared across modal loading panels.

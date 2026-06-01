@@ -1108,7 +1108,7 @@ pub(super) fn handle_editor_modal(
             state: source,
             env_key,
         } => {
-            use jackin_console::widgets::source_picker::SourceChoice;
+            use jackin_console::tui::components::source_picker::SourceChoice;
             use jackin_tui::components::TextInputState;
             match source.handle_key(key) {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
@@ -1152,7 +1152,7 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::AuthSourcePicker { state: source } => {
-            use jackin_console::widgets::source_picker::SourceChoice;
+            use jackin_console::tui::components::source_picker::SourceChoice;
             let outcome = source.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token_target` (and stashes the form into
@@ -1653,7 +1653,7 @@ pub(super) fn apply_text_input_to_pending(
                 return;
             }
             editor.open_sub_modal(Modal::SourcePicker {
-                state: jackin_console::widgets::source_picker::SourcePickerState::new(
+                state: jackin_console::tui::components::source_picker::SourcePickerState::new(
                     key.clone(),
                     op_available,
                 ),
