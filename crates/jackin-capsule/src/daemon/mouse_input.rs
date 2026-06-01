@@ -1,8 +1,6 @@
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
-use crate::tui::components::branch_context_bar::{
-    BranchContextBarHit, branch_context_bar_hit,
-};
+use crate::tui::components::branch_context_bar::branch_context_bar_hit;
 use crate::tui::view::{encode_osc52_clipboard_write, osc22_pointer_shape};
 
 use super::*;
@@ -42,29 +40,22 @@ impl Multiplexer {
     /// in priority order. Both `hover_target_at` and `pointer_shape_at`
     /// consume this so the priority ordering lives once.
     pub(super) fn chrome_hit_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
-        if let Some(dialog) = self.dialog_top() {
-            let github = self.github_context_view();
-            return dialog
-                .clickable_at(
-                    row + 1,
-                    col + 1,
-                    self.term_rows,
-                    self.term_cols,
-                    Some(&github),
-                )
-                .then_some(HoverTarget::DialogCopyTarget);
-        }
         let row_1based = row + 1;
         let col_1based = col + 1;
-        if row_1based == 1
-            && let Some(tab_idx) = self.status_bar.tab_at_col(col_1based)
-        {
-            return Some(HoverTarget::Tab(tab_idx));
-        }
-        if self.status_bar.hint_at(row_1based, col_1based) {
-            return Some(HoverTarget::Menu);
-        }
-        match branch_context_bar_hit(
+        let dialog_copy_target = self.dialog_top().is_some_and(|dialog| {
+            let github = self.github_context_view();
+            dialog.clickable_at(
+                row_1based,
+                col_1based,
+                self.term_rows,
+                self.term_cols,
+                Some(&github),
+            )
+        });
+        let tab = (row_1based == 1)
+            .then(|| self.status_bar.tab_at_col(col_1based))
+            .flatten();
+        let branch_hit = branch_context_bar_hit(
             row_1based,
             col_1based,
             self.term_rows,
@@ -73,18 +64,22 @@ impl Multiplexer {
             self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),
-        ) {
-            Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
-            Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
-            None => None,
-        }
+        );
+        chrome_hover_target_for_state(ChromeHitState {
+            dialog_copy_target,
+            dialog_open: self.dialog_top().is_some(),
+            tab,
+            menu_hit: self.status_bar.hint_at(row_1based, col_1based),
+            branch_hit,
+        })
     }
 
     pub(super) fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
-        if self.drag.is_some() || self.selection.is_some() {
-            return None;
-        }
-        self.chrome_hit_target_at(row, col)
+        hover_target_for_state(HoverState {
+            dragging: self.drag.is_some(),
+            selecting: self.selection.is_some(),
+            chrome_target: self.chrome_hit_target_at(row, col),
+        })
     }
 
     pub(super) fn pointer_shape_at(&self, row: u16, col: u16, button: u8) -> PointerShape {

@@ -288,7 +288,7 @@ Capsule initial attach-frame labels now live with attach-client effect vocabular
 
 Capsule visible multiplexer mode vocabulary (`Normal`, prefix-await, dialog, drag, selection) now lives with the visible TUI model in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> instead of a root crate module.
 
-Capsule mux-mode priority, pointer-shape priority, and drag-resize ratio math now live under <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. Daemon mouse/dialog code supplies the current protocol/session facts and applies the resulting action, but no longer owns those visible-state decisions.
+Capsule mux-mode priority, chrome-hover priority, pointer-shape priority, and drag-resize ratio math now live under <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. Daemon mouse/dialog code supplies the current protocol/session facts and applies the resulting action, but no longer owns those visible-state decisions.
 
 Capsule split-spawn pane sizing now lives with visible pane geometry in <RepoFile path="crates/jackin-capsule/src/tui/layout.rs" />. The daemon still owns capacity checks, PTY/session spawn, and tab-tree mutation, but the future half-pane size calculation is a TUI layout helper.
 

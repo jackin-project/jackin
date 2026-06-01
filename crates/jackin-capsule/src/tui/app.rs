@@ -6,6 +6,7 @@
 
 use crate::tui::layout::{Rect, SplitOrient};
 use crate::tui::render::PaneBodyDim;
+use crate::tui::components::branch_context_bar::BranchContextBarHit;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuxMode {
@@ -116,6 +117,49 @@ pub(crate) enum HoverTarget {
     DialogCopyTarget,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChromeHitState {
+    pub(crate) dialog_copy_target: bool,
+    pub(crate) dialog_open: bool,
+    pub(crate) tab: Option<usize>,
+    pub(crate) menu_hit: bool,
+    pub(crate) branch_hit: Option<BranchContextBarHit>,
+}
+
+pub(crate) fn chrome_hover_target_for_state(state: ChromeHitState) -> Option<HoverTarget> {
+    if state.dialog_open {
+        return state
+            .dialog_copy_target
+            .then_some(HoverTarget::DialogCopyTarget);
+    }
+    if let Some(tab_idx) = state.tab {
+        return Some(HoverTarget::Tab(tab_idx));
+    }
+    if state.menu_hit {
+        return Some(HoverTarget::Menu);
+    }
+    match state.branch_hit {
+        Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
+        Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
+        None => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HoverState {
+    pub(crate) dragging: bool,
+    pub(crate) selecting: bool,
+    pub(crate) chrome_target: Option<HoverTarget>,
+}
+
+pub(crate) fn hover_target_for_state(state: HoverState) -> Option<HoverTarget> {
+    if state.dragging || state.selecting {
+        None
+    } else {
+        state.chrome_target
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum VisibleAgentState {
     Idle,
@@ -149,11 +193,13 @@ pub(crate) struct DragState {
 
 #[cfg(test)]
 mod tests {
+    use crate::tui::components::branch_context_bar::BranchContextBarHit;
     use crate::tui::layout::SplitOrient;
 
     use super::{
-        HoverTarget, MuxMode, MuxModeState, PointerShape, PointerShapeState, mux_mode_for_state,
-        pointer_shape_for_state,
+        ChromeHitState, HoverState, HoverTarget, MuxMode, MuxModeState, PointerShape,
+        PointerShapeState, chrome_hover_target_for_state, hover_target_for_state,
+        mux_mode_for_state, pointer_shape_for_state,
     };
 
     #[test]
@@ -259,6 +305,71 @@ mod tests {
                 ..base
             }),
             PointerShape::Text
+        );
+    }
+
+    #[test]
+    fn chrome_hover_priority_matches_visible_layers() {
+        let base = ChromeHitState {
+            dialog_copy_target: false,
+            dialog_open: false,
+            tab: None,
+            menu_hit: false,
+            branch_hit: None,
+        };
+        assert_eq!(
+            chrome_hover_target_for_state(ChromeHitState {
+                dialog_open: true,
+                dialog_copy_target: true,
+                tab: Some(1),
+                menu_hit: true,
+                ..base
+            }),
+            Some(HoverTarget::DialogCopyTarget)
+        );
+        assert_eq!(
+            chrome_hover_target_for_state(ChromeHitState {
+                tab: Some(1),
+                menu_hit: true,
+                branch_hit: Some(BranchContextBarHit::Container),
+                ..base
+            }),
+            Some(HoverTarget::Tab(1))
+        );
+        assert_eq!(
+            chrome_hover_target_for_state(ChromeHitState {
+                menu_hit: true,
+                branch_hit: Some(BranchContextBarHit::Container),
+                ..base
+            }),
+            Some(HoverTarget::Menu)
+        );
+        assert_eq!(
+            chrome_hover_target_for_state(ChromeHitState {
+                branch_hit: Some(BranchContextBarHit::Container),
+                ..base
+            }),
+            Some(HoverTarget::Container)
+        );
+    }
+
+    #[test]
+    fn gesture_state_suppresses_hover_targets() {
+        assert_eq!(
+            hover_target_for_state(HoverState {
+                dragging: true,
+                selecting: false,
+                chrome_target: Some(HoverTarget::Menu),
+            }),
+            None
+        );
+        assert_eq!(
+            hover_target_for_state(HoverState {
+                dragging: false,
+                selecting: false,
+                chrome_target: Some(HoverTarget::Menu),
+            }),
+            Some(HoverTarget::Menu)
         );
     }
 }
