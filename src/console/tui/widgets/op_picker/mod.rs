@@ -21,6 +21,7 @@ use crate::operator_env::{OpAccount, OpField, OpItem, OpVault};
 
 mod input;
 mod load;
+mod query;
 pub mod render;
 mod selection;
 mod state;
@@ -51,117 +52,6 @@ impl Default for OpPickerState {
     fn default() -> Self {
         Self::new()
     }
-}
-
-impl OpPickerState {
-    pub fn filtered_accounts(&self) -> Vec<&OpAccount> {
-        self.accounts
-            .iter()
-            .filter(|account| {
-                matches_filter(
-                    &self.filter_buf,
-                    [account.email.as_str(), account.url.as_str()],
-                )
-            })
-            .collect()
-    }
-
-    pub fn filtered_vaults(&self) -> Vec<&OpVault> {
-        self.vaults
-            .iter()
-            .filter(|vault| matches_filter(&self.filter_buf, [vault.name.as_str()]))
-            .collect()
-    }
-
-    pub fn filtered_items(&self) -> Vec<&OpItem> {
-        self.items
-            .iter()
-            .filter(|item| {
-                matches_filter(
-                    &self.filter_buf,
-                    [item.name.as_str(), item.subtitle.as_str()],
-                )
-            })
-            .collect()
-    }
-
-    /// Filtered items, followed by a trailing `None` sentinel (the
-    /// `+ New item` row) in Create mode. Browse mode emits no sentinel.
-    pub fn filtered_item_choices(&self) -> Vec<Option<&OpItem>> {
-        let mut out: Vec<Option<&OpItem>> = self.filtered_items().into_iter().map(Some).collect();
-        if self.mode.is_create() {
-            out.push(None);
-        }
-        out
-    }
-
-    pub fn filtered_fields(&self) -> Vec<&OpField> {
-        self.fields
-            .iter()
-            .filter(|field| {
-                matches_filter(&self.filter_buf, [field.label.as_str(), field.id.as_str()])
-            })
-            .collect()
-    }
-
-    /// Distinct sections present in the loaded fields, in first-appearance
-    /// order, with a leading `None` (`(root)`) entry. Drives the Section
-    /// stage list (Create mode). The render appends a `+ New section`
-    /// sentinel after these choices.
-    pub fn section_choices(&self) -> Vec<Option<String>> {
-        section_choices_from_references(self.fields.iter().map(|field| field.reference.as_str()))
-    }
-
-    /// Build the ordered display rows for the field picker.
-    ///
-    /// Browse mode: unsectioned fields (no `section` segment in
-    /// `OpField::reference`) are emitted first; each named section follows
-    /// with a collapsible `SectionHeader` row. Sections with zero visible
-    /// (filtered) fields are omitted.
-    ///
-    /// Create mode: the Field stage is already scoped to `selected_section`
-    /// (chosen on the Section stage), so the rows are just that section's
-    /// fields followed by a `+ New field` sentinel — no headers, no
-    /// `+ New section` row. The `field_idx` values inside `Field` rows index
-    /// into `self.filtered_fields()`.
-    pub fn build_field_display_rows(&self) -> Vec<FieldDisplayRow> {
-        if self.mode.is_create() {
-            return self.build_create_field_rows();
-        }
-        let visible = self.filtered_fields();
-        browse_field_display_rows(
-            visible.iter().map(|field| field.reference.as_str()),
-            &self.collapsed_sections,
-        )
-    }
-
-    /// Field rows for the Create-mode Field stage: only the fields whose
-    /// section matches `selected_section`, followed by a `+ New field`
-    /// sentinel. No section headers and no `+ New section` row — the
-    /// section was already chosen on the Section stage.
-    fn build_create_field_rows(&self) -> Vec<FieldDisplayRow> {
-        let visible = self.filtered_fields();
-        create_field_display_rows(
-            visible.iter().map(|field| field.reference.as_str()),
-            self.selected_section.as_deref(),
-        )
-    }
-
-    /// The input box for the current naming sub-stage, or `None` when the
-    /// picker is in a list stage. Single source for the stage → input
-    /// mapping shared by the renderer, the modal sizing, and the footer
-    /// so a naming stage renders as the standard labelled input dialog.
-    pub const fn naming_stage_input(
-        &self,
-    ) -> Option<&jackin_tui::components::TextInputState<'static>> {
-        match self.stage {
-            OpPickerStage::NewItemName => Some(&self.item_name_input),
-            OpPickerStage::FieldLabel => Some(&self.field_label_input),
-            OpPickerStage::NewSectionName => Some(&self.section_name_input),
-            _ => None,
-        }
-    }
-
 }
 
 #[cfg(test)]
