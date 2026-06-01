@@ -167,7 +167,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     }
                     crate::console::tui::message::ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
                         if let crate::console::tui::ManagerStage::Editor(editor) = &mut ms.stage {
-                            crate::console::tui::input::editor::apply_role_load_completion(
+                            crate::console::effects::apply_role_load_completion(
                                 editor,
                                 &mut config,
                                 paths,

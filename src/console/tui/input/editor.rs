@@ -4,7 +4,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::console::tui::op_picker::OpPickerState;
-use super::super::effects::execute_role_source_persist;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
 use crate::console::tui::state::auth_flat_rows;
@@ -859,6 +858,10 @@ pub(super) enum EditorModalOutcome {
         selector: crate::selector::RoleSelector,
         source: crate::config::RoleSource,
     },
+    PersistTrustedRoleSource {
+        key: String,
+        source: crate::config::RoleSource,
+    },
     ValidateOpRef(crate::operator_env::OpRef),
 }
 
@@ -869,7 +872,7 @@ pub(super) fn handle_editor_modal(
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
     config: &mut AppConfig,
-    paths: &JackinPaths,
+    _paths: &JackinPaths,
     open_url: &mut Option<String>,
 ) -> EditorModalOutcome {
     let Some(modal) = editor.modal.as_mut() else {
@@ -964,8 +967,12 @@ pub(super) fn handle_editor_modal(
                             plan,
                             exit_on_success,
                         };
-                    } else if let Err(e) = apply_editor_confirm(editor, &target, config, paths) {
-                        open_editor_action_error(editor, &e);
+                    } else {
+                        match apply_editor_confirm(editor, &target) {
+                            Ok(EditorModalOutcome::Continue) => {}
+                            Ok(outcome) => return outcome,
+                            Err(e) => open_editor_action_error(editor, &e),
+                        }
                     }
                 } else if matches!(
                     target,
@@ -1738,7 +1745,7 @@ fn poll_role_load(
     let Some((load, result)) = poll_role_load_completion(editor) else {
         return false;
     };
-    apply_role_load_completion(editor, config, paths, load, result);
+    crate::console::effects::apply_role_load_completion(editor, config, paths, load, result);
     true
 }
 
@@ -1758,77 +1765,6 @@ pub(in crate::console) fn poll_role_load_completion(
         .take()
         .expect("pending role load checked above");
     Some((load, result))
-}
-
-pub(crate) fn apply_role_load_completion(
-    editor: &mut EditorState<'_>,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-    load: PendingRoleLoad,
-    result: anyhow::Result<()>,
-) {
-    match result {
-        Ok(()) => {
-            if let Err(e) = execute_role_source_persist(config, paths, &load.key, &load.source) {
-                crate::debug_log!(
-                    "role",
-                    "role loader failed for key={key:?} raw={raw:?}: {e:?}",
-                    key = load.key,
-                    raw = load.raw
-                );
-                open_role_resolution_error(
-                    editor,
-                    &load.raw,
-                    Some(&load.source.git),
-                    &e.context("role repository loaded, but registration could not be persisted"),
-                );
-                return;
-            }
-            crate::debug_log!(
-                "role",
-                "role repo registration completed for key={key:?} git={git:?}",
-                key = load.key,
-                git = load.source.git.as_str()
-            );
-            if load.source.trusted {
-                crate::debug_log!(
-                    "role",
-                    "role source is trusted; adding key={key:?} directly to the workspace",
-                    key = load.key
-                );
-                add_role_to_workspace_editor(editor, config, &load.key);
-            } else {
-                crate::debug_log!(
-                    "role",
-                    "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
-                    key = load.key,
-                    git = load.source.git.as_str()
-                );
-                open_role_trust_confirm(editor, load.key, load.source);
-            }
-        }
-        Err(e) => {
-            crate::debug_log!(
-                "role",
-                "role loader failed for key={key:?} raw={raw:?}: {e:?}",
-                key = load.key,
-                raw = load.raw
-            );
-            let err_text = e.to_string();
-            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
-                open_role_input_error(
-                    editor,
-                    &format!(
-                        "Could not load role {:?}.\n\nThe role loader hit an internal \
-                         error while registering the repository.\n\n{panic_message}",
-                        load.raw
-                    ),
-                );
-                return;
-            }
-            open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1874,7 +1810,7 @@ async fn apply_role_input_with_runner(
             crate::tui::is_debug_mode(),
         )
         .await?;
-        execute_role_source_persist(config, paths, &key, &source)?;
+        crate::console::effects::execute_role_source_persist(config, paths, &key, &source)?;
         crate::debug_log!(
             "role",
             "role repo registration completed for key={key:?} git={git:?}",
@@ -1922,7 +1858,7 @@ async fn apply_role_input_with_runner(
     }
 }
 
-fn open_role_resolution_error(
+pub(crate) fn open_role_resolution_error(
     editor: &mut EditorState<'_>,
     raw: &str,
     source_url: Option<&String>,
@@ -1951,7 +1887,7 @@ fn open_role_resolution_error(
     });
 }
 
-fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
+pub(crate) fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
     crate::debug_log!("editor", "failed to apply confirmed editor action: {err}");
     editor.modal = Some(Modal::ErrorPopup {
         state: jackin_tui::components::ErrorPopupState::new(
@@ -1961,7 +1897,7 @@ fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Di
     });
 }
 
-fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
+pub(crate) fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
     crate::debug_log!("role", "showing direct role-load error popup: {message}");
     editor.modal = Some(Modal::ErrorPopup {
         state: jackin_tui::components::ErrorPopupState::new("Load role failed", message),
@@ -2018,7 +1954,7 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
     }
 }
 
-fn open_role_trust_confirm(
+pub(crate) fn open_role_trust_confirm(
     editor: &mut EditorState<'_>,
     key: String,
     source: crate::config::RoleSource,
@@ -2030,7 +1966,7 @@ fn open_role_trust_confirm(
     });
 }
 
-fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
+pub(crate) fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
     if !editor.pending.allowed_roles.is_empty()
         && !editor.pending.allowed_roles.iter().any(|role| role == key)
     {
@@ -2056,25 +1992,10 @@ fn open_add_mount_file_browser(editor: &mut EditorState<'_>) {
     }
 }
 
-fn persist_trusted_role_add(
-    editor: &mut EditorState<'_>,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-    key: &str,
-    mut source: crate::config::RoleSource,
-) -> anyhow::Result<()> {
-    source.trusted = true;
-    execute_role_source_persist(config, paths, key, &source)?;
-    add_role_to_workspace_editor(editor, config, key);
-    Ok(())
-}
-
 fn apply_editor_confirm(
     editor: &mut EditorState<'_>,
     target: &ConfirmTarget,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-) -> anyhow::Result<()> {
+ ) -> anyhow::Result<EditorModalOutcome> {
     match target {
         ConfirmTarget::DeleteEnvVar { scope, key } => {
             // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned by the
@@ -2112,14 +2033,17 @@ fn apply_editor_confirm(
             }
         }
         ConfirmTarget::TrustRoleSource { key, source } => {
-            persist_trusted_role_add(editor, config, paths, key, source.clone())?;
+            return Ok(EditorModalOutcome::PersistTrustedRoleSource {
+                key: key.clone(),
+                source: source.clone(),
+            });
         }
         // `DeleteIsolatedAndSave` is handled inline at the dispatch
         // site because it consumes `plan` and routes through
         // `EditorSaveFlow::PendingCommit`. No-op here.
         ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
     }
-    Ok(())
+    Ok(EditorModalOutcome::Continue)
 }
 
 /// Only `EditAddMountSrc` is meaningful here; the prelude's
@@ -2203,7 +2127,8 @@ mod tests {
     use super::super::test_support::{key, mount};
     use super::{
         apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
-        env_key_input_state, handle_editor_modal, poll_role_load, secrets_flat_rows,
+        add_role_to_workspace_editor, env_key_input_state, handle_editor_modal, poll_role_load,
+        secrets_flat_rows, EditorModalOutcome,
     };
     use crate::config::AppConfig;
     use crate::console::tui::input::handle_key;
@@ -2232,7 +2157,7 @@ mod tests {
         paths: &JackinPaths,
     ) {
         let mut open_url = None;
-        handle_editor_modal(
+        let outcome = handle_editor_modal(
             editor,
             k,
             false,
@@ -2241,6 +2166,13 @@ mod tests {
             paths,
             &mut open_url,
         );
+        if let EditorModalOutcome::PersistTrustedRoleSource { key, source } = outcome {
+            let mut source = source;
+            source.trusted = true;
+            crate::console::effects::execute_role_source_persist(config, paths, &key, &source)
+                .unwrap();
+            add_role_to_workspace_editor(editor, config, &key);
+        }
         assert!(open_url.is_none(), "test helper did not expect URL-open");
     }
 

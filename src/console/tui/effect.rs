@@ -13,6 +13,10 @@ pub(crate) enum ManagerEffect {
         selector: crate::selector::RoleSelector,
         source: crate::config::RoleSource,
     },
+    PersistTrustedRoleSource {
+        key: String,
+        source: crate::config::RoleSource,
+    },
     ValidateOpCommit {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,

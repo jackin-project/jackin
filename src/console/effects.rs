@@ -10,7 +10,7 @@ use jackin_tui::runtime::spawn_blocking_subscription;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     EditorMode, EditorState, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
-    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh,
+    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
 };
 
 pub(crate) fn execute_manager_effect(
@@ -62,6 +62,9 @@ pub(crate) fn execute_manager_effect(
             selector,
             source,
         } => execute_role_registration_start(state, paths, raw, key, selector, source),
+        ManagerEffect::PersistTrustedRoleSource { key, source } => {
+            execute_trusted_role_source_persist(state, config, paths, &key, source);
+        }
         ManagerEffect::ValidateOpCommit {
             op_ref,
             is_settings,
@@ -120,6 +123,109 @@ pub(crate) fn execute_remove_workspace(
         }
     }
     true
+}
+
+pub(crate) fn apply_role_load_completion(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    load: PendingRoleLoad,
+    result: anyhow::Result<()>,
+) {
+    match result {
+        Ok(()) => {
+            if let Err(e) = execute_role_source_persist(config, paths, &load.key, &load.source) {
+                crate::debug_log!(
+                    "role",
+                    "role loader failed for key={key:?} raw={raw:?}: {e:?}",
+                    key = load.key,
+                    raw = load.raw
+                );
+                crate::console::tui::input::editor::open_role_resolution_error(
+                    editor,
+                    &load.raw,
+                    Some(&load.source.git),
+                    &e.context("role repository loaded, but registration could not be persisted"),
+                );
+                return;
+            }
+            crate::debug_log!(
+                "role",
+                "role repo registration completed for key={key:?} git={git:?}",
+                key = load.key,
+                git = load.source.git.as_str()
+            );
+            if load.source.trusted {
+                crate::debug_log!(
+                    "role",
+                    "role source is trusted; adding key={key:?} directly to the workspace",
+                    key = load.key
+                );
+                crate::console::tui::input::editor::add_role_to_workspace_editor(
+                    editor, config, &load.key,
+                );
+            } else {
+                crate::debug_log!(
+                    "role",
+                    "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
+                    key = load.key,
+                    git = load.source.git.as_str()
+                );
+                crate::console::tui::input::editor::open_role_trust_confirm(
+                    editor,
+                    load.key,
+                    load.source,
+                );
+            }
+        }
+        Err(e) => {
+            crate::debug_log!(
+                "role",
+                "role loader failed for key={key:?} raw={raw:?}: {e:?}",
+                key = load.key,
+                raw = load.raw
+            );
+            let err_text = e.to_string();
+            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                crate::console::tui::input::editor::open_role_input_error(
+                    editor,
+                    &format!(
+                        "Could not load role {:?}.\n\nThe role loader hit an internal \
+                         error while registering the repository.\n\n{panic_message}",
+                        load.raw
+                    ),
+                );
+                return;
+            }
+            crate::console::tui::input::editor::open_role_resolution_error(
+                editor,
+                &load.raw,
+                Some(&load.source.git),
+                &e,
+            );
+        }
+    }
+}
+
+fn execute_trusted_role_source_persist(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    key: &str,
+    mut source: crate::config::RoleSource,
+) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    source.trusted = true;
+    match execute_role_source_persist(config, paths, key, &source) {
+        Ok(()) => {
+            crate::console::tui::input::editor::add_role_to_workspace_editor(editor, config, key);
+        }
+        Err(error) => {
+            crate::console::tui::input::editor::open_editor_action_error(editor, &error);
+        }
+    }
 }
 
 pub(crate) fn token_generate_label(req: &crate::console::tui::state::PendingTokenGenerate) -> String {

@@ -87,6 +87,14 @@ pub fn handle_key(
                     },
                 );
             }
+            editor::EditorModalOutcome::PersistTrustedRoleSource { key, source } => {
+                execute_manager_effect(
+                    state,
+                    config,
+                    paths,
+                    ManagerEffect::PersistTrustedRoleSource { key, source },
+                );
+            }
             editor::EditorModalOutcome::ValidateOpRef(op_ref) => {
                 execute_manager_effect(
                     state,
