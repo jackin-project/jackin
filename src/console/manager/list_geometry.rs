@@ -12,7 +12,9 @@ use crate::console::manager::state::{
 };
 use crate::isolation::MountIsolation;
 use crate::workspace::MountConfig;
-pub(crate) use jackin_console::sidebar_layout::{SidebarLayout, SidebarScrollArea};
+pub(crate) use jackin_console::sidebar_layout::{
+    SidebarLayout, SidebarScrollArea, SidebarScrollAreas,
+};
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_selected = state.visual_selected();
@@ -250,13 +252,6 @@ pub(crate) struct SidebarInputs<'a> {
     pub inline_picker_active: bool,
     pub show_envs: bool,
     pub agent_count: usize,
-}
-
-pub(crate) struct SidebarScrollAreas {
-    pub workspace: SidebarScrollArea,
-    pub global: SidebarScrollArea,
-    pub role_global: Option<SidebarScrollArea>,
-    pub roles: Option<SidebarScrollArea>,
 }
 
 pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {

@@ -37,6 +37,14 @@ pub struct SidebarScrollArea {
     pub content_height: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarScrollAreas {
+    pub workspace: SidebarScrollArea,
+    pub global: SidebarScrollArea,
+    pub role_global: Option<SidebarScrollArea>,
+    pub roles: Option<SidebarScrollArea>,
+}
+
 #[must_use]
 pub fn compute_sidebar_layout(area: Rect, metrics: SidebarLayoutMetrics) -> SidebarLayout {
     let mut constraints = Vec::new();
