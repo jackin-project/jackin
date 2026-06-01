@@ -19,6 +19,7 @@ use crate::paths::JackinPaths;
 use jackin_console::services::file_browser::open_git_url;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
+use jackin_console::tui::screens::editor::view::{secrets_forbidden_label, secrets_scope_label};
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
@@ -1278,7 +1279,8 @@ pub(super) fn handle_editor_modal(
                         Some((scope, None)) => {
                             editor.pending_picker_value =
                                 Some(crate::operator_env::EnvValue::OpRef(op_ref));
-                            let label = format!("New environment key for {}", scope_label(&scope));
+                            let label =
+                                format!("New environment key for {}", secrets_scope_label(&scope));
                             let state = env_key_input_state(editor, &scope, label, "");
                             editor.open_sub_modal(Modal::TextInput {
                                 target: TextInputTarget::EnvKey { scope },
@@ -1490,13 +1492,6 @@ fn handle_token_generate_pick(
     editor.clear_modal_chain();
 }
 
-const fn scope_label(scope: &SecretsScopeTag) -> &str {
-    match scope {
-        SecretsScopeTag::Workspace => "workspace",
-        SecretsScopeTag::Role(role) => role.as_str(),
-    }
-}
-
 /// From `editor.pending` (not on-disk config) so a same-session
 /// add blocks a follow-up duplicate.
 fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -> Vec<String> {
@@ -1508,13 +1503,6 @@ fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -
             .get(role)
             .map(|o| o.env.keys().cloned().collect())
             .unwrap_or_default(),
-    }
-}
-
-fn forbidden_label_for_scope(scope: &SecretsScopeTag) -> String {
-    match scope {
-        SecretsScopeTag::Workspace => "workspace env".to_string(),
-        SecretsScopeTag::Role(role) => format!("role {role}"),
     }
 }
 
@@ -1530,7 +1518,7 @@ fn env_key_input_state<'a>(
     use jackin_tui::components::TextInputState;
     let mut state =
         TextInputState::new_with_forbidden(label, initial, forbidden_keys_for_scope(editor, scope));
-    state.forbidden_label = forbidden_label_for_scope(scope);
+    state.forbidden_label = secrets_forbidden_label(scope);
     state
 }
 
