@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use anyhow::Context as _;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
@@ -2470,7 +2469,7 @@ fn reconcile_live_running_instances(
     paths: &crate::paths::JackinPaths,
     instances: &mut Vec<crate::instance::InstanceIndexEntry>,
 ) {
-    let running = match docker_cli_running_role_containers() {
+    let running = match crate::console::services::instances::running_role_containers() {
         Ok(running) => running,
         Err(error) => {
             crate::debug_log!(
@@ -2481,32 +2480,6 @@ fn reconcile_live_running_instances(
         }
     };
     overlay_running_instances(paths, instances, &running);
-}
-
-fn docker_cli_running_role_containers() -> anyhow::Result<Vec<String>> {
-    let output = std::process::Command::new("docker")
-        .args([
-            "ps",
-            "--filter",
-            "label=jackin.kind=role",
-            "--format",
-            "{{.Names}}",
-        ])
-        .output()
-        .map_err(anyhow::Error::new)
-        .context("starting docker ps for live instance reconciliation")?;
-    anyhow::ensure!(
-        output.status.success(),
-        "docker ps exited with status {:?}: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToOwned::to_owned)
-        .collect())
 }
 
 fn overlay_running_instances(
