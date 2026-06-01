@@ -7,7 +7,7 @@ use crate::console::services::instances::load_instance_refresh_snapshot;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
-use crate::console::tui::message::{ManagerMessage, update_manager};
+use crate::console::tui::message::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 use crate::console::tui::state::{
     CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget, GlobalMountModal,
     ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck, PendingIsolationCleanup,
@@ -807,14 +807,6 @@ fn execute_settings_save(
         Err(err) => settings.mounts.error = Some(err.to_string()),
     }
 }
-
-pub(crate) type ManagerBackgroundEvent = jackin_console::tui::message::BackgroundEvent<
-    ManagerMessage,
-    crate::console::tui::state::PendingRoleLoad,
-    PendingDriftCheck,
-    crate::config::DriftDetection,
-    PendingIsolationCleanup,
->;
 
 pub(crate) fn poll_background_messages(
     state: &mut ManagerState<'_>,

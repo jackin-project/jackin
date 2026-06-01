@@ -5,13 +5,11 @@
 //! messages instead of mutating `ManagerState` inline.
 
 use jackin_console::tui::auth::AuthKind;
-#[cfg(test)]
-pub(crate) use crate::console::effects::ManagerBackgroundEvent;
 use super::effect::ManagerEffect;
 use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerListRow,
-    ManagerStage, ManagerState, MountScrollFocus, PendingMountInfoRefresh, SecretsScopeTag,
-    SettingsState, SettingsTab,
+    ManagerStage, ManagerState, MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup,
+    PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
@@ -196,6 +194,14 @@ pub(crate) enum ManagerMessage {
     DismissInlineProviderPicker,
     DismissLaunchProviderPicker,
 }
+
+pub(crate) type ManagerBackgroundEvent = jackin_console::tui::message::BackgroundEvent<
+    ManagerMessage,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    crate::config::DriftDetection,
+    PendingIsolationCleanup,
+>;
 
 pub(crate) type ManagerUpdate = jackin_console::tui::update::ConsoleUpdate<ManagerEffect>;
 
