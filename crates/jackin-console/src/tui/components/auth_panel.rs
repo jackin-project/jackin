@@ -12,8 +12,9 @@ use ratatui::{
 
 use crate::tui::auth::{AuthKind, AuthMode};
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
+use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::{Panel, PanelFocus, TextInputState};
 use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub trait AuthCredentialRef: Clone + std::fmt::Debug + PartialEq + Eq {
@@ -38,6 +39,21 @@ pub enum CredentialInput<R> {
     None,
     Literal(String),
     OpRef(R),
+}
+
+#[must_use]
+pub fn auth_source_picker_state(
+    env_var: impl Into<String>,
+    op_available: bool,
+) -> SourcePickerState {
+    SourcePickerState::new(env_var.into(), op_available)
+}
+
+#[must_use]
+pub fn auth_credential_input_state<'a>(
+    literal: impl Into<String>,
+) -> TextInputState<'a> {
+    TextInputState::new("Credential", literal)
 }
 
 /// The form's mutable state. Mode and credential are independently editable;
@@ -425,6 +441,21 @@ mod tests {
             output.push('\n');
         }
         output
+    }
+
+    #[test]
+    fn auth_credential_input_state_names_credential() {
+        let state = auth_credential_input_state("secret");
+
+        assert_eq!(state.label, "Credential");
+        assert_eq!(state.value(), "secret");
+    }
+
+    #[test]
+    fn auth_source_picker_state_keeps_env_label() {
+        let state = auth_source_picker_state("CLAUDE_API_KEY", true);
+
+        assert_eq!(state.key, "CLAUDE_API_KEY");
     }
 
     #[test]

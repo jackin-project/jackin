@@ -18,6 +18,9 @@ use crate::console::domain::{
 };
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
+use jackin_console::tui::components::auth_panel::{
+    auth_credential_input_state, auth_source_picker_state,
+};
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
     auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
@@ -32,7 +35,6 @@ use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
 use crate::selector::RolePickerState;
 use crate::workspace::WorkspaceRoleOverride;
-use jackin_tui::components::TextInputState;
 
 /// Open the auth-edit form modal for the row currently under the
 /// cursor on the Auth tab. Pre-populates the form from the row's
@@ -475,10 +477,7 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
         literal_buffer,
     });
     editor.modal = Some(Modal::AuthSourcePicker {
-        state: jackin_console::tui::components::source_picker::SourcePickerState::new(
-            "generated token".to_string(),
-            op_available,
-        ),
+        state: auth_source_picker_state("generated token", op_available),
     });
     true
 }
@@ -549,10 +548,7 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
         literal_buffer,
     });
     editor.modal = Some(Modal::AuthSourcePicker {
-        state: jackin_console::tui::components::source_picker::SourcePickerState::new(
-            env_var.to_string(),
-            op_available,
-        ),
+        state: auth_source_picker_state(env_var, op_available),
     });
     true
 }
@@ -605,7 +601,7 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
     });
     editor.modal = Some(Modal::TextInput {
         target: TextInputTarget::AuthCredential,
-        state: TextInputState::new("Credential", literal_buffer),
+        state: auth_credential_input_state(literal_buffer),
     });
 }
 

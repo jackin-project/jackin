@@ -13,6 +13,9 @@ use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
+use jackin_console::tui::components::auth_panel::{
+    auth_credential_input_state, auth_source_picker_state,
+};
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
@@ -526,10 +529,7 @@ pub(super) fn handle_settings_auth_modal(
                 // push it directly to preserve the in-progress form state.
                 auth.modal_parents.push(modal);
                 auth.modal = Some(SettingsAuthModal::SourcePicker {
-                    state: jackin_console::tui::components::source_picker::SourcePickerState::new(
-                        "generated token".to_string(),
-                        op_available,
-                    ),
+                    state: auth_source_picker_state("generated token", op_available),
                 });
                 return SettingsAuthOutcome::Continue;
             }
@@ -560,10 +560,7 @@ pub(super) fn handle_settings_auth_modal(
                         };
                         auth.modal_parents.push(modal);
                         auth.modal = Some(SettingsAuthModal::SourcePicker {
-                            state: jackin_console::tui::components::source_picker::SourcePickerState::new(
-                                env_var.to_string(),
-                                op_available,
-                            ),
+                            state: auth_source_picker_state(env_var, op_available),
                         });
                         return SettingsAuthOutcome::Continue;
                     }
@@ -671,7 +668,7 @@ pub(super) fn handle_settings_auth_modal(
                         })
                         .unwrap_or_default();
                     auth.modal = Some(SettingsAuthModal::TextInput {
-                        state: Box::new(TextInputState::new("Credential", literal)),
+                        state: Box::new(auth_credential_input_state(literal)),
                     });
                 }
                 ModalOutcome::Commit(SourceChoice::Op) => {
