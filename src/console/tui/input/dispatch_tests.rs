@@ -70,6 +70,13 @@ fn create_mode_save_uses_updated_pending_name() {
     // Default focus = Cancel; Tab -> Save, then Enter commits.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+    crate::console::effects::execute_pending_workspace_save_commit(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+    )
+    .unwrap();
 
     let reloaded = AppConfig::load_or_init(&paths).unwrap();
     assert!(
@@ -148,4 +155,3 @@ fn settings_error_popup_unrelated_key_does_not_dismiss() {
         "unrelated key must not dismiss the error popup"
     );
 }
-

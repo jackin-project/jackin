@@ -285,7 +285,18 @@ pub async fn run_console<H: InstanceActionHandler>(
                         crate::console::tui::InputOutcome::Continue
                     };
                     match outcome {
-                        crate::console::tui::InputOutcome::Continue => {}
+                        crate::console::tui::InputOutcome::Continue => {
+                            if let ConsoleStage::Manager(ms) = &mut state.stage
+                                && crate::console::effects::execute_pending_workspace_save_commit(
+                                    ms,
+                                    &mut config,
+                                    paths,
+                                    cwd,
+                                )?
+                            {
+                                needs_redraw = true;
+                            }
+                        }
                         crate::console::tui::InputOutcome::OpenCreatePreludeFileBrowser => {}
                         crate::console::tui::InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd => {}
                         crate::console::tui::InputOutcome::OpenEditorAddMountFileBrowser => {}

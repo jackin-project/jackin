@@ -117,12 +117,6 @@ pub fn handle_key(
             return Ok(InputOutcome::OpenUrl(url));
         }
 
-        if crate::console::effects::execute_pending_workspace_save_commit(
-            state, config, paths, cwd,
-        )? {
-            return Ok(InputOutcome::Continue);
-        }
-
         // After modal handling, check if an exit intent was signalled by
         // the SaveDiscardCancel modal.
         let intent = if let ManagerStage::Editor(editor) = &state.stage {

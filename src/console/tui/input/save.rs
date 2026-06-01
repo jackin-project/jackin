@@ -797,6 +797,16 @@ mod tests {
         handle_key(state, config, paths, cwd, key(KeyCode::Char('s'))).unwrap();
     }
 
+    fn run_pending_save_commit(
+        state: &mut ManagerState<'_>,
+        config: &mut AppConfig,
+        paths: &JackinPaths,
+        cwd: &std::path::Path,
+    ) {
+        crate::console::effects::execute_pending_workspace_save_commit(state, config, paths, cwd)
+            .unwrap();
+    }
+
     #[test]
     fn apply_auth_forward_diff_persists_amp_workspace_and_role_modes() {
         let tmp = tempfile::tempdir().unwrap();
@@ -957,6 +967,7 @@ mod tests {
         // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
 
         assert!(
             matches!(state.stage, ManagerStage::List),
@@ -1272,6 +1283,7 @@ mod tests {
         // Default focus = Cancel; Tab -> Save, then Enter commits.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
 
         assert!(
             matches!(state.stage, ManagerStage::List),
@@ -1315,6 +1327,7 @@ mod tests {
         // Default focus = Cancel; Tab -> Save, then Enter commits.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
 
         assert!(matches!(state.stage, ManagerStage::List));
         // BTreeMap order: ["a-first"=0, "z-second"=1]; screen index = i + 1.
@@ -1347,6 +1360,7 @@ mod tests {
         // Default focus = Cancel; Tab -> Save, then Enter commits.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
 
         assert!(
             matches!(state.stage, ManagerStage::List),
@@ -1462,6 +1476,7 @@ mod tests {
         // Default focus = Cancel; Tab -> Save, then Enter commits.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
 
         assert!(
             matches!(state.stage, ManagerStage::List),
@@ -1492,6 +1507,7 @@ mod tests {
         // Default focus = Cancel; Tab -> Save, then Enter commits.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
 
         assert!(
             matches!(state.stage, ManagerStage::List),
@@ -1535,6 +1551,7 @@ mod tests {
         // Default focus = Cancel; Tab -> Save, then Enter commits.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("stay in editor when save fails");
@@ -1578,6 +1595,7 @@ mod tests {
         // which collides with "beta" and opens the ErrorPopup.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        run_pending_save_commit(&mut state, &mut config, &paths, cwd);
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc)).unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
