@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 
 pub mod build_log;
 pub mod progress;
-pub mod renderer;
 pub mod tui;
 
 pub use tui::app::{
