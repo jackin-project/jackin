@@ -36,7 +36,6 @@ pub enum InputOutcome {
     },
     OpenUrl(String),
     RemoveWorkspace(String),
-    OpenCreatePreludeFileBrowserAtLastCwd,
     NewSessionWithProvider {
         container: String,
         agent: crate::agent::Agent,

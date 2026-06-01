@@ -13,6 +13,12 @@ use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 
+pub(super) enum PreludeModalOutcome {
+    Continue,
+    OpenUrl(String),
+    ReopenFileBrowserAtLastCwd,
+}
+
 pub(super) fn handle_prelude_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -63,7 +69,7 @@ fn prelude_advance_to_workdir_pick(prelude: &mut crate::console::tui::state::Cre
 pub(super) fn handle_prelude_modal(
     prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
     key: KeyEvent,
-) -> InputOutcome {
+) -> PreludeModalOutcome {
     use crate::console::tui::state::{FileBrowserTarget, TextInputTarget};
     use jackin_tui::components::TextInputState;
 
@@ -111,7 +117,7 @@ pub(super) fn handle_prelude_modal(
                     let outcome = state.handle_key(key);
                     (super::apply_file_browser_outcome(state, outcome), Some(cwd))
                 } else {
-                    return InputOutcome::Continue;
+                    return PreludeModalOutcome::Continue;
                 };
             match outcome {
                 FileBrowserOutcome::Commit(path) => {
@@ -144,7 +150,9 @@ pub(super) fn handle_prelude_modal(
                         super::request_file_browser_git_url_resolution(state, path);
                     }
                 }
-                FileBrowserOutcome::OpenGitUrl(url) => return InputOutcome::OpenUrl(url),
+                FileBrowserOutcome::OpenGitUrl(url) => {
+                    return PreludeModalOutcome::OpenUrl(url);
+                }
                 FileBrowserOutcome::Continue => {}
                 FileBrowserOutcome::NavigateTo(_)
                 | FileBrowserOutcome::NavigateUp
@@ -156,7 +164,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return InputOutcome::Continue;
+                return PreludeModalOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(MountDstChoice::SamePath) => {
@@ -184,7 +192,7 @@ pub(super) fn handle_prelude_modal(
                     // browser cwd (captured when src was committed). The
                     // mount src field is left stashed so `default_mount_dst`
                     // keeps working if the operator re-commits the same path.
-                    return InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd;
+                    return PreludeModalOutcome::ReopenFileBrowserAtLastCwd;
                 }
                 ModalOutcome::Continue => {}
             }
@@ -193,7 +201,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return InputOutcome::Continue;
+                return PreludeModalOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(dst) => {
@@ -214,7 +222,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::WorkdirPick { state }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return InputOutcome::Continue;
+                return PreludeModalOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(workdir) => {
@@ -247,7 +255,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return InputOutcome::Continue;
+                return PreludeModalOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(name) => {
@@ -266,7 +274,7 @@ pub(super) fn handle_prelude_modal(
         }
         PreludeModalDis::Other => {}
     }
-    InputOutcome::Continue
+    PreludeModalOutcome::Continue
 }
 
 /// Reopen the `MountDstChoice` modal seeded from the stashed mount src.
@@ -289,10 +297,9 @@ mod tests {
     //! Create-wizard tests: the prelude's multi-step modal sequence
     //! (`FileBrowserSrc` → `MountDstChoice` → `TextInputDst` → `WorkdirPick` →
     //! `TextInputName`) and its step-back / Esc semantics.
-    use super::InputOutcome;
     use crate::console::tui::state::{FileBrowserTarget, Modal};
     use super::super::test_support::key;
-    use super::handle_prelude_modal;
+    use super::{PreludeModalOutcome, handle_prelude_modal};
     use crossterm::event::KeyCode;
 
     /// Seed a `CreatePreludeState` whose `MountDstChoice` modal is open
@@ -317,7 +324,7 @@ mod tests {
         key: crossterm::event::KeyEvent,
     ) {
         let outcome = handle_prelude_modal(prelude, key);
-        if !matches!(outcome, InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd) {
+        if !matches!(outcome, PreludeModalOutcome::ReopenFileBrowserAtLastCwd) {
             return;
         }
 

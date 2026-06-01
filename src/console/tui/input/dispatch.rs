@@ -205,14 +205,15 @@ pub fn handle_key(
             let outcome = if let ManagerStage::CreatePrelude(p) = &mut state.stage {
                 prelude::handle_prelude_modal(p, key)
             } else {
-                InputOutcome::Continue
+                prelude::PreludeModalOutcome::Continue
             };
-            if !matches!(outcome, InputOutcome::Continue) {
-                if matches!(outcome, InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd) {
+            match outcome {
+                prelude::PreludeModalOutcome::Continue => {}
+                prelude::PreludeModalOutcome::OpenUrl(url) => return Ok(InputOutcome::OpenUrl(url)),
+                prelude::PreludeModalOutcome::ReopenFileBrowserAtLastCwd => {
                     state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
                     return Ok(InputOutcome::Continue);
                 }
-                return Ok(outcome);
             }
             // After the modal handler runs, the prelude is in one of three states:
             // - still in a modal (user pressed a non-commit/cancel key): continue
@@ -305,13 +306,6 @@ pub fn handle_key(
         StageDis::ConfirmDelete => Ok(handle_confirm_delete_key(state, key)),
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
     }?;
-    let outcome = match outcome {
-        InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd => {
-            state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
-            InputOutcome::Continue
-        }
-        other => other,
-    };
     state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
     Ok(outcome)
 }
