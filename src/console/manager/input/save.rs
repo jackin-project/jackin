@@ -2,7 +2,9 @@
 //! `ConfirmSave` preview modal, and service-backed config writes.
 #![allow(clippy::items_after_test_module)]
 
-use super::super::message::{ManagerMessage, update_manager};
+use super::super::message::{
+    ManagerMessage, WorkspaceSaveEffect, execute_workspace_save_effect, update_manager,
+};
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
     PendingDriftCheck, PendingIsolationCleanup,
@@ -51,21 +53,15 @@ pub fn continue_save_after_drift_check(
             }
             if !detection.stopped_records.is_empty() {
                 if drift_check.plan.delete_isolated_acknowledged {
-                    let rx = crate::console::services::workspace_save::start_isolation_cleanup(
-                        paths.clone(),
-                        detection.stopped_records,
+                    execute_workspace_save_effect(
+                        editor,
+                        paths,
+                        WorkspaceSaveEffect::StartIsolationCleanup {
+                            records: detection.stopped_records,
+                            plan: drift_check.plan,
+                            exit_on_success: drift_check.exit_on_success,
+                        },
                     );
-                    editor.pending_isolation_cleanup = Some(PendingIsolationCleanup::new(
-                        rx,
-                        drift_check.plan,
-                        drift_check.exit_on_success,
-                    ));
-                    editor.modal = Some(Modal::StatusPopup {
-                        state: jackin_tui::components::StatusPopupState::new(
-                            "Saving",
-                            "Deleting isolated state...",
-                        ),
-                    });
                     return Ok(());
                 }
                 let affected_containers: Vec<String> = detection
@@ -331,27 +327,16 @@ pub(super) fn commit_editor_save_with_runner(
             let detect_result: anyhow::Result<_> = if !has_records {
                 Ok(crate::config::DriftDetection::default())
             } else {
-                // Production path: dispatch to tokio's blocking thread pool
-                // so the TUI reactor stays responsive while Docker/git runs.
-                // The event loop polls editor.pending_drift_check each tick
-                // and calls continue_save_after_drift_check when done.
-                let rx = crate::console::services::workspace_save::start_drift_check(
-                    paths.clone(),
-                    original_name.clone(),
-                    prospective_mounts,
+                execute_workspace_save_effect(
+                    editor,
+                    paths,
+                    WorkspaceSaveEffect::StartDriftCheck {
+                        original_name: original_name.clone(),
+                        prospective_mounts,
+                        plan,
+                        exit_on_success,
+                    },
                 );
-                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::new(
-                    rx,
-                    original_name.clone(),
-                    plan,
-                    exit_on_success,
-                ));
-                editor.modal = Some(super::super::state::Modal::StatusPopup {
-                    state: jackin_tui::components::StatusPopupState::new(
-                        "Saving",
-                        "Checking isolation records...",
-                    ),
-                });
                 return Ok(());
             };
             match detect_result {
@@ -424,23 +409,16 @@ pub(super) fn commit_editor_save_with_runner(
                     .is_ok_and(|r| !r.is_empty());
 
             if has_records2 {
-                let rx = crate::console::services::workspace_save::start_drift_check(
-                    paths.clone(),
-                    original_name.clone(),
-                    prospective_mounts,
+                execute_workspace_save_effect(
+                    editor,
+                    paths,
+                    WorkspaceSaveEffect::StartDriftCheck {
+                        original_name: original_name.clone(),
+                        prospective_mounts,
+                        plan,
+                        exit_on_success,
+                    },
                 );
-                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::new(
-                    rx,
-                    original_name.clone(),
-                    plan,
-                    exit_on_success,
-                ));
-                editor.modal = Some(super::super::state::Modal::StatusPopup {
-                    state: jackin_tui::components::StatusPopupState::new(
-                        "Saving",
-                        "Checking isolation records...",
-                    ),
-                });
                 return Ok(());
             }
         }

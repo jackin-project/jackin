@@ -8,7 +8,8 @@ use super::auth_kind::AuthKind;
 use super::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, GlobalMountModal,
     ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, PendingDriftCheck,
-    PendingIsolationCleanup, PendingMountInfoRefresh, SecretsScopeTag, SettingsState, SettingsTab,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingSaveCommit, SecretsScopeTag,
+    SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
 use crate::console::services::instances::{
@@ -39,6 +40,20 @@ pub(crate) enum ManagerEffect {
     ValidateOpCommit {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,
+    },
+}
+
+pub(crate) enum WorkspaceSaveEffect {
+    StartDriftCheck {
+        original_name: String,
+        prospective_mounts: Vec<crate::workspace::MountConfig>,
+        plan: PendingSaveCommit,
+        exit_on_success: bool,
+    },
+    StartIsolationCleanup {
+        records: Vec<crate::isolation::state::IsolationRecord>,
+        plan: PendingSaveCommit,
+        exit_on_success: bool,
     },
 }
 
@@ -278,6 +293,57 @@ fn execute_op_commit_validation(
         }
     } else if let ManagerStage::Editor(editor) = &mut state.stage {
         editor.pending_op_commit = Some(super::state::PendingOpCommit::new(op_ref, rx));
+    }
+}
+
+pub(crate) fn execute_workspace_save_effect(
+    editor: &mut EditorState<'_>,
+    paths: &crate::paths::JackinPaths,
+    effect: WorkspaceSaveEffect,
+) {
+    match effect {
+        WorkspaceSaveEffect::StartDriftCheck {
+            original_name,
+            prospective_mounts,
+            plan,
+            exit_on_success,
+        } => {
+            let rx = crate::console::services::workspace_save::start_drift_check(
+                paths.clone(),
+                original_name.clone(),
+                prospective_mounts,
+            );
+            editor.pending_drift_check = Some(PendingDriftCheck::new(
+                rx,
+                original_name,
+                plan,
+                exit_on_success,
+            ));
+            editor.modal = Some(Modal::StatusPopup {
+                state: jackin_tui::components::StatusPopupState::new(
+                    "Saving",
+                    "Checking isolation records...",
+                ),
+            });
+        }
+        WorkspaceSaveEffect::StartIsolationCleanup {
+            records,
+            plan,
+            exit_on_success,
+        } => {
+            let rx = crate::console::services::workspace_save::start_isolation_cleanup(
+                paths.clone(),
+                records,
+            );
+            editor.pending_isolation_cleanup =
+                Some(PendingIsolationCleanup::new(rx, plan, exit_on_success));
+            editor.modal = Some(Modal::StatusPopup {
+                state: jackin_tui::components::StatusPopupState::new(
+                    "Saving",
+                    "Deleting isolated state...",
+                ),
+            });
+        }
     }
 }
 
