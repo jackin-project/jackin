@@ -669,15 +669,6 @@ pub(super) fn open_op_picker_from_auth_source(
 /// so the operator lands back on the form with the prior credential
 /// unchanged. Root input validates with `op read` before mutating the
 /// form, so a broken reference never lands in `editor.pending`.
-pub(in crate::console) fn apply_op_picker_to_auth_form(
-    editor: &mut EditorState<'_>,
-    op_ref: crate::operator_env::OpRef,
-) {
-    apply_op_picker_to_auth_form_with_validator(editor, op_ref, |op_ref| {
-        crate::console::services::op::validate_ref(op_ref)
-    });
-}
-
 /// Apply a committed op picker selection after the 1Password read has already
 /// succeeded on the `spawn_blocking` thread. Called from the `run_console`
 /// poll loop — the read was verified asynchronously so Touch ID / the 1Password
@@ -774,6 +765,7 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
     });
 }
 
+#[cfg(test)]
 fn apply_op_picker_to_auth_form_with_validator(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,

@@ -842,15 +842,6 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
 /// error surfaced through `auth.error` so the operator can retry. Shared
 /// by the provide-path `OpPicker` commit and the post-mint op generate
 /// re-mount in the `run_console` loop.
-pub(in crate::console) fn apply_op_picker_to_settings_auth_form(
-    auth: &mut super::super::state::SettingsAuthState,
-    op_ref: crate::operator_env::OpRef,
-) {
-    apply_op_picker_to_settings_auth_form_with_validator(auth, op_ref, |op_ref| {
-        crate::console::services::op::validate_ref(op_ref)
-    });
-}
-
 /// Inner helper split out so tests can inject a fake `OpRunner` without
 /// touching the real `op` binary (mirrors
 /// `auth::apply_op_picker_to_auth_form_with_runner`).
@@ -865,6 +856,7 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
     });
 }
 
+#[cfg(test)]
 fn apply_op_picker_to_settings_auth_form_with_validator(
     auth: &mut super::super::state::SettingsAuthState,
     op_ref: crate::operator_env::OpRef,

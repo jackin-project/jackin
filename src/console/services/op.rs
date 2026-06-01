@@ -16,9 +16,3 @@ pub fn start_ref_validation(
     let op = op_ref.op;
     jackin_tui::runtime::spawn_blocking_subscription(move || runner.read(&op).map(|_| ()))
 }
-
-/// Validate that a picked 1Password reference can be read.
-pub fn validate_ref(op_ref: &crate::operator_env::OpRef) -> anyhow::Result<()> {
-    let runner = OpCli::new().with_account(op_ref.account.clone());
-    runner.read(&op_ref.op).map(|_| ())
-}

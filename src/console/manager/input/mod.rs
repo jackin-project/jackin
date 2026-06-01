@@ -27,8 +27,8 @@ pub use mouse::{clickable_at, handle_mouse, handle_mouse_with_config};
 // the settings auth form after a mint (the `global_mounts` module is
 // `pub(super)`, so the loop reaches the helpers through this seam).
 pub(in crate::console) use global_mounts::{
-    apply_op_picker_settings_commit_failed, apply_op_picker_to_settings_auth_form,
-    apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
+    apply_op_picker_settings_commit_failed, apply_op_picker_to_settings_auth_form_committed,
+    apply_plain_text_to_settings_auth_form,
 };
 
 pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<

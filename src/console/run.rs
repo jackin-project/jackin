@@ -187,7 +187,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                             // persist_form → editor save that writes config.
                             ManagerStage::Editor(ed) => match env_value {
                                 crate::operator_env::EnvValue::OpRef(op_ref) => {
-                                    crate::console::manager::input::auth::apply_op_picker_to_auth_form(
+                                    crate::console::manager::input::auth::apply_op_picker_to_auth_form_committed(
                                         ed, op_ref,
                                     );
                                 }
@@ -201,7 +201,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                             // equivalents on the stashed settings auth form.
                             ManagerStage::Settings(s) => match env_value {
                                 crate::operator_env::EnvValue::OpRef(op_ref) => {
-                                    crate::console::manager::input::apply_op_picker_to_settings_auth_form(
+                                    crate::console::manager::input::apply_op_picker_to_settings_auth_form_committed(
                                         &mut s.auth, op_ref,
                                     );
                                 }
