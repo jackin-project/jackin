@@ -25,10 +25,12 @@ pub(super) use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHI
 
 pub(super) mod git_prompt;
 pub(super) mod input;
+pub mod listing;
 pub(super) mod render;
 pub(super) mod state;
 
 pub use git_prompt::{GitPromptFocus, git_prompt_rect, git_prompt_url_row_rect};
 pub use input::FileBrowserOutcome;
+pub use listing::{FolderEntry, FolderListing};
 pub use render::{listing_rect, render};
 pub use state::FileBrowserState;

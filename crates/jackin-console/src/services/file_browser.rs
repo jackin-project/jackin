@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use directories::BaseDirs;
 use jackin_tui::runtime::BlockingSubscription;
 
+pub use crate::tui::components::file_browser::{FolderEntry, FolderListing};
+
 /// Directories excluded from the listing when browsing $HOME.
 pub const EXCLUDED: &[&str] = &[
     "Library",
@@ -18,27 +20,6 @@ pub const EXCLUDED: &[&str] = &[
     "OrbStack",
     "Pictures",
 ];
-
-/// One row in the folder listing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FolderEntry {
-    /// Display name, no trailing slash. `".."` for the synthetic parent link.
-    pub name: String,
-    /// Absolute path the row resolves to. For `..` this is the parent dir.
-    pub path: PathBuf,
-    /// True for the synthetic `..` parent-link row.
-    pub is_parent: bool,
-    /// True iff `path` contains a `.git` child (dir or submodule file).
-    pub is_git: bool,
-}
-
-/// Fully-resolved directory listing handed to the TUI state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FolderListing {
-    pub root: PathBuf,
-    pub cwd: PathBuf,
-    pub entries: Vec<FolderEntry>,
-}
 
 /// Does `path` contain a `.git` child? Dir (regular clone) OR file
 /// (submodule worktree, `.git` is a file pointing at the real gitdir).

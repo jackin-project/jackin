@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use tui_widget_list::ListState;
 
 use super::git_prompt::GitPromptFocus;
-use crate::services::file_browser::{FolderEntry, FolderListing};
+use super::listing::{FolderEntry, FolderListing};
 use crate::tui::components::list_helpers::{cycle_select, list_state_for_count, selected_choice};
 
 #[derive(Debug)]
