@@ -3,17 +3,13 @@
 
 pub mod auth_kind;
 mod create;
-pub(crate) mod editor_geometry;
 pub(crate) mod effects;
 pub(crate) mod file_browser;
 pub mod input;
-pub(crate) mod list_geometry;
 pub mod message;
 #[cfg(test)]
 mod message_tests;
-pub(crate) mod mount_display;
 mod pre_render;
-pub(crate) mod settings_geometry;
 pub mod state;
 
 pub use crate::console::tui::render::render;

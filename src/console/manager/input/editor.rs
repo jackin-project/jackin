@@ -8,7 +8,7 @@ use futures_util::FutureExt as _;
 use crate::console::tui::components::op_picker::OpPickerState;
 use super::super::effects::execute_role_source_persist;
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::mount_display::workspace_mounts_content_width_with_cache;
+use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
 use super::super::state::auth_flat_rows;
 use super::super::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,

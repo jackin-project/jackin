@@ -6,7 +6,7 @@
 
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE};
 use crate::config::AppConfig;
-use crate::console::manager::mount_display::{
+use crate::console::tui::render::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
 pub use crate::console::manager::state::AuthRow;
@@ -1047,7 +1047,7 @@ mod contextual_row_items_tests {
 mod general_tab_render_tests {
     use super::render_general_tab;
     use crate::config::AppConfig;
-    use crate::console::manager::editor_geometry::prepare_editor_tab_for_area;
+    use crate::console::tui::render::editor_geometry::prepare_editor_tab_for_area;
     use crate::console::manager::state::{EditorState, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
@@ -1139,7 +1139,7 @@ mod agents_tab_render_tests {
     //! `allowed_roles` is the "all allowed" shorthand.
     use super::render_roles_tab;
     use crate::config::{AppConfig, RoleSource};
-    use crate::console::manager::editor_geometry::prepare_editor_tab_for_area;
+    use crate::console::tui::render::editor_geometry::prepare_editor_tab_for_area;
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;

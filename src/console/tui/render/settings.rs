@@ -18,7 +18,7 @@ use crate::console::tui::render::modal_layout::{
     auth_form_rect, confirm_rect, mount_choice_rect, op_picker_rect, role_picker_rect,
     scope_picker_rect, source_picker_rect, text_input_rect,
 };
-use crate::console::manager::mount_display::{
+use crate::console::tui::render::mount_display::{
     MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
 pub(crate) use crate::console::manager::state::SettingsEnvRow;

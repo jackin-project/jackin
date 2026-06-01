@@ -31,17 +31,17 @@ use super::{
     CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 use crate::config::AppConfig;
-use crate::console::manager::list_geometry::{
+use crate::console::tui::render::list_geometry::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, current_dir_mount_config,
     sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace, split_global_mount_rows,
 };
 #[cfg(test)]
-pub(super) use crate::console::manager::list_geometry::{
+pub(super) use crate::console::tui::render::list_geometry::{
     global_mounts_content_height, mount_block_height,
 };
 #[cfg(test)]
-pub(super) use crate::console::manager::mount_display::format_mount_rows;
-pub(super) use crate::console::manager::mount_display::{
+pub(super) use crate::console::tui::render::mount_display::format_mount_rows;
+pub(super) use crate::console::tui::render::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows_with_cache,
     mount_path_width,
 };
@@ -1274,7 +1274,7 @@ fn render_agents_subpanel_scrollable(
 mod list_name_scroll_tests {
     use super::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, render_list_body};
     use crate::config::AppConfig;
-    use crate::console::manager::list_geometry::{
+    use crate::console::tui::render::list_geometry::{
         clamp_list_scroll_for_area, list_names_content_width,
     };
     use crate::console::manager::state::{ManagerListRow, ManagerState};

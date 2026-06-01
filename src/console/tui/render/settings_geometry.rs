@@ -2,7 +2,7 @@
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use crate::console::manager::mount_display::{
+use crate::console::tui::render::mount_display::{
     settings_global_mounts_content_height, settings_global_mounts_content_width_with_cache,
 };
 use crate::console::manager::state::{GlobalMountsState, SettingsState};

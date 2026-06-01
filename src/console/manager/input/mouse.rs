@@ -4,19 +4,19 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use super::super::list_geometry::{
+use crate::console::tui::render::list_geometry::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
 use super::super::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::modal_layout::modal_outer_rect;
 #[cfg(test)]
-use super::super::mount_display::global_mounts_content_width;
+use crate::console::tui::render::mount_display::global_mounts_content_width;
 #[cfg(test)]
-use super::super::mount_display::workspace_mounts_content_width;
-use super::super::mount_display::{
+use crate::console::tui::render::mount_display::workspace_mounts_content_width;
+use crate::console::tui::render::mount_display::{
     settings_global_mounts_content_width_with_cache, workspace_mounts_content_width_with_cache,
 };
-use super::super::settings_geometry::{
+use crate::console::tui::render::settings_geometry::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
 };
 use super::super::state::{
