@@ -8,6 +8,12 @@ title: "Terminal Emulation Crate (jackin-term)"
 
 We depend on a **single-author git fork of `vt100` pinned at a SHA** for the most load-bearing piece of `jackin-capsule`. Two independent pressures make us ask whether to own this layer instead: (1) **upstream `vt100` has effectively stalled** — last code push July 2025, ten open PRs, and the exact patch our fork carries is sitting unmerged as PR #31 — so the fork is not temporary, it is forever; and (2) **the fast off-the-shelf engines are built for GPU rendering, not for the re-emit-to-a-host-terminal hot path the capsule actually runs**, so "just switch to Alacritty" does not apply. This page lays out where the idea came from, the concept we want to test, and the **specific, data-driven experiments** that will prove the idea makes sense or kill it. Building our own crate is not a problem for this project; the *only* open question is whether it brings a real benefit. The experiments below are how we answer that with numbers instead of opinion.
 
+## Hard constraint: pure Rust, no foreign bindings
+
+This decision has exactly **two** possible outcomes: **adopt a maintained, public Rust crate**, or **build our own Rust crate**. There is no third option. jackin' will not take an FFI dependency on a C or Zig terminal library — not libvterm, not `libghostty-vt`, not any `-sys` wrapper. The entire toolchain stays in Rust with no non-Rust build dependency in the container.
+
+Non-Rust emulators (libvterm, Ghostty) appear in this document **only as idea sources**. If Ghostty's memory model is the best in the field, the move is to **re-implement that design in Rust inside `jackin-term`**, with attribution to the MIT-licensed original — never to link the Zig library. Wherever this page says "bind," read it as "ruled out by this constraint; kept only to show the option was considered and rejected on principle, not overlooked."
+
 ## Where this idea came from
 
 ### Why we use `vt100` in the first place
@@ -92,9 +98,9 @@ Verification against the actual crate landscape says **no, not directly** — an
 | **[`wezterm-term`](https://github.com/wezterm/wezterm)** / **[`termwiz`](https://docs.rs/termwiz)** | own (termwiz) | full `Surface` model, scrollback, OSC 8, images | **Yes** — `Surface`/`Change` diff | `termwiz` published; **`wezterm-term` not published** ([#6663](https://github.com/wezterm/wezterm/issues/6663)) | multi-maintainer, active | The strongest "buy": has both a model and a diff-emit. Heavy dep tree; `wezterm-term` would itself be a git dep. **Must be evaluated before any build.** |
 | **[Rio](https://github.com/raphamorim/rio)** (`rio-backend` + [`copa`](https://lib.rs/crates/copa)) | `copa` (Alacritty `vte` fork) | `Crosswords` grid, GPU/WebGPU, SIMD UTF-8 | **No** — GPU present | on crates.io but **app-internal infra**; `copa` stale (0.12.0, 2023) | single primary author | GPU app backend, no emit stage, less stable than Alacritty for our purpose |
 | **[`avt`](https://github.com/asciinema/avt)** (asciinema) | own | primary/alt grid | **Partial** — full-screen `dump()`, no incremental diff, no live OSC callbacks | crates.io | asciinema org | Record/replay shape, not interactive multiplexing |
-| **[libvterm](https://www.leonerd.org.uk/code/libvterm/)** (LeoNerd, C) | own (C) | abstract VT220/xterm state, **damage callbacks** | **No** — gives damage regions; the host renders/re-emits itself | C library, maintained, packaged across distros; **[neovim fork](https://github.com/neovim/libvterm)** | active (C); **Rust bindings dead** ([`vterm-sys`](https://crates.io/crates/vterm-sys) / [`libvterm-rs`](https://github.com/ajh/libvterm-rs), ~2016) | The strongest *conceptual* prior art — battle-tested damage model neovim and emacs-vterm embed — but it is **C**, the Rust bindings are abandoned, it needs an FFI `-sys` wrapper and a C toolchain in the container, and it **still lacks the wire-emit stage**. Adopting it means owning a binding anyway. |
+| **[libvterm](https://www.leonerd.org.uk/code/libvterm/)** (LeoNerd, C) | own (C) | abstract VT220/xterm state, **damage callbacks** | **No** — gives damage regions; the host renders/re-emits itself | C library, maintained; **[neovim fork](https://github.com/neovim/libvterm)** | active (C); Rust bindings dead | **Ruled out — non-Rust.** Idea source only: a battle-tested damage-callback model. We do not link C. |
 | **[`tui-term`](https://github.com/a-kenji/tui-term)** (a-kenji) | wraps `vt100` | `vt100::Screen` | **No** — renders a **ratatui `Buffer`**, not escape bytes | crates.io, 0.3.x (Apr 2026), active | single author | A ratatui *widget*, not a model — wraps `vt100` and paints into a ratatui buffer. Wrong direction (no re-emit). Useful only as ecosystem confirmation that `vt100` is the default model, and as a reference if the capsule ever moves to ratatui (see TUI architecture item). |
-| **[Ghostty](https://github.com/ghostty-org/ghostty)** / **[libghostty-vt](https://biggo.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation)** (Zig, MIT) | own SIMD parser | **`PageList`** — pooled arena pages, offset-addressed cells, `RefCountedSet` style interning, grapheme side-map | **No** — GPU renderer; `libghostty-vt` exposes state, not re-emit | `libghostty-vt` is a 2025 C/Zig embeddable API, very active | Mitchell Hashimoto + community | **Best-in-class memory model** and a serious modern "bind" candidate — but Zig/C (FFI, no Rust crate), GPU-render-oriented, **no wire-emit**. Its real value to us is **idea theft** (MIT-licensed patterns), detailed below. |
+| **[Ghostty](https://github.com/ghostty-org/ghostty)** / **[libghostty-vt](https://biggo.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation)** (Zig, MIT) | own SIMD parser | **`PageList`** — pooled arena pages, offset-addressed cells, `RefCountedSet` style interning, grapheme side-map | **No** — GPU renderer; `libghostty-vt` exposes state, not re-emit | 2025 Zig embeddable API, very active | Mitchell Hashimoto + community | **Ruled out as a dependency — non-Rust (Zig).** But it has the **best memory model surveyed**, MIT-licensed, so we **re-implement its patterns in Rust** inside `jackin-term`. Idea theft only, detailed below. |
 | **[`vte`](https://crates.io/crates/vte)** (alacritty) | the canonical parser (`Perform`) | none | n/a | crates.io, stable, canonical | multi-maintainer | **The reusable foundation — depend on it, never rebuild the parser** |
 
 What the comparison proves:
@@ -102,7 +108,7 @@ What the comparison proves:
 - **The GPU-fast engines (Alacritty, Rio) are structurally missing our stage.** Adopting them means hand-writing the diff-to-escape emit — exactly what `vt100` gives free. So "just use Alacritty" trades our problem for a bigger one.
 - **The reusable, fast, canonical piece everyone shares is `vte`.** That is the part to depend on; rebuilding a VT parser would violate <RepoFile path="AGENTS.md" /> "Prefer libraries over hand-rolled parsers" for no gain.
 - **`termwiz` is the only off-the-shelf crate with both a model and a diff-emit** — making it the mandatory "buy" candidate to rule out before any "build."
-- **Even libvterm — the mature C model neovim and emacs-vterm embed — does not ship the wire-emit stage.** It gives damage callbacks and abstract state; the host still renders or re-emits itself. That is strong evidence that the diff-to-escape present stage is a genuinely rare, multiplexer-specific piece that *nobody hands you*, in C or Rust. And libvterm's Rust bindings are abandoned, so adopting it would mean owning an FFI `-sys` wrapper plus a C toolchain in the container — the same ownership cost as `jackin-term` with a worse dependency story and still no emit.
+- **Even libvterm — the mature C model neovim and emacs-vterm embed — does not ship the wire-emit stage.** It gives damage callbacks and abstract state; the host still renders or re-emits itself. That is strong evidence that the diff-to-escape present stage is a genuinely rare, multiplexer-specific piece that *nobody hands you*, in any language. (libvterm is also non-Rust and therefore ruled out as a dependency per the pure-Rust constraint — it informs the design, it does not become one.)
 - The hybrid we'd build = **`vte` (theirs) + ring-buffer damage grid (Alacritty's / libvterm's idea, our code) + wire-minimal emit (vt100's idea, our code, but damage-driven) + typed passthrough (ours).** Best of each world, none of them shippable as-is for our exact job.
 
 ## Why our own crate could make sense
@@ -158,7 +164,7 @@ Cross-cutting: a multi-session arena so N sessions share slab row storage and on
 
 ### Ideas worth borrowing from Ghostty (MIT-licensed)
 
-Ghostty cannot be a Rust dependency — it is Zig, GPU-render-oriented, and (like every other engine surveyed) ships no diff-to-escape stage. But its terminal core, now extracted as the embeddable `libghostty-vt`, has the **best memory model of any emulator surveyed**, and Ghostty is MIT-licensed, so the *patterns* (and, with attribution, selected code) are fair game for `DamageGrid`. The ideas worth porting:
+Ghostty is **not a candidate dependency** — it is Zig, and the pure-Rust constraint above forbids linking it (and, like every engine surveyed, it ships no diff-to-escape stage anyway). But its terminal core has the **best memory model of any emulator surveyed**, and Ghostty is MIT-licensed, so the *patterns* (re-implemented in Rust, with attribution) are fair game for `DamageGrid`. The ideas worth porting into Rust:
 
 1. **`PageList` — pooled arena pages instead of a flat ring buffer.** The screen + scrollback is a doubly-linked list of fixed-size pages drawn from a pre-heated `MemoryPool`; each page is one contiguous arena holding its rows, cells, styles, graphemes, and hyperlinks. Scroll and scrollback-trim become page-pointer operations with near-zero per-cell allocation, and on hitting the scrollback limit Ghostty *reuses the oldest page as the newest* — a free ring without a fixed-size ring's wide-terminal waste. This is a strictly better `DamageGrid` backing store than the naive ring buffer the design first sketched.
 2. **`RefCountedSet` style interning.** Cells store a small style **id**; the actual style lives once in a per-page refcounted set, released on cell overwrite with lazy id reuse. Exactly the "packed cell + interned style" goal, with a proven shape. Hyperlinks use the same set.
@@ -232,25 +238,24 @@ If and only if Experiments 1–4 surface at least one quantified wall, build a *
 
 **Decision gate:** the spike must show a **≥ 2× improvement in the walled metric** (or an unambiguous qualitative fix, e.g. eliminating visible jitter on dataset 3) to justify a full `jackin-term`. A 10% improvement does not justify owning a terminal crate; a 5× drop in p99 present-frame time or wire bytes does.
 
-### Experiment 6 — the "buy / bind" gate (`termwiz`, libvterm)
+### Experiment 6 — the "buy" gate (`termwiz`, the only adoptable Rust option)
 
-Before committing to build, rule out the two adopt-instead-of-write options:
+Per the pure-Rust constraint, the **only** adopt-instead-of-build candidate with both a cell model and a diff-emit is **`termwiz`** (the rest are non-Rust and ruled out, or Rust but missing the emit stage). Before committing to build, prototype driving `termwiz`'s `Surface`/`Change` diff as the capsule's present stage on dataset 2/3. If `termwiz` matches the prototype's numbers **and** its published API is stable enough to depend on, **buy beats build** and we adopt `termwiz`.
 
-- **`termwiz` (buy):** prototype driving its `Surface`/`Change` diff as the capsule's present stage on dataset 2/3. If `termwiz` matches the prototype's numbers **and** offers a stable published API, **buy beats build** and we adopt `termwiz`.
-- **libvterm / libghostty-vt (bind):** assess whether wrapping a maintained C/Zig library behind a fresh `-sys` crate is cheaper than `jackin-term`. libvterm (neovim fork) is mature but its Rust bindings are abandoned; `libghostty-vt` is modern and fast but Zig-built. Both gates are hard to pass for the same reasons: we would own a binding either way, both add a non-Rust toolchain to the container build, and **both still lack the wire-emit stage** we must write regardless. Document each FFI surface and build cost, then compare honestly against owning pure-Rust `jackin-term` — for which we can borrow Ghostty's MIT memory-model patterns without taking on the Zig dependency at all.
-
-If neither adopt-path clears its gate, the remaining choice is build vs. drop, decided by the matrix below.
+If `termwiz` does not clear the gate, the choice is build vs. drop, decided by the matrix below — and "build" means a pure-Rust `jackin-term` that re-implements the best borrowed ideas (Ghostty's memory model, libvterm's damage discipline, vt100's emit) natively, with no foreign binding.
 
 ## The decision matrix
 
 After the experiments, the action is determined — not argued:
 
-| Perf wall proven (Exp 1–5)? | `termwiz` covers it (Exp 6)? | Maintenance: forced-fork acceptable? | Action |
+Every action is pure-Rust: adopt a Rust crate, keep the Rust fork, or build a Rust crate. No row links a foreign library.
+
+| Perf wall proven (Exp 1–5)? | `termwiz` (Rust) covers it (Exp 6)? | Maintenance: forced-fork acceptable? | Action |
 | --- | --- | --- | --- |
 | No | — | Yes (patched fork is fine) | **Drop the idea.** Stay on `vt100`, retire the SHA-pin (Step 0). Keep win 4 as a possible *small* refactor, not a crate. |
-| No | — | No (forced-fork unacceptable long-term) | **Fork-and-own minimally.** Refactor the fork into `jackin-term` for *maintenance + passthrough (win 4)* only, no perf rewrite. |
-| Yes | Yes | — | **Buy `termwiz`.** Adopt it as the present stage; do not build. |
-| Yes | No | — | **Build `jackin-term`.** Full hybrid: `vte` + damage grid + wire-minimal emit + typed passthrough. The architecture above is the blueprint. |
+| No | — | No (forced-fork unacceptable long-term) | **Fork-and-own minimally.** Refactor the Rust fork into `jackin-term` for *maintenance + passthrough (win 4)* only, no perf rewrite. |
+| Yes | Yes | — | **Buy `termwiz`.** Adopt the Rust crate as the present stage; do not build. |
+| Yes | No | — | **Build `jackin-term`.** Pure-Rust hybrid: `vte` + damage grid (Ghostty patterns re-implemented in Rust) + wire-minimal emit + typed passthrough. The architecture above is the blueprint. |
 
 The verification is complete when every cell of the row that applies to us is backed by a diagnostics run id or a prototype branch, not a guess.
 
@@ -278,6 +283,6 @@ None. This item is entirely in-container / in-binary terminal modeling and emits
 2. How far is `vt100`'s emit from wire-minimal on realistic frames? (Experiment 2)
 3. How many allocations per frame does the current render path make? (Experiment 3)
 4. Does per-session heap-grid memory/CPU scale acceptably to 16–32 panes? (Experiment 4)
-5. Can `termwiz` (buy) or a fresh libvterm binding (bind) be the present stage and beat building `jackin-term`? (Experiment 6)
+5. Can `termwiz` — the only adoptable Rust crate with a diff-emit — be the present stage and beat building `jackin-term`? (Experiment 6)
 6. Is win 4 (typed passthrough, fork retirement) valuable enough to justify a crate **independent** of any performance result?
 7. If built, does `jackin-term` stay capsule-private, or ship as a publishable crate — the only Rust terminal model purpose-built for re-emitting multiplexers — feeding the broader jackin' ecosystem?
