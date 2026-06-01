@@ -526,6 +526,52 @@ pub(crate) enum EditorSavePreviewError {
     },
 }
 
+#[must_use]
+pub(crate) fn pre_existing_redundant_mounts_message(
+    original_name: &str,
+    collapses: &[crate::workspace::Removal],
+) -> String {
+    let details: Vec<String> = collapses
+        .iter()
+        .map(|r| {
+            format!(
+                "{} covered by {}",
+                crate::tui::shorten_home(&r.child.src),
+                crate::tui::shorten_home(&r.covered_by.src),
+            )
+        })
+        .collect();
+    format!(
+        "pre-existing redundant mount(s) in this workspace: {}; \
+         run `jackin' workspace prune {original_name}` to clean up",
+        details.join(", "),
+    )
+}
+
+/// Mirror the merge order `AppConfig::edit_workspace` uses to build the
+/// post-edit mount list, so the source-drift check evaluates the same
+/// shape that will land on disk.
+#[must_use]
+pub(crate) fn prospective_workspace_mounts(
+    current: &[MountConfig],
+    pending: &[MountConfig],
+    effective_removals: &[String],
+) -> Vec<MountConfig> {
+    let mut out: Vec<MountConfig> = current
+        .iter()
+        .filter(|m| !effective_removals.iter().any(|d| d == &m.dst))
+        .cloned()
+        .collect();
+    for upsert in pending {
+        if let Some(existing) = out.iter_mut().find(|existing| existing.dst == upsert.dst) {
+            *existing = upsert.clone();
+        } else {
+            out.push(upsert.clone());
+        }
+    }
+    out
+}
+
 pub(crate) fn plan_editor_save_preview(
     config: &AppConfig,
     input: EditorSavePreviewInput<'_>,

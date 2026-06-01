@@ -193,7 +193,10 @@ pub(super) fn begin_editor_save(
             }) => {
                 open_save_error_popup(
                     editor,
-                    &pre_existing_redundant_mounts_message(&original_name, &collapses),
+                    &crate::console::domain::pre_existing_redundant_mounts_message(
+                        &original_name,
+                        &collapses,
+                    ),
                 );
                 return Ok(());
             }
@@ -282,7 +285,7 @@ pub(super) fn commit_editor_save_with_runner(
         // mount over the existing on-disk set.
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
-            let prospective_mounts = build_prospective_mounts(
+            let prospective_mounts = crate::console::domain::prospective_workspace_mounts(
                 &current_ws.mounts,
                 &editor.pending.mounts,
                 &plan.effective_removals,
@@ -306,7 +309,7 @@ pub(super) fn commit_editor_save_with_runner(
     {
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
-            let prospective_mounts = build_prospective_mounts(
+            let prospective_mounts = crate::console::domain::prospective_workspace_mounts(
                 &current_ws.mounts,
                 &editor.pending.mounts,
                 &plan.effective_removals,
@@ -353,54 +356,6 @@ pub(crate) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str)
     editor.save_flow = EditorSaveFlow::Error {
         message: message.to_string(),
     };
-}
-
-
-fn pre_existing_redundant_mounts_message(
-    original_name: &str,
-    collapses: &[crate::workspace::Removal],
-) -> String {
-    let details: Vec<String> = collapses
-        .iter()
-        .map(|r| {
-            format!(
-                "{} covered by {}",
-                crate::tui::shorten_home(&r.child.src),
-                crate::tui::shorten_home(&r.covered_by.src),
-            )
-        })
-        .collect();
-    format!(
-        "pre-existing redundant mount(s) in this workspace: {}; \
-         run `jackin' workspace prune {original_name}` to clean up",
-        details.join(", "),
-    )
-}
-
-/// Mirror the merge order `AppConfig::edit_workspace` uses to build the
-/// post-edit mount list, so the source-drift check in
-/// `commit_editor_save` evaluates the same shape that will land on disk.
-/// Steps:
-///   1. Drop every mount whose dst is in `effective_removals`.
-///   2. For each pending mount, upsert (replace by dst, otherwise push).
-fn build_prospective_mounts(
-    current: &[crate::workspace::MountConfig],
-    pending: &[crate::workspace::MountConfig],
-    effective_removals: &[String],
-) -> Vec<crate::workspace::MountConfig> {
-    let mut out: Vec<crate::workspace::MountConfig> = current
-        .iter()
-        .filter(|m| !effective_removals.iter().any(|d| d == &m.dst))
-        .cloned()
-        .collect();
-    for upsert in pending {
-        if let Some(existing) = out.iter_mut().find(|existing| existing.dst == upsert.dst) {
-            *existing = upsert.clone();
-        } else {
-            out.push(upsert.clone());
-        }
-    }
-    out
 }
 
 #[cfg(test)]
