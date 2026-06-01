@@ -1,12 +1,13 @@
-use crate::console::prompts::{
-    console_location_debug, dispatch_and_prompt_launch, invalidate_op_cache_for_ref,
-    key_debug_name, launch_with_committed_agent, prompt_committed_role,
-};
 use crate::console::domain::build_workspace_choice;
+use crate::console::prompts::{
+    dispatch_and_prompt_launch, invalidate_op_cache_for_ref, launch_with_committed_agent,
+    prompt_committed_role,
+};
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
 };
+use crate::console::tui::debug::{console_location_debug, key_debug_name};
 use crate::console::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };

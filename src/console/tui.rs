@@ -4,6 +4,7 @@ pub mod app;
 pub mod auth_kind;
 pub mod components;
 mod create;
+pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;
 pub mod message;

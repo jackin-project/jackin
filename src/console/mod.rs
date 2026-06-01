@@ -17,6 +17,7 @@ pub mod tui;
 
 #[cfg(test)]
 use prompts::{prompt_agent_for_launch, providers_for_launch};
+#[cfg(test)]
 pub(super) use tui::consumes_letter_input;
 #[cfg(test)]
 use tui::is_on_main_screen;
@@ -29,10 +30,8 @@ pub use tui::{ConsoleStage, ConsoleState, run_console};
 mod quit_confirm_tests {
     //! Pin the gates for the Q-intercept and the
     //! `ConfirmState::handle_key` outcomes the run-loop dispatches.
-    use super::prompts::{
-        OnPromptFailure, PromptOutcome, console_location_debug, key_debug_name,
-        show_role_resolution_error,
-    };
+    use super::prompts::{OnPromptFailure, PromptOutcome, show_role_resolution_error};
+    use super::tui::debug::{console_location_debug, key_debug_name};
     use super::*;
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
