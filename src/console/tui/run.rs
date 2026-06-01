@@ -151,7 +151,7 @@ pub async fn run_console<H: InstanceActionHandler>(
             // auth form (re-mounted below) and persisted only when the
             // operator Saves — mirroring the provide path's "pick a value
             // → form re-mounts with the credential, focus Save → Save".
-            let mint = crate::workspace::token_setup::mint_token_value(
+            let mint = crate::console::services::token_setup::mint_token_value(
                 paths, &config, &req.scope, &req.args,
             );
             let _ = resume_console_terminal(&mut out);
