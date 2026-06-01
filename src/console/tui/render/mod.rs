@@ -188,16 +188,15 @@ pub fn render(
                             items
                         }
                     } else {
-                        let show_open_hint = matches!(
-                            state.selected_row(),
-                            ManagerListRow::SavedWorkspace(_)
-                        ) && state
-                            .selected_workspace_summary()
-                            .and_then(|s| config.workspaces.get(&s.name))
-                            .is_some_and(|ws| {
-                                !crate::console::manager::github_mounts::resolve_for_workspace(ws)
-                                    .is_empty()
-                            });
+                        let show_open_hint =
+                            matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
+                                && state
+                                    .selected_workspace_summary()
+                                    .and_then(|s| config.workspaces.get(&s.name))
+                                    .is_some_and(|ws| {
+                                        !jackin_console::github_mounts::resolve_for_workspace(ws)
+                                            .is_empty()
+                                    });
 
                         let is_saved =
                             matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_));

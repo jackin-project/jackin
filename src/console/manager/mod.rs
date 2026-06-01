@@ -7,7 +7,6 @@ pub mod auth_rows;
 mod create;
 pub(crate) mod editor_footer;
 pub(crate) mod editor_geometry;
-pub(crate) mod github_mounts;
 pub mod input;
 pub(crate) mod list_geometry;
 pub mod message;
@@ -27,3 +26,9 @@ pub use input::{InputOutcome, handle_key};
 pub(crate) use message::{ManagerMessage, poll_background_messages, update_manager};
 pub use pre_render::prepare_for_render;
 pub use state::{ManagerStage, ManagerState};
+
+impl jackin_console::github_mounts::WorkspaceMounts for crate::workspace::WorkspaceConfig {
+    fn mount_sources(&self) -> impl Iterator<Item = &str> {
+        self.mounts.iter().map(|mount| mount.src.as_str())
+    }
+}

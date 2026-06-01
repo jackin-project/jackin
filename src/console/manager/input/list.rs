@@ -504,7 +504,7 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
     let Some(ws) = config.workspaces.get(&summary.name) else {
         return;
     };
-    let choices = super::super::github_mounts::resolve_for_workspace(ws);
+    let choices = jackin_console::github_mounts::resolve_for_workspace(ws);
     match choices.len() {
         0 => {}
         1 => {
@@ -1560,7 +1560,7 @@ mod tests {
             ..WorkspaceConfig::default()
         };
 
-        let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
+        let choices = jackin_console::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 2);
         // URLs track the HEAD ref per-repo.
         let urls: Vec<&str> = choices.iter().map(|c| c.url.as_str()).collect();
@@ -1583,7 +1583,7 @@ mod tests {
             mounts: vec![mount(repo.to_str().unwrap(), "/solo")],
             ..WorkspaceConfig::default()
         };
-        let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
+        let choices = jackin_console::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 1);
         assert_eq!(choices[0].url, "https://github.com/owner/solo/tree/trunk");
     }

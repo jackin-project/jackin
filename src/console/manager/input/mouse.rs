@@ -1665,7 +1665,7 @@ mod mouse_drag_tests {
             ..Default::default()
         };
         // Ensure the helper signature compiles (guards against future refactors).
-        let _ = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
+        let _ = jackin_console::github_mounts::resolve_for_workspace(&ws);
         state.list_modal = Some(Modal::GithubPicker {
             state: jackin_console::widgets::github_picker::GithubPickerState::new(vec![
                 jackin_console::widgets::github_picker::GithubChoice {
