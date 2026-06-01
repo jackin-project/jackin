@@ -3,11 +3,11 @@
 #![allow(clippy::items_after_test_module)]
 
 use super::super::message::{
-    ManagerMessage, WorkspaceSaveEffect, execute_workspace_save_effect, update_manager,
+    WorkspaceSaveEffect, execute_workspace_save_effect, execute_workspace_save_write,
 };
 use super::super::state::{
-    EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
-    PendingDriftCheck, PendingIsolationCleanup,
+    EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
+    PendingIsolationCleanup,
 };
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -441,73 +441,24 @@ pub(super) fn commit_editor_save_with_runner(
         }
     };
 
-    match crate::console::services::config::save_workspace(
+    let original = editor.original.clone();
+    let pending = editor.pending.clone();
+    execute_workspace_save_write(
+        state,
+        config,
         paths,
+        cwd,
         crate::console::services::config::WorkspaceSaveInput {
             mode: service_mode,
-            original: &editor.original,
-            pending: &editor.pending,
+            original: &original,
+            pending: &pending,
         },
-    ) {
-        Ok(saved) => {
-            *config = saved.config;
-            // Refresh editor origin-of-truth; keep the operator on the
-            // editor (direct `s` press) OR bounce to list (Esc→Save path).
-            if let ManagerStage::Editor(editor) = &mut state.stage {
-                // Apply the deferred rename now that the whole write has
-                // reached disk. Doing this BEFORE the `editor.original` /
-                // `editor.pending` refresh below means that refresh can
-                // look up the new name in `config.workspaces`.
-                if let Some(new_name) = saved.pending_rename {
-                    editor.mode = EditorMode::Edit { name: new_name };
-                }
-                if let EditorMode::Edit { name } = &editor.mode
-                    && let Some(ws) = config.workspaces.get(name)
-                {
-                    editor.original = ws.clone();
-                    editor.pending = ws.clone();
-                }
-                editor.save_flow = EditorSaveFlow::Idle;
-            }
-            if exit_on_success
-                || matches!(
-                    state.stage,
-                    ManagerStage::Editor(EditorState {
-                        mode: EditorMode::Create,
-                        ..
-                    })
-                )
-            {
-                let _ = update_manager(
-                    state,
-                    ManagerMessage::ReloadFromConfig {
-                        config: Box::new(config.clone()),
-                        cwd: cwd.to_path_buf(),
-                    },
-                );
-                // Land on the workspace that was just saved.
-                let saved_count = state.workspaces.len();
-                if let Some(idx) = state
-                    .workspaces
-                    .iter()
-                    .position(|w| w.name == saved.current_name)
-                {
-                    state.selected = ManagerListRow::SavedWorkspace(idx)
-                        .to_screen_index(saved_count)
-                        .unwrap_or(0);
-                }
-            }
-        }
-        Err(e) => {
-            if let ManagerStage::Editor(editor) = &mut state.stage {
-                open_save_error_popup(editor, &e.to_string());
-            }
-        }
-    }
+        exit_on_success,
+    );
     Ok(())
 }
 
-pub(super) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
+pub(crate) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
     editor.modal = Some(Modal::ErrorPopup {
         state: jackin_tui::components::ErrorPopupState::new("Save failed", message.to_string()),
     });

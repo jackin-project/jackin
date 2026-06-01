@@ -6,7 +6,7 @@
 
 use super::auth_kind::AuthKind;
 use super::state::{
-    CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, GlobalMountModal,
+    CreatePreludeState, DragState, EditorMode, EditorState, EditorTab, FieldFocus, GlobalMountModal,
     ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, PendingDriftCheck,
     PendingIsolationCleanup, PendingMountInfoRefresh, PendingSaveCommit, SecretsScopeTag,
     SettingsState, SettingsTab,
@@ -343,6 +343,65 @@ pub(crate) fn execute_workspace_save_effect(
                     "Deleting isolated state...",
                 ),
             });
+        }
+    }
+}
+
+pub(crate) fn execute_workspace_save_write(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    cwd: &std::path::Path,
+    input: crate::console::services::config::WorkspaceSaveInput<'_>,
+    exit_on_success: bool,
+) {
+    match crate::console::services::config::save_workspace(paths, input) {
+        Ok(saved) => {
+            *config = saved.config;
+            if let ManagerStage::Editor(editor) = &mut state.stage {
+                if let Some(new_name) = saved.pending_rename {
+                    editor.mode = EditorMode::Edit { name: new_name };
+                }
+                if let EditorMode::Edit { name } = &editor.mode
+                    && let Some(ws) = config.workspaces.get(name)
+                {
+                    editor.original = ws.clone();
+                    editor.pending = ws.clone();
+                }
+                editor.save_flow = super::state::EditorSaveFlow::Idle;
+            }
+            if exit_on_success
+                || matches!(
+                    state.stage,
+                    ManagerStage::Editor(EditorState {
+                        mode: EditorMode::Create,
+                        ..
+                    })
+                )
+            {
+                let _ = update_manager(
+                    state,
+                    ManagerMessage::ReloadFromConfig {
+                        config: Box::new(config.clone()),
+                        cwd: cwd.to_path_buf(),
+                    },
+                );
+                let saved_count = state.workspaces.len();
+                if let Some(idx) = state
+                    .workspaces
+                    .iter()
+                    .position(|w| w.name == saved.current_name)
+                {
+                    state.selected = ManagerListRow::SavedWorkspace(idx)
+                        .to_screen_index(saved_count)
+                        .unwrap_or(0);
+                }
+            }
+        }
+        Err(e) => {
+            if let ManagerStage::Editor(editor) = &mut state.stage {
+                super::input::save::open_save_error_popup(editor, &e.to_string());
+            }
         }
     }
 }
