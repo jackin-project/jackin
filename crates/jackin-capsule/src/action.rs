@@ -81,5 +81,9 @@ pub enum Action {
         col: u16,
     },
     FinalizeSelection,
+    DialogClick {
+        row: u16,
+        col: u16,
+    },
     Dialog(DialogAction),
 }

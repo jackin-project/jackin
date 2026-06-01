@@ -466,6 +466,25 @@ impl Multiplexer {
             }
             Action::SelectionMotion { row, col } => self.selection_motion(row, col),
             Action::FinalizeSelection => self.finalize_selection(),
+            Action::DialogClick { row, col } => {
+                // Mouse handling while a dialog overlay is up:
+                //   click on a row  -> select + confirm
+                //   click on border / padding -> swallowed
+                //   click anywhere outside the box -> dismiss
+                //
+                // SGR mouse coords are 0-based; `box_rect` returns
+                // render-side coords that are 1-based (the values passed to
+                // `move_to`, which emits `\x1b[r;cH`). Pass row+1 / col+1 here
+                // so `handle_click` compares apples to apples.
+                let term_rows = self.term_rows;
+                let term_cols = self.term_cols;
+                let action = self
+                    .dispatch_to_dialog_top(|dialog, github| {
+                        dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
+                    })
+                    .expect("dialog presence checked");
+                self.apply_action(Action::Dialog(action))
+            }
             Action::Dialog(action) => Some(self.apply_dialog_action(action)),
         }
     }
@@ -501,26 +520,7 @@ impl Multiplexer {
             InputEvent::MousePress { col, row, button }
                 if self.dialog_captures_input() && button == 0 && !is_wheel_button(button) =>
             {
-                // Mouse handling while a dialog overlay is up:
-                //   click on a row  → select + confirm
-                //   click on border / padding → swallowed
-                //   click anywhere outside the box → dismiss
-                //
-                // SGR mouse coords are 0-based; `box_rect` returns
-                // render-side coords that are 1-based (the values
-                // passed to `move_to`, which emits `\x1b[r;cH`).
-                // Pass row+1 / col+1 here so `handle_click` compares
-                // apples to apples — otherwise a click on the
-                // dialog's top border or leftmost column reads as
-                // outside-the-box and dismisses the dialog.
-                let term_rows = self.term_rows;
-                let term_cols = self.term_cols;
-                let action = self
-                    .dispatch_to_dialog_top(|dialog, github| {
-                        dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
-                    })
-                    .expect("dialog presence checked");
-                self.apply_action(Action::Dialog(action))
+                self.apply_action(Action::DialogClick { row, col })
             }
             InputEvent::MousePress { .. } if self.dialog_captures_input() => {
                 // Any non-wheel mouse event with the dialog up that

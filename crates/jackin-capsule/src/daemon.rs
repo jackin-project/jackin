@@ -3985,6 +3985,17 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_dialog_click_routes_to_dialog_handler() {
+        let mut mux = single_pane_tab_mux();
+        mux.open_command_palette();
+        assert!(mux.dialog_open());
+
+        mux.apply_action(Action::DialogClick { row: 0, col: 0 });
+
+        assert!(!mux.dialog_open(), "outside click should dismiss dialog");
+    }
+
+    #[test]
     fn apply_action_focus_report_does_not_open_dialog() {
         let mut mux = single_pane_tab_mux();
         assert!(!mux.dialog_open());
