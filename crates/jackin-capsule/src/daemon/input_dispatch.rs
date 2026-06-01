@@ -534,99 +534,10 @@ impl Multiplexer {
     /// Handle a parsed input event from the client terminal.
     /// Returns bytes to send to the client (e.g. redraws), if any.
     pub(super) fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
-        if let InputEvent::MousePress { col, row, button }
-        | InputEvent::MouseRelease { col, row, button } = &event
-        {
-            self.apply_action(Action::MouseChromeUpdate {
-                row: *row,
-                col: *col,
-                button: *button,
-            });
+        if let Some(action) = mouse_chrome_update_action(&event) {
+            self.apply_action(action);
         }
-        match event {
-            InputEvent::OpenPalette => self.apply_action(Action::OpenPalette),
-            InputEvent::PrefixCommand(cmd) => {
-                // While a dialog is open the prefix gesture's payload
-                // must not reach the focused pane — operator's intent
-                // is to act on the dialog, not the agent underneath.
-                self.apply_action(Action::Prefix(cmd))
-            }
-            InputEvent::ResizePane(dir) => self.apply_action(Action::ResizePane(dir)),
-            InputEvent::FocusIn | InputEvent::FocusOut => {
-                // Forward only when the focused agent actually
-                // requested focus events (`?1004h`) — shells and
-                // pre-mount agents leave the mode off and would
-                // surface `[I` / `[O` as literal text at the prompt.
-                self.apply_action(Action::FocusReport(matches!(event, InputEvent::FocusIn)))
-            }
-            InputEvent::MousePress { col, row, button }
-                if self.dialog_captures_input() && button == 0 && !is_wheel_button(button) =>
-            {
-                self.apply_action(Action::DialogClick { row, col })
-            }
-            InputEvent::MousePress { .. } if self.dialog_captures_input() => {
-                // Any non-wheel mouse event with the dialog up that
-                // did not land on a row is swallowed so it never
-                // reaches the agent underneath.
-                None
-            }
-            InputEvent::MouseRelease { .. } if self.dialog_captures_input() => {
-                // Drop the release that pairs with a press the dialog
-                // already absorbed. Letting it through would surface
-                // the raw `\x1b[<...m` bytes at the focused pane's
-                // prompt as garbage text the moment the dialog
-                // dismisses (e.g. click-outside-to-close).
-                None
-            }
-            InputEvent::MouseRelease { col, row, button } => {
-                self.apply_action(Action::MouseRelease { row, col, button })
-            }
-            InputEvent::MousePress { col, row, button } if is_wheel_button(button) => {
-                self.apply_action(Action::Wheel { row, col, button })
-            }
-            InputEvent::MousePress {
-                row,
-                col,
-                button: 0,
-            } if let Some(hit) = branch_context_bar_hit(
-                row + 1,
-                col + 1,
-                self.term_rows,
-                self.term_cols,
-                self.context_bar_branch(),
-                self.pull_request_context.as_deref(),
-                self.pull_request_context_loading(),
-                self.status_bar.instance_id_label(),
-            ) =>
-            {
-                let _ = hit;
-                self.apply_action(Action::BranchContextBarClick { row, col })
-            }
-            InputEvent::MousePress {
-                row: 0,
-                col,
-                button: 0,
-            } => self.apply_action(Action::StatusBarClick { col }),
-            InputEvent::MousePress { col, row, button } => {
-                // SGR motion event with the left button still held
-                // (`button == 32`) drives an in-flight resize drag or
-                // selection drag if one is active. Treat it as the
-                // drag/selection update path; do not focus-switch or
-                // forward to PTY.
-                if button == 32 {
-                    return self.apply_action(Action::PaneButtonMotion { row, col });
-                }
-                if button == 0 {
-                    return self.apply_action(Action::PanePrimaryPress { row, col });
-                }
-                self.apply_action(Action::ForwardMouse {
-                    row,
-                    col,
-                    button,
-                    press: true,
-                })
-            }
-            InputEvent::Data(bytes) => {
+        if let InputEvent::Data(bytes) = event {
                 if let Some(action) =
                     self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
                 {
@@ -638,7 +549,33 @@ impl Multiplexer {
                     // again" implies "show me what's happening now."
                     self.apply_action(Action::PaneData(bytes))
                 }
-            }
+        } else {
+            let branch_context_hit = match &event {
+                InputEvent::MousePress {
+                    row,
+                    col,
+                    button: 0,
+                } => branch_context_bar_hit(
+                    row + 1,
+                    col + 1,
+                    self.term_rows,
+                    self.term_cols,
+                    self.context_bar_branch(),
+                    self.pull_request_context.as_deref(),
+                    self.pull_request_context_loading(),
+                    self.status_bar.instance_id_label(),
+                )
+                .is_some(),
+                _ => false,
+            };
+            input_event_action(
+                &event,
+                InputDispatchContext {
+                    dialog_captures_input: self.dialog_captures_input(),
+                    branch_context_hit,
+                },
+            )
+            .and_then(|action| self.apply_action(action))
         }
     }
 

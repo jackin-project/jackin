@@ -29,7 +29,9 @@ use tokio::time::{Duration, interval};
 
 use portable_pty::CommandBuilder;
 
-use crate::tui::message::Action;
+use crate::tui::message::{
+    Action, InputDispatchContext, input_event_action, mouse_chrome_update_action,
+};
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
     initial_spawn_request, perform_handshake, spawn_request_label,
@@ -60,8 +62,8 @@ use crate::tui::layout::SplitOrient;
 #[cfg(test)]
 use crate::mouse_protocol::mouse_event_allowed_for_mode;
 use crate::mouse_protocol::{
-    encode_mouse_for_protocol, encode_wheel_cursor_fallback, is_wheel_button,
-    mouse_event_encoding_for_session, pane_wheel_cursor_fallback_reason,
+    encode_mouse_for_protocol, encode_wheel_cursor_fallback, mouse_event_encoding_for_session,
+    pane_wheel_cursor_fallback_reason,
 };
 use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{

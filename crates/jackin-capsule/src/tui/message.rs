@@ -6,7 +6,7 @@
 
 use crate::tui::{
     dialog::{DialogAction, PaletteCommand, PickerIntent, SplitDirection},
-    input::{ArrowDir, PrefixCommand},
+    input::{ArrowDir, InputEvent, PrefixCommand},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,4 +95,167 @@ pub enum Action {
         col: u16,
     },
     Dialog(DialogAction),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct InputDispatchContext {
+    pub dialog_captures_input: bool,
+    pub branch_context_hit: bool,
+}
+
+pub fn mouse_chrome_update_action(event: &InputEvent) -> Option<Action> {
+    match event {
+        InputEvent::MousePress { col, row, button }
+        | InputEvent::MouseRelease { col, row, button } => Some(Action::MouseChromeUpdate {
+            row: *row,
+            col: *col,
+            button: *button,
+        }),
+        _ => None,
+    }
+}
+
+pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> Option<Action> {
+    match event {
+        InputEvent::Data(_) => None,
+        InputEvent::OpenPalette => Some(Action::OpenPalette),
+        InputEvent::PrefixCommand(cmd) => Some(Action::Prefix(cmd.clone())),
+        InputEvent::ResizePane(dir) => Some(Action::ResizePane(*dir)),
+        InputEvent::FocusIn | InputEvent::FocusOut => {
+            Some(Action::FocusReport(matches!(event, InputEvent::FocusIn)))
+        }
+        InputEvent::MousePress { col, row, button }
+            if context.dialog_captures_input && *button == 0 && !is_wheel_button(*button) =>
+        {
+            Some(Action::DialogClick {
+                row: *row,
+                col: *col,
+            })
+        }
+        InputEvent::MousePress { .. } if context.dialog_captures_input => None,
+        InputEvent::MouseRelease { .. } if context.dialog_captures_input => None,
+        InputEvent::MouseRelease { col, row, button } => Some(Action::MouseRelease {
+            row: *row,
+            col: *col,
+            button: *button,
+        }),
+        InputEvent::MousePress { col, row, button } if is_wheel_button(*button) => {
+            Some(Action::Wheel {
+                row: *row,
+                col: *col,
+                button: *button,
+            })
+        }
+        InputEvent::MousePress { row, col, button: 0 } if context.branch_context_hit => {
+            Some(Action::BranchContextBarClick {
+                row: *row,
+                col: *col,
+            })
+        }
+        InputEvent::MousePress {
+            row: 0,
+            col,
+            button: 0,
+        } => Some(Action::StatusBarClick { col: *col }),
+        InputEvent::MousePress { col, row, button } => {
+            if *button == 32 {
+                Some(Action::PaneButtonMotion {
+                    row: *row,
+                    col: *col,
+                })
+            } else if *button == 0 {
+                Some(Action::PanePrimaryPress {
+                    row: *row,
+                    col: *col,
+                })
+            } else {
+                Some(Action::ForwardMouse {
+                    row: *row,
+                    col: *col,
+                    button: *button,
+                    press: true,
+                })
+            }
+        }
+    }
+}
+
+fn is_wheel_button(button: u8) -> bool {
+    (64..96).contains(&button)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Action, InputDispatchContext, input_event_action, mouse_chrome_update_action};
+    use crate::tui::input::InputEvent;
+
+    #[test]
+    fn mouse_press_updates_chrome_before_main_action() {
+        let event = InputEvent::MousePress {
+            row: 2,
+            col: 3,
+            button: 0,
+        };
+        assert_eq!(
+            mouse_chrome_update_action(&event),
+            Some(Action::MouseChromeUpdate {
+                row: 2,
+                col: 3,
+                button: 0,
+            })
+        );
+        assert_eq!(
+            input_event_action(&event, InputDispatchContext::default()),
+            Some(Action::PanePrimaryPress { row: 2, col: 3 })
+        );
+    }
+
+    #[test]
+    fn dialog_captures_mouse_press_and_release() {
+        let context = InputDispatchContext {
+            dialog_captures_input: true,
+            branch_context_hit: false,
+        };
+        assert_eq!(
+            input_event_action(
+                &InputEvent::MousePress {
+                    row: 2,
+                    col: 3,
+                    button: 0,
+                },
+                context
+            ),
+            Some(Action::DialogClick { row: 2, col: 3 })
+        );
+        assert_eq!(
+            input_event_action(
+                &InputEvent::MouseRelease {
+                    row: 2,
+                    col: 3,
+                    button: 0,
+                },
+                context
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn branch_context_click_wins_before_status_body_dispatch() {
+        let event = InputEvent::MousePress {
+            row: 4,
+            col: 7,
+            button: 0,
+        };
+        assert_eq!(
+            input_event_action(
+                &event,
+                InputDispatchContext {
+                    dialog_captures_input: false,
+                    branch_context_hit: true,
+                },
+            ),
+            Some(Action::BranchContextBarClick { row: 4, col: 7 })
+        );
+    }
 }
