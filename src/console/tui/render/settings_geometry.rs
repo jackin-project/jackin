@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use crate::console::tui::render::mount_display::{
     settings_global_mounts_content_height, settings_global_mounts_content_width_with_cache,
 };
-use crate::console::tui::state::{GlobalMountsState, SettingsState};
+use crate::console::tui::state::{GlobalMountsState, SettingsState, settings_env_flat_rows};
 
 pub(crate) fn clamp_global_mounts_scroll_for_frame(area: Rect, global: &mut GlobalMountsState<'_>) {
     jackin_console::tui::screens::settings::view::clamp_mounts_scroll_x_for_frame(
@@ -23,11 +23,7 @@ pub(crate) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
 }
 
 pub(crate) fn env_content_height(state: &SettingsState<'_>) -> usize {
-    let height = jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-        &state.env.pending,
-        &state.env.expanded,
-    )
-    .len();
+    let height = settings_env_flat_rows(state).len();
     jackin_console::tui::screens::settings::view::content_height_with_error_rows(
         height,
         state.env.error.is_some(),

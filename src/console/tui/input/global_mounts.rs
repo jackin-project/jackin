@@ -6,7 +6,7 @@ use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvModal, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
-    settings_env_flat_rows,
+    settings_env_flat_rows, settings_env_state_flat_rows,
 };
 use jackin_tui::ModalOutcome;
 use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
@@ -1925,10 +1925,7 @@ fn open_settings_env_picker_modal(
 }
 
 fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
-    let rows = jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-        &env.pending,
-        &env.expanded,
-    );
+    let rows = settings_env_state_flat_rows(env);
     if let Some(SettingsEnvRow::Key { scope, key }) = rows.get(env.selected).cloned() {
         match scope {
             SettingsEnvScope::Global => {
@@ -1940,11 +1937,7 @@ fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEn
                 }
             }
         }
-        let row_count = jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-            &env.pending,
-            &env.expanded,
-        )
-        .len();
+        let row_count = settings_env_state_flat_rows(env).len();
         env.selected = env.selected.min(row_count.saturating_sub(1));
     }
 }

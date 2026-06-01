@@ -10,6 +10,7 @@ use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerListRow,
     ManagerStage, ManagerState, MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup,
     PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
+    settings_env_flat_rows,
 };
 use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
@@ -23,9 +24,8 @@ use jackin_console::tui::screens::editor::update::{
 use jackin_console::tui::screens::settings::model::SettingsEnvRow;
 use jackin_console::tui::screens::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
-    set_role_expanded as set_settings_role_expanded, settings_env_flat_rows, step_cursor_down_by,
-    step_cursor_up_by, toggle_general_selected, toggle_readonly as toggle_settings_readonly,
-    toggle_trust_selected,
+    set_role_expanded as set_settings_role_expanded, step_cursor_down_by, step_cursor_up_by,
+    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -813,7 +813,7 @@ fn move_settings_env_selection(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let rows = settings_env_flat_rows(&settings.env.pending, &settings.env.expanded);
+    let rows = settings_env_flat_rows(settings);
     let max = rows.len().saturating_sub(1);
     let candidate = if delta.is_negative() {
         settings.env.selected.saturating_sub(delta.unsigned_abs())

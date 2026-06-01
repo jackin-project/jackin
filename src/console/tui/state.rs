@@ -357,9 +357,13 @@ pub fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
 }
 
 pub fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
+    settings_env_state_flat_rows(&state.env)
+}
+
+pub fn settings_env_state_flat_rows(state: &SettingsEnvState<'_>) -> Vec<SettingsEnvRow> {
     jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-        &state.env.pending,
-        &state.env.expanded,
+        &state.pending,
+        &state.expanded,
     )
 }
 
