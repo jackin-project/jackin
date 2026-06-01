@@ -19,13 +19,39 @@ pub enum Action {
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
     FocusReport(bool),
-    Wheel { row: u16, col: u16, button: u8 },
+    Wheel {
+        row: u16,
+        col: u16,
+        button: u8,
+    },
+    FocusPaneAt {
+        row: u16,
+        col: u16,
+    },
+    ForwardMouse {
+        row: u16,
+        col: u16,
+        button: u8,
+        press: bool,
+    },
     PaneData(Vec<u8>),
-    StartDragResize { row: u16, col: u16 },
-    DragMotion { row: u16, col: u16 },
+    StartDragResize {
+        row: u16,
+        col: u16,
+    },
+    DragMotion {
+        row: u16,
+        col: u16,
+    },
     EndDragResize,
-    StartSelection { row: u16, col: u16 },
-    SelectionMotion { row: u16, col: u16 },
+    StartSelection {
+        row: u16,
+        col: u16,
+    },
+    SelectionMotion {
+        row: u16,
+        col: u16,
+    },
     FinalizeSelection,
     Dialog(DialogAction),
 }

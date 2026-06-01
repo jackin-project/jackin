@@ -3860,6 +3860,48 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_focus_pane_at_changes_focus() {
+        let mut mux = split_tab_mux();
+        let target = mux
+            .visible_panes()
+            .into_iter()
+            .find(|pane| pane.id == 2)
+            .expect("second pane should be visible")
+            .inner;
+
+        let frame = mux
+            .apply_action(Action::FocusPaneAt {
+                row: target.row,
+                col: target.col,
+            })
+            .expect("focus change should redraw");
+
+        assert_eq!(mux.tabs[mux.active_tab].focused_id, 2);
+        assert!(!frame.is_empty(), "focus redraw frame should be emitted");
+    }
+
+    #[test]
+    fn apply_action_forward_mouse_sends_to_focused_pane() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_shell_session(20, 78);
+        session.feed_pty(b"\x1b[?1003h\x1b[?1006h");
+        mux.sessions.insert(1, session);
+
+        let frame = mux.apply_action(Action::ForwardMouse {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 0,
+            press: true,
+        });
+
+        assert!(frame.is_none(), "PTY mouse forward should not redraw");
+        assert_eq!(
+            input_rx.try_recv().expect("mouse press should reach PTY"),
+            b"\x1b[<0;1;1M"
+        );
+    }
+
+    #[test]
     fn apply_action_dialog_consume_keeps_dialog_open() {
         let mut mux = single_pane_tab_mux();
         mux.open_command_palette();

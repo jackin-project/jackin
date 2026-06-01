@@ -109,10 +109,6 @@ impl Multiplexer {
         PointerShape::Default
     }
 
-    pub(super) fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) -> bool {
-        self.forward_mouse_to_focused_pane_with_kind(col, row, button, true)
-    }
-
     /// Re-encode an SGR mouse event in the focused pane's local
     /// coordinate space and forward to its PTY. `press = true` emits
     /// the `M` final, `false` emits `m` (release). Forwarding is

@@ -289,6 +289,18 @@ impl Multiplexer {
                 );
                 Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
             }
+            Action::FocusPaneAt { row, col } => self
+                .focus_pane_at(row, col)
+                .then(|| self.compose_full_frame(FullRedrawReason::FocusChange)),
+            Action::ForwardMouse {
+                row,
+                col,
+                button,
+                press,
+            } => {
+                self.forward_mouse_to_focused_pane_with_kind(col, row, button, press);
+                None
+            }
             Action::PaneData(bytes) => {
                 let mut snapped = false;
                 let mut unblocked = false;
@@ -411,8 +423,12 @@ impl Multiplexer {
                 if self.selection.is_some() && (button & 0b11) == 0 {
                     return self.apply_action(Action::FinalizeSelection);
                 }
-                self.forward_mouse_to_focused_pane_with_kind(col, row, button, false);
-                None
+                self.apply_action(Action::ForwardMouse {
+                    row,
+                    col,
+                    button,
+                    press: false,
+                })
             }
             InputEvent::MousePress { col, row, button } if is_wheel_button(button) => {
                 self.apply_action(Action::Wheel { row, col, button })
@@ -486,8 +502,12 @@ impl Multiplexer {
                     // button-motion tracking (`?1002h`). Forwarding
                     // them blindly would dump SGR bytes into shells
                     // that ignored mouse mode.
-                    self.forward_mouse_to_focused_pane(col, row, button);
-                    return None;
+                    return self.apply_action(Action::ForwardMouse {
+                        row,
+                        col,
+                        button,
+                        press: true,
+                    });
                 }
                 if button == 0 {
                     // Press on a shared pane border starts a drag —
@@ -501,21 +521,26 @@ impl Multiplexer {
                     // has to click twice (once to focus, once to act).
                     // Selection or PTY-mouse forwarding then runs
                     // against the freshly-focused pane.
-                    let switched_focus = self.focus_pane_at(row, col);
+                    let focus_frame = self.apply_action(Action::FocusPaneAt { row, col });
                     // Press inside a pane whose program never asked
                     // for a mouse protocol starts a text selection.
                     if self.detect_selection_start(row, col).is_some() {
                         return self.apply_action(Action::StartSelection { row, col });
                     }
-                    self.forward_mouse_to_focused_pane(col, row, button);
-                    return if switched_focus {
-                        Some(self.compose_full_frame(FullRedrawReason::FocusChange))
-                    } else {
-                        None
-                    };
+                    self.apply_action(Action::ForwardMouse {
+                        row,
+                        col,
+                        button,
+                        press: true,
+                    });
+                    return focus_frame;
                 }
-                self.forward_mouse_to_focused_pane(col, row, button);
-                None
+                self.apply_action(Action::ForwardMouse {
+                    row,
+                    col,
+                    button,
+                    press: true,
+                })
             }
             InputEvent::Data(bytes) => {
                 if let Some(action) =
