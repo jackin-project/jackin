@@ -1,6 +1,6 @@
 //! Mount row display data and width math shared by update and render.
 
-use crate::widgets::mount_rows::{MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH};
+use crate::tui::components::mount_rows::{MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH};
 
 /// Pre-formatted mount row. `host_source` is `Some` only when src != dst.
 #[derive(Clone, Debug, Eq, PartialEq)]

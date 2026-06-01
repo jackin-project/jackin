@@ -5,7 +5,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use super::WHITE;
+use crate::widgets::WHITE;
 
 /// "Mode" header is 4 chars; pad row values so the Type column stays aligned.
 pub const MOUNT_MODE_COL_WIDTH: usize = 4;

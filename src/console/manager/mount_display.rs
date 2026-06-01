@@ -3,7 +3,7 @@
 use crate::console::manager::state::MountInfoCache;
 
 pub(crate) use jackin_console::mount_display::{MountDisplayRow, mount_path_width};
-pub(crate) use jackin_console::widgets::mount_rows::{
+pub(crate) use jackin_console::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
 };
 
