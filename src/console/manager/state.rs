@@ -10,7 +10,7 @@ use ratatui::layout::Rect;
 use crate::config::AppConfig;
 use crate::console::manager::auth_kind::{
     AuthKind, AuthMode, auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github,
-    auth_mode_to_auth_forward, auth_mode_to_github, role_override_present,
+    role_override_present,
 };
 use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceConfig;
@@ -989,8 +989,6 @@ impl SettingsState<'_> {
         &mut self,
         paths: &crate::paths::JackinPaths,
     ) -> anyhow::Result<AppConfig> {
-        AppConfig::validate_global_mount_rows(&self.mounts.pending)?;
-        validate_settings_env(&self.env.pending, &self.trust.pending)?;
         for row in &self.auth.pending {
             if row.kind == crate::console::manager::auth_kind::AuthKind::Zai
                 && row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
@@ -998,87 +996,21 @@ impl SettingsState<'_> {
                 self.env.pending.env.remove("ZAI_API_KEY");
             }
         }
-        let mut editor = crate::config::ConfigEditor::open(paths)?;
-
-        for row in &self.mounts.original {
-            editor.remove_mount(&row.name, row.scope.as_deref());
-        }
-        for row in &self.mounts.pending {
-            editor.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
-        }
-
-        for key in self.env.original.env.keys() {
-            editor.remove_env_var(&crate::config::EnvScope::Global, key);
-        }
-        for (role, env) in &self.env.original.roles {
-            for key in env.keys() {
-                editor.remove_env_var(&crate::config::EnvScope::Role(role.clone()), key);
-            }
-        }
-        for (key, value) in &self.env.pending.env {
-            editor.set_env_var(&crate::config::EnvScope::Global, key, value.clone())?;
-        }
-        for (role, env) in &self.env.pending.roles {
-            for (key, value) in env {
-                editor.set_env_var(
-                    &crate::config::EnvScope::Role(role.clone()),
-                    key,
-                    value.clone(),
-                )?;
-            }
-        }
-
-        for row in &self.auth.pending {
-            match row.kind {
-                crate::console::manager::auth_kind::AuthKind::Claude
-                | crate::console::manager::auth_kind::AuthKind::Codex
-                | crate::console::manager::auth_kind::AuthKind::Amp
-                | crate::console::manager::auth_kind::AuthKind::Kimi
-                | crate::console::manager::auth_kind::AuthKind::Opencode => {
-                    let Some(agent) = auth_kind_agent(row.kind) else {
-                        continue;
-                    };
-                    let Some(mode) = auth_mode_to_auth_forward(row.mode) else {
-                        anyhow::bail!(
-                            "auth mode {} is not supported for {}",
-                            row.mode.as_str(),
-                            row.kind.label()
-                        );
-                    };
-                    editor.set_global_auth_forward(agent, mode);
-                }
-                crate::console::manager::auth_kind::AuthKind::Github => {
-                    let Some(mode) = auth_mode_to_github(row.mode) else {
-                        anyhow::bail!(
-                            "auth mode {} is not supported for {}",
-                            row.mode.as_str(),
-                            row.kind.label()
-                        );
-                    };
-                    editor.set_global_github_auth_forward(mode);
-                }
-                crate::console::manager::auth_kind::AuthKind::Zai => {
-                    // Z.AI auth is env-only; the credential lives in env_vars and
-                    // is written via the env block path above — no auth_forward
-                    // config block to commit here.
-                }
-            }
-        }
-        for key in self.auth.original_github_env.keys() {
-            editor.remove_global_github_env_var(key);
-        }
-        for (key, value) in &self.auth.github_env {
-            editor.set_global_github_env_var(key, value.clone())?;
-        }
-
-        for row in &self.trust.pending {
-            editor.set_agent_trust(&row.role, row.trusted);
-        }
-
-        editor.set_git_coauthor_trailer(self.general.pending_coauthor_trailer);
-        editor.set_git_dco(self.general.pending_dco);
-
-        let config = editor.save()?;
+        let config = crate::console::services::config::save_settings(
+            paths,
+            crate::console::services::config::SettingsSaveInput {
+                mounts_original: &self.mounts.original,
+                mounts_pending: &self.mounts.pending,
+                env_original: &self.env.original,
+                env_pending: &self.env.pending,
+                auth_pending: &self.auth.pending,
+                original_github_env: &self.auth.original_github_env,
+                github_env: &self.auth.github_env,
+                trust_pending: &self.trust.pending,
+                git_coauthor_trailer: self.general.pending_coauthor_trailer,
+                git_dco: self.general.pending_dco,
+            },
+        )?;
         self.general.mark_clean();
         self.mounts.original = self.mounts.pending.clone();
         self.env.original = self.env.pending.clone();
@@ -1314,39 +1246,6 @@ fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
         })
         .collect::<Vec<_>>();
     SettingsTrustState::from_rows(pending)
-}
-
-fn validate_settings_env(
-    env: &SettingsEnvConfig,
-    roles: &[SettingsTrustRow],
-) -> anyhow::Result<()> {
-    let registered: std::collections::BTreeSet<&str> =
-        roles.iter().map(|r| r.role.as_str()).collect();
-    validate_settings_env_keys("global", env.env.keys())?;
-    for (role, role_env) in &env.roles {
-        if !registered.contains(role.as_str()) {
-            anyhow::bail!("role {role:?} is not registered");
-        }
-        validate_settings_env_keys(role, role_env.keys())?;
-    }
-    Ok(())
-}
-
-fn validate_settings_env_keys<'a>(
-    scope: &str,
-    keys: impl Iterator<Item = &'a String>,
-) -> anyhow::Result<()> {
-    for key in keys {
-        if key.trim().is_empty() {
-            anyhow::bail!("env var key cannot be empty");
-        }
-        if crate::env_model::is_reserved(key) {
-            anyhow::bail!(
-                "env name {key:?} in {scope} is reserved by the jackin runtime and cannot be set"
-            );
-        }
-    }
-    Ok(())
 }
 
 // `TextInputState` is ~600B while other variants are ~330B. Boxing the state
