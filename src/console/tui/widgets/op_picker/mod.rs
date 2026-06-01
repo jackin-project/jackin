@@ -128,13 +128,34 @@ mod tests {
     /// out — the constructor's `account_list` probe is async.
     fn drain_initial_account_load(s: &mut OpPickerState) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while s.rx.is_some() && std::time::Instant::now() < deadline {
-            s.poll_load();
-            if s.rx.is_none() {
+        while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline
+        {
+            poll_load_for_test(s);
+            if s.rx.is_none() && s.pending_load.is_none() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
+    }
+
+    fn poll_load_for_test(s: &mut OpPickerState) -> bool {
+        let mut dirty = execute_pending_load_for_test(s);
+        dirty |= s.poll_load();
+        dirty |= execute_pending_load_for_test(s);
+        dirty
+    }
+
+    fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
+        let Some(pending) = s.take_pending_load() else {
+            return false;
+        };
+        let rx = crate::console::services::op_picker::start_load(
+            pending.cached,
+            pending.request,
+            pending.runner,
+        );
+        s.attach_load_receiver(rx);
+        true
     }
 
     /// Single-account picker forced into a clean Vault-stage Ready
@@ -152,6 +173,7 @@ mod tests {
         let mut s = OpPickerState::new_with_runner(runner);
         drain_initial_account_load(&mut s);
         s.rx = None;
+        s.pending_load = None;
         s.stage = OpPickerStage::Vault;
         s.load_state = OpLoadState::Ready;
         s
@@ -250,6 +272,7 @@ mod tests {
         );
 
         s.rx = None;
+        s.pending_load = None;
         s.items = vec![item("API Keys")];
         s.item_list_state.select(Some(0));
         s.stage = OpPickerStage::Item;
@@ -436,6 +459,7 @@ mod tests {
         );
         drain_initial_account_load(&mut s);
         s.rx = None;
+        s.pending_load = None;
         s.stage = OpPickerStage::Vault;
         s.load_state = OpLoadState::Ready;
         s
@@ -533,13 +557,15 @@ mod tests {
         );
         drain_initial_account_load(&mut s);
         s.rx = None;
+        s.pending_load = None;
         s.selected_vault = Some(vault("Personal"));
         s.selected_item = Some(item("login"));
         // Drive the existing-item Enter through start_field_load + drain.
         s.start_field_load("i-login".into(), "v-Personal".into(), None);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while s.rx.is_some() && std::time::Instant::now() < deadline {
-            s.poll_load();
+        while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline
+        {
+            poll_load_for_test(&mut s);
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert_eq!(
@@ -576,7 +602,7 @@ mod tests {
             .is_ok()
         );
         s.rx = Some(rx);
-        s.poll_load();
+        poll_load_for_test(&mut s);
 
         assert_eq!(
             s.stage,
@@ -936,6 +962,7 @@ mod tests {
         let mut s = OpPickerState::new_with_runner(runner);
         drain_initial_account_load(&mut s);
         s.rx = None;
+        s.pending_load = None;
         s.load_state = OpLoadState::Ready;
         s.filter_buf = "alic".to_string();
         let visible = s.filtered_accounts();
@@ -959,6 +986,7 @@ mod tests {
         let mut s = OpPickerState::new_with_runner(runner);
         drain_initial_account_load(&mut s);
         s.rx = None;
+        s.pending_load = None;
         s.load_state = OpLoadState::Ready;
         s.account_list_state.select(Some(1));
 
@@ -998,6 +1026,7 @@ mod tests {
         let mut s = OpPickerState::new_with_runner(runner);
         drain_initial_account_load(&mut s);
         s.rx = None;
+        s.pending_load = None;
         s.load_state = OpLoadState::Ready;
         s.stage = OpPickerStage::Vault;
         s.selected_account = Some(account("acct1", "a@example.com", "alpha.1password.com"));
@@ -1340,15 +1369,16 @@ mod tests {
 
     fn drain_worker_load(s: &mut OpPickerState) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
-        while s.rx.is_some() && std::time::Instant::now() < deadline {
-            s.poll_load();
-            if s.rx.is_none() {
+        while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline
+        {
+            poll_load_for_test(s);
+            if s.rx.is_none() && s.pending_load.is_none() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert!(
-            s.rx.is_none(),
+            s.rx.is_none() && s.pending_load.is_none(),
             "worker did not publish within 500ms; load_state={:?}",
             s.load_state
         );

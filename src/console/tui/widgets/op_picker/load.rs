@@ -7,24 +7,25 @@ use std::sync::Arc;
 
 use jackin_console::tui::components::list_helpers::{first_selection, list_state_for_count};
 use jackin_tui::components::TextInputState;
-use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 use super::{
     FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerError, OpPickerFatalState,
     OpPickerMode, OpPickerStage, OpPickerState,
 };
-use crate::operator_env::{OpAccount, OpCache, OpStructRunner};
+use super::state::OpPickerPendingLoad;
+use crate::operator_env::{OpAccount, OpCache, OpStructRunner, default_op_struct_runner};
 
 impl OpPickerState {
     pub fn new() -> Self {
         Self::new_with_runner_and_cache(
-            crate::console::services::op_picker::default_runner(),
+            default_op_struct_runner(),
             Rc::new(RefCell::new(OpCache::default())),
         )
     }
 
     pub fn new_with_cache(op_cache: Rc<RefCell<OpCache>>) -> Self {
-        Self::new_with_runner_and_cache(crate::console::services::op_picker::default_runner(), op_cache)
+        Self::new_with_runner_and_cache(default_op_struct_runner(), op_cache)
     }
 
     pub fn new_with_runner(runner: Arc<dyn OpStructRunner + Send + Sync>) -> Self {
@@ -45,7 +46,7 @@ impl OpPickerState {
         field_label_default: impl Into<String>,
     ) -> Self {
         Self::new_create_with_runner_and_cache(
-            crate::console::services::op_picker::default_runner(),
+            default_op_struct_runner(),
             op_cache,
             item_name_default,
             field_label_default,
@@ -110,6 +111,7 @@ impl OpPickerState {
             field_refresh_in_place: false,
             runner,
             rx: None,
+            pending_load: None,
             op_cache,
         };
         state.start_account_load();
@@ -212,11 +214,26 @@ impl OpPickerState {
     }
 
     fn start_worker_load(&mut self, cached: Option<LoadResult>, request: LoadRequest) {
-        self.rx = Some(crate::console::services::op_picker::start_load(
+        self.rx = None;
+        self.pending_load = Some(OpPickerPendingLoad {
             cached,
             request,
-            self.runner_clone_for_worker(),
-        ));
+            runner: self.runner_clone_for_worker(),
+        });
+    }
+
+    pub(in crate::console) fn take_pending_load(&mut self) -> Option<OpPickerPendingLoad> {
+        if self.rx.is_some() {
+            return None;
+        }
+        self.pending_load.take()
+    }
+
+    pub(in crate::console) fn attach_load_receiver(
+        &mut self,
+        rx: BlockingSubscription<LoadResult>,
+    ) {
+        self.rx = Some(rx);
     }
 
     pub(super) fn selected_account_id(&self) -> Option<String> {

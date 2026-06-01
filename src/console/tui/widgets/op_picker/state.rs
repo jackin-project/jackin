@@ -9,7 +9,7 @@ use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::BlockingSubscription;
 use tui_widget_list::ListState;
 
-use super::{FieldLabelOrigin, LoadResult, OpLoadState, OpPickerMode, OpPickerStage};
+use super::{FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerMode, OpPickerStage};
 use crate::operator_env::{OpAccount, OpCache, OpField, OpItem, OpStructRunner, OpVault};
 
 pub struct OpPickerState {
@@ -66,9 +66,16 @@ pub struct OpPickerState {
     /// (test injectees included).
     pub(super) runner: Arc<dyn OpStructRunner + Send + Sync>,
     pub(super) rx: Option<BlockingSubscription<LoadResult>>,
+    pub(super) pending_load: Option<OpPickerPendingLoad>,
     /// Session-scoped cache shared with `ConsoleState`; the default
     /// constructor allocates a fresh empty one for unit tests.
     pub(super) op_cache: Rc<RefCell<OpCache>>,
+}
+
+pub(in crate::console) struct OpPickerPendingLoad {
+    pub cached: Option<LoadResult>,
+    pub request: LoadRequest,
+    pub runner: Arc<dyn OpStructRunner + Send + Sync>,
 }
 
 // runner / rx aren't Debug; skipped fields are plumbing only.

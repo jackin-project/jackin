@@ -7,14 +7,9 @@ use jackin_console::tui::components::op_picker::{
 };
 use jackin_tui::runtime::BlockingSubscription;
 
-use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
+use crate::operator_env::{OpAccount, OpField, OpItem, OpStructRunner, OpVault};
 
 pub type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
-
-/// Production runner for 1Password picker metadata requests.
-pub fn default_runner() -> Arc<dyn OpStructRunner + Send + Sync> {
-    Arc::new(OpCli::new())
-}
 
 /// Return a ready or background subscription for a typed picker load request.
 pub fn start_load(

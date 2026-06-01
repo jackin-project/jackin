@@ -583,6 +583,10 @@ pub trait OpStructRunner {
     ) -> anyhow::Result<Vec<OpField>>;
 }
 
+pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + Sync> {
+    std::sync::Arc::new(OpCli::new())
+}
+
 /// `id` is the `account_uuid` accepted by `op --account <id>`. `email`
 /// and `url` feed the picker's Account pane.
 #[derive(Debug, Clone, PartialEq, Eq)]
