@@ -8,6 +8,7 @@ pub mod mount_diff;
 pub mod mount_info;
 pub mod mount_info_cache;
 pub mod op_cache;
+pub mod op_reference;
 pub mod provider_picker;
 pub mod run;
 pub mod settings;

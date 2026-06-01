@@ -234,72 +234,7 @@ impl From<&str> for EnvValue {
     }
 }
 
-/// Structured parts of an `op://...` reference.
-///
-/// Syntax: `op://<vault>/<item>/[<section>/]<field>`. Account scope is
-/// not encoded in the path; multi-account picks live separately on
-/// `OpPickerState::selected_account`. See
-/// <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpReferenceParts {
-    pub vault: String,
-    pub item: String,
-    pub section: Option<String>,
-    pub field: String,
-}
-
-impl OpReferenceParts {
-    /// Operator-facing copy-pasteable `op item delete` invocation
-    /// for this parsed reference. Surfaced in error messages where
-    /// jackin could not finish a delete itself; the exact CLI shape
-    /// lives here.
-    pub fn manual_delete_hint(&self) -> impl std::fmt::Display + '_ {
-        struct Hint<'a> {
-            item: &'a str,
-            vault: &'a str,
-        }
-        impl std::fmt::Display for Hint<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "op item delete {} --vault {}", self.item, self.vault)
-            }
-        }
-        Hint {
-            item: &self.item,
-            vault: &self.vault,
-        }
-    }
-}
-
-#[must_use]
-pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
-    let path = value.strip_prefix("op://")?;
-    // An op:// reference can carry a `?attribute=…` / `?ssh-format=…` query
-    // suffix (emitted by `resolve_op_uri_to_ref`). It tunes retrieval, not the
-    // vault/item/section/field structure, so strip it before splitting —
-    // otherwise it leaks into the parsed `field`.
-    let path = path.split('?').next().unwrap_or(path);
-    let parts: Vec<&str> = path.split('/').collect();
-    // Every segment must be non-empty: `op:////` or `op://v//f` is malformed,
-    // not a reference with blank vault/section/field names.
-    if parts.iter().any(|s| s.is_empty()) {
-        return None;
-    }
-    match parts.as_slice() {
-        [vault, item, field] => Some(OpReferenceParts {
-            vault: (*vault).to_string(),
-            item: (*item).to_string(),
-            section: None,
-            field: (*field).to_string(),
-        }),
-        [vault, item, section, field] => Some(OpReferenceParts {
-            vault: (*vault).to_string(),
-            item: (*item).to_string(),
-            section: Some((*section).to_string()),
-            field: (*field).to_string(),
-        }),
-        _ => None,
-    }
-}
+pub use jackin_console::op_reference::{OpReferenceParts, parse_op_reference};
 
 fn is_valid_env_name(s: &str) -> bool {
     let mut chars = s.chars();

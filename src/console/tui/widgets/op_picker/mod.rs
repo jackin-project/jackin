@@ -607,8 +607,8 @@ impl OpPickerState {
     pub fn section_choices(&self) -> Vec<Option<String>> {
         let mut out: Vec<Option<String>> = vec![None];
         for f in &self.fields {
-            if let Some(name) =
-                crate::operator_env::parse_op_reference(&f.reference).and_then(|p| p.section)
+            if let Some(name) = jackin_console::op_reference::parse_op_reference(&f.reference)
+                .and_then(|p| p.section)
                 && !out.iter().any(|s| s.as_deref() == Some(name.as_str()))
             {
                 out.push(Some(name));
@@ -638,7 +638,9 @@ impl OpPickerState {
         let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
 
         for (idx, f) in visible.iter().enumerate() {
-            match crate::operator_env::parse_op_reference(&f.reference).and_then(|p| p.section) {
+            match jackin_console::op_reference::parse_op_reference(&f.reference)
+                .and_then(|p| p.section)
+            {
                 None => unsectioned.push(idx),
                 Some(name) => {
                     if let Some(entry) = sections.iter_mut().find(|(n, _)| n == &name) {
@@ -682,8 +684,8 @@ impl OpPickerState {
             .iter()
             .enumerate()
             .filter(|(_, f)| {
-                let section =
-                    crate::operator_env::parse_op_reference(&f.reference).and_then(|p| p.section);
+                let section = jackin_console::op_reference::parse_op_reference(&f.reference)
+                    .and_then(|p| p.section);
                 section.as_deref() == self.selected_section.as_deref()
             })
             .map(|(idx, _)| FieldDisplayRow::Field { field_idx: idx })
@@ -1317,7 +1319,7 @@ pub(crate) fn build_op_ref_on_commit(
     // which `op item get` populates with the human-readable path. We
     // rewrite vault/item/field segments to UUID form and preserve the
     // section segment.
-    let parsed = crate::operator_env::parse_op_reference(&field.reference);
+    let parsed = jackin_console::op_reference::parse_op_reference(&field.reference);
 
     let (op, path) = match parsed {
         Some(p) if p.section.is_some() => {
