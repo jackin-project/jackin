@@ -1,9 +1,10 @@
 //! Derived list/query helpers for the 1Password picker.
 
 use super::{
-    FieldDisplayRow, OpPickerAccount, OpPickerField, OpPickerItem, OpPickerStage, OpPickerState,
+    FieldDisplayRow, OpPickerAccount, OpPickerField, OpPickerItem, OpPickerState,
     OpPickerVault, field_display_rows_for_picker, filtered_accounts, filtered_fields,
-    filtered_item_choices, filtered_items, filtered_vaults, section_choices_from_references,
+    filtered_item_choices, filtered_items, filtered_vaults, naming_stage_input_for_stage,
+    section_choices_from_references,
 };
 
 impl OpPickerState {
@@ -59,11 +60,11 @@ impl OpPickerState {
     pub const fn naming_stage_input(
         &self,
     ) -> Option<&jackin_tui::components::TextInputState<'static>> {
-        match self.stage {
-            OpPickerStage::NewItemName => Some(&self.item_name_input),
-            OpPickerStage::FieldLabel => Some(&self.field_label_input),
-            OpPickerStage::NewSectionName => Some(&self.section_name_input),
-            _ => None,
-        }
+        naming_stage_input_for_stage(
+            self.stage,
+            &self.item_name_input,
+            &self.field_label_input,
+            &self.section_name_input,
+        )
     }
 }

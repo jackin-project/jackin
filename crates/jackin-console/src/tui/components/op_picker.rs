@@ -271,6 +271,20 @@ pub const fn selected_index_for_stage(
     }
 }
 
+pub const fn naming_stage_input_for_stage<'a>(
+    stage: OpPickerStage,
+    item_name: &'a TextInputState<'static>,
+    field_label: &'a TextInputState<'static>,
+    section_name: &'a TextInputState<'static>,
+) -> Option<&'a TextInputState<'static>> {
+    match stage {
+        OpPickerStage::NewItemName => Some(item_name),
+        OpPickerStage::FieldLabel => Some(field_label),
+        OpPickerStage::NewSectionName => Some(section_name),
+        _ => None,
+    }
+}
+
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
@@ -1206,6 +1220,32 @@ mod tests {
                 Some(5),
             ),
             None
+        );
+    }
+
+    #[test]
+    fn naming_stage_input_routes_by_naming_stage() {
+        let item = TextInputState::new("item", "");
+        let field = TextInputState::new("field", "");
+        let section = TextInputState::new("section", "");
+
+        assert_eq!(
+            naming_stage_input_for_stage(OpPickerStage::NewItemName, &item, &field, &section)
+                .map(|input| input.label.as_str()),
+            Some("item")
+        );
+        assert_eq!(
+            naming_stage_input_for_stage(OpPickerStage::FieldLabel, &item, &field, &section)
+                .map(|input| input.label.as_str()),
+            Some("field")
+        );
+        assert_eq!(
+            naming_stage_input_for_stage(OpPickerStage::NewSectionName, &item, &field, &section)
+                .map(|input| input.label.as_str()),
+            Some("section")
+        );
+        assert!(
+            naming_stage_input_for_stage(OpPickerStage::Field, &item, &field, &section).is_none()
         );
     }
 
