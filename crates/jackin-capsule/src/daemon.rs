@@ -50,6 +50,7 @@ use crate::git_context::{
 use crate::git_context::{
     WorkdirContext, git_current_context, resolve_default_branch, start_git_context_watcher,
 };
+use crate::tui::effect::InitialFrameKind;
 use crate::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::tui::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
 #[cfg(test)]
@@ -292,30 +293,6 @@ impl PullRequestContextCacheEntry {
 enum PullRequestLookupMode {
     RespectCache,
     ForceRefresh,
-}
-
-/// Stages of the takeover/first-attach burst. Each variant maps to a
-/// human-readable label used in the clog line when the send fails so a
-/// dropped initial frame is observable in the multiplexer log.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum InitialFrameKind {
-    Welcome,
-    ClientOwnedModes,
-    FocusedPaneModes,
-    FirstAttach,
-    SpawnFailureBanner,
-}
-
-impl InitialFrameKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Welcome => "Welcome",
-            Self::ClientOwnedModes => "client-owned mode state",
-            Self::FocusedPaneModes => "focused-pane mode state",
-            Self::FirstAttach => "first-attach frame",
-            Self::SpawnFailureBanner => "spawn-failure banner",
-        }
-    }
 }
 
 /// Mouse-driven text selection on a pane whose program never asked
