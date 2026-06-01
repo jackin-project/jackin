@@ -7,7 +7,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use crate::console::tui::render::list_geometry::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
-use super::super::message::{ManagerMessage, update_manager};
+use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use crate::console::tui::render::mount_display::global_mounts_content_width;

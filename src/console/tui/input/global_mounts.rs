@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::super::message::{ManagerMessage, update_manager};
+use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::settings_global_mounts_content_width_with_cache;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,

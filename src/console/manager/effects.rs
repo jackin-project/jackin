@@ -6,7 +6,7 @@ use crate::console::services::instances::load_instance_refresh_snapshot;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
-use super::message::{ManagerMessage, update_manager};
+use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     EditorMode, EditorState, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
     PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, PendingSaveCommit,

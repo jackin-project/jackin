@@ -5,7 +5,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_tui::ModalOutcome;
-use super::super::message::{ManagerMessage, update_manager};
+use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;

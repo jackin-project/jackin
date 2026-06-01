@@ -251,10 +251,10 @@ pub async fn run_console<H: InstanceActionHandler>(
             let messages = manager::poll_background_messages(ms, &mut config, paths);
             for message in messages {
                 match message {
-                    manager::message::ManagerBackgroundEvent::Message(message) => {
+                    crate::console::tui::message::ManagerBackgroundEvent::Message(message) => {
                         needs_redraw |= manager::update_manager(ms, message).is_dirty();
                     }
-                    manager::message::ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
+                    crate::console::tui::message::ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
                         if let manager::ManagerStage::Editor(editor) = &mut ms.stage {
                             crate::console::tui::input::editor::apply_role_load_completion(
                                 editor,
@@ -266,7 +266,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         }
                         needs_redraw = true;
                     }
-                    manager::message::ManagerBackgroundEvent::DriftCheckFinished {
+                    crate::console::tui::message::ManagerBackgroundEvent::DriftCheckFinished {
                         check,
                         detection,
                     } => {
@@ -280,7 +280,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         );
                         needs_redraw = true;
                     }
-                    manager::message::ManagerBackgroundEvent::IsolationCleanupFinished {
+                    crate::console::tui::message::ManagerBackgroundEvent::IsolationCleanupFinished {
                         cleanup,
                         result,
                     } => {

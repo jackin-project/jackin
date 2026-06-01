@@ -1,5 +1,5 @@
-use super::{ManagerMessage, update_manager};
-use super::message::ManagerBackgroundEvent;
+use crate::console::tui::message::ManagerBackgroundEvent;
+use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::manager::effects::{
     execute_manager_effect, poll_background_messages,
 };
