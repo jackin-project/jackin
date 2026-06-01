@@ -555,6 +555,48 @@ fn field_display_label(field: OpPickerFieldDisplayRef<'_>) -> String {
     }
 }
 
+pub fn loading_title_stage(stage: OpPickerStage) -> OpPickerStage {
+    if matches!(stage, OpPickerStage::Field) {
+        OpPickerStage::Item
+    } else {
+        stage
+    }
+}
+
+pub fn loading_descriptor(
+    stage: OpPickerStage,
+    multi_account: bool,
+    account_email: &str,
+    vault_name: &str,
+    item_name: &str,
+    item_subtitle: &str,
+) -> String {
+    match stage {
+        OpPickerStage::Account => "loading accounts\u{2026}".to_string(),
+        OpPickerStage::Vault => {
+            if multi_account && !account_email.is_empty() {
+                format!("loading vaults from {account_email}\u{2026}")
+            } else {
+                "loading vaults\u{2026}".to_string()
+            }
+        }
+        OpPickerStage::Item => {
+            format!("loading items from {vault_name}\u{2026}")
+        }
+        OpPickerStage::Field => {
+            if item_subtitle.is_empty() {
+                format!("loading {item_name}\u{2026}")
+            } else {
+                format!("loading {item_name} ({item_subtitle})\u{2026}")
+            }
+        }
+        OpPickerStage::Section
+        | OpPickerStage::NewItemName
+        | OpPickerStage::FieldLabel
+        | OpPickerStage::NewSectionName => "loading\u{2026}".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -903,5 +945,32 @@ mod tests {
         assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} token");
         assert_eq!(lines[1].spans[2].content.as_ref(), "(concealed)");
         assert_eq!(lines[2].spans[0].content.as_ref(), "  + New field");
+    }
+
+    #[test]
+    fn loading_descriptor_names_current_load_target() {
+        assert_eq!(
+            loading_descriptor(OpPickerStage::Account, false, "", "", "", ""),
+            "loading accounts\u{2026}"
+        );
+        assert_eq!(
+            loading_descriptor(OpPickerStage::Vault, true, "alice@example.com", "", "", ""),
+            "loading vaults from alice@example.com\u{2026}"
+        );
+        assert_eq!(
+            loading_descriptor(
+                OpPickerStage::Field,
+                false,
+                "",
+                "",
+                "Claude",
+                "alice@example.com"
+            ),
+            "loading Claude (alice@example.com)\u{2026}"
+        );
+        assert_eq!(
+            loading_title_stage(OpPickerStage::Field),
+            OpPickerStage::Item
+        );
     }
 }

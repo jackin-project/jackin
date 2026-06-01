@@ -12,7 +12,8 @@ use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 use jackin_console::widgets::op_picker::{
     OpPickerAccountRef, OpPickerItemRef, OpPickerVaultRef, account_lines, breadcrumb_title,
-    field_lines, item_choice_lines, section_lines, vault_lines,
+    field_lines, item_choice_lines, loading_descriptor, loading_title_stage, section_lines,
+    vault_lines,
 };
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
@@ -210,12 +211,13 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
         .selected_item
         .as_ref()
         .map_or("", |i| i.subtitle.as_str());
-    let title_stage = if matches!(state.stage, OpPickerStage::Field) {
-        OpPickerStage::Item
-    } else {
-        state.stage
-    };
-    let title = breadcrumb_title(title_stage, multi_account, account_email, v_name, i_name);
+    let title = breadcrumb_title(
+        loading_title_stage(state.stage),
+        multi_account,
+        account_email,
+        v_name,
+        i_name,
+    );
     let title_with_spaces = format!(" {title} ");
     let block = Panel::new()
         .title(&title_with_spaces)
@@ -225,33 +227,14 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
     frame.render_widget(block, area);
 
     let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
-    let descriptor = match state.stage {
-        OpPickerStage::Account => "loading accounts\u{2026}".to_string(),
-        OpPickerStage::Vault => {
-            if multi_account && !account_email.is_empty() {
-                format!("loading vaults from {account_email}\u{2026}")
-            } else {
-                "loading vaults\u{2026}".to_string()
-            }
-        }
-        OpPickerStage::Item => {
-            format!("loading items from {v_name}\u{2026}")
-        }
-        OpPickerStage::Field => {
-            if i_subtitle.is_empty() {
-                format!("loading {i_name}\u{2026}")
-            } else {
-                format!("loading {i_name} ({i_subtitle})\u{2026}")
-            }
-        }
-        // The Section stage only becomes current after the field load
-        // completes; a lingering Loading state here is the field load.
-        // Naming stages never load. Both fall back to a neutral descriptor.
-        OpPickerStage::Section
-        | OpPickerStage::NewItemName
-        | OpPickerStage::FieldLabel
-        | OpPickerStage::NewSectionName => "loading\u{2026}".to_string(),
-    };
+    let descriptor = loading_descriptor(
+        state.stage,
+        multi_account,
+        account_email,
+        v_name,
+        i_name,
+        i_subtitle,
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
