@@ -88,7 +88,9 @@ mod mouse_input;
 mod multiplexer_utils;
 mod pane_layout;
 mod session_lifecycle;
-use crate::tui::view::*;
+use crate::tui::view::spawn_failure_banner;
+#[cfg(test)]
+use crate::tui::view::{osc22_pointer_shape, prefix_full_redraw_reason};
 
 struct SessionLaunch {
     label: String,

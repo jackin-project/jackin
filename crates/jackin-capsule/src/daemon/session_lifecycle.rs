@@ -1,5 +1,7 @@
 //! Session, tab, and pane lifecycle methods for the Multiplexer.
 
+use crate::tui::view::spawn_failure_banner;
+
 use super::*;
 
 impl Multiplexer {
