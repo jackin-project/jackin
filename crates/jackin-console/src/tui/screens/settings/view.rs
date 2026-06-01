@@ -3,6 +3,7 @@
 use super::model::SettingsEnvScope;
 use super::model::SettingsAuthRow;
 use super::model::SettingsTab;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 #[must_use]
 pub fn tab_labels(active: SettingsTab) -> Vec<(&'static str, bool)> {
@@ -35,6 +36,23 @@ pub fn content_height_with_error_rows(height: usize, has_error: bool) -> usize {
     } else {
         height
     }
+}
+
+pub fn clamp_mounts_scroll_x_for_frame(area: Rect, content_width: usize, scroll_x: &mut u16) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(10),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    jackin_tui::components::scrollable_panel::clamp_scroll_offset(
+        content_width,
+        jackin_tui::components::scrollable_panel::viewport_width(chunks[2]),
+        scroll_x,
+    );
 }
 
 #[must_use]

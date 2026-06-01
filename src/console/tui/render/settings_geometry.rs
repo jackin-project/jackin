@@ -1,6 +1,6 @@
 //! Settings tab geometry used by input/update code.
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use crate::console::tui::render::mount_display::{
     settings_global_mounts_content_height, settings_global_mounts_content_width_with_cache,
@@ -8,18 +8,9 @@ use crate::console::tui::render::mount_display::{
 use crate::console::tui::state::{GlobalMountsState, SettingsState};
 
 pub(crate) fn clamp_global_mounts_scroll_for_frame(area: Rect, global: &mut GlobalMountsState<'_>) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(10),
-            Constraint::Length(2),
-        ])
-        .split(area);
-    jackin_tui::components::scrollable_panel::clamp_scroll_offset(
+    jackin_console::tui::screens::settings::view::clamp_mounts_scroll_x_for_frame(
+        area,
         settings_global_mounts_content_width_with_cache(&global.pending, &global.mount_info_cache),
-        jackin_tui::components::scrollable_panel::viewport_width(chunks[2]),
         &mut global.scroll_x,
     );
 }
