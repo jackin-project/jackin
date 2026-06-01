@@ -216,6 +216,7 @@ pub(crate) fn poll_background_messages(
         dirty |= super::input::editor::poll_role_load(editor, config, paths);
     }
     dirty |= poll_file_browser_git_urls(state);
+    state.request_active_mount_info_refresh();
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::MountInfoRefreshed(result),
@@ -542,7 +543,6 @@ fn enter_create_editor(
     let mut editor = EditorState::new_create();
     editor.pending = workspace;
     editor.pending_name = Some(name);
-    editor.refresh_mount_info_cache();
     state.stage = ManagerStage::Editor(editor);
 }
 

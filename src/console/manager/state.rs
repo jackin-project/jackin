@@ -695,7 +695,7 @@ impl std::fmt::Debug for PendingRoleLoad {
 impl GlobalMountsState<'_> {
     pub fn from_config(config: &AppConfig) -> Self {
         let rows = config.list_mount_rows();
-        let state = Self {
+        Self {
             selected: 0,
             pending: rows.clone(),
             original: rows,
@@ -708,9 +708,7 @@ impl GlobalMountsState<'_> {
             scroll_y: 0,
             scroll_focused: false,
             exit_requested: false,
-        };
-        state.refresh_mount_info_cache();
-        state
+        }
     }
 
     #[must_use]
@@ -721,16 +719,11 @@ impl GlobalMountsState<'_> {
     pub fn discard(&mut self) {
         self.pending = self.original.clone();
         self.mount_info_cache.clear();
-        self.refresh_mount_info_cache();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
         self.modal = None;
         self.modal_parents.clear();
         self.error = None;
-    }
-
-    pub(crate) fn refresh_mount_info_cache(&self) {
-        self.mount_info_cache.refresh_global_rows(&self.pending);
     }
 
     pub fn save_to_config(
@@ -2427,7 +2420,7 @@ impl<'a> EditorState<'a> {
 
 impl EditorState<'_> {
     pub fn new_edit(name: String, ws: WorkspaceConfig) -> Self {
-        let state = Self {
+        Self {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
             tab_bar_focused: true,
@@ -2462,14 +2455,12 @@ impl EditorState<'_> {
             pending_isolation_cleanup: None,
             pending_op_commit: None,
             cached_footer_h: 1,
-        };
-        state.refresh_mount_info_cache();
-        state
+        }
     }
 
     pub fn new_create() -> Self {
         let empty = WorkspaceConfig::default();
-        let state = Self {
+        Self {
             mode: EditorMode::Create,
             active_tab: EditorTab::General,
             tab_bar_focused: true,
@@ -2504,13 +2495,7 @@ impl EditorState<'_> {
             pending_isolation_cleanup: None,
             pending_op_commit: None,
             cached_footer_h: 1,
-        };
-        state.refresh_mount_info_cache();
-        state
-    }
-
-    pub(crate) fn refresh_mount_info_cache(&self) {
-        self.mount_info_cache.refresh_mounts(&self.pending.mounts);
+        }
     }
 
     pub fn is_dirty(&self) -> bool {
