@@ -16,7 +16,7 @@ use crate::console::domain::InstanceRefreshSnapshot;
 use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceConfig;
 
-use crate::console::manager::auth_panel::AuthForm;
+use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::components::op_picker::OpPickerState;
 use crate::selector::RolePickerState;
 use jackin_console::tui::components::confirm_save::ConfirmSaveState;

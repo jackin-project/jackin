@@ -5,7 +5,7 @@ use ratatui::Frame;
 
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::state::Modal;
-use crate::console::{manager::auth_panel, tui::components::op_picker};
+use crate::console::{tui::components::auth_panel, tui::components::op_picker};
 
 // ── Modal dispatcher ────────────────────────────────────────────────
 

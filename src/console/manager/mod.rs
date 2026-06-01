@@ -1,7 +1,6 @@
 //! Workspace manager TUI — list, create, edit, delete workspaces from
 //! the operator console. Reached via `m` from the Workspace picker stage.
 
-pub(crate) mod auth_panel;
 pub mod auth_kind;
 mod create;
 pub(crate) mod editor_footer;
