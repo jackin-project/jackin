@@ -425,21 +425,29 @@ impl Multiplexer {
     }
 
     pub(super) fn compose_partial_frame(&mut self, dirty_panes: HashSet<u64>) -> Vec<u8> {
-        if dirty_panes.is_empty() {
-            return Vec::new();
-        }
-        if self.dialog_open() || self.selection.is_some() {
+        match partial_frame_plan(PartialFrameState {
+            dirty_empty: dirty_panes.is_empty(),
+            overlay_active: self.dialog_open() || self.selection.is_some(),
+            any_dirty_visible_pane: true,
+            dirty_pane_scrollback_active: false,
+            dirty_pane_cache_invalid: false,
+        }) {
+            PartialFramePlan::Empty => return Vec::new(),
+            PartialFramePlan::OverlayDiff => {
             // Prefer the Ratatui diff path so dialog state that hasn't
             // changed produces an empty diff instead of a full fill_screen.
             // The raw-ANSI fallback is kept for the (rare) case where the
             // Ratatui terminal fails to draw.
-            if let Some(ratatui_output) = self.compose_ratatui_frame() {
-                let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-                self.append_outer_terminal_title(&mut out);
-                out.extend_from_slice(&ratatui_output);
-                return out;
+                if let Some(ratatui_output) = self.compose_ratatui_frame() {
+                    let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+                    self.append_outer_terminal_title(&mut out);
+                    out.extend_from_slice(&ratatui_output);
+                    return out;
+                }
+                return self.compose_full_frame(FullRedrawReason::UnsafePartial);
             }
-            return self.compose_full_frame(FullRedrawReason::UnsafePartial);
+            PartialFramePlan::Full(reason) => return self.compose_full_frame(reason),
+            PartialFramePlan::Partial => {}
         }
 
         let started = Instant::now();
@@ -450,7 +458,14 @@ impl Multiplexer {
             .find(|pane| pane.focused)
             .map(|pane| pane.inner);
 
-        if !panes.iter().any(|pane| dirty_panes.contains(&pane.id)) {
+        let any_dirty_visible_pane = panes.iter().any(|pane| dirty_panes.contains(&pane.id));
+        if let PartialFramePlan::Empty = partial_frame_plan(PartialFrameState {
+            dirty_empty: false,
+            overlay_active: false,
+            any_dirty_visible_pane,
+            dirty_pane_scrollback_active: false,
+            dirty_pane_cache_invalid: false,
+        }) {
             crate::cdebug!(
                 "render: kind=partial reason=pty-output dirty_panes={} panes=0 rows=0 pane_bytes=0 bytes=0 duration_us={}",
                 dirty_panes.len(),
@@ -459,18 +474,29 @@ impl Multiplexer {
             return Vec::new();
         }
 
+        let mut dirty_pane_scrollback_active = false;
+        let mut dirty_pane_cache_invalid = false;
         for pane in panes.iter().filter(|pane| dirty_panes.contains(&pane.id)) {
             let Some(session) = self.sessions.get(&pane.id) else {
                 continue;
             };
             if session.scrollback_offset != 0 {
-                return self.compose_full_frame(FullRedrawReason::ScrollbackMovement);
+                dirty_pane_scrollback_active = true;
             }
             if !self.pane_body_caches.get(&pane.id).is_some_and(|cache| {
                 cache.is_valid_for(pane.inner.rows, pane.inner.cols, pane.body_dim)
             }) {
-                return self.compose_full_frame(FullRedrawReason::PaneCacheMiss);
+                dirty_pane_cache_invalid = true;
             }
+        }
+        if let PartialFramePlan::Full(reason) = partial_frame_plan(PartialFrameState {
+            dirty_empty: false,
+            overlay_active: false,
+            any_dirty_visible_pane,
+            dirty_pane_scrollback_active,
+            dirty_pane_cache_invalid,
+        }) {
+            return self.compose_full_frame(reason);
         }
 
         let mut buf = Vec::with_capacity(16384);

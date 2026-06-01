@@ -93,7 +93,9 @@ use crate::tui::app::{
     MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
     cursor_visible_for_state, hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
 };
-use crate::tui::update::{FullRedrawReason, drag_resize_ratio};
+use crate::tui::update::{
+    FullRedrawReason, PartialFramePlan, PartialFrameState, drag_resize_ratio, partial_frame_plan,
+};
 
 mod compositor;
 mod context_mgmt;

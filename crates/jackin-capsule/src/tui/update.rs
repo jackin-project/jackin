@@ -82,9 +82,42 @@ pub(crate) fn drag_resize_ratio(orient: SplitOrient, rect: Rect, row: u16, col: 
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PartialFramePlan {
+    Empty,
+    OverlayDiff,
+    Full(FullRedrawReason),
+    Partial,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PartialFrameState {
+    pub(crate) dirty_empty: bool,
+    pub(crate) overlay_active: bool,
+    pub(crate) any_dirty_visible_pane: bool,
+    pub(crate) dirty_pane_scrollback_active: bool,
+    pub(crate) dirty_pane_cache_invalid: bool,
+}
+
+pub(crate) fn partial_frame_plan(state: PartialFrameState) -> PartialFramePlan {
+    if state.dirty_empty {
+        PartialFramePlan::Empty
+    } else if state.overlay_active {
+        PartialFramePlan::OverlayDiff
+    } else if !state.any_dirty_visible_pane {
+        PartialFramePlan::Empty
+    } else if state.dirty_pane_scrollback_active {
+        PartialFramePlan::Full(FullRedrawReason::ScrollbackMovement)
+    } else if state.dirty_pane_cache_invalid {
+        PartialFramePlan::Full(FullRedrawReason::PaneCacheMiss)
+    } else {
+        PartialFramePlan::Partial
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{drag_resize_ratio, prefix_full_redraw_reason};
+    use super::{PartialFramePlan, PartialFrameState, drag_resize_ratio, partial_frame_plan, prefix_full_redraw_reason};
     use crate::tui::input::{ArrowDir, PrefixCommand};
     use crate::tui::layout::{Rect, SplitOrient};
     use crate::tui::update::FullRedrawReason;
@@ -125,5 +158,52 @@ mod tests {
         assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 0, 4), 0.05);
         assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 40, 4), 0.95);
         assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 12, 4), 0.5);
+    }
+
+    #[test]
+    fn partial_frame_plan_promotes_unsafe_cases_to_full_redraw() {
+        let base = PartialFrameState {
+            dirty_empty: false,
+            overlay_active: false,
+            any_dirty_visible_pane: true,
+            dirty_pane_scrollback_active: false,
+            dirty_pane_cache_invalid: false,
+        };
+        assert_eq!(partial_frame_plan(base), PartialFramePlan::Partial);
+        assert_eq!(
+            partial_frame_plan(PartialFrameState {
+                dirty_empty: true,
+                ..base
+            }),
+            PartialFramePlan::Empty
+        );
+        assert_eq!(
+            partial_frame_plan(PartialFrameState {
+                overlay_active: true,
+                ..base
+            }),
+            PartialFramePlan::OverlayDiff
+        );
+        assert_eq!(
+            partial_frame_plan(PartialFrameState {
+                any_dirty_visible_pane: false,
+                ..base
+            }),
+            PartialFramePlan::Empty
+        );
+        assert_eq!(
+            partial_frame_plan(PartialFrameState {
+                dirty_pane_scrollback_active: true,
+                ..base
+            }),
+            PartialFramePlan::Full(FullRedrawReason::ScrollbackMovement)
+        );
+        assert_eq!(
+            partial_frame_plan(PartialFrameState {
+                dirty_pane_cache_invalid: true,
+                ..base
+            }),
+            PartialFramePlan::Full(FullRedrawReason::PaneCacheMiss)
+        );
     }
 }
