@@ -12,7 +12,6 @@ pub(crate) mod list_geometry;
 pub mod message;
 pub(crate) mod modal_footer;
 pub(crate) mod modal_layout;
-pub mod mount_diff;
 pub(crate) mod mount_display;
 pub(crate) mod op_breadcrumb;
 mod pre_render;

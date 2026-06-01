@@ -26,11 +26,20 @@ use jackin_tui::runtime::{
     BlockingSubscription, Subscription, SubscriptionPoll, spawn_blocking_subscription,
 };
 
-pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};
 pub use crate::console::manager::workspace_summary::WorkspaceSummary;
 use crate::console::manager::workspace_summary::workspace_summary_from_config;
+pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
 pub use jackin_console::workspaces::state::ManagerListRow;
+
+pub(crate) type MountDiff<'a> =
+    jackin_console::mount_diff::MountDiff<'a, crate::workspace::MountConfig>;
+
+impl jackin_console::mount_diff::MountDiffItem for crate::workspace::MountConfig {
+    fn dst(&self) -> &str {
+        &self.dst
+    }
+}
 
 impl jackin_console::mount_info_cache::MountSource for crate::workspace::MountConfig {
     fn mount_src(&self) -> &str {
