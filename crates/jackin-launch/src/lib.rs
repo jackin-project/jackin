@@ -1,8 +1,8 @@
 //! Launch progress surface model and UI ownership.
 //!
-//! This crate is the extraction target for the launch cockpit. The first
-//! boundary is the public launch model used by runtime orchestration; render,
-//! update, and event-loop pieces move here in follow-up slices.
+//! This crate owns the launch cockpit boundary. Non-visual launch
+//! orchestration lives in `progress`, build-log capture lives in `build_log`,
+//! and model/message/update/run/view code lives under `tui`.
 
 use std::path::{Path, PathBuf};
 
