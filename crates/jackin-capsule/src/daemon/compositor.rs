@@ -9,15 +9,70 @@ use std::time::Instant;
 use crate::tui::view::{
     CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleDialogBottomChrome,
     CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar,
-    pane_scrollbar, render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
+    render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
     render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
     render_capsule_pane_body_partial, render_capsule_pane_body_snapshot,
     render_capsule_pane_chrome,
     render_capsule_raw_dialog_overlay, render_capsule_selection_highlight,
     render_capsule_status_bar,
+    screen_scroll_affordance_metrics,
 };
 
 use super::*;
+
+fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16) -> PaneScrollbar {
+    let debug_enabled = crate::logging::debug_enabled();
+    let (filled, vt_filled, inline_filled) = if debug_enabled {
+        let (vt_filled, inline_filled) = session.scrollback_counts();
+        (
+            vt_filled.saturating_add(inline_filled),
+            vt_filled,
+            inline_filled,
+        )
+    } else {
+        (session.scrollback_filled(), 0, 0)
+    };
+    let scrollbar = PaneScrollbar {
+        offset: session.scrollback_offset,
+        filled,
+    };
+    let metrics = if debug_enabled {
+        screen_scroll_affordance_metrics(session.screen(), viewport_rows, viewport_cols)
+    } else {
+        None
+    };
+    crate::cdebug!(
+        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} first_occupied_row={} last_occupied_row={} vt_scrollback={} inline_scrollback={} scrollback_filled={} visible={} reason={}",
+        session.agent,
+        session.screen().alternate_screen(),
+        session.mouse_enabled(),
+        viewport_rows,
+        viewport_cols,
+        metrics.as_ref().map_or(0, |m| m.screen_rows),
+        metrics.as_ref().map_or(0, |m| m.screen_cols),
+        metrics.as_ref().map_or(0, |m| m.cursor_row),
+        metrics.as_ref().map_or(0, |m| m.cursor_col),
+        metrics.as_ref().map_or(0, |m| m.occupied_rows),
+        metrics
+            .as_ref()
+            .and_then(|m| m.first_occupied_row)
+            .map_or(-1, i32::from),
+        metrics
+            .as_ref()
+            .and_then(|m| m.last_occupied_row)
+            .map_or(-1, i32::from),
+        vt_filled,
+        inline_filled,
+        filled,
+        scrollbar.visible(),
+        if scrollbar.visible() {
+            "retained-scrollback"
+        } else {
+            "none"
+        }
+    );
+    scrollbar
+}
 
 impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
