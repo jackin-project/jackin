@@ -267,6 +267,40 @@ pub(crate) fn render_capsule_bottom_chrome(
     crate::tui::dialog::render_hint_row(buf, hint_row, view.term_cols, hint_spans);
 }
 
+pub(crate) struct CapsuleDialogBottomChrome<'a> {
+    pub(crate) term_rows: u16,
+    pub(crate) term_cols: u16,
+    pub(crate) branch: Option<&'a str>,
+    pub(crate) pull_request: Option<&'a PullRequestInfo>,
+    pub(crate) pull_request_loading: bool,
+    pub(crate) instance_id_label: &'a str,
+    pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
+}
+
+pub(crate) fn render_capsule_dialog_bottom_chrome(
+    buf: &mut Vec<u8>,
+    view: CapsuleDialogBottomChrome<'_>,
+) {
+    render_branch_context_bar(
+        buf,
+        view.term_rows,
+        view.term_cols,
+        view.branch,
+        view.pull_request,
+        view.pull_request_loading,
+        view.instance_id_label,
+        None,
+    );
+    if let Some(spans) = view.hint_spans {
+        crate::tui::dialog::render_hint_row(
+            buf,
+            view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
+            view.term_cols,
+            spans,
+        );
+    }
+}
+
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
     pub(crate) active_tab: usize,
