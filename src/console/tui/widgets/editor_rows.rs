@@ -3,7 +3,7 @@
 use crate::operator_env::EnvValue;
 use ratatui::text::Line;
 
-pub(crate) use jackin_console::widgets::editor_rows::{
+pub(crate) use jackin_console::tui::components::editor_rows::{
     action_row_style, disclosure_style, render_tab_strip,
 };
 
@@ -18,13 +18,15 @@ pub(crate) fn render_secret_key_line(
 ) -> Line<'static> {
     let value = match value {
         EnvValue::Plain(value) => {
-            jackin_console::widgets::editor_rows::SecretValueDisplay::Plain(value)
+            jackin_console::tui::components::editor_rows::SecretValueDisplay::Plain(value)
         }
         EnvValue::OpRef(op_ref) => {
-            jackin_console::widgets::editor_rows::SecretValueDisplay::OpRefPath(&op_ref.path)
+            jackin_console::tui::components::editor_rows::SecretValueDisplay::OpRefPath(
+                &op_ref.path,
+            )
         }
     };
-    jackin_console::widgets::editor_rows::render_secret_key_line(
+    jackin_console::tui::components::editor_rows::render_secret_key_line(
         selected,
         cursor_col,
         key,

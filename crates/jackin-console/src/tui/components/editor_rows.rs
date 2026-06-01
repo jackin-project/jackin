@@ -7,9 +7,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT};
+use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
 pub enum SecretValueDisplay<'a> {

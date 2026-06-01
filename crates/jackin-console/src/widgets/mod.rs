@@ -5,7 +5,6 @@ pub use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub mod agent_choice;
 pub mod confirm_save;
-pub mod editor_rows;
 pub mod file_browser;
 pub mod footer_hints;
 pub mod github_picker;
