@@ -5,6 +5,9 @@
 use super::super::effect::{
     WorkspaceSaveEffect, WorkspaceSaveWriteMode,
 };
+use crate::console::effects::{
+    EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
+};
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
@@ -145,78 +148,50 @@ pub(super) fn begin_editor_save(
         EditorMode::Create => SaveMode::Create,
     };
 
-    let (effective_removals, final_mounts, has_collapses, collapse_lines) = match &save_mode {
-        SaveMode::Edit { original_name } => {
-            let Some(current_ws) = config.workspaces.get(original_name).cloned() else {
+    let preview_input = match &save_mode {
+        SaveMode::Edit { original_name } => EditorSavePreviewInput::Edit {
+            original_name,
+            original: &editor.original,
+            pending: &editor.pending,
+        },
+        SaveMode::Create => EditorSavePreviewInput::Create {
+            pending: &editor.pending,
+            pending_name: editor.pending_name.as_deref(),
+        },
+    };
+    let (effective_removals, final_mounts, has_collapses, collapse_lines) =
+        match crate::console::effects::plan_editor_save_preview(config, preview_input) {
+            Ok(EditorSavePreviewPlan::Edit {
+                effective_removals,
+                edit_driven_collapses,
+            }) => {
+                let has = !edit_driven_collapses.is_empty();
+                let lines = collapse_section_lines(&edit_driven_collapses);
+                (effective_removals, None, has, lines)
+            }
+            Ok(EditorSavePreviewPlan::Create {
+                final_mounts,
+                collapsed,
+            }) => {
+                let has = !collapsed.is_empty();
+                let lines = collapse_section_lines(&collapsed);
+                (Vec::new(), Some(final_mounts), has, lines)
+            }
+            Err(EditorSavePreviewError::Message(message)) => {
+                open_save_error_popup(editor, &message);
+                return Ok(());
+            }
+            Err(EditorSavePreviewError::PreExistingRedundantMounts {
+                original_name,
+                collapses,
+            }) => {
                 open_save_error_popup(
                     editor,
-                    &format!("workspace {original_name:?} no longer exists in config"),
+                    &pre_existing_redundant_mounts_message(&original_name, &collapses),
                 );
                 return Ok(());
-            };
-            let edit_delta = crate::console::domain::build_workspace_edit(
-                &editor.original,
-                &editor.pending,
-            );
-            match crate::workspace::planner::plan_edit(
-                &current_ws,
-                &edit_delta.upsert_mounts,
-                &edit_delta.remove_destinations,
-                false,
-            ) {
-                Err(e) => {
-                    open_save_error_popup(editor, &e.to_string());
-                    return Ok(());
-                }
-                Ok(plan) => {
-                    if plan.edit_driven_collapses.is_empty()
-                        && !plan.pre_existing_collapses.is_empty()
-                    {
-                        let details: Vec<String> = plan
-                            .pre_existing_collapses
-                            .iter()
-                            .map(|r| {
-                                format!(
-                                    "{} covered by {}",
-                                    crate::tui::shorten_home(&r.child.src),
-                                    crate::tui::shorten_home(&r.covered_by.src),
-                                )
-                            })
-                            .collect();
-                        open_save_error_popup(
-                            editor,
-                            &format!(
-                                "pre-existing redundant mount(s) in this workspace: {}; \
-                                 run `jackin' workspace prune {original_name}` to clean up",
-                                details.join(", "),
-                            ),
-                        );
-                        return Ok(());
-                    }
-                    let has = !plan.edit_driven_collapses.is_empty();
-                    let lines = collapse_section_lines(&plan.edit_driven_collapses);
-                    (plan.effective_removals, None, has, lines)
-                }
             }
-        }
-        SaveMode::Create => {
-            if editor.pending_name.is_none() {
-                open_save_error_popup(editor, "missing workspace name");
-                return Ok(());
-            }
-            match crate::workspace::planner::plan_create(&editor.pending.mounts) {
-                Err(e) => {
-                    open_save_error_popup(editor, &e.to_string());
-                    return Ok(());
-                }
-                Ok(plan) => {
-                    let has = !plan.collapsed.is_empty();
-                    let lines = collapse_section_lines(&plan.collapsed);
-                    (Vec::new(), Some(plan.final_mounts), has, lines)
-                }
-            }
-        }
-    };
+        };
 
     let lines = build_confirm_save_lines(editor, config, &collapse_lines);
     let mut confirm_state =
@@ -723,6 +698,27 @@ fn collapse_section_lines(
             ))
         })
         .collect()
+}
+
+fn pre_existing_redundant_mounts_message(
+    original_name: &str,
+    collapses: &[crate::workspace::Removal],
+) -> String {
+    let details: Vec<String> = collapses
+        .iter()
+        .map(|r| {
+            format!(
+                "{} covered by {}",
+                crate::tui::shorten_home(&r.child.src),
+                crate::tui::shorten_home(&r.covered_by.src),
+            )
+        })
+        .collect();
+    format!(
+        "pre-existing redundant mount(s) in this workspace: {}; \
+         run `jackin' workspace prune {original_name}` to clean up",
+        details.join(", "),
+    )
 }
 
 /// Mirror the merge order `AppConfig::edit_workspace` uses to build the

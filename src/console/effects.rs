@@ -731,6 +731,90 @@ fn execute_op_commit_validation(
     }
 }
 
+pub(crate) enum EditorSavePreviewInput<'a> {
+    Edit {
+        original_name: &'a str,
+        original: &'a crate::workspace::WorkspaceConfig,
+        pending: &'a crate::workspace::WorkspaceConfig,
+    },
+    Create {
+        pending: &'a crate::workspace::WorkspaceConfig,
+        pending_name: Option<&'a str>,
+    },
+}
+
+pub(crate) enum EditorSavePreviewPlan {
+    Edit {
+        effective_removals: Vec<String>,
+        edit_driven_collapses: Vec<crate::workspace::Removal>,
+    },
+    Create {
+        final_mounts: Vec<crate::workspace::MountConfig>,
+        collapsed: Vec<crate::workspace::Removal>,
+    },
+}
+
+pub(crate) enum EditorSavePreviewError {
+    Message(String),
+    PreExistingRedundantMounts {
+        original_name: String,
+        collapses: Vec<crate::workspace::Removal>,
+    },
+}
+
+pub(crate) fn plan_editor_save_preview(
+    config: &AppConfig,
+    input: EditorSavePreviewInput<'_>,
+) -> Result<EditorSavePreviewPlan, EditorSavePreviewError> {
+    match input {
+        EditorSavePreviewInput::Edit {
+            original_name,
+            original,
+            pending,
+        } => {
+            let current_ws = config.workspaces.get(original_name).cloned().ok_or_else(|| {
+                EditorSavePreviewError::Message(format!(
+                    "workspace {original_name:?} no longer exists in config"
+                ))
+            })?;
+            let edit_delta = crate::console::domain::build_workspace_edit(original, pending);
+            let plan = crate::workspace::planner::plan_edit(
+                &current_ws,
+                &edit_delta.upsert_mounts,
+                &edit_delta.remove_destinations,
+                false,
+            )
+            .map_err(|e| EditorSavePreviewError::Message(e.to_string()))?;
+            if plan.edit_driven_collapses.is_empty() && !plan.pre_existing_collapses.is_empty() {
+                return Err(EditorSavePreviewError::PreExistingRedundantMounts {
+                    original_name: original_name.to_string(),
+                    collapses: plan.pre_existing_collapses,
+                });
+            }
+            Ok(EditorSavePreviewPlan::Edit {
+                effective_removals: plan.effective_removals,
+                edit_driven_collapses: plan.edit_driven_collapses,
+            })
+        }
+        EditorSavePreviewInput::Create {
+            pending,
+            pending_name,
+        } => {
+            if pending_name.is_none() {
+                return Err(EditorSavePreviewError::Message(
+                    "missing workspace name".to_string(),
+                ));
+            }
+            let plan = crate::workspace::planner::plan_create(&pending.mounts)
+                .map_err(|e| EditorSavePreviewError::Message(e.to_string()))?;
+            Ok(EditorSavePreviewPlan::Create {
+                final_mounts: plan.final_mounts,
+                collapsed: plan.collapsed,
+            })
+        }
+    }
+}
+
 pub(crate) fn execute_workspace_save_effect(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
