@@ -1,0 +1,158 @@
+---
+title: "Supply-chain and dependency-hygiene CI"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+The workspace resolves **447 packages** in <RepoFile path="Cargo.lock" /> (85 direct dependencies in the root <RepoFile path="Cargo.toml" /> plus the four workspace crates). None of that tree is checked in CI today:
+
+- No advisory scan — a published `RUSTSEC` vulnerability in any of the 447 packages (the `bollard` + `rustls` networking stack alone pulls a deep tree) merges silently.
+- No license gate — nothing stops a future dependency bump from pulling a `GPL`/`AGPL` crate into a project that distributes binaries.
+- No unused-dependency check — 85 direct entries drift stale as features churn pre-release; removed code leaves its manifest entry behind.
+- No duplicate-version or source check — multiple semver-incompatible copies of the same crate, or a dependency silently switched to a git source, go unnoticed.
+
+jackin's whole pitch is *"keep the agent from doing dangerous things to your host."* A tool that markets a security posture but has **no demonstrable supply-chain story for its own dependencies** carries a credibility gap. The one git-sourced dependency already in the tree — `vt100` pinned to [`donbeave/vt100-rust`](https://github.com/donbeave/vt100-rust) (tracked under [Terminal emulation crate (`jackin-term`)](/reference/roadmap/terminal-emulation-crate/)) — is exactly the kind of non-crates.io source a `sources` policy should make explicit rather than invisible.
+
+This is the missing automated reviewer for the dependency tree. Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md" />, there is no second human to notice a `RUSTSEC` advisory or a copyleft license sneaking in through a transitive bump. CI advisory + license + bans checks are the substitute, exactly as multi-agent review substitutes for the missing second reviewer elsewhere.
+
+## License obligation — verified
+
+The operator's concern that copyleft licenses can force jackin' to adopt their terms is **correct** for the licenses that matter here:
+
+- **`GPL` (and `AGPL`)** are strong copyleft. Rust statically links its dependencies by default, so a binary that links a GPL crate is a *combined / derivative work*. jackin' distributes binaries (the [`homebrew-tap`](https://github.com/jackin-project/homebrew-tap), GitHub release artifacts, the `jackin-role` validator). Distributing a binary that statically links GPL code obligates the **entire binary** to ship under GPL-compatible terms — incompatible with the project's `Apache-2.0` license.
+- **`AGPL`** adds a network-use clause: merely *operating* the software as a network service triggers the source-disclosure obligation, even without distributing a binary. Strictly worse for a tool that may grow daemon/remote surfaces.
+- **`SSPL`, `BUSL`/`BSL` (non-permissive variants), `EUPL`, `CC-BY-SA`** are in the same "avoid for a permissively-licensed distributed binary" bucket and should be denied by default.
+
+### Current tree is already clean
+
+A `cargo metadata` license audit of the current 447-package tree (June 2026) found **zero `GPL` and zero `AGPL` dependencies**. There is **nothing to clean today** — the ban is a *preventive guard against future bumps*, not a cleanup. Three edge cases were reviewed and are not problems:
+
+| Crate | Pulled via | License | Verdict |
+| --- | --- | --- | --- |
+| `option-ext` | `dirs-sys` | `MPL-2.0` | **Allow.** File-level weak copyleft — covers only the crate's own files, does not infect the larger work. Standard to permit. |
+| `r-efi` (5.x, 6.x) | `getrandom` | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` | **Allow.** An `OR` expression — the project selects `MIT`/`Apache-2.0`, so the `LGPL` arm never applies. |
+| (one crate) | — | `WTFPL` | **Decide.** Permissive in intent but not OSI-clear; either allow explicitly or replace. Low stakes. |
+
+The license check therefore lands green on the current tree with a small, documented allow-list — no dependency removal required before it can be enabled.
+
+## Proposed approach
+
+Adopt **two tools**, both installed through `mise` (per the mise-only CI rule in <RepoFile path=".github/AGENTS.md" />), wired into <RepoFile path=".github/workflows/ci.yml" /> behind the existing `rust` paths-filter and folded into the `ci-required` aggregator:
+
+### 1. `cargo-deny` — advisories, licenses, bans, sources
+
+`cargo-deny` is a superset of `cargo-audit`: its `advisories` check *is* the `RUSTSEC` database scan that `cargo-audit` performs, plus three more axes. Adopting `cargo-deny` alone — **not** both — avoids running the advisory scan twice and maintaining two tools.
+
+A first `deny.toml` (roughly 50 lines):
+
+```toml
+[advisories]
+# Pull the RustSec advisory DB; fail on any unfixed vulnerability.
+version = 2
+yanked = "deny"
+# ignore = ["RUSTSEC-XXXX-XXXX"]  # only with a written justification per entry
+
+[licenses]
+version = 2
+# Permissive allow-list covering the current tree (see audit table above).
+allow = [
+  "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "0BSD",
+  "Unicode-3.0", "Unicode-DFS-2016", "CDLA-Permissive-2.0",
+  "CC0-1.0", "BSL-1.0", "Unlicense", "MPL-2.0",
+]
+# Everything not in `allow` fails — GPL/AGPL/SSPL/EUPL/CC-BY-SA included
+# by omission. No explicit deny list needed; the allow-list is the gate.
+confidence-threshold = 0.9
+
+[[licenses.exceptions]]
+# WTFPL: decide allow-or-replace; pin the one crate that carries it here
+# rather than widening the global allow-list.
+# name = "<crate>"
+# allow = ["WTFPL"]
+
+[bans]
+multiple-versions = "warn"   # surface duplicate semver-incompatible copies
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+[sources.allow-org]
+# none — list specific git deps explicitly instead
+[[sources.allow-git]]
+# vt100 fork until jackin-term retires it (see terminal-emulation-crate).
+# url = "https://github.com/donbeave/vt100-rust"
+```
+
+The `licenses.allow` list is a closed allow-list: any license **not** named — every `GPL`/`AGPL` variant, `SSPL`, `EUPL`, `CC-BY-SA`, etc. — fails the build by omission. That is the operator's requested ban, expressed as the safer "allow-list, deny-by-default" shape rather than an open-ended deny list that misses new SPDX identifiers.
+
+The `sources.allow-git` entry is what makes the `vt100` fork an explicit, reviewable decision instead of a silent exception; it is removed when `jackin-term` retires the fork.
+
+### 2. `cargo-machete` — unused direct dependencies
+
+`cargo-machete` parses each crate manifest against actual source usage. It runs on the **stable** toolchain, needs no build, and finishes in well under a second — cheap enough to run on **every** PR rather than "periodically" (a manual cadence a solo maintainer forgets). Macro-only / `cfg`-gated false positives are suppressed per-crate with `[package.metadata.cargo-machete] ignored = [...]`.
+
+### Alternatives considered and not adopted
+
+| Tool | Decision | Reason |
+| --- | --- | --- |
+| `cargo-audit` | **Skip** | Subsumed by `cargo-deny`'s `advisories` check; running both duplicates the scan. |
+| `cargo-udeps` | **Skip** | Requires the **nightly** toolchain and a full build — friction against the `rust-toolchain.toml` stable pin, slow in CI. `cargo-machete` covers the 90% case (unused *direct* deps) on stable for near-zero cost. Revisit only if precise compile-graph analysis is ever needed. |
+| `cargo-vet` / `cargo-crev` | **Defer** | Human-audit-trail tooling whose value scales with reviewer count. A solo maintainer cannot sustain a meaningful per-crate audit ledger; revisit if the project gains contributors. |
+| `cargo-geiger` | **Defer** | `unsafe`-usage census is informative but not a pass/fail gate; produces a metric, not a policy. Out of scope for a CI gate. |
+
+## CI wiring
+
+A new `deny` job in <RepoFile path=".github/workflows/ci.yml" />, mirroring the shape of the existing `check` / `msrv` jobs:
+
+```yaml
+  deny:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@... # pinned SHA, matching sibling jobs
+      - uses: jdx/mise-action@...  # installs cargo-deny + cargo-machete via mise.toml
+      - run: cargo deny check advisories licenses bans sources
+      - run: cargo machete
+```
+
+Tool versions are pinned in <RepoFile path="mise.toml" /> alongside the existing `cargo:cargo-nextest` / `cargo:cargo-zigbuild` entries:
+
+```toml
+"cargo:cargo-deny" = "<pinned>"
+"cargo:cargo-machete" = "<pinned>"
+```
+
+The `deny` job is added to the `ci-required` aggregator's `needs` list so branch protection keeps a single stable required check name.
+
+### Advisory-freshness consideration
+
+The `RUSTSEC` database updates independently of the repo, so a green PR can turn red later when a new advisory lands against an existing dependency — with no code change. Two shapes resolve this:
+
+- **Blocking on every PR + a scheduled run.** Keep `advisories` in the per-PR gate (catches newly-introduced vulnerable deps immediately) **and** add a daily/weekly `schedule:`-triggered run so an advisory against the existing tree surfaces as its own failing run rather than blocking an unrelated PR author. This is the recommended shape.
+- **License + bans + sources block per-PR; advisories scheduled-only.** Lower friction, but a PR that introduces a known-vulnerable dependency would not be caught until the next scheduled run. Weaker; not recommended.
+
+## Host-side effects
+
+**None.** All work is CI configuration plus a new `deny.toml` and pinned tool entries in <RepoFile path="mise.toml" />. No host machine state, no operator config, no container changes. The tools run only in GitHub Actions and on a contributor's own checkout when they choose to run them.
+
+## Steps
+
+1. Add `deny.toml` at the repo root with the allow-list, bans, and sources config above; pin the `vt100` git source explicitly.
+2. Resolve the `WTFPL` crate: add a scoped `licenses.exceptions` entry, or replace the dependency.
+3. Add `cargo:cargo-deny` and `cargo:cargo-machete` to <RepoFile path="mise.toml" /> with pinned versions.
+4. Add `[package.metadata.cargo-machete] ignored = [...]` entries where macro-only deps trip false positives; run `cargo machete` locally to find them.
+5. Add the `deny` job to <RepoFile path=".github/workflows/ci.yml" /> behind the `rust` paths-filter and add it to the `ci-required` `needs` list.
+6. Add the scheduled advisory run (`schedule:` trigger) so DB updates surface without blocking unrelated PRs.
+7. Document the dependency-hygiene contract for contributors (which licenses are allowed, how to add a git source or an advisory ignore with justification) in the contributor docs.
+8. Verify all checks pass green on the current tree before merging — the audit above predicts they do, modulo the one `WTFPL` decision.
+
+## Caveats
+
+- `cargo-deny`'s `advisories` check needs network access in CI to fetch the `RUSTSEC` DB; the job must not run with networking disabled.
+- The `licenses.allow` list must be re-checked whenever a dependency bump introduces a new SPDX identifier — that is the intended friction (a new license is a decision, not a default).
+- `multiple-versions = "warn"` starts non-blocking; tighten to `"deny"` only after the existing duplicate-version backlog (if any) is cleared, to avoid blocking unrelated PRs on pre-existing duplication.
