@@ -30,7 +30,9 @@ use tui_widget_list::ListState;
 use crate::operator_env::{OpAccount, OpCache, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::ModalOutcome;
-use jackin_console::widgets::{clamp_selection, cycle_select, first_selection};
+use jackin_console::widgets::{
+    clamp_selection, cycle_select, first_selection, list_state_for_count, selected_choice,
+};
 use jackin_tui::components::TextInputState;
 
 pub mod render;
@@ -249,17 +251,17 @@ impl OpPickerState {
             stage: OpPickerStage::Account,
             filter_buf: String::new(),
             accounts: Vec::new(),
-            account_list_state: ListState::default(),
+            account_list_state: list_state_for_count(0),
             selected_account: None,
             vaults: Vec::new(),
-            vault_list_state: ListState::default(),
+            vault_list_state: list_state_for_count(0),
             selected_vault: None,
             items: Vec::new(),
-            item_list_state: ListState::default(),
+            item_list_state: list_state_for_count(0),
             selected_item: None,
             fields: Vec::new(),
-            field_list_state: ListState::default(),
-            section_list_state: ListState::default(),
+            field_list_state: list_state_for_count(0),
+            section_list_state: list_state_for_count(0),
             selected_section: None,
             collapsed_sections: HashSet::new(),
             load_state: OpLoadState::Loading { spinner_tick: 0 },
@@ -315,7 +317,7 @@ impl OpPickerState {
             return;
         }
         self.accounts = accounts;
-        self.account_list_state.select(Some(0));
+        self.account_list_state = list_state_for_count(self.accounts.len());
         self.stage = OpPickerStage::Account;
         self.load_state = OpLoadState::Ready;
     }
@@ -429,7 +431,7 @@ impl OpPickerState {
                     .borrow_mut()
                     .put_vaults(self.selected_account_id_ref(), vaults.clone());
                 self.vaults = vaults;
-                self.vault_list_state.select(Some(0));
+                self.vault_list_state = list_state_for_count(self.vaults.len());
                 self.load_state = OpLoadState::Ready;
                 true
             }
@@ -504,7 +506,8 @@ impl OpPickerState {
                     // `section_choices()` always yields at least the `(root)`
                     // entry and the list always appends a `+ New section`
                     // sentinel, so index 0 is always valid.
-                    self.section_list_state.select(Some(0));
+                    self.section_list_state =
+                        list_state_for_count(self.section_choices().len() + 1);
                 } else {
                     self.selected_section = None;
                     let display_count = self.build_field_display_rows().len();
@@ -687,7 +690,7 @@ impl OpPickerState {
                 // accounts mid-session is picked up without restart.
                 self.op_cache.borrow_mut().invalidate_accounts();
                 self.accounts.clear();
-                self.account_list_state = ListState::default();
+                self.account_list_state = list_state_for_count(0);
                 self.selected_account = None;
                 self.start_account_load();
                 ModalOutcome::Continue
@@ -709,8 +712,7 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_accounts();
-                let cur = self.account_list_state.selected.unwrap_or(0);
-                if let Some(a) = visible.get(cur) {
+                if let Some(a) = selected_choice(&visible, self.account_list_state.selected) {
                     let a = (*a).clone();
                     let id = a.id.clone();
                     self.selected_account = Some(a);
@@ -735,7 +737,7 @@ impl OpPickerState {
                     .borrow_mut()
                     .invalidate_vaults(account_id.as_deref());
                 self.vaults.clear();
-                self.vault_list_state = ListState::default();
+                self.vault_list_state = list_state_for_count(0);
                 self.selected_vault = None;
                 self.start_vault_load(account_id);
                 ModalOutcome::Continue
@@ -748,7 +750,7 @@ impl OpPickerState {
                     self.filter_buf.clear();
                     self.selected_vault = None;
                     self.vaults.clear();
-                    self.vault_list_state = ListState::default();
+                    self.vault_list_state = list_state_for_count(0);
                     // Discard banners from the prior vault load so they
                     // don't bleed into the Account pane.
                     self.load_state = OpLoadState::Ready;
@@ -773,8 +775,7 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_vaults();
-                let cur = self.vault_list_state.selected.unwrap_or(0);
-                if let Some(v) = visible.get(cur) {
+                if let Some(v) = selected_choice(&visible, self.vault_list_state.selected) {
                     let v = (*v).clone();
                     let id = v.id.clone();
                     let account_id = self.selected_account_id();
@@ -805,7 +806,7 @@ impl OpPickerState {
                     .borrow_mut()
                     .invalidate_items(account_id.as_deref(), &vault_id);
                 self.items.clear();
-                self.item_list_state = ListState::default();
+                self.item_list_state = list_state_for_count(0);
                 self.start_item_load(vault_id, account_id);
                 ModalOutcome::Continue
             }
@@ -832,12 +833,11 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                let cur = self.item_list_state.selected.unwrap_or(0);
                 // `None` is the `+ New item` sentinel (Create mode only).
-                let picked: Option<Option<OpItem>> = self
-                    .filtered_item_choices()
-                    .get(cur)
-                    .map(|choice| choice.map(Clone::clone));
+                let visible = self.filtered_item_choices();
+                let picked: Option<Option<OpItem>> =
+                    selected_choice(&visible, self.item_list_state.selected)
+                        .map(|choice| choice.map(Clone::clone));
                 match picked {
                     Some(Some(item)) => {
                         let item_id = item.id.clone();
@@ -893,11 +893,12 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                let cur = self.section_list_state.selected.unwrap_or(0);
-                if cur == sentinel_idx {
+                if self.section_list_state.selected.unwrap_or(0) == sentinel_idx {
                     self.section_name_input = TextInputState::new("Section name", "");
                     self.stage = OpPickerStage::NewSectionName;
-                } else if let Some(choice) = choices.get(cur) {
+                } else if let Some(choice) =
+                    selected_choice(&choices, self.section_list_state.selected)
+                {
                     self.selected_section.clone_from(choice);
                     self.stage = OpPickerStage::Field;
                     self.filter_buf.clear();
@@ -919,7 +920,7 @@ impl OpPickerState {
             self.selected_section = None;
             // `section_choices()` + the `+ New section` sentinel always
             // yield at least two rows, so index 0 is always valid.
-            self.section_list_state.select(Some(0));
+            self.section_list_state = list_state_for_count(self.section_choices().len() + 1);
         } else {
             self.stage = OpPickerStage::Item;
             self.fields.clear();
@@ -948,7 +949,7 @@ impl OpPickerState {
                     &item_id,
                 );
                 self.fields.clear();
-                self.field_list_state = ListState::default();
+                self.field_list_state = list_state_for_count(0);
                 self.collapsed_sections.clear();
                 // In-place refresh: the operator is already on the Field
                 // stage with a chosen section. Flag the reload so the
