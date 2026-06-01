@@ -52,7 +52,9 @@ use crate::git_context::{
 };
 use crate::tui::effect::InitialFrameKind;
 use crate::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
-use crate::tui::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
+use crate::tui::layout::{Direction, Rect, SplitPosition, Tab};
+#[cfg(test)]
+use crate::tui::layout::SplitOrient;
 #[cfg(test)]
 use crate::mouse_protocol::mouse_event_allowed_for_mode;
 use crate::mouse_protocol::{
@@ -78,8 +80,11 @@ use crate::title::{
     append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
     session_agent_label,
 };
-use crate::tui::app::{DragState, HoverTarget, MuxMode, PointerShape, VisiblePane};
-use crate::tui::update::FullRedrawReason;
+use crate::tui::app::{
+    DragState, HoverTarget, MuxMode, MuxModeState, PointerShape, PointerShapeState, VisiblePane,
+    mux_mode_for_state, pointer_shape_for_state,
+};
+use crate::tui::update::{FullRedrawReason, drag_resize_ratio};
 
 mod compositor;
 mod context_mgmt;

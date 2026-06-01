@@ -20,17 +20,12 @@ impl Multiplexer {
     }
 
     pub(super) fn mux_mode(&self) -> MuxMode {
-        if self.dialog_open() {
-            MuxMode::Dialog
-        } else if self.drag.is_some() {
-            MuxMode::Drag
-        } else if self.selection.is_some() {
-            MuxMode::Select
-        } else if self.input_parser.is_awaiting_prefix() {
-            MuxMode::PrefixAwait
-        } else {
-            MuxMode::Normal
-        }
+        mux_mode_for_state(MuxModeState {
+            dialog_open: self.dialog_open(),
+            dragging: self.drag.is_some(),
+            selecting: self.selection.is_some(),
+            awaiting_prefix: self.input_parser.is_awaiting_prefix(),
+        })
     }
 
     pub(super) fn dialog_captures_input(&self) -> bool {

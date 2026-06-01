@@ -5,6 +5,7 @@
 //! invalidation causes, not PTY/session authority.
 
 use crate::tui::input::PrefixCommand;
+use crate::tui::layout::{Rect, SplitOrient};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FullRedrawReason {
@@ -65,5 +66,64 @@ pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason
         PrefixCommand::KillPane | PrefixCommand::KillTab => FullRedrawReason::SplitClose,
         PrefixCommand::ClearPane => FullRedrawReason::PaneClear,
         PrefixCommand::Detach | PrefixCommand::Redraw => FullRedrawReason::ExplicitRedraw,
+    }
+}
+
+pub(crate) fn drag_resize_ratio(orient: SplitOrient, rect: Rect, row: u16, col: u16) -> f32 {
+    match orient {
+        SplitOrient::Horizontal => {
+            let off = col.saturating_sub(rect.col);
+            (off as f32 / rect.cols as f32).clamp(0.05, 0.95)
+        }
+        SplitOrient::Vertical => {
+            let off = row.saturating_sub(rect.row);
+            (off as f32 / rect.rows as f32).clamp(0.05, 0.95)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{drag_resize_ratio, prefix_full_redraw_reason};
+    use crate::tui::input::{ArrowDir, PrefixCommand};
+    use crate::tui::layout::{Rect, SplitOrient};
+    use crate::tui::update::FullRedrawReason;
+
+    #[test]
+    fn prefix_commands_map_to_visible_redraw_reasons() {
+        assert_eq!(
+            prefix_full_redraw_reason(&PrefixCommand::NewTab),
+            FullRedrawReason::PaletteOverlay
+        );
+        assert_eq!(
+            prefix_full_redraw_reason(&PrefixCommand::MoveFocus(ArrowDir::Right)),
+            FullRedrawReason::FocusChange
+        );
+        assert_eq!(
+            prefix_full_redraw_reason(&PrefixCommand::Detach),
+            FullRedrawReason::ExplicitRedraw
+        );
+    }
+
+    #[test]
+    fn drag_resize_ratio_clamps_to_visible_resize_bounds() {
+        let rect = Rect::new(2, 4, 20, 100);
+        assert_eq!(
+            drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 0),
+            0.05
+        );
+        assert_eq!(
+            drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 200),
+            0.95
+        );
+        assert_eq!(
+            drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 54),
+            0.5
+        );
+
+        let rect = Rect::new(2, 4, 20, 100);
+        assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 0, 4), 0.05);
+        assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 40, 4), 0.95);
+        assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 12, 4), 0.5);
     }
 }

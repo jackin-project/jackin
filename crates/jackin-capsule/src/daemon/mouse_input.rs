@@ -88,30 +88,15 @@ impl Multiplexer {
     }
 
     pub(super) fn pointer_shape_at(&self, row: u16, col: u16, button: u8) -> PointerShape {
-        if self.drag.is_some() {
-            return PointerShape::Grabbing;
-        }
-        if self.selection.is_some() {
-            return PointerShape::Text;
-        }
-        match self.chrome_hit_target_at(row, col) {
-            Some(HoverTarget::DialogCopyTarget) => return PointerShape::Pointer,
-            // Non-clickable dialog interior still pins the pointer to the
-            // default cursor — the dialog "captures" pointer state.
-            None if self.dialog_top().is_some() => return PointerShape::Default,
-            Some(_) => return PointerShape::Pointer,
-            None => {}
-        }
-        if let Some(drag) = self.detect_drag_start(row, col) {
-            return match drag.orient {
-                SplitOrient::Horizontal => PointerShape::EwResize,
-                SplitOrient::Vertical => PointerShape::NsResize,
-            };
-        }
-        if button == SGR_NO_BUTTON_MOTION && self.detect_selection_start(row, col).is_some() {
-            return PointerShape::Text;
-        }
-        PointerShape::Default
+        pointer_shape_for_state(PointerShapeState {
+            dragging: self.drag.is_some(),
+            selecting: self.selection.is_some(),
+            chrome_target: self.chrome_hit_target_at(row, col),
+            dialog_open: self.dialog_top().is_some(),
+            drag_start_orient: self.detect_drag_start(row, col).map(|drag| drag.orient),
+            selection_start_available: self.detect_selection_start(row, col).is_some(),
+            no_button_motion: button == SGR_NO_BUTTON_MOTION,
+        })
     }
 
     /// Re-encode an SGR mouse event in the focused pane's local
@@ -253,16 +238,7 @@ impl Multiplexer {
 
     pub(super) fn drag_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
         let drag = self.drag.clone()?;
-        let new_ratio = match drag.orient {
-            SplitOrient::Horizontal => {
-                let off = col.saturating_sub(drag.rect.col);
-                (off as f32 / drag.rect.cols as f32).clamp(0.05, 0.95)
-            }
-            SplitOrient::Vertical => {
-                let off = row.saturating_sub(drag.rect.row);
-                (off as f32 / drag.rect.rows as f32).clamp(0.05, 0.95)
-            }
-        };
+        let new_ratio = drag_resize_ratio(drag.orient, drag.rect, row, col);
         let tab = self.tabs.get_mut(drag.tab_idx)?;
         if !tab.tree.set_ratio_at(&drag.path, new_ratio) {
             return None;
