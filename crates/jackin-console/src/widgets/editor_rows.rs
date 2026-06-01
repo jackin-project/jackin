@@ -9,7 +9,8 @@ use ratatui::{
 
 use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT};
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, op_breadcrumb::push_op_breadcrumb_spans};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
 pub enum SecretValueDisplay<'a> {
     Plain(&'a str),
