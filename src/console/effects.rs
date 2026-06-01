@@ -360,6 +360,16 @@ pub(crate) fn token_generate_label(req: &crate::console::tui::state::PendingToke
     }
 }
 
+pub(crate) fn take_pending_token_generate(
+    state: &mut ManagerState<'_>,
+) -> Option<crate::console::tui::state::PendingTokenGenerate> {
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => editor.pending_token_generate.take(),
+        ManagerStage::Settings(settings) => settings.pending_token_generate.take(),
+        _ => None,
+    }
+}
+
 pub(crate) fn execute_token_generate(
     paths: &crate::paths::JackinPaths,
     config: &AppConfig,

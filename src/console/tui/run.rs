@@ -83,8 +83,6 @@ pub async fn run_console<H: InstanceActionHandler>(
     use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
     use futures_util::{FutureExt as _, StreamExt as _};
 
-    use crate::console::tui::state::ManagerStage;
-
     let op_available = crate::console::effects::detect_op_available();
     let mut state =
         crate::console::tui::new_console_state_with_op_available(&config, cwd, op_available)?;
@@ -122,11 +120,7 @@ pub async fn run_console<H: InstanceActionHandler>(
         // borrow, `config`/`paths`/`terminal` all in scope) so a request set by
         // the previous iteration's input is handled before the next frame.
         let pending = if let ConsoleStage::Manager(ms) = &mut state.stage {
-            match &mut ms.stage {
-                ManagerStage::Editor(ed) => ed.pending_token_generate.take(),
-                ManagerStage::Settings(s) => s.pending_token_generate.take(),
-                _ => None,
-            }
+            crate::console::effects::take_pending_token_generate(ms)
         } else {
             None
         };
