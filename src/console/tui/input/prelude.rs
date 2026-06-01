@@ -11,7 +11,10 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
-use jackin_console::tui::components::workdir_pick::WorkdirPickState;
+use jackin_console::tui::screens::workspaces::view::{
+    create_prelude_mount_destination_input_state, create_prelude_mount_dst_choice_state,
+    create_prelude_workdir_pick_state, create_prelude_workspace_name_input_state,
+};
 
 pub(super) enum PreludeModalOutcome {
     Continue,
@@ -66,7 +69,7 @@ fn prelude_advance_to_workdir_pick(prelude: &mut crate::console::tui::state::Cre
         prelude.pending_readonly,
     );
     prelude.modal = Some(Modal::WorkdirPick {
-        state: WorkdirPickState::from_mounts(&[mount]),
+        state: create_prelude_workdir_pick_state(&[mount]),
     });
 }
 
@@ -76,7 +79,6 @@ pub(super) fn handle_prelude_modal(
     key: KeyEvent,
 ) -> PreludeModalOutcome {
     use crate::console::tui::state::{FileBrowserTarget, TextInputTarget};
-    use jackin_tui::components::TextInputState;
 
     // Determine which step we're on by inspecting the modal discriminant,
     // then dispatch. We do this with a discriminant enum so we can end the
@@ -175,7 +177,7 @@ pub(super) fn handle_prelude_modal(
                     prelude.used_edit_dst = true;
                     prelude.modal = Some(Modal::TextInput {
                         target: TextInputTarget::MountDst,
-                        state: TextInputState::new("Destination", default_dst),
+                        state: create_prelude_mount_destination_input_state(default_dst),
                     });
                 }
                 ModalOutcome::Cancel => {
@@ -222,7 +224,7 @@ pub(super) fn handle_prelude_modal(
                     let default_name = prelude.default_name().unwrap_or_default();
                     prelude.modal = Some(Modal::TextInput {
                         target: TextInputTarget::Name,
-                        state: TextInputState::new("Name this workspace", default_name),
+                        state: create_prelude_workspace_name_input_state(default_name),
                     });
                 }
                 ModalOutcome::Cancel => {
@@ -233,7 +235,7 @@ pub(super) fn handle_prelude_modal(
                         let current_dst = prelude.pending_mount_dst.clone().unwrap_or_default();
                         prelude.modal = Some(Modal::TextInput {
                             target: TextInputTarget::MountDst,
-                            state: TextInputState::new("Destination", current_dst),
+                            state: create_prelude_mount_destination_input_state(current_dst),
                         });
                     } else {
                         reopen_mount_dst_choice(prelude);
@@ -279,7 +281,7 @@ fn reopen_mount_dst_choice(prelude: &mut crate::console::tui::state::CreatePrelu
         .unwrap_or_default();
     prelude.modal = Some(Modal::MountDstChoice {
         target: FileBrowserTarget::CreateFirstMountSrc,
-        state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(src),
+        state: create_prelude_mount_dst_choice_state(src),
     });
 }
 
@@ -290,7 +292,11 @@ mod tests {
     //! `TextInputName`) and its step-back / Esc semantics.
     use crate::console::tui::state::{FileBrowserTarget, Modal};
     use super::super::test_support::key;
-    use super::{PreludeModalOutcome, handle_prelude_modal};
+    use super::{
+        PreludeModalOutcome, create_prelude_mount_dst_choice_state,
+        create_prelude_workdir_pick_state, create_prelude_workspace_name_input_state,
+        handle_prelude_modal,
+    };
     use crossterm::event::KeyCode;
 
     /// Seed a `CreatePreludeState` whose `MountDstChoice` modal is open
@@ -305,7 +311,7 @@ mod tests {
         prelude.accept_mount_src(std::path::PathBuf::from(src));
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(src),
+            state: create_prelude_mount_dst_choice_state(src),
         });
         prelude
     }
@@ -420,9 +426,7 @@ mod tests {
         prelude.last_browser_cwd = Some(home.clone());
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
-                home.display().to_string(),
-            ),
+            state: create_prelude_mount_dst_choice_state(home.display().to_string()),
         });
 
         handle_prelude_modal_with_effects(&mut prelude, key(KeyCode::Esc));
@@ -485,7 +489,7 @@ mod tests {
         prelude.used_edit_dst = true;
         prelude.accept_mount_dst("/home/user/project".into(), false);
         prelude.modal = Some(Modal::WorkdirPick {
-            state: jackin_console::tui::components::workdir_pick::WorkdirPickState::from_mounts(&[
+            state: create_prelude_workdir_pick_state(&[
                 crate::workspace::MountConfig {
                     src: "/home/user/project".into(),
                     dst: "/home/user/project".into(),
@@ -518,7 +522,7 @@ mod tests {
         prelude.accept_workdir("/home/user/project".into());
         prelude.modal = Some(Modal::TextInput {
             target: crate::console::tui::state::TextInputTarget::Name,
-            state: jackin_tui::components::TextInputState::new("Name this workspace", "project"),
+            state: create_prelude_workspace_name_input_state("project"),
         });
 
         handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
