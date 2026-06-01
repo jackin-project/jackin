@@ -682,7 +682,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 initial_frames.push((
                     InitialFrameKind::ClientOwnedModes,
                     encode_server(ServerFrame::Output(
-                        Session::client_owned_mode_state().to_vec(),
+                        crate::tui::terminal::client_owned_mode_state().to_vec(),
                     )),
                 ));
                 if let Some(focused) = mux.active_focused_id()

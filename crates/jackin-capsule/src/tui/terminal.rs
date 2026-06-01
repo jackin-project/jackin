@@ -2,7 +2,6 @@ use std::io::Write;
 
 use anyhow::{Context, Result};
 
-use crate::session::Session;
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 
 /// Terminal-reset escape bytes written when the attach client detaches, minus
@@ -29,6 +28,17 @@ fn outer_terminal_reset_sequence() -> Vec<u8> {
     seq
 }
 
+/// Outer-terminal modes owned by the attach client, not by the focused pane.
+/// Reassert after attach and focus swaps so a pane that requested legacy X10
+/// or press-only mouse tracking cannot downgrade the multiplexer's own input
+/// channel. Alternate-scroll (`?1007`) is disabled because some terminals
+/// translate wheel gestures in the alternate screen into cursor keys; jackin'
+/// needs the wheel to stay as mouse input so the daemon can decide whether
+/// scrollback, PTY mouse forwarding, or a no-op owns it.
+pub(crate) fn client_owned_mode_state() -> &'static [u8] {
+    b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
+}
+
 pub(crate) fn enter_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGuard> {
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
     let cleanup = RawModeGuard;
@@ -37,7 +47,7 @@ pub(crate) fn enter_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawM
     } else {
         stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H")?;
     }
-    stdout.write_all(Session::client_owned_mode_state())?;
+    stdout.write_all(client_owned_mode_state())?;
     stdout.flush()?;
     Ok(cleanup)
 }
@@ -77,6 +87,22 @@ impl Drop for RawModeGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_owned_mode_state_captures_mouse_focus_and_alternate_scroll() {
+        let state = client_owned_mode_state();
+        for needle in [
+            &b"\x1b[?1003h"[..],
+            &b"\x1b[?1006h"[..],
+            &b"\x1b[?1004h"[..],
+            &b"\x1b[?1007l"[..],
+        ] {
+            assert!(
+                state.windows(needle.len()).any(|w| w == needle),
+                "client_owned_mode_state missing {needle:?}; got {state:?}"
+            );
+        }
+    }
 
     #[test]
     fn outer_terminal_reset_disables_alternate_scroll() {

@@ -423,7 +423,7 @@ impl Multiplexer {
             if self.attached_out.is_some() {
                 let mut frames: Vec<Vec<u8>> = Vec::new();
                 frames.push(crate::session::Session::focus_swap_reset().to_vec());
-                frames.push(crate::session::Session::client_owned_mode_state().to_vec());
+                frames.push(crate::tui::terminal::client_owned_mode_state().to_vec());
                 for bytes in s.current_mode_state() {
                     frames.push(bytes);
                 }

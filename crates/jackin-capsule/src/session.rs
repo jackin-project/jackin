@@ -1612,18 +1612,6 @@ impl Session {
         out
     }
 
-    /// Outer-terminal modes owned by the attach client, not by the
-    /// focused pane. Reassert after attach and focus swaps so a pane
-    /// that requested legacy X10 or press-only mouse tracking cannot
-    /// downgrade the multiplexer's own input channel. Alternate-scroll
-    /// (`?1007`) is disabled because some terminals translate wheel
-    /// gestures in the alternate screen into cursor keys; jackin'
-    /// needs the wheel to stay as mouse input so the daemon can decide
-    /// whether scrollback, PTY mouse forwarding, or a no-op owns it.
-    pub fn client_owned_mode_state() -> &'static [u8] {
-        b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
-    }
-
     /// Outer-terminal reset sequence applied just before a focus
     /// swap restores the new pane's mode state. Disables every mode
     /// the previous pane's agent might have left on so the new pane
@@ -1871,22 +1859,6 @@ mod tests {
             assert!(
                 reset.windows(needle.len()).any(|w| w == needle),
                 "focus_swap_reset missing {needle:?}; got {reset:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn client_owned_mode_state_captures_mouse_focus_and_alternate_scroll() {
-        let state = Session::client_owned_mode_state();
-        for needle in [
-            &b"\x1b[?1003h"[..],
-            &b"\x1b[?1006h"[..],
-            &b"\x1b[?1004h"[..],
-            &b"\x1b[?1007l"[..],
-        ] {
-            assert!(
-                state.windows(needle.len()).any(|w| w == needle),
-                "client_owned_mode_state missing {needle:?}; got {state:?}"
             );
         }
     }
