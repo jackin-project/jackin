@@ -8,7 +8,6 @@ use tokio::signal::unix::{SignalKind, signal};
 use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
-use crate::session::SESSION_ENV_PASSTHROUGH;
 use crate::socket::SOCKET_PATH;
 use crate::tui::terminal::{enter_attach_terminal, terminal_size};
 
@@ -34,7 +33,7 @@ pub async fn run_client(
     let hello = encode_client(ClientFrame::Hello {
         rows,
         cols,
-        env: collect_session_env(spawn_request.is_some()),
+        env: crate::attach_context::collect_session_env(spawn_request.is_some()),
         spawn: spawn_request,
         terminal: ClientTerminal::from_env(),
         focus_session,
@@ -118,18 +117,4 @@ pub async fn run_client(
             }
         }
     }
-}
-
-fn collect_session_env(include: bool) -> Vec<(String, String)> {
-    if !include {
-        return Vec::new();
-    }
-    SESSION_ENV_PASSTHROUGH
-        .iter()
-        .filter_map(|&key| {
-            std::env::var(key)
-                .ok()
-                .map(|value| (key.to_string(), value))
-        })
-        .collect()
 }

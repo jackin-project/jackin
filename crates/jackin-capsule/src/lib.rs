@@ -2,6 +2,7 @@
 /// the protocol, prefix-key parser, VT round-trips, and status bar
 /// without spawning a PTY.
 pub mod attach_protocol;
+pub mod attach_context;
 pub mod client;
 pub mod config;
 pub mod container_context;
