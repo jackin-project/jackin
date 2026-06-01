@@ -476,7 +476,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
         }
         GlobalMountModal::MountDstChoice { state } => {
             let area = mount_choice_rect(frame.area());
-            jackin_console::widgets::mount_dst_choice::render(frame, area, state);
+            jackin_console::tui::components::mount_dst_choice::render(frame, area, state);
         }
         GlobalMountModal::ScopePicker { state } => {
             let area = scope_picker_rect(frame.area());

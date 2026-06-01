@@ -127,7 +127,7 @@ mod consistency_tests {
     }
 
     fn render_mount_dst() -> (Buffer, Rect) {
-        use jackin_console::widgets::mount_dst_choice::{MountDstChoiceState, render};
+        use jackin_console::tui::components::mount_dst_choice::{MountDstChoiceState, render};
         let area = Rect::new(0, 0, 80, 8);
         let state = MountDstChoiceState::new("/home/user/app");
         let buf = draw(area.width, area.height, |f| render(f, area, &state));

@@ -125,7 +125,7 @@ pub(super) fn handle_prelude_modal(
                         .unwrap_or_default();
                     prelude.modal = Some(Modal::MountDstChoice {
                         target: FileBrowserTarget::CreateFirstMountSrc,
-                        state: jackin_console::widgets::mount_dst_choice::MountDstChoiceState::new(
+                        state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
                             src,
                         ),
                     });
@@ -141,7 +141,7 @@ pub(super) fn handle_prelude_modal(
             }
         }
         PreludeModalDis::MountDstChoice => {
-            use jackin_console::widgets::mount_dst_choice::MountDstChoice;
+            use jackin_console::tui::components::mount_dst_choice::MountDstChoice;
             let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
@@ -287,7 +287,7 @@ fn reopen_mount_dst_choice(prelude: &mut super::super::state::CreatePreludeState
         .unwrap_or_default();
     prelude.modal = Some(Modal::MountDstChoice {
         target: FileBrowserTarget::CreateFirstMountSrc,
-        state: jackin_console::widgets::mount_dst_choice::MountDstChoiceState::new(src),
+        state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(src),
     });
 }
 
@@ -313,7 +313,7 @@ mod tests {
         prelude.accept_mount_src(std::path::PathBuf::from(src));
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: jackin_console::widgets::mount_dst_choice::MountDstChoiceState::new(src),
+            state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(src),
         });
         prelude
     }
@@ -406,7 +406,7 @@ mod tests {
         prelude.last_browser_cwd = Some(home.clone());
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: jackin_console::widgets::mount_dst_choice::MountDstChoiceState::new(
+            state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
                 home.display().to_string(),
             ),
         });
