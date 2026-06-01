@@ -2,7 +2,9 @@
 
 use super::model::{EditorTab, SecretsScopeTag};
 use crate::mount_display::{MountDisplayRow, mount_path_width};
-use crate::tui::components::editor_rows::action_row_style;
+use crate::tui::components::editor_rows::{
+    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+};
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
 };
@@ -247,6 +249,89 @@ pub fn role_lines(
     lines
 }
 
+#[must_use]
+pub fn secret_lines<'a>(
+    rows: &[super::model::SecretsRow],
+    cursor: usize,
+    show_cursor: bool,
+    area_width: u16,
+    value_for: impl Fn(&SecretsScopeTag, &str) -> Option<SecretValueDisplay<'a>>,
+    is_unmasked: impl Fn(&SecretsScopeTag, &str) -> bool,
+    role_in_registry: impl Fn(&str) -> bool,
+    role_var_count: impl Fn(&str) -> usize,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::with_capacity(rows.len());
+    let label_width = 22;
+
+    for (i, row) in rows.iter().enumerate() {
+        let selected = show_cursor && (i == cursor);
+        let cursor_col = if selected { "\u{25b8} " } else { "  " };
+        match row {
+            super::model::SecretsRow::WorkspaceKeyRow(key) => {
+                let scope = SecretsScopeTag::Workspace;
+                let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
+                lines.push(render_secret_key_line(
+                    selected,
+                    cursor_col,
+                    key,
+                    value,
+                    !is_unmasked(&scope, key),
+                    area_width,
+                    label_width,
+                ));
+            }
+            super::model::SecretsRow::WorkspaceAddSentinel => {
+                lines.push(Line::from(Span::styled(
+                    format!("{cursor_col}+ Add environment variable"),
+                    action_row_style(selected),
+                )));
+            }
+            super::model::SecretsRow::RoleHeader { role, expanded } => {
+                let arrow = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
+                let mut spans = vec![
+                    Span::raw(format!("{cursor_col}     ")),
+                    Span::styled(arrow, disclosure_style()),
+                    Span::styled(
+                        format!(" Role: {role}  ({} vars)", role_var_count(role)),
+                        disclosure_style(),
+                    ),
+                ];
+                if !role_in_registry(role) {
+                    spans.push(Span::styled(
+                        "  (not in registry)",
+                        Style::default()
+                            .fg(jackin_tui::theme::PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    ));
+                }
+                lines.push(Line::from(spans));
+            }
+            super::model::SecretsRow::RoleKeyRow { role, key } => {
+                let scope = SecretsScopeTag::Role(role.clone());
+                let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
+                lines.push(render_secret_key_line(
+                    selected,
+                    cursor_col,
+                    key,
+                    value,
+                    !is_unmasked(&scope, key),
+                    area_width,
+                    label_width,
+                ));
+            }
+            super::model::SecretsRow::RoleAddSentinel(role) => {
+                lines.push(Line::from(Span::styled(
+                    format!("{cursor_col}     + Add {role} environment variable"),
+                    action_row_style(selected),
+                )));
+            }
+            super::model::SecretsRow::SectionSpacer => lines.push(Line::from("")),
+        }
+    }
+
+    lines
+}
+
 fn render_editor_row(
     row: usize,
     cursor: usize,
@@ -371,5 +456,45 @@ mod tests {
         assert_eq!(lines[2].spans[0].content.as_ref(), "  [x]   alpha");
         assert_eq!(lines[3].spans[0].content.as_ref(), "  [ ] \u{2605} beta");
         assert_eq!(lines[5].spans[0].content.as_ref(), "\u{25b8} + Load role");
+    }
+
+    #[test]
+    fn secret_lines_render_workspace_and_role_rows() {
+        let rows = vec![
+            super::super::model::SecretsRow::WorkspaceKeyRow("TOKEN".to_string()),
+            super::super::model::SecretsRow::WorkspaceAddSentinel,
+            super::super::model::SecretsRow::RoleHeader {
+                role: "alpha".to_string(),
+                expanded: true,
+            },
+            super::super::model::SecretsRow::RoleKeyRow {
+                role: "alpha".to_string(),
+                key: "ROLE_TOKEN".to_string(),
+            },
+            super::super::model::SecretsRow::RoleAddSentinel("alpha".to_string()),
+        ];
+
+        let lines = secret_lines(
+            &rows,
+            3,
+            true,
+            80,
+            |scope, key| match (scope, key) {
+                (SecretsScopeTag::Workspace, "TOKEN") => Some(SecretValueDisplay::Plain("secret")),
+                (SecretsScopeTag::Role(role), "ROLE_TOKEN") if role == "alpha" => {
+                    Some(SecretValueDisplay::OpRefPath("op://Vault/Item/field"))
+                }
+                _ => None,
+            },
+            |scope, key| matches!((scope, key), (SecretsScopeTag::Workspace, "TOKEN")),
+            |_| true,
+            |_| 1,
+        );
+
+        assert_eq!(lines[0].spans[2].content.as_ref(), "TOKEN                 ");
+        assert_eq!(lines[1].spans[0].content.as_ref(), "  + Add environment variable");
+        assert_eq!(lines[2].spans[2].content.as_ref(), " Role: alpha  (1 vars)");
+        assert_eq!(lines[3].spans[0].content.as_ref(), "\u{25b8} ");
+        assert_eq!(lines[4].spans[0].content.as_ref(), "       + Add alpha environment variable");
     }
 }

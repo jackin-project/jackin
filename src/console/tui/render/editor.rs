@@ -22,12 +22,11 @@ pub(crate) use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
-    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
-    render_tab_strip,
+    SecretValueDisplay, action_row_style, disclosure_style, render_tab_strip,
 };
 use jackin_console::tui::screens::editor::view::{
     EditorRoleRow, general_lines as editor_general_lines, mount_lines as editor_mount_lines,
-    role_lines as editor_role_lines, tab_labels,
+    role_lines as editor_role_lines, secret_lines as editor_secret_lines, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{
@@ -224,90 +223,24 @@ fn secrets_tab_lines(
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     let rows = secrets_flat_rows(state);
-    let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
-
-    // Match General tab's label column for visual rhythm parity.
-    let label_width: usize = 22;
-
-    for (i, row) in rows.iter().enumerate() {
-        let selected = show_cursor && (i == cursor);
-        // 7-char prefix: 2-char cursor col + 5-char op-marker col.
-        // The marker col is blank on non-op rows so [op] keys line up.
-        let cursor_col = if selected { "▸ " } else { "  " };
-        match row {
-            SecretsRow::WorkspaceKeyRow(key) => {
-                let default_value = EnvValue::Plain(String::new());
-                let value = state.pending.env.get(key).unwrap_or(&default_value);
-                let masked = !state
-                    .unmasked_rows
-                    .contains(&(SecretsScopeTag::Workspace, key.clone()));
-                lines.push(render_secret_key_line(
-                    selected,
-                    cursor_col,
-                    key,
-                    secret_value_display(value),
-                    masked,
-                    area.width,
-                    label_width,
-                ));
-            }
-            SecretsRow::WorkspaceAddSentinel => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}+ Add environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SecretsRow::RoleHeader { role, expanded } => {
-                let arrow = if *expanded { "▼" } else { "▶" };
-                let in_registry = config.roles.contains_key(role);
-                let count = state.pending.roles.get(role).map_or(0, |o| o.env.len());
-                let mut spans = vec![
-                    Span::raw(format!("{cursor_col}     ")),
-                    Span::styled(arrow, disclosure_style()),
-                    Span::styled(format!(" Role: {role}  ({count} vars)"), disclosure_style()),
-                ];
-                if !in_registry {
-                    spans.push(Span::styled(
-                        "  (not in registry)",
-                        Style::default()
-                            .fg(PHOSPHOR_DIM)
-                            .add_modifier(Modifier::ITALIC),
-                    ));
-                }
-                lines.push(Line::from(spans));
-            }
-            SecretsRow::RoleKeyRow { role, key } => {
-                let empty =
-                    std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-                let pend_env = state.pending.roles.get(role).map_or(&empty, |o| &o.env);
-                let default_value = EnvValue::Plain(String::new());
-                let value = pend_env.get(key).unwrap_or(&default_value);
-                let masked = !state
-                    .unmasked_rows
-                    .contains(&(SecretsScopeTag::Role(role.clone()), key.clone()));
-                lines.push(render_secret_key_line(
-                    selected,
-                    cursor_col,
-                    key,
-                    secret_value_display(value),
-                    masked,
-                    area.width,
-                    label_width,
-                ));
-            }
-            SecretsRow::RoleAddSentinel(role) => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}     + Add {role} environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SecretsRow::SectionSpacer => {
-                lines.push(Line::from(""));
-            }
-        }
-    }
-
-    lines
+    editor_secret_lines(
+        &rows,
+        cursor,
+        show_cursor,
+        area.width,
+        |scope, key| match scope {
+            SecretsScopeTag::Workspace => state.pending.env.get(key).map(secret_value_display),
+            SecretsScopeTag::Role(role) => state
+                .pending
+                .roles
+                .get(role)
+                .and_then(|role_override| role_override.env.get(key))
+                .map(secret_value_display),
+        },
+        |scope, key| state.unmasked_rows.contains(&(scope.clone(), key.to_string())),
+        |role| config.roles.contains_key(role),
+        |role| state.pending.roles.get(role).map_or(0, |o| o.env.len()),
+    )
 }
 
 fn secret_value_display(value: &EnvValue) -> SecretValueDisplay<'_> {
