@@ -221,7 +221,14 @@ pub fn handle_key(
         && settings.mounts.modal.is_some()
     {
         let mut open_url = None;
-        global_mounts::handle_settings_confirm_modal(settings, config, paths, key, &mut open_url);
+        let modal_outcome =
+            global_mounts::handle_settings_confirm_modal(settings, key, &mut open_url);
+        if matches!(
+            modal_outcome,
+            global_mounts::SettingsModalOutcome::SaveSettings
+        ) {
+            execute_manager_effect(state, config, paths, ManagerEffect::SaveSettings);
+        }
         global_mounts::after_settings_event(state);
         if let Some(url) = open_url {
             return Ok(InputOutcome::OpenUrl(url));

@@ -8,4 +8,5 @@
 pub enum ConsoleEffect {
     RequestActiveMountInfoRefresh,
     RequestInstanceRefresh,
+    SaveSettings,
 }

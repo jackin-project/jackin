@@ -8,10 +8,8 @@ use super::super::state::{
     SettingsEnvModal, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsState,
     SettingsTab,
 };
-use crate::config::AppConfig;
 use jackin_tui::ModalOutcome;
 use crate::console::widgets::auth_panel::{AuthForm, CredentialInput};
-use crate::paths::JackinPaths;
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
@@ -29,6 +27,12 @@ fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
 const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SettingsModalOutcome {
+    Continue,
+    SaveSettings,
+}
 
 #[cfg(test)]
 pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
@@ -1141,14 +1145,13 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_settings_confirm_modal(
     settings: &mut super::super::state::SettingsState<'_>,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
     key: KeyEvent,
     open_url: &mut Option<String>,
-) {
+) -> SettingsModalOutcome {
     let Some(modal) = settings.mounts.modal.take() else {
-        return;
+        return SettingsModalOutcome::Continue;
     };
+    let mut outcome = SettingsModalOutcome::Continue;
     match modal {
         GlobalMountModal::Text { target, mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(value) => {
@@ -1278,7 +1281,9 @@ pub(super) fn handle_settings_confirm_modal(
             }
         },
         GlobalMountModal::Confirm { action, mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(true) => commit_settings_confirm(settings, action, config, paths),
+            ModalOutcome::Commit(true) => {
+                outcome = commit_settings_confirm(settings, action);
+            }
             ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
                 if matches!(action, GlobalMountConfirm::Sensitive) {
                     settings.mounts.error =
@@ -1291,13 +1296,16 @@ pub(super) fn handle_settings_confirm_modal(
             }
         },
         GlobalMountModal::PreviewSave { mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(_) => commit_settings_save(settings, config, paths),
+            ModalOutcome::Commit(_) => {
+                outcome = request_settings_save(settings);
+            }
             ModalOutcome::Cancel => settings.mounts.clear_modal_chain(),
             ModalOutcome::Continue => {
                 settings.mounts.modal = Some(GlobalMountModal::PreviewSave { state });
             }
         },
     }
+    outcome
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1488,9 +1496,7 @@ pub(super) fn handle_settings_env_modal(
 fn commit_settings_confirm(
     settings: &mut super::super::state::SettingsState<'_>,
     action: GlobalMountConfirm,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-) {
+) -> SettingsModalOutcome {
     match action {
         GlobalMountConfirm::Remove => {
             let global = &mut settings.mounts;
@@ -1498,46 +1504,26 @@ fn commit_settings_confirm(
                 global.pending.remove(global.selected);
                 global.selected = global.selected.min(global.pending.len());
             }
+            SettingsModalOutcome::Continue
         }
-        GlobalMountConfirm::Save => commit_settings_save(settings, config, paths),
+        GlobalMountConfirm::Save => request_settings_save(settings),
         GlobalMountConfirm::Sensitive => {
             open_settings_save_preview(settings);
+            SettingsModalOutcome::Continue
         }
         GlobalMountConfirm::Discard => {
             settings.discard();
             settings.mounts.exit_requested = true;
+            SettingsModalOutcome::Continue
         }
     }
 }
 
-fn commit_settings_save(
+fn request_settings_save(
     settings: &mut super::super::state::SettingsState<'_>,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-) {
+) -> SettingsModalOutcome {
     settings.remove_zai_key_when_auth_ignored();
-    match crate::console::services::config::save_settings(
-        paths,
-        crate::console::services::config::SettingsSaveInput {
-            mounts_original: &settings.mounts.original,
-            mounts_pending: &settings.mounts.pending,
-            env_original: &settings.env.original,
-            env_pending: &settings.env.pending,
-            auth_pending: &settings.auth.pending,
-            original_github_env: &settings.auth.original_github_env,
-            github_env: &settings.auth.github_env,
-            trust_pending: &settings.trust.pending,
-            git_coauthor_trailer: settings.general.pending_coauthor_trailer,
-            git_dco: settings.general.pending_dco,
-        },
-    ) {
-        Ok(saved) => {
-            *config = saved;
-            settings.mark_saved();
-            settings.mounts.exit_requested = true;
-        }
-        Err(err) => settings.mounts.error = Some(err.to_string()),
-    }
+    SettingsModalOutcome::SaveSettings
 }
 
 fn open_settings_save_preview(settings: &mut super::super::state::SettingsState<'_>) {
@@ -2182,17 +2168,42 @@ mod tests {
     };
     use super::super::test_support::key;
     use super::*;
-    use crate::config::RoleSource;
+    use crate::config::{AppConfig, RoleSource};
+    use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
 
     fn confirm_modal(
         settings: &mut SettingsState<'_>,
-        config: &mut AppConfig,
-        paths: &JackinPaths,
+        config: &mut crate::config::AppConfig,
+        paths: &crate::paths::JackinPaths,
         key: KeyEvent,
     ) {
         let mut open_url = None;
-        handle_settings_confirm_modal(settings, config, paths, key, &mut open_url);
+        let outcome = handle_settings_confirm_modal(settings, key, &mut open_url);
+        if matches!(outcome, SettingsModalOutcome::SaveSettings) {
+            match crate::console::services::config::save_settings(
+                paths,
+                crate::console::services::config::SettingsSaveInput {
+                    mounts_original: &settings.mounts.original,
+                    mounts_pending: &settings.mounts.pending,
+                    env_original: &settings.env.original,
+                    env_pending: &settings.env.pending,
+                    auth_pending: &settings.auth.pending,
+                    original_github_env: &settings.auth.original_github_env,
+                    github_env: &settings.auth.github_env,
+                    trust_pending: &settings.trust.pending,
+                    git_coauthor_trailer: settings.general.pending_coauthor_trailer,
+                    git_dco: settings.general.pending_dco,
+                },
+            ) {
+                Ok(saved) => {
+                    *config = saved;
+                    settings.mark_saved();
+                    settings.mounts.exit_requested = true;
+                }
+                Err(err) => settings.mounts.error = Some(err.to_string()),
+            }
+        }
         assert!(open_url.is_none(), "test helper did not expect URL-open");
     }
 
