@@ -14,7 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use crate::console::tui::components::op_picker::OpPickerState;
-use super::super::auth_kind::{
+use crate::console::tui::auth_kind::{
     AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,
     auth_mode_to_auth_forward, auth_mode_to_github, role_override_present,
 };
@@ -1111,7 +1111,7 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
 mod tests {
     use super::*;
     use crate::config::{AppConfig, AuthForwardMode, GithubAuthMode};
-    use crate::console::manager::auth_kind::AuthKind;
+    use crate::console::tui::auth_kind::AuthKind;
     use crate::console::manager::state::AuthRow;
     use crate::console::manager::state::auth_flat_rows;
     use crate::console::manager::state::{

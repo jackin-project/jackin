@@ -4,7 +4,7 @@
 //! Input handlers should increasingly translate terminal events into these
 //! messages instead of mutating `ManagerState` inline.
 
-use super::auth_kind::AuthKind;
+use crate::console::tui::auth_kind::AuthKind;
 pub(crate) use super::effects::ManagerBackgroundEvent;
 use super::effects::{ManagerEffect, poll_file_browser_git_urls, poll_picker_loads};
 use super::state::{

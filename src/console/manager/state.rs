@@ -8,7 +8,7 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::manager::auth_kind::{
+use crate::console::tui::auth_kind::{
     AuthKind, AuthMode, auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github,
     role_override_present,
 };
@@ -313,12 +313,12 @@ pub type PendingSaveCommit =
 pub type EditorSaveFlow =
     jackin_console::tui::screens::editor::model::EditorSaveFlow<PendingSaveCommit>;
 pub type AuthFormTarget = jackin_console::tui::screens::settings::model::AuthFormTarget<
-    crate::console::manager::auth_kind::AuthKind,
+    crate::console::tui::auth_kind::AuthKind,
 >;
-pub type AuthRow = GenericAuthRow<crate::console::manager::auth_kind::AuthKind>;
+pub type AuthRow = GenericAuthRow<crate::console::tui::auth_kind::AuthKind>;
 pub type SettingsAuthRow = jackin_console::tui::screens::settings::model::SettingsAuthRow<
-    crate::console::manager::auth_kind::AuthKind,
-    crate::console::manager::auth_kind::AuthMode,
+    crate::console::tui::auth_kind::AuthKind,
+    crate::console::tui::auth_kind::AuthMode,
 >;
 pub type ConfirmTarget = jackin_console::tui::screens::editor::model::ConfirmTarget<
     crate::config::RoleSource,
@@ -518,7 +518,7 @@ pub enum SettingsEnvModal<'a> {
 #[derive(Debug)]
 pub struct SettingsAuthState {
     pub selected: usize,
-    pub selected_kind: Option<crate::console::manager::auth_kind::AuthKind>,
+    pub selected_kind: Option<crate::console::tui::auth_kind::AuthKind>,
     pub pending: Vec<SettingsAuthRow>,
     pub original: Vec<SettingsAuthRow>,
     pub github_env: BTreeMap<String, crate::operator_env::EnvValue>,
@@ -653,7 +653,7 @@ pub struct EditorState<'a> {
     ///
     /// Widened from `Agent` to [`AuthKind`] so `Github` can sit on
     /// the panel without forcing a runtime `Agent::Github` variant.
-    pub auth_selected_kind: Option<crate::console::manager::auth_kind::AuthKind>,
+    pub auth_selected_kind: Option<crate::console::tui::auth_kind::AuthKind>,
     /// Stashed by `P` on a Secrets row so `OpPicker` knows where to
     /// write its `op://` path. `Some((scope, Some(key)))` replaces a
     /// row's value; `Some((scope, None))` opens the `EnvKey` modal
@@ -964,8 +964,8 @@ impl SettingsState<'_> {
 
     pub fn remove_zai_key_when_auth_ignored(&mut self) {
         for row in &self.auth.pending {
-            if row.kind == crate::console::manager::auth_kind::AuthKind::Zai
-                && row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
+            if row.kind == crate::console::tui::auth_kind::AuthKind::Zai
+                && row.mode == crate::console::tui::auth_kind::AuthMode::Ignore
             {
                 self.env.pending.env.remove("ZAI_API_KEY");
             }
@@ -1085,42 +1085,42 @@ impl<'a> SettingsEnvState<'a> {
 impl SettingsAuthState {
     pub fn from_config(config: &AppConfig) -> Self {
         let pending = [
-            crate::console::manager::auth_kind::AuthKind::Claude,
-            crate::console::manager::auth_kind::AuthKind::Codex,
-            crate::console::manager::auth_kind::AuthKind::Amp,
-            crate::console::manager::auth_kind::AuthKind::Kimi,
-            crate::console::manager::auth_kind::AuthKind::Opencode,
-            crate::console::manager::auth_kind::AuthKind::Github,
-            crate::console::manager::auth_kind::AuthKind::Zai,
+            crate::console::tui::auth_kind::AuthKind::Claude,
+            crate::console::tui::auth_kind::AuthKind::Codex,
+            crate::console::tui::auth_kind::AuthKind::Amp,
+            crate::console::tui::auth_kind::AuthKind::Kimi,
+            crate::console::tui::auth_kind::AuthKind::Opencode,
+            crate::console::tui::auth_kind::AuthKind::Github,
+            crate::console::tui::auth_kind::AuthKind::Zai,
         ]
         .into_iter()
         .map(|kind| SettingsAuthRow {
             kind,
             mode: match kind {
-                crate::console::manager::auth_kind::AuthKind::Claude
-                | crate::console::manager::auth_kind::AuthKind::Codex
-                | crate::console::manager::auth_kind::AuthKind::Amp
-                | crate::console::manager::auth_kind::AuthKind::Kimi
-                | crate::console::manager::auth_kind::AuthKind::Opencode => {
+                crate::console::tui::auth_kind::AuthKind::Claude
+                | crate::console::tui::auth_kind::AuthKind::Codex
+                | crate::console::tui::auth_kind::AuthKind::Amp
+                | crate::console::tui::auth_kind::AuthKind::Kimi
+                | crate::console::tui::auth_kind::AuthKind::Opencode => {
                     auth_kind_agent(kind).map_or(
-                        crate::console::manager::auth_kind::AuthMode::Sync,
+                        crate::console::tui::auth_kind::AuthMode::Sync,
                         |agent| {
-                        crate::console::manager::auth_kind::auth_mode_from_auth_forward(
+                        crate::console::tui::auth_kind::auth_mode_from_auth_forward(
                             crate::config::resolve_mode(config, agent, "", ""),
                         )
                         },
                     )
                 }
-                crate::console::manager::auth_kind::AuthKind::Github => {
-                    crate::console::manager::auth_kind::auth_mode_from_github(
+                crate::console::tui::auth_kind::AuthKind::Github => {
+                    crate::console::tui::auth_kind::auth_mode_from_github(
                         crate::config::resolve_github_mode(config, "", ""),
                     )
                 }
-                crate::console::manager::auth_kind::AuthKind::Zai => {
+                crate::console::tui::auth_kind::AuthKind::Zai => {
                     if config.env.contains_key("ZAI_API_KEY") {
-                        crate::console::manager::auth_kind::AuthMode::ApiKey
+                        crate::console::tui::auth_kind::AuthMode::ApiKey
                     } else {
-                        crate::console::manager::auth_kind::AuthMode::Ignore
+                        crate::console::tui::auth_kind::AuthMode::Ignore
                     }
                 }
             },
@@ -3200,9 +3200,9 @@ ZAI_API_KEY = "secret"
             .auth
             .pending
             .iter_mut()
-            .find(|row| row.kind == crate::console::manager::auth_kind::AuthKind::Zai)
+            .find(|row| row.kind == crate::console::tui::auth_kind::AuthKind::Zai)
             .expect("settings auth rows include Z.AI");
-        row.mode = crate::console::manager::auth_kind::AuthMode::Ignore;
+        row.mode = crate::console::tui::auth_kind::AuthMode::Ignore;
 
         state.remove_zai_key_when_auth_ignored();
         let saved = crate::console::services::config::save_settings(

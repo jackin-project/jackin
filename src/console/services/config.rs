@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
-use crate::console::manager::auth_kind::{
+use crate::console::tui::auth_kind::{
     AuthKind, auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
 };
 use crate::console::manager::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};

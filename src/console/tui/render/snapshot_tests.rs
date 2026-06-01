@@ -197,7 +197,7 @@ readonly = false
     }
 
     fn auth_form_modal() -> Modal<'static> {
-        let kind = crate::console::manager::auth_kind::AuthKind::Claude;
+        let kind = crate::console::tui::auth_kind::AuthKind::Claude;
         Modal::AuthForm {
             target: crate::console::manager::state::AuthFormTarget::Workspace { kind },
             state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(kind)),
@@ -857,7 +857,7 @@ readonly = false
             ),
         ));
 
-        let kind = crate::console::manager::auth_kind::AuthKind::Claude;
+        let kind = crate::console::tui::auth_kind::AuthKind::Claude;
         cases.push((
             "settings auth form",
             settings_auth_with_modal(

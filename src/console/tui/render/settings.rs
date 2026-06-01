@@ -13,7 +13,7 @@ use ratatui::{
 use std::collections::BTreeMap;
 
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use crate::console::manager::auth_kind::AuthKind;
+use crate::console::tui::auth_kind::AuthKind;
 use crate::console::tui::render::modal_layout::{
     auth_form_rect, confirm_rect, mount_choice_rect, op_picker_rect, role_picker_rect,
     scope_picker_rect, source_picker_rect, text_input_rect,
