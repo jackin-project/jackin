@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::state::ManagerListRow;
+use super::model::ManagerListRow;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WorkspaceRowLayout<'a> {

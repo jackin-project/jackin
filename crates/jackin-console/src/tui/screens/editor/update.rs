@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::state::{AuthRow, EditorTab, SecretsRow, SecretsScopeTag};
+use super::model::{AuthRow, EditorTab, SecretsRow, SecretsScopeTag};
 
 #[must_use]
 pub const fn previous_editor_tab(tab: EditorTab) -> EditorTab {

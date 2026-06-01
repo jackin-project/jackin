@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::state::{
+use super::model::{
     SettingsEnvConfig, SettingsEnvRow, SettingsEnvScope, SettingsGeneralState, SettingsTab,
     SettingsTrustState,
 };

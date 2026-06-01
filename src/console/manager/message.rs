@@ -19,7 +19,7 @@ use jackin_console::tui::screens::editor::update::{
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
-use jackin_console::tui::screens::settings::state::SettingsEnvRow;
+use jackin_console::tui::screens::settings::model::SettingsEnvRow;
 use jackin_console::tui::screens::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
     set_role_expanded as set_settings_role_expanded, settings_env_flat_rows, step_cursor_down_by,

@@ -2,7 +2,7 @@
 
 use jackin_tui::HintSpan;
 
-use crate::tui::screens::settings::state::AuthFormFocus;
+use crate::tui::screens::settings::model::AuthFormFocus;
 
 #[must_use]
 pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {

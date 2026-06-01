@@ -29,7 +29,7 @@ use jackin_tui::runtime::{
 
 pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
-pub use jackin_console::tui::screens::workspaces::state::{ManagerListRow, WorkspaceSummary};
+pub use jackin_console::tui::screens::workspaces::model::{ManagerListRow, WorkspaceSummary};
 
 fn workspace_summary_from_config(
     name: &str,
@@ -38,7 +38,7 @@ fn workspace_summary_from_config(
     WorkspaceSummary::from_source(name, ws)
 }
 
-impl jackin_console::tui::screens::workspaces::state::WorkspaceSummarySource
+impl jackin_console::tui::screens::workspaces::model::WorkspaceSummarySource
     for crate::workspace::WorkspaceConfig
 {
     fn workdir(&self) -> &str {
@@ -299,11 +299,11 @@ pub struct SettingsState<'a> {
     pub cached_footer_h: u16,
 }
 
-pub use jackin_console::tui::screens::editor::state::{
+pub use jackin_console::tui::screens::editor::model::{
     AuthRow as GenericAuthRow, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus,
     FileBrowserTarget, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
-pub use jackin_console::tui::screens::settings::state::{
+pub use jackin_console::tui::screens::settings::model::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
     SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
     SettingsTrustRow, SettingsTrustState,
@@ -313,20 +313,20 @@ pub use jackin_console::tui::screens::settings::update::{
 };
 
 pub type SettingsEnvConfig =
-    jackin_console::tui::screens::settings::state::SettingsEnvConfig<crate::operator_env::EnvValue>;
+    jackin_console::tui::screens::settings::model::SettingsEnvConfig<crate::operator_env::EnvValue>;
 pub type PendingSaveCommit =
-    jackin_console::tui::screens::editor::state::PendingSaveCommit<crate::workspace::MountConfig>;
+    jackin_console::tui::screens::editor::model::PendingSaveCommit<crate::workspace::MountConfig>;
 pub type EditorSaveFlow =
-    jackin_console::tui::screens::editor::state::EditorSaveFlow<PendingSaveCommit>;
-pub type AuthFormTarget = jackin_console::tui::screens::settings::state::AuthFormTarget<
+    jackin_console::tui::screens::editor::model::EditorSaveFlow<PendingSaveCommit>;
+pub type AuthFormTarget = jackin_console::tui::screens::settings::model::AuthFormTarget<
     crate::console::manager::auth_kind::AuthKind,
 >;
 pub type AuthRow = GenericAuthRow<crate::console::manager::auth_kind::AuthKind>;
-pub type SettingsAuthRow = jackin_console::tui::screens::settings::state::SettingsAuthRow<
+pub type SettingsAuthRow = jackin_console::tui::screens::settings::model::SettingsAuthRow<
     crate::console::manager::auth_kind::AuthKind,
     crate::console::manager::auth_kind::AuthMode,
 >;
-pub type ConfirmTarget = jackin_console::tui::screens::editor::state::ConfirmTarget<
+pub type ConfirmTarget = jackin_console::tui::screens::editor::model::ConfirmTarget<
     crate::config::RoleSource,
     PendingSaveCommit,
 >;
