@@ -7,6 +7,10 @@
 use crate::tui::input::PrefixCommand;
 use crate::tui::layout::{Rect, SplitOrient};
 
+/// Duration for transient "copied" feedback in TUI dialogs.
+pub(crate) const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration =
+    std::time::Duration::from_secs(2);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FullRedrawReason {
     FirstAttach,

@@ -4,6 +4,7 @@ use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, branch_context_bar_hit,
 };
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
+use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
 

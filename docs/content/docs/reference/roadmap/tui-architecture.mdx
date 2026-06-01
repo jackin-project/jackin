@@ -294,6 +294,8 @@ Capsule visible multiplexer mode vocabulary (`Normal`, prefix-await, dialog, dra
 
 Capsule mux-mode priority, chrome-hover priority, pointer-shape priority, cursor-visibility priority, and drag-resize ratio math now live under <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. Daemon mouse/dialog code supplies the current protocol/session facts and applies the resulting action, but no longer owns those visible-state decisions.
 
+Capsule dialog copy-feedback timeout now lives with visible redraw/update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon still owns the timer deadline and clears dialog feedback when it expires, but the UI-visible duration is no longer daemon-owned.
+
 Capsule split-spawn pane sizing now lives with visible pane geometry in <RepoFile path="crates/jackin-capsule/src/tui/layout.rs" />. The daemon still owns capacity checks, PTY/session spawn, and tab-tree mutation, but the future half-pane size calculation is a TUI layout helper.
 
 Capsule pane-local mouse coordinate mapping now lives with visible pane geometry in <RepoFile path="crates/jackin-capsule/src/tui/layout.rs" />. The daemon still gates mouse forwarding on the focused session's protocol mode and writes encoded mouse bytes to the PTY.

@@ -333,7 +333,6 @@ const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_milli
 /// button code 35 (`32` motion bit + `3` no-button code).
 const SGR_NO_BUTTON_MOTION: u8 = 35;
 
-const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::from_secs(2);
 /// One row reserved for the persistent hint bar shown in the main pane view.
 const CAPSULE_HINT_BAR_ROWS: u16 = 1;
 /// One blank separator row between the hint bar and the branch context bar,
