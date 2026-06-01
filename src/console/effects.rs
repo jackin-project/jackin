@@ -324,6 +324,12 @@ pub(crate) fn resolve_launch_dispatch(
     }))
 }
 
+pub(crate) fn global_mounts_require_sensitive_confirmation(
+    mounts: &[crate::config::GlobalMountRow],
+) -> bool {
+    crate::console::domain::global_rows_have_sensitive_mount(mounts)
+}
+
 pub(crate) struct CommittedRoleLaunch {
     pub(crate) input: crate::workspace::LoadWorkspaceInput,
     pub(crate) workspace: crate::workspace::ResolvedWorkspace,

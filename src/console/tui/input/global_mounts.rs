@@ -180,7 +180,9 @@ fn handle_global_mounts_key(
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return;
         };
-        if crate::console::domain::global_rows_have_sensitive_mount(&settings.mounts.pending) {
+        if crate::console::effects::global_mounts_require_sensitive_confirmation(
+            &settings.mounts.pending,
+        ) {
             settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
         } else {
             open_settings_save_preview(settings);
