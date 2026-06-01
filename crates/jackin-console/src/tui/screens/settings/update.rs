@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{
-    SettingsEnvConfig, SettingsEnvRow, SettingsEnvScope, SettingsGeneralState, SettingsTab,
-    SettingsTrustState,
+    SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope,
+    SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
 
 #[must_use]
@@ -263,6 +263,41 @@ pub fn settings_env_picker_target_for_row(
 }
 
 #[must_use]
+pub fn settings_env_enter_plan_for_row<V>(
+    pending: &SettingsEnvConfig<V>,
+    row: Option<&SettingsEnvRow>,
+    can_edit_value: impl FnOnce(Option<&V>) -> bool,
+) -> SettingsEnvEnterPlan {
+    match row {
+        Some(SettingsEnvRow::Key { scope, key }) => {
+            let value = settings_env_value(pending, scope, key);
+            if can_edit_value(value) {
+                SettingsEnvEnterPlan::EditValue {
+                    scope: scope.clone(),
+                    key: key.clone(),
+                }
+            } else {
+                SettingsEnvEnterPlan::Noop
+            }
+        }
+        Some(SettingsEnvRow::GlobalAddSentinel) => SettingsEnvEnterPlan::OpenScopePicker,
+        Some(SettingsEnvRow::RoleHeader {
+            role,
+            expanded: false,
+        }) => SettingsEnvEnterPlan::ExpandRole(role.clone()),
+        Some(SettingsEnvRow::RoleAddSentinel(role)) => {
+            SettingsEnvEnterPlan::AddRoleKey {
+                scope: SettingsEnvScope::Role(role.clone()),
+                label: format!("New {role} environment key"),
+            }
+        }
+        Some(SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer) | None => {
+            SettingsEnvEnterPlan::Noop
+        }
+    }
+}
+
+#[must_use]
 pub fn step_cursor_down_by<F>(candidate: usize, max: usize, mut is_skipped: F) -> usize
 where
     F: FnMut(usize) -> bool,
@@ -513,6 +548,68 @@ mod tests {
         assert_eq!(
             settings_env_picker_target_for_row(Some(&SettingsEnvRow::GlobalAddSentinel)),
             Some((SettingsEnvScope::Global, None))
+        );
+    }
+
+    #[test]
+    fn settings_env_enter_plan_handles_value_scope_and_headers() {
+        let pending = env_config();
+        let key = SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Global,
+            key: "GLOBAL".to_string(),
+        };
+        let collapsed = SettingsEnvRow::RoleHeader {
+            role: "alpha".to_string(),
+            expanded: false,
+        };
+        let expanded = SettingsEnvRow::RoleHeader {
+            role: "alpha".to_string(),
+            expanded: true,
+        };
+
+        assert_eq!(
+            settings_env_enter_plan_for_row(&pending, Some(&key), |value| value.is_some()),
+            SettingsEnvEnterPlan::EditValue {
+                scope: SettingsEnvScope::Global,
+                key: "GLOBAL".to_string()
+            }
+        );
+        assert_eq!(
+            settings_env_enter_plan_for_row(&pending, Some(&key), |_| false),
+            SettingsEnvEnterPlan::Noop
+        );
+        assert_eq!(
+            settings_env_enter_plan_for_row(&pending, Some(&collapsed), |_| true),
+            SettingsEnvEnterPlan::ExpandRole("alpha".to_string())
+        );
+        assert_eq!(
+            settings_env_enter_plan_for_row(&pending, Some(&expanded), |_| true),
+            SettingsEnvEnterPlan::Noop
+        );
+    }
+
+    #[test]
+    fn settings_env_enter_plan_handles_add_rows() {
+        let pending = env_config();
+
+        assert_eq!(
+            settings_env_enter_plan_for_row(
+                &pending,
+                Some(&SettingsEnvRow::GlobalAddSentinel),
+                |_| true
+            ),
+            SettingsEnvEnterPlan::OpenScopePicker
+        );
+        assert_eq!(
+            settings_env_enter_plan_for_row(
+                &pending,
+                Some(&SettingsEnvRow::RoleAddSentinel("alpha".to_string())),
+                |_| true
+            ),
+            SettingsEnvEnterPlan::AddRoleKey {
+                scope: SettingsEnvScope::Role("alpha".to_string()),
+                label: "New alpha environment key".to_string()
+            }
         );
     }
 }

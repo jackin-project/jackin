@@ -300,8 +300,8 @@ pub use jackin_console::tui::screens::editor::model::{
 };
 pub use jackin_console::tui::screens::settings::model::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
-    SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
-    SettingsTrustRow, SettingsTrustState,
+    SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
+    SettingsGeneralState, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
 pub use jackin_console::tui::screens::settings::update::{
     settings_map_change_count, settings_vec_change_count,

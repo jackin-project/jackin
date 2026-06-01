@@ -5,8 +5,8 @@ use crate::console::tui::render::mount_display::settings_global_mounts_content_w
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
-    SettingsEnvModal, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
-    settings_env_flat_rows, settings_env_state_flat_rows,
+    SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
+    SettingsEnvTextTarget, SettingsTab, settings_env_flat_rows, settings_env_state_flat_rows,
 };
 use jackin_tui::ModalOutcome;
 use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
@@ -1754,16 +1754,13 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
 
 fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
-    let Some(row) = rows.get(settings.env.selected).cloned() else {
-        return;
-    };
-    match row {
-        SettingsEnvRow::Key { scope, key } => {
-            if settings_update::settings_env_value(&settings.env.pending, &scope, &key)
-                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
-            {
-                return;
-            }
+    let plan = settings_update::settings_env_enter_plan_for_row(
+        &settings.env.pending,
+        rows.get(settings.env.selected),
+        |value| !value.is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_))),
+    );
+    match plan {
+        SettingsEnvEnterPlan::EditValue { scope, key } => {
             let current = settings_update::settings_env_value(&settings.env.pending, &scope, &key)
                 .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
@@ -1778,26 +1775,22 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
                 )),
             });
         }
-        SettingsEnvRow::GlobalAddSentinel => {
+        SettingsEnvEnterPlan::OpenScopePicker => {
             settings.env.modal = Some(SettingsEnvModal::ScopePicker {
                 state: jackin_console::tui::components::scope_picker::ScopePickerState::new(),
             });
         }
-        SettingsEnvRow::RoleHeader { role, expanded } => {
-            if !expanded {
-                settings.env.expanded.insert(role);
-            }
+        SettingsEnvEnterPlan::ExpandRole(role) => {
+            settings.env.expanded.insert(role);
         }
-        SettingsEnvRow::RoleAddSentinel(role) => {
-            let scope = SettingsEnvScope::Role(role.clone());
-            let label = format!("New {role} environment key");
+        SettingsEnvEnterPlan::AddRoleKey { scope, label } => {
             let state = settings_env_key_input_state(&settings.env, &scope, label, "");
             settings.env.modal = Some(SettingsEnvModal::Text {
                 target: SettingsEnvTextTarget::EnvKey { scope },
                 state: Box::new(state),
             });
         }
-        SettingsEnvRow::SectionSpacer => {}
+        SettingsEnvEnterPlan::Noop => {}
     }
 }
 

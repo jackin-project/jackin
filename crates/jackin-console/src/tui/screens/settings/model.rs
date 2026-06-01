@@ -102,6 +102,21 @@ pub enum SettingsEnvTextTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvEnterPlan {
+    EditValue {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    OpenScopePicker,
+    ExpandRole(String),
+    AddRoleKey {
+        scope: SettingsEnvScope,
+        label: String,
+    },
+    Noop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsEnvConfig<V> {
     pub env: BTreeMap<String, V>,
     pub roles: BTreeMap<String, BTreeMap<String, V>>,
