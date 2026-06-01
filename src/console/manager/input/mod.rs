@@ -240,8 +240,13 @@ pub fn handle_key(
             false
         };
         if has_modal {
-            if let ManagerStage::CreatePrelude(p) = &mut state.stage {
-                prelude::handle_prelude_modal(p, key);
+            let outcome = if let ManagerStage::CreatePrelude(p) = &mut state.stage {
+                prelude::handle_prelude_modal(p, key)
+            } else {
+                InputOutcome::Continue
+            };
+            if !matches!(outcome, InputOutcome::Continue) {
+                return Ok(outcome);
             }
             // After the modal handler runs, the prelude is in one of three states:
             // - still in a modal (user pressed a non-commit/cancel key): continue

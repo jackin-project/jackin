@@ -10,7 +10,6 @@ use super::super::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
-use jackin_console::services::file_browser::open_git_url;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 
@@ -64,7 +63,7 @@ fn prelude_advance_to_workdir_pick(prelude: &mut super::super::state::CreatePrel
 pub(super) fn handle_prelude_modal(
     prelude: &mut super::super::state::CreatePreludeState<'_>,
     key: KeyEvent,
-) {
+) -> InputOutcome {
     use super::super::state::{FileBrowserTarget, TextInputTarget};
     use jackin_tui::components::TextInputState;
 
@@ -112,7 +111,7 @@ pub(super) fn handle_prelude_modal(
                     let outcome = state.handle_key(key);
                     (super::apply_file_browser_outcome(state, outcome), Some(cwd))
                 } else {
-                    return;
+                    return InputOutcome::Continue;
                 };
             match outcome {
                 FileBrowserOutcome::Commit(path) => {
@@ -145,7 +144,7 @@ pub(super) fn handle_prelude_modal(
                         super::request_file_browser_git_url_resolution(state, path);
                     }
                 }
-                FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
+                FileBrowserOutcome::OpenGitUrl(url) => return InputOutcome::OpenUrl(url),
                 FileBrowserOutcome::Continue => {}
                 FileBrowserOutcome::NavigateTo(_)
                 | FileBrowserOutcome::NavigateUp
@@ -157,7 +156,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return;
+                return InputOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(MountDstChoice::SamePath) => {
@@ -194,7 +193,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return;
+                return InputOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(dst) => {
@@ -215,7 +214,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::WorkdirPick { state }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return;
+                return InputOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(workdir) => {
@@ -248,7 +247,7 @@ pub(super) fn handle_prelude_modal(
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
-                return;
+                return InputOutcome::Continue;
             };
             match outcome {
                 ModalOutcome::Commit(name) => {
@@ -267,6 +266,7 @@ pub(super) fn handle_prelude_modal(
         }
         PreludeModalDis::Other => {}
     }
+    InputOutcome::Continue
 }
 
 /// Reopen the `FileBrowserSrc` modal positioned at the last-seen cwd.
