@@ -52,20 +52,19 @@ pub(super) fn handle_prelude_key(
 /// Callers are responsible for having already pushed the mount dst onto
 /// the prelude (via `accept_mount_dst`).
 fn prelude_advance_to_workdir_pick(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
-    let mount = crate::workspace::MountConfig {
-        src: prelude
+    let mount = crate::console::domain::shared_mount_config(
+        prelude
             .pending_mount_src
             .as_ref()
             .expect("mount src must be set before advancing to workdir pick")
             .display()
             .to_string(),
-        dst: prelude
+        prelude
             .pending_mount_dst
             .clone()
             .expect("mount dst must be set before advancing to workdir pick"),
-        readonly: prelude.pending_readonly,
-        isolation: crate::isolation::MountIsolation::Shared,
-    };
+        prelude.pending_readonly,
+    );
     prelude.modal = Some(Modal::WorkdirPick {
         state: WorkdirPickState::from_mounts(&[mount]),
     });

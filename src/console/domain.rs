@@ -228,10 +228,19 @@ pub(crate) fn resolve_role_input_source(
 
 #[must_use]
 pub(crate) fn current_dir_mount_config(cwd_str: &str) -> MountConfig {
+    shared_mount_config(cwd_str, cwd_str, false)
+}
+
+#[must_use]
+pub(crate) fn shared_mount_config(
+    src: impl Into<String>,
+    dst: impl Into<String>,
+    readonly: bool,
+) -> MountConfig {
     MountConfig {
-        src: cwd_str.to_string(),
-        dst: cwd_str.to_string(),
-        readonly: false,
+        src: src.into(),
+        dst: dst.into(),
+        readonly,
         isolation: MountIsolation::Shared,
     }
 }

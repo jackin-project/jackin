@@ -12,7 +12,7 @@ use jackin_tui::ModalOutcome;
 use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
-use crate::workspace::{MountConfig, resolve_path};
+use crate::workspace::resolve_path;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::view::{env_forbidden_label, env_scope_label};
 use jackin_tui::components::{ConfirmState, TextInputState};
@@ -1716,12 +1716,7 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
     global.pending.push(crate::config::GlobalMountRow {
         scope: draft.scope,
         name: draft.name,
-        mount: MountConfig {
-            src: draft.src,
-            dst: draft.dst,
-            readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
-        },
+        mount: crate::console::domain::shared_mount_config(draft.src, draft.dst, false),
     });
     global.selected = global.pending.len().saturating_sub(1);
     global.clear_modal_chain();
@@ -2194,7 +2189,7 @@ mod tests {
         let rows = vec![crate::config::GlobalMountRow {
             scope: None,
             name: "ssh".into(),
-            mount: MountConfig {
+            mount: crate::workspace::MountConfig {
                 src: "/home/user/.ssh".into(),
                 dst: "/ssh".into(),
                 readonly: true,
