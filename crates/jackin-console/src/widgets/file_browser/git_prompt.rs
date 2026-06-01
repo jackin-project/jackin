@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -79,17 +80,17 @@ impl FileBrowserState {
 
     #[must_use]
     pub fn poll_git_url_resolution(&mut self) -> bool {
-        let Some(rx) = self.pending_git_url_rx.as_ref() else {
+        let Some(rx) = self.pending_git_url_rx.as_mut() else {
             return false;
         };
-        match rx.try_recv() {
-            Ok(url) => {
+        match rx.poll_next() {
+            SubscriptionPoll::Ready(url) => {
                 self.pending_git_url = url;
                 self.pending_git_url_rx = None;
                 true
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => false,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            SubscriptionPoll::Pending => false,
+            SubscriptionPoll::Closed => {
                 self.pending_git_url_rx = None;
                 false
             }
