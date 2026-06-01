@@ -3,7 +3,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::console::tui::components::op_picker::OpPickerState;
+use crate::console::tui::op_picker::OpPickerState;
 use super::super::effects::execute_role_source_persist;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
@@ -1249,11 +1249,11 @@ pub(super) fn handle_editor_modal(
             match outcome {
                 // Browse-mode caller: only `Existing` is reachable.
                 ModalOutcome::Commit(
-                    crate::console::tui::components::op_picker::OpPickerSelection::NewItem { .. }
-                    | crate::console::tui::components::op_picker::OpPickerSelection::EditItemField { .. },
+                    crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
+                    | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
                 ) => unreachable!("Secrets-tab OpPicker runs in Browse mode"),
                 ModalOutcome::Commit(
-                    crate::console::tui::components::op_picker::OpPickerSelection::Existing(op_ref),
+                    crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
                 ) => {
                     // Auth-form round trip wins over the Secrets-tab
                     // dispatch: the auth form sets
@@ -1425,9 +1425,9 @@ fn open_create_op_picker_for_generate(
 fn handle_token_generate_pick(
     editor: &mut EditorState<'_>,
     target: crate::console::tui::state::AuthFormTarget,
-    outcome: ModalOutcome<crate::console::tui::components::op_picker::OpPickerSelection>,
+    outcome: ModalOutcome<crate::console::tui::op_picker::OpPickerSelection>,
 ) {
-    use crate::console::tui::components::op_picker::OpPickerSelection;
+    use crate::console::tui::op_picker::OpPickerSelection;
     use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
 
     let Some(scope) = generate_scope_for_target(editor, &target) else {

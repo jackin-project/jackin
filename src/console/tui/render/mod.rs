@@ -4,6 +4,8 @@ pub mod editor;
 pub(crate) mod editor_geometry;
 mod frame;
 #[cfg(test)]
+mod consistency_tests;
+#[cfg(test)]
 mod frame_tests;
 pub(crate) mod footer;
 pub(crate) mod list;
