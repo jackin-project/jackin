@@ -8,10 +8,11 @@ use std::time::Instant;
 
 use crate::tui::view::{
     CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleDialogBottomChrome,
-    CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar, draw_pane_chrome,
+    CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar,
     pane_scrollbar, render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
     render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
     render_capsule_pane_body_partial, render_capsule_pane_body_snapshot,
+    render_capsule_pane_chrome,
     render_capsule_raw_dialog_overlay, render_capsule_selection_highlight,
     render_capsule_status_bar,
 };
@@ -257,7 +258,7 @@ impl Multiplexer {
                 // case — matches zellij's "every pane is framed"
                 // convention and gives the operator a reliable place
                 // to read the live `OSC 2` title.
-                draw_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
+                render_capsule_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
             }
         }
 
@@ -428,7 +429,7 @@ impl Multiplexer {
                 pane_body_bytes += buf.len() - before;
             }
             if let Some(title) = title {
-                draw_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
+                render_capsule_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
             }
         }
 

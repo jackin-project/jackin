@@ -106,7 +106,7 @@ pub(crate) fn pane_scrollbar(
 /// Called identically from compose_full_frame and compose_partial_frame;
 /// lives here so both compositors stay in lock-step when the chrome rules
 /// change.
-pub(crate) fn draw_pane_chrome(
+pub(crate) fn render_capsule_pane_chrome(
     buf: &mut Vec<u8>,
     pane: &VisiblePane,
     title: &str,
