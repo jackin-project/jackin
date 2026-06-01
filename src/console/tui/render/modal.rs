@@ -17,7 +17,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_tui::components::render_text_input(frame, modal_area, state);
         }
         Modal::FileBrowser { state, .. } => {
-            jackin_console::widgets::file_browser::render(frame, modal_area, state);
+            jackin_console::tui::components::file_browser::render(frame, modal_area, state);
         }
         Modal::WorkdirPick { state } => {
             jackin_console::tui::components::workdir_pick::render(frame, modal_area, state);

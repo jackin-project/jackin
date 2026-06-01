@@ -10,6 +10,10 @@
 //!   repo row opens a prompt (mount / pick-subdir / cancel) before
 //!   committing or navigating in.
 //!
+//! Filesystem scanning, sandbox checks, Git URL resolution, and browser
+//! launching live in `services::file_browser`; this module owns only terminal
+//! state, input mapping, geometry, and rendering.
+//!
 //! The browser was originally built on `ratatui-explorer`, but that
 //! crate's `Theme` exposes a single `dir_style` shared by every row —
 //! meaning "colour git repos differently" is impossible. Rewriting in-
@@ -19,16 +23,6 @@
 
 pub(super) use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
-/// Directories excluded from the listing when browsing $HOME.
-pub(super) const EXCLUDED: &[&str] = &[
-    "Library",
-    "Applications",
-    "Movies",
-    "Music",
-    "OrbStack",
-    "Pictures",
-];
-
 pub(super) mod git_prompt;
 pub(super) mod input;
 pub(super) mod render;
@@ -36,4 +30,4 @@ pub(super) mod state;
 
 pub use git_prompt::{GitPromptFocus, git_prompt_rect, git_prompt_url_row_rect};
 pub use render::{listing_rect, render};
-pub use state::{FileBrowserState, FolderEntry};
+pub use state::FileBrowserState;

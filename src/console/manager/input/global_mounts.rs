@@ -15,7 +15,7 @@ use crate::paths::JackinPaths;
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
-use jackin_console::widgets::file_browser::FileBrowserState;
+use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_tui::components::{ConfirmState, TextInputState};
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {

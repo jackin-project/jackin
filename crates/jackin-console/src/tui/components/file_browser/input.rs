@@ -6,8 +6,11 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 
 use super::git_prompt::git_prompt_url_row_rect;
-use super::state::{FileBrowserState, canonicalize_or_self, is_within_root};
-use crate::widgets::ModalOutcome;
+use super::state::FileBrowserState;
+use crate::services::file_browser::{
+    canonicalize_or_self, is_directory, is_within_root, open_git_url,
+};
+use jackin_tui::ModalOutcome;
 
 impl FileBrowserState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
@@ -78,7 +81,7 @@ impl FileBrowserState {
         // symlinked-dir-inside-root still resolves to its real path;
         // out-of-root symlinks were already filtered by `load_entries`,
         // but this belt-and-suspenders guards against races.
-        if is_within_root(&entry.path, &self.root) && entry.path.is_dir() {
+        if is_within_root(&entry.path, &self.root) && is_directory(&entry.path) {
             self.cwd = canonicalize_or_self(entry.path);
             self.reload();
         }
@@ -124,16 +127,14 @@ impl FileBrowserState {
     /// Handle a left-click at `(column, row)` in absolute terminal
     /// coordinates while `modal_area` hosts this browser. Returns `true`
     /// iff the click hit the git-prompt's URL row AND `pending_git_url`
-    /// is resolved — in which case `open::that_detached` has been fired
-    /// best-effort (errors are swallowed; see the `O` hotkey handler for
-    /// the parallel rationale). A `true` return doesn't dismiss the
-    /// prompt, matching the keyboard keypath.
+    /// is resolved. A `true` return doesn't dismiss the prompt, matching
+    /// the keyboard keypath.
     pub fn maybe_open_url_on_click(&self, modal_area: Rect, column: u16, row: u16) -> bool {
         if !self.url_row_hit(modal_area, column, row) {
             return false;
         }
         if let Some(url) = self.pending_git_url.as_deref() {
-            let _ = open::that_detached(url);
+            open_git_url(url);
         }
         true
     }

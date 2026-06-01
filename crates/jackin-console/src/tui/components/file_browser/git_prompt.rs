@@ -4,10 +4,10 @@
 //! we pause navigation and show a small modal asking what to do
 //! (mount / pick-subdir / cancel / open-in-browser). This module owns
 //! the focus enum, the per-prompt key handler, and the overlay
-//! rendering. `resolve_git_url` also lives here because it's only
-//! consumed by the prompt flow.
+//! rendering. Git-origin inspection and browser launching live in
+//! `services::file_browser`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -21,7 +21,8 @@ use ratatui::{
 
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use crate::widgets::ModalOutcome;
+use crate::services::file_browser::{open_git_url, resolve_git_url};
+use jackin_tui::ModalOutcome;
 use jackin_tui::components::{Panel, PanelFocus};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
@@ -33,18 +34,6 @@ pub enum GitPromptFocus {
     EnterIn,
     /// Dismiss the prompt and return to the listing.
     Cancel,
-}
-
-/// Resolve the web URL for a git-repo path via `mount_info::inspect`.
-/// Returns `Some` only for GitHub remotes that have a parseable web URL.
-pub(super) fn resolve_git_url(path: &Path) -> Option<String> {
-    match crate::mount_info::inspect(&path.display().to_string()) {
-        crate::mount_info::MountKind::Git {
-            origin: Some(crate::mount_info::GitOrigin::Github { web_url, .. }),
-            ..
-        } => Some(web_url),
-        _ => None,
-    }
 }
 
 impl FileBrowserState {
@@ -112,7 +101,7 @@ impl FileBrowserState {
             // so the keystroke is only advertised when it actually does something.
             KeyCode::Char('o' | 'O') => {
                 if let Some(url) = self.pending_git_url.as_deref() {
-                    let _ = open::that_detached(url);
+                    open_git_url(url);
                 }
                 ModalOutcome::Continue
             }
@@ -322,6 +311,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
 mod tests {
     use super::*;
     use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use std::path::Path;
     use tempfile::tempdir;
 
     fn key(code: KeyCode) -> KeyEvent {

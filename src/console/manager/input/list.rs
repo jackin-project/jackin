@@ -13,7 +13,7 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::paths::JackinPaths;
-use jackin_console::widgets::file_browser::FileBrowserState;
+use jackin_console::tui::components::file_browser::FileBrowserState;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_list_key(

@@ -3,6 +3,7 @@
 pub mod agent_choice;
 pub mod confirm_save;
 pub mod editor_rows;
+pub mod file_browser;
 pub mod footer_hints;
 pub mod github_picker;
 pub mod list_helpers;

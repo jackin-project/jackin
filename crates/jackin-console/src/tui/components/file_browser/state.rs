@@ -1,40 +1,18 @@
-//! Filesystem scanning, sandbox policy, and browser state.
+//! File-browser terminal state.
 //!
-//! Houses `FileBrowserState` (the modal's working state), `FolderEntry`
-//! (one row), and the listing/sandbox primitives (`load_entries`,
-//! `is_within_root`, `canonicalize_or_self`, `has_git_dir`,
-//! `is_excluded`). Construction and navigation methods that don't
-//! involve input events or rendering live here too.
+//! Houses `FileBrowserState` (the modal's working state). Directory scanning,
+//! sandbox policy, and git-origin inspection live in `services::file_browser`.
 
 use std::path::{Path, PathBuf};
 
 use directories::BaseDirs;
 use tui_widget_list::ListState;
 
-use super::EXCLUDED;
 use super::git_prompt::GitPromptFocus;
+use crate::services::file_browser::{
+    FolderEntry, canonicalize_or_self, is_directory, is_within_root, load_entries,
+};
 use crate::tui::components::list_helpers::{cycle_select, list_state_for_count, selected_choice};
-
-/// Does `path` contain a `.git` child? Dir (regular clone) OR file
-/// (submodule worktree, `.git` is a file pointing at the real gitdir).
-/// Single `metadata` call per directory entry — no filesystem walk.
-pub(super) fn has_git_dir(path: &Path) -> bool {
-    let dotgit = path.join(".git");
-    dotgit.is_dir() || dotgit.is_file()
-}
-
-/// One row in the folder listing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FolderEntry {
-    /// Display name, no trailing slash. `".."` for the synthetic parent link.
-    pub name: String,
-    /// Absolute path the row resolves to. For `..` this is the parent dir.
-    pub path: PathBuf,
-    /// True for the synthetic `..` parent-link row.
-    pub is_parent: bool,
-    /// True iff `path` contains a `.git` child (dir or submodule file).
-    pub is_git: bool,
-}
 
 #[derive(Debug)]
 pub struct FileBrowserState {
@@ -59,110 +37,6 @@ pub struct FileBrowserState {
         Option<jackin_tui::runtime::BlockingSubscription<Option<String>>>,
     /// Which button is highlighted in the git-repo prompt.
     pub pending_git_focus: GitPromptFocus,
-}
-
-/// Is `name` one of the top-level noise directories we hide at `$HOME`?
-pub(super) fn is_excluded(name: &str) -> bool {
-    EXCLUDED.contains(&name)
-}
-
-/// True when `candidate`'s canonicalized path is contained within
-/// `root` (which is already canonicalized when possible). Used to
-/// defeat lexical-prefix spoofs: a symlink under `$HOME` pointing
-/// outside `$HOME` has a lexical path that `Path::starts_with`
-/// accepts, but `canonicalize` resolves the link and exposes the
-/// real target.
-///
-/// Fails closed — any canonicalization error returns `false` rather
-/// than admitting the path. Better to reject a legitimate candidate
-/// (the operator sees an unexplained rejection and can investigate)
-/// than to leak a sandbox-escaping path.
-pub(super) fn is_within_root(candidate: &Path, root: &Path) -> bool {
-    let Ok(real_candidate) = candidate.canonicalize() else {
-        return false;
-    };
-    real_candidate.starts_with(root)
-}
-
-/// Canonicalize `path`, falling back to `path` itself on error.
-/// Used to normalise `root` once at construction time so later
-/// `is_within_root` comparisons share a common prefix. Production
-/// `$HOME` is almost always canonicalizable; tests under platforms
-/// with weird mount layouts (e.g. macOS `/tmp` → `/private/tmp`)
-/// rely on the fallback to keep behavior sane.
-pub(super) fn canonicalize_or_self(path: PathBuf) -> PathBuf {
-    path.canonicalize().unwrap_or(path)
-}
-
-/// Read directories under `cwd` and build the entry list. Hidden files
-/// (leading `.`) are excluded; the `..` synthetic parent-link is prepended
-/// iff `cwd != root`; at the root level the `EXCLUDED` list filters out
-/// the macOS-style noise folders. Unreadable directories yield an empty
-/// list — the caller surfaces that as an empty listing, not an error.
-pub(super) fn load_entries(cwd: &Path, root: &Path) -> Vec<FolderEntry> {
-    let mut out: Vec<FolderEntry> = Vec::new();
-
-    // Synthetic parent link — only shown when there's somewhere to go.
-    if cwd != root
-        && let Some(parent) = cwd.parent()
-        && parent.starts_with(root)
-    {
-        out.push(FolderEntry {
-            name: "..".to_string(),
-            path: parent.to_path_buf(),
-            is_parent: true,
-            is_git: false,
-        });
-    }
-
-    let Ok(read) = std::fs::read_dir(cwd) else {
-        return out;
-    };
-
-    let at_root = cwd == root;
-    let mut dirs: Vec<FolderEntry> = Vec::new();
-    for entry in read.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        // Skip hidden files (leading dot).
-        if name.starts_with('.') {
-            continue;
-        }
-        // Skip the $HOME-level noise folders.
-        if at_root && is_excluded(&name) {
-            continue;
-        }
-        // Only keep directories.
-        let Ok(ty) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
-        // Follow symlinks to detect dir-symlinks; stat failures skip the entry.
-        let is_dir = ty.is_dir() || (ty.is_symlink() && path.is_dir());
-        if !is_dir {
-            continue;
-        }
-        // Sandbox: a symlinked directory may point outside `root`. Lexical
-        // `starts_with` can't catch that — it sees only the link's path
-        // under root. Canonicalize the entry and drop anything whose real
-        // target escapes. Regular (non-symlink) directories are trusted
-        // because their canonical form necessarily starts with their
-        // parent, which we're already listing because we're inside root.
-        if ty.is_symlink() && !is_within_root(&path, root) {
-            continue;
-        }
-        let is_git = has_git_dir(&path);
-        dirs.push(FolderEntry {
-            name,
-            path,
-            is_parent: false,
-            is_git,
-        });
-    }
-    // Alphabetical, case-insensitive. `..` (if present) was pushed first
-    // and stays at index 0.
-    dirs.sort_by_key(|e| e.name.to_lowercase());
-    out.extend(dirs);
-    out
 }
 
 impl FileBrowserState {
@@ -243,7 +117,7 @@ impl FileBrowserState {
     /// Silently falls back to the root when `cwd` is outside the sandbox
     /// or not a readable directory.
     pub fn set_cwd(&mut self, cwd: &Path) {
-        let target = if is_within_root(cwd, &self.root) && cwd.is_dir() {
+        let target = if is_within_root(cwd, &self.root) && is_directory(cwd) {
             canonicalize_or_self(cwd.to_path_buf())
         } else {
             self.root.clone()
@@ -292,6 +166,7 @@ impl FileBrowserState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::file_browser::EXCLUDED;
     use tempfile::tempdir;
 
     fn make_state_at(path: PathBuf) -> FileBrowserState {

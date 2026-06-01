@@ -16,8 +16,8 @@ use super::super::state::{
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
-use jackin_console::widgets::file_browser::FileBrowserState;
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
@@ -2485,7 +2485,7 @@ plugins = []
         editor.active_field = FieldFocus::Row(0);
         editor.modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::EditAddMountSrc,
-            state: jackin_console::widgets::file_browser::FileBrowserState::new_from_home()
+            state: jackin_console::tui::components::file_browser::FileBrowserState::new_from_home()
                 .unwrap(),
         });
         apply_file_browser_to_editor(

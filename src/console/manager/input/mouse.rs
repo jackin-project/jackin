@@ -23,10 +23,10 @@ use super::super::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
+use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
 };
-use jackin_console::widgets::file_browser::FileBrowserState;
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
 use jackin_tui::components::scrollable_panel::{
@@ -1845,7 +1845,7 @@ mod mouse_drag_tests {
     #[test]
     fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
         use crate::console::manager::state::CreatePreludeState;
-        use jackin_console::widgets::file_browser::FileBrowserState;
+        use jackin_console::tui::components::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("parent");
@@ -1890,7 +1890,7 @@ mod mouse_drag_tests {
     #[test]
     fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
         use crate::console::manager::state::CreatePreludeState;
-        use jackin_console::widgets::file_browser::FileBrowserState;
+        use jackin_console::tui::components::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("parent");

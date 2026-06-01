@@ -170,7 +170,7 @@ mod quit_confirm_tests {
     };
     use crate::console::widgets::ModalOutcome;
     use crate::paths::JackinPaths;
-    use jackin_console::widgets::file_browser::FileBrowserState;
+    use jackin_console::tui::components::file_browser::FileBrowserState;
     use jackin_tui::components::{ConfirmState, TextInputState};
 
     fn fresh_state() -> ConsoleState {

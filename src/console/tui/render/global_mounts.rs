@@ -472,7 +472,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
         }
         GlobalMountModal::FileBrowser { state } => {
             let area = super::centered_rect_fixed(frame.area(), 70, 22);
-            jackin_console::widgets::file_browser::render(frame, area, state);
+            jackin_console::tui::components::file_browser::render(frame, area, state);
         }
         GlobalMountModal::MountDstChoice { state } => {
             let area = mount_choice_rect(frame.area());
