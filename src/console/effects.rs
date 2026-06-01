@@ -27,6 +27,10 @@ pub(crate) async fn load_inline_agent_picker_choices(
     crate::console::services::agents::load_inline_picker_choices(paths, config, role, runner).await
 }
 
+pub(crate) fn op_cli_available() -> bool {
+    crate::console::services::op::cli_available()
+}
+
 pub(crate) fn execute_manager_effect(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
