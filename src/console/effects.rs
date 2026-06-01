@@ -214,28 +214,6 @@ fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
     });
 }
 
-async fn resolve_supported_agents_for_console(
-    paths: &crate::paths::JackinPaths,
-    config: &AppConfig,
-    role: &crate::selector::RoleSelector,
-    runner: &mut impl crate::docker::CommandRunner,
-) -> anyhow::Result<Vec<crate::agent::Agent>> {
-    crate::console::services::agents::resolve_supported_for_console(paths, config, role, runner).await
-}
-
-pub(crate) async fn load_inline_agent_picker_choices(
-    paths: &crate::paths::JackinPaths,
-    config: &AppConfig,
-    runner: &mut impl crate::docker::CommandRunner,
-    role: &crate::selector::RoleSelector,
-) -> anyhow::Result<Option<Vec<crate::agent::Agent>>> {
-    let agents = resolve_supported_agents_for_console(paths, config, role, runner).await?;
-    if agents.len() < 2 {
-        return Ok(None);
-    }
-    Ok(Some(agents))
-}
-
 pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
     match crate::console::services::browser::open_url(url) {
         Ok(()) => false,

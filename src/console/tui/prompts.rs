@@ -73,8 +73,10 @@ where
 
     draw_role_resolution_dialog(terminal, state, config, cwd, role)?;
     let choices =
-        match crate::console::effects::load_inline_agent_picker_choices(paths, config, runner, role)
-            .await
+        match crate::console::services::agents::load_inline_picker_choices(
+            paths, config, role, runner,
+        )
+        .await
         {
             Ok(Some(choices)) => choices,
             Ok(None) => return Ok(AgentPickerResolution::NotNeeded),
