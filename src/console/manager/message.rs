@@ -27,7 +27,6 @@ use jackin_console::tui::screens::settings::update::{
     step_cursor_up_by, toggle_general_selected, toggle_readonly as toggle_settings_readonly,
     toggle_trust_selected,
 };
-use jackin_tui::runtime::UpdateResult;
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -196,7 +195,7 @@ pub(crate) enum ManagerMessage {
     DismissLaunchProviderPicker,
 }
 
-pub(crate) type ManagerUpdate = UpdateResult<ManagerEffect>;
+pub(crate) type ManagerUpdate = jackin_console::tui::update::ConsoleUpdate<ManagerEffect>;
 
 pub(crate) fn execute_manager_effect(
     state: &mut ManagerState<'_>,
@@ -214,21 +213,13 @@ pub(crate) fn execute_manager_effect(
     }
 }
 
-pub(crate) enum ManagerBackgroundEvent {
-    Message(ManagerMessage),
-    RoleLoadFinished {
-        load: super::state::PendingRoleLoad,
-        result: anyhow::Result<()>,
-    },
-    DriftCheckFinished {
-        check: PendingDriftCheck,
-        detection: anyhow::Result<crate::config::DriftDetection>,
-    },
-    IsolationCleanupFinished {
-        cleanup: PendingIsolationCleanup,
-        result: anyhow::Result<()>,
-    },
-}
+pub(crate) type ManagerBackgroundEvent = jackin_console::tui::message::BackgroundEvent<
+    ManagerMessage,
+    super::state::PendingRoleLoad,
+    PendingDriftCheck,
+    crate::config::DriftDetection,
+    PendingIsolationCleanup,
+>;
 
 pub(crate) fn poll_background_messages(
     state: &mut ManagerState<'_>,
@@ -526,7 +517,7 @@ pub(crate) fn update_manager(
             state.launch_provider_picker = None;
         }
     }
-    UpdateResult::redraw()
+    ManagerUpdate::redraw()
 }
 
 const fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
