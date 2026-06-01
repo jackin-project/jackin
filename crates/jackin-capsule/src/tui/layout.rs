@@ -3,6 +3,13 @@
 /// Each node is either a Leaf (holds one session) or an HSplit/VSplit
 /// that divides its rectangle between two child subtrees.
 
+/// One row reserved for the persistent hint bar shown in the main pane view.
+pub(crate) const CAPSULE_HINT_BAR_ROWS: u16 = 1;
+
+/// One blank separator row between the hint bar and the branch context bar,
+/// matching the console layout (hint → separator → chrome).
+pub(crate) const CAPSULE_HINT_SEPARATOR_ROWS: u16 = 1;
+
 #[derive(Debug, Clone)]
 pub enum PaneTree {
     Leaf(u64),

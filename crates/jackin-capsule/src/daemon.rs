@@ -58,8 +58,8 @@ use crate::tui::input::{
     ArrowDir, InputEvent, InputParser, PrefixCommand, SGR_NO_BUTTON_MOTION,
 };
 use crate::tui::layout::{
-    Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, local_mouse_position,
-    split_spawn_inner_size,
+    CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS, Direction, Rect, SplitDirectionGeometry,
+    SplitPosition, Tab, local_mouse_position, split_spawn_inner_size,
 };
 #[cfg(test)]
 use crate::tui::layout::SplitOrient;
@@ -331,11 +331,6 @@ const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
 /// surviving slow ssh / paste chunks.
 const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// One row reserved for the persistent hint bar shown in the main pane view.
-const CAPSULE_HINT_BAR_ROWS: u16 = 1;
-/// One blank separator row between the hint bar and the branch context bar,
-/// matching the console layout (hint → separator → chrome).
-const CAPSULE_HINT_SEPARATOR_ROWS: u16 = 1;
 /// One second is quick enough for operator-visible title/chrome updates after
 /// `git checkout` while avoiding a 10Hz daemon wake-up just to inspect local
 /// branch state.
