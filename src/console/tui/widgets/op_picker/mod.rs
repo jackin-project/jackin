@@ -39,9 +39,9 @@ pub mod render;
 
 pub use jackin_console::tui::components::op_picker::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,
-    OpPickerFieldRef, OpPickerItemRef, OpPickerMode, OpPickerStage, OpPickerVaultRef,
-    browse_field_display_rows, build_op_picker_ref, create_field_display_rows, matches_filter,
-    section_choices_from_references,
+    OpPickerFieldRef, OpPickerItemRef, OpPickerLoadResult, OpPickerMode, OpPickerStage,
+    OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref, create_field_display_rows,
+    matches_filter, section_choices_from_references,
 };
 
 /// What the operator chose when the picker commits.
@@ -70,14 +70,7 @@ pub enum OpPickerSelection {
     },
 }
 
-/// Pane-specific so the async-result drainer can route to the right
-/// `Vec` without a separate "what was loading" tag.
-enum LoadResult {
-    Accounts(anyhow::Result<Vec<OpAccount>>),
-    Vaults(anyhow::Result<Vec<OpVault>>),
-    Items(anyhow::Result<Vec<OpItem>>),
-    Fields(anyhow::Result<Vec<OpField>>),
-}
+type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
 
 fn ready_picker_load(result: LoadResult) -> BlockingSubscription<LoadResult> {
     let (tx, rx) = tokio::sync::oneshot::channel();

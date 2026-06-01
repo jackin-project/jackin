@@ -93,6 +93,15 @@ pub enum OpPickerFatalState {
     GenericFatal { message: String },
 }
 
+/// Background load completion routed back into the picker.
+#[derive(Debug)]
+pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
+    Accounts(anyhow::Result<Vec<Account>>),
+    Vaults(anyhow::Result<Vec<Vault>>),
+    Items(anyhow::Result<Vec<Item>>),
+    Fields(anyhow::Result<Vec<Field>>),
+}
+
 /// A single row in the field-picker display list.
 #[derive(Debug, Clone)]
 pub enum FieldDisplayRow {
