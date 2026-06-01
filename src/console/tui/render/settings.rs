@@ -7,10 +7,8 @@ use ratatui::{
     Frame,
     layout::Rect,
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
-    text::{Line, Span},
+    text::Line,
 };
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use jackin_console::tui::auth::AuthKind;
 use crate::console::tui::render::modal_layout::{
     auth_form_rect, confirm_rect, mount_choice_rect, op_picker_rect, role_picker_rect,
@@ -25,10 +23,13 @@ use crate::console::tui::state::{
     SettingsState, SettingsTab,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::tui::components::editor_rows::{SecretValueDisplay, render_tab_strip};
+use jackin_console::tui::components::editor_rows::{
+    AuthSourceDisplay, SecretValueDisplay, render_tab_strip,
+};
 use jackin_console::tui::screens::settings::view::{
-    env_lines as settings_env_lines, general_lines as settings_general_lines, tab_labels,
-    global_mount_lines as settings_global_mount_lines,
+    SettingsAuthLineRow, auth_lines as settings_auth_lines, env_lines as settings_env_lines,
+    general_lines as settings_general_lines, global_mount_lines as settings_global_mount_lines,
+    tab_labels,
     trust_lines as settings_trust_lines,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
@@ -207,80 +208,52 @@ fn settings_env_value<'a>(
 fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     use crate::console::tui::auth_panel::mode_str;
 
-    let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let phosphor = Style::default().fg(PHOSPHOR_GREEN);
-    let dim = Style::default().fg(PHOSPHOR_DIM);
     let show_cursor =
         !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     let Some(kind) = state.auth.selected_kind else {
-        return state
+        let rows: Vec<SettingsAuthLineRow> = state
             .auth
             .pending
             .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let selected = show_cursor && (state.auth.selected == i);
-                let cursor_col = if selected { "▸ " } else { "  " };
-                Line::from(Span::styled(
-                    format!("{cursor_col}{}", row.kind.label()),
-                    bold_white,
-                ))
+            .map(|row| SettingsAuthLineRow::Kind {
+                label: row.kind.label().to_string(),
             })
             .collect();
+        return settings_auth_lines(&rows, state.auth.selected, show_cursor);
     };
     let Some(row) = state.auth.pending.iter().find(|row| row.kind == kind) else {
         return Vec::new();
     };
-    let mut lines = Vec::new();
-    let mode_selected = show_cursor && (state.auth.selected == 0);
-    let mode_style = if mode_selected {
-        phosphor.add_modifier(Modifier::BOLD)
-    } else {
-        phosphor
-    };
-    let cursor_col = if mode_selected { "▸ " } else { "  " };
-    lines.push(Line::from(vec![
-        Span::styled(cursor_col, mode_style),
-        Span::styled(format!("{:<14}", "Mode"), bold_white),
-        Span::styled(mode_str(row.mode).to_string(), mode_style),
-    ]));
+    let mut rows = vec![SettingsAuthLineRow::Mode {
+        mode_label: mode_str(row.mode).to_string(),
+    }];
     if let Some(env_name) = kind.required_env_var(row.mode) {
-        let source_selected = show_cursor && (state.auth.selected == 1);
-        let source_style = if source_selected {
-            dim.add_modifier(Modifier::BOLD)
-        } else {
-            dim
-        };
-        let cursor_col = if source_selected { "▸ " } else { "  " };
-        let mut spans = vec![
-            Span::styled(cursor_col, source_style),
-            Span::styled(format!("{:<14}", "Source"), bold_white),
-        ];
-        match settings_auth_source_value(state, kind, env_name) {
-            Some(EnvValue::Plain(value)) if !value.is_empty() => {
-                spans.push(Span::styled(
-                    "●".repeat(value.chars().count().clamp(1, 12)),
-                    source_style,
-                ));
-            }
-            Some(EnvValue::OpRef(op_ref)) => {
-                spans.push(Span::styled("[op] ", source_style));
-                jackin_console::tui::components::op_breadcrumb::push_op_breadcrumb_spans(
-                    &mut spans,
-                    &op_ref.path,
-                );
-            }
-            _ => {
-                spans.push(Span::styled(
-                    format!("unset  ({env_name} for {})", mode_str(row.mode)),
-                    Style::default().fg(jackin_tui::theme::DANGER_RED),
-                ));
-            }
-        }
-        lines.push(Line::from(spans));
+        rows.push(SettingsAuthLineRow::Source {
+            display: settings_auth_source_display(state, kind, row.mode, env_name),
+        });
     }
-    lines.push(Line::from(""));
-    lines
+    rows.push(SettingsAuthLineRow::Spacer);
+    settings_auth_lines(&rows, state.auth.selected, show_cursor)
+}
+
+fn settings_auth_source_display(
+    state: &SettingsState<'_>,
+    kind: AuthKind,
+    mode: jackin_console::tui::auth::AuthMode,
+    env_name: &str,
+) -> AuthSourceDisplay {
+    use crate::console::tui::auth_panel::mode_str;
+
+    match settings_auth_source_value(state, kind, env_name) {
+        Some(EnvValue::Plain(value)) if !value.is_empty() => AuthSourceDisplay::MaskedPlain {
+            chars: value.chars().count(),
+        },
+        Some(EnvValue::OpRef(op_ref)) => AuthSourceDisplay::OpRefPath(op_ref.path.clone()),
+        _ => AuthSourceDisplay::Unset {
+            env_name: env_name.to_string(),
+            mode_label: mode_str(mode).to_string(),
+        },
+    }
 }
 
 fn settings_auth_source_value<'a>(

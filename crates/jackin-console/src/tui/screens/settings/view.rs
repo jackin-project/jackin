@@ -13,9 +13,18 @@ use ratatui::{
 
 use crate::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
-    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+    AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
+    render_secret_key_line,
 };
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsAuthLineRow {
+    Kind { label: String },
+    Mode { mode_label: String },
+    Source { display: AuthSourceDisplay },
+    Spacer,
+}
 
 #[must_use]
 pub fn tab_labels(active: SettingsTab) -> Vec<(&'static str, bool)> {
@@ -191,6 +200,96 @@ pub fn env_lines<'a>(
 }
 
 #[must_use]
+pub fn auth_lines(
+    rows: &[SettingsAuthLineRow],
+    selected_row: usize,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    rows.iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let selected = show_cursor && (selected_row == i);
+            render_auth_line(row, selected)
+        })
+        .collect()
+}
+
+fn render_auth_line(row: &SettingsAuthLineRow, selected: bool) -> Line<'static> {
+    let bold_white = Style::default()
+        .fg(jackin_tui::theme::WHITE)
+        .add_modifier(Modifier::BOLD);
+    let phosphor = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
+
+    match row {
+        SettingsAuthLineRow::Kind { label } => {
+            let cursor_col = if selected { "\u{25b8} " } else { "  " };
+            Line::from(Span::styled(format!("{cursor_col}{label}"), bold_white))
+        }
+        SettingsAuthLineRow::Mode { mode_label } => {
+            let mode_style = if selected {
+                phosphor.add_modifier(Modifier::BOLD)
+            } else {
+                phosphor
+            };
+            let cursor_col = if selected { "\u{25b8} " } else { "  " };
+            Line::from(vec![
+                Span::styled(cursor_col, mode_style),
+                Span::styled(format!("{:<14}", "Mode"), bold_white),
+                Span::styled(mode_label.clone(), mode_style),
+            ])
+        }
+        SettingsAuthLineRow::Source { display } => render_auth_source_line(display, selected),
+        SettingsAuthLineRow::Spacer => Line::from(""),
+    }
+}
+
+fn render_auth_source_line(display: &AuthSourceDisplay, selected: bool) -> Line<'static> {
+    let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    let source_style = if selected {
+        dim.add_modifier(Modifier::BOLD)
+    } else {
+        dim
+    };
+    let cursor_col = if selected { "\u{25b8} " } else { "  " };
+    let mut spans = vec![
+        Span::styled(cursor_col, source_style),
+        Span::styled(
+            format!("{:<14}", "Source"),
+            Style::default()
+                .fg(jackin_tui::theme::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    match display {
+        AuthSourceDisplay::NotRequired => {
+            spans.push(Span::styled("not required", source_style));
+        }
+        AuthSourceDisplay::OpRefPath(path) => {
+            spans.push(Span::styled("[op] ", source_style));
+            crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, path);
+        }
+        AuthSourceDisplay::MaskedPlain { chars } => {
+            spans.push(Span::styled(
+                "\u{25cf}".repeat((*chars).clamp(1, 12)),
+                source_style,
+            ));
+        }
+        AuthSourceDisplay::Unset {
+            env_name,
+            mode_label,
+        } => {
+            spans.push(Span::styled(
+                format!("unset  ({env_name} for {mode_label})"),
+                Style::default().fg(jackin_tui::theme::DANGER_RED),
+            ));
+        }
+    }
+
+    Line::from(spans)
+}
+
+#[must_use]
 pub fn global_mount_lines(
     rows: &[MountDisplayRow],
     selected: Option<usize>,
@@ -341,6 +440,30 @@ mod tests {
         assert!(rendered.starts_with("\u{25b8} very-long-role-name-that-wi\u{2026}"));
         assert!(rendered.contains("trusted"));
         assert!(rendered.contains("https://github.com/example/role"));
+    }
+
+    #[test]
+    fn auth_lines_render_kind_mode_source_and_spacer() {
+        let rows = vec![
+            SettingsAuthLineRow::Kind {
+                label: "Claude".to_string(),
+            },
+            SettingsAuthLineRow::Mode {
+                mode_label: "api-key".to_string(),
+            },
+            SettingsAuthLineRow::Source {
+                display: AuthSourceDisplay::MaskedPlain { chars: 20 },
+            },
+            SettingsAuthLineRow::Spacer,
+        ];
+
+        let lines = auth_lines(&rows, 2, true);
+
+        assert_eq!(lines[0].spans[0].content.as_ref(), "  Claude");
+        assert_eq!(lines[1].spans[1].content.as_ref(), "Mode          ");
+        assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} ");
+        assert_eq!(lines[2].spans[2].content.as_ref(), "\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}");
+        assert!(lines[3].spans.is_empty());
     }
 
     #[test]
