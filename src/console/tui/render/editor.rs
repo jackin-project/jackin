@@ -27,6 +27,7 @@ use jackin_console::tui::components::editor_rows::{
     render_tab_strip,
 };
 use jackin_console::tui::components::mount_rows::render_mount_header;
+use jackin_console::tui::screens::editor::view::tab_labels;
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use jackin_tui::theme::ACTION_ACCENT;
 use ratatui::{
@@ -89,11 +90,7 @@ fn render_editor_tab_strip(
     tab_bar_focused: bool,
     hovered: Option<usize>,
 ) {
-    let labels: Vec<(&str, bool)> = EditorTab::ALL
-        .iter()
-        .map(|tab| (tab.label(), *tab == active))
-        .collect();
-    render_tab_strip(frame, area, &labels, tab_bar_focused, hovered);
+    render_tab_strip(frame, area, &tab_labels(active), tab_bar_focused, hovered);
 }
 
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {

@@ -31,6 +31,7 @@ use jackin_console::tui::components::editor_rows::{
     SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
     render_tab_strip,
 };
+use jackin_console::tui::screens::settings::view::tab_labels;
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
 pub(super) fn render_settings(
@@ -52,14 +53,10 @@ pub(super) fn render_settings(
         ])
         .split(area);
     render_header(frame, chunks[0], "settings");
-    let labels = SettingsTab::ALL
-        .iter()
-        .map(|tab| (tab.label(), *tab == state.active_tab))
-        .collect::<Vec<_>>();
     render_tab_strip(
         frame,
         chunks[1],
-        &labels,
+        &tab_labels(state.active_tab),
         state.tab_bar_focused,
         state.hovered_tab,
     );
