@@ -48,10 +48,7 @@ pub struct ConsoleState {
 impl ConsoleState {
     pub fn new(config: &AppConfig, cwd: &std::path::Path) -> anyhow::Result<Self> {
         let op_cache = Rc::new(RefCell::new(OpCache::default()));
-        let op_available = {
-            use crate::operator_env::OpRunner as _;
-            crate::operator_env::OpCli::new_probe().probe().is_ok()
-        };
+        let op_available = crate::console::services::op::cli_available();
         Ok(Self {
             stage: ConsoleStage::Manager(
                 crate::console::manager::ManagerState::from_config_with_cache_and_op(
