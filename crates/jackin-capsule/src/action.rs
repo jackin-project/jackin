@@ -40,6 +40,9 @@ pub enum Action {
         row: u16,
         col: u16,
     },
+    StatusBarClick {
+        col: u16,
+    },
     ForwardMouse {
         row: u16,
         col: u16,

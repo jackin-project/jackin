@@ -3853,10 +3853,44 @@ mod tests {
     fn apply_action_switch_tab_moves_active_tab() {
         let mut mux = single_pane_tab_mux();
         mux.tabs.push(Tab::new_single("Shell", 2));
+        let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
 
         mux.apply_action(Action::SwitchTab(1));
 
         assert_eq!(mux.active_tab, 1);
+    }
+
+    #[test]
+    fn apply_action_status_bar_click_switches_tab() {
+        let mut mux = single_pane_tab_mux();
+        mux.tabs.push(Tab::new_single("Shell", 2));
+        let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+        let col = (1..mux.term_cols)
+            .find(|col| mux.status_bar.tab_at_col(*col) == Some(1))
+            .expect("second tab should have a clickable column")
+            - 1;
+
+        mux.apply_action(Action::StatusBarClick { col });
+
+        assert_eq!(mux.active_tab, 1);
+    }
+
+    #[test]
+    fn apply_action_status_bar_double_click_opens_rename() {
+        let mut mux = single_pane_tab_mux();
+        let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+        let col = (1..mux.term_cols)
+            .find(|col| mux.status_bar.tab_at_col(*col) == Some(0))
+            .expect("first tab should have a clickable column")
+            - 1;
+
+        mux.apply_action(Action::StatusBarClick { col });
+        mux.apply_action(Action::StatusBarClick { col });
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::RenameTab { tab_idx: 0, .. })
+        ));
     }
 
     #[test]

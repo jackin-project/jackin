@@ -340,6 +340,31 @@ impl Multiplexer {
             Action::FocusPaneAt { row, col } => self
                 .focus_pane_at(row, col)
                 .then(|| self.compose_full_frame(FullRedrawReason::FocusChange)),
+            Action::StatusBarClick { col } => {
+                // 1) Click on a tab cell switches active tab. A
+                //    second click on the same cell within the
+                //    double-click window opens the rename modal.
+                if let Some(idx) = self.status_bar.tab_at_col(col + 1)
+                    && idx < self.tabs.len()
+                {
+                    let now = std::time::Instant::now();
+                    let is_double = self
+                        .last_tab_click
+                        .filter(|(prev_idx, prev_t)| {
+                            *prev_idx == idx && now.duration_since(*prev_t) <= DOUBLE_CLICK_WINDOW
+                        })
+                        .is_some();
+                    if is_double {
+                        return self.apply_action(Action::OpenRenameTab(idx));
+                    }
+                    self.last_tab_click = Some((idx, now));
+                    return self.apply_action(Action::SwitchTab(idx));
+                }
+                if self.status_bar.hint_at(1, col + 1) {
+                    return self.apply_action(Action::OpenPalette);
+                }
+                None
+            }
             Action::ForwardMouse {
                 row,
                 col,
@@ -506,31 +531,7 @@ impl Multiplexer {
                 row: 0,
                 col,
                 button: 0,
-            } => {
-                // 1) Click on a tab cell switches active tab. A
-                //    second click on the same cell within the
-                //    double-click window opens the rename modal.
-                if let Some(idx) = self.status_bar.tab_at_col(col + 1)
-                    && idx < self.tabs.len()
-                {
-                    let now = std::time::Instant::now();
-                    let is_double = self
-                        .last_tab_click
-                        .filter(|(prev_idx, prev_t)| {
-                            *prev_idx == idx && now.duration_since(*prev_t) <= DOUBLE_CLICK_WINDOW
-                        })
-                        .is_some();
-                    if is_double {
-                        return self.apply_action(Action::OpenRenameTab(idx));
-                    }
-                    self.last_tab_click = Some((idx, now));
-                    return self.apply_action(Action::SwitchTab(idx));
-                }
-                if self.status_bar.hint_at(1, col + 1) {
-                    return self.apply_action(Action::OpenPalette);
-                }
-                None
-            }
+            } => self.apply_action(Action::StatusBarClick { col }),
             InputEvent::MousePress { col, row, button } => {
                 // SGR motion event with the left button still held
                 // (`button == 32`) drives an in-flight resize drag or
