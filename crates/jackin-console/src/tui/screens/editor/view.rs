@@ -101,6 +101,24 @@ pub fn secret_value_input_state<'a>(
 }
 
 #[must_use]
+pub fn secret_new_value_input_state<'a>(
+    key: &str,
+) -> jackin_tui::components::TextInputState<'a> {
+    jackin_tui::components::TextInputState::new_allow_empty(
+        format!("Value for {key}"),
+        String::new(),
+    )
+}
+
+#[must_use]
+pub fn secret_source_picker_state(
+    key: impl Into<String>,
+    op_available: bool,
+) -> crate::tui::components::source_picker::SourcePickerState {
+    crate::tui::components::source_picker::SourcePickerState::new(key.into(), op_available)
+}
+
+#[must_use]
 pub fn secret_scope_picker_state() -> crate::tui::components::scope_picker::ScopePickerState {
     crate::tui::components::scope_picker::ScopePickerState::new()
 }
@@ -688,8 +706,18 @@ mod tests {
         assert_eq!(editor_name_input_state("demo").value(), "demo");
         assert_eq!(secret_value_input_state("TOKEN", "value").label, "Edit TOKEN");
         assert!(secret_value_input_state("TOKEN", "").is_valid());
+        assert_eq!(secret_new_value_input_state("TOKEN").label, "Value for TOKEN");
+        assert!(secret_new_value_input_state("TOKEN").is_valid());
         assert_eq!(mount_destination_input_state("/workspace").label, "Destination");
         assert_eq!(mount_destination_input_state("/workspace").value(), "/workspace");
+    }
+
+    #[test]
+    fn secret_source_picker_state_names_key() {
+        let state = secret_source_picker_state("TOKEN", true);
+
+        assert_eq!(state.key, "TOKEN");
+        assert!(state.op_available);
     }
 
     #[test]

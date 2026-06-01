@@ -23,8 +23,9 @@ use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     editor_name_input_state, editor_workdir_pick_state, mount_destination_input_state,
     mount_dst_choice_state, role_load_input_state, role_trust_confirm_state,
-    secret_delete_confirm_state, secret_key_input_state, secret_scope_picker_state,
-    secret_value_input_state, secrets_scope_label,
+    secret_delete_confirm_state, secret_key_input_state, secret_new_value_input_state,
+    secret_scope_picker_state, secret_source_picker_state, secret_value_input_state,
+    secrets_scope_label,
 };
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -1048,7 +1049,6 @@ pub(super) fn handle_editor_modal(
             env_key,
         } => {
             use jackin_console::tui::components::source_picker::SourceChoice;
-            use jackin_tui::components::TextInputState;
             match source.handle_key(key) {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     let Some((scope, key)) = env_key.take() else {
@@ -1060,10 +1060,7 @@ pub(super) fn handle_editor_modal(
                             scope,
                             key: key.clone(),
                         },
-                        state: TextInputState::new_allow_empty(
-                            format!("Value for {key}"),
-                            String::new(),
-                        ),
+                        state: secret_new_value_input_state(&key),
                     });
                 }
                 ModalOutcome::Commit(SourceChoice::Op) => {
@@ -1530,10 +1527,7 @@ pub(super) fn apply_text_input_to_pending(
                 return;
             }
             editor.open_sub_modal(Modal::SourcePicker {
-                state: jackin_console::tui::components::source_picker::SourcePickerState::new(
-                    key.clone(),
-                    op_available,
-                ),
+                state: secret_source_picker_state(key.clone(), op_available),
                 env_key: Some((scope.clone(), key)),
             });
         }
@@ -1952,7 +1946,7 @@ mod tests {
     use super::{
         apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
         add_role_to_workspace_editor, env_key_input_state, handle_editor_modal, poll_role_load,
-        secrets_flat_rows, EditorModalOutcome,
+        role_load_input_state, secrets_flat_rows, EditorModalOutcome,
     };
     use crate::config::AppConfig;
     use crate::console::tui::input::handle_key;
@@ -3088,11 +3082,13 @@ plugins = []
         let mut editor = EditorState::new_edit("ws".into(), empty_ws());
         editor.modal = Some(Modal::TextInput {
             target: TextInputTarget::Role,
-            state: jackin_tui::components::TextInputState::new(
-                "Load role",
-                "Chain Argus Agent Brown",
-            ),
+            state: role_load_input_state(Vec::new()),
         });
+        if let Some(Modal::TextInput { state, .. }) = editor.modal.as_mut() {
+            for ch in "Chain Argus Agent Brown".chars() {
+                state.handle_key(key(KeyCode::Char(ch)));
+            }
+        }
 
         handle_modal_with(&mut editor, key(KeyCode::Enter), &mut config, &paths);
 
