@@ -16,5 +16,9 @@ pub enum Action {
     ResizePane(ArrowDir),
     FocusReport(bool),
     PaneData(Vec<u8>),
+    DragMotion { row: u16, col: u16 },
+    EndDragResize,
+    SelectionMotion { row: u16, col: u16 },
+    FinalizeSelection,
     Dialog(DialogAction),
 }

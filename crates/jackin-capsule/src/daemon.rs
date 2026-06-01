@@ -3841,4 +3841,50 @@ mod tests {
         mux.apply_action(Action::FocusReport(false));
         assert!(!mux.dialog_open());
     }
+
+    #[test]
+    fn apply_action_end_drag_resize_clears_drag_state() {
+        let mut mux = single_pane_tab_mux();
+        mux.drag = Some(DragState {
+            tab_idx: 0,
+            path: Vec::new(),
+            orient: SplitOrient::Horizontal,
+            rect: Rect::new(STATUS_BAR_ROWS, 0, mux.content_rows, mux.term_cols),
+        });
+
+        let frame = mux
+            .apply_action(Action::EndDragResize)
+            .expect("ending drag should redraw layout");
+
+        assert!(mux.drag.is_none(), "drag state should be cleared");
+        assert!(!frame.is_empty(), "layout redraw frame should be emitted");
+    }
+
+    #[test]
+    fn apply_action_selection_motion_updates_selection() {
+        let mut mux = single_pane_tab_mux();
+        let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
+        mux.selection = Some(SelectionState {
+            session_id: 1,
+            inner,
+            anchor_row: 0,
+            anchor_col: 0,
+            end_row: 0,
+            end_col: 0,
+        });
+
+        let frame = mux
+            .apply_action(Action::SelectionMotion {
+                row: inner.row + 2,
+                col: inner.col + 3,
+            })
+            .expect("selection motion should redraw");
+
+        let selection = mux.selection.expect("selection should remain active");
+        assert_eq!((selection.end_row, selection.end_col), (2, 3));
+        assert!(
+            !frame.is_empty(),
+            "selection repaint frame should be emitted"
+        );
+    }
 }

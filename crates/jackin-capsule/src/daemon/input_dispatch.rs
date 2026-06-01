@@ -200,6 +200,13 @@ impl Multiplexer {
                     None
                 }
             }
+            Action::DragMotion { row, col } => self.drag_motion(row, col),
+            Action::EndDragResize => {
+                self.drag = None;
+                Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+            }
+            Action::SelectionMotion { row, col } => self.selection_motion(row, col),
+            Action::FinalizeSelection => self.finalize_selection(),
             Action::Dialog(action) => Some(self.apply_dialog_action(action)),
         }
     }
@@ -274,13 +281,12 @@ impl Multiplexer {
                 // Drop the PTY forward so the source agent does not
                 // see a half-paired release in the middle of a drag.
                 if self.drag.is_some() && (button & 0b11) == 0 {
-                    self.drag = None;
-                    return Some(self.compose_full_frame(FullRedrawReason::LayoutChange));
+                    return self.apply_action(Action::EndDragResize);
                 }
                 // Commit any active text selection: copy to clipboard
                 // and clear the highlight.
                 if self.selection.is_some() && (button & 0b11) == 0 {
-                    return self.finalize_selection();
+                    return self.apply_action(Action::FinalizeSelection);
                 }
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, false);
                 None
@@ -448,10 +454,10 @@ impl Multiplexer {
                 // forward to PTY.
                 if button == 32 {
                     if self.drag.is_some() {
-                        return self.drag_motion(row, col);
+                        return self.apply_action(Action::DragMotion { row, col });
                     }
                     if self.selection.is_some() {
-                        return self.selection_motion(row, col);
+                        return self.apply_action(Action::SelectionMotion { row, col });
                     }
                     // No drag / selection in flight: motion events
                     // belong to the focused pane only if it asked
