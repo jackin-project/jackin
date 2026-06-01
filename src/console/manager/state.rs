@@ -26,11 +26,44 @@ use jackin_tui::runtime::{
     BlockingSubscription, Subscription, SubscriptionPoll, spawn_blocking_subscription,
 };
 
-pub use crate::console::manager::workspace_summary::WorkspaceSummary;
-use crate::console::manager::workspace_summary::workspace_summary_from_config;
 pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
-pub use jackin_console::workspaces::state::ManagerListRow;
+pub use jackin_console::workspaces::state::{ManagerListRow, WorkspaceSummary};
+
+fn workspace_summary_from_config(
+    name: &str,
+    ws: &crate::workspace::WorkspaceConfig,
+) -> WorkspaceSummary {
+    WorkspaceSummary::from_source(name, ws)
+}
+
+impl jackin_console::workspaces::state::WorkspaceSummarySource
+    for crate::workspace::WorkspaceConfig
+{
+    fn workdir(&self) -> &str {
+        &self.workdir
+    }
+
+    fn mount_count(&self) -> usize {
+        self.mounts.len()
+    }
+
+    fn readonly_mount_count(&self) -> usize {
+        self.mounts.iter().filter(|mount| mount.readonly).count()
+    }
+
+    fn allowed_role_count(&self) -> usize {
+        self.allowed_roles.len()
+    }
+
+    fn default_role(&self) -> Option<&str> {
+        self.default_role.as_deref()
+    }
+
+    fn last_role(&self) -> Option<&str> {
+        self.last_role.as_deref()
+    }
+}
 
 pub(crate) type MountDiff<'a> =
     jackin_console::mount_diff::MountDiff<'a, crate::workspace::MountConfig>;

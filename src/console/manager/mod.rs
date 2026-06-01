@@ -18,7 +18,6 @@ mod pre_render;
 pub(crate) mod settings_footer;
 pub(crate) mod settings_geometry;
 pub mod state;
-pub mod workspace_summary;
 
 pub use crate::console::tui::render::render;
 pub use input::{InputOutcome, handle_key};
