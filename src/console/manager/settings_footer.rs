@@ -10,6 +10,7 @@ use crate::console::manager::state::{
     SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab,
 };
 use crate::operator_env::EnvValue;
+use jackin_console::widgets::footer_hints::{content_footer_items, tab_bar_footer_items};
 
 pub(crate) fn settings_footer_items(
     state: &SettingsState<'_>,
@@ -28,56 +29,19 @@ pub(crate) fn settings_footer_items(
 
 fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     if state.tab_bar_focused {
-        let mut items = vec![
-            HintSpan::Key("\u{2190}\u{2192}"),
-            HintSpan::Text("switch tab"),
-            HintSpan::GroupSep,
-            HintSpan::Key("⇥/↓"),
-            HintSpan::Text("enter content"),
-        ];
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("S"),
-            HintSpan::Text("save settings"),
-        ]);
-        if state.is_dirty() {
-            items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-        }
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text(if state.is_dirty() { "discard" } else { "back" }),
-        ]);
-        return items;
+        return tab_bar_footer_items(
+            "save settings",
+            true,
+            state.is_dirty().then(|| state.change_count()),
+        );
     }
-
-    let mut items = vec![
-        HintSpan::Key("\u{2191}\u{2193}"),
-        HintSpan::Text("navigate"),
-    ];
 
     let row_items = contextual_row_items(state, op_available);
-    if !row_items.is_empty() {
-        items.push(HintSpan::GroupSep);
-        items.extend(row_items);
-    }
-
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("⇧Tab"),
-        HintSpan::Text("tab bar"),
-        HintSpan::GroupSep,
-    ]);
-    items.extend([HintSpan::Key("S"), HintSpan::Text("save settings")]);
-    if state.is_dirty() {
-        items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-    }
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        HintSpan::Text(if state.is_dirty() { "discard" } else { "back" }),
-    ]);
-    items
+    content_footer_items(
+        "save settings",
+        row_items,
+        state.is_dirty().then(|| state.change_count()),
+    )
 }
 
 #[allow(clippy::too_many_lines)]

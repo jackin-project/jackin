@@ -11,6 +11,7 @@ use crate::console::manager::state::{
     AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow,
 };
 use crate::operator_env::EnvValue;
+use jackin_console::widgets::footer_hints::{content_footer_items, tab_bar_footer_items};
 
 pub(crate) fn editor_footer_items(
     state: &EditorState<'_>,
@@ -31,69 +32,18 @@ pub(crate) fn editor_footer_items(
         return items;
     }
     if state.tab_bar_focused {
-        let enter_content_hint = if state.active_tab == EditorTab::General {
-            &[][..]
-        } else {
-            &[
-                HintSpan::GroupSep,
-                HintSpan::Key("⇥/↓"),
-                HintSpan::Text("enter content"),
-            ][..]
-        };
-        let mut items = vec![
-            HintSpan::Key("\u{2190}\u{2192}"),
-            HintSpan::Text("switch tab"),
-        ];
-        items.extend_from_slice(enter_content_hint);
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("S"),
-            HintSpan::Text("save workspace"),
-        ]);
-        if state.is_dirty() {
-            items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-        }
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            if state.is_dirty() {
-                HintSpan::Text("discard")
-            } else {
-                HintSpan::Text("back")
-            },
-        ]);
-        return items;
+        return tab_bar_footer_items(
+            "save workspace",
+            state.active_tab != EditorTab::General,
+            state.is_dirty().then(|| state.change_count()),
+        );
     }
-    let mut items: Vec<HintSpan<'static>> = vec![
-        HintSpan::Key("\u{2191}\u{2193}"),
-        HintSpan::Text("navigate"),
-    ];
     let row_items = contextual_row_items(state, config, op_available);
-    if !row_items.is_empty() {
-        items.push(HintSpan::GroupSep);
-        items.extend(row_items);
-    }
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("⇧Tab"),
-        HintSpan::Text("tab bar"),
-        HintSpan::GroupSep,
-        HintSpan::Key("S"),
-        HintSpan::Text("save workspace"),
-    ]);
-    if state.is_dirty() {
-        items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-    }
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        if state.is_dirty() {
-            HintSpan::Text("discard")
-        } else {
-            HintSpan::Text("back")
-        },
-    ]);
-    items
+    content_footer_items(
+        "save workspace",
+        row_items,
+        state.is_dirty().then(|| state.change_count()),
+    )
 }
 
 #[allow(clippy::too_many_lines)]

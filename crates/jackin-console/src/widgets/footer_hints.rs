@@ -106,3 +106,74 @@ pub fn yes_no_footer_items() -> Vec<HintSpan<'static>> {
         HintSpan::Text("no"),
     ]
 }
+
+#[must_use]
+pub fn tab_bar_footer_items(
+    save_label: &'static str,
+    enter_content: bool,
+    dirty_change_count: Option<usize>,
+) -> Vec<HintSpan<'static>> {
+    let mut items = vec![
+        HintSpan::Key("\u{2190}\u{2192}"),
+        HintSpan::Text("switch tab"),
+    ];
+    if enter_content {
+        items.extend([
+            HintSpan::GroupSep,
+            HintSpan::Key("\u{21e5}/\u{2193}"),
+            HintSpan::Text("enter content"),
+        ]);
+    }
+    append_save_and_escape(&mut items, save_label, dirty_change_count);
+    items
+}
+
+#[must_use]
+pub fn content_footer_items(
+    save_label: &'static str,
+    row_items: Vec<HintSpan<'static>>,
+    dirty_change_count: Option<usize>,
+) -> Vec<HintSpan<'static>> {
+    let mut items = vec![
+        HintSpan::Key("\u{2191}\u{2193}"),
+        HintSpan::Text("navigate"),
+    ];
+
+    if !row_items.is_empty() {
+        items.push(HintSpan::GroupSep);
+        items.extend(row_items);
+    }
+
+    items.extend([
+        HintSpan::GroupSep,
+        HintSpan::Key("\u{21e7}Tab"),
+        HintSpan::Text("tab bar"),
+        HintSpan::GroupSep,
+    ]);
+    append_save_and_escape(&mut items, save_label, dirty_change_count);
+    items
+}
+
+fn append_save_and_escape(
+    items: &mut Vec<HintSpan<'static>>,
+    save_label: &'static str,
+    dirty_change_count: Option<usize>,
+) {
+    items.extend([
+        HintSpan::GroupSep,
+        HintSpan::Key("S"),
+        HintSpan::Text(save_label),
+    ]);
+    if let Some(count) = dirty_change_count {
+        items.push(HintSpan::Dyn(format!("({count} changes)")));
+    }
+    items.extend([
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text(if dirty_change_count.is_some() {
+            "discard"
+        } else {
+            "back"
+        }),
+    ]);
+}
