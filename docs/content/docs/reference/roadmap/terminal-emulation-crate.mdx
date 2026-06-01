@@ -92,6 +92,8 @@ Verification against the actual crate landscape says **no, not directly** — an
 | **[`wezterm-term`](https://github.com/wezterm/wezterm)** / **[`termwiz`](https://docs.rs/termwiz)** | own (termwiz) | full `Surface` model, scrollback, OSC 8, images | **Yes** — `Surface`/`Change` diff | `termwiz` published; **`wezterm-term` not published** ([#6663](https://github.com/wezterm/wezterm/issues/6663)) | multi-maintainer, active | The strongest "buy": has both a model and a diff-emit. Heavy dep tree; `wezterm-term` would itself be a git dep. **Must be evaluated before any build.** |
 | **[Rio](https://github.com/raphamorim/rio)** (`rio-backend` + [`copa`](https://lib.rs/crates/copa)) | `copa` (Alacritty `vte` fork) | `Crosswords` grid, GPU/WebGPU, SIMD UTF-8 | **No** — GPU present | on crates.io but **app-internal infra**; `copa` stale (0.12.0, 2023) | single primary author | GPU app backend, no emit stage, less stable than Alacritty for our purpose |
 | **[`avt`](https://github.com/asciinema/avt)** (asciinema) | own | primary/alt grid | **Partial** — full-screen `dump()`, no incremental diff, no live OSC callbacks | crates.io | asciinema org | Record/replay shape, not interactive multiplexing |
+| **[libvterm](https://www.leonerd.org.uk/code/libvterm/)** (LeoNerd, C) | own (C) | abstract VT220/xterm state, **damage callbacks** | **No** — gives damage regions; the host renders/re-emits itself | C library, maintained, packaged across distros; **[neovim fork](https://github.com/neovim/libvterm)** | active (C); **Rust bindings dead** ([`vterm-sys`](https://crates.io/crates/vterm-sys) / [`libvterm-rs`](https://github.com/ajh/libvterm-rs), ~2016) | The strongest *conceptual* prior art — battle-tested damage model neovim and emacs-vterm embed — but it is **C**, the Rust bindings are abandoned, it needs an FFI `-sys` wrapper and a C toolchain in the container, and it **still lacks the wire-emit stage**. Adopting it means owning a binding anyway. |
+| **[`tui-term`](https://github.com/a-kenji/tui-term)** (a-kenji) | wraps `vt100` | `vt100::Screen` | **No** — renders a **ratatui `Buffer`**, not escape bytes | crates.io, 0.3.x (Apr 2026), active | single author | A ratatui *widget*, not a model — wraps `vt100` and paints into a ratatui buffer. Wrong direction (no re-emit). Useful only as ecosystem confirmation that `vt100` is the default model, and as a reference if the capsule ever moves to ratatui (see TUI architecture item). |
 | **[`vte`](https://crates.io/crates/vte)** (alacritty) | the canonical parser (`Perform`) | none | n/a | crates.io, stable, canonical | multi-maintainer | **The reusable foundation — depend on it, never rebuild the parser** |
 
 What the comparison proves:
@@ -99,7 +101,8 @@ What the comparison proves:
 - **The GPU-fast engines (Alacritty, Rio) are structurally missing our stage.** Adopting them means hand-writing the diff-to-escape emit — exactly what `vt100` gives free. So "just use Alacritty" trades our problem for a bigger one.
 - **The reusable, fast, canonical piece everyone shares is `vte`.** That is the part to depend on; rebuilding a VT parser would violate <RepoFile path="AGENTS.md" /> "Prefer libraries over hand-rolled parsers" for no gain.
 - **`termwiz` is the only off-the-shelf crate with both a model and a diff-emit** — making it the mandatory "buy" candidate to rule out before any "build."
-- The hybrid we'd build = **`vte` (theirs) + ring-buffer damage grid (Alacritty's idea, our code) + wire-minimal emit (vt100's idea, our code, but damage-driven) + typed passthrough (ours).** Best of each world, none of them shippable as-is for our exact job.
+- **Even libvterm — the mature C model neovim and emacs-vterm embed — does not ship the wire-emit stage.** It gives damage callbacks and abstract state; the host still renders or re-emits itself. That is strong evidence that the diff-to-escape present stage is a genuinely rare, multiplexer-specific piece that *nobody hands you*, in C or Rust. And libvterm's Rust bindings are abandoned, so adopting it would mean owning an FFI `-sys` wrapper plus a C toolchain in the container — the same ownership cost as `jackin-term` with a worse dependency story and still no emit.
+- The hybrid we'd build = **`vte` (theirs) + ring-buffer damage grid (Alacritty's / libvterm's idea, our code) + wire-minimal emit (vt100's idea, our code, but damage-driven) + typed passthrough (ours).** Best of each world, none of them shippable as-is for our exact job.
 
 ## Why our own crate could make sense
 
@@ -215,9 +218,14 @@ If and only if Experiments 1–4 surface at least one quantified wall, build a *
 
 **Decision gate:** the spike must show a **≥ 2× improvement in the walled metric** (or an unambiguous qualitative fix, e.g. eliminating visible jitter on dataset 3) to justify a full `jackin-term`. A 10% improvement does not justify owning a terminal crate; a 5× drop in p99 present-frame time or wire bytes does.
 
-### Experiment 6 — the "buy" gate (`termwiz`)
+### Experiment 6 — the "buy / bind" gate (`termwiz`, libvterm)
 
-Before committing to build, prototype driving **`termwiz`'s `Surface`/`Change` diff** as the capsule's present stage on dataset 2/3. If `termwiz` matches the prototype's numbers **and** offers a stable published API, **buy beats build** and we adopt `termwiz` instead of writing `jackin-term`.
+Before committing to build, rule out the two adopt-instead-of-write options:
+
+- **`termwiz` (buy):** prototype driving its `Surface`/`Change` diff as the capsule's present stage on dataset 2/3. If `termwiz` matches the prototype's numbers **and** offers a stable published API, **buy beats build** and we adopt `termwiz`.
+- **libvterm (bind):** assess whether wrapping the maintained C library (neovim fork) behind a fresh `-sys` crate is cheaper than `jackin-term`. The gate is hard to pass: its Rust bindings are abandoned (so we'd own a binding either way), it adds a C toolchain to the container build, and it **still lacks the wire-emit stage** we'd have to write regardless. Document the FFI surface and build cost, then compare honestly against owning pure-Rust `jackin-term`.
+
+If neither adopt-path clears its gate, the remaining choice is build vs. drop, decided by the matrix below.
 
 ## The decision matrix
 
@@ -256,6 +264,6 @@ None. This item is entirely in-container / in-binary terminal modeling and emits
 2. How far is `vt100`'s emit from wire-minimal on realistic frames? (Experiment 2)
 3. How many allocations per frame does the current render path make? (Experiment 3)
 4. Does per-session heap-grid memory/CPU scale acceptably to 16–32 panes? (Experiment 4)
-5. Can `termwiz` be the present stage and make "buy" beat "build"? (Experiment 6)
+5. Can `termwiz` (buy) or a fresh libvterm binding (bind) be the present stage and beat building `jackin-term`? (Experiment 6)
 6. Is win 4 (typed passthrough, fork retirement) valuable enough to justify a crate **independent** of any performance result?
 7. If built, does `jackin-term` stay capsule-private, or ship as a publishable crate — the only Rust terminal model purpose-built for re-emitting multiplexers — feeding the broader jackin' ecosystem?
