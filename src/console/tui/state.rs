@@ -347,6 +347,15 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
     )
 }
 
+pub fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
+    jackin_console::tui::screens::editor::update::secrets_flat_rows(
+        &editor.pending.env,
+        &editor.pending.roles,
+        &editor.secrets_expanded,
+        |role| &role.env,
+    )
+}
+
 fn effective_mode_needs_credential(
     synthesized: &AppConfig,
     ws_name: &str,

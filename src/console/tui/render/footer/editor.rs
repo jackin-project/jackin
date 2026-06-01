@@ -6,9 +6,9 @@ use jackin_tui::HintSpan;
 
 use crate::config::AppConfig;
 use crate::console::tui::render::footer::modal::modal_footer_items;
-use crate::console::tui::state::auth_flat_rows;
 use crate::console::tui::state::{
     AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow,
+    auth_flat_rows, secrets_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
@@ -158,13 +158,4 @@ pub(crate) fn contextual_row_items(
             }
         }
     }
-}
-
-fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    jackin_console::tui::screens::editor::update::secrets_flat_rows(
-        &editor.pending.env,
-        &editor.pending.roles,
-        &editor.secrets_expanded,
-        |role| &role.env,
-    )
 }

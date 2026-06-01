@@ -7,11 +7,11 @@ use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
-use crate::console::tui::state::auth_flat_rows;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
     TextInputTarget,
+    auth_flat_rows, secrets_flat_rows,
 };
 #[cfg(test)]
 use crate::console::tui::state::PendingRoleLoad;
@@ -24,15 +24,6 @@ use jackin_console::tui::screens::editor::view::{secrets_forbidden_label, secret
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use jackin_tui::ModalOutcome;
-
-fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    jackin_console::tui::screens::editor::update::secrets_flat_rows(
-        &editor.pending.env,
-        &editor.pending.roles,
-        &editor.secrets_expanded,
-        |role| &role.env,
-    )
-}
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.

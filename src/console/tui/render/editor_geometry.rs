@@ -6,9 +6,9 @@ use crate::config::AppConfig;
 use crate::console::tui::render::mount_display::{
     workspace_mounts_content_height, workspace_mounts_content_width_with_cache,
 };
-use crate::console::tui::state::auth_flat_rows;
 use crate::console::tui::state::{
     AuthRow, EditorMode, EditorState, EditorTab, SecretsRow, SecretsScopeTag,
+    auth_flat_rows, secrets_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::screens::editor::view::{
@@ -165,15 +165,6 @@ fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGe
         content_width,
         content_height: rows.len(),
     }
-}
-
-fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    jackin_console::tui::screens::editor::update::secrets_flat_rows(
-        &editor.pending.env,
-        &editor.pending.roles,
-        &editor.secrets_expanded,
-        |role| &role.env,
-    )
 }
 
 fn secrets_row_width(

@@ -8,12 +8,13 @@ use crate::config::AppConfig;
 use crate::console::domain::resolve_panel_mode;
 use crate::console::tui::render::mount_display::format_mount_rows_with_cache;
 pub use crate::console::tui::state::AuthRow;
+#[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
 pub(crate) use crate::console::tui::state::{
-    auth_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
+    auth_flat_rows, secrets_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::{
@@ -177,15 +178,6 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
         .collect();
 
     editor_role_lines(&rows, allowed_count, is_all, cursor, show_cursor)
-}
-
-fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    jackin_console::tui::screens::editor::update::secrets_flat_rows(
-        &editor.pending.env,
-        &editor.pending.roles,
-        &editor.secrets_expanded,
-        |role| &role.env,
-    )
 }
 
 // Linear match per row kind reads better than scattered helpers.
