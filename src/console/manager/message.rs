@@ -13,6 +13,7 @@ use super::state::{
 };
 use crate::config::AppConfig;
 use jackin_console::focus::moved_selection;
+pub(crate) use jackin_console::tui::effect::ConsoleEffect as ManagerEffect;
 use jackin_console::tui::screens::editor::update::{
     next_editor_tab, previous_editor_tab, set_role_expanded as set_editor_role_expanded,
     step_cursor_down, step_cursor_up, toggle_general_selected as toggle_editor_general_row,
@@ -193,12 +194,6 @@ pub(crate) enum ManagerMessage {
     DismissInlineAgentPicker,
     DismissInlineProviderPicker,
     DismissLaunchProviderPicker,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ManagerEffect {
-    RequestActiveMountInfoRefresh,
-    RequestInstanceRefresh,
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<ManagerEffect>;

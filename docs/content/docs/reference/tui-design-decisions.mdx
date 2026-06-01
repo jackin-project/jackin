@@ -145,7 +145,7 @@ src/
 
 **Enforcement:** before adding any file under `src/tui/`, ask: "Does this execute external work, own durable product state, or define non-visual behavior?" Yes → it does not go in `src/tui/`. Before adding a TUI file outside `src/tui/`, ask: "Is this about terminal interaction or terminal rendering?" Yes → it belongs under `src/tui/`.
 
-**Migration status:** Capsule, launch, and console all have thin `src/tui.rs` roots. Launch model/message/update/effect/run/view files live under `crates/jackin-launch/src/tui/`, and launch-local visual components live under `crates/jackin-launch/src/tui/components/`. Console screen model/update helpers now live under `crates/jackin-console/src/tui/screens/` using `model.rs` for screen state, and extracted console-local visual components live under `crates/jackin-console/src/tui/components/`. Remaining transitional widgets may stay until migrated, but do not add new canonical TUI code to old locations.
+**Migration status:** Capsule, launch, and console all have thin `src/tui.rs` roots. Launch model/message/update/effect/run/view files live under `crates/jackin-launch/src/tui/`, and launch-local visual components live under `crates/jackin-launch/src/tui/components/`. Console effect types, screen model/update helpers, and extracted console-local visual components now live under `crates/jackin-console/src/tui/`; screen state uses `model.rs` under `crates/jackin-console/src/tui/screens/`. Remaining transitional widgets may stay until migrated, but do not add new canonical TUI code to old locations.
 
 ---
 
