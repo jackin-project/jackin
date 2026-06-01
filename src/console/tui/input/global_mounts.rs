@@ -17,6 +17,7 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     env_forbidden_label, env_scope_label, global_mount_confirm_prompt,
+    settings_env_delete_confirm_prompt,
 };
 use jackin_tui::components::{ConfirmState, TextInputState};
 
@@ -1817,7 +1818,7 @@ fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::S
     };
     settings.env.modal = Some(SettingsEnvModal::Confirm {
         action: SettingsEnvConfirm::Delete,
-        state: ConfirmState::new(format!("Delete environment variable {key}?")),
+        state: ConfirmState::new(settings_env_delete_confirm_prompt(&key)),
     });
 }
 

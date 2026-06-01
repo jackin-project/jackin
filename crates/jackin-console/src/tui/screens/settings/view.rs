@@ -72,6 +72,11 @@ pub const fn global_mount_confirm_prompt(action: GlobalMountConfirm) -> &'static
 }
 
 #[must_use]
+pub fn settings_env_delete_confirm_prompt(key: &str) -> String {
+    format!("Delete environment variable {key}?")
+}
+
+#[must_use]
 pub fn env_scope_label(scope: &SettingsEnvScope) -> &str {
     match scope {
         SettingsEnvScope::Global => "global",
@@ -479,6 +484,14 @@ mod tests {
         assert_eq!(
             global_mount_confirm_prompt(GlobalMountConfirm::Sensitive),
             "Sensitive global mount path detected. Save anyway?"
+        );
+    }
+
+    #[test]
+    fn settings_env_delete_confirm_prompt_names_key() {
+        assert_eq!(
+            settings_env_delete_confirm_prompt("TOKEN"),
+            "Delete environment variable TOKEN?"
         );
     }
 
