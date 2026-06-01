@@ -175,6 +175,11 @@ pub(crate) enum ManagerMessage {
         title: String,
         message: String,
     },
+    OpenStatusPopup {
+        title: String,
+        message: String,
+    },
+    DismissStatusPopup,
     OpenListContainerInfo {
         state: jackin_tui::components::ContainerInfoState,
     },
@@ -454,6 +459,14 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::OpenListErrorPopup { title, message } => {
             state.open_list_error_popup(title, message);
+        }
+        ManagerMessage::OpenStatusPopup { title, message } => {
+            state.status_overlay = Some(jackin_tui::components::StatusPopupState::new(
+                title, message,
+            ));
+        }
+        ManagerMessage::DismissStatusPopup => {
+            state.status_overlay = None;
         }
         ManagerMessage::OpenListContainerInfo { state: info } => {
             state.list_modal = Some(super::state::Modal::ContainerInfo { state: info });
@@ -2026,6 +2039,29 @@ mod tests {
             state.list_modal,
             Some(super::super::state::Modal::ErrorPopup { .. })
         ));
+    }
+
+    #[test]
+    fn status_popup_messages_open_and_dismiss_overlay() {
+        let cwd = std::path::Path::new("/");
+        let config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        assert!(state.status_overlay.is_none());
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::OpenStatusPopup {
+                    title: "Stopping".into(),
+                    message: "Stopping capsule-a...".into(),
+                }
+            )
+            .is_dirty()
+        );
+        assert!(state.status_overlay.is_some());
+
+        assert!(update_manager(&mut state, ManagerMessage::DismissStatusPopup).is_dirty());
+        assert!(state.status_overlay.is_none());
     }
 
     #[test]

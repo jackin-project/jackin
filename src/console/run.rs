@@ -527,7 +527,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                     let busy_body = format!("{busy_title} {container}…");
                                     let _ = manager::update_manager(
                                         ms,
-                                        manager::ManagerMessage::OpenListErrorPopup {
+                                        manager::ManagerMessage::OpenStatusPopup {
                                             title: busy_title.into(),
                                             message: busy_body,
                                         },
@@ -545,7 +545,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
                                     let _ = manager::update_manager(
                                         ms,
-                                        manager::ManagerMessage::DismissListModal,
+                                        manager::ManagerMessage::DismissStatusPopup,
                                     );
                                     if let Err(error) = result {
                                         let err_title = match action {
