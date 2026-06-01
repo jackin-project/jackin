@@ -118,7 +118,7 @@ pub struct ManagerState<'a> {
     pub inline_role_picker: Option<RolePickerState>,
     pub inline_agent_picker: Option<(
         crate::selector::RoleSelector,
-        crate::console::widgets::agent_choice::AgentChoiceState,
+        crate::agent::AgentChoiceState,
     )>,
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
@@ -130,7 +130,7 @@ pub struct ManagerState<'a> {
     #[allow(clippy::type_complexity)]
     pub inline_new_session_picker: Option<(
         String,
-        crate::console::widgets::agent_choice::AgentChoiceState,
+        crate::agent::AgentChoiceState,
         Vec<jackin_protocol::Provider>,
     )>,
     /// Provider picker shown after the agent is committed in

@@ -533,7 +533,7 @@ fn render_agent_picker_sidebar(
     frame: &mut Frame,
     area: Rect,
     role_name: &str,
-    picker: &crate::console::widgets::agent_choice::AgentChoiceState,
+    picker: &crate::agent::AgentChoiceState,
     focused: bool,
 ) {
     let title = format!(" {role_name} ");
@@ -550,7 +550,7 @@ fn render_agent_picker_sidebar(
         .iter()
         .map(|agent| {
             ListItem::new(Line::from(
-                crate::console::widgets::agent_choice::agent_picker_label(*agent),
+                jackin_console::widgets::agent_choice::agent_picker_label(*agent),
             ))
         })
         .collect();

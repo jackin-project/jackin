@@ -139,10 +139,9 @@ pub(super) fn handle_list_key(
                 let instances = state.workspace_active_instances(ws_idx);
                 if let Some(entry) = instances.get(inst_idx) {
                     let container = entry.container_base.clone();
-                    let picker =
-                        crate::console::widgets::agent_choice::AgentChoiceState::with_choices(
-                            crate::agent::Agent::ALL.to_vec(),
-                        );
+                    let picker = crate::agent::AgentChoiceState::with_choices(
+                        crate::agent::Agent::ALL.to_vec(),
+                    );
                     // The host config does not prove what env the already-running
                     // Capsule daemon captured. Offer provider choices only from
                     // daemon-owned flows that know `ZAI_API_KEY` exists there.
@@ -764,9 +763,9 @@ mod tests {
     use super::super::super::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
     use super::{InputOutcome, handle_new_session_picker, instance_action_accepts_status};
+    use crate::agent::AgentChoiceState;
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
-    use crate::console::widgets::agent_choice::AgentChoiceState;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
     use crate::paths::JackinPaths;
     use crate::workspace::WorkspaceConfig;

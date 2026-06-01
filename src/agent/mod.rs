@@ -12,6 +12,22 @@ pub enum Agent {
     Opencode,
 }
 
+impl jackin_console::widgets::agent_choice::AgentChoice for Agent {
+    const ALL: &'static [Self] = Self::ALL;
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
+            Self::Amp => "Amp",
+            Self::Kimi => "Kimi",
+            Self::Opencode => "OpenCode",
+        }
+    }
+}
+
+pub type AgentChoiceState = jackin_console::widgets::agent_choice::AgentChoiceState<Agent>;
+
 impl Agent {
     /// Every variant in declaration order. Iteration sites consult
     /// this instead of hand-rolling their own array.

@@ -147,7 +147,7 @@ pub(super) async fn open_inline_agent_picker(
     let ConsoleStage::Manager(ms) = &mut state.stage;
     ms.inline_agent_picker = Some((
         role.clone(),
-        crate::console::widgets::agent_choice::AgentChoiceState::with_choices(agents),
+        crate::agent::AgentChoiceState::with_choices(agents),
     ));
     ms.inline_role_picker = None;
     state.pending_launch_role = Some(role.clone());
