@@ -220,8 +220,12 @@ pub fn handle_key(
     if let ManagerStage::Settings(settings) = &mut state.stage
         && settings.mounts.modal.is_some()
     {
-        global_mounts::handle_settings_confirm_modal(settings, config, paths, key);
+        let mut open_url = None;
+        global_mounts::handle_settings_confirm_modal(settings, config, paths, key, &mut open_url);
         global_mounts::after_settings_event(state);
+        if let Some(url) = open_url {
+            return Ok(InputOutcome::OpenUrl(url));
+        }
         return Ok(InputOutcome::Continue);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage

@@ -15,7 +15,6 @@ use crate::paths::JackinPaths;
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
-use jackin_console::services::file_browser::open_git_url;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::view::{env_forbidden_label, env_scope_label};
 use jackin_tui::components::{ConfirmState, TextInputState};
@@ -1140,6 +1139,7 @@ pub(super) fn handle_settings_confirm_modal(
     config: &mut AppConfig,
     paths: &JackinPaths,
     key: KeyEvent,
+    open_url: &mut Option<String>,
 ) {
     let Some(modal) = settings.mounts.modal.take() else {
         return;
@@ -1189,7 +1189,7 @@ pub(super) fn handle_settings_confirm_modal(
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                 }
                 FileBrowserOutcome::OpenGitUrl(url) => {
-                    open_git_url(&url);
+                    *open_url = Some(url);
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                 }
                 FileBrowserOutcome::Continue
@@ -2164,6 +2164,17 @@ mod tests {
     use crate::config::RoleSource;
     use std::collections::BTreeMap;
 
+    fn confirm_modal(
+        settings: &mut SettingsState<'_>,
+        config: &mut AppConfig,
+        paths: &JackinPaths,
+        key: KeyEvent,
+    ) {
+        let mut open_url = None;
+        handle_settings_confirm_modal(settings, config, paths, key, &mut open_url);
+        assert!(open_url.is_none(), "test helper did not expect URL-open");
+    }
+
     #[test]
     fn global_mount_save_detects_sensitive_sources() {
         let rows = vec![crate::config::GlobalMountRow {
@@ -2200,7 +2211,7 @@ mod tests {
             Some(GlobalMountModal::ScopePicker { .. })
         ));
 
-        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
         assert!(matches!(
             settings.mounts.modal,
             Some(GlobalMountModal::FileBrowser { .. })
@@ -2222,13 +2233,13 @@ mod tests {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             panic!("expected settings stage");
         };
-        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
         assert!(matches!(
             settings.mounts.modal,
             Some(GlobalMountModal::FileBrowser { .. })
         ));
 
-        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
 
         // The ScopePicker was committed when AllAgents was picked, so Esc
         // on the FileBrowser must close the modal chain entirely rather
@@ -2268,13 +2279,13 @@ mod tests {
             panic!("expected scope picker");
         };
         picker.focused = jackin_console::tui::components::scope_picker::ScopeChoice::SpecificAgent;
-        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
         assert!(matches!(
             settings.mounts.modal,
             Some(GlobalMountModal::RolePicker { .. })
         ));
 
-        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
         assert!(matches!(
             settings.mounts.modal,
             Some(GlobalMountModal::FileBrowser { .. })
@@ -2317,13 +2328,13 @@ mod tests {
             panic!("expected scope picker");
         };
         picker.focused = jackin_console::tui::components::scope_picker::ScopeChoice::SpecificAgent;
-        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
         assert!(matches!(
             settings.mounts.modal,
             Some(GlobalMountModal::RolePicker { .. })
         ));
 
-        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
 
         assert!(
             settings.mounts.modal.is_none(),
