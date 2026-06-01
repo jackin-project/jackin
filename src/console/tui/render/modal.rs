@@ -5,7 +5,7 @@ use ratatui::Frame;
 
 use crate::console::tui::render::modal_layout::modal_outer_rect;
 use crate::console::tui::state::Modal;
-use crate::console::{tui::auth_panel, tui::op_picker};
+use crate::console::tui::auth_panel;
 
 // ── Modal dispatcher ────────────────────────────────────────────────
 
@@ -47,7 +47,11 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_tui::components::render_status_popup(frame, modal_area, state);
         }
         Modal::OpPicker { state } => {
-            op_picker::render::render(frame, modal_area, state);
+            jackin_console::tui::components::op_picker::render_picker(
+                frame,
+                modal_area,
+                state.as_ref(),
+            );
         }
         Modal::RolePicker { state }
         | Modal::RoleOverridePicker { state }

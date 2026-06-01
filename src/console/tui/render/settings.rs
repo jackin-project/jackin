@@ -320,7 +320,7 @@ pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvMo
         }
         SettingsEnvModal::OpPicker { state } => {
             let area = op_picker_rect(frame.area());
-            crate::console::tui::op_picker::render::render(frame, area, state);
+            jackin_console::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
         SettingsEnvModal::RolePicker { state } => {
             let area = role_picker_rect(frame.area(), state);
@@ -359,7 +359,7 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuth
             } else {
                 op_picker_rect(frame.area())
             };
-            crate::console::tui::op_picker::render::render(frame, area, state);
+            jackin_console::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
     }
 }

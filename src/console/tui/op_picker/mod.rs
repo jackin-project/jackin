@@ -20,7 +20,6 @@
 mod input;
 mod load;
 mod query;
-pub mod render;
 mod selection;
 mod state;
 

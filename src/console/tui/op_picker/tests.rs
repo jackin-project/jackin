@@ -1221,7 +1221,7 @@ fn picker_loading_account_state_renders_spinner_immediately() {
     let area = Rect::new(0, 0, 60, 12);
     let backend = TestBackend::new(area.width, area.height);
     let mut term = Terminal::new(backend).unwrap();
-    term.draw(|f| crate::console::tui::op_picker::render::render(f, area, &s))
+    term.draw(|f| jackin_console::tui::components::op_picker::render_picker(f, area, &s))
         .unwrap();
     let buf = term.backend().buffer();
 
@@ -1241,6 +1241,111 @@ fn picker_loading_account_state_renders_spinner_immediately() {
     );
 
     runner_for_release.release();
+}
+
+fn render_picker_dump(state: &OpPickerState, width: u16, height: u16) -> (String, String) {
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+    let backend = TestBackend::new(width, height);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| {
+        jackin_console::tui::components::op_picker::render_picker(
+            f,
+            Rect::new(0, 0, width, height),
+            state,
+        );
+    })
+    .unwrap();
+    let buf = term.backend().buffer();
+    let mut dump = String::new();
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            dump.push_str(buf[(x, y)].symbol());
+        }
+        dump.push('\n');
+    }
+    let top_row = (0..buf.area.width)
+        .map(|x| buf[(x, 0)].symbol())
+        .collect::<String>();
+    (dump, top_row)
+}
+
+#[test]
+fn loading_panel_title_during_item_load_shows_breadcrumb() {
+    let mut state = OpPickerState::default();
+    state.accounts = vec![
+        account("a1", "alice@example.com", "alice.1password.com"),
+        account("a2", "bob@example.com", "bob.1password.com"),
+    ];
+    state.selected_account = Some(state.accounts[0].clone());
+    state.selected_vault = Some(OpVault {
+        id: "v-personal".into(),
+        name: "Personal".into(),
+    });
+    state.stage = OpPickerStage::Item;
+    state.load_state = OpLoadState::Loading { spinner_tick: 0 };
+
+    let (dump, _) = render_picker_dump(&state, 80, 12);
+
+    assert!(dump.contains("alice@example.com"), "dump:\n{dump}");
+    assert!(dump.contains("Personal"), "dump:\n{dump}");
+    assert!(dump.contains('\u{2192}'), "dump:\n{dump}");
+    assert!(dump.contains("loading items from Personal"), "dump:\n{dump}");
+}
+
+#[test]
+fn picker_field_load_title_shows_parent_and_body_includes_subtitle() {
+    let mut state = OpPickerState::default();
+    state.accounts = vec![
+        account("a1", "alexey@zhokhov.com", "z.1password.com"),
+        account("a2", "alexey@chainargos.com", "c.1password.com"),
+    ];
+    state.selected_account = Some(state.accounts[1].clone());
+    state.selected_vault = Some(OpVault {
+        id: "v-chainargos".into(),
+        name: "ChainArgos".into(),
+    });
+    state.selected_item = Some(OpItem {
+        id: "i-redshift".into(),
+        name: "ChainArgos Redshift".into(),
+        subtitle: "donbeave".into(),
+    });
+    state.stage = OpPickerStage::Field;
+    state.load_state = OpLoadState::Loading { spinner_tick: 0 };
+
+    let (dump, top_row) = render_picker_dump(&state, 80, 12);
+
+    assert!(top_row.contains("alexey@chainargos.com"), "top row:\n{top_row}");
+    assert!(top_row.contains("ChainArgos"), "top row:\n{top_row}");
+    assert!(!top_row.contains("Redshift"), "top row:\n{top_row}");
+    assert!(
+        dump.contains("loading ChainArgos Redshift (donbeave)"),
+        "dump:\n{dump}"
+    );
+    assert!(!dump.contains("loading fields from"), "dump:\n{dump}");
+}
+
+#[test]
+fn picker_field_load_body_no_subtitle() {
+    let mut state = OpPickerState::default();
+    state.accounts = vec![account("a1", "single@example.com", "x.1password.com")];
+    state.selected_account = Some(state.accounts[0].clone());
+    state.selected_vault = Some(OpVault {
+        id: "v".into(),
+        name: "Personal".into(),
+    });
+    state.selected_item = Some(OpItem {
+        id: "i-note".into(),
+        name: "Standalone Note".into(),
+        subtitle: String::new(),
+    });
+    state.stage = OpPickerStage::Field;
+    state.load_state = OpLoadState::Loading { spinner_tick: 0 };
+
+    let (dump, _) = render_picker_dump(&state, 80, 12);
+
+    assert!(dump.contains("loading Standalone Note"), "dump:\n{dump}");
+    assert!(!dump.contains("loading Standalone Note ("), "dump:\n{dump}");
 }
 
 /// Compile-time guard: any new field added to `OpField` (in
@@ -1918,4 +2023,3 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
     assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
 }
-
