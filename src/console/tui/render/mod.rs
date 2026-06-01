@@ -14,6 +14,7 @@ pub(crate) mod modal;
 pub(crate) mod modal_layout;
 pub(crate) mod mount_display;
 mod pre_render;
+pub(crate) mod save_preview;
 pub(crate) mod settings;
 pub(crate) mod settings_geometry;
 #[cfg(test)]

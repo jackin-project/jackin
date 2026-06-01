@@ -324,6 +324,8 @@ Shared editor/settings auth-source display vocabulary now lives with the shared 
 
 Workspace-list mount row rendering for workspace mounts and global mounts now lives with console-local mount row components in <RepoFile path="crates/jackin-console/src/tui/components/mount_rows.rs" />. Root list rendering still gathers root workspace/global mount data and mount-info labels, then passes crate-owned display rows into the component helpers.
 
+Root-console save-confirm preview line composition now lives under the render boundary in <RepoFile path="src/console/tui/render/save_preview.rs" />. Save input handlers still decide when to open the preview modal and which save effect to request, but no longer own Ratatui line construction for workspace/settings save previews.
+
 1. **Classify existing modules.** For each root-level file in the three surface crates, decide whether it is TUI, pure non-visual domain logic, or side-effect/service/runtime logic.
 2. **Capture the current behavior before moving code.** Identify the existing tests, snapshots, and manual-smoke checks that prove the affected workflow. Add focused coverage first if a workflow has no useful guard.
 3. **Move TUI files under `src/tui/`.** Preserve behavior while moving files into `app.rs`, `message.rs`, `update.rs`, `effect.rs`, `subscriptions.rs`, `run.rs`, `terminal.rs`, `view.rs`, `components/`, and `screens/` as appropriate.
