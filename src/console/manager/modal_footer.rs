@@ -8,8 +8,8 @@ use crate::console::manager::state::{
 };
 use jackin_console::tui::components::footer_hints::{
     auth_form_footer_items as shared_auth_form_footer_items, confirm_save_footer_items,
-    filtered_picker_footer_items, mount_destination_footer_items, pick_list_footer_items,
-    segmented_choice_footer_items, yes_no_footer_items,
+    filtered_picker_footer_items, mount_destination_footer_items, op_section_footer_items,
+    pick_list_footer_items, segmented_choice_footer_items, yes_no_footer_items,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -50,16 +50,7 @@ pub(crate) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
         Modal::OpPicker { state }
             if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
         {
-            vec![
-                HintSpan::Key("\u{2191}\u{2193}"),
-                HintSpan::Text("navigate"),
-                HintSpan::GroupSep,
-                HintSpan::Key("↵"),
-                HintSpan::Text("select"),
-                HintSpan::GroupSep,
-                HintSpan::Key("Esc"),
-                HintSpan::Text("cancel"),
-            ]
+            op_section_footer_items()
         }
         Modal::OpPicker { .. } => filtered_picker_footer_items(true),
         Modal::RolePicker { .. }
@@ -125,16 +116,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
         SettingsAuthModal::OpPicker { state }
             if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
         {
-            vec![
-                HintSpan::Key("\u{2191}\u{2193}"),
-                HintSpan::Text("navigate"),
-                HintSpan::GroupSep,
-                HintSpan::Key("↵"),
-                HintSpan::Text("select"),
-                HintSpan::GroupSep,
-                HintSpan::Key("Esc"),
-                HintSpan::Text("cancel"),
-            ]
+            op_section_footer_items()
         }
         SettingsAuthModal::OpPicker { .. } => filtered_picker_footer_items(false),
     }

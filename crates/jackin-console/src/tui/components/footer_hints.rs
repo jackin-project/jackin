@@ -80,6 +80,20 @@ pub fn filtered_picker_footer_items(include_refresh: bool) -> Vec<HintSpan<'stat
 }
 
 #[must_use]
+pub fn op_section_footer_items() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("\u{2191}\u{2193}"),
+        HintSpan::Text("navigate"),
+        HintSpan::GroupSep,
+        HintSpan::Key("↵"),
+        HintSpan::Text("select"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("cancel"),
+    ]
+}
+
+#[must_use]
 pub fn confirm_save_footer_items(scrollable: bool) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Key("S"),
