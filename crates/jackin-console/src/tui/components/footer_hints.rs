@@ -200,7 +200,6 @@ pub enum AuthRowFooterMode {
     ManageAuth,
     EditMode,
     RoleHeader,
-    AddOverride,
     EditSource,
     Empty,
 }
@@ -220,9 +219,6 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
             HintSpan::Key("D"),
             HintSpan::Text("reset"),
         ],
-        AuthRowFooterMode::AddOverride => {
-            vec![HintSpan::Key("↵/A"), HintSpan::Text("add override")]
-        }
         AuthRowFooterMode::EditSource => vec![HintSpan::Key("↵"), HintSpan::Text("edit source")],
         AuthRowFooterMode::Empty => Vec::new(),
     }
