@@ -309,38 +309,12 @@ impl Multiplexer {
     pub(super) fn visible_panes(&self) -> Vec<VisiblePane> {
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
-        if let Some(zoom_id) = self.active_zoomed_id() {
-            let outer = content_rect;
-            return vec![VisiblePane {
-                id: zoom_id,
-                outer,
-                inner: outer.shrink(1),
-                focused: Some(zoom_id) == focused_id,
-                body_dim: PaneBodyDim::Normal,
-            }];
-        }
-        let Some(tab) = self.tabs.get(self.active_tab) else {
-            return Vec::new();
-        };
-        let leaves = tab.tree.leaves(content_rect);
-        let multi_pane = leaves.len() > 1;
-        leaves
-            .into_iter()
-            .map(|(id, outer)| {
-                let focused = Some(id) == focused_id;
-                VisiblePane {
-                    id,
-                    outer,
-                    inner: outer.shrink(1),
-                    focused,
-                    body_dim: if multi_pane && !focused {
-                        PaneBodyDim::Inactive
-                    } else {
-                        PaneBodyDim::Normal
-                    },
-                }
-            })
-            .collect()
+        visible_panes_for_layout(
+            content_rect,
+            focused_id,
+            self.active_zoomed_id(),
+            self.tabs.get(self.active_tab),
+        )
     }
 
     /// Adjust the split that contains the focused pane along `dir` by

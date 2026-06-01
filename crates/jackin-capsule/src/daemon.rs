@@ -73,7 +73,7 @@ use crate::protocol::attach::{
 };
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::pull_request::PullRequestInfo;
-use crate::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode};
+use crate::tui::render::{PaneBodyCache, PaneBodyRenderMode};
 use crate::tui::selection::{
     SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,
     selection_was_dragged,
@@ -93,6 +93,7 @@ use crate::tui::app::{
     ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
     MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
     cursor_visible_for_state, hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
+    visible_panes_for_layout,
 };
 use crate::tui::update::{
     FullRedrawReason, PartialFramePlan, PartialFrameState, drag_resize_ratio, partial_frame_plan,

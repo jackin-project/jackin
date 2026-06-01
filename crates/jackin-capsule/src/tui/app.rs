@@ -4,7 +4,7 @@
 //! state enums live here so hover and pointer rendering share the TUI boundary
 //! instead of being defined in daemon internals.
 
-use crate::tui::layout::{Rect, SplitOrient};
+use crate::tui::layout::{Rect, SplitOrient, Tab};
 use crate::tui::render::PaneBodyDim;
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 
@@ -194,6 +194,46 @@ pub(crate) struct VisiblePane {
     pub(crate) body_dim: PaneBodyDim,
 }
 
+pub(crate) fn visible_panes_for_layout(
+    content_rect: Rect,
+    focused_id: Option<u64>,
+    zoom_id: Option<u64>,
+    active_tab: Option<&Tab>,
+) -> Vec<VisiblePane> {
+    if let Some(zoom_id) = zoom_id {
+        let outer = content_rect;
+        return vec![VisiblePane {
+            id: zoom_id,
+            outer,
+            inner: outer.shrink(1),
+            focused: Some(zoom_id) == focused_id,
+            body_dim: PaneBodyDim::Normal,
+        }];
+    }
+    let Some(tab) = active_tab else {
+        return Vec::new();
+    };
+    let leaves = tab.tree.leaves(content_rect);
+    let multi_pane = leaves.len() > 1;
+    leaves
+        .into_iter()
+        .map(|(id, outer)| {
+            let focused = Some(id) == focused_id;
+            VisiblePane {
+                id,
+                outer,
+                inner: outer.shrink(1),
+                focused,
+                body_dim: if multi_pane && !focused {
+                    PaneBodyDim::Inactive
+                } else {
+                    PaneBodyDim::Normal
+                },
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct DragState {
     pub(crate) tab_idx: usize,
@@ -211,12 +251,14 @@ pub(crate) struct DragState {
 #[cfg(test)]
 mod tests {
     use crate::tui::components::branch_context_bar::BranchContextBarHit;
-    use crate::tui::layout::SplitOrient;
+    use crate::tui::layout::{PaneTree, Rect, SplitOrient, Tab};
+    use crate::tui::render::PaneBodyDim;
 
     use super::{
         ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
         PointerShape, PointerShapeState, chrome_hover_target_for_state, cursor_visible_for_state,
         hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
+        visible_panes_for_layout,
     };
 
     #[test]
@@ -420,5 +462,48 @@ mod tests {
             agent_cursor_hidden: true,
             ..visible
         }));
+    }
+
+    #[test]
+    fn visible_panes_mark_unfocused_split_bodies_inactive() {
+        let mut tab = Tab::new_single("tab", 1);
+        tab.tree = PaneTree::HSplit {
+            left: Box::new(PaneTree::Leaf(1)),
+            right: Box::new(PaneTree::Leaf(2)),
+            ratio: 0.5,
+        };
+
+        let panes = visible_panes_for_layout(
+            Rect::new(1, 0, 10, 20),
+            Some(2),
+            None,
+            Some(&tab),
+        );
+
+        assert_eq!(panes.len(), 2);
+        assert_eq!(panes[0].id, 1);
+        assert!(!panes[0].focused);
+        assert_eq!(panes[0].body_dim, PaneBodyDim::Inactive);
+        assert_eq!(panes[1].id, 2);
+        assert!(panes[1].focused);
+        assert_eq!(panes[1].body_dim, PaneBodyDim::Normal);
+    }
+
+    #[test]
+    fn zoomed_visible_pane_uses_whole_content_rect() {
+        let tab = Tab::new_single("tab", 1);
+        let panes = visible_panes_for_layout(
+            Rect::new(1, 0, 10, 20),
+            Some(1),
+            Some(1),
+            Some(&tab),
+        );
+
+        assert_eq!(panes.len(), 1);
+        assert_eq!(panes[0].id, 1);
+        assert_eq!(panes[0].outer, Rect::new(1, 0, 10, 20));
+        assert_eq!(panes[0].inner, Rect::new(2, 1, 8, 18));
+        assert!(panes[0].focused);
+        assert_eq!(panes[0].body_dim, PaneBodyDim::Normal);
     }
 }
