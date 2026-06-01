@@ -6,6 +6,7 @@
 #![allow(irrefutable_let_patterns)]
 
 pub mod manager;
+mod domain;
 mod preview;
 mod prompts;
 pub mod run;

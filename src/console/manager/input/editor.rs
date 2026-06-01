@@ -1695,7 +1695,7 @@ fn apply_role_input(
         crate::config::RoleSource,
         jackin_tui::runtime::BlockingSubscription<anyhow::Result<()>>,
     )> {
-        let source = candidate_role_source(config, &selector)?;
+        let source = crate::console::domain::candidate_role_source(config, &selector)?;
         crate::debug_log!(
             "role",
             "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
@@ -1768,7 +1768,7 @@ fn apply_role_input(
                 );
                 return;
             }
-            let source = candidate_role_source(config, &selector).ok();
+            let source = crate::console::domain::candidate_role_source(config, &selector).ok();
             open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
         }
     }
@@ -1901,7 +1901,7 @@ async fn apply_role_input_with_runner(
 
     let key = selector.key();
     let result = async {
-        let source = candidate_role_source(config, &selector)?;
+        let source = crate::console::domain::candidate_role_source(config, &selector)?;
         crate::debug_log!(
             "role",
             "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
@@ -1985,28 +1985,9 @@ async fn apply_role_input_with_runner(
                 );
                 return;
             }
-            let source = candidate_role_source(config, &selector).ok();
+            let source = crate::console::domain::candidate_role_source(config, &selector).ok();
             open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
         }
-    }
-}
-
-fn candidate_role_source(
-    config: &AppConfig,
-    selector: &crate::selector::RoleSelector,
-) -> anyhow::Result<crate::config::RoleSource> {
-    let mut candidate = config.clone();
-    match candidate.resolve_role_source(selector) {
-        Ok((source, _)) => Ok(source),
-        Err(_) if selector.namespace.is_none() => Ok(crate::config::RoleSource {
-            git: format!(
-                "https://github.com/jackin-project/jackin-{}.git",
-                selector.name
-            ),
-            trusted: false,
-            env: std::collections::BTreeMap::new(),
-        }),
-        Err(err) => Err(err),
     }
 }
 
