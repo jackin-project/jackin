@@ -576,6 +576,22 @@ pub fn secrets_forbidden_label(scope: &SecretsScopeTag) -> String {
     }
 }
 
+#[must_use]
+pub fn secret_key_input_state<'a>(
+    scope: &SecretsScopeTag,
+    label: impl Into<String>,
+    initial: impl Into<String>,
+    forbidden_keys: Vec<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    let mut state = jackin_tui::components::TextInputState::new_with_forbidden(
+        label,
+        initial,
+        forbidden_keys,
+    );
+    state.forbidden_label = secrets_forbidden_label(scope);
+    state
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -623,6 +639,20 @@ mod tests {
         assert!(rows
             .iter()
             .any(|(label, value)| label == "Repository" && value == "https://example.test/role"));
+    }
+
+    #[test]
+    fn secret_key_input_state_marks_scope_duplicates() {
+        let state = secret_key_input_state(
+            &SecretsScopeTag::Role("alpha".to_string()),
+            "New alpha key",
+            "TOKEN",
+            vec!["TOKEN".to_string()],
+        );
+
+        assert_eq!(state.label, "New alpha key");
+        assert_eq!(state.forbidden_label, "role alpha");
+        assert!(state.is_duplicate());
     }
 
     #[test]

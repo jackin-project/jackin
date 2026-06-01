@@ -22,7 +22,7 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
-    role_trust_confirm_state, secret_delete_confirm_prompt, secrets_forbidden_label,
+    role_trust_confirm_state, secret_delete_confirm_prompt, secret_key_input_state,
     secrets_scope_label,
 };
 #[cfg(test)]
@@ -1427,11 +1427,7 @@ fn env_key_input_state<'a>(
     label: impl Into<String>,
     initial: impl Into<String>,
 ) -> jackin_tui::components::TextInputState<'a> {
-    use jackin_tui::components::TextInputState;
-    let mut state =
-        TextInputState::new_with_forbidden(label, initial, forbidden_keys_for_scope(editor, scope));
-    state.forbidden_label = secrets_forbidden_label(scope);
-    state
+    secret_key_input_state(scope, label, initial, forbidden_keys_for_scope(editor, scope))
 }
 
 /// Single source of truth for setting one env entry on the pending
