@@ -29,6 +29,7 @@ use jackin_console::tui::screens::settings::update::{
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
+use jackin_tui::runtime::spawn_blocking_subscription;
 
 #[derive(Debug)]
 pub(crate) enum ManagerMessage {
@@ -205,7 +206,28 @@ pub(crate) fn execute_manager_effect(
 ) {
     match effect {
         ManagerEffect::RequestActiveMountInfoRefresh => {
-            state.request_active_mount_info_refresh(config);
+            if state.mount_info_refresh_in_flight() {
+                return;
+            }
+            let Some((target, sources)) = state.active_mount_info_sources(config) else {
+                return;
+            };
+            if tokio::runtime::Handle::try_current().is_err() {
+                let entries = jackin_console::services::mount_info::inspect_entries(sources);
+                let _ = update_manager(
+                    state,
+                    ManagerMessage::MountInfoRefreshed(PendingMountInfoRefresh {
+                        target,
+                        entries,
+                    }),
+                );
+                return;
+            }
+            let rx = spawn_blocking_subscription(move || {
+                let entries = jackin_console::services::mount_info::inspect_entries(sources);
+                PendingMountInfoRefresh { target, entries }
+            });
+            state.begin_mount_info_refresh(rx);
         }
         ManagerEffect::RequestInstanceRefresh => {
             state.request_instance_refresh(paths);

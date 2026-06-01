@@ -758,12 +758,12 @@ impl PendingOpCommit {
 
 #[derive(Debug)]
 pub(crate) struct PendingMountInfoRefresh {
-    target: MountInfoRefreshTarget,
-    entries: Vec<(String, jackin_console::mount_info::MountKind)>,
+    pub(crate) target: MountInfoRefreshTarget,
+    pub(crate) entries: Vec<(String, jackin_console::mount_info::MountKind)>,
 }
 
 #[derive(Debug, Clone, Copy)]
-enum MountInfoRefreshTarget {
+pub(crate) enum MountInfoRefreshTarget {
     ManagerList,
     Editor,
     SettingsMounts,
@@ -1861,22 +1861,14 @@ impl ManagerState<'_> {
         self.instances_refresh_rx.is_some()
     }
 
-    pub(crate) fn request_active_mount_info_refresh(&mut self, config: &AppConfig) {
-        if self.mount_info_refresh_rx.is_some() {
-            return;
-        }
-        let Some((target, sources)) = self.active_mount_info_sources(config) else {
-            return;
-        };
-        if tokio::runtime::Handle::try_current().is_err() {
-            let entries = jackin_console::services::mount_info::inspect_entries(sources);
-            let _ = self.apply_mount_info_refresh(PendingMountInfoRefresh { target, entries });
-            return;
-        }
-        let rx = spawn_blocking_subscription(move || {
-            let entries = jackin_console::services::mount_info::inspect_entries(sources);
-            PendingMountInfoRefresh { target, entries }
-        });
+    pub(crate) fn mount_info_refresh_in_flight(&self) -> bool {
+        self.mount_info_refresh_rx.is_some()
+    }
+
+    pub(crate) fn begin_mount_info_refresh(
+        &mut self,
+        rx: BlockingSubscription<PendingMountInfoRefresh>,
+    ) {
         self.mount_info_refresh_rx = Some(rx);
     }
 
@@ -1920,7 +1912,7 @@ impl ManagerState<'_> {
         true
     }
 
-    fn active_mount_info_sources(
+    pub(crate) fn active_mount_info_sources(
         &self,
         config: &AppConfig,
     ) -> Option<(MountInfoRefreshTarget, Vec<String>)> {
