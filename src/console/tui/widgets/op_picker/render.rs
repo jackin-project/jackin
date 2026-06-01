@@ -8,15 +8,11 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::operator_env::OpField;
-
 use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
-use super::{
-    FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState,
-};
+use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 use jackin_console::widgets::op_picker::{
     OpPickerAccountRef, OpPickerItemRef, OpPickerVaultRef, account_lines, breadcrumb_title,
-    item_choice_lines, section_lines, sentinel_line, vault_lines,
+    field_lines, item_choice_lines, section_lines, vault_lines,
 };
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
@@ -180,90 +176,19 @@ fn render_section_lines(state: &OpPickerState) -> Vec<Line<'static>> {
 }
 
 fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    let visible: Vec<&OpField> = state.filtered_fields();
-    let selected = state.field_list_state.selected;
-    let label_w = visible
-        .iter()
-        .map(|f| display_label(f).chars().count())
-        .max()
-        .unwrap_or(0)
-        .max(8);
-
-    state
-        .build_field_display_rows()
-        .into_iter()
-        .enumerate()
-        .map(|(row_i, row)| {
-            let is_selected = Some(row_i) == selected;
-            match row {
-                FieldDisplayRow::SectionHeader { name, field_count } => {
-                    let prefix = if is_selected { "\u{25b8}  " } else { "   " };
-                    let arrow = if state.collapsed_sections.contains(&name) {
-                        "\u{25b6}"
-                    } else {
-                        "\u{25bc}"
-                    };
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(PHOSPHOR_GREEN)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(PHOSPHOR_DIM)
-                    };
-                    let count_label = format!(
-                        "({} {})",
-                        field_count,
-                        if field_count == 1 { "field" } else { "fields" }
-                    );
-                    Line::from(vec![
-                        Span::styled(prefix, style),
-                        Span::styled(arrow, style),
-                        Span::styled(format!(" {name}  "), style),
-                        Span::styled(count_label, Style::default().fg(PHOSPHOR_DIM)),
-                    ])
-                }
-                FieldDisplayRow::Field { field_idx } => {
-                    // Defensive: a row/field-list desync must not panic the
-                    // whole TUI mid-render. Matches the `.get()` guard in
-                    // `handle_field_key`; an empty line is dropped on the
-                    // next rebuild.
-                    let Some(f) = visible.get(field_idx) else {
-                        return Line::default();
-                    };
-                    let prefix = if is_selected { "\u{25b8} " } else { "  " };
-                    let label = display_label(f);
-                    let pad = label_w.saturating_sub(label.chars().count());
-                    let label_style = if is_selected {
-                        Style::default()
-                            .fg(PHOSPHOR_GREEN)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(WHITE)
-                    };
-                    let annotation = if f.concealed {
-                        "(concealed)".to_string()
-                    } else {
-                        format!("({})", f.field_type.to_lowercase())
-                    };
-                    Line::from(vec![
-                        Span::styled(format!("{prefix}{label}"), label_style),
-                        Span::raw(format!("{}  ", " ".repeat(pad))),
-                        Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
-                    ])
-                }
-                FieldDisplayRow::NewFieldSentinel => sentinel_line("+ New field", is_selected),
-                FieldDisplayRow::NewSectionSentinel => sentinel_line("+ New section", is_selected),
+    field_lines(
+        state.build_field_display_rows(),
+        state.filtered_fields().into_iter().map(|field| {
+            jackin_console::widgets::op_picker::OpPickerFieldDisplayRef {
+                id: &field.id,
+                label: &field.label,
+                field_type: &field.field_type,
+                concealed: field.concealed,
             }
-        })
-        .collect()
-}
-
-fn display_label(f: &OpField) -> String {
-    if f.label.is_empty() {
-        f.id.clone()
-    } else {
-        f.label.clone()
-    }
+        }),
+        &state.collapsed_sections,
+        state.field_list_state.selected,
+    )
 }
 
 fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8) {

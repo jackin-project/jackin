@@ -100,6 +100,14 @@ pub struct OpPickerFieldRef<'a> {
     pub reference: &'a str,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OpPickerFieldDisplayRef<'a> {
+    pub id: &'a str,
+    pub label: &'a str,
+    pub field_type: &'a str,
+    pub concealed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuiltOpPickerRef {
     pub op: String,
@@ -445,6 +453,108 @@ pub fn section_lines(
     lines
 }
 
+pub fn field_lines<'a>(
+    rows: impl IntoIterator<Item = FieldDisplayRow>,
+    fields: impl IntoIterator<Item = OpPickerFieldDisplayRef<'a>>,
+    collapsed_sections: &HashSet<String>,
+    selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    let fields: Vec<OpPickerFieldDisplayRef<'a>> = fields.into_iter().collect();
+    let label_w = fields
+        .iter()
+        .map(|field| field_display_label(*field).chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(8);
+
+    rows.into_iter()
+        .enumerate()
+        .map(|(row_i, row)| {
+            let is_selected = Some(row_i) == selected;
+            match row {
+                FieldDisplayRow::SectionHeader { name, field_count } => {
+                    section_header_line(&name, field_count, collapsed_sections, is_selected)
+                }
+                FieldDisplayRow::Field { field_idx } => {
+                    let Some(field) = fields.get(field_idx).copied() else {
+                        return Line::default();
+                    };
+                    field_line(field, label_w, is_selected)
+                }
+                FieldDisplayRow::NewFieldSentinel => sentinel_line("+ New field", is_selected),
+                FieldDisplayRow::NewSectionSentinel => sentinel_line("+ New section", is_selected),
+            }
+        })
+        .collect()
+}
+
+fn section_header_line(
+    name: &str,
+    field_count: usize,
+    collapsed_sections: &HashSet<String>,
+    is_selected: bool,
+) -> Line<'static> {
+    let prefix = if is_selected { "\u{25b8}  " } else { "   " };
+    let arrow = if collapsed_sections.contains(name) {
+        "\u{25b6}"
+    } else {
+        "\u{25bc}"
+    };
+    let style = if is_selected {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(PHOSPHOR_DIM)
+    };
+    let count_label = format!(
+        "({} {})",
+        field_count,
+        if field_count == 1 { "field" } else { "fields" }
+    );
+    Line::from(vec![
+        Span::styled(prefix, style),
+        Span::styled(arrow, style),
+        Span::styled(format!(" {name}  "), style),
+        Span::styled(count_label, Style::default().fg(PHOSPHOR_DIM)),
+    ])
+}
+
+fn field_line(
+    field: OpPickerFieldDisplayRef<'_>,
+    label_w: usize,
+    is_selected: bool,
+) -> Line<'static> {
+    let prefix = if is_selected { "\u{25b8} " } else { "  " };
+    let label = field_display_label(field);
+    let pad = label_w.saturating_sub(label.chars().count());
+    let label_style = if is_selected {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(WHITE)
+    };
+    let annotation = if field.concealed {
+        "(concealed)".to_string()
+    } else {
+        format!("({})", field.field_type.to_lowercase())
+    };
+    Line::from(vec![
+        Span::styled(format!("{prefix}{label}"), label_style),
+        Span::raw(format!("{}  ", " ".repeat(pad))),
+        Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
+    ])
+}
+
+fn field_display_label(field: OpPickerFieldDisplayRef<'_>) -> String {
+    if field.label.is_empty() {
+        field.id.to_string()
+    } else {
+        field.label.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -764,5 +874,34 @@ mod tests {
         assert_eq!(items[0].spans[1].content.as_ref(), "Claude");
         assert_eq!(items[0].spans[3].content.as_ref(), "alice@example.com");
         assert_eq!(items[1].spans[0].content.as_ref(), "\u{25b8} + New item");
+    }
+
+    #[test]
+    fn field_lines_render_headers_fields_and_sentinels() {
+        let mut collapsed = HashSet::new();
+        collapsed.insert("Auth".to_string());
+        let lines = field_lines(
+            [
+                FieldDisplayRow::SectionHeader {
+                    name: "Auth".to_string(),
+                    field_count: 1,
+                },
+                FieldDisplayRow::Field { field_idx: 0 },
+                FieldDisplayRow::NewFieldSentinel,
+            ],
+            [OpPickerFieldDisplayRef {
+                id: "f1",
+                label: "token",
+                field_type: "CONCEALED",
+                concealed: true,
+            }],
+            &collapsed,
+            Some(1),
+        );
+
+        assert_eq!(lines[0].spans[1].content.as_ref(), "\u{25b6}");
+        assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} token");
+        assert_eq!(lines[1].spans[2].content.as_ref(), "(concealed)");
+        assert_eq!(lines[2].spans[0].content.as_ref(), "  + New field");
     }
 }
