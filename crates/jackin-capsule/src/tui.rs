@@ -7,12 +7,14 @@
 pub mod app;
 pub mod components;
 pub mod dialog;
+pub mod effect;
 pub mod input;
 pub mod message;
 pub mod render;
 pub mod run;
 pub mod selection;
 pub mod socket_backend;
+pub mod subscriptions;
 pub mod terminal;
 pub mod update;
 pub mod view;
