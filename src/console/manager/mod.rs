@@ -1,7 +1,6 @@
 //! Workspace manager TUI — list, create, edit, delete workspaces from
 //! the operator console. Reached via `m` from the Workspace picker stage.
 
-pub mod agent_allow;
 pub mod auth_kind;
 pub mod auth_rows;
 mod create;

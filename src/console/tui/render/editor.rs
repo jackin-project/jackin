@@ -330,7 +330,7 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
-    let is_all = crate::console::manager::agent_allow::allows_all_agents(&state.pending);
+    let is_all = jackin_console::workspace::allows_all_agents(&state.pending);
     let total = config.roles.len();
     let allowed_count = state.pending.allowed_roles.len();
 
@@ -374,10 +374,7 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
     for (i, (role_name, _)) in config.roles.iter().enumerate() {
         let selected = show_cursor && (i == cursor);
         let effectively_allowed =
-            crate::console::manager::agent_allow::agent_is_effectively_allowed(
-                &state.pending,
-                role_name,
-            );
+            jackin_console::workspace::agent_is_effectively_allowed(&state.pending, role_name);
         let is_default = state.pending.default_role.as_deref() == Some(role_name.as_str());
         let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };

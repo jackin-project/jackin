@@ -36,7 +36,7 @@ src/console/tui/render/editor/
 - `handle_editor_key` — main dispatcher; stays in `mod.rs`
 - `handle_editor_modal` — modal commit handling; stays in `mod.rs`
 - Both functions dispatch to tab-specific helpers; the helpers move to per-tab files
-- After split, helper imports such as `super::super::agent_allow::allows_all_agents` should switch to a stable absolute path (`crate::console::manager::agent_allow::allows_all_agents`) because `editor/` becomes one level deeper
+- After split, helper imports should use stable absolute paths because `editor/` becomes one level deeper; workspace role-access helpers now live at `jackin_console::workspace::*`.
 
 ## Duplication found within this file
 

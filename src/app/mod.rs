@@ -1858,10 +1858,9 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
 }
 
 /// Reject a flag-supplied `--role` the workspace does not allow, before
-/// any token mint runs. Empty `allowed_roles` is the "any role" shorthand
-/// (see [`crate::console::manager::agent_allow`]).
+/// any token mint runs. Empty `allowed_roles` is the "any role" shorthand.
 fn validate_setup_role_allowed(config: &AppConfig, workspace: &str, role: &str) -> Result<()> {
-    use crate::console::manager::agent_allow::agent_is_effectively_allowed;
+    use jackin_console::workspace::agent_is_effectively_allowed;
     let ws = config.require_workspace(workspace)?;
     if !agent_is_effectively_allowed(ws, role) {
         anyhow::bail!(

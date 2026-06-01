@@ -119,7 +119,7 @@ fn mounts_tab_geometry(state: &EditorState<'_>) -> EditorTabGeometry {
 }
 
 fn roles_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGeometry {
-    let is_all = crate::console::manager::agent_allow::allows_all_agents(&state.pending);
+    let is_all = jackin_console::workspace::allows_all_agents(&state.pending);
     let allowed_count = state.pending.allowed_roles.len();
     let total = config.roles.len();
     let status_width = if is_all {

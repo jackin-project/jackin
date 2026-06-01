@@ -781,7 +781,7 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
     };
 
     // Read "all" state before the mutable borrow on `allowed_roles`.
-    let is_all_mode = super::super::agent_allow::allows_all_agents(&editor.pending);
+    let is_all_mode = jackin_console::workspace::allows_all_agents(&editor.pending);
     let list = &mut editor.pending.allowed_roles;
     let in_list = list.iter().position(|a| a == role);
 
@@ -826,7 +826,7 @@ fn toggle_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
         return;
     }
 
-    if !super::super::agent_allow::agent_is_effectively_allowed(&editor.pending, role) {
+    if !jackin_console::workspace::agent_is_effectively_allowed(&editor.pending, role) {
         return;
     }
 

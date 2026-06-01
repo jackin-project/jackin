@@ -623,7 +623,7 @@ pub(crate) fn agents_block_agent_count(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
-    let all_allowed = ws_config.is_none_or(crate::console::manager::agent_allow::allows_all_agents);
+    let all_allowed = ws_config.is_none_or(jackin_console::workspace::allows_all_agents);
     if all_allowed {
         config.roles.len()
     } else {

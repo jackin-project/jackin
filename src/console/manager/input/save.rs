@@ -828,7 +828,7 @@ fn mount_summary(
 }
 
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
-    if super::super::agent_allow::allows_all_agents(&editor.pending) {
+    if jackin_console::workspace::allows_all_agents(&editor.pending) {
         return format!("any ({} roles)", config.roles.len());
     }
     editor.pending.allowed_roles.join(", ")

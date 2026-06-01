@@ -130,6 +130,12 @@ impl Default for WorkspaceConfig {
     }
 }
 
+impl jackin_console::workspace::WorkspaceRoleAccess for WorkspaceConfig {
+    fn allowed_roles(&self) -> &[String] {
+        &self.allowed_roles
+    }
+}
+
 /// Per-workspace power-management opt-in.
 ///
 /// macOS-only today: when `enabled = true`, jackin spawns
@@ -353,6 +359,45 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ws_with_allowed(allowed: Vec<String>) -> WorkspaceConfig {
+        WorkspaceConfig {
+            allowed_roles: allowed,
+            ..WorkspaceConfig::default()
+        }
+    }
+
+    #[test]
+    fn allows_all_roles_when_allowed_list_is_empty() {
+        assert!(jackin_console::workspace::allows_all_agents(
+            &ws_with_allowed(vec![])
+        ));
+        assert!(!jackin_console::workspace::allows_all_agents(
+            &ws_with_allowed(vec!["alpha".into()])
+        ));
+    }
+
+    #[test]
+    fn role_access_accepts_empty_shorthand_or_explicit_membership() {
+        let all = ws_with_allowed(vec![]);
+        assert!(jackin_console::workspace::agent_is_effectively_allowed(
+            &all, "alpha"
+        ));
+        assert!(jackin_console::workspace::agent_is_effectively_allowed(
+            &all, "beta"
+        ));
+
+        let custom = ws_with_allowed(vec!["alpha".into(), "gamma".into()]);
+        assert!(jackin_console::workspace::agent_is_effectively_allowed(
+            &custom, "alpha"
+        ));
+        assert!(!jackin_console::workspace::agent_is_effectively_allowed(
+            &custom, "beta"
+        ));
+        assert!(jackin_console::workspace::agent_is_effectively_allowed(
+            &custom, "gamma"
+        ));
+    }
 
     // -- validate_workspace_config: workdir vs mount destination coverage ------
 

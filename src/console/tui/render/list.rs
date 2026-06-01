@@ -1210,7 +1210,7 @@ fn render_agents_subpanel_scrollable(
     focused: bool,
 ) {
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_roles.as_slice());
-    let all_allowed = ws_config.is_none_or(crate::console::manager::agent_allow::allows_all_agents);
+    let all_allowed = ws_config.is_none_or(jackin_console::workspace::allows_all_agents);
     let default = ws_config.and_then(|w| w.default_role.as_deref());
 
     let mut lines: Vec<Line> = Vec::new();
