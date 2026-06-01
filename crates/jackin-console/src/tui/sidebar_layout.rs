@@ -45,6 +45,32 @@ pub struct SidebarScrollAreas {
     pub roles: Option<SidebarScrollArea>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarScrollFocus {
+    Workspace,
+    Global,
+    RoleGlobal,
+    Roles,
+}
+
+#[must_use]
+pub fn focused_scroll_area_still_scrollable(
+    focus: SidebarScrollFocus,
+    areas: Option<&SidebarScrollAreas>,
+) -> bool {
+    let Some(areas) = areas else {
+        return false;
+    };
+    match focus {
+        SidebarScrollFocus::Workspace => scroll_area_scrollable(areas.workspace),
+        SidebarScrollFocus::Global => {
+            areas.global.area.height > 0 && scroll_area_scrollable(areas.global)
+        }
+        SidebarScrollFocus::RoleGlobal => areas.role_global.is_some_and(scroll_area_scrollable),
+        SidebarScrollFocus::Roles => areas.roles.is_some_and(scroll_area_scrollable),
+    }
+}
+
 #[must_use]
 pub fn compute_sidebar_layout(area: Rect, metrics: SidebarLayoutMetrics) -> SidebarLayout {
     let mut constraints = Vec::new();
@@ -257,5 +283,43 @@ mod tests {
             content_width: 8,
             content_height: 30,
         }));
+    }
+
+    #[test]
+    fn focused_scrollability_requires_area_and_overflow() {
+        let area = Rect::new(0, 0, 10, 5);
+        let scrollable = SidebarScrollArea {
+            area,
+            content_width: 30,
+            content_height: 3,
+        };
+        let empty = SidebarScrollArea {
+            area: Rect::new(0, 0, 0, 0),
+            content_width: 30,
+            content_height: 3,
+        };
+        let areas = SidebarScrollAreas {
+            workspace: scrollable,
+            global: empty,
+            role_global: None,
+            roles: None,
+        };
+
+        assert!(focused_scroll_area_still_scrollable(
+            SidebarScrollFocus::Workspace,
+            Some(&areas)
+        ));
+        assert!(!focused_scroll_area_still_scrollable(
+            SidebarScrollFocus::Global,
+            Some(&areas)
+        ));
+        assert!(!focused_scroll_area_still_scrollable(
+            SidebarScrollFocus::RoleGlobal,
+            Some(&areas)
+        ));
+        assert!(!focused_scroll_area_still_scrollable(
+            SidebarScrollFocus::Roles,
+            None
+        ));
     }
 }

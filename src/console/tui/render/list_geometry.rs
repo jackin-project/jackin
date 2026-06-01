@@ -13,7 +13,7 @@ use crate::console::tui::state::{
 use crate::isolation::MountIsolation;
 use crate::workspace::MountConfig;
 pub(crate) use jackin_console::tui::sidebar_layout::{
-    SidebarLayout, SidebarScrollArea, SidebarScrollAreas,
+    SidebarLayout, SidebarScrollArea, SidebarScrollAreas, SidebarScrollFocus,
 };
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
@@ -142,25 +142,23 @@ fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
     jackin_console::tui::sidebar_layout::clamp_scroll_area_y(area, value);
 }
 
-fn scroll_area_scrollable(area: SidebarScrollArea) -> bool {
-    jackin_console::tui::sidebar_layout::scroll_area_scrollable(area)
+fn sidebar_scroll_focus(focus: MountScrollFocus) -> SidebarScrollFocus {
+    match focus {
+        MountScrollFocus::Workspace => SidebarScrollFocus::Workspace,
+        MountScrollFocus::Global => SidebarScrollFocus::Global,
+        MountScrollFocus::RoleGlobal => SidebarScrollFocus::RoleGlobal,
+        MountScrollFocus::Roles => SidebarScrollFocus::Roles,
+    }
 }
 
 fn focused_block_still_scrollable(
     focus: MountScrollFocus,
     areas: Option<&SidebarScrollAreas>,
 ) -> bool {
-    let Some(areas) = areas else {
-        return false;
-    };
-    match focus {
-        MountScrollFocus::Workspace => scroll_area_scrollable(areas.workspace),
-        MountScrollFocus::Global => {
-            areas.global.area.height > 0 && scroll_area_scrollable(areas.global)
-        }
-        MountScrollFocus::RoleGlobal => areas.role_global.is_some_and(scroll_area_scrollable),
-        MountScrollFocus::Roles => areas.roles.is_some_and(scroll_area_scrollable),
-    }
+    jackin_console::tui::sidebar_layout::focused_scroll_area_still_scrollable(
+        sidebar_scroll_focus(focus),
+        areas,
+    )
 }
 
 fn scroll_viewport_width(area: Rect) -> usize {
