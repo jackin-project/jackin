@@ -21,6 +21,26 @@ pub struct EditorRoleRow {
     pub is_default: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorAuthSourceDisplay {
+    NotRequired,
+    OpRefPath(String),
+    MaskedPlain { chars: usize },
+    Unset { env_name: String, mode_label: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorAuthLineRow {
+    AuthKind { label: String },
+    WorkspaceMode { mode_label: String, inherited: bool },
+    WorkspaceSource { display: EditorAuthSourceDisplay },
+    RoleHeader { role: String, expanded: bool },
+    RoleMode { mode_label: String },
+    RoleSource { display: EditorAuthSourceDisplay },
+    AddSentinel { eligible: usize },
+    Spacer,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorScrollGeometry {
     pub active_mounts: bool,
@@ -332,6 +352,134 @@ pub fn secret_lines<'a>(
     lines
 }
 
+#[must_use]
+pub fn auth_lines(
+    rows: &[EditorAuthLineRow],
+    cursor: usize,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    rows.iter()
+        .enumerate()
+        .map(|(i, row)| render_auth_line(show_cursor && (i == cursor), row))
+        .collect()
+}
+
+fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
+    let bold_white = Style::default()
+        .fg(jackin_tui::theme::WHITE)
+        .add_modifier(Modifier::BOLD);
+    let dim_green = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    let phosphor = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
+
+    match row {
+        EditorAuthLineRow::AuthKind { label } => {
+            let cursor_col = if selected { "\u{25b8} " } else { "  " };
+            Line::from(vec![
+                Span::raw(cursor_col),
+                Span::styled(label.clone(), bold_white),
+            ])
+        }
+        EditorAuthLineRow::WorkspaceMode {
+            mode_label,
+            inherited,
+        } => {
+            let cursor_col = if selected { "\u{25b8} " } else { "  " };
+            let suffix = if *inherited { " (inherited)" } else { "" };
+            Line::from(vec![
+                Span::raw(cursor_col),
+                Span::styled(format!("{:<12}", "Mode"), bold_white),
+                Span::styled(mode_label.clone(), phosphor),
+                Span::styled(suffix.to_string(), dim_green),
+            ])
+        }
+        EditorAuthLineRow::WorkspaceSource { display } => {
+            render_auth_source_line("Source", display, 0)
+        }
+        EditorAuthLineRow::RoleHeader { role, expanded } => {
+            let glyph = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
+            Line::from(vec![
+                Span::styled(glyph.to_string(), disclosure_style()),
+                Span::styled(format!(" Role: {role}"), disclosure_style()),
+            ])
+        }
+        EditorAuthLineRow::RoleMode { mode_label } => Line::from(vec![
+            Span::raw("      "),
+            Span::styled(format!("{:<12}", "Mode"), bold_white),
+            Span::styled(mode_label.clone(), phosphor),
+        ]),
+        EditorAuthLineRow::RoleSource { display } => render_auth_source_line("Source", display, 6),
+        EditorAuthLineRow::AddSentinel { eligible } => {
+            let label_style = if *eligible == 0 {
+                dim_green
+            } else {
+                action_row_style(selected)
+            };
+            let suffix = if *eligible == 0 {
+                "   (all roles overridden)".to_string()
+            } else {
+                String::new()
+            };
+            let cursor_col = if selected { "\u{25b8} " } else { "  " };
+            Line::from(vec![
+                Span::raw(cursor_col),
+                Span::styled("+ Override for a role", label_style),
+                Span::styled(suffix, dim_green),
+            ])
+        }
+        EditorAuthLineRow::Spacer => Line::from(""),
+    }
+}
+
+fn render_auth_source_line(
+    label: &str,
+    display: &EditorAuthSourceDisplay,
+    indent: usize,
+) -> Line<'static> {
+    let label_width = if indent == 0 { 14 } else { 12 };
+    let mut spans = vec![
+        Span::raw(" ".repeat(indent)),
+        Span::styled(
+            format!("{label:<label_width$}"),
+            Style::default()
+                .fg(jackin_tui::theme::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    match display {
+        EditorAuthSourceDisplay::NotRequired => {
+            spans.push(Span::styled(
+                "not required",
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+        }
+        EditorAuthSourceDisplay::OpRefPath(path) => {
+            spans.push(Span::styled(
+                "[op] ",
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+            crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, path);
+        }
+        EditorAuthSourceDisplay::MaskedPlain { chars } => {
+            spans.push(Span::styled(
+                "\u{25cf}".repeat((*chars).clamp(1, 12)),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+        }
+        EditorAuthSourceDisplay::Unset {
+            env_name,
+            mode_label,
+        } => {
+            spans.push(Span::styled(
+                format!("unset  ({env_name} for {mode_label})"),
+                Style::default().fg(jackin_tui::theme::DANGER_RED),
+            ));
+        }
+    }
+
+    Line::from(spans)
+}
+
 fn render_editor_row(
     row: usize,
     cursor: usize,
@@ -496,5 +644,39 @@ mod tests {
         assert_eq!(lines[2].spans[2].content.as_ref(), " Role: alpha  (1 vars)");
         assert_eq!(lines[3].spans[0].content.as_ref(), "\u{25b8} ");
         assert_eq!(lines[4].spans[0].content.as_ref(), "       + Add alpha environment variable");
+    }
+
+    #[test]
+    fn auth_lines_render_kind_mode_source_and_sentinel() {
+        let rows = vec![
+            EditorAuthLineRow::AuthKind {
+                label: "Claude".to_string(),
+            },
+            EditorAuthLineRow::WorkspaceMode {
+                mode_label: "api-key".to_string(),
+                inherited: true,
+            },
+            EditorAuthLineRow::WorkspaceSource {
+                display: EditorAuthSourceDisplay::Unset {
+                    env_name: "CLAUDE_API_KEY".to_string(),
+                    mode_label: "api-key".to_string(),
+                },
+            },
+            EditorAuthLineRow::RoleHeader {
+                role: "alpha".to_string(),
+                expanded: false,
+            },
+            EditorAuthLineRow::AddSentinel { eligible: 0 },
+        ];
+
+        let lines = auth_lines(&rows, 1, true);
+
+        assert_eq!(lines[0].spans[0].content.as_ref(), "  ");
+        assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} ");
+        assert_eq!(lines[1].spans[2].content.as_ref(), "api-key");
+        assert_eq!(lines[1].spans[3].content.as_ref(), " (inherited)");
+        assert_eq!(lines[2].spans[2].content.as_ref(), "unset  (CLAUDE_API_KEY for api-key)");
+        assert_eq!(lines[3].spans[1].content.as_ref(), " Role: alpha");
+        assert_eq!(lines[4].spans[2].content.as_ref(), "   (all roles overridden)");
     }
 }

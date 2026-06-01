@@ -4,7 +4,6 @@
 //! (General / Mounts / Roles / Secrets), and the contextual footer
 //! composition that varies with the active tab + cursor.
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::config::AppConfig;
 use crate::console::domain::resolve_panel_mode;
 use crate::console::tui::render::mount_display::format_mount_rows_with_cache;
@@ -21,19 +20,17 @@ pub(crate) use crate::console::tui::state::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::tui::components::editor_rows::{
-    SecretValueDisplay, action_row_style, disclosure_style, render_tab_strip,
-};
+use jackin_console::tui::components::editor_rows::{SecretValueDisplay, render_tab_strip};
 use jackin_console::tui::screens::editor::view::{
-    EditorRoleRow, general_lines as editor_general_lines, mount_lines as editor_mount_lines,
+    EditorAuthLineRow, EditorAuthSourceDisplay, EditorRoleRow, auth_lines as editor_auth_lines,
+    general_lines as editor_general_lines, mount_lines as editor_mount_lines,
     role_lines as editor_role_lines, secret_lines as editor_secret_lines, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Span},
+    text::Line,
 };
 
 // ── Editor stage ────────────────────────────────────────────────────
@@ -282,152 +279,84 @@ fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'stat
     let show_cursor =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
-    rows.iter()
-        .enumerate()
-        .map(|(i, r)| {
-            render_auth_row(
-                show_cursor && (i == cursor_clamped),
-                r,
-                &synthesized,
-                &workspace_name,
-            )
-        })
-        .collect()
+    let display_rows: Vec<EditorAuthLineRow> = rows
+        .iter()
+        .map(|row| auth_display_row(row, &synthesized, &workspace_name))
+        .collect();
+    editor_auth_lines(&display_rows, cursor_clamped, show_cursor)
 }
 
-fn render_auth_row(
-    selected: bool,
+fn auth_display_row(
     row: &AuthRow,
     synthesized: &AppConfig,
     workspace_name: &str,
-) -> ratatui::text::Line<'static> {
+) -> EditorAuthLineRow {
     use crate::console::tui::auth_panel::mode_str;
 
-    let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let dim_green = Style::default().fg(PHOSPHOR_DIM);
-    let phosphor = Style::default().fg(PHOSPHOR_GREEN);
-
     match row {
-        AuthRow::AuthKindRow { kind } => {
-            let cursor_col = if selected { "▸ " } else { "  " };
-            ratatui::text::Line::from(vec![
-                Span::raw(cursor_col),
-                Span::styled(kind.label().to_string(), bold_white),
-            ])
-        }
+        AuthRow::AuthKindRow { kind } => EditorAuthLineRow::AuthKind {
+            label: kind.label().to_string(),
+        },
         AuthRow::WorkspaceMode { kind } => {
             let ws = synthesized.workspaces.get(workspace_name);
             let explicit = ws.and_then(|ws| explicit_workspace_mode(ws, *kind));
             let mode = explicit
                 .unwrap_or_else(|| resolve_panel_mode(synthesized, *kind, workspace_name, ""));
-            let suffix = if explicit.is_some() {
-                ""
-            } else {
-                " (inherited)"
-            };
-            let cursor_col = if selected { "▸ " } else { "  " };
-            ratatui::text::Line::from(vec![
-                Span::raw(cursor_col),
-                Span::styled(format!("{:<12}", "Mode"), bold_white),
-                Span::styled(mode_str(mode).to_string(), phosphor),
-                Span::styled(suffix.to_string(), dim_green),
-            ])
+            EditorAuthLineRow::WorkspaceMode {
+                mode_label: mode_str(mode).to_string(),
+                inherited: explicit.is_none(),
+            }
         }
-        AuthRow::WorkspaceSource { kind } => {
-            render_auth_source_line("Source", synthesized, workspace_name, "", *kind, 0)
-        }
-        AuthRow::RoleHeader { role, expanded } => {
-            let glyph = if *expanded { "▼" } else { "▶" };
-            ratatui::text::Line::from(vec![
-                Span::styled(glyph.to_string(), disclosure_style()),
-                Span::styled(format!(" Role: {role}"), disclosure_style()),
-            ])
-        }
+        AuthRow::WorkspaceSource { kind } => EditorAuthLineRow::WorkspaceSource {
+            display: auth_source_display(synthesized, workspace_name, "", *kind),
+        },
+        AuthRow::RoleHeader { role, expanded } => EditorAuthLineRow::RoleHeader {
+            role: role.clone(),
+            expanded: *expanded,
+        },
         AuthRow::RoleMode { role, kind } => {
             let mode = resolve_panel_mode(synthesized, *kind, workspace_name, role);
-            ratatui::text::Line::from(vec![
-                Span::raw("      "),
-                Span::styled(format!("{:<12}", "Mode"), bold_white),
-                Span::styled(mode_str(mode).to_string(), phosphor),
-            ])
+            EditorAuthLineRow::RoleMode {
+                mode_label: mode_str(mode).to_string(),
+            }
         }
-        AuthRow::RoleSource { role, kind } => {
-            render_auth_source_line("Source", synthesized, workspace_name, role, *kind, 6)
-        }
-        AuthRow::AddSentinel { eligible } => {
-            let label_style = if *eligible == 0 {
-                dim_green
-            } else {
-                action_row_style(selected)
-            };
-            let suffix = if *eligible == 0 {
-                "   (all roles overridden)".to_string()
-            } else {
-                String::new()
-            };
-            let cursor_col = if selected { "▸ " } else { "  " };
-            ratatui::text::Line::from(vec![
-                Span::raw(cursor_col),
-                Span::styled("+ Override for a role", label_style),
-                Span::styled(suffix, dim_green),
-            ])
-        }
-        AuthRow::Spacer => ratatui::text::Line::from(""),
+        AuthRow::RoleSource { role, kind } => EditorAuthLineRow::RoleSource {
+            display: auth_source_display(synthesized, workspace_name, role, *kind),
+        },
+        AuthRow::AddSentinel { eligible } => EditorAuthLineRow::AddSentinel {
+            eligible: *eligible,
+        },
+        AuthRow::Spacer => EditorAuthLineRow::Spacer,
     }
 }
 
-fn render_auth_source_line(
-    label: &str,
+fn auth_source_display(
     synthesized: &AppConfig,
     workspace_name: &str,
     role: &str,
     kind: jackin_console::tui::auth::AuthKind,
-    indent: usize,
-) -> ratatui::text::Line<'static> {
+) -> EditorAuthSourceDisplay {
     use crate::console::tui::auth_panel::mode_str;
 
     let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
     let env_name = kind.required_env_var(mode);
-    let label_width = if indent == 0 { 14 } else { 12 };
-    let mut spans = vec![
-        Span::raw(" ".repeat(indent)),
-        Span::styled(
-            format!("{label:<label_width$}"),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-    ];
 
     let Some(env_name) = env_name else {
-        spans.push(Span::styled(
-            "not required",
-            Style::default().fg(PHOSPHOR_DIM),
-        ));
-        return ratatui::text::Line::from(spans);
+        return EditorAuthSourceDisplay::NotRequired;
     };
 
     let value = auth_source_value(synthesized, workspace_name, role, env_name, kind);
 
     match value {
-        Some(EnvValue::OpRef(r)) => {
-            spans.push(Span::styled("[op] ", Style::default().fg(PHOSPHOR_DIM)));
-            jackin_console::tui::components::op_breadcrumb::push_op_breadcrumb_spans(
-                &mut spans, &r.path,
-            );
-        }
-        Some(EnvValue::Plain(s)) if !s.is_empty() => {
-            spans.push(Span::styled(
-                "●".repeat(s.chars().count().clamp(1, 12)),
-                Style::default().fg(PHOSPHOR_DIM),
-            ));
-        }
-        _ => {
-            spans.push(Span::styled(
-                format!("unset  ({env_name} for {})", mode_str(mode)),
-                Style::default().fg(jackin_tui::theme::DANGER_RED),
-            ));
-        }
+        Some(EnvValue::OpRef(r)) => EditorAuthSourceDisplay::OpRefPath(r.path.clone()),
+        Some(EnvValue::Plain(s)) if !s.is_empty() => EditorAuthSourceDisplay::MaskedPlain {
+            chars: s.chars().count(),
+        },
+        _ => EditorAuthSourceDisplay::Unset {
+            env_name: env_name.to_string(),
+            mode_label: mode_str(mode).to_string(),
+        },
     }
-    ratatui::text::Line::from(spans)
 }
 
 /// Explicit workspace-level mode for a kind, if any.
