@@ -1044,7 +1044,7 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
 /// can write the `op://...` reference straight into the named key.
 #[test]
 fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
-    use jackin_console::widgets::source_picker::SourcePickerState;
+    use jackin_console::tui::components::source_picker::SourcePickerState;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
@@ -1096,7 +1096,7 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
 /// key flailing.
 #[test]
 fn source_picker_op_disabled_when_op_missing() -> Result<()> {
-    use jackin_console::widgets::source_picker::{SourceChoice, SourcePickerState};
+    use jackin_console::tui::components::source_picker::{SourceChoice, SourcePickerState};
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;

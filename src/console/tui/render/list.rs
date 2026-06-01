@@ -48,7 +48,7 @@ pub(super) use crate::console::manager::mount_display::{
 use crate::console::manager::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
-use crate::console::widgets::mount_rows::render_mount_header;
+use jackin_console::tui::components::mount_rows::render_mount_header;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn render_list_body(
@@ -1465,8 +1465,8 @@ mod mount_table_tests {
         MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
         mount_path_width, render_mount_lines,
     };
-    use crate::console::widgets::mount_rows::render_mount_header;
     use crate::workspace::MountConfig;
+    use jackin_console::tui::components::mount_rows::render_mount_header;
 
     /// Collapse a `Line` into a single plain string (concat of all span contents).
     fn line_text(line: &ratatui::text::Line<'_>) -> String {

@@ -27,6 +27,10 @@ use crate::console::manager::state::{
     SettingsState, SettingsTab,
 };
 use crate::operator_env::EnvValue;
+use jackin_console::tui::components::editor_rows::{
+    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+    render_tab_strip,
+};
 
 pub(super) fn render_settings(
     frame: &mut Frame,
@@ -51,7 +55,7 @@ pub(super) fn render_settings(
         .iter()
         .map(|tab| (tab.label(), *tab == state.active_tab))
         .collect::<Vec<_>>();
-    crate::console::widgets::editor_rows::render_tab_strip(
+    render_tab_strip(
         frame,
         chunks[1],
         &labels,
@@ -236,7 +240,7 @@ fn global_mount_lines(
         }
         lines.push(Line::from(Span::styled(
             format!("{sentinel_prefix}+ Add mount"),
-            crate::console::widgets::editor_rows::action_row_style(sentinel_selected),
+            action_row_style(sentinel_selected),
         )));
     }
     lines
@@ -260,22 +264,20 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
                     .env
                     .unmasked_rows
                     .contains(&(scope.clone(), key.clone()));
-                lines.push(
-                    crate::console::widgets::editor_rows::render_secret_key_line(
-                        selected,
-                        cursor_col,
-                        key,
-                        value,
-                        masked,
-                        area_width,
-                        label_width,
-                    ),
-                );
+                lines.push(render_secret_key_line(
+                    selected,
+                    cursor_col,
+                    key,
+                    secret_value_display(value),
+                    masked,
+                    area_width,
+                    label_width,
+                ));
             }
             SettingsEnvRow::GlobalAddSentinel => {
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}+ Add environment variable"),
-                    crate::console::widgets::editor_rows::action_row_style(selected),
+                    action_row_style(selected),
                 )));
             }
             SettingsEnvRow::RoleHeader { role, expanded } => {
@@ -283,26 +285,27 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
                 let count = state.env.pending.roles.get(role).map_or(0, BTreeMap::len);
                 lines.push(Line::from(vec![
                     Span::raw(cursor_col.to_string()),
-                    Span::styled(
-                        arrow.to_string(),
-                        crate::console::widgets::editor_rows::disclosure_style(),
-                    ),
-                    Span::styled(
-                        format!(" Role: {role}  ({count} vars)"),
-                        crate::console::widgets::editor_rows::disclosure_style(),
-                    ),
+                    Span::styled(arrow.to_string(), disclosure_style()),
+                    Span::styled(format!(" Role: {role}  ({count} vars)"), disclosure_style()),
                 ]));
             }
             SettingsEnvRow::RoleAddSentinel(role) => {
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}+ Add {role} environment variable"),
-                    crate::console::widgets::editor_rows::action_row_style(selected),
+                    action_row_style(selected),
                 )));
             }
             SettingsEnvRow::SectionSpacer => lines.push(Line::from("")),
         }
     }
     lines
+}
+
+fn secret_value_display(value: &EnvValue) -> SecretValueDisplay<'_> {
+    match value {
+        EnvValue::Plain(value) => SecretValueDisplay::Plain(value),
+        EnvValue::OpRef(op_ref) => SecretValueDisplay::OpRefPath(&op_ref.path),
+    }
 }
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {

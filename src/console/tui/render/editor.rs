@@ -24,11 +24,12 @@ pub(crate) use crate::console::manager::state::{
 pub(crate) use crate::console::manager::state::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
-use crate::console::widgets::editor_rows::{
-    action_row_style, disclosure_style, render_secret_key_line, render_tab_strip,
-};
-use crate::console::widgets::mount_rows::render_mount_header;
 use crate::operator_env::EnvValue;
+use jackin_console::tui::components::editor_rows::{
+    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+    render_tab_strip,
+};
+use jackin_console::tui::components::mount_rows::render_mount_header;
 use jackin_tui::theme::ACTION_ACCENT;
 use ratatui::{
     Frame,
@@ -459,7 +460,7 @@ fn secrets_tab_lines(
                     selected,
                     cursor_col,
                     key,
-                    value,
+                    secret_value_display(value),
                     masked,
                     area.width,
                     label_width,
@@ -503,7 +504,7 @@ fn secrets_tab_lines(
                     selected,
                     cursor_col,
                     key,
-                    value,
+                    secret_value_display(value),
                     masked,
                     area.width,
                     label_width,
@@ -522,6 +523,13 @@ fn secrets_tab_lines(
     }
 
     lines
+}
+
+fn secret_value_display(value: &EnvValue) -> SecretValueDisplay<'_> {
+    match value {
+        EnvValue::Plain(value) => SecretValueDisplay::Plain(value),
+        EnvValue::OpRef(op_ref) => SecretValueDisplay::OpRefPath(&op_ref.path),
+    }
 }
 
 /// Render the Auth tab directly from [`auth_flat_rows`].

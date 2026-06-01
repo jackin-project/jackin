@@ -12,8 +12,6 @@ pub(crate) use jackin_tui::theme::{
 };
 
 pub mod auth_panel;
-pub(crate) mod editor_rows;
-pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
 
