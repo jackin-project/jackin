@@ -81,6 +81,7 @@ use crate::title::{
     append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
     session_agent_label,
 };
+use crate::tui::app::{HoverTarget, PointerShape};
 
 mod compositor;
 mod context_mgmt;
@@ -359,38 +360,6 @@ impl InitialFrameKind {
             Self::FocusedPaneModes => "focused-pane mode state",
             Self::FirstAttach => "first-attach frame",
             Self::SpawnFailureBanner => "spawn-failure banner",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PointerShape {
-    Default,
-    Pointer,
-    Text,
-    EwResize,
-    NsResize,
-    Grabbing,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum HoverTarget {
-    Tab(usize),
-    Menu,
-    BranchContext,
-    Container,
-    DialogCopyTarget,
-}
-
-impl PointerShape {
-    fn as_osc22_name(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::Pointer => "pointer",
-            Self::Text => "text",
-            Self::EwResize => "ew-resize",
-            Self::NsResize => "ns-resize",
-            Self::Grabbing => "grabbing",
         }
     }
 }

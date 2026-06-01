@@ -1,8 +1,8 @@
 use jackin_tui::ansi::RESET;
 use jackin_tui::{display_cols, take_display_cols};
 
-use crate::daemon::HoverTarget;
 use crate::session::PullRequestInfo;
+use crate::tui::app::HoverTarget;
 
 pub const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
 

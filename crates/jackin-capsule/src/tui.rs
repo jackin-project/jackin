@@ -4,6 +4,7 @@
 //! terminal UI lives here, per the TUI source-location convention in
 //! `tui-design-decisions.mdx`.
 
+pub mod app;
 pub mod components;
 pub mod dialog;
 pub mod message;
