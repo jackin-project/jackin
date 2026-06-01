@@ -29,29 +29,20 @@ pub(crate) fn prepare_editor_tab_for_area(
     let geometry = editor_tab_geometry(body, state, config);
     state.tab_content_width = geometry.content_width;
     state.tab_content_height = geometry.content_height;
-    let viewport_w = jackin_tui::components::scrollable_panel::viewport_width(body);
-    let viewport_h = jackin_tui::components::scrollable_panel::viewport_height(body);
-    if state.active_tab == EditorTab::Mounts {
-        let content_width = workspace_mounts_content_width_with_cache(
-            &state.pending.mounts,
-            &state.mount_info_cache,
-        );
-        jackin_tui::components::scrollable_panel::clamp_scroll_offset(
-            content_width,
-            viewport_w,
-            &mut state.workspace_mounts_scroll_x,
-        );
-    } else {
-        jackin_tui::components::scrollable_panel::clamp_scroll_offset(
-            state.tab_content_width,
-            viewport_w,
-            &mut state.tab_scroll_x,
-        );
-    }
-    jackin_tui::components::scrollable_panel::clamp_scroll_offset(
-        state.tab_content_height,
-        viewport_h,
+    jackin_console::tui::screens::editor::view::clamp_editor_scroll_for_frame(
+        body,
+        jackin_console::tui::screens::editor::view::EditorScrollGeometry {
+            active_mounts: state.active_tab == EditorTab::Mounts,
+            content_width: geometry.content_width,
+            content_height: geometry.content_height,
+            mounts_content_width: workspace_mounts_content_width_with_cache(
+                &state.pending.mounts,
+                &state.mount_info_cache,
+            ),
+        },
+        &mut state.tab_scroll_x,
         &mut state.tab_scroll_y,
+        &mut state.workspace_mounts_scroll_x,
     );
 }
 
