@@ -27,7 +27,7 @@ use jackin_tui::{
 };
 
 use crate::container_context::StatusIdentity;
-use crate::tui::app::VisibleAgentState;
+use crate::tui::app::{MuxMode, VisibleAgentState};
 use crate::tui::layout::Tab;
 
 /// Column width in terminal cells for a label, measured with
@@ -70,6 +70,14 @@ pub const STATUS_BAR_ROWS: u16 = 2;
 pub enum PrefixMode {
     Idle,
     Awaiting,
+}
+
+pub(crate) const fn prefix_mode_for_mux_mode(mode: MuxMode) -> PrefixMode {
+    if matches!(mode, MuxMode::PrefixAwait) {
+        PrefixMode::Awaiting
+    } else {
+        PrefixMode::Idle
+    }
 }
 
 pub struct StatusBar {
@@ -632,6 +640,17 @@ mod tests {
             s.contains(BUTTON_BG_AWAITING),
             "awaiting prefix hint should use active blue chrome: {s:?}"
         );
+    }
+
+    #[test]
+    fn prefix_mode_follows_visible_mux_mode() {
+        assert_eq!(
+            prefix_mode_for_mux_mode(MuxMode::PrefixAwait),
+            PrefixMode::Awaiting
+        );
+        for mode in [MuxMode::Normal, MuxMode::Dialog, MuxMode::Drag, MuxMode::Select] {
+            assert_eq!(prefix_mode_for_mux_mode(mode), PrefixMode::Idle);
+        }
     }
 
     #[test]

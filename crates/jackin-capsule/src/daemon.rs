@@ -39,6 +39,7 @@ use crate::attach_protocol::{
 };
 #[cfg(test)]
 use crate::tui::components::branch_context_bar::branch_context_bar_layout;
+use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
 use crate::tui::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
     PickerIntent, PullRequestStatus, SplitDirection,
@@ -918,11 +919,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                     mux.send_output(redraw);
                 }
             }
-            let prefix_mode = if matches!(mux.mux_mode(), MuxMode::PrefixAwait) {
-                crate::tui::components::status_bar::PrefixMode::Awaiting
-            } else {
-                crate::tui::components::status_bar::PrefixMode::Idle
-            };
+            let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);
                 let frame_data = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
