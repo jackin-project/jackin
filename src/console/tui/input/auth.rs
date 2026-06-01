@@ -12,7 +12,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
+use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
 use crate::console::tui::components::op_picker::OpPickerState;
 use crate::console::tui::auth_kind::{
     AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,

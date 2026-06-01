@@ -330,7 +330,7 @@ fn settings_env_value<'a>(
 }
 
 fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    use crate::console::tui::components::auth_panel::mode_str;
+    use crate::console::tui::auth_panel::mode_str;
 
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
@@ -533,7 +533,7 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuth
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
             let area = auth_form_rect(frame.area(), state);
-            crate::console::tui::components::auth_panel::render_form(frame, area, state, *focus);
+            crate::console::tui::auth_panel::render_form(frame, area, state, *focus);
         }
         SettingsAuthModal::SourcePicker { state } => {
             let area = source_picker_rect(frame.area());

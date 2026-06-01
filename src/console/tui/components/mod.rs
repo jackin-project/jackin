@@ -4,7 +4,6 @@
 //! host-console facades and still-local widgets while the architecture
 //! migration proceeds.
 
-pub mod auth_panel;
 pub mod op_picker;
 
 #[cfg(test)]

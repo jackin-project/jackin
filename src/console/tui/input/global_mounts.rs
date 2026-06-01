@@ -9,7 +9,7 @@ use crate::console::tui::state::{
     SettingsTab,
 };
 use jackin_tui::ModalOutcome;
-use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
+use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};

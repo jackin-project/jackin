@@ -10,7 +10,7 @@ use crate::console::tui::state::{
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
     SettingsTab,
 };
-use crate::console::tui::components::auth_panel::AuthForm;
+use crate::console::tui::auth_panel::AuthForm;
 use jackin_tui::components::ErrorPopupState;
 use ratatui::layout::Rect;
 

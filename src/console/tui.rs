@@ -1,6 +1,7 @@
 //! Transitional root-console render/widget facades.
 
 pub mod app;
+pub(crate) mod auth_panel;
 pub mod auth_kind;
 pub mod components;
 mod create;
