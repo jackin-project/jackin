@@ -1,7 +1,11 @@
 //! Editor screen view helpers.
 
 use super::model::{EditorTab, SecretsScopeTag};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorScrollGeometry {
@@ -57,6 +61,62 @@ pub fn editor_row_width(label: &str, value: &str) -> usize {
     padded_width(&format!("  {label:15}{value}"))
 }
 
+#[must_use]
+pub fn general_lines(
+    cursor: usize,
+    show_cursor: bool,
+    name_value: &str,
+    workdir_display: &str,
+    keep_awake_enabled: bool,
+    git_pull_on_entry: bool,
+) -> Vec<Line<'static>> {
+    let keep_awake_display = if keep_awake_enabled {
+        "enabled (macOS only)"
+    } else {
+        "disabled"
+    };
+    let git_pull_display = if git_pull_on_entry {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    vec![
+        render_editor_row(0, cursor, "Name", name_value, show_cursor),
+        render_editor_row(1, cursor, "Working dir", workdir_display, show_cursor),
+        render_editor_row(2, cursor, "Keep awake", keep_awake_display, show_cursor),
+        render_editor_row(3, cursor, "Git pull", git_pull_display, show_cursor),
+    ]
+}
+
+fn render_editor_row(
+    row: usize,
+    cursor: usize,
+    label: &str,
+    value: &str,
+    show_cursor: bool,
+) -> Line<'static> {
+    let selected = show_cursor && (row == cursor);
+    let prefix = if selected { "\u{25b8} " } else { "  " };
+    let label_style = if selected {
+        Style::default()
+            .fg(jackin_tui::theme::WHITE)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(jackin_tui::theme::WHITE)
+    };
+    let value_style = if selected {
+        Style::default()
+            .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+    };
+    Line::from(vec![
+        Span::styled(format!("{prefix}{label:15}"), label_style),
+        Span::styled(value.to_string(), value_style),
+    ])
+}
+
 pub fn padded_width(text: &str) -> usize {
     padded_width_cols(
         text_width(text),
@@ -93,5 +153,21 @@ pub fn secrets_forbidden_label(scope: &SecretsScopeTag) -> String {
     match scope {
         SecretsScopeTag::Workspace => "workspace env".to_string(),
         SecretsScopeTag::Role(role) => format!("role {role}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn general_lines_highlight_selected_row() {
+        let lines = general_lines(2, true, "demo", "~/repo", true, false);
+
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0].spans[0].content.as_ref(), "  Name           ");
+        assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} Keep awake     ");
+        assert_eq!(lines[2].spans[1].content.as_ref(), "enabled (macOS only)");
+        assert_eq!(lines[3].spans[1].content.as_ref(), "disabled");
     }
 }

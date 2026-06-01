@@ -28,7 +28,9 @@ use jackin_console::tui::components::editor_rows::{
     render_tab_strip,
 };
 use jackin_console::tui::components::mount_rows::render_mount_header;
-use jackin_console::tui::screens::editor::view::tab_labels;
+use jackin_console::tui::screens::editor::view::{
+    general_lines as editor_general_lines, tab_labels,
+};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use jackin_tui::theme::ACTION_ACCENT;
 use ratatui::{
@@ -118,100 +120,16 @@ fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
         EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
-
-    // Both Edit and Create modes show the same four rows:
-    //   0 = Name        (editable; Enter opens rename TextInput)
-    //   1 = Working dir (editable; Enter opens workdir picker)
-    //   2 = Keep awake  (toggle; Space flips pending.keep_awake.enabled)
-    //   3 = Git pull    (toggle; Space flips pending.git_pull_on_entry)
-    //
-    // The former `Default role` (ro) and `Last used` (ro) rows were
-    // removed from the General tab. `Default role` is now editable on the
-    // Roles tab (see `*` keybinding); `Last used` was informational
-    // clutter and has no place here. The underlying schema fields
-    // (`default_role`, `last_role`) still live on `WorkspaceConfig` —
-    // we just don't surface them on the General tab anymore.
-    //
-    // Per-row dirty markers were removed for consistency with the other
-    // tabs; the footer's `S save workspace (N changes)` is the canonical
-    // unsaved-state indicator.
-    let mut rows: Vec<Line> = Vec::new();
-
-    rows.push(render_editor_row(
-        0,
-        cursor,
-        "Name",
-        name_value,
-        show_cursor,
-    ));
     let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-    rows.push(render_editor_row(
-        1,
+
+    editor_general_lines(
         cursor,
-        "Working dir",
+        show_cursor,
+        name_value,
         &workdir_display,
-        show_cursor,
-    ));
-    // Keep-awake row. The "(macOS only)" suffix when enabled mirrors the
-    // CLI `workspace show` output, surfacing the platform constraint
-    // exactly where it matters: the moment an operator opts in.
-    let keep_awake_display = if state.pending.keep_awake.enabled {
-        "enabled (macOS only)"
-    } else {
-        "disabled"
-    };
-    rows.push(render_editor_row(
-        2,
-        cursor,
-        "Keep awake",
-        keep_awake_display,
-        show_cursor,
-    ));
-    let git_pull_display = if state.pending.git_pull_on_entry {
-        "enabled"
-    } else {
-        "disabled"
-    };
-    rows.push(render_editor_row(
-        3,
-        cursor,
-        "Git pull",
-        git_pull_display,
-        show_cursor,
-    ));
-
-    rows
-}
-
-/// Render a field row with cursor highlight when `row == cursor` and the
-/// content block is focused. Pass `show_cursor = false` whenever the tab bar
-/// owns focus so the `▸` prefix is suppressed.
-fn render_editor_row(
-    row: usize,
-    cursor: usize,
-    label: &str,
-    value: &str,
-    show_cursor: bool,
-) -> Line<'static> {
-    let selected = show_cursor && (row == cursor);
-    let prefix = if selected { "▸ " } else { "  " };
-    // Labels stay white regardless of focus — focus is signalled by the
-    // `▸` prefix and the bold weight, not by a colour shift.
-    let label_style = if selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(WHITE)
-    };
-    let mut spans = vec![Span::styled(format!("{prefix}{label:15}"), label_style)];
-    let value_style = if selected {
-        Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(PHOSPHOR_GREEN)
-    };
-    spans.push(Span::styled(value.to_string(), value_style));
-    Line::from(spans)
+        state.pending.keep_awake.enabled,
+        state.pending.git_pull_on_entry,
+    )
 }
 
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
