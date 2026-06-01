@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod components;
+pub mod message;
 pub mod subscriptions;
 pub mod terminal;
 pub mod update;

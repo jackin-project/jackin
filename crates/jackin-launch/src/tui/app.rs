@@ -104,36 +104,6 @@ pub enum FailureCopyTarget {
     CommandOutputPath,
 }
 
-#[derive(Debug, Clone)]
-pub enum LaunchMessage {
-    Started(LaunchIdentity),
-    IdentityUpdated(LaunchIdentity),
-    StageStatus {
-        stage: LaunchStage,
-        status: StageStatus,
-        detail: String,
-        set_activity: bool,
-    },
-    StageFailed(LaunchFailure),
-    FailureAcknowledged,
-    FailureCopyHovered(Option<FailureCopyTarget>),
-    FailureCopied(FailureCopyTarget),
-    FooterHoverChanged(StatusFooterHover),
-    BuildLogOpened,
-    BuildLogClosed,
-    BuildLogScrolled {
-        filled: usize,
-        delta: isize,
-    },
-    RenderTick {
-        advance_frame: bool,
-        build_log_filled: Option<usize>,
-    },
-    ContainerInfoOpened,
-    ContainerInfoClosed,
-    ContainerInfoCopied(usize),
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct StageLabelTransition {
     pub from: usize,
