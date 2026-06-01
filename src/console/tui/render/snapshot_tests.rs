@@ -15,7 +15,7 @@ mod tests {
 
     use crate::{
         config::AppConfig,
-        console::manager::{prepare_for_render, render},
+        console::tui::{prepare_for_render, render},
         console::tui::state::{
             EditorState, EditorTab, GlobalMountConfirm, GlobalMountModal, ManagerStage,
             ManagerState, Modal, MountScrollFocus, SettingsEnvModal, SettingsEnvScope,

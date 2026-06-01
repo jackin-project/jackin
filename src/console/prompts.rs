@@ -5,9 +5,8 @@ use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
-use super::manager;
 use super::preview;
-use super::{ConsoleOutcome, ConsoleStage, ConsoleState, build_workspace_choice};
+use super::{ConsoleOutcome, ConsoleStage, ConsoleState, build_workspace_choice, tui};
 
 const fn modal_debug_name(modal: &crate::console::tui::state::Modal<'_>) -> &'static str {
     use crate::console::tui::state::Modal;
@@ -177,7 +176,7 @@ where
         format!("Loading and resolving {}", role.key()),
     ));
     terminal.draw(|frame| {
-        manager::render(frame, frame.area(), ms, config, cwd);
+        tui::render(frame, frame.area(), ms, config, cwd);
     })?;
     ms.status_overlay = None;
     Ok(())
@@ -206,9 +205,9 @@ pub(super) fn show_role_resolution_error(
     error: &anyhow::Error,
 ) {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    let _ = manager::update_manager(
+    let _ = tui::update_manager(
         ms,
-        manager::ManagerMessage::OpenListErrorPopup {
+        tui::ManagerMessage::OpenListErrorPopup {
             title: "Role resolution failed".into(),
             message: format!("Could not resolve {}.\n\n{error:#}", role.key()),
         },

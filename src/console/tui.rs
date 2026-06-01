@@ -11,3 +11,7 @@ pub mod render;
 pub mod state;
 
 pub(crate) use crate::console::manager::{effects, file_browser};
+pub(crate) use input::{InputOutcome, handle_key};
+pub(crate) use message::{ManagerMessage, update_manager};
+pub use render::{prepare_for_render, render};
+pub use state::{ManagerStage, ManagerState};

@@ -3,7 +3,7 @@ use crate::config::AppConfig;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
-use super::{ConsoleStage, ConsoleState, build_workspace_choice, manager, preview};
+use super::{ConsoleStage, ConsoleState, build_workspace_choice, preview, tui};
 
 impl ConsoleState {
     /// Open the inline role picker for every eligible role count except zero.
@@ -27,9 +27,9 @@ impl ConsoleState {
             // — a single Enter shouldn't terminate the TUI.
             let name = choice.name;
             if let ConsoleStage::Manager(ms) = &mut self.stage {
-                let _ = manager::update_manager(
+                let _ = tui::update_manager(
                     ms,
-                    manager::ManagerMessage::OpenListErrorPopup {
+                    tui::ManagerMessage::OpenListErrorPopup {
                         title: "No eligible roles".into(),
                         message: format!(
                             "Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."

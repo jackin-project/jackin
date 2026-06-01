@@ -11,7 +11,7 @@ use crate::workspace::LoadWorkspaceInput;
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ConsoleStage {
-    Manager(crate::console::manager::ManagerState<'static>),
+    Manager(crate::console::tui::ManagerState<'static>),
 }
 
 #[derive(Debug)]
@@ -46,7 +46,7 @@ impl ConsoleState {
         let op_cache = Rc::new(RefCell::new(OpCache::default()));
         Ok(Self {
             stage: ConsoleStage::Manager(
-                crate::console::manager::ManagerState::from_config_with_cache_and_op(
+                crate::console::tui::ManagerState::from_config_with_cache_and_op(
                     config,
                     cwd,
                     op_cache.clone(),
