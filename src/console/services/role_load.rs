@@ -13,26 +13,36 @@ pub fn start_role_registration(
         let mut runner = crate::docker::ShellRunner {
             debug: crate::tui::is_debug_mode(),
         };
-        let result = std::panic::AssertUnwindSafe(async {
-            crate::runtime::register_agent_repo(
-                &paths,
-                &selector,
-                &git_url,
-                &mut runner,
-                crate::tui::is_debug_mode(),
-            )
-            .await?;
-            Ok::<_, anyhow::Error>(())
-        })
-        .catch_unwind()
-        .await
-        .unwrap_or_else(|payload| {
-            let panic_message = panic_payload_message(payload.as_ref());
-            Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
-        });
+        let result = register_with_runner(
+            &paths,
+            &selector,
+            &git_url,
+            &mut runner,
+            crate::tui::is_debug_mode(),
+        )
+        .await;
         let _ = tx.send(result);
     });
     rx
+}
+
+pub(crate) async fn register_with_runner(
+    paths: &crate::paths::JackinPaths,
+    selector: &crate::selector::RoleSelector,
+    git_url: &str,
+    runner: &mut impl crate::docker::CommandRunner,
+    debug: bool,
+) -> anyhow::Result<()> {
+    std::panic::AssertUnwindSafe(async {
+        crate::runtime::register_agent_repo(paths, selector, git_url, runner, debug).await?;
+        Ok::<_, anyhow::Error>(())
+    })
+    .catch_unwind()
+    .await
+    .unwrap_or_else(|payload| {
+        let panic_message = panic_payload_message(payload.as_ref());
+        Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
+    })
 }
 
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {

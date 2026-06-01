@@ -2,8 +2,6 @@
 //! handling, and the editor-level modal dispatcher.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-#[cfg(test)]
-use futures_util::FutureExt as _;
 
 use crate::console::tui::components::op_picker::OpPickerState;
 use super::super::effects::execute_role_source_persist;
@@ -1855,7 +1853,7 @@ async fn apply_role_input_with_runner(
     crate::debug_log!("role", "parsed role selector: {selector}");
 
     let key = selector.key();
-    let result = async {
+    let result: anyhow::Result<crate::config::RoleSource> = async {
         let source = crate::console::domain::candidate_role_source(config, &selector)?;
         crate::debug_log!(
             "role",
@@ -1863,42 +1861,20 @@ async fn apply_role_input_with_runner(
             git = source.git.as_str(),
             trusted = source.trusted
         );
-        let source_to_register = source.clone();
         crate::debug_log!(
             "role",
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
-        let registration = std::panic::AssertUnwindSafe(async {
-            crate::runtime::register_agent_repo(
-                paths,
-                &selector,
-                &source.git,
-                runner,
-                crate::tui::is_debug_mode(),
-            )
-            .await?;
-            execute_role_source_persist(
-                config,
-                paths,
-                &key,
-                &source_to_register,
-            )?;
-            Ok::<_, anyhow::Error>(())
-        })
-        .catch_unwind()
-        .await;
-        match registration {
-            Ok(result) => result?,
-            Err(payload) => {
-                let panic_message = panic_payload_message(payload.as_ref());
-                crate::debug_log!(
-                    "role",
-                    "role repo registration panicked for key={key:?} raw={raw:?}: {panic_message}"
-                );
-                return Err(anyhow::anyhow!("role loader panicked: {panic_message}"));
-            }
-        }
+        crate::console::services::role_load::register_with_runner(
+            paths,
+            &selector,
+            &source.git,
+            runner,
+            crate::tui::is_debug_mode(),
+        )
+        .await?;
+        execute_role_source_persist(config, paths, &key, &source)?;
         crate::debug_log!(
             "role",
             "role repo registration completed for key={key:?} git={git:?}",
@@ -1990,17 +1966,6 @@ fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
     editor.modal = Some(Modal::ErrorPopup {
         state: jackin_tui::components::ErrorPopupState::new("Load role failed", message),
     });
-}
-
-#[cfg(test)]
-fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        return (*message).to_string();
-    }
-    if let Some(message) = payload.downcast_ref::<String>() {
-        return message.clone();
-    }
-    "role loader panicked with a non-string payload".to_string()
 }
 
 /// Translate a runtime role-resolution error into the operator-facing
