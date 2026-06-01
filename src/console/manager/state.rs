@@ -8,13 +8,11 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::services::instances::{
-    InstanceRefreshSnapshot, load_instance_refresh_snapshot,
-};
 use crate::console::manager::auth_kind::{
     AuthKind, AuthMode, auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github,
     role_override_present,
 };
+use crate::console::services::instances::InstanceRefreshSnapshot;
 use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceConfig;
 
@@ -1793,6 +1791,7 @@ impl ManagerState<'_> {
         }
     }
 
+    #[cfg(test)]
     pub fn refresh_instances(&mut self, paths: &crate::paths::JackinPaths) {
         const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
         let now = std::time::Instant::now();
@@ -1802,7 +1801,7 @@ impl ManagerState<'_> {
             return;
         }
         self.instances_last_refresh = Some(now);
-        match load_instance_refresh_snapshot(paths) {
+        match crate::console::services::instances::load_instance_refresh_snapshot(paths) {
             Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
             Err(error) => self.apply_instance_refresh_error(&error),
         }
