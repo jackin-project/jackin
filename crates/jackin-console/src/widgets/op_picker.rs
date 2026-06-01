@@ -2,6 +2,13 @@
 
 use std::collections::HashSet;
 
+use ratatui::{
+    style::{Modifier, Style},
+    text::{Line, Span},
+};
+
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+
 /// Browse-only vs. creation-enabled picker mode.
 #[derive(Debug, Clone)]
 pub enum OpPickerMode {
@@ -299,6 +306,51 @@ pub fn build_op_picker_ref<'a>(
     }
 }
 
+/// `+ New X` creation row, styled like picker list rows.
+pub fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
+    let prefix = if is_selected { "\u{25b8} " } else { "  " };
+    let style = if is_selected {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(PHOSPHOR_DIM)
+    };
+    Line::from(Span::styled(format!("{prefix}{text}"), style))
+}
+
+/// Render section-stage rows: `(root)`, named sections, then a creation
+/// sentinel.
+pub fn section_lines(
+    choices: impl IntoIterator<Item = Option<String>>,
+    selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    let choices: Vec<Option<String>> = choices.into_iter().collect();
+    let sentinel_idx = choices.len();
+    let mut lines: Vec<Line<'static>> = choices
+        .into_iter()
+        .enumerate()
+        .map(|(i, choice)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            let label = choice.unwrap_or_else(|| "(root)".to_string());
+            Line::from(Span::styled(format!("{prefix}{label}"), style))
+        })
+        .collect();
+    lines.push(sentinel_line(
+        "+ New section",
+        Some(sentinel_idx) == selected,
+    ));
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -554,5 +606,26 @@ mod tests {
         assert_eq!(built.op, "op://v_uuid/i_uuid/f_noref");
         assert_eq!(built.path, "Private/MyItem/notes");
         assert!(built.empty_reference_with_sibling_refs);
+    }
+
+    #[test]
+    fn section_lines_append_new_section_sentinel() {
+        let lines = section_lines([None, Some("Auth".to_string())], Some(2));
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines[0].spans[0].content.as_ref(),
+            "  (root)",
+            "root choice renders first"
+        );
+        assert_eq!(
+            lines[1].spans[0].content.as_ref(),
+            "  Auth",
+            "named section renders second"
+        );
+        assert_eq!(
+            lines[2].spans[0].content.as_ref(),
+            "\u{25b8} + New section",
+            "sentinel renders last and selected"
+        );
     }
 }

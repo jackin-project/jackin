@@ -14,7 +14,7 @@ use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{
     FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState,
 };
-use jackin_console::widgets::op_picker::breadcrumb_title;
+use jackin_console::widgets::op_picker::{breadcrumb_title, section_lines, sentinel_line};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
 
@@ -220,45 +220,7 @@ fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
 /// trailing `+ New section` sentinel — same selected/prefix styling as the
 /// vault/item lists.
 fn render_section_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    let selected = state.section_list_state.selected;
-    let choices = state.section_choices();
-    let sentinel_idx = choices.len();
-    let mut lines: Vec<Line<'static>> = choices
-        .into_iter()
-        .enumerate()
-        .map(|(i, choice)| {
-            let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            let label = choice.unwrap_or_else(|| "(root)".to_string());
-            Line::from(Span::styled(format!("{prefix}{label}"), style))
-        })
-        .collect();
-    lines.push(sentinel_line(
-        "+ New section",
-        Some(sentinel_idx) == selected,
-    ));
-    lines
-}
-
-/// `+ New X` creation row, styled like the existing list rows
-/// (`PHOSPHOR_GREEN` + BOLD selected, `PHOSPHOR_DIM` otherwise).
-fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
-    let prefix = if is_selected { "\u{25b8} " } else { "  " };
-    let style = if is_selected {
-        Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(PHOSPHOR_DIM)
-    };
-    Line::from(Span::styled(format!("{prefix}{text}"), style))
+    section_lines(state.section_choices(), state.section_list_state.selected)
 }
 
 fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
