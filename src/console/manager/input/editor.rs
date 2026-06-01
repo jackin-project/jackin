@@ -2,6 +2,7 @@
 //! handling, and the editor-level modal dispatcher.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+#[cfg(test)]
 use futures_util::FutureExt as _;
 
 use super::super::super::widgets::op_picker::OpPickerState;
@@ -1695,38 +1696,16 @@ fn apply_role_input(
             git = source.git.as_str(),
             trusted = source.trusted
         );
-        let selector = selector.clone();
-        let thread_paths = paths.clone();
-        let git_url = source.git.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
         crate::debug_log!(
             "role",
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
-        tokio::spawn(async move {
-            let mut runner = crate::docker::ShellRunner {
-                debug: crate::tui::is_debug_mode(),
-            };
-            let result = std::panic::AssertUnwindSafe(async {
-                crate::runtime::register_agent_repo(
-                    &thread_paths,
-                    &selector,
-                    &git_url,
-                    &mut runner,
-                    crate::tui::is_debug_mode(),
-                )
-                .await?;
-                Ok::<_, anyhow::Error>(())
-            })
-            .catch_unwind()
-            .await
-            .unwrap_or_else(|payload| {
-                let panic_message = panic_payload_message(payload.as_ref());
-                Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
-            });
-            let _ = tx.send(result);
-        });
+        let rx = crate::console::services::role_load::start_role_registration(
+            paths.clone(),
+            selector.clone(),
+            source.git.clone(),
+        );
         Ok((key.clone(), source, rx))
     })();
 
@@ -2030,6 +2009,7 @@ fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
     });
 }
 
+#[cfg(test)]
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         return (*message).to_string();
