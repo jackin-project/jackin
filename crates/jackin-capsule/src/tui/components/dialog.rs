@@ -353,6 +353,33 @@ impl Dialog {
         }
     }
 
+    pub fn new_rename_tab(tab_idx: usize, initial: impl Into<String>) -> Self {
+        let input =
+            jackin_tui::TextField::new(initial.into()).with_max_chars(MAX_CUSTOM_LABEL_LEN);
+        Self::RenameTab { tab_idx, input }
+    }
+
+    pub fn new_split_direction_picker() -> Self {
+        Self::SplitDirectionPicker {
+            selected: 0,
+            filter: String::new(),
+        }
+    }
+
+    pub fn new_close_target_picker() -> Self {
+        Self::CloseTargetPicker {
+            selected: 0,
+            filter: String::new(),
+        }
+    }
+
+    pub fn new_confirm_action(kind: ConfirmKind) -> Self {
+        Self::ConfirmAction {
+            kind,
+            selected_yes: false,
+        }
+    }
+
     pub fn new_provider_picker(
         agent: Option<String>,
         providers: Vec<jackin_protocol::Provider>,

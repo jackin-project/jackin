@@ -122,10 +122,7 @@ impl Multiplexer {
                 // CloseTargetPicker. Esc walks back to the picker,
                 // then back to the Menu — operator can change their
                 // mind without destroying anything.
-                self.dialog_push(Dialog::ConfirmAction {
-                    kind,
-                    selected_yes: false,
-                });
+                self.dialog_push(Dialog::new_confirm_action(kind));
             }
             DialogAction::ConfirmedAction(kind) => {
                 // Terminal action — clear every dialog under us and
@@ -169,12 +166,7 @@ impl Multiplexer {
                     .custom_label()
                     .map(str::to_owned)
                     .unwrap_or_default();
-                let input = jackin_tui::TextField::new(initial)
-                    .with_max_chars(crate::tui::dialog::MAX_CUSTOM_LABEL_LEN);
-                self.dialog_push(Dialog::RenameTab {
-                    tab_idx: idx,
-                    input,
-                });
+                self.dialog_push(Dialog::new_rename_tab(idx, initial));
                 self.last_tab_click = None;
                 Some(self.compose_full_frame(FullRedrawReason::DialogChange))
             }
@@ -611,10 +603,7 @@ impl Multiplexer {
                 // `apply_dialog_action` chains into an `AgentPicker`
                 // carrying `PickerIntent::Split(direction)`. Final
                 // confirm spawns the new pane.
-                self.dialog_push(Dialog::SplitDirectionPicker {
-                    selected: 0,
-                    filter: String::new(),
-                });
+                self.dialog_push(Dialog::new_split_direction_picker());
             }
             PaletteCommand::NewTab => {
                 // Always show the agent picker — even when the role
@@ -635,19 +624,13 @@ impl Multiplexer {
             }
             PaletteCommand::Close => {
                 if self.active_tab_pane_count() == 1 {
-                    self.dialog_push(Dialog::ConfirmAction {
-                        kind: ConfirmKind::CloseTab,
-                        selected_yes: false,
-                    });
+                    self.dialog_push(Dialog::new_confirm_action(ConfirmKind::CloseTab));
                 } else {
                     // Drill-down: push the CloseTargetPicker on top
                     // of the Menu so split tabs still ask whether
                     // the operator wants the focused pane or every
                     // pane in the tab. Esc walks back to Menu.
-                    self.dialog_push(Dialog::CloseTargetPicker {
-                        selected: 0,
-                        filter: String::new(),
-                    });
+                    self.dialog_push(Dialog::new_close_target_picker());
                 }
             }
             PaletteCommand::ZoomPane => {
@@ -663,10 +646,7 @@ impl Multiplexer {
                 // Push ConfirmAction for Exit — the operator
                 // confirms before every agent session is stopped. Esc
                 // walks back to Menu.
-                self.dialog_push(Dialog::ConfirmAction {
-                    kind: ConfirmKind::Exit,
-                    selected_yes: false,
-                });
+                self.dialog_push(Dialog::new_confirm_action(ConfirmKind::Exit));
             }
         }
         None
