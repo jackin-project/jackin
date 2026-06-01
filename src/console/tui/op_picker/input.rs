@@ -8,15 +8,15 @@ use jackin_tui::ModalOutcome;
 use jackin_tui::components::TextInputState;
 
 use super::{
-    AccountStageCommitPlan, FieldStageCommitPlan, ItemStageCommitPlan, OpField, OpItem,
-    OpLoadState, OpPickerError, OpPickerSelection, OpPickerStage, OpPickerState,
-    SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan,
-    account_stage_commit_plan, account_stage_refresh_plan, build_op_ref_on_commit,
-    field_label_cancel_plan, field_stage_back_plan, field_stage_commit_plan,
-    filter_reset_selection_for_stage, item_stage_back_plan, item_stage_commit_plan,
-    new_item_name_commit_plan, new_section_name_commit_plan, section_header_collapse_target,
-    section_stage_back_plan, section_stage_commit_plan, vault_stage_back_plan,
-    vault_stage_commit_plan,
+    AccountStageCommitPlan, FieldLabelCommitPlan, FieldStageCommitPlan, ItemStageCommitPlan,
+    OpField, OpItem, OpLoadState, OpPickerError, OpPickerSelection, OpPickerStage,
+    OpPickerState, SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan,
+    VaultStageCommitPlan, account_stage_commit_plan, account_stage_refresh_plan,
+    build_op_ref_on_commit, field_label_cancel_plan, field_label_commit_plan,
+    field_stage_back_plan, field_stage_commit_plan, filter_reset_selection_for_stage,
+    item_stage_back_plan, item_stage_commit_plan, new_item_name_commit_plan,
+    new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
+    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
 };
 
 impl OpPickerState {
@@ -514,26 +514,40 @@ impl OpPickerState {
                     .selected_vault
                     .clone()
                     .expect("vault set before field-label commit");
-                // Trim the field label so leading/trailing whitespace can't
-                // reach the op field id/label (item_name is trimmed too).
-                let field_label = label.trim().to_string();
-                if let Some(item) = self.selected_item.clone() {
-                    ModalOutcome::Commit(OpPickerSelection::EditItemField {
-                        account: self.selected_account.clone(),
+                match field_label_commit_plan(
+                    self.selected_account.clone(),
+                    vault,
+                    self.selected_item.clone(),
+                    self.pending_section.take(),
+                    self.item_name_input.trimmed_value(),
+                    &label,
+                ) {
+                    FieldLabelCommitPlan::EditItemField {
+                        account,
+                        item,
+                        vault,
+                        section,
+                        field_label,
+                    } => ModalOutcome::Commit(OpPickerSelection::EditItemField {
+                        account,
                         vault,
                         item,
-                        section: self.pending_section.take(),
-                        // Typed label = a new field to append.
+                        section,
                         field: crate::operator_env::FieldTarget::New { label: field_label },
-                    })
-                } else {
-                    ModalOutcome::Commit(OpPickerSelection::NewItem {
-                        account: self.selected_account.clone(),
+                    }),
+                    FieldLabelCommitPlan::NewItem {
+                        account,
                         vault,
-                        item_name: self.item_name_input.trimmed_value(),
-                        section: self.pending_section.take(),
+                        item_name,
+                        section,
                         field_label,
-                    })
+                    } => ModalOutcome::Commit(OpPickerSelection::NewItem {
+                        account,
+                        vault,
+                        item_name,
+                        section,
+                        field_label,
+                    }),
                 }
             }
             ModalOutcome::Continue => ModalOutcome::Continue,

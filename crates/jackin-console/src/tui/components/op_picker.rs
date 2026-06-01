@@ -568,6 +568,51 @@ pub const fn field_label_cancel_plan(origin: FieldLabelOrigin) -> NamingStagePla
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldLabelCommitPlan<Account, Vault, Item> {
+    NewItem {
+        account: Option<Account>,
+        vault: Vault,
+        item_name: String,
+        section: Option<String>,
+        field_label: String,
+    },
+    EditItemField {
+        account: Option<Account>,
+        vault: Vault,
+        item: Item,
+        section: Option<String>,
+        field_label: String,
+    },
+}
+
+pub fn field_label_commit_plan<Account, Vault, Item>(
+    account: Option<Account>,
+    vault: Vault,
+    item: Option<Item>,
+    pending_section: Option<String>,
+    item_name: String,
+    raw_label: &str,
+) -> FieldLabelCommitPlan<Account, Vault, Item> {
+    let field_label = raw_label.trim().to_string();
+    if let Some(item) = item {
+        return FieldLabelCommitPlan::EditItemField {
+            account,
+            vault,
+            item,
+            section: pending_section,
+            field_label,
+        };
+    }
+    FieldLabelCommitPlan::NewItem {
+        account,
+        vault,
+        item_name,
+        section: pending_section,
+        field_label,
+    }
+}
+
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
@@ -2079,6 +2124,44 @@ mod tests {
         assert_eq!(
             FieldLabelOrigin::NewSection.cancel_stage(),
             OpPickerStage::NewSectionName
+        );
+    }
+
+    #[test]
+    fn field_label_commit_plan_trims_and_routes_item_presence() {
+        assert_eq!(
+            field_label_commit_plan(
+                Some("account"),
+                "vault",
+                Some("item"),
+                Some("section".to_string()),
+                "ignored".to_string(),
+                "  token  ",
+            ),
+            FieldLabelCommitPlan::EditItemField {
+                account: Some("account"),
+                vault: "vault",
+                item: "item",
+                section: Some("section".to_string()),
+                field_label: "token".to_string(),
+            }
+        );
+        assert_eq!(
+            field_label_commit_plan::<&str, &str, &str>(
+                None,
+                "vault",
+                None,
+                None,
+                "login".to_string(),
+                "  password  ",
+            ),
+            FieldLabelCommitPlan::NewItem {
+                account: None,
+                vault: "vault",
+                item_name: "login".to_string(),
+                section: None,
+                field_label: "password".to_string(),
+            }
         );
     }
 
