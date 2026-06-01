@@ -11,7 +11,9 @@ use super::tui::terminal::{
 use super::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };
-use jackin_console::tui::run::{quit_confirm_area, render_debug_bar, split_debug_area};
+use jackin_console::tui::run::{
+    quit_confirm_area, render_debug_bar, should_debug_log_mouse, split_debug_area,
+};
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -64,16 +66,6 @@ pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
     }
 
     false
-}
-
-pub(super) const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool {
-    !matches!(
-        mouse.kind,
-        crossterm::event::MouseEventKind::ScrollDown
-            | crossterm::event::MouseEventKind::ScrollUp
-            | crossterm::event::MouseEventKind::ScrollLeft
-            | crossterm::event::MouseEventKind::ScrollRight
-    )
 }
 
 #[allow(clippy::too_many_lines)]

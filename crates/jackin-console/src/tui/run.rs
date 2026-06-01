@@ -59,6 +59,17 @@ pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id
 }
 
 #[must_use]
+pub const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool {
+    !matches!(
+        mouse.kind,
+        crossterm::event::MouseEventKind::ScrollDown
+            | crossterm::event::MouseEventKind::ScrollUp
+            | crossterm::event::MouseEventKind::ScrollLeft
+            | crossterm::event::MouseEventKind::ScrollRight
+    )
+}
+
+#[must_use]
 pub fn quit_confirm_area(frame: Rect, confirm: &jackin_tui::components::ConfirmState) -> Rect {
     let width: u16 = 44.min(frame.width.saturating_sub(4));
     let height: u16 = jackin_tui::components::confirm_required_height(confirm)

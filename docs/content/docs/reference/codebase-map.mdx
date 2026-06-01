@@ -155,7 +155,7 @@ The interactive console is split between root integration code in `src/console/`
 and extracted surface code in `crates/jackin-console/`:
 
 - <RepoFile path="src/console/mod.rs" /> and <RepoFile path="src/console/run.rs" /> — root integration for the `run_console` entrypoint, runtime/config prompts, and instance actions.
-- <RepoFile path="crates/jackin-console/src/tui/run.rs" /> and <RepoFile path="crates/jackin-console/src/tui/terminal.rs" /> — extracted event-loop shell helpers and terminal lifecycle abstractions used by the root integration layer.
+- <RepoFile path="crates/jackin-console/src/tui/run.rs" /> and <RepoFile path="crates/jackin-console/src/tui/terminal.rs" /> — extracted event-loop shell helpers, mouse telemetry filters, debug-bar rendering, and terminal lifecycle abstractions used by the root integration layer.
 - <RepoFile path="src/console/state.rs" /> — `ConsoleState` and
   `WorkspaceChoice`.
 - <RepoFile path="src/console/preview.rs" /> — workspace preview and
