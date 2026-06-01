@@ -13,3 +13,4 @@ pub mod render;
 pub mod selection;
 pub mod socket_backend;
 pub mod update;
+pub mod view;

@@ -1,19 +1,24 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
-use super::*;
+use crate::input::PrefixCommand;
+use crate::render::draw_scrollbar;
+use crate::session::Session;
+use crate::statusbar::draw_pane_box;
+use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
+use crate::tui::update::FullRedrawReason;
 
-pub(super) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
+pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     match target {
         Some(HoverTarget::Tab(idx)) => Some(idx),
         _ => None,
     }
 }
 
-pub(super) const fn hovered_menu(target: Option<HoverTarget>) -> bool {
+pub(crate) const fn hovered_menu(target: Option<HoverTarget>) -> bool {
     matches!(target, Some(HoverTarget::Menu))
 }
 
-pub(super) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
+pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
     match cmd {
         PrefixCommand::NewTab | PrefixCommand::Palette => FullRedrawReason::PaletteOverlay,
         PrefixCommand::NextTab | PrefixCommand::PrevTab | PrefixCommand::JumpTab(_) => {
@@ -31,18 +36,18 @@ pub(super) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason
 }
 
 #[derive(Default)]
-pub(super) struct PaneScrollbar {
-    pub(super) offset: usize,
-    pub(super) filled: usize,
+pub(crate) struct PaneScrollbar {
+    pub(crate) offset: usize,
+    pub(crate) filled: usize,
 }
 
 impl PaneScrollbar {
-    pub(super) const fn visible(&self) -> bool {
+    pub(crate) const fn visible(&self) -> bool {
         self.filled > 0
     }
 }
 
-pub(super) fn pane_scrollbar(
+pub(crate) fn pane_scrollbar(
     session: &mut Session,
     viewport_rows: u16,
     viewport_cols: u16,
@@ -105,7 +110,7 @@ pub(super) fn pane_scrollbar(
 /// Called identically from compose_full_frame and compose_partial_frame;
 /// lives here so both compositors stay in lock-step when the chrome rules
 /// change.
-pub(super) fn draw_pane_chrome(
+pub(crate) fn draw_pane_chrome(
     buf: &mut Vec<u8>,
     pane: &VisiblePane,
     title: &str,
@@ -141,17 +146,17 @@ pub(super) fn draw_pane_chrome(
     );
 }
 
-pub(super) struct ScrollAffordanceMetrics {
-    pub(super) screen_rows: u16,
-    pub(super) screen_cols: u16,
-    pub(super) cursor_row: u16,
-    pub(super) cursor_col: u16,
-    pub(super) occupied_rows: usize,
-    pub(super) first_occupied_row: Option<u16>,
-    pub(super) last_occupied_row: Option<u16>,
+pub(crate) struct ScrollAffordanceMetrics {
+    pub(crate) screen_rows: u16,
+    pub(crate) screen_cols: u16,
+    pub(crate) cursor_row: u16,
+    pub(crate) cursor_col: u16,
+    pub(crate) occupied_rows: usize,
+    pub(crate) first_occupied_row: Option<u16>,
+    pub(crate) last_occupied_row: Option<u16>,
 }
 
-pub(super) fn screen_scroll_affordance_metrics(
+pub(crate) fn screen_scroll_affordance_metrics(
     screen: &vt100::Screen,
     viewport_rows: u16,
     viewport_cols: u16,
@@ -190,7 +195,7 @@ pub(super) fn screen_scroll_affordance_metrics(
 /// → bold red text → clear to end of line → restore cursor. The
 /// save/restore wrap prevents the banner from scrolling whichever
 /// pane the composed frame left the cursor in.
-pub(super) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
+pub(crate) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
     format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
 }
 
@@ -199,10 +204,10 @@ pub(super) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
 /// compatibility notes live with the canonical implementation in
 /// `jackin_tui::ansi::encode_osc52_clipboard_write`; keeping that detail in
 /// one place stops the two copies from drifting.
-pub(super) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
+pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     jackin_tui::ansi::encode_osc52_clipboard_write(payload)
 }
 
-pub(super) fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
+pub(crate) fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
     format!("\x1b]22;{}\x1b\\", shape.as_osc22_name()).into_bytes()
 }
