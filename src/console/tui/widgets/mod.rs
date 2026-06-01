@@ -12,7 +12,6 @@ pub(crate) use jackin_tui::theme::{
 };
 
 pub mod auth_panel;
-pub(crate) mod op_breadcrumb;
 pub mod op_picker;
 
 #[cfg(test)]

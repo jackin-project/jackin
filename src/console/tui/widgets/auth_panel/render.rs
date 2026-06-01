@@ -14,7 +14,7 @@ use ratatui::{
 use super::form::{AuthForm, CredentialInput};
 use crate::console::manager::auth_kind::AuthMode;
 use crate::console::manager::state::AuthFormFocus;
-use crate::console::widgets::op_breadcrumb::push_op_breadcrumb_spans;
+use jackin_console::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
 use super::super::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use jackin_tui::components::{Panel, PanelFocus};

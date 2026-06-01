@@ -692,7 +692,9 @@ fn render_auth_source_line(
     match value {
         Some(EnvValue::OpRef(r)) => {
             spans.push(Span::styled("[op] ", Style::default().fg(PHOSPHOR_DIM)));
-            crate::console::widgets::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, &r.path);
+            jackin_console::tui::components::op_breadcrumb::push_op_breadcrumb_spans(
+                &mut spans, &r.path,
+            );
         }
         Some(EnvValue::Plain(s)) if !s.is_empty() => {
             spans.push(Span::styled(
