@@ -31,7 +31,9 @@ mod quit_confirm_tests {
     //! Pin the gates for the Q-intercept and the
     //! `ConfirmState::handle_key` outcomes the run-loop dispatches.
     use super::tui::debug::{console_location_debug, key_debug_name};
-    use super::tui::prompts::{OnPromptFailure, PromptOutcome, show_role_resolution_error};
+    use super::tui::prompts::{
+        AgentPickerChoices, OnPromptFailure, PromptOutcome, show_role_resolution_error,
+    };
     use super::*;
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
@@ -40,7 +42,6 @@ mod quit_confirm_tests {
     use crate::selector::RoleSelector;
     use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
     use jackin_tui::ModalOutcome;
-    use crate::paths::JackinPaths;
     use jackin_console::tui::components::file_browser::FileBrowserState;
     use jackin_tui::components::{ConfirmState, TextInputState};
 
@@ -316,81 +317,46 @@ mod quit_confirm_tests {
         }
     }
 
-    async fn run_prompt_for_unknown_role(
-        on_failure: OnPromptFailure,
-    ) -> (ConsoleState, PromptOutcome) {
-        use ratatui::backend::TestBackend;
+    fn run_prompt_for_unknown_role(on_failure: OnPromptFailure) -> (ConsoleState, PromptOutcome) {
         let cwd = std::env::temp_dir();
-        let temp = tempfile::tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        // Empty config → resolve_supported_agents_for_console errors on
-        // the unregistered selector; helper routes that into Failed.
         let config = AppConfig::default();
         let mut state = tui::new_console_state(&config, &cwd).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let workspace = unresolved_workspace();
-        let mut runner = crate::runtime::FakeRunner::default();
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = ratatui::Terminal::new(backend).unwrap();
         let input = LoadWorkspaceInput::CurrentDir;
         let outcome = super::prompt_agent_for_launch(
-            &mut terminal,
             &mut state,
-            &paths,
-            &config,
-            &cwd,
-            &mut runner,
             &selector,
             &workspace,
             input,
             on_failure,
-        )
-        .await
-        .unwrap();
+            AgentPickerChoices::Failed(anyhow::anyhow!("unknown role")),
+        );
         (state, outcome)
     }
 
-    #[tokio::test]
-    async fn prompt_agent_for_launch_skips_resolution_when_workspace_default_agent_set() {
+    #[test]
+    fn prompt_agent_for_launch_skips_resolution_when_workspace_default_agent_set() {
         // workspace.default_agent.is_some() must short-circuit before
-        // any git work — operators with a configured default never
-        // wait on a network round trip just to confirm a launch.
-        use ratatui::backend::TestBackend;
+        // any agent-picker state opens — operators with a configured default
+        // never wait on a resolution round trip just to confirm a launch.
         let cwd = std::env::temp_dir();
-        let temp = tempfile::tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
         let config = AppConfig::default();
         let mut state = tui::new_console_state(&config, &cwd).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut workspace = unresolved_workspace();
         workspace.default_agent = Some(crate::agent::Agent::Codex);
-        let mut runner = crate::runtime::FakeRunner::default();
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = ratatui::Terminal::new(backend).unwrap();
 
         let outcome = super::prompt_agent_for_launch(
-            &mut terminal,
             &mut state,
-            &paths,
-            &config,
-            &cwd,
-            &mut runner,
             &selector,
             &workspace,
             LoadWorkspaceInput::CurrentDir,
             OnPromptFailure::ClearPending,
-        )
-        .await
-        .unwrap();
+            AgentPickerChoices::Failed(anyhow::anyhow!("must not be observed")),
+        );
 
         assert!(matches!(outcome, PromptOutcome::Launch));
-        assert!(
-            runner.recorded.is_empty(),
-            "workspace default_agent must short-circuit before any git work: {:?}",
-            runner.recorded
-        );
         let ConsoleStage::Manager(ms) = &state.stage;
         assert!(
             ms.list_modal.is_none(),
@@ -402,9 +368,9 @@ mod quit_confirm_tests {
         );
     }
 
-    #[tokio::test]
-    async fn prompt_agent_for_launch_restore_pending_keeps_input_for_retry() {
-        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::RestorePending).await;
+    #[test]
+    fn prompt_agent_for_launch_restore_pending_keeps_input_for_retry() {
+        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::RestorePending);
         assert!(matches!(outcome, PromptOutcome::Defer));
         assert!(
             state.pending_launch.is_some(),
@@ -417,9 +383,9 @@ mod quit_confirm_tests {
         );
     }
 
-    #[tokio::test]
-    async fn prompt_agent_for_launch_clear_pending_drops_input() {
-        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::ClearPending).await;
+    #[test]
+    fn prompt_agent_for_launch_clear_pending_drops_input() {
+        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::ClearPending);
         assert!(matches!(outcome, PromptOutcome::Defer));
         assert!(
             state.pending_launch.is_none(),

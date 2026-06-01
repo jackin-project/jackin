@@ -2,7 +2,6 @@
 
 use crate::config::AppConfig;
 use crate::console::ConsoleOutcome;
-use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
@@ -10,6 +9,12 @@ use super::{ConsoleStage, ConsoleState};
 
 pub(super) enum AgentPickerResolution {
     Opened,
+    NotNeeded,
+    Failed(anyhow::Error),
+}
+
+pub(in crate::console) enum AgentPickerChoices {
+    Choices(Vec<crate::agent::Agent>),
     NotNeeded,
     Failed(anyhow::Error),
 }
@@ -52,36 +57,21 @@ pub(in crate::console) fn show_role_resolution_error(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) async fn try_prompt_for_agent<B>(
-    terminal: &mut ratatui::Terminal<B>,
+pub(super) fn try_prompt_for_agent(
     state: &mut ConsoleState,
-    paths: &JackinPaths,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
     role: &RoleSelector,
     workspace: &ResolvedWorkspace,
-) -> anyhow::Result<AgentPickerResolution>
-where
-    B: ratatui::backend::Backend,
-    B::Error: std::error::Error + Send + Sync + 'static,
-{
+    choices: AgentPickerChoices,
+) -> AgentPickerResolution {
     if workspace.default_agent.is_some() {
-        return Ok(AgentPickerResolution::NotNeeded);
+        return AgentPickerResolution::NotNeeded;
     }
 
-    draw_role_resolution_dialog(terminal, state, config, cwd, role)?;
-    let choices =
-        match crate::console::services::agents::load_inline_picker_choices(
-            paths, config, role, runner,
-        )
-        .await
-        {
-            Ok(Some(choices)) => choices,
-            Ok(None) => return Ok(AgentPickerResolution::NotNeeded),
-            Err(error) => return Ok(AgentPickerResolution::Failed(error)),
-        };
+    let choices = match choices {
+        AgentPickerChoices::Choices(choices) => choices,
+        AgentPickerChoices::NotNeeded => return AgentPickerResolution::NotNeeded,
+        AgentPickerChoices::Failed(error) => return AgentPickerResolution::Failed(error),
+    };
 
     let ConsoleStage::Manager(ms) = &mut state.stage;
     ms.inline_agent_picker = Some((
@@ -90,7 +80,7 @@ where
     ));
     ms.inline_role_picker = None;
     state.pending_launch_role = Some(role.clone());
-    Ok(AgentPickerResolution::Opened)
+    AgentPickerResolution::Opened
 }
 
 /// Outcome of `prompt_agent_for_launch`. Two states because callers
@@ -111,121 +101,87 @@ pub(in crate::console) enum OnPromptFailure {
     RestorePending,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(in crate::console) async fn prompt_agent_for_launch<B>(
-    terminal: &mut ratatui::Terminal<B>,
+pub(in crate::console) fn prompt_agent_for_launch(
     state: &mut ConsoleState,
-    paths: &JackinPaths,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
     role: &RoleSelector,
     workspace: &ResolvedWorkspace,
     input: LoadWorkspaceInput,
     on_failure: OnPromptFailure,
-) -> anyhow::Result<PromptOutcome>
-where
-    B: ratatui::backend::Backend,
-    B::Error: std::error::Error + Send + Sync + 'static,
-{
-    match try_prompt_for_agent(terminal, state, paths, config, cwd, runner, role, workspace).await?
-    {
+    choices: AgentPickerChoices,
+) -> PromptOutcome {
+    match try_prompt_for_agent(state, role, workspace, choices) {
         AgentPickerResolution::Opened => {
             state.pending_launch = Some(input);
-            Ok(PromptOutcome::Defer)
+            PromptOutcome::Defer
         }
-        AgentPickerResolution::NotNeeded => Ok(PromptOutcome::Launch),
+        AgentPickerResolution::NotNeeded => PromptOutcome::Launch,
         AgentPickerResolution::Failed(error) => {
             if matches!(on_failure, OnPromptFailure::RestorePending) {
                 state.pending_launch = Some(input);
             }
             show_role_resolution_error(state, role, &error);
-            Ok(PromptOutcome::Defer)
+            PromptOutcome::Defer
         }
     }
 }
 
-pub(super) async fn dispatch_and_prompt_launch<B>(
-    terminal: &mut ratatui::Terminal<B>,
+pub(super) fn dispatch_launch_prompt(
     state: &mut ConsoleState,
-    paths: &JackinPaths,
     config: &AppConfig,
     cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
     input: LoadWorkspaceInput,
-) -> anyhow::Result<Option<ConsoleOutcome>>
-where
-    B: ratatui::backend::Backend,
-    B::Error: std::error::Error + Send + Sync + 'static,
-{
+) -> anyhow::Result<LaunchPromptDispatch> {
     let Some((role, workspace, agent)) =
         crate::console::tui::launch::dispatch_launch_for_workspace(state, config, cwd, input.clone())?
     else {
-        return Ok(None);
+        return Ok(LaunchPromptDispatch::None);
     };
     if agent.is_some() {
-        return Ok(Some(ConsoleOutcome::Launch(role, workspace, agent)));
+        return Ok(LaunchPromptDispatch::Launch(ConsoleOutcome::Launch(
+            role, workspace, agent,
+        )));
     }
-    match prompt_agent_for_launch(
-        terminal,
-        state,
-        paths,
-        config,
-        cwd,
-        runner,
-        &role,
-        &workspace,
+    Ok(LaunchPromptDispatch::Prompt(LaunchPromptRequest {
+        role,
+        workspace,
         input,
-        OnPromptFailure::ClearPending,
-    )
-    .await?
-    {
-        PromptOutcome::Launch => Ok(Some(ConsoleOutcome::Launch(role, workspace, None))),
-        PromptOutcome::Defer => Ok(None),
-    }
+        on_failure: OnPromptFailure::ClearPending,
+    }))
 }
 
-pub(super) async fn prompt_committed_role<B>(
-    terminal: &mut ratatui::Terminal<B>,
+pub(super) fn committed_role_prompt(
     state: &mut ConsoleState,
-    paths: &JackinPaths,
     config: &AppConfig,
     cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
     role: RoleSelector,
-) -> anyhow::Result<Option<ConsoleOutcome>>
-where
-    B: ratatui::backend::Backend,
-    B::Error: std::error::Error + Send + Sync + 'static,
-{
+) -> anyhow::Result<LaunchPromptDispatch> {
     let Some(input) = state.pending_launch.take() else {
-        return Ok(None);
+        return Ok(LaunchPromptDispatch::None);
     };
     let Some(resolved) =
         crate::console::domain::resolve_committed_role_launch(config, cwd, input, &role)?
     else {
-        return Ok(None);
+        return Ok(LaunchPromptDispatch::None);
     };
-    match prompt_agent_for_launch(
-        terminal,
-        state,
-        paths,
-        config,
-        cwd,
-        runner,
-        &role,
-        &resolved.workspace,
-        resolved.input,
-        OnPromptFailure::RestorePending,
-    )
-    .await?
-    {
-        PromptOutcome::Launch => {
-            state.pending_launch_role = None;
-            Ok(Some(ConsoleOutcome::Launch(role, resolved.workspace, None)))
-        }
-        PromptOutcome::Defer => Ok(None),
-    }
+    Ok(LaunchPromptDispatch::Prompt(LaunchPromptRequest {
+        role,
+        workspace: resolved.workspace,
+        input: resolved.input,
+        on_failure: OnPromptFailure::RestorePending,
+    }))
+}
+
+pub(super) enum LaunchPromptDispatch {
+    Launch(ConsoleOutcome),
+    Prompt(LaunchPromptRequest),
+    None,
+}
+
+pub(super) struct LaunchPromptRequest {
+    pub(super) role: RoleSelector,
+    pub(super) workspace: ResolvedWorkspace,
+    pub(super) input: LoadWorkspaceInput,
+    pub(super) on_failure: OnPromptFailure,
 }
 
 pub(super) fn launch_with_committed_agent(

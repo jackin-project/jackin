@@ -1,5 +1,7 @@
 use crate::console::tui::prompts::{
-    dispatch_and_prompt_launch, launch_with_committed_agent, prompt_committed_role,
+    AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest, PromptOutcome,
+    committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
+    launch_with_committed_agent, prompt_agent_for_launch,
 };
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
@@ -64,6 +66,80 @@ pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
     }
 
     false
+}
+
+async fn execute_launch_prompt<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    runner: &mut impl crate::docker::CommandRunner,
+    request: LaunchPromptRequest,
+) -> anyhow::Result<Option<ConsoleOutcome>>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    if request.workspace.default_agent.is_none() {
+        draw_role_resolution_dialog(terminal, state, config, cwd, &request.role)?;
+    }
+    let choices = if request.workspace.default_agent.is_some() {
+        AgentPickerChoices::NotNeeded
+    } else {
+        match crate::console::effects::load_inline_agent_picker_choices(
+            paths,
+            config,
+            &request.role,
+            runner,
+        )
+        .await
+        {
+            Ok(Some(choices)) => AgentPickerChoices::Choices(choices),
+            Ok(None) => AgentPickerChoices::NotNeeded,
+            Err(error) => AgentPickerChoices::Failed(error),
+        }
+    };
+    match prompt_agent_for_launch(
+        state,
+        &request.role,
+        &request.workspace,
+        request.input,
+        request.on_failure,
+        choices,
+    ) {
+        PromptOutcome::Launch => {
+            state.pending_launch_role = None;
+            Ok(Some(ConsoleOutcome::Launch(
+                request.role,
+                request.workspace,
+                None,
+            )))
+        }
+        PromptOutcome::Defer => Ok(None),
+    }
+}
+
+async fn execute_launch_prompt_dispatch<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    runner: &mut impl crate::docker::CommandRunner,
+    dispatch: LaunchPromptDispatch,
+) -> anyhow::Result<Option<ConsoleOutcome>>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    match dispatch {
+        LaunchPromptDispatch::Launch(outcome) => Ok(Some(outcome)),
+        LaunchPromptDispatch::Prompt(request) => {
+            execute_launch_prompt(terminal, state, paths, config, cwd, runner, request).await
+        }
+        LaunchPromptDispatch::None => Ok(None),
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -311,14 +387,20 @@ pub async fn run_console<H: InstanceActionHandler>(
                             break 'main Ok(None);
                         }
                         crate::console::tui::InputOutcome::LaunchNamed(name) => {
-                            if let Some(outcome) = dispatch_and_prompt_launch(
+                            let dispatch = dispatch_launch_prompt(
+                                &mut state,
+                                &config,
+                                cwd,
+                                LoadWorkspaceInput::Saved(name),
+                            )?;
+                            if let Some(outcome) = execute_launch_prompt_dispatch(
                                 &mut terminal,
                                 &mut state,
                                 paths,
                                 &config,
                                 cwd,
                                 runner,
-                                LoadWorkspaceInput::Saved(name),
+                                dispatch,
                             )
                             .await?
                             {
@@ -326,14 +408,20 @@ pub async fn run_console<H: InstanceActionHandler>(
                             }
                         }
                         crate::console::tui::InputOutcome::LaunchCurrentDir => {
-                            if let Some(outcome) = dispatch_and_prompt_launch(
+                            let dispatch = dispatch_launch_prompt(
+                                &mut state,
+                                &config,
+                                cwd,
+                                LoadWorkspaceInput::CurrentDir,
+                            )?;
+                            if let Some(outcome) = execute_launch_prompt_dispatch(
                                 &mut terminal,
                                 &mut state,
                                 paths,
                                 &config,
                                 cwd,
                                 runner,
-                                LoadWorkspaceInput::CurrentDir,
+                                dispatch,
                             )
                             .await?
                             {
@@ -341,14 +429,16 @@ pub async fn run_console<H: InstanceActionHandler>(
                             }
                         }
                         crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
-                            if let Some(outcome) = prompt_committed_role(
+                            let dispatch =
+                                committed_role_prompt(&mut state, &config, cwd, role)?;
+                            if let Some(outcome) = execute_launch_prompt_dispatch(
                                 &mut terminal,
                                 &mut state,
                                 paths,
                                 &config,
                                 cwd,
                                 runner,
-                                role,
+                                dispatch,
                             )
                             .await?
                             {

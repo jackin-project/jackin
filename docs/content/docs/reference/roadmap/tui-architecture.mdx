@@ -270,6 +270,8 @@ The current repo is transitional. The target above should guide all remaining mo
 
 ## Remaining work
 
+Latest console cleanup: agent-picker choice resolution now runs through the root effect executor before `src/console/tui/prompts.rs` opens inline prompt state. The prompt helper owns terminal drawing and state transitions only; Docker-backed agent resolution stays behind `src/console/effects.rs` and `src/console/services/agents.rs`.
+
 1. **Classify existing modules.** For each root-level file in the three surface crates, decide whether it is TUI, pure non-visual domain logic, or side-effect/service/runtime logic.
 2. **Capture the current behavior before moving code.** Identify the existing tests, snapshots, and manual-smoke checks that prove the affected workflow. Add focused coverage first if a workflow has no useful guard.
 3. **Move TUI files under `src/tui/`.** Preserve behavior while moving files into `app.rs`, `message.rs`, `update.rs`, `effect.rs`, `subscriptions.rs`, `run.rs`, `terminal.rs`, `view.rs`, `components/`, and `screens/` as appropriate.
