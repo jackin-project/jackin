@@ -337,6 +337,29 @@ pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SectionCollapseIntent {
+    Collapse,
+    Expand,
+    Toggle,
+}
+
+pub fn section_header_collapse_target(
+    row: Option<&FieldDisplayRow>,
+    collapsed_sections: &HashSet<String>,
+    intent: SectionCollapseIntent,
+) -> Option<(String, bool)> {
+    let Some(FieldDisplayRow::SectionHeader { name, .. }) = row else {
+        return None;
+    };
+    let collapsed = match intent {
+        SectionCollapseIntent::Collapse => true,
+        SectionCollapseIntent::Expand => false,
+        SectionCollapseIntent::Toggle => !collapsed_sections.contains(name.as_str()),
+    };
+    Some((name.clone(), collapsed))
+}
+
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
@@ -1347,6 +1370,46 @@ mod tests {
                 clear_selected_item: true,
                 reset_section_list: false,
             }
+        );
+    }
+
+    #[test]
+    fn section_header_collapse_target_routes_only_headers() {
+        let row = FieldDisplayRow::SectionHeader {
+            name: "Auth".to_string(),
+            field_count: 2,
+        };
+        let mut collapsed = HashSet::new();
+
+        assert_eq!(
+            section_header_collapse_target(
+                Some(&row),
+                &collapsed,
+                SectionCollapseIntent::Collapse
+            ),
+            Some(("Auth".to_string(), true))
+        );
+        assert_eq!(
+            section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Expand),
+            Some(("Auth".to_string(), false))
+        );
+        assert_eq!(
+            section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Toggle),
+            Some(("Auth".to_string(), true))
+        );
+
+        collapsed.insert("Auth".to_string());
+        assert_eq!(
+            section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Toggle),
+            Some(("Auth".to_string(), false))
+        );
+        assert_eq!(
+            section_header_collapse_target(
+                Some(&FieldDisplayRow::NewFieldSentinel),
+                &collapsed,
+                SectionCollapseIntent::Toggle,
+            ),
+            None
         );
     }
 

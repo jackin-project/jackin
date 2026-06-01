@@ -9,8 +9,9 @@ use jackin_tui::components::TextInputState;
 
 use super::{
     FieldDisplayRow, FieldLabelOrigin, OpField, OpItem, OpLoadState, OpPickerError,
-    OpPickerSelection, OpPickerStage, OpPickerState, build_op_ref_on_commit,
-    field_stage_back_plan, filter_reset_selection_for_stage,
+    OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent,
+    build_op_ref_on_commit, field_stage_back_plan, filter_reset_selection_for_stage,
+    section_header_collapse_target,
 };
 
 impl OpPickerState {
@@ -350,19 +351,25 @@ impl OpPickerState {
             }
             KeyCode::Left => {
                 let cur = self.field_list_state.selected.unwrap_or(0);
-                if let Some(FieldDisplayRow::SectionHeader { name, .. }) =
-                    self.build_field_display_rows().into_iter().nth(cur)
-                {
-                    self.set_section_collapsed(name, true);
+                let rows = self.build_field_display_rows();
+                if let Some((name, collapsed)) = section_header_collapse_target(
+                    rows.get(cur),
+                    &self.collapsed_sections,
+                    SectionCollapseIntent::Collapse,
+                ) {
+                    self.set_section_collapsed(name, collapsed);
                 }
                 ModalOutcome::Continue
             }
             KeyCode::Right => {
                 let cur = self.field_list_state.selected.unwrap_or(0);
-                if let Some(FieldDisplayRow::SectionHeader { name, .. }) =
-                    self.build_field_display_rows().into_iter().nth(cur)
-                {
-                    self.set_section_collapsed(name, false);
+                let rows = self.build_field_display_rows();
+                if let Some((name, collapsed)) = section_header_collapse_target(
+                    rows.get(cur),
+                    &self.collapsed_sections,
+                    SectionCollapseIntent::Expand,
+                ) {
+                    self.set_section_collapsed(name, collapsed);
                 }
                 ModalOutcome::Continue
             }
@@ -374,12 +381,19 @@ impl OpPickerState {
             KeyCode::Enter => {
                 let visible = self.filtered_fields();
                 let cur = self.field_list_state.selected.unwrap_or(0);
-                match self.build_field_display_rows().into_iter().nth(cur) {
-                    Some(FieldDisplayRow::SectionHeader { name, .. }) => {
-                        self.toggle_section_collapse(name);
+                let rows = self.build_field_display_rows();
+                match rows.get(cur) {
+                    Some(FieldDisplayRow::SectionHeader { .. }) => {
+                        if let Some((name, collapsed)) = section_header_collapse_target(
+                            rows.get(cur),
+                            &self.collapsed_sections,
+                            SectionCollapseIntent::Toggle,
+                        ) {
+                            self.set_section_collapsed(name, collapsed);
+                        }
                     }
                     Some(FieldDisplayRow::Field { field_idx }) => {
-                        if let Some(field) = visible.get(field_idx) {
+                        if let Some(field) = visible.get(*field_idx) {
                             return ModalOutcome::Commit(self.commit_existing_field(field));
                         }
                     }
@@ -480,11 +494,6 @@ impl OpPickerState {
             }
             ModalOutcome::Continue => ModalOutcome::Continue,
         }
-    }
-
-    fn toggle_section_collapse(&mut self, name: String) {
-        let collapsed = self.collapsed_sections.contains(name.as_str());
-        self.set_section_collapsed(name, !collapsed);
     }
 
     /// Collapse (`collapsed = true`) or expand a section header, then clamp
