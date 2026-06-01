@@ -29,19 +29,19 @@ use tokio::time::{Duration, interval};
 
 use portable_pty::CommandBuilder;
 
-use crate::action::Action;
+use crate::tui::message::Action;
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
     initial_spawn_request, perform_handshake, spawn_request_label,
 };
 #[cfg(test)]
-use crate::branch_context_bar::{
+use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_HOVER_BG, BRANCH_CONTEXT_BAR_HOVER_FG, branch_context_bar_layout,
 };
-use crate::branch_context_bar::{
+use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, BranchContextBarHit, branch_context_bar_hit, render_branch_context_bar,
 };
-use crate::dialog::{
+use crate::tui::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
     PickerIntent, PullRequestStatus, SplitDirection,
 };
@@ -54,7 +54,7 @@ use crate::git_context::{
 use crate::git_context::{
     WorkdirContext, git_current_context, resolve_default_branch, start_git_context_watcher,
 };
-use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
+use crate::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
 #[cfg(test)]
 use crate::mouse_protocol::mouse_event_allowed_for_mode;
@@ -68,14 +68,14 @@ use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
-use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, fill_screen};
-use crate::selection::{SelectionState, paint_selection_highlight, selection_text};
+use crate::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, fill_screen};
+use crate::tui::selection::{SelectionState, paint_selection_highlight, selection_text};
 use crate::session::{
     BranchName, GitContext, Oid, PullRequestInfo, PullRequestLookupOutcome,
     SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
-use crate::statusbar::{STATUS_BAR_ROWS, StatusBar};
+use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::title::{
     append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
@@ -227,7 +227,7 @@ pub struct Multiplexer {
     /// terminal for full-frame draws so they can use shared `jackin-tui`
     /// components. The raw ANSI compositor remains as the fallback and partial
     /// update path while the remaining render migration proceeds.
-    ratatui_terminal: ratatui::Terminal<crate::socket_backend::SocketBackend>,
+    ratatui_terminal: ratatui::Terminal<crate::tui::socket_backend::SocketBackend>,
 }
 
 /// Three book-keeping fields for a background context lookup. They
@@ -434,7 +434,7 @@ impl Multiplexer {
             workdir,
             workdir_context,
             zai_key,
-            ratatui_terminal: ratatui::Terminal::new(crate::socket_backend::SocketBackend::new(
+            ratatui_terminal: ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(
                 cols, rows,
             ))
             .expect("SocketBackend::new never fails"),
@@ -957,9 +957,9 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 }
             }
             let prefix_mode = if matches!(mux.mux_mode(), MuxMode::PrefixAwait) {
-                crate::statusbar::PrefixMode::Awaiting
+                crate::tui::components::status_bar::PrefixMode::Awaiting
             } else {
-                crate::statusbar::PrefixMode::Idle
+                crate::tui::components::status_bar::PrefixMode::Idle
             };
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);

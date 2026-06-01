@@ -5,7 +5,7 @@
 //! instead of being defined in daemon internals.
 
 use crate::layout::{Rect, SplitOrient};
-use crate::render::PaneBodyDim;
+use crate::tui::render::PaneBodyDim;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PointerShape {

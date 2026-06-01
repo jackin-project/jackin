@@ -20,7 +20,7 @@ use jackin_tui::components::filter_input::render_filter_input;
 use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use ratatui::style::Color;
 
-use crate::dialog::Dialog;
+use crate::tui::dialog::Dialog;
 use crate::session::PullRequestInfo;
 
 // ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ impl Dialog {
                 filter,
                 close_label,
             } => {
-                use crate::dialog::{PALETTE_ITEMS, PaletteCommand};
+                use crate::tui::dialog::{PALETTE_ITEMS, PaletteCommand};
                 let needle = filter.to_ascii_lowercase();
                 let items: Vec<PickerItem> = PALETTE_ITEMS
                     .iter()
@@ -124,7 +124,7 @@ impl Dialog {
                 intent,
                 filter,
             } => {
-                use crate::dialog::PickerIntent;
+                use crate::tui::dialog::PickerIntent;
                 let title = match intent {
                     PickerIntent::NewTab => "New tab".to_string(),
                     PickerIntent::Split(dir) => format!("Split: {}", dir.label()),
@@ -164,7 +164,7 @@ impl Dialog {
             }
 
             Dialog::SplitDirectionPicker { selected, filter } => {
-                use crate::dialog::SPLIT_DIRECTION_ITEMS;
+                use crate::tui::dialog::SPLIT_DIRECTION_ITEMS;
                 let needle = filter.to_ascii_lowercase();
                 let items: Vec<PickerItem> = SPLIT_DIRECTION_ITEMS
                     .iter()
@@ -182,7 +182,7 @@ impl Dialog {
             }
 
             Dialog::CloseTargetPicker { selected, filter } => {
-                use crate::dialog::CLOSE_TARGET_ITEMS;
+                use crate::tui::dialog::CLOSE_TARGET_ITEMS;
                 let needle = filter.to_ascii_lowercase();
                 let items: Vec<PickerItem> = CLOSE_TARGET_ITEMS
                     .iter()

@@ -2,7 +2,7 @@
 /// menu hint, overflow indicator.
 use jackin_capsule::layout::Tab;
 use jackin_capsule::protocol::AgentState;
-use jackin_capsule::statusbar::{PrefixMode, StatusBar};
+use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar};
 
 fn render(
     bar: &mut StatusBar,

@@ -1,4 +1,4 @@
-use crate::statusbar::STATUS_BAR_ROWS;
+use crate::tui::components::status_bar::STATUS_BAR_ROWS;
 
 pub const DEFAULT_ROWS: u16 = 24;
 pub const DEFAULT_COLS: u16 = 80;

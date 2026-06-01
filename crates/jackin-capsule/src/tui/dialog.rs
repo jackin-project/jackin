@@ -1001,11 +1001,11 @@ impl Dialog {
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };
         let max_height = term_rows
-            .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
+            .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS)
             .saturating_sub(1)
             .max(3);
         let height = natural_height.min(max_height);
-        let row = crate::statusbar::STATUS_BAR_ROWS + (max_height.saturating_sub(height)) / 2;
+        let row = crate::tui::components::status_bar::STATUS_BAR_ROWS + (max_height.saturating_sub(height)) / 2;
         let col = (term_cols.saturating_sub(width)) / 2;
         (row, col, height, width)
     }
@@ -1039,7 +1039,7 @@ impl Dialog {
         // hold the box without overlapping the status bar or the
         // bottom edge. The host terminal would otherwise scroll and
         // destroy operator pane content.
-        if term_rows < crate::statusbar::STATUS_BAR_ROWS + 3
+        if term_rows < crate::tui::components::status_bar::STATUS_BAR_ROWS + 3
             || box_row + height > term_rows
             || box_col + width > term_cols
         {

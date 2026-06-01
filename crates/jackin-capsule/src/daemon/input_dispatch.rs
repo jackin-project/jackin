@@ -162,7 +162,7 @@ impl Multiplexer {
                     .map(str::to_owned)
                     .unwrap_or_default();
                 let input = jackin_tui::TextField::new(initial)
-                    .with_max_chars(crate::dialog::MAX_CUSTOM_LABEL_LEN);
+                    .with_max_chars(crate::tui::dialog::MAX_CUSTOM_LABEL_LEN);
                 self.dialog_push(Dialog::RenameTab {
                     tab_idx: idx,
                     input,

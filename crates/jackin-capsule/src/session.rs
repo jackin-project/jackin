@@ -29,7 +29,7 @@ use tokio::sync::mpsc;
 use vt100::{Callbacks, Screen};
 
 use crate::protocol::AgentState;
-use crate::render::{RowSnapshot, pane_snapshot_with_scrollback_prefix, snapshot_screen_row};
+use crate::tui::render::{RowSnapshot, pane_snapshot_with_scrollback_prefix, snapshot_screen_row};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const BLOCKED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);

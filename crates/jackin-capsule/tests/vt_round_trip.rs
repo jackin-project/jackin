@@ -5,7 +5,7 @@
 /// mode, bracketed paste, alt-screen) or that the rendered output
 /// reproduces it. These are the regressions the hand-rolled `vte`
 /// emulator could not satisfy.
-use jackin_capsule::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, render_pane};
+use jackin_capsule::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, render_pane};
 use vt100::{MouseProtocolEncoding, MouseProtocolMode, Parser};
 
 #[test]

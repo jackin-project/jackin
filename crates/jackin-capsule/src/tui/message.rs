@@ -4,7 +4,7 @@
 //! should the multiplexer do with it?" so dispatch can become testable without
 //! a live PTY or attach socket.
 
-use crate::{
+use crate::tui::{
     dialog::{DialogAction, PaletteCommand, PickerIntent, SplitDirection},
     input::{ArrowDir, PrefixCommand},
 };

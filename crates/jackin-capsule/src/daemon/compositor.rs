@@ -146,7 +146,7 @@ impl Multiplexer {
                         None,
                     );
                     if let Some(spans) = dialog_hint_spans {
-                        crate::dialog::render_hint_row(
+                        crate::tui::dialog::render_hint_row(
                             &mut output,
                             self.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
                             self.term_cols,
@@ -291,10 +291,10 @@ impl Multiplexer {
         let scrollback_active = focused_id
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
-        let hint_spans = crate::dialog::main_view_hint(scrollback_active);
+        let hint_spans = crate::tui::dialog::main_view_hint(scrollback_active);
         // Hint row is 2 above branch context bar (separator row at +1 between them).
         let hint_row = self.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
-        crate::dialog::render_hint_row(&mut buf, hint_row, self.term_cols, hint_spans);
+        crate::tui::dialog::render_hint_row(&mut buf, hint_row, self.term_cols, hint_spans);
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
 

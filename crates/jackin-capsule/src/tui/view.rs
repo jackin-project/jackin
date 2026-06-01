@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 
-use crate::input::PrefixCommand;
-use crate::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
+use crate::tui::input::PrefixCommand;
+use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
 use crate::layout::Tab;
-use crate::render::draw_scrollbar;
+use crate::tui::render::draw_scrollbar;
 use crate::session::Session;
-use crate::statusbar::draw_pane_box;
+use crate::tui::components::status_bar::draw_pane_box;
 use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
@@ -177,7 +177,7 @@ pub(crate) fn render_capsule_ratatui_frame(
         x: 0,
         y: 0,
         width: view.term_cols,
-        height: crate::statusbar::STATUS_BAR_ROWS,
+        height: crate::tui::components::status_bar::STATUS_BAR_ROWS,
     };
     frame.render_widget(
         StatusBarWidget {
@@ -191,11 +191,11 @@ pub(crate) fn render_capsule_ratatui_frame(
     if view.dialog_open {
         let content_area = RatatuiRect {
             x: 0,
-            y: crate::statusbar::STATUS_BAR_ROWS,
+            y: crate::tui::components::status_bar::STATUS_BAR_ROWS,
             width: view.term_cols,
             height: view
                 .term_rows
-                .saturating_sub(crate::statusbar::STATUS_BAR_ROWS),
+                .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS),
         };
         frame.render_widget(DialogBackdrop, content_area);
         if let Some((snapshot, rect)) = view.dialog_snapshot {
@@ -204,7 +204,7 @@ pub(crate) fn render_capsule_ratatui_frame(
         return;
     }
 
-    let hint_spans = crate::dialog::main_view_hint(view.scrollback_active);
+    let hint_spans = crate::tui::dialog::main_view_hint(view.scrollback_active);
     let hint_area = RatatuiRect {
         x: 0,
         y: view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),

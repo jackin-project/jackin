@@ -5,7 +5,7 @@
 //! highlight overlay that the compositor writes on top of pane bodies.
 
 use crate::layout::Rect;
-use crate::render::{PaneBodyDim, RowSnapshot, render_row_range_inverse};
+use crate::tui::render::{PaneBodyDim, RowSnapshot, render_row_range_inverse};
 
 /// Active mouse text selection on a pane. Held until the operator
 /// releases the mouse button or the pane resizes.

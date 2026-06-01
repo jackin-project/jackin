@@ -22,14 +22,3 @@ pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.
 pub mod tui;
-
-// Flat re-exports so existing `crate::dialog`, `crate::statusbar`, etc.
-// paths continue to resolve without changing every call site.
-pub use tui::components::branch_context_bar;
-pub use tui::components::status_bar as statusbar;
-pub use tui::dialog;
-pub use tui::input;
-pub use tui::message as action;
-pub use tui::render;
-pub use tui::selection;
-pub use tui::socket_backend;
