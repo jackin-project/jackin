@@ -6,7 +6,7 @@ use jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT;
 use crate::console::manager::state::{
     AuthFormFocus, GlobalMountModal, Modal, SettingsAuthModal, SettingsAuthState, SettingsEnvModal,
 };
-use jackin_console::widgets::footer_hints::{
+use jackin_console::tui::components::footer_hints::{
     auth_form_footer_items as shared_auth_form_footer_items, confirm_save_footer_items,
     filtered_picker_footer_items, mount_destination_footer_items, pick_list_footer_items,
     segmented_choice_footer_items, yes_no_footer_items,

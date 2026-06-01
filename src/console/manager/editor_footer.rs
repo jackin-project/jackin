@@ -11,7 +11,7 @@ use crate::console::manager::state::{
     AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::widgets::footer_hints::{content_footer_items, tab_bar_footer_items};
+use jackin_console::tui::components::footer_hints::{content_footer_items, tab_bar_footer_items};
 
 pub(crate) fn editor_footer_items(
     state: &EditorState<'_>,
