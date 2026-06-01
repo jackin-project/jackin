@@ -700,7 +700,7 @@ fn render_auth_source_line(
         _ => {
             spans.push(Span::styled(
                 format!("unset  ({env_name} for {})", mode_str(mode)),
-                Style::default().fg(crate::console::widgets::DANGER_RED),
+                Style::default().fg(jackin_tui::theme::DANGER_RED),
             ));
         }
     }

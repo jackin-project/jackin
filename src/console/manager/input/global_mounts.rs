@@ -9,7 +9,7 @@ use super::super::state::{
     SettingsTab,
 };
 use crate::config::AppConfig;
-use crate::console::widgets::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use crate::console::widgets::auth_panel::{AuthForm, CredentialInput};
 use crate::paths::JackinPaths;
 use crate::selector::RolePickerState;

@@ -398,7 +398,7 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             _ => {
                 spans.push(Span::styled(
                     format!("unset  ({env_name} for {})", mode_str(row.mode)),
-                    Style::default().fg(crate::console::widgets::DANGER_RED),
+                    Style::default().fg(jackin_tui::theme::DANGER_RED),
                 ));
             }
         }

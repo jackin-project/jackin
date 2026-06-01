@@ -4,13 +4,6 @@
 //! host-console facades and still-local widgets while the architecture
 //! migration proceeds.
 
-pub(crate) use jackin_console::tui::components::spinner::SPINNER_FRAMES;
-pub(crate) use jackin_tui::ModalOutcome;
-pub(crate) use jackin_tui::theme::{
-    DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER,
-    WHITE,
-};
-
 pub(crate) mod auth_panel;
 pub mod op_picker;
 
@@ -25,7 +18,7 @@ mod consistency_tests {
     //! contract so a future drift doesn't silently degrade the look.
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
-    use super::{PHOSPHOR_GREEN, WHITE};
+    use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
     /// Render a closure into a fresh `TestBackend` and return the resulting
     /// buffer. Size is chosen to comfortably fit every modal under test.

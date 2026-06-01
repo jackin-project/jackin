@@ -574,10 +574,10 @@ fn build_confirm_save_lines(
     use ratatui::text::{Line, Span};
 
     let heading = Style::default()
-        .fg(crate::console::widgets::WHITE)
+        .fg(jackin_tui::theme::WHITE)
         .add_modifier(Modifier::BOLD);
-    let value = Style::default().fg(crate::console::widgets::PHOSPHOR_GREEN);
-    let dim = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
+    let value = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
+    let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
 
     let mut out: Vec<Line<'static>> = Vec::new();
 
@@ -901,7 +901,7 @@ fn collapse_section_lines(
 ) -> Vec<ratatui::text::Line<'static>> {
     use ratatui::style::Style;
     use ratatui::text::{Line, Span};
-    let style = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
+    let style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
     collapses
         .iter()
         .map(|r| {
@@ -2612,11 +2612,11 @@ pub(super) fn build_settings_save_lines(
     use ratatui::text::{Line, Span};
 
     let heading = Style::default()
-        .fg(crate::console::widgets::WHITE)
+        .fg(jackin_tui::theme::WHITE)
         .add_modifier(Modifier::BOLD);
-    let add_style = Style::default().fg(crate::console::widgets::PHOSPHOR_GREEN);
-    let remove_style = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
-    let sep_style = Style::default().fg(crate::console::widgets::PHOSPHOR_DARK);
+    let add_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
+    let remove_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    let sep_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DARK);
 
     let mut out: Vec<Line<'static>> = Vec::new();
 

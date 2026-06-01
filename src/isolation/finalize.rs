@@ -93,7 +93,7 @@ impl FinalizerPrompt for RichCleanupPrompt {
 /// dialog. Returns the option index: 0 = return to role, 1 = preserve,
 /// 2 = force-delete.
 fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedReason) -> usize {
-    use crate::console::widgets::{LINK_BLUE, PHOSPHOR_DIM, WHITE};
+    use jackin_tui::theme::{LINK_BLUE, PHOSPHOR_DIM, WHITE};
 
     let reason_line = match reason {
         PreservedReason::Dirty => "has uncommitted changes",

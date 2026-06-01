@@ -4,7 +4,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::super::super::widgets::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{ManagerState, Modal};
 use super::InputOutcome;

@@ -13,7 +13,7 @@ pub mod save;
 use crossterm::event::KeyEvent;
 use std::path::PathBuf;
 
-use super::super::widgets::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use super::message::{ManagerEffect, ManagerMessage, execute_manager_effect, update_manager};
 use super::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
@@ -200,7 +200,7 @@ pub fn handle_key(
         let dismiss = settings.error_popup.as_ref().is_some_and(|p| {
             matches!(
                 p.handle_key(key),
-                crate::console::widgets::ModalOutcome::Cancel
+                jackin_tui::ModalOutcome::Cancel
             )
         });
         if dismiss {

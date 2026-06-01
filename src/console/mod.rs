@@ -168,7 +168,7 @@ mod quit_confirm_tests {
     use crate::console::manager::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
-    use crate::console::widgets::ModalOutcome;
+    use jackin_tui::ModalOutcome;
     use crate::paths::JackinPaths;
     use jackin_console::tui::components::file_browser::FileBrowserState;
     use jackin_tui::components::{ConfirmState, TextInputState};

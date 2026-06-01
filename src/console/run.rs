@@ -389,7 +389,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         console_location_debug(&state)
                     );
                     if let Some(confirm) = state.quit_confirm.as_mut() {
-                        use crate::console::widgets::ModalOutcome;
+                        use jackin_tui::ModalOutcome;
                         match confirm.handle_key(key) {
                             ModalOutcome::Commit(true) => break 'main Ok(None),
                             ModalOutcome::Commit(false) | ModalOutcome::Cancel => {

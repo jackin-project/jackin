@@ -4,7 +4,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::FutureExt as _;
 
-use super::super::super::widgets::{ModalOutcome, op_picker::OpPickerState};
+use super::super::super::widgets::op_picker::OpPickerState;
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::mount_display::workspace_mounts_content_width_with_cache;
 use super::super::state::auth_flat_rows;
@@ -21,6 +21,7 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::tui::screens::editor::view::{secrets_forbidden_label, secrets_scope_label};
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+use jackin_tui::ModalOutcome;
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     jackin_console::tui::screens::editor::update::secrets_flat_rows(

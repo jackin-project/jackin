@@ -107,7 +107,7 @@ mod tests {
 
     fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
         let cell = &buf[coord];
-        cell.fg == crate::console::widgets::PHOSPHOR_GREEN
+        cell.fg == jackin_tui::theme::PHOSPHOR_GREEN
             && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
     }
 

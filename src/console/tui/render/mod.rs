@@ -19,9 +19,6 @@ mod snapshot_tests;
 
 pub(super) use jackin_console::tui::layout::centered_rect_fixed;
 
-pub(super) use crate::console::widgets::{
-    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
-};
 pub(crate) use jackin_tui::components::scrollable_panel::{
     is_scrollable, viewport_height as scroll_viewport_height,
     viewport_width as scroll_viewport_width,
@@ -31,6 +28,9 @@ pub(super) use jackin_tui::components::scrollable_panel::{
     render_scrollable_block_at, render_vertical_scrollbar,
 };
 pub(super) use jackin_tui::theme::{CYAN, CYAN_DIM};
+pub(super) use jackin_tui::theme::{
+    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
+};
 
 #[allow(clippy::too_many_lines)]
 pub fn render(

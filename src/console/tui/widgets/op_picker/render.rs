@@ -8,15 +8,16 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 use jackin_console::tui::components::op_picker::{
     OpPickerAccountRef, OpPickerItemRef, OpPickerVaultRef, account_lines, breadcrumb_title,
     fatal_body_lines, field_lines, item_choice_lines, loading_descriptor, loading_title_stage,
     section_lines, vault_lines,
 };
+use jackin_console::tui::components::spinner::SPINNER_FRAMES;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
