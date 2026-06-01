@@ -2234,9 +2234,9 @@ fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
     src: &str,
-    outcome: &ModalOutcome<crate::console::widgets::mount_dst_choice::MountDstChoice>,
+    outcome: &ModalOutcome<jackin_console::widgets::mount_dst_choice::MountDstChoice>,
 ) {
-    use crate::console::widgets::mount_dst_choice::MountDstChoice;
+    use jackin_console::widgets::mount_dst_choice::MountDstChoice;
     match outcome {
         ModalOutcome::Commit(MountDstChoice::SamePath) => {
             if target == FileBrowserTarget::EditAddMountSrc {
@@ -2277,7 +2277,7 @@ pub(super) fn apply_file_browser_to_editor(
     editor: &mut EditorState<'_>,
     path: std::path::PathBuf,
 ) {
-    use crate::console::widgets::mount_dst_choice::MountDstChoiceState;
+    use jackin_console::widgets::mount_dst_choice::MountDstChoiceState;
     match target {
         FileBrowserTarget::EditAddMountSrc => {
             // Defer the mount push to the choice modal: in the common case

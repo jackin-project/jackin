@@ -18,7 +18,6 @@ pub mod confirm_save;
 pub(crate) mod editor_rows;
 pub mod file_browser;
 pub mod github_picker;
-pub mod mount_dst_choice;
 pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
@@ -152,7 +151,7 @@ mod consistency_tests {
     }
 
     fn render_mount_dst() -> (Buffer, Rect) {
-        use super::mount_dst_choice::{MountDstChoiceState, render};
+        use jackin_console::widgets::mount_dst_choice::{MountDstChoiceState, render};
         let area = Rect::new(0, 0, 80, 8);
         let state = MountDstChoiceState::new("/home/user/app");
         let buf = draw(area.width, area.height, |f| render(f, area, &state));

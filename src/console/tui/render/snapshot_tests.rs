@@ -484,7 +484,7 @@ readonly = false
                 &cwd,
                 Modal::MountDstChoice {
                     target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
-                    state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
+                    state: jackin_console::widgets::mount_dst_choice::MountDstChoiceState::new(
                         "/workspace",
                     ),
                 },
@@ -692,7 +692,7 @@ readonly = false
                 &config,
                 &cwd,
                 GlobalMountModal::MountDstChoice {
-                    state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
+                    state: jackin_console::widgets::mount_dst_choice::MountDstChoiceState::new(
                         "/workspace",
                     ),
                 },

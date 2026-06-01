@@ -1156,7 +1156,7 @@ pub(super) fn handle_settings_confirm_modal(
                 settings
                     .mounts
                     .open_sub_modal(GlobalMountModal::MountDstChoice {
-                        state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
+                        state: jackin_console::widgets::mount_dst_choice::MountDstChoiceState::new(
                             src,
                         ),
                     });
@@ -1172,7 +1172,7 @@ pub(super) fn handle_settings_confirm_modal(
             }
         },
         GlobalMountModal::MountDstChoice { mut state } => {
-            use crate::console::widgets::mount_dst_choice::MountDstChoice;
+            use jackin_console::widgets::mount_dst_choice::MountDstChoice;
             let src = state.src.clone();
             match state.handle_key(key) {
                 ModalOutcome::Commit(MountDstChoice::SamePath) => {

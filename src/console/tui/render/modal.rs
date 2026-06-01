@@ -4,8 +4,7 @@
 use ratatui::Frame;
 
 use super::super::super::widgets::{
-    auth_panel, confirm_save, file_browser, github_picker, mount_dst_choice, op_picker,
-    role_picker, workdir_pick,
+    auth_panel, confirm_save, file_browser, github_picker, op_picker, role_picker, workdir_pick,
 };
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::state::Modal;
@@ -28,7 +27,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_tui::components::render_save_discard_dialog(frame, modal_area, state);
         }
         Modal::MountDstChoice { state, .. } => {
-            mount_dst_choice::render(frame, modal_area, state);
+            jackin_console::widgets::mount_dst_choice::render(frame, modal_area, state);
         }
         Modal::GithubPicker { state } => github_picker::render(frame, modal_area, state),
         Modal::ConfirmSave { state } => confirm_save::render(frame, modal_area, state),
