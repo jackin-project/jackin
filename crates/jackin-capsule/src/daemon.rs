@@ -56,7 +56,8 @@ use crate::git_context::{
 use crate::tui::effect::InitialFrameKind;
 use crate::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::tui::layout::{
-    Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, split_spawn_inner_size,
+    Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, local_mouse_position,
+    split_spawn_inner_size,
 };
 #[cfg(test)]
 use crate::tui::layout::SplitOrient;

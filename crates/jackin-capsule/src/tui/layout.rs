@@ -83,6 +83,16 @@ pub fn split_spawn_inner_size(direction: SplitDirectionGeometry, from_rect: Rect
     }
 }
 
+pub fn local_mouse_position(inner: Rect, row: u16, col: u16) -> Option<(u16, u16)> {
+    if row < inner.row || row >= inner.row + inner.rows {
+        return None;
+    }
+    if col < inner.col || col >= inner.col + inner.cols {
+        return None;
+    }
+    Some((row - inner.row, col - inner.col))
+}
+
 impl PaneTree {
     /// Walk the tree and return `(session_id, rect)` for every leaf.
     /// Each leaf's rect is the **outer** rectangle the pane occupies,
@@ -383,7 +393,9 @@ pub enum SplitPosition {
 
 #[cfg(test)]
 mod rect_shrink_tests {
-    use super::{Rect, SplitDirectionGeometry, split_spawn_inner_size};
+    use super::{
+        Rect, SplitDirectionGeometry, local_mouse_position, split_spawn_inner_size,
+    };
 
     #[test]
     fn shrink_inside_normal_rect() {
@@ -433,6 +445,17 @@ mod rect_shrink_tests {
             split_spawn_inner_size(SplitDirectionGeometry::TopBottom, rect),
             (0, 1)
         );
+    }
+
+    #[test]
+    fn local_mouse_position_requires_inner_rect_hit() {
+        let inner = Rect::new(2, 4, 10, 20);
+        assert_eq!(local_mouse_position(inner, 2, 4), Some((0, 0)));
+        assert_eq!(local_mouse_position(inner, 11, 23), Some((9, 19)));
+        assert_eq!(local_mouse_position(inner, 1, 4), None);
+        assert_eq!(local_mouse_position(inner, 12, 4), None);
+        assert_eq!(local_mouse_position(inner, 2, 3), None);
+        assert_eq!(local_mouse_position(inner, 2, 24), None);
     }
 }
 

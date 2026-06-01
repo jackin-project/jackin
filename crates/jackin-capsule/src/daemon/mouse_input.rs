@@ -120,14 +120,9 @@ impl Multiplexer {
         let Some(inner) = self.active_focused_inner_rect() else {
             return false;
         };
-        if row < inner.row || row >= inner.row + inner.rows {
+        let Some((local_row, local_col)) = local_mouse_position(inner, row, col) else {
             return false;
-        }
-        if col < inner.col || col >= inner.col + inner.cols {
-            return false;
-        }
-        let local_row = row - inner.row;
-        let local_col = col - inner.col;
+        };
         let Some(buf) =
             encode_mouse_for_protocol(button, local_col + 1, local_row + 1, press, encoding)
         else {
