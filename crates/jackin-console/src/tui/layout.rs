@@ -2,6 +2,8 @@ pub const LIST_HEADER_HEIGHT: u16 = 2;
 pub const LIST_FOOTER_HEIGHT: u16 = 2;
 /// Minimum terminal width where the list/details seam is draggable.
 pub const MIN_DRAGGABLE_WIDTH: u16 = 40;
+pub const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 1;
+pub const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 pub const SCREEN_HEADER_HEIGHT: u16 = 3;
 /// Half-width of the list/details seam hit-region.
 pub const SEAM_HIT_SLACK: u16 = 1;
@@ -235,8 +237,9 @@ pub fn centered_rect_fixed(
 #[cfg(test)]
 mod tests {
     use super::{
-        MIN_DRAGGABLE_WIDTH, SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis,
-        TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
+        MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP, MOUSE_VERTICAL_SCROLL_STEP,
+        SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis, TAB_STRIP_HEIGHT,
+        horizontal_split_pane_dims,
         apply_horizontal_scroll, apply_vertical_scroll, is_horizontally_scrollable,
         list_body_area, list_content_visual_index_at, near_seam, point_in_rect,
         scrollbar_drag_offset, scroll_viewport_height, scroll_viewport_width,
@@ -254,6 +257,8 @@ mod tests {
     fn near_seam_uses_one_column_hit_slack() {
         assert_eq!(MIN_DRAGGABLE_WIDTH, 40);
         assert_eq!(SEAM_HIT_SLACK, 1);
+        assert_eq!(MOUSE_HORIZONTAL_SCROLL_STEP, 1);
+        assert_eq!(MOUSE_VERTICAL_SCROLL_STEP, 1);
 
         assert!(near_seam(29, 30));
         assert!(near_seam(30, 30));
