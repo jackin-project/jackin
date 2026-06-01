@@ -28,7 +28,7 @@ use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
     horizontal_split_pane_dims, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
-    tabbed_content_area,
+    tab_cell_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -464,14 +464,7 @@ fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
 /// (` label ` cell, one-column gap, from col 0) so the host console's hit-test
 /// and the in-container multiplexer's stay in lock-step.
 fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
-    if mouse.row < SCREEN_HEADER_HEIGHT
-        || mouse.row >= SCREEN_HEADER_HEIGHT.saturating_add(TAB_STRIP_HEIGHT)
-    {
-        return None;
-    }
-    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    let laid = jackin_tui::lay_out_tabs(&cells, 0);
-    jackin_tui::tab_at_column(&laid, mouse.column)
+    tab_cell_at_position(mouse.row, mouse.column, labels)
 }
 
 /// Repaint the hovered tab index on mouse motion so the strip lifts under the

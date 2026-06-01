@@ -107,6 +107,16 @@ pub const fn tabbed_content_area(
     }
 }
 
+#[must_use]
+pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize> {
+    if row < SCREEN_HEADER_HEIGHT || row >= SCREEN_HEADER_HEIGHT.saturating_add(TAB_STRIP_HEIGHT) {
+        return None;
+    }
+    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
+    let laid = jackin_tui::lay_out_tabs(&cells, 0);
+    jackin_tui::tab_at_column(&laid, col)
+}
+
 const fn point_in(col: u16, row: u16, area: ratatui::layout::Rect) -> bool {
     col >= area.x
         && col < area.x.saturating_add(area.width)
@@ -135,7 +145,8 @@ pub fn centered_rect_fixed(
 mod tests {
     use super::{
         SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
-        scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tabbed_content_area,
+        scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tab_cell_at_position,
+        tabbed_content_area,
     };
     use ratatui::layout::Rect;
 
@@ -196,6 +207,25 @@ mod tests {
                 width: 120,
                 height: 32,
             }
+        );
+    }
+
+    #[test]
+    fn tab_cell_at_position_uses_shared_tab_layout() {
+        let labels = ["General", "Mounts", "Auth"];
+
+        assert_eq!(
+            tab_cell_at_position(SCREEN_HEADER_HEIGHT, 1, &labels),
+            Some(0)
+        );
+        assert_eq!(
+            tab_cell_at_position(SCREEN_HEADER_HEIGHT + 1, 11, &labels),
+            Some(1)
+        );
+        assert_eq!(tab_cell_at_position(SCREEN_HEADER_HEIGHT - 1, 1, &labels), None);
+        assert_eq!(
+            tab_cell_at_position(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT, 1, &labels),
+            None
         );
     }
 }
