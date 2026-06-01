@@ -6,7 +6,7 @@ use ratatui::layout::Rect;
 use ratatui::text::Line;
 
 use crate::renderer::RichRenderer;
-use crate::tui::build_log::build_log_scroll_filled;
+use crate::tui::components::build_log_dialog::build_log_scroll_filled;
 use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
 use crate::{
     LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage,

@@ -11,7 +11,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
 use crate::LaunchView;
-use crate::tui::dialog::dialog_backdrop;
+use crate::tui::components::dialog::dialog_backdrop;
 
 #[must_use]
 pub fn build_log_scroll_filled(area: Rect) -> usize {

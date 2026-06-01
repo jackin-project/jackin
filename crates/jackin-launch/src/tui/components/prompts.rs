@@ -10,7 +10,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 
-use crate::tui::dialog::dialog_backdrop;
+use crate::tui::components::dialog::dialog_backdrop;
 
 /// Footer-hint keys for the forced-choice launch picker.
 const PICKER_HINT: &[HintSpan<'static>] = &[

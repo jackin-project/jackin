@@ -7,10 +7,12 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEve
 use jackin_tui::components::StatusFooterHover;
 use ratatui::layout::Rect;
 
-use crate::tui::build_log::build_log_scroll_filled;
-use crate::tui::container_info::{launch_container_info_rect, launch_container_info_state};
-use crate::tui::failure::{failure_copy_payload, failure_copy_target_at};
-use crate::tui::footer::{footer_instance, format_activity};
+use crate::tui::components::build_log_dialog::build_log_scroll_filled;
+use crate::tui::components::container_info_dialog::{
+    launch_container_info_rect, launch_container_info_state,
+};
+use crate::tui::components::failure_dialog::{failure_copy_payload, failure_copy_target_at};
+use crate::tui::components::footer::{footer_instance, format_activity};
 use crate::{LaunchHostTerminal, LaunchMessage, LaunchView, update_launch_view};
 
 const BUILD_LOG_SCROLL_STEP: usize = 3;

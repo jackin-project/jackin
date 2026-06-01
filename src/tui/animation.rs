@@ -102,7 +102,7 @@ fn hold_resizable(total: std::time::Duration, mut draw: impl FnMut()) -> bool {
     }
 }
 
-// ── Digital rain moved to `jackin-launch::tui::rain` ─────────────────────────
+// ── Digital rain moved to `jackin-launch::tui::components::rain` ──────────────
 
 const RAIN_CHARS: &[u8] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~";

@@ -11,8 +11,10 @@ use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, Tex
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 
-use crate::tui::cockpit::{emit_launch_hyperlink_overlays, render_launch_frame};
-use crate::tui::prompts::{draw_confirm, draw_error_popup, draw_select, draw_text_prompt};
+use crate::tui::components::prompts::{
+    draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
+};
+use crate::tui::view::{emit_launch_hyperlink_overlays, render_launch_frame};
 use crate::{LaunchHostTerminal, LaunchView, PromptResult};
 
 pub struct RichRenderer {
@@ -25,7 +27,7 @@ pub struct RichRenderer {
     /// Shared digital-rain engine (the same one the intro/outro use), ticked
     /// per frame and painted into the loading box. Sized to the terminal so
     /// the box shows a window into one continuous rainfall.
-    rain: Option<crate::tui::rain::RainState>,
+    rain: Option<crate::tui::components::rain::RainState>,
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
 }
@@ -211,13 +213,13 @@ impl RichRenderer {
                 .as_ref()
                 .is_none_or(|rain| rain.cols != cols || rain.rows != rows);
             if stale && cols > 0 && rows > 0 {
-                self.rain = Some(crate::tui::rain::RainState::new(cols, rows));
+                self.rain = Some(crate::tui::components::rain::RainState::new(cols, rows));
             }
             if !no_motion
                 && !view.frame.is_multiple_of(3)
                 && let Some(rain) = &mut self.rain
             {
-                crate::tui::rain::tick_rain(rain);
+                crate::tui::components::rain::tick_rain(rain);
             }
         }
         let rain = self.rain.as_ref();

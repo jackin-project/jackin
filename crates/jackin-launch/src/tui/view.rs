@@ -6,15 +6,17 @@ use ratatui::widgets::Clear;
 use std::io::Write as _;
 
 use crate::LaunchView;
-use crate::tui::build_log::render_build_log_dialog;
-use crate::tui::container_info::{
+use crate::tui::components::build_log_dialog::render_build_log_dialog;
+use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state, render_launch_container_info,
 };
-use crate::tui::failure::{failure_popup_hyperlink_overlay, render_failure_popup};
-use crate::tui::footer::render_footer;
-use crate::tui::header::render_cockpit_header;
-use crate::tui::progress::render_progress;
-use crate::tui::rain::{RainState, render_rain};
+use crate::tui::components::failure_dialog::{
+    failure_popup_hyperlink_overlay, render_failure_popup,
+};
+use crate::tui::components::footer::render_footer;
+use crate::tui::components::header::render_cockpit_header;
+use crate::tui::components::progress_rail::render_progress;
+use crate::tui::components::rain::{RainState, render_rain};
 
 pub fn render_launch_frame(
     frame: &mut Frame<'_>,

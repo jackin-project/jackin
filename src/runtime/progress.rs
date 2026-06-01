@@ -18,28 +18,32 @@ use ratatui::text::Line;
 
 pub use jackin_launch::progress::LaunchProgress;
 #[cfg(test)]
-use jackin_launch::tui::build_log::BUILD_LOG_WRAP_PREFIX;
+use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
 #[cfg(test)]
-use jackin_launch::tui::build_log::build_log_scroll_filled;
+use jackin_launch::tui::components::build_log_dialog::build_log_scroll_filled;
 #[cfg(test)]
-use jackin_launch::tui::build_log::{render_build_log_dialog, wrap_build_log_lines};
+use jackin_launch::tui::components::build_log_dialog::{
+    render_build_log_dialog, wrap_build_log_lines,
+};
 #[cfg(test)]
-use jackin_launch::tui::cockpit::render_launch_frame as render_launch_frame_view;
+use jackin_launch::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
 #[cfg(test)]
-use jackin_launch::tui::failure::failure_popup_hyperlink_overlay;
+use jackin_launch::tui::components::failure_dialog::{
+    failure_copy_payload, failure_copy_target_at,
+};
 #[cfg(test)]
-use jackin_launch::tui::failure::{failure_copy_payload, failure_copy_target_at};
-#[cfg(test)]
-use jackin_launch::tui::failure::{
+use jackin_launch::tui::components::failure_dialog::{
     failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
 };
 #[cfg(test)]
-use jackin_launch::tui::progress::{
+use jackin_launch::tui::components::progress_rail::{
     LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
     display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
 };
 #[cfg(test)]
-use jackin_launch::tui::prompts::{draw_confirm, draw_error_popup, draw_text_prompt};
+use jackin_launch::tui::components::prompts::{draw_confirm, draw_error_popup, draw_text_prompt};
+#[cfg(test)]
+use jackin_launch::tui::view::render_launch_frame as render_launch_frame_view;
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, StageLabelTransition, StageStatus, StageView, active_stage_index, initial_view,
@@ -172,7 +176,7 @@ fn render_launch_frame(
     run_id: &str,
     run_log_path: &str,
     no_motion: bool,
-    rain: Option<&jackin_launch::tui::rain::RainState>,
+    rain: Option<&jackin_launch::tui::components::rain::RainState>,
 ) {
     render_launch_frame_view(
         frame,
