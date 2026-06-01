@@ -286,6 +286,8 @@ Workspace-list split geometry and list-name scroll clamping also live in <RepoFi
 
 Workspace-list mouse split geometry, scrollbar drag offset planning, point-in-rect hit-testing, mouse-wheel scroll application, tab-strip hit-testing, and tabbed content-area geometry now live in <RepoFile path="crates/jackin-console/src/tui/layout.rs" />. Root mouse input keeps root stage/modal hit-testing and delegates seam columns, Ratatui-matched pane dimensions, drag percentage math, rectangle containment, scrollbar track-position math, scroll-delta viewport math, tab-row geometry, and header/tab/footer rectangle math to the console TUI boundary.
 
+Workspace-list body rectangle and visual-row mouse hit-testing now also live in <RepoFile path="crates/jackin-console/src/tui/layout.rs" />. Root key/mouse input maps the crate-owned geometry result back to root `ManagerListRow` values but no longer owns the generic list-content border math.
+
 Sidebar scroll-focus liveness now lives in <RepoFile path="crates/jackin-console/src/tui/sidebar_layout.rs" />. Root list geometry maps its `MountScrollFocus` enum into the crate-owned focus vocabulary and no longer owns the generic "is the focused sidebar area still scrollable?" rule.
 
 Capsule initial attach-frame labels now live with attach-client effect vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/effect.rs" /> instead of daemon internals. The daemon still assembles and sends the actual protocol frames, but the visible first-attach burst names are owned by the TUI boundary.

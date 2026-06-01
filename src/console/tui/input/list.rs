@@ -3,6 +3,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use jackin_console::tui::layout::list_body_area;
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
@@ -221,12 +222,7 @@ fn clamp_list_scroll_after_key(
     cwd: &std::path::Path,
 ) {
     let area = state.cached_term_size;
-    let body = ratatui::layout::Rect {
-        x: 0,
-        y: 2,
-        width: area.width,
-        height: area.height.saturating_sub(4),
-    };
+    let body = list_body_area(area);
     crate::console::tui::render::list_geometry::clamp_list_scroll_for_area(body, state, config, cwd);
 }
 

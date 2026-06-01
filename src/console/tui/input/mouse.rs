@@ -26,10 +26,11 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
-    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
-    apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
-    is_horizontally_scrollable, point_in_rect, scrollbar_drag_offset, scroll_viewport_width,
-    split_pct_from_drag, split_seam_column, tab_cell_at_position, tabbed_content_area,
+    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis,
+    TAB_STRIP_HEIGHT, apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
+    is_horizontally_scrollable, list_content_visual_index_at, point_in_rect,
+    scrollbar_drag_offset, scroll_viewport_width, split_pct_from_drag, split_seam_column,
+    tab_cell_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -1326,25 +1327,7 @@ fn list_content_row_index(
     term_size: Rect,
     seam_x: u16,
 ) -> Option<ManagerListRow> {
-    // Column check — strictly inside the left pane (exclude left border
-    // and seam column, which is also the left pane's right border).
-    if mouse.column == 0 || mouse.column >= seam_x {
-        return None;
-    }
-    // Row check — strictly inside the bordered list block.
-    let content_top = LIST_HEADER_HEIGHT + 1; // +1 skips the top border
-    let body_end = term_size.height.saturating_sub(LIST_FOOTER_HEIGHT);
-    // Content bottom is body_end - 1 (skip bottom border). Guard against
-    // a terminal so short that the list has no interior.
-    let content_bottom = body_end.saturating_sub(1);
-    if mouse.row < content_top || mouse.row >= content_bottom {
-        return None;
-    }
-    // Visual row index into the rendered list: items start at y = content_top
-    // (the first row below the top border). The rendered list may contain a
-    // blank spacer before "+ New workspace"; clicking that spacer selects
-    // nothing.
-    let idx = usize::from(mouse.row - content_top);
+    let idx = list_content_visual_index_at(mouse.column, mouse.row, term_size, seam_x)?;
     state.row_at_visual_index(idx)
 }
 

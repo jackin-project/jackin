@@ -35,6 +35,39 @@ pub fn horizontal_split_pane_dims(pct: u16, total_width: u16) -> (u16, u16, u16,
     (cols[0].x, cols[0].width, cols[1].x, cols[1].width)
 }
 
+#[must_use]
+pub const fn list_body_area(term_size: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    ratatui::layout::Rect {
+        x: 0,
+        y: LIST_HEADER_HEIGHT,
+        width: term_size.width,
+        height: term_size
+            .height
+            .saturating_sub(LIST_HEADER_HEIGHT + LIST_FOOTER_HEIGHT),
+    }
+}
+
+/// Return the visual list row index under a mouse position, excluding the
+/// left pane border, seam column, top border, and bottom border.
+#[must_use]
+pub const fn list_content_visual_index_at(
+    col: u16,
+    row: u16,
+    term_size: ratatui::layout::Rect,
+    seam_x: u16,
+) -> Option<usize> {
+    if col == 0 || col >= seam_x {
+        return None;
+    }
+    let content_top = LIST_HEADER_HEIGHT + 1;
+    let body_end = term_size.height.saturating_sub(LIST_FOOTER_HEIGHT);
+    let content_bottom = body_end.saturating_sub(1);
+    if row < content_top || row >= content_bottom {
+        return None;
+    }
+    Some((row - content_top) as usize)
+}
+
 /// Derive a new split percentage from a drag anchor and current mouse column.
 #[must_use]
 pub fn split_pct_from_drag(anchor_pct: u16, anchor_x: u16, mouse_col: u16, width: u16) -> u16 {
@@ -191,9 +224,10 @@ pub fn centered_rect_fixed(
 mod tests {
     use super::{
         SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
-        apply_horizontal_scroll, apply_vertical_scroll, is_horizontally_scrollable, point_in_rect,
-        scrollbar_drag_offset, scroll_viewport_height, scroll_viewport_width, split_pct_from_drag,
-        split_seam_column, tab_cell_at_position, tabbed_content_area,
+        apply_horizontal_scroll, apply_vertical_scroll, is_horizontally_scrollable,
+        list_body_area, list_content_visual_index_at, point_in_rect, scrollbar_drag_offset,
+        scroll_viewport_height, scroll_viewport_width, split_pct_from_drag, split_seam_column,
+        tab_cell_at_position, tabbed_content_area,
     };
     use ratatui::layout::Rect;
 
@@ -207,6 +241,40 @@ mod tests {
     fn horizontal_split_pane_dims_match_ratatui_percentage_layout() {
         assert_eq!(horizontal_split_pane_dims(30, 100), (0, 30, 30, 70));
         assert_eq!(horizontal_split_pane_dims(33, 101), (0, 33, 33, 68));
+    }
+
+    #[test]
+    fn list_body_area_reserves_header_and_footer() {
+        assert_eq!(
+            list_body_area(Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 24,
+            }),
+            Rect {
+                x: 0,
+                y: 2,
+                width: 100,
+                height: 20,
+            }
+        );
+    }
+
+    #[test]
+    fn list_content_visual_index_excludes_borders() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 24,
+        };
+        assert_eq!(list_content_visual_index_at(1, 3, area, 30), Some(0));
+        assert_eq!(list_content_visual_index_at(1, 4, area, 30), Some(1));
+        assert_eq!(list_content_visual_index_at(0, 3, area, 30), None);
+        assert_eq!(list_content_visual_index_at(30, 3, area, 30), None);
+        assert_eq!(list_content_visual_index_at(1, 2, area, 30), None);
+        assert_eq!(list_content_visual_index_at(1, 21, area, 30), None);
     }
 
     #[test]
