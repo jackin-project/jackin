@@ -8,8 +8,9 @@ use std::time::Instant;
 
 use crate::tui::components::branch_context_bar::render_branch_context_bar;
 use crate::tui::view::{
-    CapsuleChromeHoverFrame, PaneScrollbar, draw_pane_chrome, hovered_menu, hovered_tab,
-    pane_scrollbar, render_capsule_chrome_hover_frame,
+    CapsuleChromeHoverFrame, CapsuleRawDialogOverlay, PaneScrollbar, draw_pane_chrome,
+    hovered_menu, hovered_tab, pane_scrollbar, render_capsule_chrome_hover_frame,
+    render_capsule_raw_dialog_overlay,
 };
 
 use super::*;
@@ -181,22 +182,26 @@ impl Multiplexer {
         // stays hidden from the `?25l` above (append_cursor_state
         // no-ops while a dialog is open).
         if self.dialog_open() {
-            fill_screen(
-                &mut buf,
-                self.term_rows,
-                self.term_cols,
-                jackin_tui::DIALOG_BACKDROP,
-            );
+            let github = self.github_context_view();
             if let Some(dialog) = self.dialog_top() {
-                let github = self.github_context_view();
-                dialog.render_with_hover(
+                render_capsule_raw_dialog_overlay(
+                    &mut buf,
+                    CapsuleRawDialogOverlay {
+                        term_rows: self.term_rows,
+                        term_cols: self.term_cols,
+                        dialog,
+                        copy_target_hovered: self.hover_target
+                            == Some(HoverTarget::DialogCopyTarget),
+                        github,
+                    },
+                );
+            } else {
+                fill_screen(
                     &mut buf,
                     self.term_rows,
                     self.term_cols,
-                    self.hover_target == Some(HoverTarget::DialogCopyTarget),
-                    Some(&github),
+                    jackin_tui::DIALOG_BACKDROP,
                 );
-                dialog.render_footer_hint(&mut buf, self.term_rows, self.term_cols, Some(&github));
             }
             crate::cdebug!(
                 "render: kind=dialog reason={} bytes={} duration_us={}",

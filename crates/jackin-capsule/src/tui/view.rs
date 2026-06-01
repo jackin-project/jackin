@@ -7,11 +7,12 @@ use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
 };
 use crate::tui::layout::Tab;
-use crate::tui::render::draw_scrollbar;
+use crate::tui::render::{draw_scrollbar, fill_screen};
 use crate::session::{PullRequestInfo, Session};
 use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
 use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
+use crate::tui::components::dialog::{Dialog, GithubContextView};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
 use ratatui::{Frame, layout::Rect as RatatuiRect};
@@ -173,6 +174,39 @@ pub(crate) fn render_capsule_chrome_hover_frame(
         view.pull_request_loading,
         status_bar.instance_id_label(),
         view.hover_target,
+    );
+}
+
+pub(crate) struct CapsuleRawDialogOverlay<'a> {
+    pub(crate) term_rows: u16,
+    pub(crate) term_cols: u16,
+    pub(crate) dialog: &'a Dialog,
+    pub(crate) copy_target_hovered: bool,
+    pub(crate) github: GithubContextView<'a>,
+}
+
+pub(crate) fn render_capsule_raw_dialog_overlay(
+    buf: &mut Vec<u8>,
+    view: CapsuleRawDialogOverlay<'_>,
+) {
+    fill_screen(
+        buf,
+        view.term_rows,
+        view.term_cols,
+        jackin_tui::DIALOG_BACKDROP,
+    );
+    view.dialog.render_with_hover(
+        buf,
+        view.term_rows,
+        view.term_cols,
+        view.copy_target_hovered,
+        Some(&view.github),
+    );
+    view.dialog.render_footer_hint(
+        buf,
+        view.term_rows,
+        view.term_cols,
+        Some(&view.github),
     );
 }
 
