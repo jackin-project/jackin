@@ -223,6 +223,57 @@ pub fn build_workspace_choice(
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum LaunchDispatchResolution {
+    NoEligibleRoles {
+        name: String,
+    },
+    SingleRole {
+        role: RoleSelector,
+        workspace: ResolvedWorkspace,
+    },
+    RolePicker {
+        input: LoadWorkspaceInput,
+        roles: Vec<RoleSelector>,
+        selected: Option<usize>,
+    },
+}
+
+pub(crate) fn resolve_launch_dispatch(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    input: LoadWorkspaceInput,
+) -> anyhow::Result<Option<LaunchDispatchResolution>> {
+    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let roles = choice.allowed_roles.clone();
+
+    if roles.is_empty() {
+        return Ok(Some(LaunchDispatchResolution::NoEligibleRoles {
+            name: choice.name,
+        }));
+    }
+
+    if roles.len() == 1 {
+        let role = roles.into_iter().next().unwrap();
+        let workspace =
+            crate::console::preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+        return Ok(Some(LaunchDispatchResolution::SingleRole { role, workspace }));
+    }
+
+    let selected = crate::app::context::preferred_agent_index(
+        &roles,
+        choice.last_role.as_deref(),
+        choice.default_role.as_deref(),
+    );
+    Ok(Some(LaunchDispatchResolution::RolePicker {
+        input,
+        roles,
+        selected,
+    }))
+}
+
 fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
     crate::operator_env::lookup_operator_env_raw(
         config,
@@ -482,6 +533,137 @@ mod tests {
             github: None,
             git_pull_on_entry: false,
         }
+    }
+
+    fn launch_workspace(
+        workdir: &std::path::Path,
+        allowed_roles: Vec<&str>,
+    ) -> crate::workspace::WorkspaceConfig {
+        crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: workdir.display().to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: workdir.display().to_string(),
+                dst: workdir.display().to_string(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            allowed_roles: allowed_roles.into_iter().map(str::to_string).collect(),
+            default_role: None,
+            default_agent: None,
+            last_role: None,
+            env: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
+            keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
+            amp: None,
+            kimi: None,
+            opencode: None,
+            github: None,
+            git_pull_on_entry: false,
+        }
+    }
+
+    #[test]
+    fn resolve_launch_dispatch_returns_none_for_deleted_workspace() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = crate::config::AppConfig::default();
+
+        let resolution = resolve_launch_dispatch(
+            &config,
+            temp.path(),
+            LoadWorkspaceInput::Saved("missing".to_string()),
+        )
+        .unwrap();
+
+        assert!(resolution.is_none());
+    }
+
+    #[test]
+    fn resolve_launch_dispatch_reports_no_eligible_roles() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "empty".to_string(),
+            launch_workspace(temp.path(), Vec::new()),
+        );
+
+        let resolution = resolve_launch_dispatch(
+            &config,
+            temp.path(),
+            LoadWorkspaceInput::Saved("empty".to_string()),
+        )
+        .unwrap()
+        .expect("workspace exists");
+
+        assert!(matches!(
+            resolution,
+            LaunchDispatchResolution::NoEligibleRoles { name } if name == "empty"
+        ));
+    }
+
+    #[test]
+    fn resolve_launch_dispatch_resolves_single_role_workspace() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config = crate::config::AppConfig::default();
+        config
+            .roles
+            .insert("smith".to_string(), agent_source_stub());
+        config.workspaces.insert(
+            "solo".to_string(),
+            launch_workspace(temp.path(), vec!["smith"]),
+        );
+
+        let resolution = resolve_launch_dispatch(
+            &config,
+            temp.path(),
+            LoadWorkspaceInput::Saved("solo".to_string()),
+        )
+        .unwrap()
+        .expect("workspace exists");
+
+        let LaunchDispatchResolution::SingleRole { role, workspace } = resolution else {
+            panic!("expected single-role launch dispatch");
+        };
+        assert_eq!(role.key(), "smith");
+        assert_eq!(workspace.label, "solo");
+    }
+
+    #[test]
+    fn resolve_launch_dispatch_preselects_role_picker() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config = crate::config::AppConfig::default();
+        config
+            .roles
+            .insert("alpha".to_string(), agent_source_stub());
+        config.roles.insert("beta".to_string(), agent_source_stub());
+        let mut saved = launch_workspace(temp.path(), vec!["alpha", "beta"]);
+        saved.last_role = Some("beta".to_string());
+        config.workspaces.insert("multi".to_string(), saved);
+
+        let resolution = resolve_launch_dispatch(
+            &config,
+            temp.path(),
+            LoadWorkspaceInput::Saved("multi".to_string()),
+        )
+        .unwrap()
+        .expect("workspace exists");
+
+        let LaunchDispatchResolution::RolePicker {
+            roles, selected, ..
+        } = resolution
+        else {
+            panic!("expected role picker dispatch");
+        };
+        assert_eq!(
+            roles
+                .iter()
+                .map(crate::selector::RoleSelector::key)
+                .collect::<Vec<_>>(),
+            vec!["alpha", "beta"]
+        );
+        assert_eq!(selected, Some(1));
     }
 
     #[test]

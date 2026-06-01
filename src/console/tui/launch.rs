@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::console::effects::LaunchDispatchResolution;
+use crate::console::domain::LaunchDispatchResolution;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
@@ -14,7 +14,7 @@ pub(crate) fn dispatch_launch_for_workspace(
     cwd: &std::path::Path,
     input: LoadWorkspaceInput,
 ) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>)>> {
-    let Some(resolution) = crate::console::effects::resolve_launch_dispatch(config, cwd, input)?
+    let Some(resolution) = crate::console::domain::resolve_launch_dispatch(config, cwd, input)?
     else {
         // Workspace was deleted between keypress and dispatch.
         return Ok(None);
