@@ -13,18 +13,18 @@ use super::{
     FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerError, OpPickerFatalState,
     OpPickerMode, OpPickerStage, OpPickerState,
 };
-use crate::operator_env::{OpAccount, OpCache, OpCli, OpStructRunner};
+use crate::operator_env::{OpAccount, OpCache, OpStructRunner};
 
 impl OpPickerState {
     pub fn new() -> Self {
         Self::new_with_runner_and_cache(
-            Arc::new(OpCli::new()),
+            crate::console::services::op_picker::default_runner(),
             Rc::new(RefCell::new(OpCache::default())),
         )
     }
 
     pub fn new_with_cache(op_cache: Rc<RefCell<OpCache>>) -> Self {
-        Self::new_with_runner_and_cache(Arc::new(OpCli::new()), op_cache)
+        Self::new_with_runner_and_cache(crate::console::services::op_picker::default_runner(), op_cache)
     }
 
     pub fn new_with_runner(runner: Arc<dyn OpStructRunner + Send + Sync>) -> Self {
@@ -45,7 +45,7 @@ impl OpPickerState {
         field_label_default: impl Into<String>,
     ) -> Self {
         Self::new_create_with_runner_and_cache(
-            Arc::new(OpCli::new()),
+            crate::console::services::op_picker::default_runner(),
             op_cache,
             item_name_default,
             field_label_default,
