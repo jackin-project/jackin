@@ -510,9 +510,6 @@ pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
 #[cfg(test)]
 mod tests {
     use super::OpPickerStage;
-    use jackin_console::widgets::op_picker::breadcrumb_title;
-
-    // ── Breadcrumb formatting ─────────────────────────────────────────
 
     // ── Loading-panel breadcrumb ──────────────────────────────────────
 

@@ -1,5 +1,7 @@
 //! Shared 1Password picker modal state enums.
 
+use std::collections::HashSet;
+
 /// Browse-only vs. creation-enabled picker mode.
 #[derive(Debug, Clone)]
 pub enum OpPickerMode {
@@ -120,6 +122,91 @@ pub fn classify_probe_error_message(message: impl Into<String>) -> OpPickerError
     }
 }
 
+/// Distinct sections present in loaded `op://` field references, in
+/// first-appearance order, with a leading `None` (`(root)`) entry.
+pub fn section_choices_from_references<'a>(
+    references: impl IntoIterator<Item = &'a str>,
+) -> Vec<Option<String>> {
+    let mut out: Vec<Option<String>> = vec![None];
+    for reference in references {
+        if let Some(name) =
+            crate::op_reference::parse_op_reference(reference).and_then(|parts| parts.section)
+            && !out
+                .iter()
+                .any(|section| section.as_deref() == Some(name.as_str()))
+        {
+            out.push(Some(name));
+        }
+    }
+    out
+}
+
+/// Build browse-mode field rows from the currently visible field
+/// references. Returned `field_idx` values index into the visible-field
+/// list supplied by the caller.
+pub fn browse_field_display_rows<'a>(
+    references: impl IntoIterator<Item = &'a str>,
+    collapsed_sections: &HashSet<String>,
+) -> Vec<FieldDisplayRow> {
+    let mut unsectioned: Vec<usize> = Vec::new();
+    let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
+
+    for (idx, reference) in references.into_iter().enumerate() {
+        match crate::op_reference::parse_op_reference(reference).and_then(|parts| parts.section) {
+            None => unsectioned.push(idx),
+            Some(name) => {
+                if let Some(entry) = sections.iter_mut().find(|(section, _)| section == &name) {
+                    entry.1.push(idx);
+                } else {
+                    sections.push((name, vec![idx]));
+                }
+            }
+        }
+    }
+
+    let mut rows = Vec::new();
+
+    for idx in unsectioned {
+        rows.push(FieldDisplayRow::Field { field_idx: idx });
+    }
+
+    for (section_name, indices) in sections {
+        let count = indices.len();
+        rows.push(FieldDisplayRow::SectionHeader {
+            name: section_name.clone(),
+            field_count: count,
+        });
+        if !collapsed_sections.contains(section_name.as_str()) {
+            for idx in indices {
+                rows.push(FieldDisplayRow::Field { field_idx: idx });
+            }
+        }
+    }
+
+    rows
+}
+
+/// Build create-mode field rows scoped to `selected_section`. Returned
+/// `field_idx` values index into the visible-field list supplied by the
+/// caller. A trailing `+ New field` sentinel is always present.
+pub fn create_field_display_rows<'a>(
+    references: impl IntoIterator<Item = &'a str>,
+    selected_section: Option<&str>,
+) -> Vec<FieldDisplayRow> {
+    let mut rows: Vec<FieldDisplayRow> = references
+        .into_iter()
+        .enumerate()
+        .filter(|(_, reference)| {
+            let section =
+                crate::op_reference::parse_op_reference(reference).and_then(|parts| parts.section);
+            section.as_deref() == selected_section
+        })
+        .map(|(idx, _)| FieldDisplayRow::Field { field_idx: idx })
+        .collect();
+    rows.push(FieldDisplayRow::NewFieldSentinel);
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +279,65 @@ mod tests {
             classify_probe_error_message("boom"),
             OpPickerError::Fatal(OpPickerFatalState::GenericFatal { .. })
         ));
+    }
+
+    #[test]
+    fn section_choices_deduplicate_in_first_seen_order() {
+        let choices = section_choices_from_references([
+            "op://Vault/Item/token",
+            "op://Vault/Item/Auth/password",
+            "op://Vault/Item/Deploy/key",
+            "op://Vault/Item/Auth/otp",
+        ]);
+        assert_eq!(
+            choices,
+            vec![None, Some("Auth".to_string()), Some("Deploy".to_string())]
+        );
+    }
+
+    #[test]
+    fn browse_field_rows_group_sections_and_respect_collapse() {
+        let mut collapsed = HashSet::new();
+        collapsed.insert("Auth".to_string());
+        let rows = browse_field_display_rows(
+            [
+                "op://Vault/Item/root",
+                "op://Vault/Item/Auth/password",
+                "op://Vault/Item/Auth/otp",
+                "op://Vault/Item/Deploy/key",
+            ],
+            &collapsed,
+        );
+        assert!(matches!(rows[0], FieldDisplayRow::Field { field_idx: 0 }));
+        assert!(matches!(
+            rows[1],
+            FieldDisplayRow::SectionHeader {
+                ref name,
+                field_count: 2
+            } if name == "Auth"
+        ));
+        assert!(matches!(
+            rows[2],
+            FieldDisplayRow::SectionHeader {
+                ref name,
+                field_count: 1
+            } if name == "Deploy"
+        ));
+        assert!(matches!(rows[3], FieldDisplayRow::Field { field_idx: 3 }));
+    }
+
+    #[test]
+    fn create_field_rows_scope_to_section_and_add_sentinel() {
+        let rows = create_field_display_rows(
+            [
+                "op://Vault/Item/root",
+                "op://Vault/Item/Auth/password",
+                "op://Vault/Item/Auth/otp",
+            ],
+            Some("Auth"),
+        );
+        assert!(matches!(rows[0], FieldDisplayRow::Field { field_idx: 1 }));
+        assert!(matches!(rows[1], FieldDisplayRow::Field { field_idx: 2 }));
+        assert!(matches!(rows[2], FieldDisplayRow::NewFieldSentinel));
     }
 }

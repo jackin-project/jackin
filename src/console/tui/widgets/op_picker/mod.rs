@@ -605,16 +605,9 @@ impl OpPickerState {
     /// stage list (Create mode). The render appends a `+ New section`
     /// sentinel after these choices.
     pub fn section_choices(&self) -> Vec<Option<String>> {
-        let mut out: Vec<Option<String>> = vec![None];
-        for f in &self.fields {
-            if let Some(name) = jackin_console::op_reference::parse_op_reference(&f.reference)
-                .and_then(|p| p.section)
-                && !out.iter().any(|s| s.as_deref() == Some(name.as_str()))
-            {
-                out.push(Some(name));
-            }
-        }
-        out
+        jackin_console::widgets::op_picker::section_choices_from_references(
+            self.fields.iter().map(|field| field.reference.as_str()),
+        )
     }
 
     /// Build the ordered display rows for the field picker.
@@ -634,44 +627,10 @@ impl OpPickerState {
             return self.build_create_field_rows();
         }
         let visible = self.filtered_fields();
-        let mut unsectioned: Vec<usize> = Vec::new();
-        let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
-
-        for (idx, f) in visible.iter().enumerate() {
-            match jackin_console::op_reference::parse_op_reference(&f.reference)
-                .and_then(|p| p.section)
-            {
-                None => unsectioned.push(idx),
-                Some(name) => {
-                    if let Some(entry) = sections.iter_mut().find(|(n, _)| n == &name) {
-                        entry.1.push(idx);
-                    } else {
-                        sections.push((name, vec![idx]));
-                    }
-                }
-            }
-        }
-
-        let mut rows = Vec::new();
-
-        for idx in unsectioned {
-            rows.push(FieldDisplayRow::Field { field_idx: idx });
-        }
-
-        for (section_name, indices) in sections {
-            let count = indices.len();
-            rows.push(FieldDisplayRow::SectionHeader {
-                name: section_name.clone(),
-                field_count: count,
-            });
-            if !self.collapsed_sections.contains(section_name.as_str()) {
-                for idx in indices {
-                    rows.push(FieldDisplayRow::Field { field_idx: idx });
-                }
-            }
-        }
-
-        rows
+        jackin_console::widgets::op_picker::browse_field_display_rows(
+            visible.iter().map(|field| field.reference.as_str()),
+            &self.collapsed_sections,
+        )
     }
 
     /// Field rows for the Create-mode Field stage: only the fields whose
@@ -679,19 +638,11 @@ impl OpPickerState {
     /// sentinel. No section headers and no `+ New section` row — the
     /// section was already chosen on the Section stage.
     fn build_create_field_rows(&self) -> Vec<FieldDisplayRow> {
-        let mut rows: Vec<FieldDisplayRow> = self
-            .filtered_fields()
-            .iter()
-            .enumerate()
-            .filter(|(_, f)| {
-                let section = jackin_console::op_reference::parse_op_reference(&f.reference)
-                    .and_then(|p| p.section);
-                section.as_deref() == self.selected_section.as_deref()
-            })
-            .map(|(idx, _)| FieldDisplayRow::Field { field_idx: idx })
-            .collect();
-        rows.push(FieldDisplayRow::NewFieldSentinel);
-        rows
+        let visible = self.filtered_fields();
+        jackin_console::widgets::op_picker::create_field_display_rows(
+            visible.iter().map(|field| field.reference.as_str()),
+            self.selected_section.as_deref(),
+        )
     }
 
     /// The input box for the current naming sub-stage, or `None` when the
