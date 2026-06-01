@@ -834,17 +834,29 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form(
     auth: &mut super::super::state::SettingsAuthState,
     op_ref: crate::operator_env::OpRef,
 ) {
-    let runner = crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
-    apply_op_picker_to_settings_auth_form_with_runner(auth, op_ref, &runner);
+    apply_op_picker_to_settings_auth_form_with_validator(auth, op_ref, |op_ref| {
+        crate::console::services::op::validate_ref(op_ref)
+    });
 }
 
 /// Inner helper split out so tests can inject a fake `OpRunner` without
 /// touching the real `op` binary (mirrors
 /// `auth::apply_op_picker_to_auth_form_with_runner`).
+#[cfg(test)]
 fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpRunner + ?Sized>(
     auth: &mut super::super::state::SettingsAuthState,
     op_ref: crate::operator_env::OpRef,
     runner: &R,
+) {
+    apply_op_picker_to_settings_auth_form_with_validator(auth, op_ref, |op_ref| {
+        runner.read(&op_ref.op).map(|_| ())
+    });
+}
+
+fn apply_op_picker_to_settings_auth_form_with_validator(
+    auth: &mut super::super::state::SettingsAuthState,
+    op_ref: crate::operator_env::OpRef,
+    validate: impl FnOnce(&crate::operator_env::OpRef) -> anyhow::Result<()>,
 ) {
     let Some(SettingsAuthModal::AuthForm {
         target,
@@ -864,7 +876,7 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
         );
         return;
     };
-    match runner.read(&op_ref.op) {
+    match validate(&op_ref) {
         Ok(_) => {
             state.set_op_ref(op_ref);
             auth.modal = Some(SettingsAuthModal::AuthForm {

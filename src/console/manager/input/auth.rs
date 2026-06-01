@@ -673,10 +673,9 @@ pub(in crate::console) fn apply_op_picker_to_auth_form(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,
 ) {
-    // Pin the read-back to the account the picker committed onto the ref
-    // so a vault in a non-default account resolves.
-    let runner = crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
-    apply_op_picker_to_auth_form_with_runner(editor, op_ref, &runner);
+    apply_op_picker_to_auth_form_with_validator(editor, op_ref, |op_ref| {
+        crate::console::services::op::validate_ref(op_ref)
+    });
 }
 
 /// Apply a committed op picker selection after the 1Password read has already
@@ -764,10 +763,21 @@ pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<
 
 /// Inner helper split out so tests can inject a fake `OpRunner`
 /// without touching the real `op` binary.
+#[cfg(test)]
 fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?Sized>(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,
     runner: &R,
+) {
+    apply_op_picker_to_auth_form_with_validator(editor, op_ref, |op_ref| {
+        runner.read(&op_ref.op).map(|_| ())
+    });
+}
+
+fn apply_op_picker_to_auth_form_with_validator(
+    editor: &mut EditorState<'_>,
+    op_ref: crate::operator_env::OpRef,
+    validate: impl FnOnce(&crate::operator_env::OpRef) -> anyhow::Result<()>,
 ) {
     use jackin_tui::components::ErrorPopupState;
 
@@ -785,7 +795,7 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
         );
         return;
     };
-    let read_result = runner.read(&op_ref.op);
+    let read_result = validate(&op_ref);
     if let Err(e) = read_result {
         // Re-push the form so the ErrorPopup dismiss handler can
         // restore it via restore_auth_form_after_op_picker_cancel.
