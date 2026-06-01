@@ -156,14 +156,16 @@ pub(crate) fn render_capsule_chrome_hover_frame(
     status_bar: &mut StatusBar,
     view: CapsuleChromeHoverFrame<'_>,
 ) {
-    status_bar.render(
+    render_capsule_status_bar(
         buf,
-        view.term_cols,
-        view.tabs,
-        view.active_tab,
-        view.session_states,
-        hovered_tab(view.hover_target),
-        hovered_menu(view.hover_target),
+        status_bar,
+        CapsuleStatusBarFrame {
+            term_cols: view.term_cols,
+            tabs: view.tabs,
+            active_tab: view.active_tab,
+            session_states: view.session_states,
+            hover_target: view.hover_target,
+        },
     );
     render_branch_context_bar(
         buf,
@@ -174,6 +176,30 @@ pub(crate) fn render_capsule_chrome_hover_frame(
         view.pull_request_loading,
         status_bar.instance_id_label(),
         view.hover_target,
+    );
+}
+
+pub(crate) struct CapsuleStatusBarFrame<'a> {
+    pub(crate) term_cols: u16,
+    pub(crate) tabs: &'a [Tab],
+    pub(crate) active_tab: usize,
+    pub(crate) session_states: &'a [(u64, AgentState)],
+    pub(crate) hover_target: Option<HoverTarget>,
+}
+
+pub(crate) fn render_capsule_status_bar(
+    buf: &mut Vec<u8>,
+    status_bar: &mut StatusBar,
+    view: CapsuleStatusBarFrame<'_>,
+) {
+    status_bar.render(
+        buf,
+        view.term_cols,
+        view.tabs,
+        view.active_tab,
+        view.session_states,
+        hovered_tab(view.hover_target),
+        hovered_menu(view.hover_target),
     );
 }
 

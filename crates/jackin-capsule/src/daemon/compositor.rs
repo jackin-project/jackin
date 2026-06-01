@@ -8,10 +8,10 @@ use std::time::Instant;
 
 use crate::tui::components::branch_context_bar::render_branch_context_bar;
 use crate::tui::view::{
-    CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleRawDialogOverlay, PaneScrollbar,
-    draw_pane_chrome, hovered_menu, hovered_tab, pane_scrollbar,
-    render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
-    render_capsule_raw_dialog_overlay,
+    CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleRawDialogOverlay, CapsuleStatusBarFrame,
+    PaneScrollbar, draw_pane_chrome, pane_scrollbar, render_capsule_bottom_chrome,
+    render_capsule_chrome_hover_frame, render_capsule_raw_dialog_overlay,
+    render_capsule_status_bar,
 };
 
 use super::*;
@@ -218,14 +218,16 @@ impl Multiplexer {
         self.refresh_tab_labels();
 
         let states = self.snapshot_session_states();
-        self.status_bar.render(
+        render_capsule_status_bar(
             &mut buf,
-            self.term_cols,
-            &self.tabs,
-            self.active_tab,
-            &states,
-            hovered_tab(self.hover_target),
-            hovered_menu(self.hover_target),
+            &mut self.status_bar,
+            CapsuleStatusBarFrame {
+                term_cols: self.term_cols,
+                tabs: &self.tabs,
+                active_tab: self.active_tab,
+                session_states: &states,
+                hover_target: self.hover_target,
+            },
         );
 
         let focused_id = self.active_focused_id();
