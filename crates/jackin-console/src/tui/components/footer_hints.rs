@@ -4,6 +4,171 @@ use jackin_tui::HintSpan;
 
 use crate::tui::screens::settings::model::AuthFormFocus;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListFooterMode {
+    AgentPicker {
+        scroll_focused: bool,
+    },
+    RolePicker {
+        scroll_focused: bool,
+    },
+    PreviewPane,
+    InstanceRow {
+        has_snapshot: bool,
+    },
+    WorkspaceRow {
+        scroll_focused: bool,
+        enter_label: &'static str,
+        is_saved: bool,
+        show_expand: bool,
+        show_collapse: bool,
+        show_open_in_github: bool,
+    },
+}
+
+#[must_use]
+pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpan<'static>> {
+    match mode {
+        WorkspaceListFooterMode::AgentPicker { scroll_focused } => {
+            workspace_picker_footer_items(scroll_focused, false)
+        }
+        WorkspaceListFooterMode::RolePicker { scroll_focused } => {
+            workspace_picker_footer_items(scroll_focused, true)
+        }
+        WorkspaceListFooterMode::PreviewPane => vec![
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate panes"),
+            HintSpan::Sep,
+            HintSpan::Key("↵"),
+            HintSpan::Text("attach focused pane"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("back"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Q"),
+            HintSpan::Text("quit"),
+        ],
+        WorkspaceListFooterMode::InstanceRow { has_snapshot } => {
+            let mut items = vec![
+                HintSpan::Key("\u{2191}\u{2193}"),
+                HintSpan::Sep,
+                HintSpan::Key("↵"),
+                HintSpan::Text("reconnect"),
+                HintSpan::Sep,
+                HintSpan::Key("N"),
+                HintSpan::Text("new session"),
+                HintSpan::Sep,
+                HintSpan::Key("X"),
+                HintSpan::Text("shell"),
+                HintSpan::Sep,
+                HintSpan::Key("T"),
+                HintSpan::Text("stop"),
+                HintSpan::Sep,
+                HintSpan::Key("P"),
+                HintSpan::Text("purge"),
+            ];
+            if has_snapshot {
+                items.push(HintSpan::Sep);
+                items.push(HintSpan::Key("⇥"));
+                items.push(HintSpan::Text("into preview"));
+            }
+            items.extend([
+                HintSpan::GroupSep,
+                HintSpan::Key("\u{2190}"),
+                HintSpan::Text("back"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Q"),
+                HintSpan::Text("quit"),
+            ]);
+            items
+        }
+        WorkspaceListFooterMode::WorkspaceRow {
+            scroll_focused,
+            enter_label,
+            is_saved,
+            show_expand,
+            show_collapse,
+            show_open_in_github,
+        } => {
+            let mut items: Vec<HintSpan<'static>> = if scroll_focused {
+                vec![
+                    HintSpan::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
+                    HintSpan::Text("scroll block"),
+                    HintSpan::GroupSep,
+                    HintSpan::Key("↵"),
+                    HintSpan::Text(enter_label),
+                    HintSpan::GroupSep,
+                ]
+            } else {
+                vec![
+                    HintSpan::Key("\u{2191}\u{2193}"),
+                    HintSpan::Sep,
+                    HintSpan::Key("↵"),
+                    HintSpan::Text(enter_label),
+                    HintSpan::GroupSep,
+                ]
+            };
+            if is_saved {
+                items.extend([HintSpan::Key("E"), HintSpan::Text("edit"), HintSpan::Sep]);
+            }
+            items.extend([HintSpan::Key("N"), HintSpan::Text("new")]);
+            if is_saved {
+                items.extend([HintSpan::Sep, HintSpan::Key("D"), HintSpan::Text("delete")]);
+            }
+            items.extend([
+                HintSpan::Sep,
+                HintSpan::Key("S"),
+                HintSpan::Text("settings"),
+            ]);
+            if show_expand {
+                items.push(HintSpan::Sep);
+                items.push(HintSpan::Key("\u{2192}"));
+                items.push(HintSpan::Text("expand"));
+            }
+            if show_collapse {
+                items.push(HintSpan::Sep);
+                items.push(HintSpan::Key("\u{2190}"));
+                items.push(HintSpan::Text("collapse"));
+            }
+            if show_open_in_github {
+                items.push(HintSpan::Sep);
+                items.push(HintSpan::Key("O"));
+                items.push(HintSpan::Text("open in GitHub"));
+            }
+            items.push(HintSpan::GroupSep);
+            items.push(HintSpan::Key("Q"));
+            items.push(HintSpan::Text("quit"));
+            items
+        }
+    }
+}
+
+fn workspace_picker_footer_items(
+    scroll_focused: bool,
+    include_quit: bool,
+) -> Vec<HintSpan<'static>> {
+    let mut items = vec![
+        HintSpan::Key("\u{2191}\u{2193}"),
+        HintSpan::Sep,
+        HintSpan::Key("↵"),
+        HintSpan::Text("launch"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("return to workspaces"),
+    ];
+    if scroll_focused {
+        items.push(HintSpan::GroupSep);
+        items.push(HintSpan::Key("←/→"));
+        items.push(HintSpan::Text("scroll block"));
+    }
+    if include_quit {
+        items.push(HintSpan::GroupSep);
+        items.push(HintSpan::Key("Q"));
+        items.push(HintSpan::Text("quit"));
+    }
+    items
+}
+
 #[must_use]
 pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
     vec![
@@ -420,4 +585,85 @@ fn append_save_and_escape(
             "back"
         }),
     ]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_string()),
+                HintSpan::Dyn(value) => Some(value),
+                HintSpan::Sep | HintSpan::GroupSep => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn workspace_list_footer_role_picker_includes_quit() {
+        assert_eq!(
+            labels(workspace_list_footer_items(
+                WorkspaceListFooterMode::RolePicker {
+                    scroll_focused: true
+                }
+            )),
+            vec![
+                "\u{2191}\u{2193}",
+                "↵",
+                "launch",
+                "Esc",
+                "return to workspaces",
+                "←/→",
+                "scroll block",
+                "Q",
+                "quit",
+            ]
+        );
+    }
+
+    #[test]
+    fn workspace_list_footer_instance_snapshot_can_enter_preview() {
+        let labels = labels(workspace_list_footer_items(
+            WorkspaceListFooterMode::InstanceRow { has_snapshot: true },
+        ));
+        assert!(labels.windows(2).any(|pair| pair == ["⇥", "into preview"]));
+    }
+
+    #[test]
+    fn workspace_list_footer_saved_workspace_shows_row_actions() {
+        assert_eq!(
+            labels(workspace_list_footer_items(
+                WorkspaceListFooterMode::WorkspaceRow {
+                    scroll_focused: false,
+                    enter_label: "launch",
+                    is_saved: true,
+                    show_expand: true,
+                    show_collapse: false,
+                    show_open_in_github: true,
+                }
+            )),
+            vec![
+                "\u{2191}\u{2193}",
+                "↵",
+                "launch",
+                "E",
+                "edit",
+                "N",
+                "new",
+                "D",
+                "delete",
+                "S",
+                "settings",
+                "\u{2192}",
+                "expand",
+                "O",
+                "open in GitHub",
+                "Q",
+                "quit",
+            ]
+        );
+    }
 }

@@ -5,6 +5,9 @@ use ratatui::{
 
 use crate::config::AppConfig;
 use crate::console::tui::state::{ManagerListRow, ManagerStage, ManagerState};
+use jackin_console::tui::components::footer_hints::{
+    WorkspaceListFooterMode, workspace_list_footer_items,
+};
 use jackin_console::tui::view::{render_footer, render_header};
 use jackin_tui::HintSpan;
 
@@ -40,207 +43,7 @@ pub fn render(
 
         let footer_items: Vec<HintSpan<'static>> = match &state.stage {
             ManagerStage::List => {
-                let picker_footer = || {
-                    let mut items = vec![
-                        HintSpan::Key("\u{2191}\u{2193}"),
-                        HintSpan::Sep,
-                        HintSpan::Key("↵"),
-                        HintSpan::Text("launch"),
-                        HintSpan::GroupSep,
-                        HintSpan::Key("Esc"),
-                        HintSpan::Text("return to workspaces"),
-                    ];
-                    if state.list_scroll_focus.is_some() {
-                        items.push(HintSpan::GroupSep);
-                        items.push(HintSpan::Key("←/→"));
-                        items.push(HintSpan::Text("scroll block"));
-                    }
-                    items
-                };
-                if state.inline_agent_picker.is_some() {
-                    picker_footer()
-                } else if state.inline_role_picker.is_some() {
-                    // The role picker can quit the app; the agent picker is
-                    // reached mid-flow and only returns to workspaces.
-                    let mut items = picker_footer();
-                    items.push(HintSpan::GroupSep);
-                    items.push(HintSpan::Key("Q"));
-                    items.push(HintSpan::Text("quit"));
-                    items
-                } else {
-                    // Hidden on current-dir and "+ New workspace" rows because
-                    // they have no workspace config.
-                    let is_instance_row = matches!(
-                        state.selected_row(),
-                        ManagerListRow::WorkspaceInstance(_, _)
-                            | ManagerListRow::CurrentDirectoryInstance(_)
-                    );
-
-                    if is_instance_row {
-                        if state.preview_focused {
-                            // Inside the preview pane: arrow navigation
-                            // walks the snapshot's pane tree; Enter
-                            // attaches the focused pane; Esc returns
-                            // the focus to the instance row itself.
-                            vec![
-                                HintSpan::Key("\u{2191}\u{2193}"),
-                                HintSpan::Text("navigate panes"),
-                                HintSpan::Sep,
-                                HintSpan::Key("↵"),
-                                HintSpan::Text("attach focused pane"),
-                                HintSpan::GroupSep,
-                                HintSpan::Key("Esc"),
-                                HintSpan::Text("back"),
-                                HintSpan::GroupSep,
-                                HintSpan::Key("Q"),
-                                HintSpan::Text("quit"),
-                            ]
-                        } else {
-                            let has_snapshot = match state.selected_row() {
-                                ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
-                                    .workspace_active_instances(ws_idx)
-                                    .get(inst_idx)
-                                    .copied()
-                                    .is_some_and(|e| {
-                                        state.instance_snapshots.contains_key(&e.container_base)
-                                    }),
-                                ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
-                                    .current_dir_active_instances()
-                                    .get(inst_idx)
-                                    .copied()
-                                    .is_some_and(|e| {
-                                        state.instance_snapshots.contains_key(&e.container_base)
-                                    }),
-                                _ => false,
-                            };
-                            let mut items = vec![
-                                HintSpan::Key("\u{2191}\u{2193}"),
-                                HintSpan::Sep,
-                                HintSpan::Key("↵"),
-                                HintSpan::Text("reconnect"),
-                                HintSpan::Sep,
-                                HintSpan::Key("N"),
-                                HintSpan::Text("new session"),
-                                HintSpan::Sep,
-                                HintSpan::Key("X"),
-                                HintSpan::Text("shell"),
-                                HintSpan::Sep,
-                                HintSpan::Key("T"),
-                                HintSpan::Text("stop"),
-                                HintSpan::Sep,
-                                HintSpan::Key("P"),
-                                HintSpan::Text("purge"),
-                            ];
-                            if has_snapshot {
-                                items.push(HintSpan::Sep);
-                                items.push(HintSpan::Key("⇥"));
-                                items.push(HintSpan::Text("into preview"));
-                            }
-                            items.extend([
-                                HintSpan::GroupSep,
-                                HintSpan::Key("\u{2190}"),
-                                HintSpan::Text("back"),
-                                HintSpan::GroupSep,
-                                HintSpan::Key("Q"),
-                                HintSpan::Text("quit"),
-                            ]);
-                            items
-                        }
-                    } else {
-                        let show_open_hint =
-                            matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
-                                && state
-                                    .selected_workspace_summary()
-                                    .and_then(|s| config.workspaces.get(&s.name))
-                                    .is_some_and(|ws| {
-                                        !jackin_console::github_mounts::resolve_for_workspace_from_cache(
-                                            ws,
-                                            &state.mount_info_cache,
-                                        )
-                                        .is_empty()
-                                    });
-
-                        let is_saved =
-                            matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_));
-                        let show_expand_hint = matches!(
-                            state.selected_row(),
-                            ManagerListRow::SavedWorkspace(i)
-                                if !state.workspace_active_instances(i).is_empty()
-                                    && !state.is_workspace_expanded(i)
-                        );
-                        let show_collapse_hint = matches!(
-                            state.selected_row(),
-                            ManagerListRow::SavedWorkspace(i)
-                                if state.is_workspace_expanded(i)
-                        );
-                        let scroll_focused = state.list_scroll_focus.is_some();
-
-                        let enter_label =
-                            if matches!(state.selected_row(), ManagerListRow::NewWorkspace) {
-                                "setup"
-                            } else {
-                                "launch"
-                            };
-
-                        let mut items: Vec<HintSpan<'static>> = if scroll_focused {
-                            vec![
-                                HintSpan::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
-                                HintSpan::Text("scroll block"),
-                                HintSpan::GroupSep,
-                                HintSpan::Key("↵"),
-                                HintSpan::Text(enter_label),
-                                HintSpan::GroupSep,
-                            ]
-                        } else {
-                            vec![
-                                HintSpan::Key("\u{2191}\u{2193}"),
-                                HintSpan::Sep,
-                                HintSpan::Key("↵"),
-                                HintSpan::Text(enter_label),
-                                HintSpan::GroupSep,
-                            ]
-                        };
-                        if is_saved {
-                            items.extend([
-                                HintSpan::Key("E"),
-                                HintSpan::Text("edit"),
-                                HintSpan::Sep,
-                            ]);
-                        }
-                        items.extend([HintSpan::Key("N"), HintSpan::Text("new")]);
-                        if is_saved {
-                            items.extend([
-                                HintSpan::Sep,
-                                HintSpan::Key("D"),
-                                HintSpan::Text("delete"),
-                            ]);
-                        }
-                        items.extend([
-                            HintSpan::Sep,
-                            HintSpan::Key("S"),
-                            HintSpan::Text("settings"),
-                        ]);
-                        if show_expand_hint {
-                            items.push(HintSpan::Sep);
-                            items.push(HintSpan::Key("\u{2192}"));
-                            items.push(HintSpan::Text("expand"));
-                        }
-                        if show_collapse_hint {
-                            items.push(HintSpan::Sep);
-                            items.push(HintSpan::Key("\u{2190}"));
-                            items.push(HintSpan::Text("collapse"));
-                        }
-                        if show_open_hint {
-                            items.push(HintSpan::Sep);
-                            items.push(HintSpan::Key("O"));
-                            items.push(HintSpan::Text("open in GitHub"));
-                        }
-                        items.push(HintSpan::GroupSep);
-                        items.push(HintSpan::Key("Q"));
-                        items.push(HintSpan::Text("quit"));
-                        items
-                    }
-                }
+                workspace_list_footer_items(workspace_list_footer_mode(state, config))
             }
             ManagerStage::CreatePrelude(_) => vec![
                 HintSpan::Dyn("Create workspace — follow the prompts".to_string()),
@@ -354,5 +157,83 @@ fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
         }
         ManagerStage::CreatePrelude(prelude) => prelude.modal.is_some(),
         ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => true,
+    }
+}
+
+fn workspace_list_footer_mode(
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+) -> WorkspaceListFooterMode {
+    let scroll_focused = state.list_scroll_focus.is_some();
+    if state.inline_agent_picker.is_some() {
+        return WorkspaceListFooterMode::AgentPicker { scroll_focused };
+    }
+    if state.inline_role_picker.is_some() {
+        return WorkspaceListFooterMode::RolePicker { scroll_focused };
+    }
+
+    let selected = state.selected_row();
+    if matches!(
+        selected,
+        ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
+    ) {
+        if state.preview_focused {
+            return WorkspaceListFooterMode::PreviewPane;
+        }
+        return WorkspaceListFooterMode::InstanceRow {
+            has_snapshot: selected_instance_has_snapshot(state, selected),
+        };
+    }
+
+    let is_saved = matches!(selected, ManagerListRow::SavedWorkspace(_));
+    let show_open_in_github = is_saved
+        && state
+            .selected_workspace_summary()
+            .and_then(|s| config.workspaces.get(&s.name))
+            .is_some_and(|ws| {
+                !jackin_console::github_mounts::resolve_for_workspace_from_cache(
+                    ws,
+                    &state.mount_info_cache,
+                )
+                .is_empty()
+            });
+    let show_expand = matches!(
+        selected,
+        ManagerListRow::SavedWorkspace(i)
+            if !state.workspace_active_instances(i).is_empty() && !state.is_workspace_expanded(i)
+    );
+    let show_collapse = matches!(
+        selected,
+        ManagerListRow::SavedWorkspace(i) if state.is_workspace_expanded(i)
+    );
+    let enter_label = if matches!(selected, ManagerListRow::NewWorkspace) {
+        "setup"
+    } else {
+        "launch"
+    };
+
+    WorkspaceListFooterMode::WorkspaceRow {
+        scroll_focused,
+        enter_label,
+        is_saved,
+        show_expand,
+        show_collapse,
+        show_open_in_github,
+    }
+}
+
+fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {
+    match selected {
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
+            .workspace_active_instances(ws_idx)
+            .get(inst_idx)
+            .copied()
+            .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base)),
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
+            .current_dir_active_instances()
+            .get(inst_idx)
+            .copied()
+            .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base)),
+        _ => false,
     }
 }
