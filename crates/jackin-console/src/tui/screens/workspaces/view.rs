@@ -1,5 +1,13 @@
 //! Workspaces screen view helpers.
 
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disclosure {
     None,
@@ -67,6 +75,92 @@ pub fn create_prelude_workdir_pick_state<M: crate::tui::components::workdir_pick
     mounts: &[M],
 ) -> crate::tui::components::workdir_pick::WorkdirPickState {
     crate::tui::components::workdir_pick::WorkdirPickState::from_mounts(mounts)
+}
+
+/// Compact running-instances badge (3 rows: border + count line + border).
+/// Cyan border and text distinguish live state from config panels.
+pub fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize, expanded: bool) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(jackin_tui::theme::CYAN))
+        .title(Span::styled(
+            " Running ",
+            Style::default()
+                .fg(jackin_tui::theme::CYAN)
+                .add_modifier(Modifier::BOLD),
+        ));
+    let plural = if count == 1 { "instance" } else { "instances" };
+    let line = Line::from(vec![
+        Span::styled("  ● ", Style::default().fg(jackin_tui::theme::CYAN)),
+        Span::styled(
+            format!("{count} {plural} running"),
+            Style::default().fg(jackin_tui::theme::CYAN),
+        ),
+        Span::styled(
+            if expanded {
+                "  ·  ↓ navigate instances"
+            } else {
+                "  ·  → expand"
+            },
+            Style::default().fg(jackin_tui::theme::CYAN_DIM),
+        ),
+    ]);
+    frame.render_widget(
+        Paragraph::new(vec![line])
+            .block(block)
+            .style(Style::default().fg(jackin_tui::theme::CYAN)),
+        area,
+    );
+}
+
+/// Right-pane description shown when cursor is on the "+ New workspace"
+/// sentinel. It summarizes what a saved workspace records and why to create it.
+pub fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5),
+            Constraint::Min(9),
+        ])
+        .split(area);
+
+    let intro_block = jackin_tui::components::Panel::new()
+        .title(" What is a workspace? ")
+        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .block();
+    let intro_lines = vec![
+        Line::from(Span::styled(
+            "  A workspace saves a project boundary once so you",
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+        )),
+        Line::from(Span::styled(
+            "  can launch roles into it from anywhere \u{2014} without",
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+        )),
+        Line::from(Span::styled(
+            "  retyping mount paths.",
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+        )),
+    ];
+    frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
+
+    let why_block = jackin_tui::components::Panel::new()
+        .title(" Why create one? ")
+        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .block();
+    let bullet_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
+    let bullets = [
+        "Name a project once, launch from any cwd",
+        "Keep extra mounts consistent across sessions",
+        "Reuse one boundary with different role classes",
+        "Set a default role or restrict which classes apply",
+        "Let `jackin console` auto-detect and preselect it",
+    ];
+    let why_lines: Vec<Line<'static>> = bullets
+        .iter()
+        .map(|b| Line::from(Span::styled(format!("  \u{2022} {b}"), bullet_style)))
+        .collect();
+    frame.render_widget(Paragraph::new(why_lines).block(why_block), rows[1]);
 }
 
 #[cfg(test)]

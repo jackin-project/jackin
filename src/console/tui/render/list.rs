@@ -24,7 +24,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{List, ListItem, ListState, Paragraph},
 };
 
 use super::{
@@ -56,7 +56,9 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 };
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
-use jackin_console::tui::screens::workspaces::view::Disclosure;
+use jackin_console::tui::screens::workspaces::view::{
+    Disclosure, render_compact_instances_summary, render_sentinel_description_pane,
+};
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn render_list_body(
@@ -678,40 +680,6 @@ fn render_current_dir_details_pane(
     render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
-/// Compact running-instances badge (3 rows: border + count line + border).
-/// Cyan border and text distinguish live state from config panels.
-fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize, expanded: bool) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(CYAN))
-        .title(Span::styled(
-            " Running ",
-            Style::default().fg(CYAN).add_modifier(Modifier::BOLD),
-        ));
-    let plural = if count == 1 { "instance" } else { "instances" };
-    let line = Line::from(vec![
-        Span::styled("  ● ", Style::default().fg(CYAN)),
-        Span::styled(
-            format!("{count} {plural} running"),
-            Style::default().fg(CYAN),
-        ),
-        Span::styled(
-            if expanded {
-                "  ·  ↓ navigate instances"
-            } else {
-                "  ·  → expand"
-            },
-            Style::default().fg(CYAN_DIM),
-        ),
-    ]);
-    frame.render_widget(
-        Paragraph::new(vec![line])
-            .block(block)
-            .style(Style::default().fg(CYAN)),
-        area,
-    );
-}
-
 /// Right-panel shown when operator selects an instance row in the tree.
 /// When the daemon's bind-mounted socket gives us a live snapshot we
 /// render the tab/pane tree (active tab marked, focused pane marked,
@@ -854,62 +822,6 @@ fn render_instance_details_pane(
             .style(Style::default().fg(PHOSPHOR_GREEN)),
         area,
     );
-}
-
-/// Right-pane description shown when the cursor is on the "+ New workspace"
-/// sentinel. Explains what a workspace is and why the operator might create
-/// one — compacted from `docs/src/content/docs/guides/workspaces.mdx`
-/// sections "What is a workspace?" + "Why save a workspace?".
-fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
-    // Two stacked sub-panels so the section titles render as block titles
-    // with the same PHOSPHOR_DARK border used by General/Mounts/Roles.
-    // The "What is a workspace?" intro is short (fits in 4 rows); the
-    // rest of the area hosts the bullet list.
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5), // "What is a workspace?" intro (2 text rows + 2 borders + 1 pad)
-            Constraint::Min(9),    // "Why create one?" bullets
-        ])
-        .split(area);
-
-    let intro_block = Panel::new()
-        .title(" What is a workspace? ")
-        .focus(PanelFocus::Unfocused)
-        .block();
-    let intro_lines = vec![
-        Line::from(Span::styled(
-            "  A workspace saves a project boundary once so you",
-            Style::default().fg(PHOSPHOR_GREEN),
-        )),
-        Line::from(Span::styled(
-            "  can launch roles into it from anywhere \u{2014} without",
-            Style::default().fg(PHOSPHOR_GREEN),
-        )),
-        Line::from(Span::styled(
-            "  retyping mount paths.",
-            Style::default().fg(PHOSPHOR_GREEN),
-        )),
-    ];
-    frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
-
-    let why_block = Panel::new()
-        .title(" Why create one? ")
-        .focus(PanelFocus::Unfocused)
-        .block();
-    let bullet_style = Style::default().fg(PHOSPHOR_GREEN);
-    let bullets = [
-        "Name a project once, launch from any cwd",
-        "Keep extra mounts consistent across sessions",
-        "Reuse one boundary with different role classes",
-        "Set a default role or restrict which classes apply",
-        "Let `jackin console` auto-detect and preselect it",
-    ];
-    let why_lines: Vec<Line<'static>> = bullets
-        .iter()
-        .map(|b| Line::from(Span::styled(format!("  \u{2022} {b}"), bullet_style)))
-        .collect();
-    frame.render_widget(Paragraph::new(why_lines).block(why_block), rows[1]);
 }
 
 fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir: &str) {
