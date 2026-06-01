@@ -10,11 +10,12 @@ use jackin_tui::components::TextInputState;
 use super::{
     FieldStageCommitPlan, ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError,
     OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent,
-    SectionStageCommitPlan, build_op_ref_on_commit, field_label_cancel_plan,
-    field_stage_back_plan, field_stage_commit_plan, filter_reset_selection_for_stage,
-    item_stage_back_plan, item_stage_commit_plan, new_item_name_commit_plan,
-    new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
-    section_stage_commit_plan,
+    SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan, build_op_ref_on_commit,
+    field_label_cancel_plan, field_stage_back_plan, field_stage_commit_plan,
+    filter_reset_selection_for_stage, item_stage_back_plan, item_stage_commit_plan,
+    new_item_name_commit_plan, new_section_name_commit_plan, section_header_collapse_target,
+    section_stage_back_plan, section_stage_commit_plan, vault_stage_back_plan,
+    vault_stage_commit_plan,
 };
 
 impl OpPickerState {
@@ -117,20 +118,32 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Esc => {
-                // `self.accounts` is non-empty iff this is a multi-account
-                // session (see the invariant in `handle_accounts_loaded`).
-                if self.accounts.len() > 1 {
-                    self.stage = OpPickerStage::Account;
-                    self.filter_buf.clear();
-                    self.selected_vault = None;
-                    self.vaults.clear();
-                    self.vault_list_state = list_state_for_count(0);
-                    // Discard banners from the prior vault load so they
-                    // don't bleed into the Account pane.
-                    self.load_state = OpLoadState::Ready;
-                    return ModalOutcome::Continue;
+                match vault_stage_back_plan(self.accounts.len()) {
+                    VaultStageBackPlan::BackToAccount {
+                        stage,
+                        clear_selected_vault,
+                        clear_vaults,
+                        reset_vault_list,
+                        ready_load_state,
+                    } => {
+                        self.stage = stage;
+                        self.filter_buf.clear();
+                        if clear_selected_vault {
+                            self.selected_vault = None;
+                        }
+                        if clear_vaults {
+                            self.vaults.clear();
+                        }
+                        if reset_vault_list {
+                            self.vault_list_state = list_state_for_count(0);
+                        }
+                        if ready_load_state {
+                            self.load_state = OpLoadState::Ready;
+                        }
+                        ModalOutcome::Continue
+                    }
+                    VaultStageBackPlan::Cancel => ModalOutcome::Cancel,
                 }
-                ModalOutcome::Cancel
             }
             KeyCode::Up => {
                 let n = self.filtered_vaults().len();
@@ -149,8 +162,9 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_vaults();
-                if let Some(v) = selected_choice(&visible, self.vault_list_state.selected) {
-                    let v = (*v).clone();
+                let picked =
+                    selected_choice(&visible, self.vault_list_state.selected).map(|v| (*v).clone());
+                if let VaultStageCommitPlan::ExistingVault(v) = vault_stage_commit_plan(picked) {
                     let id = v.id.clone();
                     let account_id = self.selected_account_id();
                     self.selected_vault = Some(v);

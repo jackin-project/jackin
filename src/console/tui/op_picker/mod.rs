@@ -33,13 +33,14 @@ pub use jackin_console::tui::components::op_picker::{
     OpPickerCache, OpPickerError, OpPickerFatalState, OpPickerField, OpPickerFieldRef,
     OpPickerItem, OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
     OpPickerStage, OpPickerVault, OpPickerVaultRef, SectionCollapseIntent, SectionStageBackPlan,
-    SectionStageCommitPlan, browse_field_display_rows, build_op_picker_ref,
-    create_field_display_rows, field_display_rows_for_picker, field_label_cancel_plan,
-    field_stage_back_plan, field_stage_commit_plan, filter_reset_selection_for_stage,
-    filtered_accounts, filtered_fields, filtered_item_choices, filtered_items, filtered_vaults,
-    item_stage_back_plan, item_stage_commit_plan, matches_filter, naming_stage_input_for_stage,
-    new_item_name_commit_plan, new_section_name_commit_plan, section_choices_from_references,
-    section_header_collapse_target, section_stage_back_plan, section_stage_commit_plan,
+    SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan, browse_field_display_rows,
+    build_op_picker_ref, create_field_display_rows, field_display_rows_for_picker,
+    field_label_cancel_plan, field_stage_back_plan, field_stage_commit_plan,
+    filter_reset_selection_for_stage, filtered_accounts, filtered_fields, filtered_item_choices,
+    filtered_items, filtered_vaults, item_stage_back_plan, item_stage_commit_plan, matches_filter,
+    naming_stage_input_for_stage, new_item_name_commit_plan, new_section_name_commit_plan,
+    section_choices_from_references, section_header_collapse_target, section_stage_back_plan,
+    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
 };
 
 pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<

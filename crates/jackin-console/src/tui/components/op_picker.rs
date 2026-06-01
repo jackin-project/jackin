@@ -409,6 +409,44 @@ pub fn item_stage_commit_plan<Item>(picked: Option<Option<Item>>) -> ItemStageCo
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VaultStageBackPlan {
+    BackToAccount {
+        stage: OpPickerStage,
+        clear_selected_vault: bool,
+        clear_vaults: bool,
+        reset_vault_list: bool,
+        ready_load_state: bool,
+    },
+    Cancel,
+}
+
+pub const fn vault_stage_back_plan(account_count: usize) -> VaultStageBackPlan {
+    if account_count > 1 {
+        VaultStageBackPlan::BackToAccount {
+            stage: OpPickerStage::Account,
+            clear_selected_vault: true,
+            clear_vaults: true,
+            reset_vault_list: true,
+            ready_load_state: true,
+        }
+    } else {
+        VaultStageBackPlan::Cancel
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VaultStageCommitPlan<Vault> {
+    ExistingVault(Vault),
+    NoSelection,
+}
+
+pub fn vault_stage_commit_plan<Vault>(picked: Option<Vault>) -> VaultStageCommitPlan<Vault> {
+    picked
+        .map(VaultStageCommitPlan::ExistingVault)
+        .unwrap_or(VaultStageCommitPlan::NoSelection)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionCollapseIntent {
     Collapse,
     Expand,
@@ -1579,6 +1617,33 @@ mod tests {
         assert_eq!(
             item_stage_commit_plan::<&str>(None),
             ItemStageCommitPlan::NoSelection
+        );
+    }
+
+    #[test]
+    fn vault_stage_back_plan_handles_single_and_multi_account() {
+        assert_eq!(vault_stage_back_plan(1), VaultStageBackPlan::Cancel);
+        assert_eq!(
+            vault_stage_back_plan(2),
+            VaultStageBackPlan::BackToAccount {
+                stage: OpPickerStage::Account,
+                clear_selected_vault: true,
+                clear_vaults: true,
+                reset_vault_list: true,
+                ready_load_state: true,
+            }
+        );
+    }
+
+    #[test]
+    fn vault_stage_commit_plan_routes_existing_and_empty() {
+        assert_eq!(
+            vault_stage_commit_plan(Some("vault")),
+            VaultStageCommitPlan::ExistingVault("vault")
+        );
+        assert_eq!(
+            vault_stage_commit_plan::<&str>(None),
+            VaultStageCommitPlan::NoSelection
         );
     }
 
