@@ -2,6 +2,8 @@
 
 use jackin_tui::HintSpan;
 
+use crate::settings::state::AuthFormFocus;
+
 #[must_use]
 pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
     vec![
@@ -151,6 +153,57 @@ pub fn content_footer_items(
         HintSpan::GroupSep,
     ]);
     append_save_and_escape(&mut items, save_label, dirty_change_count);
+    items
+}
+
+#[must_use]
+pub fn auth_form_footer_items(
+    focus: AuthFormFocus,
+    shows_credential_block: bool,
+) -> Vec<HintSpan<'static>> {
+    let mut items: Vec<HintSpan<'static>> = match focus {
+        AuthFormFocus::Mode => {
+            let mut v = vec![HintSpan::Key("\u{2423}"), HintSpan::Text("cycle")];
+            if shows_credential_block {
+                v.extend([
+                    HintSpan::Sep,
+                    HintSpan::Key("\u{2193}"),
+                    HintSpan::Text("navigate"),
+                ]);
+            }
+            v.extend([
+                HintSpan::GroupSep,
+                HintSpan::Key("\u{21e5}"),
+                HintSpan::Text("button row"),
+            ]);
+            v
+        }
+        AuthFormFocus::CredentialSource => vec![
+            HintSpan::Key("↵"),
+            HintSpan::Text("set"),
+            HintSpan::Sep,
+            HintSpan::Key("\u{2191}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("\u{21e5}"),
+            HintSpan::Text("button row"),
+        ],
+        AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("move"),
+            HintSpan::GroupSep,
+            HintSpan::Key("\u{21e5}"),
+            HintSpan::Text("fields"),
+            HintSpan::GroupSep,
+            HintSpan::Key("↵"),
+            HintSpan::Text("select"),
+        ],
+    };
+    items.extend([
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("cancel"),
+    ]);
     items
 }
 

@@ -7,8 +7,9 @@ use crate::console::manager::state::{
     AuthFormFocus, GlobalMountModal, Modal, SettingsAuthModal, SettingsAuthState, SettingsEnvModal,
 };
 use jackin_console::widgets::footer_hints::{
-    confirm_save_footer_items, filtered_picker_footer_items, mount_destination_footer_items,
-    pick_list_footer_items, segmented_choice_footer_items, yes_no_footer_items,
+    auth_form_footer_items as shared_auth_form_footer_items, confirm_save_footer_items,
+    filtered_picker_footer_items, mount_destination_footer_items, pick_list_footer_items,
+    segmented_choice_footer_items, yes_no_footer_items,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -143,48 +144,5 @@ fn auth_form_footer_items(
     form: &crate::console::widgets::auth_panel::form::AuthForm,
     focus: AuthFormFocus,
 ) -> Vec<HintSpan<'static>> {
-    let mut items: Vec<HintSpan<'static>> = match focus {
-        AuthFormFocus::Mode => {
-            let mut v = vec![HintSpan::Key("␣"), HintSpan::Text("cycle")];
-            if form.shows_credential_block() {
-                v.extend([
-                    HintSpan::Sep,
-                    HintSpan::Key("\u{2193}"),
-                    HintSpan::Text("navigate"),
-                ]);
-            }
-            v.extend([
-                HintSpan::GroupSep,
-                HintSpan::Key("⇥"),
-                HintSpan::Text("button row"),
-            ]);
-            v
-        }
-        AuthFormFocus::CredentialSource => vec![
-            HintSpan::Key("↵"),
-            HintSpan::Text("set"),
-            HintSpan::Sep,
-            HintSpan::Key("\u{2191}"),
-            HintSpan::Text("navigate"),
-            HintSpan::GroupSep,
-            HintSpan::Key("⇥"),
-            HintSpan::Text("button row"),
-        ],
-        AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
-            HintSpan::Key("\u{2190}/\u{2192}"),
-            HintSpan::Text("move"),
-            HintSpan::GroupSep,
-            HintSpan::Key("⇥"),
-            HintSpan::Text("fields"),
-            HintSpan::GroupSep,
-            HintSpan::Key("↵"),
-            HintSpan::Text("select"),
-        ],
-    };
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        HintSpan::Text("cancel"),
-    ]);
-    items
+    shared_auth_form_footer_items(focus, form.shows_credential_block())
 }
