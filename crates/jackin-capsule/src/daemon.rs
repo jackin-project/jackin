@@ -75,7 +75,8 @@ use crate::protocol::control::{AgentState, SessionInfo};
 use crate::pull_request::PullRequestInfo;
 use crate::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode};
 use crate::tui::selection::{
-    SelectionState, move_selection_end, selection_text, selection_was_dragged,
+    SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,
+    selection_was_dragged,
 };
 use crate::session::{
     BranchName, GitContext, Oid, PullRequestLookupOutcome, SESSION_ENV_PASSTHROUGH, Session,

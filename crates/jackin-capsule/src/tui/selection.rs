@@ -4,7 +4,7 @@
 //! The helper functions here extract text and paint the inverse-video
 //! highlight overlay that the compositor writes on top of pane bodies.
 
-use crate::tui::layout::Rect;
+use crate::tui::layout::{Rect, local_mouse_position};
 use crate::tui::render::{PaneBodyDim, RowSnapshot, render_row_range_inverse};
 
 /// Active mouse text selection on a pane. Held until the operator
@@ -24,6 +24,25 @@ pub(crate) struct SelectionState {
     /// on every motion event.
     pub(crate) end_row: u16,
     pub(crate) end_col: u16,
+}
+
+/// Build the initial visible selection state for a click inside a
+/// pane's inner content rect.
+pub(crate) fn selection_start_for_inner_rect(
+    session_id: u64,
+    inner: Rect,
+    row: u16,
+    col: u16,
+) -> Option<SelectionState> {
+    let (anchor_row, anchor_col) = local_mouse_position(inner, row, col)?;
+    Some(SelectionState {
+        session_id,
+        inner,
+        anchor_row,
+        anchor_col,
+        end_row: anchor_row,
+        end_col: anchor_col,
+    })
 }
 
 /// Extract the selected text from the pane's vt100 screen.
@@ -128,8 +147,24 @@ pub(crate) fn paint_selection_highlight(
 
 #[cfg(test)]
 mod tests {
-    use super::{SelectionState, move_selection_end, selection_was_dragged};
+    use super::{
+        SelectionState, move_selection_end, selection_start_for_inner_rect, selection_was_dragged,
+    };
     use crate::tui::layout::Rect;
+
+    #[test]
+    fn selection_start_requires_inner_rect_hit() {
+        let inner = Rect::new(10, 20, 5, 8);
+
+        let sel = selection_start_for_inner_rect(7, inner, 12, 24).unwrap();
+        assert_eq!(sel.session_id, 7);
+        assert_eq!(sel.inner, inner);
+        assert_eq!((sel.anchor_row, sel.anchor_col), (2, 4));
+        assert_eq!((sel.end_row, sel.end_col), (2, 4));
+
+        assert!(selection_start_for_inner_rect(7, inner, 9, 24).is_none());
+        assert!(selection_start_for_inner_rect(7, inner, 12, 28).is_none());
+    }
 
     #[test]
     fn selection_motion_clamps_to_inner_rect() {

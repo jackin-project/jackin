@@ -162,16 +162,7 @@ impl Multiplexer {
             // Pane's program wants the mouse — defer to PTY forward.
             return None;
         }
-        let anchor_row = row - inner.row;
-        let anchor_col = col - inner.col;
-        Some(SelectionState {
-            session_id: id,
-            inner,
-            anchor_row,
-            anchor_col,
-            end_row: anchor_row,
-            end_col: anchor_col,
-        })
+        selection_start_for_inner_rect(id, inner, row, col)
     }
 
     /// Update the active selection's end-cell to the new motion
