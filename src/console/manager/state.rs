@@ -15,7 +15,7 @@ use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{auth_panel::AuthForm, op_picker::OpPickerState};
 use crate::selector::RolePickerState;
-use jackin_console::widgets::confirm_save::ConfirmSaveState;
+use jackin_console::tui::components::confirm_save::ConfirmSaveState;
 use jackin_console::widgets::file_browser::FileBrowserState;
 use jackin_console::widgets::github_picker::GithubPickerState;
 use jackin_console::widgets::mount_dst_choice::MountDstChoiceState;

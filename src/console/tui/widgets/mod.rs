@@ -192,7 +192,7 @@ mod consistency_tests {
     }
 
     fn render_confirm_save() -> (Buffer, Rect) {
-        use jackin_console::widgets::confirm_save::{ConfirmSaveState, render};
+        use jackin_console::tui::components::confirm_save::{ConfirmSaveState, render};
         use ratatui::text::Line;
         let area = Rect::new(0, 0, 70, 10);
         let state = ConfirmSaveState::<crate::workspace::MountConfig>::new(vec![

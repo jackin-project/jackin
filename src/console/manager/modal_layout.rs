@@ -3,8 +3,8 @@ use ratatui::layout::Rect;
 use crate::console::manager::state::Modal;
 use crate::console::widgets::auth_panel;
 use crate::selector::RolePickerState;
+use jackin_console::tui::components::confirm_save;
 use jackin_console::tui::components::modal_rects;
-use jackin_console::widgets::confirm_save;
 
 pub(crate) fn text_input_rect(outer: Rect) -> Rect {
     modal_rects::text_input_rect(outer)

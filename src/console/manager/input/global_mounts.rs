@@ -1496,7 +1496,7 @@ fn commit_settings_save(
 fn open_settings_save_preview(settings: &mut super::super::state::SettingsState<'_>) {
     let lines = super::save::build_settings_save_lines(settings);
     settings.mounts.modal = Some(super::super::state::GlobalMountModal::PreviewSave {
-        state: jackin_console::widgets::confirm_save::ConfirmSaveState::new(lines),
+        state: jackin_console::tui::components::confirm_save::ConfirmSaveState::new(lines),
     });
 }
 

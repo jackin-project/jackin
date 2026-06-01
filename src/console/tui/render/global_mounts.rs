@@ -491,7 +491,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
             jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
         GlobalMountModal::PreviewSave { state } => {
-            use jackin_console::widgets::confirm_save;
+            use jackin_console::tui::components::confirm_save;
             let height = confirm_save::required_height(state).min(frame.area().height);
             let area = super::centered_rect_fixed(frame.area(), 80, height);
             confirm_save::render(frame, area, state);

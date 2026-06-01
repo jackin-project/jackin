@@ -73,7 +73,7 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
         }
         ManagerStage::Settings(settings) => {
             if let Some(GlobalMountModal::PreviewSave { state }) = &mut settings.mounts.modal {
-                use jackin_console::widgets::confirm_save;
+                use jackin_console::tui::components::confirm_save;
                 let height = confirm_save::required_height(state).min(area.height);
                 let modal_area = jackin_console::tui::layout::centered_rect_fixed(area, 80, height);
                 confirm_save::prepare_for_render(modal_area, state);
@@ -89,7 +89,7 @@ fn prepare_modal(outer: Rect, modal: &mut Modal<'_>) {
     let modal_area = modal_outer_rect(modal, outer);
     match modal {
         Modal::ConfirmSave { state } => {
-            jackin_console::widgets::confirm_save::prepare_for_render(modal_area, state);
+            jackin_console::tui::components::confirm_save::prepare_for_render(modal_area, state);
         }
         _ => {}
     }

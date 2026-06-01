@@ -14,8 +14,7 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use super::ModalOutcome;
-
+use jackin_tui::ModalOutcome;
 use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };

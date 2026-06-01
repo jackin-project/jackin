@@ -35,7 +35,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_console::widgets::github_picker::render(frame, modal_area, state);
         }
         Modal::ConfirmSave { state } => {
-            jackin_console::widgets::confirm_save::render(frame, modal_area, state);
+            jackin_console::tui::components::confirm_save::render(frame, modal_area, state);
         }
         Modal::ErrorPopup { state } => {
             jackin_tui::components::render_error_dialog(frame, modal_area, state);

@@ -1021,7 +1021,7 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::ConfirmSave { state: modal_state } => {
-            use jackin_console::widgets::confirm_save::SaveChoice;
+            use jackin_console::tui::components::confirm_save::SaveChoice;
             match modal_state.handle_key(key) {
                 ModalOutcome::Commit(SaveChoice::Save) => {
                     // Confirming → PendingCommit atomically so plan +
