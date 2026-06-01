@@ -115,7 +115,7 @@ pub fn handle_key(
         && editor.modal.is_some()
     {
         editor::handle_editor_modal(editor, key, op_available, op_cache, config, paths);
-        state.request_active_mount_info_refresh();
+        state.request_active_mount_info_refresh(config);
 
         // Drain the ConfirmSave → commit signal FIRST. The modal handler
         // only closes the modal and stashes the plan; this outer layer
@@ -316,7 +316,7 @@ pub fn handle_key(
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
     };
-    state.request_active_mount_info_refresh();
+    state.request_active_mount_info_refresh(config);
     outcome
 }
 

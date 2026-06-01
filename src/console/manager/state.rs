@@ -552,6 +552,7 @@ pub(crate) struct PendingMountInfoRefresh {
 
 #[derive(Debug, Clone, Copy)]
 enum MountInfoRefreshTarget {
+    ManagerList,
     Editor,
     SettingsMounts,
 }
@@ -1384,7 +1385,7 @@ impl ManagerState<'_> {
         );
         let selected = selected_row.to_screen_index(saved_count).unwrap_or(0);
 
-        let state = Self {
+        Self {
             stage: ManagerStage::List,
             workspaces,
             instances: Vec::new(),
@@ -1432,18 +1433,7 @@ impl ManagerState<'_> {
             instance_snapshots: HashMap::new(),
             preview_focused: false,
             preview_pane_cursor: HashMap::new(),
-        };
-        state.refresh_mount_info_cache(config);
-        state
-    }
-
-    pub(crate) fn refresh_mount_info_cache(&self, config: &AppConfig) {
-        self.mount_info_cache.refresh_src(&self.current_dir);
-        for workspace in config.workspaces.values() {
-            self.mount_info_cache.refresh_mounts(&workspace.mounts);
         }
-        let global_rows = config.list_mount_rows();
-        self.mount_info_cache.refresh_global_rows(&global_rows);
     }
 
     // ── Tree navigation helpers ────────────────────────────────────
@@ -1797,11 +1787,11 @@ impl ManagerState<'_> {
         self.drain_instance_refresh()
     }
 
-    pub(crate) fn request_active_mount_info_refresh(&mut self) {
+    pub(crate) fn request_active_mount_info_refresh(&mut self, config: &AppConfig) {
         if self.mount_info_refresh_rx.is_some() {
             return;
         }
-        let Some((target, sources)) = self.active_mount_info_sources() else {
+        let Some((target, sources)) = self.active_mount_info_sources(config) else {
             return;
         };
         if tokio::runtime::Handle::try_current().is_err() {
@@ -1835,6 +1825,9 @@ impl ManagerState<'_> {
 
     pub(super) fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
         match result.target {
+            MountInfoRefreshTarget::ManagerList => {
+                self.mount_info_cache.store_entries(result.entries);
+            }
             MountInfoRefreshTarget::Editor => {
                 let ManagerStage::Editor(editor) = &mut self.stage else {
                     return false;
@@ -1854,8 +1847,28 @@ impl ManagerState<'_> {
         true
     }
 
-    fn active_mount_info_sources(&self) -> Option<(MountInfoRefreshTarget, Vec<String>)> {
+    fn active_mount_info_sources(
+        &self,
+        config: &AppConfig,
+    ) -> Option<(MountInfoRefreshTarget, Vec<String>)> {
         match &self.stage {
+            ManagerStage::List => {
+                let mut sources = BTreeSet::new();
+                sources.insert(self.current_dir.clone());
+                for workspace in config.workspaces.values() {
+                    sources.extend(workspace.mounts.iter().map(|mount| mount.src.clone()));
+                }
+                sources.extend(
+                    config
+                        .list_mount_rows()
+                        .into_iter()
+                        .map(|row| row.mount.src),
+                );
+                Some((
+                    MountInfoRefreshTarget::ManagerList,
+                    sources.into_iter().collect(),
+                ))
+            }
             ManagerStage::Editor(editor) => {
                 let sources = editor
                     .pending
@@ -1878,8 +1891,7 @@ impl ManagerState<'_> {
                     .collect::<Vec<_>>();
                 (!sources.is_empty()).then_some((MountInfoRefreshTarget::SettingsMounts, sources))
             }
-            ManagerStage::List
-            | ManagerStage::CreatePrelude(_)
+            ManagerStage::CreatePrelude(_)
             | ManagerStage::ConfirmDelete { .. }
             | ManagerStage::ConfirmInstancePurge { .. } => None,
         }

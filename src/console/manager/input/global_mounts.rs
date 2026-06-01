@@ -2076,8 +2076,6 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
     }
     if exit {
         dispatch_manager(state, ManagerMessage::ReturnToList);
-    } else {
-        state.request_active_mount_info_refresh();
     }
 }
 

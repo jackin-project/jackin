@@ -216,7 +216,7 @@ pub(crate) fn poll_background_messages(
         dirty |= super::input::editor::poll_role_load(editor, config, paths);
     }
     dirty |= poll_file_browser_git_urls(state);
-    state.request_active_mount_info_refresh();
+    state.request_active_mount_info_refresh(config);
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::MountInfoRefreshed(result),
