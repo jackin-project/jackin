@@ -850,6 +850,12 @@ fn step_auth_cursor_up(rows: &[AuthRow], mut candidate: usize) -> usize {
     candidate
 }
 
+#[derive(Debug)]
+pub(super) enum EditorModalOutcome {
+    Continue,
+    ValidateOpRef(crate::operator_env::OpRef),
+}
+
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub(super) fn handle_editor_modal(
     editor: &mut EditorState<'_>,
@@ -859,9 +865,9 @@ pub(super) fn handle_editor_modal(
     config: &mut AppConfig,
     paths: &JackinPaths,
     open_url: &mut Option<String>,
-) {
+) -> EditorModalOutcome {
     let Some(modal) = editor.modal.as_mut() else {
-        return;
+        return EditorModalOutcome::Continue;
     };
     match modal {
         Modal::TextInput { target, state } => {
@@ -886,7 +892,7 @@ pub(super) fn handle_editor_modal(
                         // recovers identically to the OpPicker leg.
                         editor.modal = None;
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
-                        return;
+                        return EditorModalOutcome::Continue;
                     }
                     editor.pop_modal_chain();
                     // Scratch slots only get dropped when the pop
@@ -1120,7 +1126,7 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     let Some((scope, key)) = env_key.take() else {
                         editor.clear_modal_chain();
-                        return;
+                        return EditorModalOutcome::Continue;
                     };
                     editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvValue {
@@ -1136,7 +1142,7 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Commit(SourceChoice::Op) => {
                     let Some((scope, key)) = env_key.take() else {
                         editor.clear_modal_chain();
-                        return;
+                        return EditorModalOutcome::Continue;
                     };
                     editor.pending_picker_target = Some((scope, Some(key)));
                     // The env_key context now lives in the modal; no separate
@@ -1183,7 +1189,7 @@ pub(super) fn handle_editor_modal(
                     }
                     ModalOutcome::Continue => {}
                 }
-                return;
+                return EditorModalOutcome::Continue;
             }
             match outcome {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
@@ -1232,7 +1238,7 @@ pub(super) fn handle_editor_modal(
             // create variants are reachable only on this path.
             if let Some(target) = editor.generating_token_target.take() {
                 handle_token_generate_pick(editor, target, outcome);
-                return;
+                return EditorModalOutcome::Continue;
             }
             match outcome {
                 // Browse-mode caller: only `Existing` is reachable.
@@ -1248,18 +1254,10 @@ pub(super) fn handle_editor_modal(
                     // `pending_auth_form_return` exactly when it's the
                     // caller, so the two paths can never collide.
                     if !editor.modal_parents.is_empty() {
-                        // Spawn the 1Password read on a blocking thread so Touch
-                        // ID / the 1Password desktop dialog don't freeze the TUI
-                        // reactor. The outer run_console loop polls the receiver
-                        // each tick and applies the result via _committed / _failed.
-                        let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
-                        editor.pending_op_commit = Some(
-                            crate::console::manager::state::PendingOpCommit::new(op_ref, rx),
-                        );
                         // Close the OpPicker — the auth form stays stashed on
                         // modal_parents so the _committed / _failed helpers find it.
                         editor.modal = None;
-                        return;
+                        return EditorModalOutcome::ValidateOpRef(op_ref);
                     }
                     // Operator picked a Vault → Item → Field path. The
                     // dispatch depends on whether `P` was pressed on a
@@ -1294,7 +1292,7 @@ pub(super) fn handle_editor_modal(
                     // disambiguated by `pending_auth_form_return`.
                     if !editor.modal_parents.is_empty() {
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
-                        return;
+                        return EditorModalOutcome::Continue;
                     }
                     // Clear both scratch fields so a stale path/target
                     // can't carry into a later interaction.
@@ -1306,6 +1304,7 @@ pub(super) fn handle_editor_modal(
             }
         }
     }
+    EditorModalOutcome::Continue
 }
 
 /// `pending_picker_target` records `(scope, Some(key))` for key rows

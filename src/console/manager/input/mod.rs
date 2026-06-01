@@ -128,7 +128,7 @@ pub fn handle_key(
         && editor.modal.is_some()
     {
         let mut open_url = None;
-        editor::handle_editor_modal(
+        let editor_outcome = editor::handle_editor_modal(
             editor,
             key,
             op_available,
@@ -137,6 +137,17 @@ pub fn handle_key(
             paths,
             &mut open_url,
         );
+        if let editor::EditorModalOutcome::ValidateOpRef(op_ref) = editor_outcome {
+            execute_manager_effect(
+                state,
+                config,
+                paths,
+                ManagerEffect::ValidateOpCommit {
+                    op_ref,
+                    is_settings: false,
+                },
+            );
+        }
         execute_manager_effect(
             state,
             config,
