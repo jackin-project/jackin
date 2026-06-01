@@ -3,6 +3,7 @@
 pub mod app;
 pub mod auth;
 pub mod components;
+pub mod debug;
 pub mod effect;
 pub mod layout;
 pub mod list_geometry;

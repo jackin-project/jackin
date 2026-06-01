@@ -107,20 +107,5 @@ pub(crate) fn key_debug_name(
     state: &ConsoleState,
     key: crossterm::event::KeyEvent,
 ) -> String {
-    use crossterm::event::{KeyCode, KeyModifiers};
-    let has_command_modifier = key
-        .modifiers
-        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
-    let code = match key.code {
-        KeyCode::Char(_) if super::consumes_letter_input(state) && !has_command_modifier => {
-            "Char(<redacted>)".to_string()
-        }
-        KeyCode::Char(ch) => format!("Char({})", ch.escape_default()),
-        other => format!("{other:?}"),
-    };
-    if key.modifiers.is_empty() {
-        code
-    } else {
-        format!("{:?}+{code}", key.modifiers)
-    }
+    jackin_console::tui::debug::key_debug_name_for_input(key, super::consumes_letter_input(state))
 }
