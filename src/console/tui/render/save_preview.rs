@@ -12,247 +12,9 @@ pub(crate) fn build_confirm_save_lines(
     config: &AppConfig,
     collapse_lines: &[ratatui::text::Line<'static>],
 ) -> Vec<ratatui::text::Line<'static>> {
-    use ratatui::style::{Modifier, Style};
-    use ratatui::text::{Line, Span};
-
-    let heading = Style::default()
-        .fg(jackin_tui::theme::WHITE)
-        .add_modifier(Modifier::BOLD);
-    let value = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
-    let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
-
-    let mut out: Vec<Line<'static>> = Vec::new();
-
-    match &editor.mode {
-        EditorMode::Create => {
-            let name = editor
-                .pending_name
-                .clone()
-                .unwrap_or_else(|| "(unnamed)".into());
-            out.push(Line::from(vec![
-                Span::styled("Create workspace: ", heading),
-                Span::styled(name, value),
-            ]));
-            out.push(Line::raw(""));
-            out.push(Line::from(vec![
-                Span::styled("Working directory: ", heading),
-                Span::styled(crate::tui::shorten_home(&editor.pending.workdir), value),
-            ]));
-            if !editor.pending.mounts.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled(
-                    format!("Mounts ({}):", editor.pending.mounts.len()),
-                    heading,
-                )));
-                for m in &editor.pending.mounts {
-                    out.push(Line::from(Span::styled(
-                        format!("  \u{2022} {}", mount_summary(m, &editor.mount_info_cache)),
-                        value,
-                    )));
-                }
-            }
-            out.push(Line::raw(""));
-            out.push(Line::from(vec![
-                Span::styled("Allowed roles: ", heading),
-                Span::styled(allowed_agents_summary(editor, config), value),
-            ]));
-            out.push(Line::raw(""));
-            out.push(Line::from(vec![
-                Span::styled("Default role: ", heading),
-                Span::styled(
-                    editor
-                        .pending
-                        .default_role
-                        .clone()
-                        .unwrap_or_else(|| "(none)".into()),
-                    value,
-                ),
-            ]));
-            if editor.pending.keep_awake.enabled {
-                out.push(Line::raw(""));
-                out.push(Line::from(vec![
-                    Span::styled("Keep awake: ", heading),
-                    Span::styled("enabled", value),
-                ]));
-            }
-            if editor.pending.git_pull_on_entry {
-                out.push(Line::raw(""));
-                out.push(Line::from(vec![
-                    Span::styled("Git pull: ", heading),
-                    Span::styled("enabled", value),
-                ]));
-            }
-            let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
-            if !env_lines.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Env vars:", heading)));
-                out.extend(env_lines);
-            }
-        }
-        EditorMode::Edit { name } => {
-            let display_name = editor.pending_name.clone().unwrap_or_else(|| name.clone());
-            out.push(Line::from(vec![
-                Span::styled("Edit workspace: ", heading),
-                Span::styled(display_name, value),
-            ]));
-
-            if let Some(new_name) = &editor.pending_name
-                && new_name != name
-            {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Rename:", heading)));
-                out.push(Line::from(Span::styled(format!("  - {name}"), dim)));
-                out.push(Line::from(Span::styled(format!("  + {new_name}"), value)));
-            }
-
-            if editor.pending.workdir != editor.original.workdir {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Working directory:", heading)));
-                out.push(Line::from(Span::styled(
-                    format!("  - {}", crate::tui::shorten_home(&editor.original.workdir)),
-                    dim,
-                )));
-                out.push(Line::from(Span::styled(
-                    format!("  + {}", crate::tui::shorten_home(&editor.pending.workdir)),
-                    value,
-                )));
-            }
-
-            let mount_diffs = crate::console::tui::state::classify_mount_diffs(
-                &editor.original.mounts,
-                &editor.pending.mounts,
-            );
-            let any_diff = mount_diffs
-                .iter()
-                .any(|d| !matches!(d, crate::console::tui::state::MountDiff::Unchanged(_)));
-            if any_diff {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Mounts:", heading)));
-                for diff in &mount_diffs {
-                    match diff {
-                        crate::console::tui::state::MountDiff::Added(m) => {
-                            out.push(Line::from(Span::styled(
-                                format!("  + {}", mount_summary(m, &editor.mount_info_cache)),
-                                value,
-                            )));
-                        }
-                        crate::console::tui::state::MountDiff::Removed(m) => {
-                            out.push(Line::from(Span::styled(
-                                format!("  - {}", mount_summary(m, &editor.mount_info_cache)),
-                                dim,
-                            )));
-                        }
-                        crate::console::tui::state::MountDiff::Modified { original, pending } => {
-                            // Modified row: show the new state (`~`) with a
-                            // dimmed `was:` follow-up so the operator can
-                            // see exactly what changed without reading a
-                            // remove + add pair.
-                            out.push(Line::from(Span::styled(
-                                format!("  ~ {}", mount_summary(pending, &editor.mount_info_cache)),
-                                value,
-                            )));
-                            out.push(Line::from(Span::styled(
-                                format!(
-                                    "      was: {}",
-                                    mount_summary(original, &editor.mount_info_cache)
-                                ),
-                                dim,
-                            )));
-                        }
-                        crate::console::tui::state::MountDiff::Unchanged(_) => {}
-                    }
-                }
-            }
-
-            let added_agents: Vec<_> = editor
-                .pending
-                .allowed_roles
-                .iter()
-                .filter(|a| !editor.original.allowed_roles.contains(a))
-                .collect();
-            let removed_agents: Vec<_> = editor
-                .original
-                .allowed_roles
-                .iter()
-                .filter(|a| !editor.pending.allowed_roles.contains(a))
-                .collect();
-            if !added_agents.is_empty() || !removed_agents.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Allowed roles:", heading)));
-                for a in &added_agents {
-                    out.push(Line::from(Span::styled(format!("  + {a}"), value)));
-                }
-                for a in &removed_agents {
-                    out.push(Line::from(Span::styled(format!("  - {a}"), dim)));
-                }
-            }
-
-            if editor.pending.default_role != editor.original.default_role {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Default role:", heading)));
-                if let Some(old) = &editor.original.default_role {
-                    out.push(Line::from(Span::styled(format!("  - {old}"), dim)));
-                }
-                if let Some(new) = &editor.pending.default_role {
-                    out.push(Line::from(Span::styled(format!("  + {new}"), value)));
-                } else {
-                    out.push(Line::from(Span::styled("  + (none)", value)));
-                }
-            }
-
-            if editor.pending.keep_awake.enabled != editor.original.keep_awake.enabled {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Keep awake:", heading)));
-                let old_label = if editor.original.keep_awake.enabled {
-                    "enabled"
-                } else {
-                    "disabled"
-                };
-                let new_label = if editor.pending.keep_awake.enabled {
-                    "enabled"
-                } else {
-                    "disabled"
-                };
-                out.push(Line::from(Span::styled(format!("  - {old_label}"), dim)));
-                out.push(Line::from(Span::styled(format!("  + {new_label}"), value)));
-            }
-
-            if editor.pending.git_pull_on_entry != editor.original.git_pull_on_entry {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Git pull:", heading)));
-                let old_label = if editor.original.git_pull_on_entry {
-                    "enabled"
-                } else {
-                    "disabled"
-                };
-                let new_label = if editor.pending.git_pull_on_entry {
-                    "enabled"
-                } else {
-                    "disabled"
-                };
-                out.push(Line::from(Span::styled(format!("  - {old_label}"), dim)));
-                out.push(Line::from(Span::styled(format!("  + {new_label}"), value)));
-            }
-
-            let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
-            if !env_lines.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Env vars:", heading)));
-                out.extend(env_lines);
-            }
-        }
-    }
-
-    if !collapse_lines.is_empty() {
-        out.push(Line::raw(""));
-        out.push(Line::from(Span::styled(
-            "Mount collapse required:",
-            heading,
-        )));
-        out.extend(collapse_lines.iter().cloned());
-    }
-
-    out
+    jackin_console::tui::components::save_preview::workspace_save_lines(
+        &workspace_save_preview(editor, config, collapse_lines),
+    )
 }
 
 fn mount_summary(
@@ -270,48 +32,101 @@ fn mount_summary(
     format!("{dst}{host}  ({rw}, {isolation}, {})", cache.label(&m.src))
 }
 
-fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
-    if jackin_console::workspace::allows_all_agents(&editor.pending) {
-        return format!("any ({} roles)", config.roles.len());
+fn workspace_save_preview(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+    collapse_lines: &[ratatui::text::Line<'static>],
+) -> jackin_console::tui::components::save_preview::WorkspaceSavePreview {
+    use jackin_console::tui::components::save_preview::{
+        WorkspaceMountDiff, WorkspaceSaveMode, WorkspaceSavePreview,
+    };
+
+    let mode = match &editor.mode {
+        EditorMode::Create => WorkspaceSaveMode::Create {
+            name: editor
+                .pending_name
+                .clone()
+                .unwrap_or_else(|| "(unnamed)".into()),
+        },
+        EditorMode::Edit { name } => WorkspaceSaveMode::Edit {
+            original_name: name.clone(),
+            display_name: editor
+                .pending_name
+                .clone()
+                .unwrap_or_else(|| name.clone()),
+            pending_name: editor.pending_name.clone(),
+        },
+    };
+
+    let mount_diffs = match editor.mode {
+        EditorMode::Create => editor
+            .pending
+            .mounts
+            .iter()
+            .map(|mount| WorkspaceMountDiff::Added(mount_summary(mount, &editor.mount_info_cache)))
+            .collect(),
+        EditorMode::Edit { .. } => crate::console::tui::state::classify_mount_diffs(
+            &editor.original.mounts,
+            &editor.pending.mounts,
+        )
+        .into_iter()
+        .map(|diff| match diff {
+            crate::console::tui::state::MountDiff::Added(mount) => {
+                WorkspaceMountDiff::Added(mount_summary(&mount, &editor.mount_info_cache))
+            }
+            crate::console::tui::state::MountDiff::Removed(mount) => {
+                WorkspaceMountDiff::Removed(mount_summary(&mount, &editor.mount_info_cache))
+            }
+            crate::console::tui::state::MountDiff::Modified { original, pending } => {
+                WorkspaceMountDiff::Modified {
+                    original: mount_summary(&original, &editor.mount_info_cache),
+                    pending: mount_summary(&pending, &editor.mount_info_cache),
+                }
+            }
+            crate::console::tui::state::MountDiff::Unchanged(_) => WorkspaceMountDiff::Unchanged,
+        })
+        .collect(),
+    };
+
+    WorkspaceSavePreview {
+        mode,
+        original_workdir: matches!(editor.mode, EditorMode::Edit { .. })
+            .then(|| crate::tui::shorten_home(&editor.original.workdir)),
+        pending_workdir: crate::tui::shorten_home(&editor.pending.workdir),
+        mount_diffs,
+        original_allowed_roles: editor.original.allowed_roles.clone(),
+        pending_allowed_roles: editor.pending.allowed_roles.clone(),
+        role_count: config.roles.len(),
+        original_default_role: editor.original.default_role.clone(),
+        pending_default_role: editor.pending.default_role.clone(),
+        original_keep_awake: editor.original.keep_awake.enabled,
+        pending_keep_awake: editor.pending.keep_awake.enabled,
+        original_git_pull: editor.original.git_pull_on_entry,
+        pending_git_pull: editor.pending.git_pull_on_entry,
+        env_original: workspace_env_preview(&editor.original),
+        env_pending: workspace_env_preview(&editor.pending),
+        collapse_lines: collapse_lines.to_vec(),
     }
-    editor.pending.allowed_roles.join(", ")
 }
 
-/// Per-role sections are prefixed with `  <role>:` so a single
-/// "Env vars:" heading hosts both workspace and override deltas.
-fn env_diff_lines(
-    original: &crate::workspace::WorkspaceConfig,
-    pending: &crate::workspace::WorkspaceConfig,
-    value: ratatui::style::Style,
-    dim: ratatui::style::Style,
-) -> Vec<ratatui::text::Line<'static>> {
-    use ratatui::text::{Line, Span};
-    let mut out: Vec<Line<'static>> = Vec::new();
-
-    append_env_map_diff_lines(&mut out, None, &original.env, &pending.env, value, dim);
-
-    let agent_keys: std::collections::BTreeSet<&String> =
-        original.roles.keys().chain(pending.roles.keys()).collect();
-    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-    for role in agent_keys {
-        let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
-        let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
-        // Pre-check if there are any deltas for this role; only emit
-        // the role header when there are.
-        let mut probe: Vec<Line<'static>> = Vec::new();
-        append_env_map_diff_lines(&mut probe, None, orig_env, pend_env, value, dim);
-        if !probe.is_empty() {
-            out.push(Line::from(Span::styled(format!("  role {role}:"), value)));
-            append_env_map_diff_lines(&mut out, Some("  "), orig_env, pend_env, value, dim);
-        }
+fn workspace_env_preview(
+    workspace: &crate::workspace::WorkspaceConfig,
+) -> jackin_console::tui::components::save_preview::SettingsEnvPreview {
+    jackin_console::tui::components::save_preview::SettingsEnvPreview {
+        env: env_display_map(&workspace.env),
+        roles: workspace
+            .roles
+            .iter()
+            .map(|(role, config)| (role.clone(), env_display_map(&config.env)))
+            .collect(),
     }
-    out
 }
 
 /// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
 /// two env maps. `indent` (`None` or `Some("  ")`) controls per-role
 /// sub-indent — workspace-level lines use two spaces to match existing
 /// diff styling; per-role lines nest one extra level.
+#[cfg(test)]
 pub(crate) fn append_env_map_diff_lines(
     out: &mut Vec<ratatui::text::Line<'static>>,
     indent: Option<&str>,
@@ -320,22 +135,11 @@ pub(crate) fn append_env_map_diff_lines(
     value: ratatui::style::Style,
     dim: ratatui::style::Style,
 ) {
-    use ratatui::text::{Line, Span};
-    let prefix = indent.unwrap_or("");
-    for (k, v) in pending {
-        match original.get(k) {
-            Some(ov) if ov == v => {}
-            _ => out.push(Line::from(Span::styled(
-                format!("{prefix}  + {k} = {}", v.as_display_str()),
-                value,
-            ))),
-        }
-    }
-    for k in original.keys() {
-        if !pending.contains_key(k) {
-            out.push(Line::from(Span::styled(format!("{prefix}  - {k}"), dim)));
-        }
-    }
+    let original = env_display_map(original);
+    let pending = env_display_map(pending);
+    jackin_console::tui::components::save_preview::append_env_map_diff_lines(
+        out, indent, &original, &pending, value, dim,
+    );
 }
 
 pub(crate) fn collapse_section_lines(
