@@ -27,10 +27,22 @@ use jackin_tui::runtime::{
 };
 
 pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};
-pub use crate::console::manager::mount_info_cache::MountInfoCache;
 pub use crate::console::manager::workspace_summary::WorkspaceSummary;
 use crate::console::manager::workspace_summary::workspace_summary_from_config;
+pub use jackin_console::mount_info_cache::MountInfoCache;
 pub use jackin_console::workspaces::state::ManagerListRow;
+
+impl jackin_console::mount_info_cache::MountSource for crate::workspace::MountConfig {
+    fn mount_src(&self) -> &str {
+        &self.src
+    }
+}
+
+impl jackin_console::mount_info_cache::MountSource for crate::config::GlobalMountRow {
+    fn mount_src(&self) -> &str {
+        &self.mount.src
+    }
+}
 
 /// Provider picker bound to its follow-up context.
 ///

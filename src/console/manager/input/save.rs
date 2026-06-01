@@ -814,7 +814,7 @@ fn build_confirm_save_lines(
 
 fn mount_summary(
     m: &crate::workspace::MountConfig,
-    cache: &super::super::mount_info_cache::MountInfoCache,
+    cache: &jackin_console::mount_info_cache::MountInfoCache,
 ) -> String {
     let dst = crate::tui::shorten_home(&m.dst);
     let rw = if m.readonly { "ro" } else { "rw" };
