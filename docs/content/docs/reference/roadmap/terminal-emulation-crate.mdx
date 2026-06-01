@@ -96,11 +96,12 @@ Verification against the actual crate landscape says **no, not directly** — an
 | **[`vt100`](https://crates.io/crates/vt100)** (doy) | own state machine | `Screen` of fat cells, `Vec<Row>` | **Yes** — `contents_diff` / `contents_formatted` | crates.io 0.16.x; **upstream stalled (last push Jul 2025, 10 open PRs)** | single author, low activity | Native fit, but forced-fork forever and unoptimized emit |
 | **[`alacritty_terminal`](https://crates.io/crates/alacritty_terminal)** | [`vte`](https://github.com/alacritty/vte) | `Term<T>` + ring-buffer `Grid`/`Storage`, line-level damage | **No** — built to feed a GPU; no escape emit | crates.io, but documents **no public-API stability guarantee** | multi-maintainer, active | Fastest parse/model, but **we'd build the entire emit stage ourselves**, and the API can break on `cargo update` — a *different* unstable-upstream problem, not a fix for ours |
 | **[`wezterm-term`](https://github.com/wezterm/wezterm)** / **[`termwiz`](https://docs.rs/termwiz)** | own (termwiz) | full `Surface` model, scrollback, OSC 8, images | **Yes** — `Surface`/`Change` diff | `termwiz` published; **`wezterm-term` not published** ([#6663](https://github.com/wezterm/wezterm/issues/6663)) | multi-maintainer, active | The strongest "buy": has both a model and a diff-emit. Heavy dep tree; `wezterm-term` would itself be a git dep. **Must be evaluated before any build.** |
-| **[Rio](https://github.com/raphamorim/rio)** (`rio-backend` + [`copa`](https://lib.rs/crates/copa)) | `copa` (Alacritty `vte` fork) | `Crosswords` grid, GPU/WebGPU, SIMD UTF-8 | **No** — GPU present | on crates.io but **app-internal infra**; `copa` stale (0.12.0, 2023) | single primary author | GPU app backend, no emit stage, less stable than Alacritty for our purpose |
+| **[Rio](https://github.com/raphamorim/rio)** (`rio-backend` + [`copa`](https://crates.io/crates/copa)) | `copa` (Alacritty `vte` fork) | `Crosswords` grid, GPU/WebGPU, SIMD UTF-8 | **No** — GPU present | on crates.io but **app-internal infra**; `copa` stale (0.12.0, 2023) | single primary author | GPU app backend, no emit stage, less stable than Alacritty for our purpose |
 | **[`avt`](https://github.com/asciinema/avt)** (asciinema) | own | primary/alt grid | **Partial** — full-screen `dump()`, no incremental diff, no live OSC callbacks | crates.io | asciinema org | Record/replay shape, not interactive multiplexing |
 | **[libvterm](https://www.leonerd.org.uk/code/libvterm/)** (LeoNerd, C) | own (C) | abstract VT220/xterm state, **damage callbacks** | **No** — gives damage regions; the host renders/re-emits itself | C library, maintained; **[neovim fork](https://github.com/neovim/libvterm)** | active (C); Rust bindings dead | **Ruled out — non-Rust.** Idea source only: a battle-tested damage-callback model. We do not link C. |
 | **[`tui-term`](https://github.com/a-kenji/tui-term)** (a-kenji) | wraps `vt100` | `vt100::Screen` | **No** — renders a **ratatui `Buffer`**, not escape bytes | crates.io, 0.3.x (Apr 2026), active | single author | A ratatui *widget*, not a model — wraps `vt100` and paints into a ratatui buffer. Wrong direction (no re-emit). Useful only as ecosystem confirmation that `vt100` is the default model, and as a reference if the capsule ever moves to ratatui (see TUI architecture item). |
 | **[Ghostty](https://github.com/ghostty-org/ghostty)** / **[libghostty-vt](https://biggo.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation)** (Zig, MIT) | own SIMD parser | **`PageList`** — pooled arena pages, offset-addressed cells, `RefCountedSet` style interning, grapheme side-map | **No** — GPU renderer; `libghostty-vt` exposes state, not re-emit | 2025 Zig embeddable API, very active | Mitchell Hashimoto + community | **Ruled out as a dependency — non-Rust (Zig).** But it has the **best memory model surveyed**, MIT-licensed, so we **re-implement its patterns in Rust** inside `jackin-term`. Idea theft only, detailed below. |
+| **[Zellij](https://github.com/zellij-org/zellij)** (Rust) | **`vte`** (its `Grid` impls `vte::Perform`) | own `Grid` — viewport + scrollback + cursor + styles | **Yes** — `OutputBuffer` damage-tracks and emits ANSI only for changed cells/attrs | **not published** — lives app-internal in `zellij-server/src/panes/` | multi-maintainer, active | **The closest prior art and the strongest validation.** A pure-Rust re-emit multiplexer that solves *our exact problem* with *our exact architecture* (`vte` + own grid + damage-tracked ANSI emit). It hand-rolled the grid because no crate fit, and never extracted it — so we cannot depend on it, but it proves the design works and is the best reference target. |
 | **[`vte`](https://crates.io/crates/vte)** (alacritty) | the canonical parser (`Perform`) | none | n/a | crates.io, stable, canonical | multi-maintainer | **The reusable foundation — depend on it, never rebuild the parser** |
 
 What the comparison proves:
@@ -173,6 +174,61 @@ Ghostty is **not a candidate dependency** — it is Zig, and the pure-Rust const
 5. **Serial numbers + pins for invalidation.** Monotonic page serials detect stale references without requiring pointer stability, and a `PinSet` keeps cursor/scrollback anchors correct across mutations. This is the principled replacement for the capsule's current ad-hoc `scrollback_offset` + `inline_scrollback` bookkeeping in <RepoFile path="crates/jackin-capsule/src/session.rs" />.
 
 What Ghostty does **not** give us is the one thing that matters most — the wire-emit stage — which reconfirms the survey's central finding: the memory model is borrowable from the best in the field, but the diff-to-escape present stage is ours to write no matter which engine we study.
+
+## The synthesis — one library, best of all worlds
+
+This is the heart of the proposal. `jackin-term` is not "yet another terminal emulator." It is a deliberate **assembly of the single best idea from each project**, each chosen because it serves the one job the capsule actually does: re-emit a focused PTY's screen to a host terminal with the fewest bytes, the least allocation, and the cleanest passthrough. Every borrowed idea is either a Rust crate we depend on, a pattern we re-implement in Rust (with attribution), or a correctness reference — never a foreign binding.
+
+### The borrow ledger — what each project contributes
+
+| Source | The one idea worth taking | What it buys jackin' | How we take it |
+| --- | --- | --- | --- |
+| **`vte`** (Alacritty) | The canonical Williams-state-machine parser with the `Perform` trait. | A fast, correct, UTF-8-aware byte→event front end we never have to write or maintain. | **Depend** (the one external Rust crate at the core). |
+| **`vt100`** (doy) | The **re-emit model**: `contents_diff` / `contents_formatted` serialize a screen back to the *minimal* escape sequence; plus the `Callbacks` interception shape. | The only off-the-shelf implementation of our actual hot stage — proof the diff-to-escape approach is right, and a baseline to beat. | **Re-implement and evolve** into `WireDiff` (damage-driven, not full-screen compare) + typed events. |
+| **Zellij** | The **`OutputBuffer`**: damage-track the grid and emit ANSI only for cells/attributes that changed since the last character. | Independent validation that a pure-Rust `vte` + own-grid + damage-emit multiplexer works and is fast — our exact architecture, shipping in production. | **Reference** (not published; we re-implement the pattern and benchmark against it). |
+| **Alacritty (`alacritty_terminal`)** | The **ring-buffer `Storage` grid**: O(1) scroll, packed cache-friendly `Cell`, line-level damage. | Cheap scroll and mutation without per-row copying. | **Re-implement the idea** (superseded by Ghostty's pages where they go further). |
+| **Ghostty** | The **`PageList` memory model**: pooled arena pages, `RefCountedSet` style interning, grapheme side-map, offset addressing, serial+pin invalidation. | Best-in-field memory economy: near-zero per-cell allocation, cheap huge scrollback, a relocatable store that makes the multi-session arena real. | **Re-implement in Rust** (MIT, with attribution). |
+| **libvterm** | The **damage-callback discipline** and an exhaustive VT-coverage checklist (DEC modes, mouse encodings, query responses). | A correctness reference for what passthrough/state must be first-class so nothing silently drops. | **Reference only** (non-Rust; never linked). |
+| **`termwiz`** | The **`Surface`/`Change` diff API** ergonomics and emit completeness. | Either the "buy" that ends the project, or a target for how a Rust diff-emit API should feel. | **Depend if the buy-gate passes; else reference.** |
+| **`avt`** (asciinema) | Full-screen `dump()` **serialization** of a screen to text/escapes. | A snapshot/record primitive that feeds the [terminal observation](/reference/roadmap/terminal-observation-automation/) item. | **Re-implement the small piece** when that surface needs it. |
+| **Rio (`copa`)** | **SIMD UTF-8 validation** with runtime CPU-feature detection (`simdutf8`). | Parse-throughput headroom *if* profiling ever shows a parse wall. | **Optional borrow** (likely unnecessary; `vte` already handles UTF-8). |
+
+### Prior art for the use case — and why the niche is still open
+
+We are explicitly not the first to need this. The *use case* — a terminal multiplexer that re-emits a pane to a host terminal — has three notable solvers:
+
+- **Zellij (Rust)** — the closest. It built precisely `vte` + own `Grid` + `OutputBuffer` damage-emit, and **had to hand-roll the grid because no crate fit**. It never extracted that work into a reusable library; it lives inside `zellij-server`. Aram Drevekenin's [performance write-up](https://poor.dev/blog/performance/) is essentially a field report on optimizing the exact stage `jackin-term` targets.
+- **tmux (C)** — the canonical multiplexer; its grid + redraw logic is hand-rolled C, not reusable from Rust.
+- **WezTerm mux (Rust)** — uses `termwiz`'s `Surface`/`Change` model for its multiplexer, the one published Rust path that already has a diff-emit.
+
+The pattern across all three: **the re-emit-multiplexer terminal model is always either hand-rolled and locked inside an application (Zellij, tmux) or available only as part of a heavier surface (`termwiz`).** No one has published a small, focused, pure-Rust crate whose single job is "model a PTY screen and re-emit it to a host terminal with minimal bytes." That gap is exactly the shape of `jackin-term`. If we build it, it is plausibly the first reusable crate of its kind — which is why an open question below asks whether it should ship publicly and feed the broader ecosystem, not stay capsule-private.
+
+### The final shape
+
+Putting the ledger together, `jackin-term` is:
+
+```text
+vte (depend)                         ← parse: bytes → events, zero-copy
+   ▼
+PageList-style arena grid            ← model: Ghostty memory + Alacritty packing,
+   │  + RefCountedSet style interning   re-implemented in Rust, damage recorded
+   │  + source-recorded dirty spans     as bytes arrive (Zellij OutputBuffer +
+   │                                     libvterm damage discipline)
+   ▼
+Typed PassthroughEvents              ← supersede vt100 Callbacks + the capsule's
+   │                                     OscCapture: title/icon/clipboard/kitty/
+   │                                     focus/cwd/csi/scrollback as first-class
+   ▼
+WireDiff                             ← present: vt100's minimal-escape idea, but
+   │                                     damage-driven and wire-byte-tuned, into a
+   │                                     reused buffer (zero per-frame alloc),
+   │                                     DEC ?2026 synchronized, frame-coalesced
+   ▼
++ avt-style dump()                   ← snapshot/record for the observation item
++ multi-session arena                ← Ghostty offset addressing → cheap N panes
+```
+
+Each layer names its source. Nothing here is invented for novelty; every piece is the best existing answer to a sub-problem, re-assembled in Rust around the one sub-problem nobody else packages: **minimal-byte re-emission to a host terminal.** Whether that assembly is worth building rather than borrowing `termwiz` or staying on `vt100` is what the experiments below decide.
 
 ## How we verify the concept — the experiments
 
