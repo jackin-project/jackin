@@ -27,6 +27,9 @@ use jackin_console::tui::screens::settings::update::{
     set_role_expanded as set_settings_role_expanded, step_cursor_down_by, step_cursor_up_by,
     toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
+use jackin_console::tui::screens::workspaces::view::{
+    instance_purge_confirm_state, workspace_delete_confirm_state,
+};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -439,19 +442,16 @@ const fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
 
 fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {
     state.stage = ManagerStage::ConfirmDelete {
-        state: jackin_tui::components::ConfirmState::new(format!("Delete \"{name}\"?")),
+        state: workspace_delete_confirm_state(&name),
         name,
     };
 }
 
 fn enter_confirm_instance_purge(state: &mut ManagerState<'_>, container: String, label: String) {
-    let prompt = format!(
-        "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
-    );
     state.stage = ManagerStage::ConfirmInstancePurge {
         container,
+        state: instance_purge_confirm_state(&label),
         label,
-        state: jackin_tui::components::ConfirmState::new(prompt),
     };
 }
 
