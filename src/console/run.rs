@@ -573,6 +573,20 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 action,
                             }));
                         }
+                        manager::InputOutcome::OpenUrl(url) => {
+                            if let Err(e) = crate::console::services::browser::open_url(&url)
+                                && let ConsoleStage::Manager(ms) = &mut state.stage
+                            {
+                                let _ = manager::update_manager(
+                                    ms,
+                                    manager::ManagerMessage::OpenListErrorPopup {
+                                        title: "Failed to open URL".into(),
+                                        message: format!("{e}"),
+                                    },
+                                );
+                                needs_redraw = true;
+                            }
+                        }
                     }
                 }
                 Event::Mouse(mouse) => {

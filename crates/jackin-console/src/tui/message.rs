@@ -41,6 +41,9 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
         container: String,
         action: InstanceAction,
     },
+    /// Open an external URL. The root run loop executes this because browser
+    /// launching is a host-side side effect, not input/update work.
+    OpenUrl(String),
     /// Operator selected an agent and provider for a new session.
     NewSessionWithProvider {
         container: String,

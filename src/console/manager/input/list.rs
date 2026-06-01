@@ -181,10 +181,7 @@ pub(super) fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('o' | 'O') => {
-            handle_list_open_in_github(state, config);
-            Ok(InputOutcome::Continue)
-        }
+        KeyCode::Char('o' | 'O') => Ok(handle_list_open_in_github(state, config)),
         KeyCode::Char('r' | 'R') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Reconnect,
@@ -493,29 +490,19 @@ const fn instance_action_accepts_status(
 }
 
 /// Dispatch the `o` key on the workspace list view.
-fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) {
+fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) -> InputOutcome {
     // Silent no-op when there is no workspace or no GitHub URLs — the hint is
     // already suppressed in those cases so the operator never sees the key.
     let Some(summary) = state.selected_workspace_summary() else {
-        return;
+        return InputOutcome::Continue;
     };
     let Some(ws) = config.workspaces.get(&summary.name) else {
-        return;
+        return InputOutcome::Continue;
     };
     let choices = jackin_console::github_mounts::resolve_for_workspace(ws);
     match choices.len() {
-        0 => {}
-        1 => {
-            if let Err(e) = crate::console::services::browser::open_url(&choices[0].url) {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::OpenListErrorPopup {
-                        title: "Failed to open URL".into(),
-                        message: format!("{e}"),
-                    },
-                );
-            }
-        }
+        0 => InputOutcome::Continue,
+        1 => InputOutcome::OpenUrl(choices[0].url.clone()),
         _ => {
             dispatch_manager(
                 state,
@@ -525,6 +512,7 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
                     ),
                 },
             );
+            InputOutcome::Continue
         }
     }
 }
@@ -538,16 +526,7 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
         Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(url) => {
                 dispatch_manager(state, ManagerMessage::DismissListModal);
-                if let Err(e) = crate::console::services::browser::open_url(&url) {
-                    dispatch_manager(
-                        state,
-                        ManagerMessage::OpenListErrorPopup {
-                            title: "Failed to open URL".into(),
-                            message: format!("{e}"),
-                        },
-                    );
-                }
-                InputOutcome::Continue
+                InputOutcome::OpenUrl(url)
             }
             ModalOutcome::Cancel => {
                 dispatch_manager(state, ManagerMessage::DismissListModal);
@@ -1574,18 +1553,31 @@ mod tests {
 
     #[test]
     fn list_o_with_single_github_mount_has_one_resolved_url() {
-        // Resolver-side check — we can't cleanly assert `open::that_detached`
-        // ran, but we can pin that there's exactly one URL to hand to it so
-        // the 1-mount branch's immediate-open path is taken.
+        // Input emits a typed URL-open outcome; browser side effects stay in
+        // the run loop.
         let tmp = tempfile::tempdir().unwrap();
         let repo = make_github_repo(tmp.path(), "solo", "trunk");
         let ws = WorkspaceConfig {
             mounts: vec![mount(repo.to_str().unwrap(), "/solo")],
             ..WorkspaceConfig::default()
         };
-        let choices = jackin_console::github_mounts::resolve_for_workspace(&ws);
-        assert_eq!(choices.len(), 1);
-        assert_eq!(choices[0].url, "https://github.com/owner/solo/tree/trunk");
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('o')),
+        )
+        .unwrap();
+
+        match outcome {
+            InputOutcome::OpenUrl(url) => {
+                assert_eq!(url, "https://github.com/owner/solo/tree/trunk");
+            }
+            other => panic!("expected OpenUrl outcome, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1695,7 +1687,7 @@ mod tests {
             }]),
         });
 
-        handle_key(
+        let outcome = handle_key(
             &mut state,
             &mut config,
             &paths,
@@ -1704,12 +1696,16 @@ mod tests {
         )
         .unwrap();
 
-        // Modal is either closed (open succeeded) or shows ErrorPopup (open failed).
-        // Either way, GithubPicker is gone.
+        // Browser side effects are no longer executed in the input handler.
+        // The modal closes and returns a URL-open outcome for the run loop.
         assert!(
             !matches!(state.list_modal, Some(Modal::GithubPicker { .. })),
             "GithubPicker must be gone after Enter"
         );
+        match outcome {
+            InputOutcome::OpenUrl(url) => assert_eq!(url, "file:///dev/null"),
+            other => panic!("expected OpenUrl outcome, got {other:?}"),
+        }
     }
 
     #[test]
