@@ -3,7 +3,8 @@
 use super::model::{EditorTab, SecretsScopeTag};
 use crate::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
-    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+    AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
+    render_secret_key_line,
 };
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
@@ -22,21 +23,13 @@ pub struct EditorRoleRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EditorAuthSourceDisplay {
-    NotRequired,
-    OpRefPath(String),
-    MaskedPlain { chars: usize },
-    Unset { env_name: String, mode_label: String },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorAuthLineRow {
     AuthKind { label: String },
     WorkspaceMode { mode_label: String, inherited: bool },
-    WorkspaceSource { display: EditorAuthSourceDisplay },
+    WorkspaceSource { display: AuthSourceDisplay },
     RoleHeader { role: String, expanded: bool },
     RoleMode { mode_label: String },
-    RoleSource { display: EditorAuthSourceDisplay },
+    RoleSource { display: AuthSourceDisplay },
     AddSentinel { eligible: usize },
     Spacer,
 }
@@ -449,7 +442,7 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
 
 fn render_auth_source_line(
     label: &str,
-    display: &EditorAuthSourceDisplay,
+    display: &AuthSourceDisplay,
     indent: usize,
 ) -> Line<'static> {
     let label_width = if indent == 0 { 14 } else { 12 };
@@ -464,26 +457,26 @@ fn render_auth_source_line(
     ];
 
     match display {
-        EditorAuthSourceDisplay::NotRequired => {
+        AuthSourceDisplay::NotRequired => {
             spans.push(Span::styled(
                 "not required",
                 Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
             ));
         }
-        EditorAuthSourceDisplay::OpRefPath(path) => {
+        AuthSourceDisplay::OpRefPath(path) => {
             spans.push(Span::styled(
                 "[op] ",
                 Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
             ));
             crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, path);
         }
-        EditorAuthSourceDisplay::MaskedPlain { chars } => {
+        AuthSourceDisplay::MaskedPlain { chars } => {
             spans.push(Span::styled(
                 "\u{25cf}".repeat((*chars).clamp(1, 12)),
                 Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
             ));
         }
-        EditorAuthSourceDisplay::Unset {
+        AuthSourceDisplay::Unset {
             env_name,
             mode_label,
         } => {
@@ -685,7 +678,7 @@ mod tests {
                 inherited: true,
             },
             EditorAuthLineRow::WorkspaceSource {
-                display: EditorAuthSourceDisplay::Unset {
+                display: AuthSourceDisplay::Unset {
                     env_name: "CLAUDE_API_KEY".to_string(),
                     mode_label: "api-key".to_string(),
                 },

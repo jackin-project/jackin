@@ -316,6 +316,8 @@ Workspace and settings mount-row footer hint blocks now live with console-local 
 
 Workspace-secret and settings-environment footer hint fragments now also live in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer code decides whether the focused row is plain, `op://`, add sentinel, or role header, then delegates the shared hint labels and ordering to crate-owned helpers.
 
+Shared editor/settings auth-source display vocabulary now lives with the shared row helpers in <RepoFile path="crates/jackin-console/src/tui/components/editor_rows.rs" /> so screen views can render masked literals, `op://` breadcrumbs, unset credentials, and "not required" rows from root-supplied display facts.
+
 1. **Classify existing modules.** For each root-level file in the three surface crates, decide whether it is TUI, pure non-visual domain logic, or side-effect/service/runtime logic.
 2. **Capture the current behavior before moving code.** Identify the existing tests, snapshots, and manual-smoke checks that prove the affected workflow. Add focused coverage first if a workflow has no useful guard.
 3. **Move TUI files under `src/tui/`.** Preserve behavior while moving files into `app.rs`, `message.rs`, `update.rs`, `effect.rs`, `subscriptions.rs`, `run.rs`, `terminal.rs`, `view.rs`, `components/`, and `screens/` as appropriate.

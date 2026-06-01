@@ -16,6 +16,14 @@ pub enum SecretValueDisplay<'a> {
     OpRefPath(&'a str),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthSourceDisplay {
+    NotRequired,
+    OpRefPath(String),
+    MaskedPlain { chars: usize },
+    Unset { env_name: String, mode_label: String },
+}
+
 #[must_use]
 pub fn action_row_style(selected: bool) -> Style {
     let style = Style::default().fg(ACTION_ACCENT);

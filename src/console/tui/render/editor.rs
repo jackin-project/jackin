@@ -20,10 +20,12 @@ pub(crate) use crate::console::tui::state::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::tui::components::editor_rows::{SecretValueDisplay, render_tab_strip};
+use jackin_console::tui::components::editor_rows::{
+    AuthSourceDisplay, SecretValueDisplay, render_tab_strip,
+};
 use jackin_console::tui::screens::editor::view::{
-    EditorAuthLineRow, EditorAuthSourceDisplay, EditorRoleRow, auth_lines as editor_auth_lines,
-    editor_frame_areas, general_lines as editor_general_lines,
+    EditorAuthLineRow, EditorRoleRow, auth_lines as editor_auth_lines, editor_frame_areas,
+    general_lines as editor_general_lines,
     mount_lines as editor_mount_lines, role_lines as editor_role_lines,
     secret_lines as editor_secret_lines, tab_labels,
 };
@@ -328,24 +330,24 @@ fn auth_source_display(
     workspace_name: &str,
     role: &str,
     kind: jackin_console::tui::auth::AuthKind,
-) -> EditorAuthSourceDisplay {
+) -> AuthSourceDisplay {
     use crate::console::tui::auth_panel::mode_str;
 
     let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
     let env_name = kind.required_env_var(mode);
 
     let Some(env_name) = env_name else {
-        return EditorAuthSourceDisplay::NotRequired;
+        return AuthSourceDisplay::NotRequired;
     };
 
     let value = auth_source_value(synthesized, workspace_name, role, env_name, kind);
 
     match value {
-        Some(EnvValue::OpRef(r)) => EditorAuthSourceDisplay::OpRefPath(r.path.clone()),
-        Some(EnvValue::Plain(s)) if !s.is_empty() => EditorAuthSourceDisplay::MaskedPlain {
+        Some(EnvValue::OpRef(r)) => AuthSourceDisplay::OpRefPath(r.path.clone()),
+        Some(EnvValue::Plain(s)) if !s.is_empty() => AuthSourceDisplay::MaskedPlain {
             chars: s.chars().count(),
         },
-        _ => EditorAuthSourceDisplay::Unset {
+        _ => AuthSourceDisplay::Unset {
             env_name: env_name.to_string(),
             mode_label: mode_str(mode).to_string(),
         },
