@@ -85,6 +85,49 @@ pub const fn auth_mode_from_github(mode: GithubAuthMode) -> AuthMode {
     }
 }
 
+/// Resolve the effective auth mode for the panel via the kind-specific
+/// resolver in `crate::config`. Agent kinds go through `resolve_mode`;
+/// Github routes through `resolve_github_mode`.
+#[must_use]
+pub(crate) fn resolve_panel_mode(
+    cfg: &AppConfig,
+    kind: AuthKind,
+    workspace: &str,
+    role: &str,
+) -> AuthMode {
+    match kind {
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode => {
+            let Some(agent) = auth_kind_agent(kind) else {
+                return AuthMode::Ignore;
+            };
+            let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
+            auth_mode_from_auth_forward(mode)
+        }
+        AuthKind::Github => {
+            let mode = crate::config::resolve_github_mode(cfg, workspace, role);
+            auth_mode_from_github(mode)
+        }
+        AuthKind::Zai => {
+            let key_present = crate::operator_env::lookup_operator_env_raw(
+                cfg,
+                (!role.is_empty()).then_some(role),
+                Some(workspace),
+                crate::env_model::ZAI_API_KEY_ENV_NAME,
+            )
+            .is_some();
+            if key_present {
+                AuthMode::ApiKey
+            } else {
+                AuthMode::Ignore
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct InstanceRefreshSnapshot {
     pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,

@@ -8,11 +8,8 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::domain::InstanceRefreshSnapshot;
-use crate::console::domain::{
-    auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github, role_override_present,
-};
-use jackin_console::tui::auth::{AuthKind, AuthMode};
+use crate::console::domain::{InstanceRefreshSnapshot, role_override_present};
+use jackin_console::tui::auth::AuthKind;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 
@@ -352,50 +349,8 @@ fn effective_mode_needs_credential(
     role: &str,
     kind: AuthKind,
 ) -> bool {
-    let mode = resolve_panel_mode(synthesized, kind, ws_name, role);
+    let mode = crate::console::domain::resolve_panel_mode(synthesized, kind, ws_name, role);
     kind.required_env_var(mode).is_some()
-}
-
-/// Resolve the effective auth mode for the panel via the kind-specific
-/// resolver in `crate::config`. Agent kinds go through `resolve_mode`;
-/// Github routes through `resolve_github_mode`.
-pub(crate) fn resolve_panel_mode(
-    cfg: &AppConfig,
-    kind: AuthKind,
-    workspace: &str,
-    role: &str,
-) -> AuthMode {
-    match kind {
-        AuthKind::Claude
-        | AuthKind::Codex
-        | AuthKind::Amp
-        | AuthKind::Kimi
-        | AuthKind::Opencode => {
-            let Some(agent) = auth_kind_agent(kind) else {
-                return AuthMode::Ignore;
-            };
-            let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
-            auth_mode_from_auth_forward(mode)
-        }
-        AuthKind::Github => {
-            let mode = crate::config::resolve_github_mode(cfg, workspace, role);
-            auth_mode_from_github(mode)
-        }
-        AuthKind::Zai => {
-            let key_present = crate::operator_env::lookup_operator_env_raw(
-                cfg,
-                (!role.is_empty()).then_some(role),
-                Some(workspace),
-                "ZAI_API_KEY",
-            )
-            .is_some();
-            if key_present {
-                AuthMode::ApiKey
-            } else {
-                AuthMode::Ignore
-            }
-        }
-    }
 }
 
 /// Mirrors launch-time semantics from
@@ -1096,32 +1051,7 @@ impl SettingsAuthState {
         .into_iter()
         .map(|kind| SettingsAuthRow {
             kind,
-            mode: match kind {
-                jackin_console::tui::auth::AuthKind::Claude
-                | jackin_console::tui::auth::AuthKind::Codex
-                | jackin_console::tui::auth::AuthKind::Amp
-                | jackin_console::tui::auth::AuthKind::Kimi
-                | jackin_console::tui::auth::AuthKind::Opencode => {
-                    auth_kind_agent(kind).map_or(
-                        jackin_console::tui::auth::AuthMode::Sync,
-                        |agent| {
-                            auth_mode_from_auth_forward(crate::config::resolve_mode(
-                                config, agent, "", "",
-                            ))
-                        },
-                    )
-                }
-                jackin_console::tui::auth::AuthKind::Github => {
-                    auth_mode_from_github(crate::config::resolve_github_mode(config, "", ""))
-                }
-                jackin_console::tui::auth::AuthKind::Zai => {
-                    if config.env.contains_key("ZAI_API_KEY") {
-                        jackin_console::tui::auth::AuthMode::ApiKey
-                    } else {
-                        jackin_console::tui::auth::AuthMode::Ignore
-                    }
-                }
-            },
+            mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
         })
         .collect::<Vec<_>>();
         Self {

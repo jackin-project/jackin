@@ -288,7 +288,7 @@ fn auth_source_width(
     let synthesized = crate::console::tui::state::synthesize_appconfig_for_auth(state, config);
     let workspace_name = crate::console::tui::state::workspace_name_for_panel(state);
     let mode =
-        crate::console::tui::state::resolve_panel_mode(&synthesized, kind, &workspace_name, "");
+        crate::console::domain::resolve_panel_mode(&synthesized, kind, &workspace_name, "");
     let label_width = if indent == 0 { 14 } else { 12 };
     let prefix = indent + text_width(&format!("{label:<label_width$}"));
     let value_width = match kind.required_env_var(mode) {

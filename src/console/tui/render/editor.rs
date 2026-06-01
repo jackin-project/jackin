@@ -6,6 +6,7 @@
 
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE};
 use crate::config::AppConfig;
+use crate::console::domain::resolve_panel_mode;
 use crate::console::tui::render::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
@@ -15,7 +16,7 @@ use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
 pub(crate) use crate::console::tui::state::{
-    auth_flat_rows, resolve_panel_mode, synthesize_appconfig_for_auth, workspace_name_for_panel,
+    auth_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::{
@@ -2267,9 +2268,9 @@ mod eligible_agents_for_override_tests {
 mod auth_flat_rows_tests {
     use super::{AuthRow, auth_flat_rows, resolve_panel_mode};
     use crate::config::AppConfig;
-    use jackin_console::tui::auth::{AuthKind, AuthMode};
     use crate::console::tui::state::EditorState;
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_console::tui::auth::{AuthKind, AuthMode};
 
     #[test]
     fn root_view_lists_auth_kinds_in_design_order() {
