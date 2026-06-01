@@ -104,10 +104,10 @@ The unified TUI scrollbar extraction has shipped: shared metrics, clamping, drag
 
 | Extraction | Current duplication | Files affected | Impact |
 |---|---|---|---|
-| `fn titled_block(title, focused) -> Block` | 18 `Block::default().borders(ALL)` + 15 border_style chains + 13 title constructions (78 total sites) | `render/editor.rs`, `render/list.rs`, `render/global_mounts.rs` | Collapses 78 boilerplate chains |
+| `fn titled_block(title, focused) -> Block` | 18 `Block::default().borders(ALL)` + 15 border_style chains + 13 title constructions (78 total sites) | `render/editor.rs`, `render/list.rs`, `render/settings.rs` | Collapses 78 boilerplate chains |
 | Named style constants (`BOLD_WHITE`, `DIM`, `GREEN`, `BORDER`, `DANGER`) | 296 `Style::default().fg(...)` chains across 22 files; `Style::default().fg(WHITE).add_modifier(BOLD)` alone appears 26+ times | All render files + all widget files + `input/save.rs` | Eliminates 296 inline style constructions |
 | Centralized color palette import | Inline `Color::Rgb(...)` values duplicated in `input/save.rs`, `scope_picker.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `file_browser/render.rs` instead of importing from `console/tui/widgets/mod.rs` | 6+ files | Removes ~20 inline magic color values |
-| `fn app_layout(area) -> Rc<[Rect]>` for header/body/footer | 4 identical `Layout::default()` splits with `[Length(3), Min(..), Length(2)]` | `render/mod.rs`, `render/global_mounts.rs` | Removes 4 duplicate layout constructions |
+| `fn app_layout(area) -> Rc<[Rect]>` for header/body/footer | 4 identical `Layout::default()` splits with `[Length(3), Min(..), Length(2)]` | `render/mod.rs`, `render/settings.rs` | Removes 4 duplicate layout constructions |
 | Deduplicate breadcrumb logic | `push_op_breadcrumb_spans()` at `render/editor.rs:1427` is fully duplicated inline at lines 1058–1091 | `render/editor.rs` | One call replaces ~30 duplicated lines |
 | Extract `config_with_agents` to shared test utility | 4 copies of the same function (3 are byte-for-byte identical in `render/editor.rs`); 1 variant in `input/editor.rs` | `render/editor.rs`, `input/editor.rs` | 4 functions → 1 shared helper |
 
@@ -211,7 +211,7 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 | File | LOC | Note |
 |---|---|---|
 | <RepoFile path="src/instance/manifest.rs" /> | **945** | Per-instance manifest (grew from 851 since the original audit) |
-| <RepoFile path="src/console/tui/render/global_mounts.rs" /> | **893** | Global mounts rendering |
+| <RepoFile path="src/console/tui/render/settings.rs" /> | **893** | Settings rendering |
 | <RepoFile path="src/cli/workspace.rs" /> | **861** | Workspace CLI commands |
 | <RepoFile path="src/config/workspaces.rs" /> | **805** | Per-workspace file parsing / serialization |
 | <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" /> | **802** | Scrollable widget primitive |

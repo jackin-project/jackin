@@ -8,7 +8,7 @@ use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState}
 use jackin_console::tui::view::{render_footer, render_header};
 use jackin_tui::HintSpan;
 
-use super::{centered_rect_fixed, editor, global_mounts, list, modal};
+use super::{centered_rect_fixed, editor, list, modal, settings};
 
 #[allow(clippy::too_many_lines)]
 pub fn render(
@@ -21,7 +21,7 @@ pub fn render(
     if let ManagerStage::Editor(editor) = &state.stage {
         editor::render_editor(frame, area, editor, config, state.op_available);
     } else if let ManagerStage::Settings(settings) = &state.stage {
-        global_mounts::render_settings(frame, area, settings, state.op_available);
+        settings::render_settings(frame, area, settings, state.op_available);
     } else {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -320,11 +320,11 @@ pub fn render(
                     let popup_area = centered_rect_fixed(area, 60, h);
                     jackin_tui::components::render_error_dialog(frame, popup_area, popup);
                 } else if let Some(modal) = &settings.mounts.modal {
-                    global_mounts::render_global_mount_modal(frame, modal);
+                    settings::render_global_mount_modal(frame, modal);
                 } else if let Some(modal) = &settings.env.modal {
-                    global_mounts::render_settings_env_modal(frame, modal);
+                    settings::render_settings_env_modal(frame, modal);
                 } else if let Some(modal) = &settings.auth.modal {
-                    global_mounts::render_settings_auth_modal(frame, modal);
+                    settings::render_settings_auth_modal(frame, modal);
                 }
             }
         }

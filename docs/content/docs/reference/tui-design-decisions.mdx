@@ -931,7 +931,7 @@ jackin' has **one** convention for "add a new thing to this list": a sentinel ro
 
 - `+ New workspace` — list stage (<RepoFile path="src/console/tui/render/list.rs" />)
 - `+ Add role` — workspace editor Roles tab (<RepoFile path="src/console/tui/render/editor.rs" />)
-- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/tui/render/global_mounts.rs" />)
+- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/tui/render/settings.rs" />)
 - `+ Override for a role` — Auth tab per-role override
 
 Selecting a creation sentinel opens the next step in the flow — usually the **text input box** to name the new thing, or a two-button choice. Any new "add an item to this list" affordance MUST render as a `+ ` sentinel row in the same position and style, and MUST route its selection through the text input box (for naming) or a picker (for choosing). Do not invent a different add-affordance (no separate "New…" button floating elsewhere, no key-only shortcut without a visible row).
