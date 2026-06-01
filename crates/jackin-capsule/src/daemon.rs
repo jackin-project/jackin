@@ -81,6 +81,10 @@ use crate::tui::selection::{
     SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,
     selection_was_dragged,
 };
+use crate::tui::subscriptions::{
+    GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL,
+    RENDER_TICK_INTERVAL, STATE_TICK_INTERVAL,
+};
 use crate::session::{
     BranchName, GitContext, Oid, PullRequestLookupOutcome, SESSION_ENV_PASSTHROUGH, Session,
     SessionEvent, build_agent_command, build_shell_command,
@@ -325,15 +329,6 @@ const MAX_TABS: usize = 32;
 /// for the same memory-bounding reason.
 const MAX_SESSIONS: usize = 64;
 
-/// One second is quick enough for operator-visible title/chrome updates after
-/// `git checkout` while avoiding a 10Hz daemon wake-up just to inspect local
-/// branch state.
-const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_secs(1);
-/// 60 s keeps the CI-status freshness within one PR turn while
-/// staying well under `gh`'s default secondary-rate-limit budget.
-/// The bar is operator-facing chrome, not a live feed.
-const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: Duration = Duration::from_secs(60);
-
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
         let (rows, cols) = normalize_size(rows, cols);
@@ -470,13 +465,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
-    let mut state_ticker = interval(Duration::from_secs(1));
-    // Render ticker: ~30 fps. Coalesces PTY-output bursts into one
-    // frame per tick. With 4+ panes producing output continuously,
-    // composing immediately on every event spent more time emitting
-    // SGR bytes than the client could draw, which read as visible
-    // multiplexer lag. zellij uses the same coalescing pattern.
-    let mut render_ticker = interval(Duration::from_millis(33));
+    let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    let mut render_ticker = interval(RENDER_TICK_INTERVAL);
     render_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
