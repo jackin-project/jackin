@@ -17,6 +17,7 @@ use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
 use jackin_console::services::file_browser::open_git_url;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::screens::settings::view::{env_forbidden_label, env_scope_label};
 use jackin_tui::components::{ConfirmState, TextInputState};
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
@@ -1377,10 +1378,7 @@ pub(super) fn handle_settings_env_modal(
                     Some((scope, None)) => {
                         env.pending_picker_value =
                             Some(crate::operator_env::EnvValue::OpRef(op_ref));
-                        let label = format!(
-                            "New environment key for {}",
-                            settings_env_scope_label(&scope)
-                        );
+                        let label = format!("New environment key for {}", env_scope_label(&scope));
                         let state = settings_env_key_input_state(env, &scope, label, "");
                         env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
                         env.open_sub_modal(SettingsEnvModal::Text {
@@ -1930,7 +1928,10 @@ fn open_settings_env_picker_modal(
 }
 
 fn delete_selected_settings_env(env: &mut super::super::state::SettingsEnvState<'_>) {
-    let rows = settings_env_rows_from_env(env);
+    let rows = jackin_console::tui::screens::settings::update::settings_env_flat_rows(
+        &env.pending,
+        &env.expanded,
+    );
     if let Some(SettingsEnvRow::Key { scope, key }) = rows.get(env.selected).cloned() {
         match scope {
             SettingsEnvScope::Global => {
@@ -1942,49 +1943,13 @@ fn delete_selected_settings_env(env: &mut super::super::state::SettingsEnvState<
                 }
             }
         }
-        let row_count = settings_env_rows_from_env(env).len();
+        let row_count = jackin_console::tui::screens::settings::update::settings_env_flat_rows(
+            &env.pending,
+            &env.expanded,
+        )
+        .len();
         env.selected = env.selected.min(row_count.saturating_sub(1));
     }
-}
-
-fn settings_env_rows_from_env(
-    env: &super::super::state::SettingsEnvState<'_>,
-) -> Vec<SettingsEnvRow> {
-    let mut rows = Vec::new();
-    for key in env.pending.env.keys() {
-        rows.push(SettingsEnvRow::Key {
-            scope: SettingsEnvScope::Global,
-            key: key.clone(),
-        });
-    }
-    if !env.pending.env.is_empty() {
-        rows.push(SettingsEnvRow::SectionSpacer);
-    }
-    rows.push(SettingsEnvRow::GlobalAddSentinel);
-    for (role, role_env) in &env.pending.roles {
-        if role_env.is_empty() {
-            continue;
-        }
-        rows.push(SettingsEnvRow::SectionSpacer);
-        let expanded = env.expanded.contains(role);
-        rows.push(SettingsEnvRow::RoleHeader {
-            role: role.clone(),
-            expanded,
-        });
-        if expanded {
-            if let Some(role_env) = env.pending.roles.get(role) {
-                for key in role_env.keys() {
-                    rows.push(SettingsEnvRow::Key {
-                        scope: SettingsEnvScope::Role(role.clone()),
-                        key: key.clone(),
-                    });
-                }
-            }
-            rows.push(SettingsEnvRow::SectionSpacer);
-            rows.push(SettingsEnvRow::RoleAddSentinel(role.clone()));
-        }
-    }
-    rows
 }
 
 fn settings_env_value<'a>(
@@ -1999,13 +1964,6 @@ fn settings_env_value<'a>(
             .roles
             .get(role)
             .and_then(|role_env| role_env.get(key)),
-    }
-}
-
-const fn settings_env_scope_label(scope: &SettingsEnvScope) -> &str {
-    match scope {
-        SettingsEnvScope::Global => "global",
-        SettingsEnvScope::Role(role) => role.as_str(),
     }
 }
 
@@ -2024,13 +1982,6 @@ fn forbidden_settings_env_keys(
     }
 }
 
-fn forbidden_settings_env_label(scope: &SettingsEnvScope) -> String {
-    match scope {
-        SettingsEnvScope::Global => "global env".to_string(),
-        SettingsEnvScope::Role(role) => format!("role {role}"),
-    }
-}
-
 fn settings_env_key_input_state<'a>(
     env: &super::super::state::SettingsEnvState<'_>,
     scope: &SettingsEnvScope,
@@ -2039,7 +1990,7 @@ fn settings_env_key_input_state<'a>(
 ) -> TextInputState<'a> {
     let mut state =
         TextInputState::new_with_forbidden(label, initial, forbidden_settings_env_keys(env, scope));
-    state.forbidden_label = forbidden_settings_env_label(scope);
+    state.forbidden_label = env_forbidden_label(scope);
     state
 }
 
