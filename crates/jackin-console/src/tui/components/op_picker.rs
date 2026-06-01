@@ -379,6 +379,36 @@ pub fn section_stage_commit_plan(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemStageBackPlan {
+    pub stage: OpPickerStage,
+    pub clear_items: bool,
+    pub clear_selected_item: bool,
+}
+
+pub const fn item_stage_back_plan() -> ItemStageBackPlan {
+    ItemStageBackPlan {
+        stage: OpPickerStage::Vault,
+        clear_items: true,
+        clear_selected_item: true,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ItemStageCommitPlan<Item> {
+    ExistingItem(Item),
+    NewItemName,
+    NoSelection,
+}
+
+pub fn item_stage_commit_plan<Item>(picked: Option<Option<Item>>) -> ItemStageCommitPlan<Item> {
+    match picked {
+        Some(Some(item)) => ItemStageCommitPlan::ExistingItem(item),
+        Some(None) => ItemStageCommitPlan::NewItemName,
+        None => ItemStageCommitPlan::NoSelection,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionCollapseIntent {
     Collapse,
     Expand,
@@ -1521,6 +1551,34 @@ mod tests {
         assert_eq!(
             section_stage_commit_plan(Some(3), &choices),
             SectionStageCommitPlan::NoSelection
+        );
+    }
+
+    #[test]
+    fn item_stage_back_plan_returns_to_vault() {
+        assert_eq!(
+            item_stage_back_plan(),
+            ItemStageBackPlan {
+                stage: OpPickerStage::Vault,
+                clear_items: true,
+                clear_selected_item: true,
+            }
+        );
+    }
+
+    #[test]
+    fn item_stage_commit_plan_routes_existing_new_and_empty() {
+        assert_eq!(
+            item_stage_commit_plan(Some(Some("item"))),
+            ItemStageCommitPlan::ExistingItem("item")
+        );
+        assert_eq!(
+            item_stage_commit_plan::<&str>(Some(None)),
+            ItemStageCommitPlan::NewItemName
+        );
+        assert_eq!(
+            item_stage_commit_plan::<&str>(None),
+            ItemStageCommitPlan::NoSelection
         );
     }
 

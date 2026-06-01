@@ -8,10 +8,11 @@ use jackin_tui::ModalOutcome;
 use jackin_tui::components::TextInputState;
 
 use super::{
-    FieldStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError, OpPickerSelection,
-    OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan,
-    build_op_ref_on_commit, field_label_cancel_plan, field_stage_back_plan,
-    field_stage_commit_plan, filter_reset_selection_for_stage, new_item_name_commit_plan,
+    FieldStageCommitPlan, ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError,
+    OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent,
+    SectionStageCommitPlan, build_op_ref_on_commit, field_label_cancel_plan,
+    field_stage_back_plan, field_stage_commit_plan, filter_reset_selection_for_stage,
+    item_stage_back_plan, item_stage_commit_plan, new_item_name_commit_plan,
     new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
     section_stage_commit_plan,
 };
@@ -184,10 +185,15 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Esc => {
-                self.stage = OpPickerStage::Vault;
+                let plan = item_stage_back_plan();
+                self.stage = plan.stage;
                 self.filter_buf.clear();
-                self.items.clear();
-                self.selected_item = None;
+                if plan.clear_items {
+                    self.items.clear();
+                }
+                if plan.clear_selected_item {
+                    self.selected_item = None;
+                }
                 ModalOutcome::Continue
             }
             KeyCode::Up => {
@@ -211,8 +217,8 @@ impl OpPickerState {
                 let picked: Option<Option<OpItem>> =
                     selected_choice(&visible, self.item_list_state.selected)
                         .map(|choice| choice.map(Clone::clone));
-                match picked {
-                    Some(Some(item)) => {
+                match item_stage_commit_plan(picked) {
+                    ItemStageCommitPlan::ExistingItem(item) => {
                         let item_id = item.id.clone();
                         let vault_id = self
                             .selected_vault
@@ -223,10 +229,10 @@ impl OpPickerState {
                         self.selected_item = Some(item);
                         self.start_field_load(item_id, vault_id, account_id);
                     }
-                    Some(None) => {
+                    ItemStageCommitPlan::NewItemName => {
                         self.stage = OpPickerStage::NewItemName;
                     }
-                    None => {}
+                    ItemStageCommitPlan::NoSelection => {}
                 }
                 ModalOutcome::Continue
             }
