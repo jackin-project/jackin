@@ -77,6 +77,21 @@ pub(crate) fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) 
     }
 }
 
+/// True only after the pointer moved away from the anchor cell.
+pub(crate) fn selection_was_dragged(sel: &SelectionState) -> bool {
+    sel.anchor_row != sel.end_row || sel.anchor_col != sel.end_col
+}
+
+/// Clamp a pointer motion event to the selected pane's inner rect and
+/// update the visible selection end-cell.
+pub(crate) fn move_selection_end(sel: &mut SelectionState, row: u16, col: u16) {
+    let inner = sel.inner;
+    let clamped_row = row.clamp(inner.row, inner.row + inner.rows.saturating_sub(1));
+    let clamped_col = col.clamp(inner.col, inner.col + inner.cols.saturating_sub(1));
+    sel.end_row = clamped_row - inner.row;
+    sel.end_col = clamped_col - inner.col;
+}
+
 /// Paint an inverse-video highlight over every cell inside the
 /// selection rectangle. Emitted after pane-body rendering so the
 /// agent's content is preserved underneath — the operator sees the same
@@ -108,5 +123,45 @@ pub(crate) fn paint_selection_highlight(
         let _ =
             std::io::Write::write_fmt(buf, format_args!("\x1b[{};{}H", abs_row + 1, abs_col + 1));
         render_row_range_inverse(buf, row, from_col, to_col, dim);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SelectionState, move_selection_end, selection_was_dragged};
+    use crate::tui::layout::Rect;
+
+    #[test]
+    fn selection_motion_clamps_to_inner_rect() {
+        let mut sel = SelectionState {
+            session_id: 7,
+            inner: Rect::new(10, 20, 5, 8),
+            anchor_row: 1,
+            anchor_col: 2,
+            end_row: 1,
+            end_col: 2,
+        };
+
+        move_selection_end(&mut sel, 99, 99);
+        assert_eq!((sel.end_row, sel.end_col), (4, 7));
+
+        move_selection_end(&mut sel, 0, 0);
+        assert_eq!((sel.end_row, sel.end_col), (0, 0));
+    }
+
+    #[test]
+    fn same_cell_selection_is_not_a_drag() {
+        let mut sel = SelectionState {
+            session_id: 7,
+            inner: Rect::new(10, 20, 5, 8),
+            anchor_row: 1,
+            anchor_col: 2,
+            end_row: 1,
+            end_col: 2,
+        };
+        assert!(!selection_was_dragged(&sel));
+
+        move_selection_end(&mut sel, 12, 24);
+        assert!(selection_was_dragged(&sel));
     }
 }

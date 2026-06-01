@@ -184,11 +184,7 @@ impl Multiplexer {
     /// the pane still produces a reasonable highlight.
     pub(super) fn selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
         let sel = self.selection.as_mut()?;
-        let inner = sel.inner;
-        let clamped_row = row.clamp(inner.row, inner.row + inner.rows.saturating_sub(1));
-        let clamped_col = col.clamp(inner.col, inner.col + inner.cols.saturating_sub(1));
-        sel.end_row = clamped_row - inner.row;
-        sel.end_col = clamped_col - inner.col;
+        move_selection_end(sel, row, col);
         Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
     }
 
@@ -202,8 +198,7 @@ impl Multiplexer {
         // drag motion lands anchor==end and would otherwise OSC 52
         // whatever character sat under the cursor — a silent host-
         // clipboard overwrite on every focus click.
-        let dragged = sel.anchor_row != sel.end_row || sel.anchor_col != sel.end_col;
-        if dragged && let Some(session) = self.sessions.get_mut(&sel.session_id) {
+        if selection_was_dragged(&sel) && let Some(session) = self.sessions.get_mut(&sel.session_id) {
             let rows = session.render_snapshot(sel.inner.rows, sel.inner.cols);
             let text = selection_text(&rows, &sel);
             if !text.is_empty() && self.attached_out.is_some() {
