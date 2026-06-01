@@ -8,8 +8,9 @@ use std::time::Instant;
 
 use crate::tui::components::branch_context_bar::render_branch_context_bar;
 use crate::tui::view::{
-    CapsuleChromeHoverFrame, CapsuleRawDialogOverlay, PaneScrollbar, draw_pane_chrome,
-    hovered_menu, hovered_tab, pane_scrollbar, render_capsule_chrome_hover_frame,
+    CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleRawDialogOverlay, PaneScrollbar,
+    draw_pane_chrome, hovered_menu, hovered_tab, pane_scrollbar,
+    render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
     render_capsule_raw_dialog_overlay,
 };
 
@@ -287,25 +288,22 @@ impl Multiplexer {
         }
 
         let pull_request_loading = self.pull_request_context_loading();
-        render_branch_context_bar(
-            &mut buf,
-            self.term_rows,
-            self.term_cols,
-            self.context_bar_branch(),
-            self.pull_request_context.as_deref(),
-            pull_request_loading,
-            self.status_bar.instance_id_label(),
-            self.hover_target,
-        );
-
-        // Hint bar: one row above the branch context bar.
         let scrollback_active = focused_id
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
-        let hint_spans = crate::tui::dialog::main_view_hint(scrollback_active);
-        // Hint row is 2 above branch context bar (separator row at +1 between them).
-        let hint_row = self.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
-        crate::tui::dialog::render_hint_row(&mut buf, hint_row, self.term_cols, hint_spans);
+        render_capsule_bottom_chrome(
+            &mut buf,
+            CapsuleBottomChrome {
+                term_rows: self.term_rows,
+                term_cols: self.term_cols,
+                branch: self.context_bar_branch(),
+                pull_request: self.pull_request_context.as_deref(),
+                pull_request_loading,
+                instance_id_label: self.status_bar.instance_id_label(),
+                hover_target: self.hover_target,
+                scrollback_active,
+            },
+        );
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
 

@@ -210,6 +210,37 @@ pub(crate) fn render_capsule_raw_dialog_overlay(
     );
 }
 
+pub(crate) struct CapsuleBottomChrome<'a> {
+    pub(crate) term_rows: u16,
+    pub(crate) term_cols: u16,
+    pub(crate) branch: Option<&'a str>,
+    pub(crate) pull_request: Option<&'a PullRequestInfo>,
+    pub(crate) pull_request_loading: bool,
+    pub(crate) instance_id_label: &'a str,
+    pub(crate) hover_target: Option<HoverTarget>,
+    pub(crate) scrollback_active: bool,
+}
+
+pub(crate) fn render_capsule_bottom_chrome(
+    buf: &mut Vec<u8>,
+    view: CapsuleBottomChrome<'_>,
+) {
+    render_branch_context_bar(
+        buf,
+        view.term_rows,
+        view.term_cols,
+        view.branch,
+        view.pull_request,
+        view.pull_request_loading,
+        view.instance_id_label,
+        view.hover_target,
+    );
+
+    let hint_spans = crate::tui::dialog::main_view_hint(view.scrollback_active);
+    let hint_row = view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
+    crate::tui::dialog::render_hint_row(buf, hint_row, view.term_cols, hint_spans);
+}
+
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
     pub(crate) active_tab: usize,
