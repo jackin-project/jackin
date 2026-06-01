@@ -10,7 +10,7 @@ use jackin_tui::components::TextInputState;
 use super::{
     FieldDisplayRow, FieldLabelOrigin, OpField, OpItem, OpLoadState, OpPickerError,
     OpPickerSelection, OpPickerStage, OpPickerState, build_op_ref_on_commit,
-    filter_reset_selection_for_stage,
+    field_stage_back_plan, filter_reset_selection_for_stage,
 };
 
 impl OpPickerState {
@@ -285,16 +285,21 @@ impl OpPickerState {
     /// Section stage (keeping the loaded fields); Browse steps back to Item.
     fn field_stage_back(&mut self) {
         self.filter_buf.clear();
-        if self.mode.is_create() {
-            self.stage = OpPickerStage::Section;
+        let plan = field_stage_back_plan(&self.mode);
+        self.stage = plan.stage;
+        if plan.reset_selected_section {
             self.selected_section = None;
-            // `section_choices()` + the `+ New section` sentinel always
-            // yield at least two rows, so index 0 is always valid.
+        }
+        if plan.reset_section_list {
             self.section_list_state = list_state_for_count(self.section_choices().len() + 1);
-        } else {
-            self.stage = OpPickerStage::Item;
+        }
+        if plan.clear_fields {
             self.fields.clear();
+        }
+        if plan.clear_collapsed_sections {
             self.collapsed_sections.clear();
+        }
+        if plan.clear_selected_item {
             self.selected_item = None;
         }
     }

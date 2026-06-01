@@ -28,13 +28,14 @@ pub(crate) use selection::build_op_ref_on_commit;
 pub use state::OpPickerState;
 
 pub use jackin_console::tui::components::op_picker::{
-    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerCache,
+    FieldDisplayRow, FieldLabelOrigin, FieldStageBackPlan, OpLoadState, OpPickerAccount, OpPickerCache,
     OpPickerError, OpPickerFatalState, OpPickerField, OpPickerFieldRef, OpPickerItem,
     OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode, OpPickerStage,
     OpPickerVault, OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref,
     create_field_display_rows, field_display_rows_for_picker, filtered_accounts, filtered_fields,
     filter_reset_selection_for_stage, filtered_item_choices, filtered_items, filtered_vaults,
-    matches_filter, naming_stage_input_for_stage, section_choices_from_references,
+    field_stage_back_plan, matches_filter, naming_stage_input_for_stage,
+    section_choices_from_references,
 };
 
 pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<

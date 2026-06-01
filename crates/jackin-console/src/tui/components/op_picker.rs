@@ -305,6 +305,38 @@ pub const fn filter_reset_selection_for_stage(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldStageBackPlan {
+    pub stage: OpPickerStage,
+    pub reset_selected_section: bool,
+    pub clear_fields: bool,
+    pub clear_collapsed_sections: bool,
+    pub clear_selected_item: bool,
+    pub reset_section_list: bool,
+}
+
+pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
+    if mode.is_create() {
+        FieldStageBackPlan {
+            stage: OpPickerStage::Section,
+            reset_selected_section: true,
+            clear_fields: false,
+            clear_collapsed_sections: false,
+            clear_selected_item: false,
+            reset_section_list: true,
+        }
+    } else {
+        FieldStageBackPlan {
+            stage: OpPickerStage::Item,
+            reset_selected_section: false,
+            clear_fields: true,
+            clear_collapsed_sections: true,
+            clear_selected_item: true,
+            reset_section_list: false,
+        }
+    }
+}
+
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
@@ -1286,6 +1318,35 @@ mod tests {
         assert_eq!(
             filter_reset_selection_for_stage(OpPickerStage::FieldLabel, 2, 3, 4, 5),
             None
+        );
+    }
+
+    #[test]
+    fn field_stage_back_plan_preserves_create_mode_sections() {
+        assert_eq!(
+            field_stage_back_plan(&OpPickerMode::Create {
+                item_name_default: String::new(),
+                field_label_default: String::new(),
+            }),
+            FieldStageBackPlan {
+                stage: OpPickerStage::Section,
+                reset_selected_section: true,
+                clear_fields: false,
+                clear_collapsed_sections: false,
+                clear_selected_item: false,
+                reset_section_list: true,
+            }
+        );
+        assert_eq!(
+            field_stage_back_plan(&OpPickerMode::Browse),
+            FieldStageBackPlan {
+                stage: OpPickerStage::Item,
+                reset_selected_section: false,
+                clear_fields: true,
+                clear_collapsed_sections: true,
+                clear_selected_item: true,
+                reset_section_list: false,
+            }
         );
     }
 
