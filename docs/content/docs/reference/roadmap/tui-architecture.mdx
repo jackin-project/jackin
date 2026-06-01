@@ -298,6 +298,8 @@ Console debug key-name formatting now lives in <RepoFile path="crates/jackin-con
 
 Editor screen body layout, row-width primitives, and scroll clamping now flow through <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />. Root editor geometry still derives root-specific content widths/heights from workspace config and mount-info cache data, then delegates viewport/body geometry to the screen view helper.
 
+Workspace and settings mount-row footer hint blocks now live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer code decides whether the focused row has a GitHub URL, then delegates the shared hint ordering and labels to the component helper.
+
 1. **Classify existing modules.** For each root-level file in the three surface crates, decide whether it is TUI, pure non-visual domain logic, or side-effect/service/runtime logic.
 2. **Capture the current behavior before moving code.** Identify the existing tests, snapshots, and manual-smoke checks that prove the affected workflow. Add focused coverage first if a workflow has no useful guard.
 3. **Move TUI files under `src/tui/`.** Preserve behavior while moving files into `app.rs`, `message.rs`, `update.rs`, `effect.rs`, `subscriptions.rs`, `run.rs`, `terminal.rs`, `view.rs`, `components/`, and `screens/` as appropriate.

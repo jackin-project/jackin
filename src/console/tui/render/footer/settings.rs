@@ -10,7 +10,9 @@ use crate::console::tui::state::{
     SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::tui::components::footer_hints::{content_footer_items, tab_bar_footer_items};
+use jackin_console::tui::components::footer_hints::{
+    content_footer_items, global_mount_row_footer_items, tab_bar_footer_items,
+};
 
 pub(crate) fn settings_footer_items(
     state: &SettingsState<'_>,
@@ -60,45 +62,16 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
             if cursor == mount_count {
                 vec![HintSpan::Key("↵/A"), HintSpan::Text("add")]
             } else {
-                let mut items = vec![
-                    HintSpan::Key("D"),
-                    HintSpan::Text("remove"),
-                    HintSpan::Sep,
-                    HintSpan::Key("A"),
-                    HintSpan::Text("add"),
-                ];
-                if state
-                    .mounts
-                    .pending
-                    .get(cursor)
-                    .and_then(|row| state.mounts.mount_info_cache.github_web_url(&row.mount.src))
-                    .is_some()
-                {
-                    items.push(HintSpan::Sep);
-                    items.push(HintSpan::Key("O"));
-                    items.push(HintSpan::Text("open in GitHub"));
-                }
-                items.extend([
-                    HintSpan::Sep,
-                    HintSpan::Key("R"),
-                    HintSpan::Text("toggle ro/rw"),
-                    HintSpan::Sep,
-                    HintSpan::Key("N"),
-                    HintSpan::Text("rename"),
-                    HintSpan::Sep,
-                    HintSpan::Key("1"),
-                    HintSpan::Text("edit source"),
-                    HintSpan::Sep,
-                    HintSpan::Key("2"),
-                    HintSpan::Text("edit dst"),
-                    HintSpan::Sep,
-                    HintSpan::Key("3"),
-                    HintSpan::Text("edit scope"),
-                    HintSpan::Sep,
-                    HintSpan::Key("H/L"),
-                    HintSpan::Text("scroll"),
-                ]);
-                items
+                global_mount_row_footer_items(
+                    state
+                        .mounts
+                        .pending
+                        .get(cursor)
+                        .and_then(|row| {
+                            state.mounts.mount_info_cache.github_web_url(&row.mount.src)
+                        })
+                        .is_some(),
+                )
             }
         }
         SettingsTab::Environments => {

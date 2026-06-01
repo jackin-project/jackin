@@ -11,7 +11,9 @@ use crate::console::tui::state::{
     AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::tui::components::footer_hints::{content_footer_items, tab_bar_footer_items};
+use jackin_console::tui::components::footer_hints::{
+    content_footer_items, tab_bar_footer_items, workspace_mount_row_footer_items,
+};
 
 pub(crate) fn editor_footer_items(
     state: &EditorState<'_>,
@@ -65,38 +67,14 @@ pub(crate) fn contextual_row_items(
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
             match cursor.cmp(&mount_count) {
-                Ordering::Less => {
-                    let mut items = vec![
-                        HintSpan::Key("D"),
-                        HintSpan::Text("remove"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                    ];
-                    if state
+                Ordering::Less => workspace_mount_row_footer_items(
+                    state
                         .pending
                         .mounts
                         .get(cursor)
                         .and_then(|m| state.mount_info_cache.github_web_url(&m.src))
-                        .is_some()
-                    {
-                        items.push(HintSpan::Sep);
-                        items.push(HintSpan::Key("O"));
-                        items.push(HintSpan::Text("open in GitHub"));
-                    }
-                    items.extend([
-                        HintSpan::Sep,
-                        HintSpan::Key("R"),
-                        HintSpan::Text("toggle ro/rw"),
-                        HintSpan::Sep,
-                        HintSpan::Key("I"),
-                        HintSpan::Text("cycle isolation"),
-                        HintSpan::Sep,
-                        HintSpan::Key("H/L"),
-                        HintSpan::Text("scroll"),
-                    ]);
-                    items
-                }
+                        .is_some(),
+                ),
                 Ordering::Equal => vec![HintSpan::Key("↵/A"), HintSpan::Text("add")],
                 Ordering::Greater => Vec::new(),
             }

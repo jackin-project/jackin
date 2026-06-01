@@ -206,6 +206,63 @@ pub fn content_footer_items(
 }
 
 #[must_use]
+pub fn workspace_mount_row_footer_items(has_github_url: bool) -> Vec<HintSpan<'static>> {
+    let mut items = vec![
+        HintSpan::Key("D"),
+        HintSpan::Text("remove"),
+        HintSpan::Sep,
+        HintSpan::Key("A"),
+        HintSpan::Text("add"),
+    ];
+    append_open_in_github(&mut items, has_github_url);
+    items.extend([
+        HintSpan::Sep,
+        HintSpan::Key("R"),
+        HintSpan::Text("toggle ro/rw"),
+        HintSpan::Sep,
+        HintSpan::Key("I"),
+        HintSpan::Text("cycle isolation"),
+        HintSpan::Sep,
+        HintSpan::Key("H/L"),
+        HintSpan::Text("scroll"),
+    ]);
+    items
+}
+
+#[must_use]
+pub fn global_mount_row_footer_items(has_github_url: bool) -> Vec<HintSpan<'static>> {
+    let mut items = vec![
+        HintSpan::Key("D"),
+        HintSpan::Text("remove"),
+        HintSpan::Sep,
+        HintSpan::Key("A"),
+        HintSpan::Text("add"),
+    ];
+    append_open_in_github(&mut items, has_github_url);
+    items.extend([
+        HintSpan::Sep,
+        HintSpan::Key("R"),
+        HintSpan::Text("toggle ro/rw"),
+        HintSpan::Sep,
+        HintSpan::Key("N"),
+        HintSpan::Text("rename"),
+        HintSpan::Sep,
+        HintSpan::Key("1"),
+        HintSpan::Text("edit source"),
+        HintSpan::Sep,
+        HintSpan::Key("2"),
+        HintSpan::Text("edit dst"),
+        HintSpan::Sep,
+        HintSpan::Key("3"),
+        HintSpan::Text("edit scope"),
+        HintSpan::Sep,
+        HintSpan::Key("H/L"),
+        HintSpan::Text("scroll"),
+    ]);
+    items
+}
+
+#[must_use]
 pub fn auth_form_footer_items(
     focus: AuthFormFocus,
     shows_credential_block: bool,
@@ -254,6 +311,16 @@ pub fn auth_form_footer_items(
         HintSpan::Text("cancel"),
     ]);
     items
+}
+
+fn append_open_in_github(items: &mut Vec<HintSpan<'static>>, has_github_url: bool) {
+    if has_github_url {
+        items.extend([
+            HintSpan::Sep,
+            HintSpan::Key("O"),
+            HintSpan::Text("open in GitHub"),
+        ]);
+    }
 }
 
 fn append_save_and_escape(
