@@ -563,7 +563,7 @@ fn load_mount_info_entries(
     sources
         .into_iter()
         .map(|src| {
-            let kind = crate::console::manager::mount_info::inspect(&src);
+            let kind = jackin_console::mount_info::inspect(&src);
             (src, kind)
         })
         .collect()

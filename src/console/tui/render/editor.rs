@@ -918,7 +918,7 @@ mod contextual_row_items_tests {
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         editor.mount_info_cache.store_entries([(
             tmp.path().display().to_string(),
-            crate::console::manager::mount_info::inspect(&tmp.path().display().to_string()),
+            jackin_console::mount_info::inspect(&tmp.path().display().to_string()),
         )]);
         let config = AppConfig::default();
         let hint = contextual_row_items(&editor, &config, true);

@@ -2898,7 +2898,7 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
                 mount: mount_display(&m.src, &m.dst),
                 mode: mount_mode(m.readonly),
                 isolation: m.isolation.as_str().to_string(),
-                kind: crate::console::manager::mount_info::inspect(&m.src).label(),
+                kind: jackin_console::mount_info::inspect(&m.src).label(),
             })
             .collect();
         let mut mount_table = Table::new(mount_rows);
