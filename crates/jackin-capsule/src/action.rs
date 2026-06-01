@@ -66,6 +66,11 @@ pub enum Action {
         button: u8,
         press: bool,
     },
+    MouseRelease {
+        row: u16,
+        col: u16,
+        button: u8,
+    },
     PaneData(Vec<u8>),
     StartDragResize {
         row: u16,

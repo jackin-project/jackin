@@ -4119,6 +4119,28 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_mouse_release_ends_drag_resize() {
+        let mut mux = single_pane_tab_mux();
+        mux.drag = Some(DragState {
+            tab_idx: 0,
+            path: Vec::new(),
+            orient: SplitOrient::Horizontal,
+            rect: Rect::new(STATUS_BAR_ROWS, 0, mux.content_rows, mux.term_cols),
+        });
+
+        let frame = mux
+            .apply_action(Action::MouseRelease {
+                row: STATUS_BAR_ROWS,
+                col: 1,
+                button: 0,
+            })
+            .expect("left-button release should redraw layout after drag");
+
+        assert!(mux.drag.is_none(), "drag state should be cleared");
+        assert!(!frame.is_empty(), "layout redraw frame should be emitted");
+    }
+
+    #[test]
     fn apply_action_start_drag_resize_sets_drag_state() {
         let mut mux = split_tab_mux();
         let (row, col) = (0..mux.term_rows)

@@ -442,6 +442,25 @@ impl Multiplexer {
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, press);
                 None
             }
+            Action::MouseRelease { row, col, button } => {
+                // End an in-flight pane resize on left-button release. Drop the
+                // PTY forward so the source agent does not see a half-paired
+                // release in the middle of a drag.
+                if self.drag.is_some() && (button & 0b11) == 0 {
+                    return self.apply_action(Action::EndDragResize);
+                }
+                // Commit any active text selection: copy to clipboard and clear
+                // the highlight.
+                if self.selection.is_some() && (button & 0b11) == 0 {
+                    return self.apply_action(Action::FinalizeSelection);
+                }
+                self.apply_action(Action::ForwardMouse {
+                    row,
+                    col,
+                    button,
+                    press: false,
+                })
+            }
             Action::PaneData(bytes) => {
                 let mut snapped = false;
                 let mut unblocked = false;
@@ -554,23 +573,7 @@ impl Multiplexer {
                 None
             }
             InputEvent::MouseRelease { col, row, button } => {
-                // End an in-flight pane resize on left-button release.
-                // Drop the PTY forward so the source agent does not
-                // see a half-paired release in the middle of a drag.
-                if self.drag.is_some() && (button & 0b11) == 0 {
-                    return self.apply_action(Action::EndDragResize);
-                }
-                // Commit any active text selection: copy to clipboard
-                // and clear the highlight.
-                if self.selection.is_some() && (button & 0b11) == 0 {
-                    return self.apply_action(Action::FinalizeSelection);
-                }
-                self.apply_action(Action::ForwardMouse {
-                    row,
-                    col,
-                    button,
-                    press: false,
-                })
+                self.apply_action(Action::MouseRelease { row, col, button })
             }
             InputEvent::MousePress { col, row, button } if is_wheel_button(button) => {
                 self.apply_action(Action::Wheel { row, col, button })
