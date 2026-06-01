@@ -32,7 +32,7 @@ use jackin_console::tui::components::editor_rows::{
     render_tab_strip,
 };
 use jackin_console::tui::screens::settings::view::{
-    general_lines as settings_general_lines, tab_labels,
+    general_lines as settings_general_lines, tab_labels, trust_lines as settings_trust_lines,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
@@ -394,48 +394,17 @@ fn settings_auth_source_value<'a>(
 }
 
 fn trust_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(Span::styled(
-        "  Role                         Trust      Git",
-        Style::default().fg(WHITE),
-    ))];
-    if state.trust.pending.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  (none)",
-            Style::default().fg(PHOSPHOR_DIM),
-        )));
-    }
     let show_cursor = !state.tab_bar_focused
         && state.trust.scroll_focused
         && state.auth.modal.is_none()
         && state.env.modal.is_none()
         && state.mounts.modal.is_none();
-    for (i, row) in state.trust.pending.iter().enumerate() {
-        let selected = show_cursor && (state.trust.selected == i);
-        let mut style = if selected {
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(PHOSPHOR_GREEN)
-        };
-        // Hover lift: graphite background on the hovered (non-selected) row,
-        // matching the tab/list hover cue.
-        if !selected && state.trust.hovered == Some(i) {
-            style = style.bg(super::TAB_BG_INACTIVE_HOVER);
-        }
-        let prefix = if selected { "▸ " } else { "  " };
-        let trust = if row.trusted { "trusted" } else { "untrusted" };
-        lines.push(Line::from(Span::styled(
-            format!(
-                "{prefix}{:<28} {:<10} {}",
-                truncate(&row.role, 28),
-                trust,
-                row.git // full URL — horizontal scroll handles overflow
-            ),
-            style,
-        )));
-    }
-    lines
+    settings_trust_lines(
+        &state.trust.pending,
+        state.trust.selected,
+        state.trust.hovered,
+        show_cursor,
+    )
 }
 
 pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountModal<'_>) {
@@ -527,15 +496,6 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuth
             crate::console::tui::op_picker::render::render(frame, area, state);
         }
     }
-}
-
-fn truncate(value: &str, width: usize) -> String {
-    let mut out: String = value.chars().take(width).collect();
-    if value.chars().count() > width && width > 1 {
-        out.pop();
-        out.push('…');
-    }
-    out
 }
 
 #[cfg(test)]

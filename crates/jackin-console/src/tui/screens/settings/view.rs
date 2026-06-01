@@ -1,8 +1,9 @@
 //! Settings screen view helpers.
 
-use super::model::SettingsEnvScope;
 use super::model::SettingsAuthRow;
+use super::model::SettingsEnvScope;
 use super::model::SettingsTab;
+use super::model::SettingsTrustRow;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -79,6 +80,59 @@ pub fn general_lines(
         .collect()
 }
 
+#[must_use]
+pub fn trust_lines(
+    rows: &[SettingsTrustRow],
+    selected_row: usize,
+    hovered_row: Option<usize>,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled(
+        "  Role                         Trust      Git",
+        Style::default().fg(jackin_tui::theme::WHITE),
+    ))];
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (none)",
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+        )));
+    }
+    for (i, row) in rows.iter().enumerate() {
+        let selected = show_cursor && (selected_row == i);
+        let mut style = if selected {
+            Style::default()
+                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+        };
+        if !selected && hovered_row == Some(i) {
+            style = style.bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER);
+        }
+        let prefix = if selected { "\u{25b8} " } else { "  " };
+        let trust = if row.trusted { "trusted" } else { "untrusted" };
+        lines.push(Line::from(Span::styled(
+            format!(
+                "{prefix}{:<28} {:<10} {}",
+                truncate(&row.role, 28),
+                trust,
+                row.git
+            ),
+            style,
+        )));
+    }
+    lines
+}
+
+fn truncate(value: &str, width: usize) -> String {
+    let mut out: String = value.chars().take(width).collect();
+    if value.chars().count() > width && width > 1 {
+        out.pop();
+        out.push('\u{2026}');
+    }
+    out
+}
+
 pub fn clamp_mounts_scroll_x_for_frame(area: Rect, content_width: usize, scroll_x: &mut u16) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -138,6 +192,25 @@ mod tests {
         assert_eq!(lines[0].spans[2].content.as_ref(), "enabled");
         assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} ");
         assert_eq!(lines[1].spans[2].content.as_ref(), "disabled");
+    }
+
+    #[test]
+    fn trust_lines_include_header_empty_row_and_truncate_long_role() {
+        let rows = [SettingsTrustRow {
+            role: "very-long-role-name-that-will-truncate".to_string(),
+            git: "https://github.com/example/role".to_string(),
+            trusted: true,
+        }];
+
+        let empty = trust_lines(&[], 0, None, false);
+        assert_eq!(empty[0].spans[0].content.as_ref(), "  Role                         Trust      Git");
+        assert_eq!(empty[1].spans[0].content.as_ref(), "  (none)");
+
+        let lines = trust_lines(&rows, 0, None, true);
+        let rendered = lines[1].spans[0].content.as_ref();
+        assert!(rendered.starts_with("\u{25b8} very-long-role-name-that-wi\u{2026}"));
+        assert!(rendered.contains("trusted"));
+        assert!(rendered.contains("https://github.com/example/role"));
     }
 
     #[test]
