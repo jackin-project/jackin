@@ -120,7 +120,8 @@ enum State {
 
 impl Default for InputParser {
     fn default() -> Self {
-        Self::new(default_prefix(), default_palette_key())
+        let bindings = crate::input_bindings::InputBindings::default();
+        Self::new(bindings.prefix, bindings.palette_key)
     }
 }
 
@@ -353,86 +354,8 @@ fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
     }
 }
 
-/// Prefix mode is **opt-in**: returns `Some(byte)` when `JACKIN_PREFIX`
-/// is set to a parseable key, `None` otherwise. The direct palette
-/// key (see `default_palette_key`, default `Ctrl+\`) is the primary
-/// UX; the prefix-key state machine layered on top is for operators
-/// who want tmux-style multi-keystroke commands.
-fn default_prefix() -> Option<u8> {
-    let s = std::env::var("JACKIN_PREFIX").ok()?;
-    if s.eq_ignore_ascii_case("none") {
-        return None;
-    }
-    match parse_prefix(&s) {
-        Some(byte) => Some(byte),
-        None => {
-            crate::clog!("invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
-            None
-        }
-    }
-}
-
-/// Palette key defaults to `Ctrl+\` (`0x1C`). Picked because raw-mode
-/// terminals never emit it as content (cooked-mode SIGQUIT semantics
-/// don't apply in raw mode), no agent uses it as an editing key, and
-/// it sits one finger from `Enter` on US/UK layouts. The literal LF
-/// byte (`Ctrl+J`, `0x0A`) is what agents and shells use for
-/// multi-line input continuation, so we avoid it as the default.
-///
-/// Set `JACKIN_PALETTE_KEY` to override (e.g. `C-]`, `C-g`, `C-j`);
-/// set it to the literal string `none` to disable the direct-palette
-/// shortcut entirely. Parse failures log via `clog!` so they land in
-/// `multiplexer.log` next to the other input-parser init events.
-fn default_palette_key() -> Option<u8> {
-    match std::env::var("JACKIN_PALETTE_KEY") {
-        Err(_) => Some(0x1C),
-        Ok(s) if s.eq_ignore_ascii_case("none") => None,
-        Ok(s) => match parse_prefix(&s) {
-            Some(byte) => Some(byte),
-            None => {
-                crate::clog!("invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\");
-                Some(0x1C)
-            }
-        },
-    }
-}
-
-/// Accept:
-/// - `C-a` … `C-z` (case-insensitive) — `Ctrl+letter`, maps to `0x01..=0x1A`
-/// - `C-\` / `C-]` / `C-^` / `C-_` — `Ctrl+symbol`, maps to `0x1C..=0x1F`
-/// - `C-Space` or `C-@` — `Ctrl+Space` / `Ctrl+@`, maps to `0x00`
-/// - A single ASCII control byte in hex form `0xNN`
-/// - A single literal byte
-///
-/// Returns `None` on parse error so the caller falls back to the default.
 pub fn parse_prefix(s: &str) -> Option<u8> {
-    let s = s.trim();
-    if let Some(rest) = s.strip_prefix("C-").or_else(|| s.strip_prefix("c-")) {
-        if rest.eq_ignore_ascii_case("space") || rest == "@" {
-            return Some(0x00);
-        }
-        let c = rest.chars().next()?;
-        if c.is_ascii_alphabetic() {
-            let upper = c.to_ascii_uppercase() as u8;
-            return Some(upper - b'A' + 1);
-        }
-        // ASCII control-byte mapping for non-letter `Ctrl+symbol`:
-        //   Ctrl+\ → 0x1C, Ctrl+] → 0x1D, Ctrl+^ → 0x1E, Ctrl+_ → 0x1F
-        return match c {
-            '\\' => Some(0x1C),
-            ']' => Some(0x1D),
-            '^' => Some(0x1E),
-            '_' => Some(0x1F),
-            _ => None,
-        };
-    }
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        return u8::from_str_radix(hex, 16).ok();
-    }
-    if s.len() == 1 {
-        return Some(s.as_bytes()[0]);
-    }
-    None
+    crate::input_bindings::parse_key_binding(s)
 }
 
 fn prefix_binding(b: u8) -> Option<PrefixCommand> {

@@ -380,7 +380,8 @@ impl Multiplexer {
             .filter_map(|&k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
             .collect();
 
-        let input_parser = InputParser::default();
+        let input_bindings = crate::input_bindings::resolve_input_bindings();
+        let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
         crate::clog!(

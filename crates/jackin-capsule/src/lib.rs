@@ -7,6 +7,7 @@ pub mod config;
 pub mod container_context;
 pub mod daemon;
 pub mod git_context;
+pub mod input_bindings;
 pub mod logging;
 pub mod mouse_protocol;
 pub mod mux_mode;
