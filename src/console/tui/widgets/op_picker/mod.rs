@@ -547,33 +547,37 @@ impl OpPickerState {
     }
 
     pub fn filtered_accounts(&self) -> Vec<&OpAccount> {
-        let needle = self.filter_buf.to_lowercase();
         self.accounts
             .iter()
-            .filter(|a| {
-                needle.is_empty()
-                    || a.email.to_lowercase().contains(&needle)
-                    || a.url.to_lowercase().contains(&needle)
+            .filter(|account| {
+                jackin_console::widgets::op_picker::matches_filter(
+                    &self.filter_buf,
+                    [account.email.as_str(), account.url.as_str()],
+                )
             })
             .collect()
     }
 
     pub fn filtered_vaults(&self) -> Vec<&OpVault> {
-        let needle = self.filter_buf.to_lowercase();
         self.vaults
             .iter()
-            .filter(|v| needle.is_empty() || v.name.to_lowercase().contains(&needle))
+            .filter(|vault| {
+                jackin_console::widgets::op_picker::matches_filter(
+                    &self.filter_buf,
+                    [vault.name.as_str()],
+                )
+            })
             .collect()
     }
 
     pub fn filtered_items(&self) -> Vec<&OpItem> {
-        let needle = self.filter_buf.to_lowercase();
         self.items
             .iter()
-            .filter(|i| {
-                needle.is_empty()
-                    || i.name.to_lowercase().contains(&needle)
-                    || i.subtitle.to_lowercase().contains(&needle)
+            .filter(|item| {
+                jackin_console::widgets::op_picker::matches_filter(
+                    &self.filter_buf,
+                    [item.name.as_str(), item.subtitle.as_str()],
+                )
             })
             .collect()
     }
@@ -589,13 +593,13 @@ impl OpPickerState {
     }
 
     pub fn filtered_fields(&self) -> Vec<&OpField> {
-        let needle = self.filter_buf.to_lowercase();
         self.fields
             .iter()
-            .filter(|f| {
-                needle.is_empty()
-                    || f.label.to_lowercase().contains(&needle)
-                    || f.id.to_lowercase().contains(&needle)
+            .filter(|field| {
+                jackin_console::widgets::op_picker::matches_filter(
+                    &self.filter_buf,
+                    [field.label.as_str(), field.id.as_str()],
+                )
             })
             .collect()
     }

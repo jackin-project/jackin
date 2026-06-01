@@ -207,6 +207,16 @@ pub fn create_field_display_rows<'a>(
     rows
 }
 
+pub fn matches_filter<'a>(filter: &str, values: impl IntoIterator<Item = &'a str>) -> bool {
+    if filter.is_empty() {
+        return true;
+    }
+    let needle = filter.to_lowercase();
+    values
+        .into_iter()
+        .any(|value| value.to_lowercase().contains(&needle))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,5 +349,16 @@ mod tests {
         assert!(matches!(rows[0], FieldDisplayRow::Field { field_idx: 1 }));
         assert!(matches!(rows[1], FieldDisplayRow::Field { field_idx: 2 }));
         assert!(matches!(rows[2], FieldDisplayRow::NewFieldSentinel));
+    }
+
+    #[test]
+    fn matches_filter_accepts_empty_or_any_matching_value() {
+        assert!(matches_filter("", ["anything"]));
+        assert!(matches_filter("api", ["Stripe", "API token"]));
+        assert!(matches_filter(
+            "example",
+            ["alice@example.com", "https://example.test"]
+        ));
+        assert!(!matches_filter("missing", ["one", "two"]));
     }
 }
