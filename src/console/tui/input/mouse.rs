@@ -27,15 +27,12 @@ use crate::console::tui::state::{
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
-    horizontal_split_pane_dims, point_in_rect, scrollbar_drag_offset, split_pct_from_drag,
-    split_seam_column, tab_cell_at_position, tabbed_content_area,
+    apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
+    is_horizontally_scrollable, point_in_rect, scrollbar_drag_offset, scroll_viewport_width,
+    split_pct_from_drag, split_seam_column, tab_cell_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
-use jackin_tui::components::scrollable_panel::{
-    apply_scroll_delta, is_scrollable,
-    viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
-};
 
 /// Minimum terminal width (in columns) at which the list/details seam is
 /// draggable. Below this, the 20/80 clamp bounds leave the right pane
@@ -986,10 +983,10 @@ fn scroll_active_panel(
                 };
                 let viewport = scroll_viewport_width(area);
                 let content_width = list_names_content_width(state, viewport);
-                apply_scroll_delta(
+                apply_horizontal_scroll(
                     &mut state.list_names_scroll_x,
                     delta,
-                    viewport,
+                    area,
                     content_width,
                 );
                 return;
@@ -1025,7 +1022,7 @@ fn scroll_active_panel(
                 editor.workspace_mounts_scroll_focused = false;
                 let area = editor_content_area(editor, term_size);
                 if point_in(mouse, area)
-                    && is_scrollable(editor.tab_content_width, scroll_viewport_width(area))
+                    && is_horizontally_scrollable(area, editor.tab_content_width)
                 {
                     editor.tab_content_scroll_focused = true;
                     apply_horizontal_scroll(
@@ -1041,7 +1038,7 @@ fn scroll_active_panel(
             }
             let area = editor_scroll_area(editor, term_size);
             if point_in(mouse, area.area)
-                && is_scrollable(area.content_width, scroll_viewport_width(area.area))
+                && is_horizontally_scrollable(area.area, area.content_width)
             {
                 editor.workspace_mounts_scroll_focused = true;
                 apply_horizontal_scroll(
@@ -1221,14 +1218,6 @@ fn scroll_active_panel_vertical(
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
-}
-
-fn apply_horizontal_scroll(value: &mut u16, delta: i16, area: Rect, content_width: usize) {
-    apply_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
-}
-
-fn apply_vertical_scroll(value: &mut u16, delta: i16, area: Rect, content_height: usize) {
-    apply_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
 }
 
 fn list_scroll_areas(

@@ -282,7 +282,7 @@ Workspace-list row sizing now includes the generic list-name content-width fold 
 
 Workspace-list split geometry and list-name scroll clamping also live in <RepoFile path="crates/jackin-console/src/tui/list_geometry.rs" />. The root list geometry keeps selection/state mapping and delegates the reusable column allocation and scroll-limit mechanics.
 
-Workspace-list mouse split geometry, scrollbar drag offset planning, point-in-rect hit-testing, tab-strip hit-testing, and tabbed content-area geometry now live in <RepoFile path="crates/jackin-console/src/tui/layout.rs" />. Root mouse input keeps root stage/modal hit-testing and delegates seam columns, Ratatui-matched pane dimensions, drag percentage math, rectangle containment, scrollbar track-position math, tab-row geometry, and header/tab/footer rectangle math to the console TUI boundary.
+Workspace-list mouse split geometry, scrollbar drag offset planning, point-in-rect hit-testing, mouse-wheel scroll application, tab-strip hit-testing, and tabbed content-area geometry now live in <RepoFile path="crates/jackin-console/src/tui/layout.rs" />. Root mouse input keeps root stage/modal hit-testing and delegates seam columns, Ratatui-matched pane dimensions, drag percentage math, rectangle containment, scrollbar track-position math, scroll-delta viewport math, tab-row geometry, and header/tab/footer rectangle math to the console TUI boundary.
 
 Sidebar scroll-focus liveness now lives in <RepoFile path="crates/jackin-console/src/tui/sidebar_layout.rs" />. Root list geometry maps its `MountScrollFocus` enum into the crate-owned focus vocabulary and no longer owns the generic "is the focused sidebar area still scrollable?" rule.
 

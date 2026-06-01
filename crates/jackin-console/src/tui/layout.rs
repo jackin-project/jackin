@@ -127,6 +127,49 @@ pub const fn point_in_rect(col: u16, row: u16, area: ratatui::layout::Rect) -> b
         && row < area.y.saturating_add(area.height)
 }
 
+pub fn apply_horizontal_scroll(
+    value: &mut u16,
+    delta: i16,
+    area: ratatui::layout::Rect,
+    content_width: usize,
+) {
+    use jackin_tui::components::scrollable_panel::apply_scroll_delta;
+
+    apply_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
+}
+
+pub fn apply_vertical_scroll(
+    value: &mut u16,
+    delta: i16,
+    area: ratatui::layout::Rect,
+    content_height: usize,
+) {
+    use jackin_tui::components::scrollable_panel::apply_scroll_delta;
+
+    apply_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
+}
+
+#[must_use]
+pub const fn scroll_viewport_width(area: ratatui::layout::Rect) -> usize {
+    jackin_tui::components::scrollable_panel::viewport_width(area)
+}
+
+#[must_use]
+pub const fn scroll_viewport_height(area: ratatui::layout::Rect) -> usize {
+    jackin_tui::components::scrollable_panel::viewport_height(area)
+}
+
+#[must_use]
+pub const fn is_horizontally_scrollable(
+    area: ratatui::layout::Rect,
+    content_width: usize,
+) -> bool {
+    jackin_tui::components::scrollable_panel::is_scrollable(
+        content_width,
+        scroll_viewport_width(area),
+    )
+}
+
 /// Like a centered percent-width rect, but takes a fixed row height.
 #[must_use]
 pub fn centered_rect_fixed(
@@ -148,8 +191,9 @@ pub fn centered_rect_fixed(
 mod tests {
     use super::{
         SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
-        point_in_rect, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
-        tab_cell_at_position, tabbed_content_area,
+        apply_horizontal_scroll, apply_vertical_scroll, is_horizontally_scrollable, point_in_rect,
+        scrollbar_drag_offset, scroll_viewport_height, scroll_viewport_width, split_pct_from_drag,
+        split_seam_column, tab_cell_at_position, tabbed_content_area,
     };
     use ratatui::layout::Rect;
 
@@ -207,6 +251,33 @@ mod tests {
         assert!(point_in_rect(6, 6, area));
         assert!(!point_in_rect(7, 3, area));
         assert!(!point_in_rect(2, 7, area));
+    }
+
+    #[test]
+    fn scroll_apply_helpers_use_scrollable_panel_viewports() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 6,
+        };
+
+        let mut horizontal = 0;
+        apply_horizontal_scroll(&mut horizontal, 20, area, 40);
+        assert_eq!(horizontal, 20);
+        apply_horizontal_scroll(&mut horizontal, 20, area, 40);
+        assert_eq!(horizontal, 32);
+
+        let mut vertical = 0;
+        apply_vertical_scroll(&mut vertical, 20, area, 40);
+        assert_eq!(vertical, 20);
+        apply_vertical_scroll(&mut vertical, 20, area, 40);
+        assert_eq!(vertical, 36);
+
+        assert_eq!(scroll_viewport_width(area), 8);
+        assert_eq!(scroll_viewport_height(area), 4);
+        assert!(is_horizontally_scrollable(area, 40));
+        assert!(!is_horizontally_scrollable(area, 8));
     }
 
     #[test]
