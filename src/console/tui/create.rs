@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use super::state::{CreatePreludeState, CreateStep};
+use crate::console::manager::state::{CreatePreludeState, CreateStep};
 use crate::workspace::{MountConfig, WorkspaceConfig};
 
 impl CreatePreludeState<'_> {
