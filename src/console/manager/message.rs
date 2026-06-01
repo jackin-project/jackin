@@ -26,7 +26,7 @@ use jackin_console::settings::update::{
     step_cursor_up_by, toggle_general_selected, toggle_readonly as toggle_settings_readonly,
     toggle_trust_selected,
 };
-use jackin_tui::runtime::{NoEffect, UpdateResult};
+use jackin_tui::runtime::UpdateResult;
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -195,7 +195,29 @@ pub(crate) enum ManagerMessage {
     DismissLaunchProviderPicker,
 }
 
-pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ManagerEffect {
+    RequestActiveMountInfoRefresh,
+    RequestInstanceRefresh,
+}
+
+pub(crate) type ManagerUpdate = UpdateResult<ManagerEffect>;
+
+pub(crate) fn execute_manager_effect(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    effect: ManagerEffect,
+) {
+    match effect {
+        ManagerEffect::RequestActiveMountInfoRefresh => {
+            state.request_active_mount_info_refresh(config);
+        }
+        ManagerEffect::RequestInstanceRefresh => {
+            state.request_instance_refresh(paths);
+        }
+    }
+}
 
 pub(crate) enum ManagerBackgroundEvent {
     Message(ManagerMessage),
@@ -227,7 +249,12 @@ pub(crate) fn poll_background_messages(
             messages.push(ManagerBackgroundEvent::RoleLoadFinished { load, result });
         }
     }
-    state.request_active_mount_info_refresh(config);
+    execute_manager_effect(
+        state,
+        config,
+        paths,
+        ManagerEffect::RequestActiveMountInfoRefresh,
+    );
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::MountInfoRefreshed(result),
@@ -238,7 +265,7 @@ pub(crate) fn poll_background_messages(
             ManagerMessage::InstancesRefreshed(result),
         ));
     }
-    state.request_instance_refresh(paths);
+    execute_manager_effect(state, config, paths, ManagerEffect::RequestInstanceRefresh);
     if let Some((op_ref, result, is_settings)) = state.poll_pending_op_commit() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::OpCommitResolved {
@@ -1104,7 +1131,10 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
 
 #[cfg(test)]
 mod tests {
-    use super::{ManagerBackgroundEvent, ManagerMessage, poll_background_messages, update_manager};
+    use super::{
+        ManagerBackgroundEvent, ManagerEffect, ManagerMessage, execute_manager_effect,
+        poll_background_messages, update_manager,
+    };
     use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::{
         AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
@@ -2089,6 +2119,27 @@ mod tests {
             event,
             ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls)
         )));
+    }
+
+    #[tokio::test]
+    async fn execute_manager_effect_requests_instance_refresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::RequestInstanceRefresh,
+        );
+
+        assert!(
+            state.instance_refresh_in_flight(),
+            "instance refresh effect should spawn a worker"
+        );
     }
 
     #[test]

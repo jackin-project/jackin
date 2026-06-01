@@ -1791,6 +1791,11 @@ impl ManagerState<'_> {
         self.drain_instance_refresh()
     }
 
+    #[cfg(test)]
+    pub(crate) fn instance_refresh_in_flight(&self) -> bool {
+        self.instances_refresh_rx.is_some()
+    }
+
     pub(crate) fn request_active_mount_info_refresh(&mut self, config: &AppConfig) {
         if self.mount_info_refresh_rx.is_some() {
             return;
