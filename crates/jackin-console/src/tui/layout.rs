@@ -1,6 +1,10 @@
 pub const LIST_HEADER_HEIGHT: u16 = 2;
 pub const LIST_FOOTER_HEIGHT: u16 = 2;
+/// Minimum terminal width where the list/details seam is draggable.
+pub const MIN_DRAGGABLE_WIDTH: u16 = 40;
 pub const SCREEN_HEADER_HEIGHT: u16 = 3;
+/// Half-width of the list/details seam hit-region.
+pub const SEAM_HIT_SLACK: u16 = 1;
 pub const TAB_STRIP_HEIGHT: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +17,14 @@ pub enum ScrollbarAxis {
 #[must_use]
 pub const fn split_seam_column(pct: u16, width: u16) -> u16 {
     width.saturating_mul(pct) / 100
+}
+
+/// `true` when `column` is inside the list/details seam hit-region.
+#[must_use]
+pub const fn near_seam(column: u16, seam_x: u16) -> bool {
+    let lo = seam_x.saturating_sub(SEAM_HIT_SLACK);
+    let hi = seam_x.saturating_add(SEAM_HIT_SLACK);
+    column >= lo && column <= hi
 }
 
 /// Return `(left_x, left_width, right_x, right_width)` using Ratatui's
@@ -223,11 +235,12 @@ pub fn centered_rect_fixed(
 #[cfg(test)]
 mod tests {
     use super::{
-        SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
+        MIN_DRAGGABLE_WIDTH, SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis,
+        TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
         apply_horizontal_scroll, apply_vertical_scroll, is_horizontally_scrollable,
-        list_body_area, list_content_visual_index_at, point_in_rect, scrollbar_drag_offset,
-        scroll_viewport_height, scroll_viewport_width, split_pct_from_drag, split_seam_column,
-        tab_cell_at_position, tabbed_content_area,
+        list_body_area, list_content_visual_index_at, near_seam, point_in_rect,
+        scrollbar_drag_offset, scroll_viewport_height, scroll_viewport_width,
+        split_pct_from_drag, split_seam_column, tab_cell_at_position, tabbed_content_area,
     };
     use ratatui::layout::Rect;
 
@@ -235,6 +248,18 @@ mod tests {
     fn split_seam_column_uses_saturating_percent_math() {
         assert_eq!(split_seam_column(30, 100), 30);
         assert_eq!(split_seam_column(30, 0), 0);
+    }
+
+    #[test]
+    fn near_seam_uses_one_column_hit_slack() {
+        assert_eq!(MIN_DRAGGABLE_WIDTH, 40);
+        assert_eq!(SEAM_HIT_SLACK, 1);
+
+        assert!(near_seam(29, 30));
+        assert!(near_seam(30, 30));
+        assert!(near_seam(31, 30));
+        assert!(!near_seam(28, 30));
+        assert!(!near_seam(32, 30));
     }
 
     #[test]

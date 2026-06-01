@@ -26,24 +26,14 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
-    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis,
-    TAB_STRIP_HEIGHT, apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
-    is_horizontally_scrollable, list_content_visual_index_at, point_in_rect,
-    scrollbar_drag_offset, scroll_viewport_width, split_pct_from_drag, split_seam_column,
-    tab_cell_at_position, tabbed_content_area,
+    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, SCREEN_HEADER_HEIGHT,
+    ScrollbarAxis, TAB_STRIP_HEIGHT, apply_horizontal_scroll, apply_vertical_scroll,
+    horizontal_split_pane_dims, is_horizontally_scrollable, list_content_visual_index_at,
+    near_seam, point_in_rect, scrollbar_drag_offset, scroll_viewport_width, split_pct_from_drag,
+    split_seam_column, tab_cell_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
-
-/// Minimum terminal width (in columns) at which the list/details seam is
-/// draggable. Below this, the 20/80 clamp bounds leave the right pane
-/// implausibly narrow for meaningful interaction — silently ignore mouse
-/// events rather than produce an unusable layout.
-const MIN_DRAGGABLE_WIDTH: u16 = 40;
-/// Half-width of the seam hit-region. A Down event lands within ±1 column
-/// of the computed seam to initiate drag. Narrow enough that operators
-/// don't accidentally start a drag while clicking in either pane.
-const SEAM_HIT_SLACK: u16 = 1;
 
 const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 1;
 const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
@@ -1329,13 +1319,6 @@ fn list_content_row_index(
 ) -> Option<ManagerListRow> {
     let idx = list_content_visual_index_at(mouse.column, mouse.row, term_size, seam_x)?;
     state.row_at_visual_index(idx)
-}
-
-/// `true` when `column` is within ±`SEAM_HIT_SLACK` of `seam_x`.
-const fn near_seam(column: u16, seam_x: u16) -> bool {
-    let lo = seam_x.saturating_sub(SEAM_HIT_SLACK);
-    let hi = seam_x.saturating_add(SEAM_HIT_SLACK);
-    column >= lo && column <= hi
 }
 
 #[cfg(test)]
