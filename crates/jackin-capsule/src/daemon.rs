@@ -55,7 +55,8 @@ use crate::git_context::{
 };
 use crate::tui::effect::InitialFrameKind;
 use crate::tui::input::{
-    ArrowDir, InputEvent, InputParser, PrefixCommand, SGR_NO_BUTTON_MOTION,
+    DEFAULT_ESCAPE_TIME, ENV_ESCAPE_TIME, ArrowDir, InputEvent, InputParser, PrefixCommand,
+    SGR_NO_BUTTON_MOTION,
 };
 use crate::tui::layout::{
     CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS, Direction, Rect, SplitDirectionGeometry,
@@ -323,13 +324,6 @@ const MAX_TABS: usize = 32;
 /// can grow the session count past the tab count; cap separately
 /// for the same memory-bounding reason.
 const MAX_SESSIONS: usize = 64;
-
-/// `JACKIN_ESCAPE_TIME` env var — operator-tunable in milliseconds.
-const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
-
-/// 50 ms matches tmux's default. Below human perception while
-/// surviving slow ssh / paste chunks.
-const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// One second is quick enough for operator-visible title/chrome updates after
 /// `git checkout` while avoiding a 10Hz daemon wake-up just to inspect local

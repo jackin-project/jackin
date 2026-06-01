@@ -306,7 +306,7 @@ Capsule visible pane-list derivation now lives with the visible multiplexer mode
 
 Capsule parsed-input and prefix-command to semantic-action mapping now lives with action vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/message.rs" />. The daemon still supplies live context such as dialog-captures-input and branch-bar hit-testing, then executes the returned action against PTY/session state.
 
-Capsule input binding data, key-binding parsing, and SGR passive-motion vocabulary now live with terminal input parsing in <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />. The environment/logging resolver for those TUI-owned binding definitions lives under the non-TUI services boundary in <RepoFile path="crates/jackin-capsule/src/services/input_bindings.rs" />.
+Capsule input binding data, key-binding parsing, escape-time defaults, and SGR passive-motion vocabulary now live with terminal input parsing in <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />. The environment/logging resolver for those TUI-owned binding definitions lives under the non-TUI services boundary in <RepoFile path="crates/jackin-capsule/src/services/input_bindings.rs" />.
 
 Capsule tab double-click timing now lives with terminal input parsing in <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />. The daemon still stores the previous tab click timestamp and opens the rename dialog, but the TUI-owned gesture threshold is no longer daemon-owned.
 

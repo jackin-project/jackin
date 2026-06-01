@@ -26,6 +26,14 @@
 pub(crate) const TAB_DOUBLE_CLICK_WINDOW: std::time::Duration =
     std::time::Duration::from_millis(500);
 
+/// `JACKIN_ESCAPE_TIME` env var — operator-tunable in milliseconds.
+pub(crate) const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
+
+/// 50 ms matches tmux's default. Below human perception while
+/// surviving slow ssh / paste chunks.
+pub(crate) const DEFAULT_ESCAPE_TIME: std::time::Duration =
+    std::time::Duration::from_millis(50);
+
 /// XTerm SGR any-event mouse tracking reports passive motion as
 /// button code 35 (`32` motion bit + `3` no-button code).
 pub(crate) const SGR_NO_BUTTON_MOTION: u8 = 35;
