@@ -17,7 +17,6 @@ pub(crate) mod editor_rows;
 pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
-pub mod role_picker;
 
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`
 /// for Up, `+1` for Down. No-op when `count == 0`.
@@ -198,8 +197,9 @@ mod consistency_tests {
     }
 
     fn render_role_picker() -> (Buffer, Rect) {
-        use super::role_picker::{RolePickerState, render};
+        use crate::selector::RolePickerState;
         use crate::selector::RoleSelector;
+        use jackin_console::widgets::role_picker::render;
         let area = Rect::new(0, 0, 60, 10);
         let state = RolePickerState::new(vec![
             RoleSelector::parse("chainargos/agent-smith").unwrap(),

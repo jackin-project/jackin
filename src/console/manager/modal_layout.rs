@@ -4,7 +4,8 @@ use jackin_console::layout::centered_rect_fixed;
 use ratatui::layout::Rect;
 
 use crate::console::manager::state::Modal;
-use crate::console::widgets::{auth_panel, role_picker};
+use crate::console::widgets::auth_panel;
+use crate::selector::RolePickerState;
 use jackin_console::widgets::confirm_save;
 
 pub(crate) fn text_input_rect(outer: Rect) -> Rect {
@@ -23,7 +24,7 @@ pub(crate) fn op_picker_rect(outer: Rect) -> Rect {
     centered_rect_fixed(outer, 80, 22)
 }
 
-pub(crate) fn role_picker_rect(outer: Rect, state: &role_picker::RolePickerState) -> Rect {
+pub(crate) fn role_picker_rect(outer: Rect, state: &RolePickerState) -> Rect {
     let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
     centered_rect_fixed(outer, 50, rows)
 }

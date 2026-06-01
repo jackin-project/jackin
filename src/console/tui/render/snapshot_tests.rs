@@ -532,7 +532,7 @@ readonly = false
                 &config,
                 &cwd,
                 Modal::RolePicker {
-                    state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                    state: crate::selector::RolePickerState::new(vec![
                         crate::selector::RoleSelector::parse("chainargos/agent-smith")
                             .expect("valid role selector"),
                     ]),
@@ -604,7 +604,7 @@ readonly = false
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.tab_bar_focused = false;
         editor.modal = Some(Modal::RoleOverridePicker {
-            state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+            state: crate::selector::RolePickerState::new(vec![
                 crate::selector::RoleSelector::parse("chainargos/agent-smith")
                     .expect("valid role selector"),
             ]),
@@ -616,7 +616,7 @@ readonly = false
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.tab_bar_focused = false;
         editor.modal = Some(Modal::AuthRolePicker {
-            state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+            state: crate::selector::RolePickerState::new(vec![
                 crate::selector::RoleSelector::parse("chainargos/agent-smith")
                     .expect("valid role selector"),
             ]),
@@ -716,7 +716,7 @@ readonly = false
                 &config,
                 &cwd,
                 GlobalMountModal::RolePicker {
-                    state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                    state: crate::selector::RolePickerState::new(vec![
                         crate::selector::RoleSelector::parse("chainargos/agent-smith")
                             .expect("valid role selector"),
                     ]),
@@ -785,7 +785,7 @@ readonly = false
                 &config,
                 &cwd,
                 SettingsEnvModal::RolePicker {
-                    state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                    state: crate::selector::RolePickerState::new(vec![
                         crate::selector::RoleSelector::parse("chainargos/agent-smith")
                             .expect("valid role selector"),
                     ]),

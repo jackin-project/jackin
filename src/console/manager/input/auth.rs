@@ -14,7 +14,6 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
 use super::super::super::widgets::op_picker::OpPickerState;
-use super::super::super::widgets::role_picker::RolePickerState;
 use super::super::auth_kind::{AuthKind, AuthMode};
 use super::super::auth_rows::{
     auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
@@ -29,6 +28,7 @@ use crate::config::{
 };
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
+use crate::selector::RolePickerState;
 use crate::workspace::WorkspaceRoleOverride;
 use jackin_tui::components::TextInputState;
 

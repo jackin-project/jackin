@@ -11,8 +11,8 @@ use super::super::state::{
 use crate::config::AppConfig;
 use crate::console::widgets::ModalOutcome;
 use crate::console::widgets::auth_panel::{AuthForm, CredentialInput};
-use crate::console::widgets::role_picker::RolePickerState;
 use crate::paths::JackinPaths;
+use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
 use jackin_console::widgets::file_browser::FileBrowserState;
@@ -1603,7 +1603,7 @@ fn commit_env_text(
 }
 
 fn open_settings_env_role_picker(env: &mut super::super::state::SettingsEnvState<'_>) {
-    use crate::console::widgets::role_picker::RolePickerState;
+    use crate::selector::RolePickerState;
     use crate::selector::RoleSelector;
 
     let roles = env

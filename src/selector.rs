@@ -76,6 +76,14 @@ impl RoleSelector {
     }
 }
 
+impl jackin_console::widgets::role_picker::RoleChoice for RoleSelector {
+    fn key(&self) -> String {
+        self.to_string()
+    }
+}
+
+pub type RolePickerState = jackin_console::widgets::role_picker::RolePickerState<RoleSelector>;
+
 impl TryFrom<&str> for RoleSelector {
     type Error = SelectorError;
 

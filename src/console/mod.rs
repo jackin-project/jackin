@@ -145,9 +145,7 @@ impl ConsoleState {
             self.pending_launch_role = None;
             if let ConsoleStage::Manager(ms) = &mut self.stage {
                 let mut picker =
-                    crate::console::widgets::role_picker::RolePickerState::with_confirm_label(
-                        roles, "launch",
-                    );
+                    crate::selector::RolePickerState::with_confirm_label(roles, "launch");
                 if let Some(selected) = selected {
                     picker.list_state.select(Some(selected));
                 }

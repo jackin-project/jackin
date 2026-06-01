@@ -666,7 +666,7 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
 /// override are NOT filtered out — operator may want to add more
 /// keys.
 fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    use super::super::super::widgets::role_picker::RolePickerState;
+    use crate::selector::RolePickerState;
     use crate::selector::RoleSelector;
     let eligible: Vec<RoleSelector> =
         super::super::auth_rows::eligible_agents_for_override(editor, config)

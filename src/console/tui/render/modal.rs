@@ -3,7 +3,7 @@
 
 use ratatui::Frame;
 
-use super::super::super::widgets::{auth_panel, op_picker, role_picker};
+use super::super::super::widgets::{auth_panel, op_picker};
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::state::Modal;
 
@@ -52,7 +52,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::RolePicker { state }
         | Modal::RoleOverridePicker { state }
         | Modal::AuthRolePicker { state } => {
-            role_picker::render(frame, modal_area, state);
+            jackin_console::widgets::role_picker::render(frame, modal_area, state);
         }
         Modal::SourcePicker { state, .. } | Modal::AuthSourcePicker { state } => {
             jackin_console::widgets::source_picker::render(frame, modal_area, state);

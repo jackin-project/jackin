@@ -502,7 +502,7 @@ fn render_role_picker_sidebar(
     frame: &mut Frame,
     area: Rect,
     workspace_name: &str,
-    picker: &crate::console::widgets::role_picker::RolePickerState,
+    picker: &crate::selector::RolePickerState,
     focused: bool,
 ) {
     let title = format!(" {workspace_name} ");
