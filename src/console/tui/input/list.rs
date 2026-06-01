@@ -485,7 +485,8 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
     let Some(ws) = config.workspaces.get(&summary.name) else {
         return InputOutcome::Continue;
     };
-    let choices = jackin_console::github_mounts::resolve_for_workspace(ws);
+    let choices =
+        jackin_console::github_mounts::resolve_for_workspace_from_cache(ws, &state.mount_info_cache);
     match choices.len() {
         0 => InputOutcome::Continue,
         1 => InputOutcome::OpenUrl(choices[0].url.clone()),
@@ -765,6 +766,9 @@ mod tests {
         config.workspaces.insert("demo".into(), ws);
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 1; // force selection onto the saved workspace row
+        state
+            .mount_info_cache
+            .refresh_mounts(&config.workspaces["demo"].mounts);
         (state, config, paths, tmp)
     }
 

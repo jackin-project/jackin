@@ -18,6 +18,7 @@
 //! call a neutral helper.
 
 use crate::mount_info::{GitBranch, GitOrigin, MountKind, inspect};
+use crate::mount_info_cache::MountInfoCache;
 
 /// GitHub-hosted mount row that can be shown in the TUI picker or opened
 /// directly when it is the only candidate.
@@ -37,24 +38,81 @@ pub trait WorkspaceMounts {
 /// remote at all, plain folders, or missing sources are omitted.
 pub fn resolve_for_workspace(ws: &impl WorkspaceMounts) -> Vec<GithubChoice> {
     ws.mount_sources()
+        .filter_map(|src| github_choice_from_kind(src, inspect(src)))
+        .collect()
+}
+
+/// Same projection as [`resolve_for_workspace`], but uses mount metadata
+/// already collected by the TUI's typed mount-info refresh effect.
+pub fn resolve_for_workspace_from_cache(
+    ws: &impl WorkspaceMounts,
+    cache: &MountInfoCache,
+) -> Vec<GithubChoice> {
+    ws.mount_sources()
         .filter_map(|src| {
-            let MountKind::Git {
-                branch,
-                origin: Some(GitOrigin::Github { web_url, .. }),
-            } = inspect(src)
-            else {
-                return None;
-            };
-            let branch_label = match branch {
-                GitBranch::Named(b) => b,
-                GitBranch::Detached { short_sha } => format!("detached {short_sha}"),
-                GitBranch::Unknown => "unknown".to_string(),
-            };
-            Some(GithubChoice {
-                src: src.to_string(),
-                branch: branch_label,
-                url: web_url,
-            })
+            cache
+                .inspect_cached(src)
+                .and_then(|kind| github_choice_from_kind(src, kind))
         })
         .collect()
+}
+
+fn github_choice_from_kind(src: &str, kind: MountKind) -> Option<GithubChoice> {
+    let MountKind::Git {
+        branch,
+        origin: Some(GitOrigin::Github { web_url, .. }),
+    } = kind
+    else {
+        return None;
+    };
+    let branch_label = match branch {
+        GitBranch::Named(b) => b,
+        GitBranch::Detached { short_sha } => format!("detached {short_sha}"),
+        GitBranch::Unknown => "unknown".to_string(),
+    };
+    Some(GithubChoice {
+        src: src.to_string(),
+        branch: branch_label,
+        url: web_url,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Sources(Vec<String>);
+
+    impl WorkspaceMounts for Sources {
+        fn mount_sources(&self) -> impl Iterator<Item = &str> {
+            self.0.iter().map(String::as_str)
+        }
+    }
+
+    #[test]
+    fn cached_resolver_uses_stored_mount_info_without_inspecting_filesystem() {
+        let cache = MountInfoCache::default();
+        cache.store_entries([
+            (
+                "/repo".to_string(),
+                MountKind::Git {
+                    branch: GitBranch::Named("main".to_string()),
+                    origin: Some(GitOrigin::Github {
+                        remote_url: "git@github.com:owner/repo.git".to_string(),
+                        web_url: "https://github.com/owner/repo/tree/main".to_string(),
+                    }),
+                },
+            ),
+            ("/plain".to_string(), MountKind::Folder),
+        ]);
+        let choices = resolve_for_workspace_from_cache(
+            &Sources(vec!["/repo".to_string(), "/plain".to_string()]),
+            &cache,
+        );
+
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].src, "/repo");
+        assert_eq!(choices[0].branch, "main");
+        assert_eq!(choices[0].url, "https://github.com/owner/repo/tree/main");
+    }
 }

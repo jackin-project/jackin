@@ -153,8 +153,11 @@ pub fn render(
                                     .selected_workspace_summary()
                                     .and_then(|s| config.workspaces.get(&s.name))
                                     .is_some_and(|ws| {
-                                        !jackin_console::github_mounts::resolve_for_workspace(ws)
-                                            .is_empty()
+                                        !jackin_console::github_mounts::resolve_for_workspace_from_cache(
+                                            ws,
+                                            &state.mount_info_cache,
+                                        )
+                                        .is_empty()
                                     });
 
                         let is_saved =
