@@ -94,6 +94,7 @@ Verification against the actual crate landscape says **no, not directly** — an
 | **[`avt`](https://github.com/asciinema/avt)** (asciinema) | own | primary/alt grid | **Partial** — full-screen `dump()`, no incremental diff, no live OSC callbacks | crates.io | asciinema org | Record/replay shape, not interactive multiplexing |
 | **[libvterm](https://www.leonerd.org.uk/code/libvterm/)** (LeoNerd, C) | own (C) | abstract VT220/xterm state, **damage callbacks** | **No** — gives damage regions; the host renders/re-emits itself | C library, maintained, packaged across distros; **[neovim fork](https://github.com/neovim/libvterm)** | active (C); **Rust bindings dead** ([`vterm-sys`](https://crates.io/crates/vterm-sys) / [`libvterm-rs`](https://github.com/ajh/libvterm-rs), ~2016) | The strongest *conceptual* prior art — battle-tested damage model neovim and emacs-vterm embed — but it is **C**, the Rust bindings are abandoned, it needs an FFI `-sys` wrapper and a C toolchain in the container, and it **still lacks the wire-emit stage**. Adopting it means owning a binding anyway. |
 | **[`tui-term`](https://github.com/a-kenji/tui-term)** (a-kenji) | wraps `vt100` | `vt100::Screen` | **No** — renders a **ratatui `Buffer`**, not escape bytes | crates.io, 0.3.x (Apr 2026), active | single author | A ratatui *widget*, not a model — wraps `vt100` and paints into a ratatui buffer. Wrong direction (no re-emit). Useful only as ecosystem confirmation that `vt100` is the default model, and as a reference if the capsule ever moves to ratatui (see TUI architecture item). |
+| **[Ghostty](https://github.com/ghostty-org/ghostty)** / **[libghostty-vt](https://biggo.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation)** (Zig, MIT) | own SIMD parser | **`PageList`** — pooled arena pages, offset-addressed cells, `RefCountedSet` style interning, grapheme side-map | **No** — GPU renderer; `libghostty-vt` exposes state, not re-emit | `libghostty-vt` is a 2025 C/Zig embeddable API, very active | Mitchell Hashimoto + community | **Best-in-class memory model** and a serious modern "bind" candidate — but Zig/C (FFI, no Rust crate), GPU-render-oriented, **no wire-emit**. Its real value to us is **idea theft** (MIT-licensed patterns), detailed below. |
 | **[`vte`](https://crates.io/crates/vte)** (alacritty) | the canonical parser (`Perform`) | none | n/a | crates.io, stable, canonical | multi-maintainer | **The reusable foundation — depend on it, never rebuild the parser** |
 
 What the comparison proves:
@@ -131,9 +132,10 @@ Win 4 is a maintenance/architecture win that holds **regardless of performance**
 vte (dependency — canonical parser, do not rebuild)
    │  byte slices in, Perform events out (zero-copy borrow of the input buffer)
    ▼
-DamageGrid          ← ring-buffer storage (Alacritty's Storage idea):
-   │                  O(1) scroll, packed cache-friendly Cell, scrollback in
-   │                  the same ring, dirty-span tracking recorded AS bytes
+DamageGrid          ← pooled arena pages (Ghostty PageList idea) or a ring
+   │                  buffer (Alacritty Storage idea): O(1) scroll, packed
+   │                  cache-friendly Cell with interned style ids, scrollback
+   │                  in the same store, dirty-span tracking recorded AS bytes
    │                  arrive (not recomputed by full-screen compare)
    ▼
 PassthroughEvents   ← typed stream: TitleChanged, IconName, ClipboardWrite,
@@ -153,6 +155,18 @@ Cross-cutting: a multi-session arena so N sessions share slab row storage and on
 - **Parse:** `vte` consumes borrowed input slices; no copy into the parser.
 - **Model:** cells store style as packed bitflags + indexed color; grapheme content references interned storage rather than a per-cell heap `String`.
 - **Present:** `WireDiff` writes into a daemon-owned reusable `Vec<u8>` that is cleared, not reallocated, each frame.
+
+### Ideas worth borrowing from Ghostty (MIT-licensed)
+
+Ghostty cannot be a Rust dependency — it is Zig, GPU-render-oriented, and (like every other engine surveyed) ships no diff-to-escape stage. But its terminal core, now extracted as the embeddable `libghostty-vt`, has the **best memory model of any emulator surveyed**, and Ghostty is MIT-licensed, so the *patterns* (and, with attribution, selected code) are fair game for `DamageGrid`. The ideas worth porting:
+
+1. **`PageList` — pooled arena pages instead of a flat ring buffer.** The screen + scrollback is a doubly-linked list of fixed-size pages drawn from a pre-heated `MemoryPool`; each page is one contiguous arena holding its rows, cells, styles, graphemes, and hyperlinks. Scroll and scrollback-trim become page-pointer operations with near-zero per-cell allocation, and on hitting the scrollback limit Ghostty *reuses the oldest page as the newest* — a free ring without a fixed-size ring's wide-terminal waste. This is a strictly better `DamageGrid` backing store than the naive ring buffer the design first sketched.
+2. **`RefCountedSet` style interning.** Cells store a small style **id**; the actual style lives once in a per-page refcounted set, released on cell overwrite with lazy id reuse. Exactly the "packed cell + interned style" goal, with a proven shape. Hyperlinks use the same set.
+3. **Grapheme side-map.** A `grapheme_map` from cell offset to a codepoint slice keeps the common single-codepoint case in the cell and spills only complex clusters to a grapheme allocator — our grapheme-interning idea, concretely.
+4. **Offset-addressed memory (`OffsetBuf`).** Everything inside a page is stored as an offset into the page arena, not a pointer, so pages are relocatable and copyable. This is what makes the multi-session arena and cheap session teardown realistic.
+5. **Serial numbers + pins for invalidation.** Monotonic page serials detect stale references without requiring pointer stability, and a `PinSet` keeps cursor/scrollback anchors correct across mutations. This is the principled replacement for the capsule's current ad-hoc `scrollback_offset` + `inline_scrollback` bookkeeping in <RepoFile path="crates/jackin-capsule/src/session.rs" />.
+
+What Ghostty does **not** give us is the one thing that matters most — the wire-emit stage — which reconfirms the survey's central finding: the memory model is borrowable from the best in the field, but the diff-to-escape present stage is ours to write no matter which engine we study.
 
 ## How we verify the concept — the experiments
 
@@ -223,7 +237,7 @@ If and only if Experiments 1–4 surface at least one quantified wall, build a *
 Before committing to build, rule out the two adopt-instead-of-write options:
 
 - **`termwiz` (buy):** prototype driving its `Surface`/`Change` diff as the capsule's present stage on dataset 2/3. If `termwiz` matches the prototype's numbers **and** offers a stable published API, **buy beats build** and we adopt `termwiz`.
-- **libvterm (bind):** assess whether wrapping the maintained C library (neovim fork) behind a fresh `-sys` crate is cheaper than `jackin-term`. The gate is hard to pass: its Rust bindings are abandoned (so we'd own a binding either way), it adds a C toolchain to the container build, and it **still lacks the wire-emit stage** we'd have to write regardless. Document the FFI surface and build cost, then compare honestly against owning pure-Rust `jackin-term`.
+- **libvterm / libghostty-vt (bind):** assess whether wrapping a maintained C/Zig library behind a fresh `-sys` crate is cheaper than `jackin-term`. libvterm (neovim fork) is mature but its Rust bindings are abandoned; `libghostty-vt` is modern and fast but Zig-built. Both gates are hard to pass for the same reasons: we would own a binding either way, both add a non-Rust toolchain to the container build, and **both still lack the wire-emit stage** we must write regardless. Document each FFI surface and build cost, then compare honestly against owning pure-Rust `jackin-term` — for which we can borrow Ghostty's MIT memory-model patterns without taking on the Zig dependency at all.
 
 If neither adopt-path clears its gate, the remaining choice is build vs. drop, decided by the matrix below.
 
