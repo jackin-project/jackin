@@ -102,6 +102,29 @@ pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
     Fields(anyhow::Result<Vec<Field>>),
 }
 
+/// What the operator chose when the picker commits.
+#[derive(Debug, Clone)]
+pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
+    /// An existing field was chosen.
+    Existing(Reference),
+    /// Create a brand-new item in the vault.
+    NewItem {
+        account: Option<Account>,
+        vault: Vault,
+        item_name: String,
+        section: Option<String>,
+        field_label: String,
+    },
+    /// Write/append a field in an existing item.
+    EditItemField {
+        account: Option<Account>,
+        vault: Vault,
+        item: Item,
+        section: Option<String>,
+        field: FieldTarget,
+    },
+}
+
 /// A single row in the field-picker display list.
 #[derive(Debug, Clone)]
 pub enum FieldDisplayRow {

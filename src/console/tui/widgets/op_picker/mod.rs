@@ -44,31 +44,13 @@ pub use jackin_console::tui::components::op_picker::{
     matches_filter, section_choices_from_references,
 };
 
-/// What the operator chose when the picker commits.
-#[derive(Debug, Clone)]
-pub enum OpPickerSelection {
-    /// An existing field was chosen — its `op://` reference (Browse behaviour).
-    Existing(crate::operator_env::OpRef),
-    /// `+ New item` flow: create a brand-new item in the vault.
-    NewItem {
-        account: Option<crate::operator_env::OpAccount>,
-        vault: crate::operator_env::OpVault,
-        item_name: String,
-        section: Option<String>,
-        field_label: String,
-    },
-    /// Write/append a field in an existing item (existing-field overwrite,
-    /// `+ New field`, or `+ New section`).
-    EditItemField {
-        account: Option<crate::operator_env::OpAccount>,
-        vault: crate::operator_env::OpVault,
-        item: crate::operator_env::OpItem,
-        section: Option<String>,
-        /// Which field to write: an exact existing field (overwrite,
-        /// placement preserved) or a new field by label.
-        field: crate::operator_env::FieldTarget,
-    },
-}
+pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<
+    crate::operator_env::OpRef,
+    crate::operator_env::OpAccount,
+    crate::operator_env::OpVault,
+    crate::operator_env::OpItem,
+    crate::operator_env::FieldTarget,
+>;
 
 type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
 
