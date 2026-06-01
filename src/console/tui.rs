@@ -2,7 +2,6 @@
 
 pub mod app;
 pub(crate) mod auth_panel;
-mod create;
 pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;

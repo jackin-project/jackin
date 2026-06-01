@@ -14,7 +14,7 @@ use crate::console::domain::{
 };
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 use crate::operator_env::OpCache;
-use crate::workspace::WorkspaceConfig;
+use crate::workspace::{MountConfig, WorkspaceConfig};
 
 use crate::console::tui::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
@@ -2412,6 +2412,75 @@ impl CreatePreludeState<'_> {
             last_browser_cwd: None,
             used_edit_dst: false,
         }
+    }
+
+    pub fn accept_mount_src(&mut self, src: PathBuf) {
+        self.pending_mount_src = Some(src);
+        self.step = CreateStep::PickFirstMountDst;
+    }
+
+    /// Default mount dst = same absolute path as host src. Operator can
+    /// overwrite in the dst modal.
+    pub fn default_mount_dst(&self) -> Option<String> {
+        self.pending_mount_src
+            .as_ref()
+            .map(|p| p.display().to_string())
+    }
+
+    pub fn accept_mount_dst(&mut self, dst: String, readonly: bool) {
+        self.pending_mount_dst = Some(dst);
+        self.pending_readonly = readonly;
+        self.step = CreateStep::PickWorkdir;
+    }
+
+    pub fn accept_workdir(&mut self, workdir: String) {
+        self.pending_workdir = Some(workdir);
+        self.step = CreateStep::NameWorkspace;
+    }
+
+    /// Default name = mount dst basename.
+    pub fn default_name(&self) -> Option<String> {
+        self.pending_mount_dst.as_ref().and_then(|dst| {
+            std::path::Path::new(dst)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+        })
+    }
+
+    pub fn accept_name(&mut self, name: String) {
+        self.pending_name = Some(name);
+    }
+
+    /// Produce the `WorkspaceConfig` for commit. Returns None if any
+    /// required field is missing.
+    pub fn build_workspace(&self) -> Option<WorkspaceConfig> {
+        let src = self.pending_mount_src.as_ref()?;
+        let dst = self.pending_mount_dst.as_ref()?;
+        let workdir = self.pending_workdir.as_ref()?;
+
+        Some(WorkspaceConfig {
+            workdir: workdir.clone(),
+            mounts: vec![MountConfig {
+                src: src.display().to_string(),
+                dst: dst.clone(),
+                readonly: self.pending_readonly,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..WorkspaceConfig::default()
+        })
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.pending_name.as_deref()
+    }
+
+    /// The wizard is complete iff a name, a mount source, a mount dst,
+    /// and a workdir have all been captured. Returns the owned pair the
+    /// dispatcher needs to transition to the editor.
+    pub fn completed(&self) -> Option<(String, WorkspaceConfig)> {
+        let name = self.pending_name.clone()?;
+        let workspace = self.build_workspace()?;
+        Some((name, workspace))
     }
 }
 
