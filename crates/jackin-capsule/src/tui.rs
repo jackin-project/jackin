@@ -12,3 +12,4 @@ pub mod message;
 pub mod render;
 pub mod selection;
 pub mod socket_backend;
+pub mod update;

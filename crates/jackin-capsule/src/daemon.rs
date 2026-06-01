@@ -82,6 +82,7 @@ use crate::title::{
     session_agent_label,
 };
 use crate::tui::app::{DragState, HoverTarget, PointerShape, VisiblePane};
+use crate::tui::update::FullRedrawReason;
 
 mod compositor;
 mod context_mgmt;
@@ -293,51 +294,6 @@ impl PullRequestContextCacheEntry {
 enum PullRequestLookupMode {
     RespectCache,
     ForceRefresh,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FullRedrawReason {
-    FirstAttach,
-    Resize,
-    TabSwitch,
-    LayoutChange,
-    SplitClose,
-    ZoomChange,
-    ScrollbackMovement,
-    DialogChange,
-    SelectionRepaint,
-    PaletteOverlay,
-    FocusChange,
-    SessionExit,
-    PaneClear,
-    ExplicitRedraw,
-    StatusChange,
-    PaneCacheMiss,
-    UnsafePartial,
-}
-
-impl FullRedrawReason {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::FirstAttach => "first-attach",
-            Self::Resize => "resize",
-            Self::TabSwitch => "tab-switch",
-            Self::LayoutChange => "layout-change",
-            Self::SplitClose => "split-close",
-            Self::ZoomChange => "zoom-change",
-            Self::ScrollbackMovement => "scrollback-movement",
-            Self::DialogChange => "dialog-change",
-            Self::SelectionRepaint => "selection-repaint",
-            Self::PaletteOverlay => "palette-overlay",
-            Self::FocusChange => "focus-change",
-            Self::SessionExit => "session-exit",
-            Self::PaneClear => "pane-clear",
-            Self::ExplicitRedraw => "explicit-redraw",
-            Self::StatusChange => "status-change",
-            Self::PaneCacheMiss => "pane-cache-miss",
-            Self::UnsafePartial => "unsafe-partial",
-        }
-    }
 }
 
 /// Stages of the takeover/first-attach burst. Each variant maps to a
