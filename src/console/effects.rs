@@ -69,10 +69,30 @@ pub(crate) fn execute_manager_effect(
         ManagerEffect::OpenCreatePreludeFileBrowser => {
             execute_create_prelude_file_browser_open(state);
         }
+        ManagerEffect::OpenEditorAddMountFileBrowser => {
+            execute_editor_add_mount_file_browser_open(state);
+        }
         ManagerEffect::ValidateOpCommit {
             op_ref,
             is_settings,
         } => execute_op_commit_validation(state, op_ref, is_settings),
+    }
+}
+
+fn execute_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    match crate::console::services::file_browser::from_home() {
+        Ok(file_browser) => {
+            editor.modal = Some(Modal::FileBrowser {
+                target: FileBrowserTarget::EditAddMountSrc,
+                state: file_browser,
+            });
+        }
+        Err(error) => {
+            crate::console::tui::input::editor::open_editor_action_error(editor, &error);
+        }
     }
 }
 

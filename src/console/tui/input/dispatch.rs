@@ -358,6 +358,15 @@ pub fn handle_key(
             );
             InputOutcome::Continue
         }
+        InputOutcome::OpenEditorAddMountFileBrowser => {
+            execute_manager_effect(
+                state,
+                config,
+                paths,
+                ManagerEffect::OpenEditorAddMountFileBrowser,
+            );
+            InputOutcome::Continue
+        }
         other => other,
     };
     execute_manager_effect(

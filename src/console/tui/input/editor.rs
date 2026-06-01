@@ -325,7 +325,7 @@ pub(super) fn handle_editor_key(
             EditorTab::Mounts => {
                 let FieldFocus::Row(n) = editor.active_field;
                 if n == editor.pending.mounts.len() {
-                    open_add_mount_file_browser(editor);
+                    return Ok(InputOutcome::OpenEditorAddMountFileBrowser);
                 }
             }
             EditorTab::Secrets => {
@@ -395,7 +395,7 @@ pub(super) fn handle_editor_key(
             toggle_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
-            open_add_mount_file_browser(editor);
+            return Ok(InputOutcome::OpenEditorAddMountFileBrowser);
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
@@ -1975,20 +1975,6 @@ pub(crate) fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config:
 
     if let Some(idx) = config.roles.keys().position(|role| role == key) {
         editor.active_field = FieldFocus::Row(idx);
-    }
-}
-
-fn open_add_mount_file_browser(editor: &mut EditorState<'_>) {
-    match super::new_file_browser_from_home() {
-        Ok(state) => {
-            editor.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::EditAddMountSrc,
-                state,
-            });
-        }
-        Err(e) => {
-            open_editor_action_error(editor, &e);
-        }
     }
 }
 

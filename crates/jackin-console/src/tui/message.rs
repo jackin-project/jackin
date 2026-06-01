@@ -51,6 +51,9 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     /// The root input dispatcher executes the filesystem-backed listing through
     /// the file-browser service adapter.
     OpenCreatePreludeFileBrowser,
+    /// Open the workspace editor add-mount file browser through the root
+    /// file-browser service adapter.
+    OpenEditorAddMountFileBrowser,
     /// Operator selected an agent and provider for a new session.
     NewSessionWithProvider {
         container: String,

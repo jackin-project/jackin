@@ -344,6 +344,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     match outcome {
                         crate::console::tui::InputOutcome::Continue => {}
                         crate::console::tui::InputOutcome::OpenCreatePreludeFileBrowser => {}
+                        crate::console::tui::InputOutcome::OpenEditorAddMountFileBrowser => {}
                         crate::console::tui::InputOutcome::ExitJackin => {
                             break 'main Ok(None);
                         }
