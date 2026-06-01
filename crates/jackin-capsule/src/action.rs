@@ -5,7 +5,7 @@
 //! a live PTY or attach socket.
 
 use crate::{
-    dialog::DialogAction,
+    dialog::{DialogAction, PaletteCommand},
     input::{ArrowDir, PrefixCommand},
 };
 
@@ -16,6 +16,7 @@ pub enum Action {
     OpenGithubContext,
     OpenRenameTab(usize),
     SwitchTab(usize),
+    Palette(PaletteCommand),
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
     FocusReport(bool),

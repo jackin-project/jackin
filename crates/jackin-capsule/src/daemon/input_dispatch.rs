@@ -35,7 +35,7 @@ impl Multiplexer {
                 // `handle_palette_command` decides per-arm whether
                 // the command opens a sub-dialog (push) or finishes
                 // the flow (clear stack).
-                if let Some(frame) = self.handle_palette_command(cmd) {
+                if let Some(frame) = self.apply_action(Action::Palette(cmd)) {
                     return frame;
                 }
             }
@@ -180,6 +180,7 @@ impl Multiplexer {
                 self.synthesise_focus_swap(prev, self.active_focused_id());
                 Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
             }
+            Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
                 if self.dialog_captures_input() {
                     None

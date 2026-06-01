@@ -3860,6 +3860,16 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_palette_new_tab_pushes_agent_picker() {
+        let mut mux = single_pane_tab_mux();
+        mux.open_command_palette();
+
+        mux.apply_action(Action::Palette(PaletteCommand::NewTab));
+
+        assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
+    }
+
+    #[test]
     fn apply_action_focus_pane_at_changes_focus() {
         let mut mux = split_tab_mux();
         let target = mux
