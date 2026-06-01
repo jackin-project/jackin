@@ -161,63 +161,13 @@ pub async fn run_console<H: InstanceActionHandler>(
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             let messages = crate::console::effects::poll_background_messages(ms, &mut config, paths);
             for message in messages {
-                match message {
-                    crate::console::tui::message::ManagerBackgroundEvent::Message(message) => {
-                        needs_redraw |= crate::console::tui::update_manager(ms, message).is_dirty();
-                    }
-                    crate::console::tui::message::ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
-                        if let crate::console::tui::ManagerStage::Editor(editor) = &mut ms.stage {
-                            crate::console::effects::apply_role_load_completion(
-                                editor,
-                                &mut config,
-                                paths,
-                                load,
-                                result,
-                            );
-                        }
-                        needs_redraw = true;
-                    }
-                    crate::console::tui::message::ManagerBackgroundEvent::DriftCheckFinished {
-                        check,
-                        detection,
-                    } => {
-                        if let Ok(Some(effect)) = crate::console::tui::input::save::continue_save_after_drift_check(
-                            ms,
-                            &mut config,
-                            check,
-                            detection,
-                        ) {
-                            crate::console::effects::execute_workspace_save_effect(
-                                ms,
-                                &mut config,
-                                paths,
-                                cwd,
-                                effect,
-                            );
-                        }
-                        needs_redraw = true;
-                    }
-                    crate::console::tui::message::ManagerBackgroundEvent::IsolationCleanupFinished {
-                        cleanup,
-                        result,
-                    } => {
-                        if let Ok(Some(effect)) = crate::console::tui::input::save::continue_save_after_isolation_cleanup(
-                            ms,
-                            &mut config,
-                            cleanup,
-                            result,
-                        ) {
-                            crate::console::effects::execute_workspace_save_effect(
-                                ms,
-                                &mut config,
-                                paths,
-                                cwd,
-                                effect,
-                            );
-                        }
-                        needs_redraw = true;
-                    }
-                }
+                needs_redraw |= crate::console::effects::apply_background_event(
+                    ms,
+                    &mut config,
+                    paths,
+                    cwd,
+                    message,
+                );
             }
         }
 

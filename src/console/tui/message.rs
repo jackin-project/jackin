@@ -5,6 +5,7 @@
 //! messages instead of mutating `ManagerState` inline.
 
 use jackin_console::tui::auth::AuthKind;
+#[cfg(test)]
 pub(crate) use super::effects::ManagerBackgroundEvent;
 use super::effect::ManagerEffect;
 use super::effects::{poll_file_browser_git_urls, poll_picker_loads};

@@ -797,6 +797,44 @@ pub(crate) fn poll_background_messages(
     messages
 }
 
+pub(crate) fn apply_background_event(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    cwd: &std::path::Path,
+    event: ManagerBackgroundEvent,
+) -> bool {
+    match event {
+        ManagerBackgroundEvent::Message(message) => update_manager(state, message).is_dirty(),
+        ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
+            if let ManagerStage::Editor(editor) = &mut state.stage {
+                apply_role_load_completion(editor, config, paths, load, result);
+            }
+            true
+        }
+        ManagerBackgroundEvent::DriftCheckFinished { check, detection } => {
+            if let Ok(Some(effect)) =
+                crate::console::tui::input::save::continue_save_after_drift_check(
+                    state, config, check, detection,
+                )
+            {
+                execute_workspace_save_effect(state, config, paths, cwd, effect);
+            }
+            true
+        }
+        ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result } => {
+            if let Ok(Some(effect)) =
+                crate::console::tui::input::save::continue_save_after_isolation_cleanup(
+                    state, config, cleanup, result,
+                )
+            {
+                execute_workspace_save_effect(state, config, paths, cwd, effect);
+            }
+            true
+        }
+    }
+}
+
 /// Drained from the outer event loop every tick so picker results land without
 /// keystroke pumping. This executor starts non-TUI load services for pending
 /// picker requests, then routes completed subscriptions back into picker state.
