@@ -6,7 +6,7 @@ use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
 use crate::console::tui::auth_kind::{
     AuthKind, auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
 };
-use crate::console::manager::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
+use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
 use crate::workspace::WorkspaceConfig;

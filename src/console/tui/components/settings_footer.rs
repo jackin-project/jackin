@@ -6,7 +6,7 @@ use crate::console::tui::components::modal_footer::{
     settings_auth_modal_footer_items, settings_env_modal_footer_items,
     settings_mounts_modal_footer_items,
 };
-use crate::console::manager::state::{
+use crate::console::tui::state::{
     SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab,
 };
 use crate::operator_env::EnvValue;

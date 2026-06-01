@@ -19,7 +19,7 @@ use crate::console::tui::render::mount_display::{
 use crate::console::tui::render::settings_geometry::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
 };
-use super::super::state::{
+use crate::console::tui::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
@@ -337,7 +337,7 @@ fn container_info_copyable_row_at(
 /// there selects a row / activates scroll). Shared by the click handler and the
 /// hover cue.
 fn settings_trust_clickable(
-    settings: &super::super::state::SettingsState<'_>,
+    settings: &crate::console::tui::state::SettingsState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
@@ -410,7 +410,7 @@ fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
 /// click handler's geometry: skip the column header (content line 0) and add
 /// the rendered vertical scroll, same as `try_select_settings_trust_row`.
 fn settings_trust_row_at(
-    settings: &super::super::state::SettingsState<'_>,
+    settings: &crate::console::tui::state::SettingsState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> Option<usize> {
@@ -542,7 +542,7 @@ fn try_select_settings_trust_row(
 /// Pure geometry shared by the click handler and the hover hand-pointer cue so
 /// they can't drift.
 fn editor_mount_index_at(
-    editor: &super::super::state::EditorState<'_>,
+    editor: &crate::console::tui::state::EditorState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> Option<usize> {
@@ -580,7 +580,7 @@ fn try_select_editor_mount_row(
 }
 
 fn editor_mount_index_at_visual_row(
-    editor: &super::super::state::EditorState<'_>,
+    editor: &crate::console::tui::state::EditorState<'_>,
     row: usize,
 ) -> Option<usize> {
     if row == 0 {
@@ -804,7 +804,7 @@ fn update_scroll_focus(
 
 /// The content area below the header + tab strip in Settings/Editor stages.
 const fn settings_content_area(
-    settings: &super::super::state::SettingsState<'_>,
+    settings: &crate::console::tui::state::SettingsState<'_>,
     term_size: Rect,
 ) -> Rect {
     Rect {
@@ -888,7 +888,7 @@ fn drag_vertical_scrollbar(
     drag_scrollbar_axis(ScrollbarAxis::Vertical, value, mouse, area, content_height)
 }
 
-const fn settings_modal_open(settings: &super::super::state::SettingsState<'_>) -> bool {
+const fn settings_modal_open(settings: &crate::console::tui::state::SettingsState<'_>) -> bool {
     settings.error_popup.is_some()
         || settings.mounts.modal.is_some()
         || settings.env.modal.is_some()
@@ -1291,7 +1291,7 @@ fn list_scroll_areas(
 }
 
 const fn editor_content_area(
-    editor: &super::super::state::EditorState<'_>,
+    editor: &crate::console::tui::state::EditorState<'_>,
     term_size: Rect,
 ) -> Rect {
     Rect {
@@ -1305,7 +1305,7 @@ const fn editor_content_area(
 }
 
 fn editor_scroll_area(
-    editor: &super::super::state::EditorState<'_>,
+    editor: &crate::console::tui::state::EditorState<'_>,
     term_size: Rect,
 ) -> ScrollArea {
     ScrollArea {
@@ -1317,13 +1317,13 @@ fn editor_scroll_area(
     }
 }
 
-const fn editor_content_height(editor: &super::super::state::EditorState<'_>) -> usize {
+const fn editor_content_height(editor: &crate::console::tui::state::EditorState<'_>) -> usize {
     editor.tab_content_height
 }
 
 fn global_mount_rows_content_width(
     rows: &[crate::config::GlobalMountRow],
-    cache: &super::super::state::MountInfoCache,
+    cache: &crate::console::tui::state::MountInfoCache,
 ) -> usize {
     // Settings mounts render Destination + Mode + Type columns, unlike the
     // sidebar's Destination + Mode variant.
@@ -1481,7 +1481,7 @@ mod mouse_drag_tests {
     use super::{
         MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
     };
-    use crate::console::manager::state::{
+    use crate::console::tui::state::{
         DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
         GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
         MountScrollFocus, SecretsScopeTag, SettingsState, SettingsTab,
@@ -1507,7 +1507,7 @@ mod mouse_drag_tests {
         use super::{
             SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT, editor_content_area, settings_content_area,
         };
-        use crate::console::manager::state::SettingsState;
+        use crate::console::tui::state::SettingsState;
         let term = Rect::new(0, 0, 80, 24);
 
         let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
@@ -1786,7 +1786,7 @@ mod mouse_drag_tests {
         assert_eq!(editor.active_tab, EditorTab::Secrets);
         assert!(matches!(
             editor.active_field,
-            crate::console::manager::state::FieldFocus::Row(0)
+            crate::console::tui::state::FieldFocus::Row(0)
         ));
     }
 
@@ -1853,7 +1853,7 @@ mod mouse_drag_tests {
 
     #[test]
     fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
-        use crate::console::manager::state::CreatePreludeState;
+        use crate::console::tui::state::CreatePreludeState;
         use jackin_console::tui::components::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
@@ -1883,7 +1883,7 @@ mod mouse_drag_tests {
 
         let prelude = CreatePreludeState {
             modal: Some(Modal::FileBrowser {
-                target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                target: crate::console::tui::state::FileBrowserTarget::CreateFirstMountSrc,
                 state: fb,
             }),
             ..CreatePreludeState::default()
@@ -1922,7 +1922,7 @@ mod mouse_drag_tests {
 
     #[test]
     fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
-        use crate::console::manager::state::CreatePreludeState;
+        use crate::console::tui::state::CreatePreludeState;
         use jackin_console::tui::components::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
@@ -1949,7 +1949,7 @@ mod mouse_drag_tests {
 
         let prelude = CreatePreludeState {
             modal: Some(Modal::FileBrowser {
-                target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                target: crate::console::tui::state::FileBrowserTarget::CreateFirstMountSrc,
                 state: fb,
             }),
             ..CreatePreludeState::default()
@@ -2450,7 +2450,7 @@ mod mouse_drag_tests {
             ..Default::default()
         };
         let mut editor = EditorState::new_edit("x".into(), ws);
-        editor.active_tab = crate::console::manager::state::EditorTab::Mounts;
+        editor.active_tab = crate::console::tui::state::EditorTab::Mounts;
         state.stage = ManagerStage::Editor(editor);
 
         handle_mouse_with_config(
@@ -2468,7 +2468,7 @@ mod mouse_drag_tests {
             MOUSE_HORIZONTAL_SCROLL_STEP
         );
 
-        editor.active_tab = crate::console::manager::state::EditorTab::General;
+        editor.active_tab = crate::console::tui::state::EditorTab::General;
         handle_mouse_with_config(
             &mut state,
             mouse_kind_at(MouseEventKind::ScrollRight, 10, 6),

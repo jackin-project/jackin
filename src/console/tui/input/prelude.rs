@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_tui::ModalOutcome;
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::state::{ManagerState, Modal};
+use crate::console::tui::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -39,7 +39,7 @@ pub(super) fn handle_prelude_key(
 /// the `TextInputDst` commit path (operator edited dst) end the same way.
 /// Callers are responsible for having already pushed the mount dst onto
 /// the prelude (via `accept_mount_dst`).
-fn prelude_advance_to_workdir_pick(prelude: &mut super::super::state::CreatePreludeState<'_>) {
+fn prelude_advance_to_workdir_pick(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
     let mount = crate::workspace::MountConfig {
         src: prelude
             .pending_mount_src
@@ -61,10 +61,10 @@ fn prelude_advance_to_workdir_pick(prelude: &mut super::super::state::CreatePrel
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_prelude_modal(
-    prelude: &mut super::super::state::CreatePreludeState<'_>,
+    prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
     key: KeyEvent,
 ) -> InputOutcome {
-    use super::super::state::{FileBrowserTarget, TextInputTarget};
+    use crate::console::tui::state::{FileBrowserTarget, TextInputTarget};
     use jackin_tui::components::TextInputState;
 
     // Determine which step we're on by inspecting the modal discriminant,
@@ -272,8 +272,8 @@ pub(super) fn handle_prelude_modal(
 /// Reopen the `FileBrowserSrc` modal positioned at the last-seen cwd.
 /// Used by step-back navigation from `MountDstChoice`. Silently starts at
 /// `$HOME` when the browser fails to build or no cwd was recorded.
-fn reopen_file_browser_at_last_cwd(prelude: &mut super::super::state::CreatePreludeState<'_>) {
-    use super::super::state::FileBrowserTarget;
+fn reopen_file_browser_at_last_cwd(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
+    use crate::console::tui::state::FileBrowserTarget;
     let Ok(mut fb) = super::new_file_browser_from_home() else {
         prelude.modal = None;
         return;
@@ -289,8 +289,8 @@ fn reopen_file_browser_at_last_cwd(prelude: &mut super::super::state::CreatePrel
 
 /// Reopen the `MountDstChoice` modal seeded from the stashed mount src.
 /// Used by step-back navigation from `TextInputDst` / `WorkdirPick`.
-fn reopen_mount_dst_choice(prelude: &mut super::super::state::CreatePreludeState<'_>) {
-    use super::super::state::FileBrowserTarget;
+fn reopen_mount_dst_choice(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
+    use crate::console::tui::state::FileBrowserTarget;
     let src = prelude
         .pending_mount_src
         .as_ref()
@@ -307,7 +307,7 @@ mod tests {
     //! Create-wizard tests: the prelude's multi-step modal sequence
     //! (`FileBrowserSrc` → `MountDstChoice` → `TextInputDst` → `WorkdirPick` →
     //! `TextInputName`) and its step-back / Esc semantics.
-    use super::super::super::state::{FileBrowserTarget, Modal};
+    use crate::console::tui::state::{FileBrowserTarget, Modal};
     use super::super::test_support::key;
     use super::handle_prelude_modal;
     use crossterm::event::KeyCode;
@@ -319,8 +319,8 @@ mod tests {
     /// that cleanly from outside the widget).
     fn prelude_with_browser_committed(
         src: &str,
-    ) -> super::super::super::state::CreatePreludeState<'static> {
-        let mut prelude = super::super::super::state::CreatePreludeState::new();
+    ) -> crate::console::tui::state::CreatePreludeState<'static> {
+        let mut prelude = crate::console::tui::state::CreatePreludeState::new();
         prelude.accept_mount_src(std::path::PathBuf::from(src));
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
@@ -350,7 +350,7 @@ mod tests {
         assert!(!prelude.pending_readonly);
         assert!(matches!(
             prelude.step,
-            super::super::super::state::CreateStep::PickWorkdir
+            crate::console::tui::state::CreateStep::PickWorkdir
         ));
     }
 
@@ -368,7 +368,7 @@ mod tests {
             Some(Modal::TextInput { target, .. }) => {
                 assert_eq!(
                     target,
-                    &super::super::super::state::TextInputTarget::MountDst
+                    &crate::console::tui::state::TextInputTarget::MountDst
                 );
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),
@@ -379,7 +379,7 @@ mod tests {
         // advanced yet) — TextInput commit is what calls accept_mount_dst.
         assert!(matches!(
             prelude.step,
-            super::super::super::state::CreateStep::PickFirstMountDst
+            crate::console::tui::state::CreateStep::PickFirstMountDst
         ));
     }
 
@@ -412,7 +412,7 @@ mod tests {
             .map(|b| b.home_dir().to_path_buf())
             .expect("resolve $HOME");
 
-        let mut prelude = super::super::super::state::CreatePreludeState::new();
+        let mut prelude = crate::console::tui::state::CreatePreludeState::new();
         prelude.accept_mount_src(home.clone());
         prelude.last_browser_cwd = Some(home.clone());
         prelude.modal = Some(Modal::MountDstChoice {
@@ -497,7 +497,7 @@ mod tests {
             Some(Modal::TextInput { target, .. }) => {
                 assert_eq!(
                     target,
-                    &super::super::super::state::TextInputTarget::MountDst
+                    &crate::console::tui::state::TextInputTarget::MountDst
                 );
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),
@@ -509,12 +509,12 @@ mod tests {
         // Name is the last step in the wizard — Esc on TextInputName
         // must rewind to WorkdirPick so the operator can change the
         // workdir without abandoning the partial workspace.
-        let mut prelude = super::super::super::state::CreatePreludeState::new();
+        let mut prelude = crate::console::tui::state::CreatePreludeState::new();
         prelude.accept_mount_src(std::path::PathBuf::from("/home/user/project"));
         prelude.accept_mount_dst("/home/user/project".into(), false);
         prelude.accept_workdir("/home/user/project".into());
         prelude.modal = Some(Modal::TextInput {
-            target: super::super::super::state::TextInputTarget::Name,
+            target: crate::console::tui::state::TextInputTarget::Name,
             state: jackin_tui::components::TextInputState::new("Name this workspace", "project"),
         });
 
@@ -532,7 +532,7 @@ mod tests {
         // Step 1 (FileBrowserSrc) has no prior state to restore — Esc
         // must close the modal so the outer dispatcher drops back to
         // the workspace list (today's "cancelled" contract).
-        let mut prelude = super::super::super::state::CreatePreludeState::new();
+        let mut prelude = crate::console::tui::state::CreatePreludeState::new();
         let fb = jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
             jackin_console::services::file_browser::listing_from_home()
                 .expect("file browser should build in test env"),

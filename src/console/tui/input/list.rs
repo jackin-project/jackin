@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_tui::ModalOutcome;
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::state::{
+use crate::console::tui::state::{
     CreatePreludeState, EditorState, FileBrowserTarget, ManagerListRow, ManagerState, Modal,
     ProviderPickerState, SettingsState,
 };
@@ -740,7 +740,7 @@ pub(super) fn handle_launch_provider_picker(
 mod tests {
     //! List-stage tests: row-0 (current dir) gating, Enter routing,
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
-    use super::super::super::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
+    use crate::console::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
     use super::{InputOutcome, handle_new_session_picker, instance_action_accepts_status};
     use crate::agent::AgentChoiceState;
@@ -897,7 +897,7 @@ mod tests {
         )];
         state.expand_workspace(0);
         state.selected = state
-            .index_of_row(crate::console::manager::state::ManagerListRow::WorkspaceInstance(0, 0))
+            .index_of_row(crate::console::tui::state::ManagerListRow::WorkspaceInstance(0, 0))
             .expect("expanded workspace instance row exists");
 
         let outcome = handle_key(
@@ -970,7 +970,7 @@ mod tests {
         );
         assert!(matches!(
             state.row_at(1),
-            Some(crate::console::manager::state::ManagerListRow::CurrentDirectoryInstance(0))
+            Some(crate::console::tui::state::ManagerListRow::CurrentDirectoryInstance(0))
         ));
     }
 
@@ -1151,7 +1151,7 @@ mod tests {
         assert!(
             matches!(
                 state.stage,
-                crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. }
+                crate::console::tui::state::ManagerStage::ConfirmInstancePurge { .. }
             ),
             "P should have set ConfirmInstancePurge stage"
         );
@@ -1198,7 +1198,7 @@ mod tests {
         .unwrap();
         assert!(matches!(
             state.stage,
-            crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. }
+            crate::console::tui::state::ManagerStage::ConfirmInstancePurge { .. }
         ));
         let outcome = handle_key(
             &mut state,
@@ -1215,7 +1215,7 @@ mod tests {
         assert!(
             matches!(
                 state.stage,
-                crate::console::manager::state::ManagerStage::List
+                crate::console::tui::state::ManagerStage::List
             ),
             "N must reset stage to List"
         );
@@ -1254,7 +1254,7 @@ mod tests {
         assert!(matches!(outcome, InputOutcome::Continue));
         assert!(matches!(
             state.stage,
-            crate::console::manager::state::ManagerStage::List
+            crate::console::tui::state::ManagerStage::List
         ));
     }
 

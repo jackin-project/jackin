@@ -9,8 +9,8 @@ use super::manager;
 use super::preview;
 use super::{ConsoleOutcome, ConsoleStage, ConsoleState, build_workspace_choice};
 
-const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> &'static str {
-    use crate::console::manager::state::Modal;
+const fn modal_debug_name(modal: &crate::console::tui::state::Modal<'_>) -> &'static str {
+    use crate::console::tui::state::Modal;
     match modal {
         Modal::TextInput { .. } => "TextInput",
         Modal::FileBrowser { .. } => "FileBrowser",
@@ -44,58 +44,58 @@ pub(super) fn console_location_debug(console_state: &ConsoleState) -> String {
         format!(" list_modal={}", modal_debug_name(modal))
     });
     let location = match &ms.stage {
-        crate::console::manager::state::ManagerStage::List => "list".to_string(),
-        crate::console::manager::state::ManagerStage::Editor(editor) => {
+        crate::console::tui::state::ManagerStage::List => "list".to_string(),
+        crate::console::tui::state::ManagerStage::Editor(editor) => {
             let modal = editor.modal.as_ref().map_or("none", modal_debug_name);
             format!(
                 "editor mode={:?} tab={:?} field={:?} modal={modal}",
                 editor.mode, editor.active_tab, editor.active_field
             )
         }
-        crate::console::manager::state::ManagerStage::CreatePrelude(prelude) => {
+        crate::console::tui::state::ManagerStage::CreatePrelude(prelude) => {
             let modal = prelude.modal.as_ref().map_or("none", modal_debug_name);
             format!("create-prelude step={:?} modal={modal}", prelude.step)
         }
-        crate::console::manager::state::ManagerStage::ConfirmDelete { .. } => {
+        crate::console::tui::state::ManagerStage::ConfirmDelete { .. } => {
             "confirm-delete".to_string()
         }
-        crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. } => {
+        crate::console::tui::state::ManagerStage::ConfirmInstancePurge { .. } => {
             "confirm-instance-purge".to_string()
         }
-        crate::console::manager::state::ManagerStage::Settings(settings) => {
+        crate::console::tui::state::ManagerStage::Settings(settings) => {
             let modal = settings
                 .mounts
                 .modal
                 .as_ref()
                 .map_or("none", |modal| match modal {
-                    crate::console::manager::state::GlobalMountModal::Text { .. } => "text-input",
-                    crate::console::manager::state::GlobalMountModal::FileBrowser { .. } => {
+                    crate::console::tui::state::GlobalMountModal::Text { .. } => "text-input",
+                    crate::console::tui::state::GlobalMountModal::FileBrowser { .. } => {
                         "file-browser"
                     }
-                    crate::console::manager::state::GlobalMountModal::MountDstChoice { .. } => {
+                    crate::console::tui::state::GlobalMountModal::MountDstChoice { .. } => {
                         "mount-dst-choice"
                     }
-                    crate::console::manager::state::GlobalMountModal::ScopePicker { .. } => {
+                    crate::console::tui::state::GlobalMountModal::ScopePicker { .. } => {
                         "scope-picker"
                     }
-                    crate::console::manager::state::GlobalMountModal::RolePicker { .. } => {
+                    crate::console::tui::state::GlobalMountModal::RolePicker { .. } => {
                         "role-picker"
                     }
-                    crate::console::manager::state::GlobalMountModal::Confirm {
+                    crate::console::tui::state::GlobalMountModal::Confirm {
                         action, ..
                     } => match action {
-                        crate::console::manager::state::GlobalMountConfirm::Remove => {
+                        crate::console::tui::state::GlobalMountConfirm::Remove => {
                             "confirm-remove"
                         }
-                        crate::console::manager::state::GlobalMountConfirm::Save => "confirm-save",
-                        crate::console::manager::state::GlobalMountConfirm::Sensitive => {
+                        crate::console::tui::state::GlobalMountConfirm::Save => "confirm-save",
+                        crate::console::tui::state::GlobalMountConfirm::Sensitive => {
                             "confirm-sensitive"
                         }
-                        crate::console::manager::state::GlobalMountConfirm::Discard => {
+                        crate::console::tui::state::GlobalMountConfirm::Discard => {
                             "confirm-discard"
                         }
                     },
-                    crate::console::manager::state::GlobalMountModal::PreviewSave { .. } => {
+                    crate::console::tui::state::GlobalMountModal::PreviewSave { .. } => {
                         "preview-save"
                     }
                 });
@@ -425,7 +425,7 @@ pub(super) fn launch_with_committed_agent(
     }
 
     if let ConsoleStage::Manager(ms) = &mut state.stage {
-        ms.launch_provider_picker = Some(crate::console::manager::state::ProviderPickerState::new(
+        ms.launch_provider_picker = Some(crate::console::tui::state::ProviderPickerState::new(
             role.clone(),
             agent,
             providers,

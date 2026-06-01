@@ -5,7 +5,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use crate::console::tui::render::mount_display::{
     settings_global_mounts_content_height, settings_global_mounts_content_width_with_cache,
 };
-use crate::console::manager::state::{GlobalMountsState, SettingsState};
+use crate::console::tui::state::{GlobalMountsState, SettingsState};
 
 pub(crate) fn clamp_global_mounts_scroll_for_frame(area: Rect, global: &mut GlobalMountsState<'_>) {
     let chunks = Layout::default()

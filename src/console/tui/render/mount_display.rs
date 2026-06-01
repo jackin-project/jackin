@@ -1,6 +1,6 @@
 //! Mount row display data and width math shared by update and render.
 
-use crate::console::manager::state::MountInfoCache;
+use crate::console::tui::state::MountInfoCache;
 
 pub(crate) use jackin_console::mount_display::{MountDisplayRow, mount_path_width};
 pub(crate) use jackin_console::tui::components::mount_rows::{

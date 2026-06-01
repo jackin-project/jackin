@@ -6,8 +6,8 @@ use crate::config::AppConfig;
 use crate::console::tui::render::mount_display::{
     workspace_mounts_content_height, workspace_mounts_content_width_with_cache,
 };
-use crate::console::manager::state::auth_flat_rows;
-use crate::console::manager::state::{
+use crate::console::tui::state::auth_flat_rows;
+use crate::console::tui::state::{
     AuthRow, EditorMode, EditorState, EditorTab, SecretsRow, SecretsScopeTag,
 };
 use crate::operator_env::EnvValue;
@@ -285,10 +285,10 @@ fn auth_source_width(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> usize {
-    let synthesized = crate::console::manager::state::synthesize_appconfig_for_auth(state, config);
-    let workspace_name = crate::console::manager::state::workspace_name_for_panel(state);
+    let synthesized = crate::console::tui::state::synthesize_appconfig_for_auth(state, config);
+    let workspace_name = crate::console::tui::state::workspace_name_for_panel(state);
     let mode =
-        crate::console::manager::state::resolve_panel_mode(&synthesized, kind, &workspace_name, "");
+        crate::console::tui::state::resolve_panel_mode(&synthesized, kind, &workspace_name, "");
     let label_width = if indent == 0 { 14 } else { 12 };
     let prefix = indent + text_width(&format!("{label:<label_width$}"));
     let value_width = match kind.required_env_var(mode) {

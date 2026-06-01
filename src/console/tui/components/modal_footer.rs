@@ -3,7 +3,7 @@
 use jackin_tui::HintSpan;
 use jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT;
 
-use crate::console::manager::state::{
+use crate::console::tui::state::{
     AuthFormFocus, GlobalMountModal, Modal, SettingsAuthModal, SettingsAuthState, SettingsEnvModal,
 };
 use jackin_console::tui::components::footer_hints::{

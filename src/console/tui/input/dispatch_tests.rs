@@ -7,7 +7,7 @@
 //! handlers in a single test (e.g. open the in-editor rename modal,
 //! commit it via `handle_key`, then drive the save flow through the
 //! same `handle_key`).
-use super::super::state::{EditorState, FieldFocus, ManagerStage, ManagerState};
+use crate::console::tui::state::{EditorState, FieldFocus, ManagerStage, ManagerState};
 use super::test_support::{key, mount};
 use super::*;
 use crate::config::AppConfig;
@@ -90,7 +90,7 @@ fn settings_error_popup_dismissed_by_enter() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut settings = super::super::state::SettingsState::from_config(&config);
+    let mut settings = crate::console::tui::state::SettingsState::from_config(&config);
     settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
         "Test", "details",
     ));
@@ -125,7 +125,7 @@ fn settings_error_popup_unrelated_key_does_not_dismiss() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut settings = super::super::state::SettingsState::from_config(&config);
+    let mut settings = crate::console::tui::state::SettingsState::from_config(&config);
     settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
         "Test", "details",
     ));

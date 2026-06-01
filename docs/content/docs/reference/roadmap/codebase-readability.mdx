@@ -180,7 +180,7 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 | <RepoFile path="src/app/mod.rs" /> | **2932** | `fn run` is 1239L with a 51-arm match. | `fn run` (1239L), `render_workspace_show` (147L), `handle_claude_token` (117L) |
 | <RepoFile path="src/console/tui/render/list.rs" /> | **2920** | 41 `TestBackend::new()` calls. | `render_details_pane` (116L) |
 | <RepoFile path="src/console/tui/input/save.rs" /> | **2908** | Deep nesting to 36+ spaces. Inline color re-declarations. | `build_confirm_save_lines` (245L) |
-| <RepoFile path="src/console/manager/state.rs" /> | **2522** | State machine + modal definitions mixed. | — |
+| <RepoFile path="src/console/tui/state.rs" /> | **2522** | State machine + modal definitions mixed. | — |
 | <RepoFile path="src/config/editor.rs" /> | **2412** | 51 `JackinPaths::for_tests()` calls. | — |
 | <RepoFile path="src/isolation/materialize.rs" /> | **2392** | `materialize_one` (245L), `materialize_clone` (210L). | `materialize_one` (245L), `materialize_clone` (210L) |
 | <RepoFile path="src/console/tui/components/op_picker/mod.rs" /> | **2331** | 4-level state machine + loader + key handler. | — |

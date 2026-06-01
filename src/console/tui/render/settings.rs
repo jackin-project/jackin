@@ -21,8 +21,8 @@ use crate::console::tui::render::modal_layout::{
 use crate::console::tui::render::mount_display::{
     MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
-pub(crate) use crate::console::manager::state::SettingsEnvRow;
-use crate::console::manager::state::{
+pub(crate) use crate::console::tui::state::SettingsEnvRow;
+use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
     SettingsState, SettingsTab,
 };

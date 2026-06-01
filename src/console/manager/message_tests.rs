@@ -5,7 +5,7 @@ use crate::console::manager::effects::{
 };
 use jackin_console::tui::effect::ConsoleEffect;
 use crate::console::tui::auth_kind::AuthKind;
-use crate::console::manager::state::{
+use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
     SettingsTab,
@@ -62,7 +62,7 @@ fn mouse_selection_messages_update_tabs_and_rows() {
     editor.active_tab = EditorTab::Secrets;
     editor.secrets_expanded.insert("smith".into());
     editor.unmasked_rows.insert((
-        crate::console::manager::state::SecretsScopeTag::Workspace,
+        crate::console::tui::state::SecretsScopeTag::Workspace,
         "TOKEN".into(),
     ));
     state.stage = ManagerStage::Editor(editor);
@@ -313,7 +313,7 @@ fn editor_toggle_messages_update_selected_content() {
         update_manager(
             &mut state,
             ManagerMessage::ToggleEditorSecretMask {
-                scope: crate::console::manager::state::SecretsScopeTag::Workspace,
+                scope: crate::console::tui::state::SecretsScopeTag::Workspace,
                 key: "TOKEN".into(),
             },
         )
@@ -325,7 +325,7 @@ fn editor_toggle_messages_update_selected_content() {
     };
     assert!(editor.pending.mounts[0].readonly);
     assert!(editor.unmasked_rows.contains(&(
-        crate::console::manager::state::SecretsScopeTag::Workspace,
+        crate::console::tui::state::SecretsScopeTag::Workspace,
         "TOKEN".into()
     )));
 }
@@ -947,7 +947,7 @@ fn open_list_error_popup_sets_error_modal() {
     );
     assert!(matches!(
         state.list_modal,
-        Some(super::state::Modal::ErrorPopup { .. })
+        Some(crate::console::tui::state::Modal::ErrorPopup { .. })
     ));
 }
 

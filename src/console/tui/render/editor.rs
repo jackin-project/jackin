@@ -9,16 +9,16 @@ use crate::config::AppConfig;
 use crate::console::tui::render::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
-pub use crate::console::manager::state::AuthRow;
-pub(crate) use crate::console::manager::state::SecretsRow;
-use crate::console::manager::state::{
+pub use crate::console::tui::state::AuthRow;
+pub(crate) use crate::console::tui::state::SecretsRow;
+use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
-pub(crate) use crate::console::manager::state::{
+pub(crate) use crate::console::tui::state::{
     auth_flat_rows, resolve_panel_mode, synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 #[cfg(test)]
-pub(crate) use crate::console::manager::state::{
+pub(crate) use crate::console::tui::state::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
 use crate::operator_env::EnvValue;
@@ -844,7 +844,7 @@ mod contextual_row_items_tests {
 
     use crate::config::{AppConfig, RoleSource};
     use crate::console::tui::components::editor_footer::contextual_row_items;
-    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use jackin_tui::HintSpan;
 
@@ -1048,7 +1048,7 @@ mod general_tab_render_tests {
     use super::render_general_tab;
     use crate::config::AppConfig;
     use crate::console::tui::render::editor_geometry::prepare_editor_tab_for_area;
-    use crate::console::manager::state::{EditorState, FieldFocus};
+    use crate::console::tui::state::{EditorState, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1090,7 +1090,7 @@ mod general_tab_render_tests {
 mod mounts_tab_render_tests {
     use super::render_editor;
     use crate::config::AppConfig;
-    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1140,7 +1140,7 @@ mod agents_tab_render_tests {
     use super::render_roles_tab;
     use crate::config::{AppConfig, RoleSource};
     use crate::console::tui::render::editor_geometry::prepare_editor_tab_for_area;
-    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1304,7 +1304,7 @@ mod secrets_tab_render_tests {
     //! builder honours `secrets_expanded` for per-role override sections.
     use super::render_secrets_tab;
     use crate::config::AppConfig;
-    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus, SecretsScopeTag};
+    use crate::console::tui::state::{EditorState, EditorTab, FieldFocus, SecretsScopeTag};
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -2165,7 +2165,7 @@ mod eligible_agents_for_override_tests {
     //! picker can add more keys to an existing override.
     use super::eligible_agents_for_override;
     use crate::config::{AppConfig, RoleSource};
-    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 
     fn config_with_agents(names: &[&str]) -> AppConfig {
@@ -2269,7 +2269,7 @@ mod auth_flat_rows_tests {
     use super::{AuthRow, auth_flat_rows, resolve_panel_mode};
     use crate::config::AppConfig;
     use crate::console::tui::auth_kind::{AuthKind, AuthMode};
-    use crate::console::manager::state::EditorState;
+    use crate::console::tui::state::EditorState;
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 
     #[test]
@@ -2452,7 +2452,7 @@ mod auth_flat_rows_tests {
 
     #[test]
     fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
-        use crate::console::manager::state::AuthFormTarget;
+        use crate::console::tui::state::AuthFormTarget;
         use crate::workspace::WorkspaceConfig;
 
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());

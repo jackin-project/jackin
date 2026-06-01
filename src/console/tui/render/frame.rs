@@ -4,7 +4,7 @@ use ratatui::{
 };
 
 use crate::config::AppConfig;
-use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState};
+use crate::console::tui::state::{ManagerListRow, ManagerStage, ManagerState};
 use jackin_console::tui::view::{render_footer, render_header};
 use jackin_tui::HintSpan;
 

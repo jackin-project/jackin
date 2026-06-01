@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::settings_global_mounts_content_width_with_cache;
-use super::super::state::{
+use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvModal, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsState,
@@ -435,8 +435,8 @@ fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 fn open_settings_auth_form(
-    auth: &mut super::super::state::SettingsAuthState,
-    env: &super::super::state::SettingsEnvState<'_>,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+    env: &crate::console::tui::state::SettingsEnvState<'_>,
 ) {
     let Some(kind) = auth.selected_kind else {
         return;
@@ -474,7 +474,7 @@ fn open_settings_auth_form(
 /// generate trigger: an `AuthForm` showing the global Claude
 /// `oauth_token` slot. Settings generate is always global Claude, so —
 /// unlike the workspace editor — there is no per-target gate.
-pub fn settings_auth_can_generate_token(auth: &super::super::state::SettingsAuthState) -> bool {
+pub fn settings_auth_can_generate_token(auth: &crate::console::tui::state::SettingsAuthState) -> bool {
     matches!(
         auth.modal.as_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
@@ -485,9 +485,9 @@ pub fn settings_auth_can_generate_token(auth: &super::super::state::SettingsAuth
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_settings_auth_modal(
-    auth: &mut super::super::state::SettingsAuthState,
-    env: &mut super::super::state::SettingsEnvState<'_>,
-    pending_token_generate: &mut Option<super::super::state::PendingTokenGenerate>,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
+    pending_token_generate: &mut Option<crate::console::tui::state::PendingTokenGenerate>,
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
@@ -620,7 +620,7 @@ pub(super) fn handle_settings_auth_modal(
                 match outcome {
                     ModalOutcome::Commit(SourceChoice::Plain) => {
                         auth.generating_token = false;
-                        *pending_token_generate = Some(super::super::state::PendingTokenGenerate {
+                        *pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
                             scope: crate::workspace::token_setup::TokenSetupScope::Global,
                             args: crate::workspace::token_setup::TokenSetupArgs {
                                 plain_text: true,
@@ -722,14 +722,14 @@ pub(super) fn handle_settings_auth_modal(
 }
 
 /// Translate a Create-mode `OpPicker` commit into a global
-/// [`PendingTokenGenerate`](super::super::state::PendingTokenGenerate)
+/// [`PendingTokenGenerate`](crate::console::tui::state::PendingTokenGenerate)
 /// request that the `run_console` loop drains to mint the token.
 /// `Existing` cannot occur in Create mode; a Cancel (or stray
 /// `Existing`) just closes the chain. On `Continue` the picker is still
 /// drilling, so the marker stays armed and the modal stays open.
 fn handle_settings_token_generate_pick(
-    auth: &mut super::super::state::SettingsAuthState,
-    pending_token_generate: &mut Option<super::super::state::PendingTokenGenerate>,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+    pending_token_generate: &mut Option<crate::console::tui::state::PendingTokenGenerate>,
     outcome: ModalOutcome<crate::console::tui::components::op_picker::OpPickerSelection>,
     modal: SettingsAuthModal<'static>,
 ) {
@@ -789,7 +789,7 @@ fn handle_settings_token_generate_pick(
     };
 
     auth.generating_token = false;
-    *pending_token_generate = Some(super::super::state::PendingTokenGenerate {
+    *pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
         scope: crate::workspace::token_setup::TokenSetupScope::Global,
         args,
     });
@@ -807,7 +807,7 @@ fn cycle_auth_form_mode(form: &mut AuthForm) {
     form.set_mode(next);
 }
 
-fn restore_settings_auth_form(auth: &mut super::super::state::SettingsAuthState) {
+fn restore_settings_auth_form(auth: &mut crate::console::tui::state::SettingsAuthState) {
     auth.restore_pending_auth_form();
 }
 
@@ -817,7 +817,7 @@ fn restore_settings_auth_form(auth: &mut super::super::state::SettingsAuthState)
 /// the `run_console` loop — both stage a literal and drop the operator
 /// onto Save so the editor's normal save persists it.
 pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
-    auth: &mut super::super::state::SettingsAuthState,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
     value: &str,
 ) {
     let Some(SettingsAuthModal::AuthForm {
@@ -851,7 +851,7 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
 /// `auth::apply_op_picker_to_auth_form_with_runner`).
 #[cfg(test)]
 fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpRunner + ?Sized>(
-    auth: &mut super::super::state::SettingsAuthState,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
     op_ref: crate::operator_env::OpRef,
     runner: &R,
 ) {
@@ -862,7 +862,7 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
 
 #[cfg(test)]
 fn apply_op_picker_to_settings_auth_form_with_validator(
-    auth: &mut super::super::state::SettingsAuthState,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
     op_ref: crate::operator_env::OpRef,
     validate: impl FnOnce(&crate::operator_env::OpRef) -> anyhow::Result<()>,
 ) {
@@ -916,7 +916,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
 /// The auth form is on `auth.modal_parents` — pop it, set the `OpRef` without
 /// re-reading, and re-mount with focus on Save.
 pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
-    auth: &mut super::super::state::SettingsAuthState,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
     op_ref: crate::operator_env::OpRef,
 ) {
     let Some(SettingsAuthModal::AuthForm {
@@ -938,7 +938,7 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
     auth.modal = Some(SettingsAuthModal::AuthForm {
         target,
         state,
-        focus: crate::console::manager::state::AuthFormFocus::Save,
+        focus: crate::console::tui::state::AuthFormFocus::Save,
         literal_buffer,
     });
 }
@@ -949,15 +949,15 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
 /// used); the auth form stays stashed on `auth.modal_parents` so
 /// `restore_settings_auth_form` can bring it back on the next user action.
 pub(in crate::console) fn apply_op_picker_settings_commit_failed(
-    auth: &mut super::super::state::SettingsAuthState,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
     error: &anyhow::Error,
 ) {
     auth.error = Some(format!("1Password read failed: {error}"));
 }
 
 fn persist_settings_auth_form(
-    auth: &mut super::super::state::SettingsAuthState,
-    env: &mut super::super::state::SettingsEnvState<'_>,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     form: &AuthForm,
 ) {
     let Some(outcome) = form.commit() else {
@@ -985,8 +985,8 @@ fn persist_settings_auth_form(
 }
 
 fn clear_settings_auth_kind(
-    auth: &mut super::super::state::SettingsAuthState,
-    env: &mut super::super::state::SettingsEnvState<'_>,
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     target: &AuthFormTarget,
 ) {
     let AuthFormTarget::Workspace { kind } = target else {
@@ -1144,7 +1144,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_settings_confirm_modal(
-    settings: &mut super::super::state::SettingsState<'_>,
+    settings: &mut crate::console::tui::state::SettingsState<'_>,
     key: KeyEvent,
     open_url: &mut Option<String>,
 ) -> SettingsModalOutcome {
@@ -1310,7 +1310,7 @@ pub(super) fn handle_settings_confirm_modal(
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_settings_env_modal(
-    env: &mut super::super::state::SettingsEnvState<'_>,
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     key: KeyEvent,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
@@ -1494,7 +1494,7 @@ pub(super) fn handle_settings_env_modal(
 }
 
 fn commit_settings_confirm(
-    settings: &mut super::super::state::SettingsState<'_>,
+    settings: &mut crate::console::tui::state::SettingsState<'_>,
     action: GlobalMountConfirm,
 ) -> SettingsModalOutcome {
     match action {
@@ -1520,21 +1520,21 @@ fn commit_settings_confirm(
 }
 
 fn request_settings_save(
-    settings: &mut super::super::state::SettingsState<'_>,
+    settings: &mut crate::console::tui::state::SettingsState<'_>,
 ) -> SettingsModalOutcome {
     settings.remove_zai_key_when_auth_ignored();
     SettingsModalOutcome::SaveSettings
 }
 
-fn open_settings_save_preview(settings: &mut super::super::state::SettingsState<'_>) {
+fn open_settings_save_preview(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let lines = super::save::build_settings_save_lines(settings);
-    settings.mounts.modal = Some(super::super::state::GlobalMountModal::PreviewSave {
+    settings.mounts.modal = Some(crate::console::tui::state::GlobalMountModal::PreviewSave {
         state: jackin_console::tui::components::confirm_save::ConfirmSaveState::new(lines),
     });
 }
 
 fn commit_text(
-    global: &mut super::super::state::GlobalMountsState<'_>,
+    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
     target: &GlobalMountTextTarget,
     value: &str,
 ) {
@@ -1592,7 +1592,7 @@ fn commit_text(
 }
 
 fn commit_env_text(
-    env: &mut super::super::state::SettingsEnvState<'_>,
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     target: &SettingsEnvTextTarget,
     value: &str,
 ) {
@@ -1637,7 +1637,7 @@ fn commit_env_text(
     }
 }
 
-fn open_settings_env_role_picker(env: &mut super::super::state::SettingsEnvState<'_>) {
+fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
     use crate::selector::RolePickerState;
     use crate::selector::RoleSelector;
 
@@ -1656,7 +1656,7 @@ fn open_settings_env_role_picker(env: &mut super::super::state::SettingsEnvState
     });
 }
 
-fn commit_add_scope_text(global: &mut super::super::state::GlobalMountsState<'_>, value: &str) {
+fn commit_add_scope_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
     let Some(draft) = global.add_draft.as_mut() else {
         global.error = Some(ADD_DRAFT_LOST.into());
         return;
@@ -1665,7 +1665,7 @@ fn commit_add_scope_text(global: &mut super::super::state::GlobalMountsState<'_>
     open_global_mount_file_browser(global);
 }
 
-fn commit_add_name_text(global: &mut super::super::state::GlobalMountsState<'_>, value: &str) {
+fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
     if value.is_empty() {
         global.error = Some(MOUNT_NAME_EMPTY.into());
         global.modal = Some(text_modal(GlobalMountTextTarget::AddName, "Mount name", ""));
@@ -1679,7 +1679,7 @@ fn commit_add_name_text(global: &mut super::super::state::GlobalMountsState<'_>,
     global.open_sub_modal(text_modal(GlobalMountTextTarget::AddSource, "Source", ""));
 }
 
-fn commit_add_source_text(global: &mut super::super::state::GlobalMountsState<'_>, value: &str) {
+fn commit_add_source_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
     let Some(draft) = global.add_draft.as_mut() else {
         global.error = Some(ADD_DRAFT_LOST.into());
         return;
@@ -1693,7 +1693,7 @@ fn commit_add_source_text(global: &mut super::super::state::GlobalMountsState<'_
 }
 
 fn commit_add_destination_text(
-    global: &mut super::super::state::GlobalMountsState<'_>,
+    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
     value: &str,
 ) {
     let Some(draft) = global.add_draft.as_mut() else {
@@ -1704,13 +1704,13 @@ fn commit_add_destination_text(
     finalize_global_mount_add(global);
 }
 
-fn open_global_mount_scope_picker(global: &mut super::super::state::GlobalMountsState<'_>) {
+fn open_global_mount_scope_picker(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
     global.add_draft = Some(GlobalMountDraft::default());
     global.modal_parents.clear();
     global.modal = Some(scope_picker_modal());
 }
 
-fn open_global_mount_file_browser(global: &mut super::super::state::GlobalMountsState<'_>) {
+fn open_global_mount_file_browser(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
     match super::new_file_browser_from_home() {
         Ok(state) => {
             global.open_sub_modal(GlobalMountModal::FileBrowser {
@@ -1724,7 +1724,7 @@ fn open_global_mount_file_browser(global: &mut super::super::state::GlobalMounts
     }
 }
 
-fn finalize_global_mount_add(global: &mut super::super::state::GlobalMountsState<'_>) {
+fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
     let Some(mut draft) = global.add_draft.take() else {
         global.error = Some(ADD_DRAFT_LOST.into());
         return;
@@ -1750,7 +1750,7 @@ fn finalize_global_mount_add(global: &mut super::super::state::GlobalMountsState
 }
 
 fn unique_global_mount_name(
-    global: &super::super::state::GlobalMountsState<'_>,
+    global: &crate::console::tui::state::GlobalMountsState<'_>,
     draft: &GlobalMountDraft,
 ) -> String {
     let basename = std::path::Path::new(&draft.dst)
@@ -1813,7 +1813,7 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
     global.modal = Some(text_modal(target, label, &initial));
 }
 
-fn open_settings_env_enter_modal(settings: &mut super::super::state::SettingsState<'_>) {
+fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
     let Some(row) = rows.get(settings.env.selected).cloned() else {
         return;
@@ -1862,7 +1862,7 @@ fn open_settings_env_enter_modal(settings: &mut super::super::state::SettingsSta
     }
 }
 
-fn open_settings_env_add_modal(settings: &mut super::super::state::SettingsState<'_>) {
+fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
     let Some(row) = rows.get(settings.env.selected).cloned() else {
         return;
@@ -1894,7 +1894,7 @@ fn open_settings_env_add_modal(settings: &mut super::super::state::SettingsState
     });
 }
 
-fn open_settings_env_delete_confirm(settings: &mut super::super::state::SettingsState<'_>) {
+fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
     let Some(SettingsEnvRow::Key { key, .. }) = rows.get(settings.env.selected).cloned() else {
         return;
@@ -1905,7 +1905,7 @@ fn open_settings_env_delete_confirm(settings: &mut super::super::state::Settings
     });
 }
 
-fn toggle_settings_env_mask(settings: &mut super::super::state::SettingsState<'_>) {
+fn toggle_settings_env_mask(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
     let Some(SettingsEnvRow::Key { scope, key }) = rows.get(settings.env.selected).cloned() else {
         return;
@@ -1922,7 +1922,7 @@ fn toggle_settings_env_mask(settings: &mut super::super::state::SettingsState<'_
 }
 
 fn open_settings_env_picker_modal(
-    settings: &mut super::super::state::SettingsState<'_>,
+    settings: &mut crate::console::tui::state::SettingsState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let rows = settings_env_flat_rows(settings);
@@ -1946,7 +1946,7 @@ fn open_settings_env_picker_modal(
     });
 }
 
-fn delete_selected_settings_env(env: &mut super::super::state::SettingsEnvState<'_>) {
+fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
     let rows = jackin_console::tui::screens::settings::update::settings_env_flat_rows(
         &env.pending,
         &env.expanded,
@@ -1972,7 +1972,7 @@ fn delete_selected_settings_env(env: &mut super::super::state::SettingsEnvState<
 }
 
 fn settings_env_value<'a>(
-    env: &'a super::super::state::SettingsEnvState<'_>,
+    env: &'a crate::console::tui::state::SettingsEnvState<'_>,
     scope: &SettingsEnvScope,
     key: &str,
 ) -> Option<&'a crate::operator_env::EnvValue> {
@@ -1987,7 +1987,7 @@ fn settings_env_value<'a>(
 }
 
 fn forbidden_settings_env_keys(
-    env: &super::super::state::SettingsEnvState<'_>,
+    env: &crate::console::tui::state::SettingsEnvState<'_>,
     scope: &SettingsEnvScope,
 ) -> Vec<String> {
     match scope {
@@ -2002,7 +2002,7 @@ fn forbidden_settings_env_keys(
 }
 
 fn settings_env_key_input_state<'a>(
-    env: &super::super::state::SettingsEnvState<'_>,
+    env: &crate::console::tui::state::SettingsEnvState<'_>,
     scope: &SettingsEnvScope,
     label: impl Into<String>,
     initial: impl Into<String>,
@@ -2014,7 +2014,7 @@ fn settings_env_key_input_state<'a>(
 }
 
 fn set_settings_env_value_typed(
-    env: &mut super::super::state::SettingsEnvState<'_>,
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     scope: &SettingsEnvScope,
     key: &str,
     value: crate::operator_env::EnvValue,
@@ -2089,7 +2089,7 @@ const fn scope_picker_modal() -> GlobalMountModal<'static> {
 }
 
 fn commit_add_scope_choice(
-    settings: &mut super::super::state::SettingsState<'_>,
+    settings: &mut crate::console::tui::state::SettingsState<'_>,
     choice: jackin_console::tui::components::scope_picker::ScopeChoice,
 ) {
     match choice {
@@ -2102,7 +2102,7 @@ fn commit_add_scope_choice(
     }
 }
 
-fn open_global_mount_role_picker(settings: &mut super::super::state::SettingsState<'_>) {
+fn open_global_mount_role_picker(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let roles = settings
         .trust
         .pending
@@ -2162,7 +2162,7 @@ fn has_sensitive_mount(rows: &[crate::config::GlobalMountRow]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::state::{
+    use crate::console::tui::state::{
         ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvTextTarget, SettingsState,
         SettingsTab,
     };
@@ -2829,7 +2829,7 @@ mod tests {
             settings.env.modal,
             Some(SettingsEnvModal::Text {
                 target: SettingsEnvTextTarget::EnvKey {
-                    scope: super::super::super::state::SettingsEnvScope::Global
+                    scope: crate::console::tui::state::SettingsEnvScope::Global
                 },
                 ..
             })
@@ -2895,7 +2895,7 @@ mod tests {
             state.op_cache.clone(),
         );
         let target = SettingsEnvTextTarget::EnvKey {
-            scope: super::super::super::state::SettingsEnvScope::Global,
+            scope: crate::console::tui::state::SettingsEnvScope::Global,
         };
         commit_env_text(&mut settings.env, &target, "API_KEY");
         assert!(matches!(
@@ -2964,7 +2964,7 @@ mod tests {
             &settings.env.modal,
             Some(SettingsEnvModal::Text {
                 target: SettingsEnvTextTarget::EnvKey {
-                    scope: super::super::super::state::SettingsEnvScope::Role(role)
+                    scope: crate::console::tui::state::SettingsEnvScope::Role(role)
                 },
                 ..
             }) if role == "chainargos/agent-brown"

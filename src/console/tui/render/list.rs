@@ -45,7 +45,7 @@ pub(super) use crate::console::tui::render::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows_with_cache,
     mount_path_width,
 };
-use crate::console::manager::state::{
+use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
 use jackin_console::tui::components::mount_rows::render_mount_header;
@@ -1277,7 +1277,7 @@ mod list_name_scroll_tests {
     use crate::console::tui::render::list_geometry::{
         clamp_list_scroll_for_area, list_names_content_width,
     };
-    use crate::console::manager::state::{ManagerListRow, ManagerState};
+    use crate::console::tui::state::{ManagerListRow, ManagerState};
     use crate::workspace::WorkspaceConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
     use ratatui::Terminal;
@@ -1743,7 +1743,7 @@ mod subpanel_padding_tests {
         render_general_subpanel, render_mounts_subpanel,
     };
     use crate::config::AppConfig;
-    use crate::console::manager::state::{MountInfoCache, WorkspaceSummary};
+    use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -2692,7 +2692,7 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
@@ -2752,7 +2752,7 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
@@ -2793,7 +2793,7 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
@@ -2829,7 +2829,7 @@ mod subpanel_padding_tests {
         cfg.roles
             .insert("alpha".into(), crate::config::RoleSource::default());
 
-        let mut state = crate::console::manager::state::ManagerState::from_config(
+        let mut state = crate::console::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
@@ -2914,7 +2914,7 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
@@ -2977,7 +2977,7 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );

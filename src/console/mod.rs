@@ -38,7 +38,7 @@ mod quit_confirm_tests {
         show_role_resolution_error,
     };
     use super::*;
-    use crate::console::manager::state::{
+    use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
     use crate::config::AppConfig;

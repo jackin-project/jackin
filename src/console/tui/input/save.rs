@@ -6,7 +6,7 @@ use super::super::effects::{
     WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
     execute_workspace_save_effect, execute_workspace_save_write,
 };
-use super::super::state::{
+use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
 };
@@ -77,7 +77,7 @@ pub fn continue_save_after_drift_check(
                     affected_containers.join("\n  "),
                 );
                 editor.modal = Some(Modal::Confirm {
-                    target: super::super::state::ConfirmTarget::DeleteIsolatedAndSave {
+                    target: crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave {
                         plan: drift_check.plan.clone(),
                         exit_on_success: drift_check.exit_on_success,
                         affected_containers,
@@ -259,7 +259,7 @@ pub(super) fn commit_editor_save(
     config: &mut AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-    plan: super::super::state::PendingSaveCommit,
+    plan: crate::console::tui::state::PendingSaveCommit,
     exit_on_success: bool,
 ) -> anyhow::Result<()> {
     commit_editor_save_with_runner(state, config, paths, cwd, plan, exit_on_success)
@@ -275,7 +275,7 @@ pub(super) fn commit_editor_save_with_runner(
     config: &mut AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-    plan: super::super::state::PendingSaveCommit,
+    plan: crate::console::tui::state::PendingSaveCommit,
     exit_on_success: bool,
 ) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
@@ -368,7 +368,7 @@ pub(super) fn commit_editor_save_with_runner(
                             affected_containers.join("\n  "),
                         );
                         editor.modal = Some(Modal::Confirm {
-                            target: super::super::state::ConfirmTarget::DeleteIsolatedAndSave {
+                            target: crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave {
                                 plan,
                                 exit_on_success,
                                 affected_containers,
@@ -379,7 +379,7 @@ pub(super) fn commit_editor_save_with_runner(
                         // modal. The modal handler re-stashes the plan
                         // with `delete_isolated_acknowledged = true` on Yes.
                         editor.save_flow =
-                            super::super::state::EditorSaveFlow::Confirming { exit_on_success };
+                            crate::console::tui::state::EditorSaveFlow::Confirming { exit_on_success };
                         return Ok(());
                     }
                 }
@@ -578,31 +578,31 @@ fn build_confirm_save_lines(
                 )));
             }
 
-            let mount_diffs = super::super::state::classify_mount_diffs(
+            let mount_diffs = crate::console::tui::state::classify_mount_diffs(
                 &editor.original.mounts,
                 &editor.pending.mounts,
             );
             let any_diff = mount_diffs
                 .iter()
-                .any(|d| !matches!(d, super::super::state::MountDiff::Unchanged(_)));
+                .any(|d| !matches!(d, crate::console::tui::state::MountDiff::Unchanged(_)));
             if any_diff {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Mounts:", heading)));
                 for diff in &mount_diffs {
                     match diff {
-                        super::super::state::MountDiff::Added(m) => {
+                        crate::console::tui::state::MountDiff::Added(m) => {
                             out.push(Line::from(Span::styled(
                                 format!("  + {}", mount_summary(m, &editor.mount_info_cache)),
                                 value,
                             )));
                         }
-                        super::super::state::MountDiff::Removed(m) => {
+                        crate::console::tui::state::MountDiff::Removed(m) => {
                             out.push(Line::from(Span::styled(
                                 format!("  - {}", mount_summary(m, &editor.mount_info_cache)),
                                 dim,
                             )));
                         }
-                        super::super::state::MountDiff::Modified { original, pending } => {
+                        crate::console::tui::state::MountDiff::Modified { original, pending } => {
                             // Modified row: show the new state (`~`) with a
                             // dimmed `was:` follow-up so the operator can
                             // see exactly what changed without reading a
@@ -619,7 +619,7 @@ fn build_confirm_save_lines(
                                 dim,
                             )));
                         }
-                        super::super::state::MountDiff::Unchanged(_) => {}
+                        crate::console::tui::state::MountDiff::Unchanged(_) => {}
                     }
                 }
             }
@@ -846,7 +846,7 @@ fn build_prospective_mounts(
 #[cfg(test)]
 #[allow(clippy::too_many_lines)]
 mod tests {
-    use super::super::super::state::{
+    use crate::console::tui::state::{
         EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal,
     };
     use super::super::test_support::{key, mount};
@@ -1483,7 +1483,7 @@ mod tests {
         // Drive commit_editor_save directly with a plan that will make
         // `ce.edit_workspace` fail AFTER `ce.rename_workspace` has already
         // moved the workspace inside ConfigEditor's in-memory buffer.
-        let bad_plan = crate::console::manager::state::PendingSaveCommit {
+        let bad_plan = crate::console::tui::state::PendingSaveCommit {
             effective_removals: vec!["/does/not/exist".to_string()],
             final_mounts: None,
             delete_isolated_acknowledged: false,
@@ -1748,7 +1748,7 @@ mod tests {
 
         // Operator renames mid-edit.
         super::super::editor::apply_text_input_to_pending(
-            &super::super::super::state::TextInputTarget::Name,
+            &crate::console::tui::state::TextInputTarget::Name,
             match &mut state.stage {
                 ManagerStage::Editor(e) => e,
                 _ => unreachable!(),
@@ -1946,7 +1946,7 @@ mod tests {
         let plan = match &mut state.stage {
             ManagerStage::Editor(e) => match &e.modal {
                 Some(Modal::ConfirmSave { state: m }) => {
-                    crate::console::manager::state::PendingSaveCommit {
+                    crate::console::tui::state::PendingSaveCommit {
                         effective_removals: m.effective_removals.clone(),
                         final_mounts: m.final_mounts.clone(),
                         delete_isolated_acknowledged: false,
@@ -1984,7 +1984,7 @@ mod tests {
         )
         .await;
         let (_tx, rx) = tokio::sync::oneshot::channel();
-        let drift_check = crate::console::manager::state::PendingDriftCheck {
+        let drift_check = crate::console::tui::state::PendingDriftCheck {
             rx,
             plan,
             exit_on_success: false,
@@ -2035,7 +2035,7 @@ mod tests {
         let plan = match &mut state.stage {
             ManagerStage::Editor(e) => match &e.modal {
                 Some(Modal::ConfirmSave { state: m }) => {
-                    crate::console::manager::state::PendingSaveCommit {
+                    crate::console::tui::state::PendingSaveCommit {
                         effective_removals: m.effective_removals.clone(),
                         final_mounts: m.final_mounts.clone(),
                         delete_isolated_acknowledged: false,
@@ -2066,7 +2066,7 @@ mod tests {
         )
         .await;
         let (_tx, rx) = tokio::sync::oneshot::channel();
-        let drift_check = crate::console::manager::state::PendingDriftCheck {
+        let drift_check = crate::console::tui::state::PendingDriftCheck {
             rx,
             plan,
             exit_on_success: false,
@@ -2088,7 +2088,7 @@ mod tests {
         match &e.modal {
             Some(Modal::Confirm {
                 target:
-                    crate::console::manager::state::ConfirmTarget::DeleteIsolatedAndSave {
+                    crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave {
                         affected_containers,
                         ..
                     },
@@ -2194,7 +2194,7 @@ mod tests {
     #[test]
     fn settings_save_general_dirty_shows_summary_and_diff() {
         use crate::config::AppConfig;
-        use crate::console::manager::state::{SettingsState, SettingsTab};
+        use crate::console::tui::state::{SettingsState, SettingsTab};
 
         let config = AppConfig::default();
         let mut settings = SettingsState::from_config(&config);
@@ -2229,7 +2229,7 @@ mod tests {
     #[test]
     fn settings_save_general_dco_dirty_shows_diff() {
         use crate::config::AppConfig;
-        use crate::console::manager::state::{SettingsState, SettingsTab};
+        use crate::console::tui::state::{SettingsState, SettingsTab};
 
         let config = AppConfig::default();
         let mut settings = SettingsState::from_config(&config);
@@ -2256,7 +2256,7 @@ mod tests {
     #[test]
     fn settings_save_general_clean_shows_no_general_section() {
         use crate::config::AppConfig;
-        use crate::console::manager::state::SettingsState;
+        use crate::console::tui::state::SettingsState;
 
         let config = AppConfig::default();
         let settings = SettingsState::from_config(&config);
@@ -2288,7 +2288,7 @@ mod tests {
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub(super) fn build_settings_save_lines(
-    settings: &super::super::state::SettingsState<'_>,
+    settings: &crate::console::tui::state::SettingsState<'_>,
 ) -> Vec<ratatui::text::Line<'static>> {
     use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
@@ -2487,8 +2487,8 @@ fn settings_mount_stats(
 }
 
 fn settings_env_stats(
-    original: &super::super::state::SettingsEnvConfig,
-    pending: &super::super::state::SettingsEnvConfig,
+    original: &crate::console::tui::state::SettingsEnvConfig,
+    pending: &crate::console::tui::state::SettingsEnvConfig,
 ) -> Option<String> {
     let (added, removed, modified) = env_config_diff_counts(original, pending);
     if added + removed + modified == 0 {
@@ -2507,7 +2507,7 @@ fn settings_env_stats(
     Some(parts.join(", "))
 }
 
-fn settings_general_stats(state: &super::super::state::SettingsGeneralState) -> Option<String> {
+fn settings_general_stats(state: &crate::console::tui::state::SettingsGeneralState) -> Option<String> {
     let count = state.change_count();
     if count == 0 {
         return None;
@@ -2520,8 +2520,8 @@ fn settings_general_stats(state: &super::super::state::SettingsGeneralState) -> 
 }
 
 fn settings_auth_stats(
-    original: &[super::super::state::SettingsAuthRow],
-    pending: &[super::super::state::SettingsAuthRow],
+    original: &[crate::console::tui::state::SettingsAuthRow],
+    pending: &[crate::console::tui::state::SettingsAuthRow],
     orig_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     pend_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
 ) -> Option<String> {
@@ -2540,8 +2540,8 @@ fn settings_auth_stats(
 }
 
 fn settings_trust_stats(
-    original: &[super::super::state::SettingsTrustRow],
-    pending: &[super::super::state::SettingsTrustRow],
+    original: &[crate::console::tui::state::SettingsTrustRow],
+    pending: &[crate::console::tui::state::SettingsTrustRow],
 ) -> Option<String> {
     let changed = original
         .iter()
@@ -2585,8 +2585,8 @@ fn mount_diff_counts(
 }
 
 fn env_config_diff_counts(
-    original: &super::super::state::SettingsEnvConfig,
-    pending: &super::super::state::SettingsEnvConfig,
+    original: &crate::console::tui::state::SettingsEnvConfig,
+    pending: &crate::console::tui::state::SettingsEnvConfig,
 ) -> (usize, usize, usize) {
     let (ga, gr, gm) = env_map_diff_counts(&original.env, &pending.env);
     let all_roles: std::collections::BTreeSet<&String> =
@@ -2687,8 +2687,8 @@ fn mount_row_summary(row: &crate::config::GlobalMountRow) -> String {
 }
 
 fn settings_env_diff_lines(
-    original: &super::super::state::SettingsEnvConfig,
-    pending: &super::super::state::SettingsEnvConfig,
+    original: &crate::console::tui::state::SettingsEnvConfig,
+    pending: &crate::console::tui::state::SettingsEnvConfig,
     add_style: ratatui::style::Style,
     remove_style: ratatui::style::Style,
 ) -> Vec<ratatui::text::Line<'static>> {
@@ -2722,8 +2722,8 @@ fn settings_env_diff_lines(
 }
 
 fn settings_auth_diff_lines(
-    original: &[super::super::state::SettingsAuthRow],
-    pending: &[super::super::state::SettingsAuthRow],
+    original: &[crate::console::tui::state::SettingsAuthRow],
+    pending: &[crate::console::tui::state::SettingsAuthRow],
     orig_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     pend_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     add_style: ratatui::style::Style,
@@ -2756,8 +2756,8 @@ fn settings_auth_diff_lines(
 }
 
 fn settings_trust_diff_lines(
-    original: &[super::super::state::SettingsTrustRow],
-    pending: &[super::super::state::SettingsTrustRow],
+    original: &[crate::console::tui::state::SettingsTrustRow],
+    pending: &[crate::console::tui::state::SettingsTrustRow],
     add_style: ratatui::style::Style,
     remove_style: ratatui::style::Style,
 ) -> Vec<ratatui::text::Line<'static>> {

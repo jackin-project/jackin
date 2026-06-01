@@ -1853,7 +1853,7 @@ impl ManagerState<'_> {
         Some(result)
     }
 
-    pub(super) fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
+    pub(in crate::console) fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
         match result.target {
             MountInfoRefreshTarget::ManagerList => {
                 self.mount_info_cache.store_entries(result.entries);

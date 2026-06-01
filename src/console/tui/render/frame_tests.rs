@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::console::tui::render::list_geometry::{
     clamp_list_scroll_for_area, selected_sidebar_scroll_areas,
 };
-use crate::console::manager::state::ManagerState;
+use crate::console::tui::state::ManagerState;
 use crate::isolation::MountIsolation;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_tui::components::scrollable_panel::{

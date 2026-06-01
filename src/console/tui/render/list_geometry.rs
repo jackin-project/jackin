@@ -7,7 +7,7 @@ use crate::console::tui::render::mount_display::{
     global_mounts_content_width_with_cache, workspace_mounts_content_height,
     workspace_mounts_content_width_with_cache,
 };
-use crate::console::manager::state::{
+use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
 use crate::isolation::MountIsolation;
@@ -574,5 +574,5 @@ pub(crate) fn workspace_active_count(
         role_key: None,
         agent_runtime: None,
     };
-    crate::console::manager::state::active_instances_matching(instances, query).count()
+    crate::console::tui::state::active_instances_matching(instances, query).count()
 }

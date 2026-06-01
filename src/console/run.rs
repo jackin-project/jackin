@@ -23,14 +23,14 @@ use crate::workspace::LoadWorkspaceInput;
 /// (editor, prelude, confirm, list modal) pops the exit prompt.
 pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
-    matches!(ms.stage, crate::console::manager::state::ManagerStage::List)
+    matches!(ms.stage, crate::console::tui::state::ManagerStage::List)
         && ms.list_modal.is_none()
 }
 
 /// Modals that consume letters (`TextInput`, pickers with filter-as-
 /// you-type) must shadow the Q-intercept so `Q` types the letter.
 pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
-    use crate::console::manager::state::{GlobalMountModal, ManagerStage, Modal};
+    use crate::console::tui::state::{GlobalMountModal, ManagerStage, Modal};
     let ConsoleStage::Manager(ms) = &state.stage;
 
     if let Some(modal) = &ms.list_modal
@@ -84,7 +84,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
     use futures_util::{FutureExt as _, StreamExt as _};
 
-    use crate::console::manager::state::{ManagerStage, Modal};
+    use crate::console::tui::state::{ManagerStage, Modal};
 
     let op_available = crate::console::services::op::cli_available();
     let mut state = ConsoleState::new_with_op_available(&config, cwd, op_available)?;
@@ -327,7 +327,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     render_debug_bar(frame, bar_area, &run_id, None);
                 }
             })?;
-            if let Some(modal @ manager::state::Modal::ContainerInfo { state: info }) =
+            if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
                 ms.list_modal.as_ref()
             {
                 let rect = crate::console::tui::render::modal_layout::modal_outer_rect(modal, main_area);
@@ -705,7 +705,7 @@ pub async fn run_console<H: InstanceActionHandler>(
 fn report_open_url_error(ms: &mut manager::ManagerState<'_>, error: anyhow::Error) {
     match &mut ms.stage {
         manager::ManagerStage::Editor(editor) => {
-            editor.modal = Some(manager::state::Modal::ErrorPopup {
+            editor.modal = Some(crate::console::tui::state::Modal::ErrorPopup {
                 state: jackin_tui::components::ErrorPopupState::new(
                     "Failed to open URL",
                     error.to_string(),

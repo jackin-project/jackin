@@ -7,7 +7,7 @@ use jackin_console::tui::effect::ConsoleEffect;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
 use super::message::{ManagerMessage, update_manager};
-use super::state::{
+use crate::console::tui::state::{
     EditorMode, EditorState, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
     PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, PendingSaveCommit,
 };
@@ -139,7 +139,7 @@ fn execute_role_registration_start(
         source.git.clone(),
     );
     if let ManagerStage::Editor(editor) = &mut state.stage {
-        editor.pending_role_load = Some(super::state::PendingRoleLoad {
+        editor.pending_role_load = Some(crate::console::tui::state::PendingRoleLoad {
             raw,
             key: key.clone(),
             source,
@@ -163,10 +163,10 @@ fn execute_op_commit_validation(
     if is_settings {
         if let ManagerStage::Settings(settings) = &mut state.stage {
             settings.auth.pending_op_commit =
-                Some(super::state::PendingOpCommit::new(op_ref, rx));
+                Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
         }
     } else if let ManagerStage::Editor(editor) = &mut state.stage {
-        editor.pending_op_commit = Some(super::state::PendingOpCommit::new(op_ref, rx));
+        editor.pending_op_commit = Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
     }
 }
 
@@ -261,7 +261,7 @@ pub(crate) fn execute_workspace_save_write(
                     editor.original = ws.clone();
                     editor.pending = ws.clone();
                 }
-                editor.save_flow = super::state::EditorSaveFlow::Idle;
+                editor.save_flow = crate::console::tui::state::EditorSaveFlow::Idle;
             }
             if exit_on_success
                 || matches!(
@@ -342,7 +342,7 @@ fn execute_settings_save(
 
 pub(crate) type ManagerBackgroundEvent = jackin_console::tui::message::BackgroundEvent<
     ManagerMessage,
-    super::state::PendingRoleLoad,
+    crate::console::tui::state::PendingRoleLoad,
     PendingDriftCheck,
     crate::config::DriftDetection,
     PendingIsolationCleanup,
@@ -411,13 +411,13 @@ pub(crate) fn poll_picker_loads(state: &mut ManagerState<'_>) -> bool {
         dirty |= poll_op_picker_load(state);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(super::state::SettingsEnvModal::OpPicker { state }) =
+        && let Some(crate::console::tui::state::SettingsEnvModal::OpPicker { state }) =
             settings.env.modal.as_mut()
     {
         dirty |= poll_op_picker_load(state);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(super::state::SettingsAuthModal::OpPicker { state }) =
+        && let Some(crate::console::tui::state::SettingsAuthModal::OpPicker { state }) =
             settings.auth.modal.as_mut()
     {
         dirty |= poll_op_picker_load(state);

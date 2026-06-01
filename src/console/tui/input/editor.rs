@@ -9,8 +9,8 @@ use crate::console::tui::components::op_picker::OpPickerState;
 use super::super::effects::execute_role_source_persist;
 use super::super::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
-use super::super::state::auth_flat_rows;
-use super::super::state::{
+use crate::console::tui::state::auth_flat_rows;
+use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,
     SecretsScopeTag, TextInputTarget,
@@ -437,14 +437,14 @@ pub(super) fn handle_editor_key(
         {
             open_secrets_add_modal(editor);
         }
-        KeyCode::Char('i' | 'I') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+        KeyCode::Char('i' | 'I') if editor.active_tab == crate::console::tui::state::EditorTab::Mounts => {
             // Cycle the per-mount isolation strategy on the highlighted row.
             // Mirrors the R (readonly) toggle but threads through the
             // dedicated state helper so the cycling rule lives in one place.
             // Silent no-op on the `+ Add mount` sentinel.
             editor.cycle_isolation_for_selected_mount();
         }
-        KeyCode::Char('o' | 'O') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+        KeyCode::Char('o' | 'O') if editor.active_tab == crate::console::tui::state::EditorTab::Mounts => {
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
                 if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
@@ -666,7 +666,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
     use crate::selector::RolePickerState;
     use crate::selector::RoleSelector;
     let eligible: Vec<RoleSelector> =
-        super::super::state::eligible_agents_for_override(editor, config)
+        crate::console::tui::state::eligible_agents_for_override(editor, config)
             .into_iter()
             .filter_map(|name| RoleSelector::parse(&name).ok())
             .collect();
@@ -954,7 +954,7 @@ pub(super) fn handle_editor_modal(
                     // re-stashes it as a `PendingCommit` for the outer
                     // dispatcher (which owns `paths` / `cwd` / `runner`)
                     // to drain via `commit_editor_save`.
-                    if let super::super::state::ConfirmTarget::DeleteIsolatedAndSave {
+                    if let crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave {
                         mut plan,
                         exit_on_success,
                         ..
@@ -971,7 +971,7 @@ pub(super) fn handle_editor_modal(
                     }
                 } else if matches!(
                     target,
-                    super::super::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
+                    crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
                 ) {
                     editor.save_flow = EditorSaveFlow::Idle;
                 }
@@ -979,7 +979,7 @@ pub(super) fn handle_editor_modal(
             ModalOutcome::Cancel => {
                 let was_drift = matches!(
                     target,
-                    super::super::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
+                    crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
                 );
                 editor.clear_modal_chain();
                 if was_drift {
@@ -1047,7 +1047,7 @@ pub(super) fn handle_editor_modal(
                     // Confirming → PendingCommit atomically so plan +
                     // exit_on_success travel together to the outer
                     // handler that holds paths/cwd.
-                    let plan = super::super::state::PendingSaveCommit {
+                    let plan = crate::console::tui::state::PendingSaveCommit {
                         effective_removals: modal_state.effective_removals.clone(),
                         final_mounts: modal_state.final_mounts.clone(),
                         // First commit pass — the drift check in
@@ -1218,7 +1218,7 @@ pub(super) fn handle_editor_modal(
         Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
                 if let Some(kind) = editor.auth_selected_kind {
-                    let target = crate::console::manager::state::AuthFormTarget::WorkspaceRole {
+                    let target = crate::console::tui::state::AuthFormTarget::WorkspaceRole {
                         role: role.key(),
                         kind,
                     };
@@ -1226,7 +1226,7 @@ pub(super) fn handle_editor_modal(
                     editor.open_sub_modal(Modal::AuthForm {
                         target,
                         state: Box::new(form),
-                        focus: crate::console::manager::state::AuthFormFocus::Mode,
+                        focus: crate::console::tui::state::AuthFormFocus::Mode,
                         literal_buffer: String::new(),
                     });
                 } else {
@@ -1350,21 +1350,21 @@ fn open_secrets_picker_modal(
 /// in Edit mode (Create mode has no workspace to wire yet).
 fn generate_scope_for_target(
     editor: &EditorState<'_>,
-    target: &crate::console::manager::state::AuthFormTarget,
+    target: &crate::console::tui::state::AuthFormTarget,
 ) -> Option<crate::workspace::token_setup::TokenSetupScope> {
     use crate::workspace::token_setup::TokenSetupScope;
-    let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
+    let crate::console::tui::state::EditorMode::Edit { name } = &editor.mode else {
         return None;
     };
     let workspace = name.clone();
     Some(match target {
-        crate::console::manager::state::AuthFormTarget::WorkspaceRole { role, .. } => {
+        crate::console::tui::state::AuthFormTarget::WorkspaceRole { role, .. } => {
             TokenSetupScope::WorkspaceRole {
                 workspace,
                 role: role.clone(),
             }
         }
-        crate::console::manager::state::AuthFormTarget::Workspace { .. } => {
+        crate::console::tui::state::AuthFormTarget::Workspace { .. } => {
             TokenSetupScope::Workspace(workspace)
         }
     })
@@ -1384,7 +1384,7 @@ fn start_plain_token_generate(editor: &mut EditorState<'_>) {
         super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
     };
-    editor.pending_token_generate = Some(crate::console::manager::state::PendingTokenGenerate {
+    editor.pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
         scope,
         args: crate::workspace::token_setup::TokenSetupArgs {
             plain_text: true,
@@ -1401,7 +1401,7 @@ fn open_create_op_picker_for_generate(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
-    let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
+    let crate::console::tui::state::EditorMode::Edit { name } = &editor.mode else {
         editor.generating_token_target = None;
         super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
@@ -1426,7 +1426,7 @@ fn open_create_op_picker_for_generate(
 /// The workspace name comes from `editor.mode` Edit.
 fn handle_token_generate_pick(
     editor: &mut EditorState<'_>,
-    target: crate::console::manager::state::AuthFormTarget,
+    target: crate::console::tui::state::AuthFormTarget,
     outcome: ModalOutcome<crate::console::tui::components::op_picker::OpPickerSelection>,
 ) {
     use crate::console::tui::components::op_picker::OpPickerSelection;
@@ -1490,7 +1490,7 @@ fn handle_token_generate_pick(
     };
 
     editor.pending_token_generate =
-        Some(crate::console::manager::state::PendingTokenGenerate { scope, args });
+        Some(crate::console::tui::state::PendingTokenGenerate { scope, args });
     editor.clear_modal_chain();
 }
 
@@ -2187,7 +2187,7 @@ fn dispatch_editor_mount_dst_choice(
                     isolation: crate::isolation::MountIsolation::Shared,
                 });
                 editor.open_sub_modal(Modal::TextInput {
-                    target: super::super::state::TextInputTarget::MountDst,
+                    target: crate::console::tui::state::TextInputTarget::MountDst,
                     state: jackin_tui::components::TextInputState::new("Destination", src),
                 });
             } else {
@@ -2231,7 +2231,7 @@ pub(super) fn apply_file_browser_to_editor(
 mod tests {
     //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
     //! bindings, and mount-row readonly toggle.
-    use super::super::super::state::{
+    use crate::console::tui::state::{
         ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
         ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
     };
@@ -4594,7 +4594,7 @@ mod auth_cursor_step_tests {
     //! `Spacer` rows are intentionally non-selectable so the cursor
     //! never lands on a blank line in the rendered list.
     use crate::console::tui::auth_kind::AuthKind;
-    use super::super::super::state::AuthRow;
+    use crate::console::tui::state::AuthRow;
     use super::{step_auth_cursor_down, step_auth_cursor_up};
 
     fn rows() -> Vec<AuthRow> {

@@ -18,7 +18,7 @@ use crate::console::tui::auth_kind::{
     AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,
     auth_mode_to_auth_forward, auth_mode_to_github, role_override_present,
 };
-use super::super::state::{
+use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
     auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
 };
@@ -415,7 +415,7 @@ pub(super) fn handle_auth_form_key(
 pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
     if !matches!(
         editor.mode,
-        crate::console::manager::state::EditorMode::Edit { .. }
+        crate::console::tui::state::EditorMode::Edit { .. }
     ) {
         return false;
     }
@@ -449,7 +449,7 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
     }
     if !matches!(
         editor.mode,
-        crate::console::manager::state::EditorMode::Edit { .. }
+        crate::console::tui::state::EditorMode::Edit { .. }
     ) {
         return false;
     }
@@ -1112,9 +1112,9 @@ mod tests {
     use super::*;
     use crate::config::{AppConfig, AuthForwardMode, GithubAuthMode};
     use crate::console::tui::auth_kind::AuthKind;
-    use crate::console::manager::state::AuthRow;
-    use crate::console::manager::state::auth_flat_rows;
-    use crate::console::manager::state::{
+    use crate::console::tui::state::AuthRow;
+    use crate::console::tui::state::auth_flat_rows;
+    use crate::console::tui::state::{
         AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
     };
     use crate::operator_env::{OpRef, OpRunner};
@@ -1201,7 +1201,7 @@ mod tests {
         let mut state = ManagerState::from_config(&cfg, &cwd);
         let ws = cfg.workspaces.get("proj").unwrap().clone();
         let mut editor = EditorState::new_edit("proj".into(), ws);
-        editor.active_tab = crate::console::manager::state::EditorTab::Auth;
+        editor.active_tab = crate::console::tui::state::EditorTab::Auth;
         editor.auth_selected_kind = Some(AuthKind::Claude);
         let ws_claude_idx = workspace_claude_row_idx(&editor, &cfg);
         editor.active_field = FieldFocus::Row(ws_claude_idx);
@@ -2158,7 +2158,7 @@ mod tests {
         // disk reload.
         let saved_ws = editor.pending.clone();
         let mut reloaded = EditorState::new_edit("proj".into(), saved_ws);
-        reloaded.active_tab = crate::console::manager::state::EditorTab::Auth;
+        reloaded.active_tab = crate::console::tui::state::EditorTab::Auth;
         reloaded.auth_selected_kind = Some(AuthKind::Github);
         let rows = auth_flat_rows(&reloaded, &cfg);
         // WorkspaceMode + WorkspaceSource (token requires GH_TOKEN).
@@ -2237,7 +2237,7 @@ mod tests {
         let cwd = std::path::PathBuf::from("/tmp");
         let mut state = ManagerState::from_config(&cfg, &cwd);
         let mut editor = EditorState::new_edit("proj".into(), ws);
-        editor.active_tab = crate::console::manager::state::EditorTab::Auth;
+        editor.active_tab = crate::console::tui::state::EditorTab::Auth;
         editor.auth_selected_kind = Some(AuthKind::Github);
         state.stage = ManagerStage::Editor(editor);
         let ManagerStage::Editor(editor) = &mut state.stage else {

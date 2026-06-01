@@ -7,7 +7,7 @@
 use crate::console::tui::auth_kind::AuthKind;
 pub(crate) use super::effects::ManagerBackgroundEvent;
 use super::effects::{ManagerEffect, poll_file_browser_git_urls, poll_picker_loads};
-use super::state::{
+use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerListRow,
     ManagerStage, ManagerState, MountScrollFocus, PendingMountInfoRefresh, SecretsScopeTag,
     SettingsState, SettingsTab,
@@ -373,10 +373,10 @@ pub(crate) fn update_manager(
             state.status_overlay = None;
         }
         ManagerMessage::OpenListContainerInfo { state: info } => {
-            state.list_modal = Some(super::state::Modal::ContainerInfo { state: info });
+            state.list_modal = Some(crate::console::tui::state::Modal::ContainerInfo { state: info });
         }
         ManagerMessage::OpenListGithubPicker { state: picker } => {
-            state.list_modal = Some(super::state::Modal::GithubPicker { state: picker });
+            state.list_modal = Some(crate::console::tui::state::Modal::GithubPicker { state: picker });
         }
         ManagerMessage::DismissListModal => {
             state.list_modal = None;
