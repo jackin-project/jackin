@@ -12,8 +12,8 @@ use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 use jackin_console::widgets::op_picker::{
     OpPickerAccountRef, OpPickerItemRef, OpPickerVaultRef, account_lines, breadcrumb_title,
-    field_lines, item_choice_lines, loading_descriptor, loading_title_stage, section_lines,
-    vault_lines,
+    fatal_body_lines, field_lines, item_choice_lines, loading_descriptor, loading_title_stage,
+    section_lines, vault_lines,
 };
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
@@ -257,78 +257,13 @@ pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let body_lines = match fatal {
-        OpPickerFatalState::NotInstalled => vec![
-            Line::from(Span::styled(
-                "1Password CLI not found.",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Install: brew install 1password-cli (macOS)",
-                Style::default().fg(PHOSPHOR_GREEN),
-            )),
-            Line::from(Span::styled(
-                "or visit 1password.com/downloads/command-line/",
-                Style::default().fg(PHOSPHOR_GREEN),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "After install, run `op signin`, then press P to retry.",
-                Style::default().fg(PHOSPHOR_DIM),
-            )),
-        ],
-        OpPickerFatalState::NotSignedIn => vec![
-            Line::from(Span::styled(
-                "1Password CLI is not signed in.",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Run `op signin` in your shell, then retry.",
-                Style::default().fg(PHOSPHOR_GREEN),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "jackin' uses your existing op session — there is no separate jackin' auth.",
-                Style::default().fg(PHOSPHOR_DIM),
-            )),
-        ],
-        OpPickerFatalState::NoVaults => vec![
-            Line::from(Span::styled(
-                "No vaults available.",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Check 1Password's app integration settings:",
-                Style::default().fg(PHOSPHOR_GREEN),
-            )),
-            Line::from(Span::styled(
-                "Settings \u{2192} Developer \u{2192} CLI integration.",
-                Style::default().fg(PHOSPHOR_GREEN),
-            )),
-        ],
-        OpPickerFatalState::GenericFatal { message } => {
-            let truncated: String = message.chars().take(120).collect();
-            vec![
-                Line::from(Span::styled(
-                    "1Password CLI error.",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                )),
-                Line::from(""),
-                Line::from(Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM))),
-            ]
-        }
-    };
-
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(inner);
 
     frame.render_widget(
-        Paragraph::new(body_lines).alignment(Alignment::Center),
+        Paragraph::new(fatal_body_lines(fatal)).alignment(Alignment::Center),
         rows[1],
     );
 }

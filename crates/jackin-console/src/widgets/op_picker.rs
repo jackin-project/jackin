@@ -597,6 +597,73 @@ pub fn loading_descriptor(
     }
 }
 
+pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
+    match fatal {
+        OpPickerFatalState::NotInstalled => vec![
+            Line::from(Span::styled(
+                "1Password CLI not found.",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Install: brew install 1password-cli (macOS)",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(Span::styled(
+                "or visit 1password.com/downloads/command-line/",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "After install, run `op signin`, then press P to retry.",
+                Style::default().fg(PHOSPHOR_DIM),
+            )),
+        ],
+        OpPickerFatalState::NotSignedIn => vec![
+            Line::from(Span::styled(
+                "1Password CLI is not signed in.",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Run `op signin` in your shell, then retry.",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "jackin' uses your existing op session — there is no separate jackin' auth.",
+                Style::default().fg(PHOSPHOR_DIM),
+            )),
+        ],
+        OpPickerFatalState::NoVaults => vec![
+            Line::from(Span::styled(
+                "No vaults available.",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Check 1Password's app integration settings:",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(Span::styled(
+                "Settings \u{2192} Developer \u{2192} CLI integration.",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+        ],
+        OpPickerFatalState::GenericFatal { message } => {
+            let truncated: String = message.chars().take(120).collect();
+            vec![
+                Line::from(Span::styled(
+                    "1Password CLI error.",
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM))),
+            ]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -972,5 +1039,20 @@ mod tests {
             loading_title_stage(OpPickerStage::Field),
             OpPickerStage::Item
         );
+    }
+
+    #[test]
+    fn fatal_body_lines_truncate_generic_errors() {
+        let long = "x".repeat(140);
+        let lines = fatal_body_lines(&OpPickerFatalState::GenericFatal { message: long });
+        assert_eq!(lines[0].spans[0].content.as_ref(), "1Password CLI error.");
+        assert_eq!(lines[2].spans[0].content.chars().count(), 120);
+
+        let missing = fatal_body_lines(&OpPickerFatalState::NotInstalled);
+        assert!(missing.iter().any(|line| {
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("brew install"))
+        }));
     }
 }
