@@ -2,7 +2,6 @@
 //! the operator console. Reached via `m` from the Workspace picker stage.
 
 pub(crate) mod effects;
-pub(crate) mod file_browser;
 
 pub(crate) use effects::poll_background_messages;
 

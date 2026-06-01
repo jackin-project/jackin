@@ -10,7 +10,8 @@ mod message_tests;
 pub mod render;
 pub mod state;
 
-pub(crate) use crate::console::manager::{effects, file_browser};
+pub(crate) use crate::console::manager::effects;
+pub(crate) use crate::console::services::file_browser;
 pub(crate) use input::{InputOutcome, handle_key};
 pub(crate) use message::{ManagerMessage, update_manager};
 pub use render::{prepare_for_render, render};
