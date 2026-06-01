@@ -1814,7 +1814,8 @@ pub(crate) fn apply_role_load_completion(
 ) {
     match result {
         Ok(()) => {
-            if let Err(e) = persist_role_source_registration(config, paths, &load.key, &load.source)
+            if let Err(e) =
+                crate::console::services::config::upsert_role_source(config, paths, &load.key, &load.source)
             {
                 crate::debug_log!(
                     "role",
@@ -1922,7 +1923,12 @@ async fn apply_role_input_with_runner(
                 crate::tui::is_debug_mode(),
             )
             .await?;
-            persist_role_source_registration(config, paths, &key, &source_to_register)?;
+            crate::console::services::config::upsert_role_source(
+                config,
+                paths,
+                &key,
+                &source_to_register,
+            )?;
             Ok::<_, anyhow::Error>(())
         })
         .catch_unwind()
@@ -2122,18 +2128,6 @@ fn open_role_trust_confirm(
     });
 }
 
-fn persist_role_source_registration(
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-    key: &str,
-    source: &crate::config::RoleSource,
-) -> anyhow::Result<()> {
-    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
-    editor_doc.upsert_agent_source(key, source);
-    *config = editor_doc.save()?;
-    Ok(())
-}
-
 fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
     if !editor.pending.allowed_roles.is_empty()
         && !editor.pending.allowed_roles.iter().any(|role| role == key)
@@ -2168,7 +2162,7 @@ fn persist_trusted_role_add(
     mut source: crate::config::RoleSource,
 ) -> anyhow::Result<()> {
     source.trusted = true;
-    persist_role_source_registration(config, paths, key, &source)?;
+    crate::console::services::config::upsert_role_source(config, paths, key, &source)?;
     add_role_to_workspace_editor(editor, config, key);
     Ok(())
 }
