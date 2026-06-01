@@ -39,9 +39,9 @@ pub mod render;
 
 pub use jackin_console::tui::components::op_picker::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,
-    OpPickerFieldRef, OpPickerItemRef, OpPickerLoadResult, OpPickerMode, OpPickerStage,
-    OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref, create_field_display_rows,
-    matches_filter, section_choices_from_references,
+    OpPickerFieldRef, OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
+    OpPickerStage, OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref,
+    create_field_display_rows, matches_filter, section_choices_from_references,
 };
 
 pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<
@@ -53,6 +53,8 @@ pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPicke
 >;
 
 type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
+
+type LoadRequest = OpPickerLoadRequest;
 
 fn ready_picker_load(result: LoadResult) -> BlockingSubscription<LoadResult> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -261,13 +263,16 @@ impl OpPickerState {
     /// stays the single completion path.
     fn start_account_load(&mut self) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
+        let request = LoadRequest::Accounts;
         let cached = self
             .op_cache
             .borrow()
             .get_accounts()
             .map(|accounts| LoadResult::Accounts(Ok(accounts)));
         let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, move || LoadResult::Accounts(runner.account_list()));
+        self.start_worker_load(cached, request, move || {
+            LoadResult::Accounts(runner.account_list())
+        });
     }
 
     fn handle_accounts_loaded(&mut self, accounts: Vec<OpAccount>) {
@@ -309,8 +314,11 @@ impl OpPickerState {
             .borrow()
             .get_vaults(account_id.as_deref())
             .map(|vaults| LoadResult::Vaults(Ok(vaults)));
+        let request = LoadRequest::Vaults {
+            account_id: account_id.clone(),
+        };
         let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, move || {
+        self.start_worker_load(cached, request, move || {
             LoadResult::Vaults(runner.vault_list(account_id.as_deref()))
         });
     }
@@ -324,8 +332,12 @@ impl OpPickerState {
             .borrow()
             .get_items(account_id.as_deref(), &vault_id)
             .map(|items| LoadResult::Items(Ok(items)));
+        let request = LoadRequest::Items {
+            account_id: account_id.clone(),
+            vault_id: vault_id.clone(),
+        };
         let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, move || {
+        self.start_worker_load(cached, request, move || {
             LoadResult::Items(runner.item_list(&vault_id, account_id.as_deref()))
         });
     }
@@ -339,8 +351,13 @@ impl OpPickerState {
             .borrow()
             .get_fields(account_id.as_deref(), &vault_id, &item_id)
             .map(|fields| LoadResult::Fields(Ok(fields)));
+        let request = LoadRequest::Fields {
+            account_id: account_id.clone(),
+            vault_id: vault_id.clone(),
+            item_id: item_id.clone(),
+        };
         let runner = self.runner_clone_for_worker();
-        self.start_worker_load(cached, move || {
+        self.start_worker_load(cached, request, move || {
             LoadResult::Fields(runner.item_get(&item_id, &vault_id, account_id.as_deref()))
         });
     }
@@ -348,8 +365,10 @@ impl OpPickerState {
     fn start_worker_load(
         &mut self,
         cached: Option<LoadResult>,
+        request: LoadRequest,
         worker: impl FnOnce() -> LoadResult + Send + 'static,
     ) {
+        let _ = request;
         self.rx = Some(match cached {
             Some(cached) => ready_picker_load(cached),
             None => spawn_picker_load(worker),

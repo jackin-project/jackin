@@ -102,6 +102,24 @@ pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
     Fields(anyhow::Result<Vec<Field>>),
 }
 
+/// Typed request for external 1Password metadata loading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpPickerLoadRequest {
+    Accounts,
+    Vaults {
+        account_id: Option<String>,
+    },
+    Items {
+        account_id: Option<String>,
+        vault_id: String,
+    },
+    Fields {
+        account_id: Option<String>,
+        vault_id: String,
+        item_id: String,
+    },
+}
+
 /// What the operator chose when the picker commits.
 #[derive(Debug, Clone)]
 pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
