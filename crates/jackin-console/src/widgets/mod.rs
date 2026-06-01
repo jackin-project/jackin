@@ -35,6 +35,18 @@ pub fn cycle_select(list_state: &mut tui_widget_list::ListState, count: usize, d
 }
 
 #[must_use]
+pub fn list_state_for_count(count: usize) -> tui_widget_list::ListState {
+    let mut list_state = tui_widget_list::ListState::default();
+    list_state.select(first_selection(count));
+    list_state
+}
+
+#[must_use]
+pub fn selected_choice<T>(choices: &[T], selected: Option<usize>) -> Option<&T> {
+    selected.and_then(|index| choices.get(index))
+}
+
+#[must_use]
 pub const fn first_selection(count: usize) -> Option<usize> {
     if count == 0 { None } else { Some(0) }
 }
@@ -56,7 +68,7 @@ pub const fn clamp_selection(selected: Option<usize>, count: usize) -> Option<us
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_selection, first_selection};
+    use super::{clamp_selection, first_selection, list_state_for_count, selected_choice};
 
     #[test]
     fn first_selection_is_zero_only_when_nonempty() {
@@ -70,5 +82,20 @@ mod tests {
         assert_eq!(clamp_selection(None, 3), None);
         assert_eq!(clamp_selection(Some(4), 3), Some(2));
         assert_eq!(clamp_selection(Some(1), 3), Some(1));
+    }
+
+    #[test]
+    fn list_state_for_count_selects_first_nonempty_row() {
+        assert_eq!(list_state_for_count(0).selected, None);
+        assert_eq!(list_state_for_count(2).selected, Some(0));
+    }
+
+    #[test]
+    fn selected_choice_reads_only_valid_selection() {
+        let choices = ["alpha", "beta"];
+
+        assert_eq!(selected_choice(&choices, Some(1)), Some(&"beta"));
+        assert_eq!(selected_choice(&choices, Some(2)), None);
+        assert_eq!(selected_choice(&choices, None), None);
     }
 }

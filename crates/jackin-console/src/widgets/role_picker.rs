@@ -29,10 +29,7 @@ impl<R: RoleChoice> RolePickerState<R> {
     #[must_use]
     pub fn with_confirm_label(roles: Vec<R>, confirm_label: &str) -> Self {
         let filtered = roles.clone();
-        let mut list_state = ListState::default();
-        if !filtered.is_empty() {
-            list_state.select(Some(0));
-        }
+        let list_state = super::list_state_for_count(filtered.len());
         Self {
             roles,
             list_state,
@@ -50,11 +47,8 @@ impl<R: RoleChoice> RolePickerState<R> {
             .filter(|role| needle.is_empty() || role.key().to_ascii_lowercase().contains(&needle))
             .cloned()
             .collect();
-        if self.filtered.is_empty() {
-            self.list_state.select(None);
-        } else {
-            self.list_state.select(Some(0));
-        }
+        self.list_state
+            .select(super::first_selection(self.filtered.len()));
     }
 
     fn move_up(&mut self) {
@@ -82,8 +76,7 @@ impl<R: RoleChoice> RolePickerState<R> {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(i) = self.list_state.selected
-                    && let Some(role) = self.filtered.get(i)
+                if let Some(role) = super::selected_choice(&self.filtered, self.list_state.selected)
                 {
                     return ModalOutcome::Commit(role.clone());
                 }

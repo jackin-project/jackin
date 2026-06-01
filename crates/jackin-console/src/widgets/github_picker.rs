@@ -28,10 +28,7 @@ pub struct GithubPickerState {
 
 impl GithubPickerState {
     pub fn new(choices: Vec<GithubChoice>) -> Self {
-        let mut list_state = ListState::default();
-        if !choices.is_empty() {
-            list_state.select(Some(0));
-        }
+        let list_state = super::list_state_for_count(choices.len());
         Self {
             choices,
             list_state,
@@ -49,9 +46,7 @@ impl GithubPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(i) = self.list_state.selected
-                    && let Some(c) = self.choices.get(i)
-                {
+                if let Some(c) = super::selected_choice(&self.choices, self.list_state.selected) {
                     return ModalOutcome::Commit(c.url.clone());
                 }
                 ModalOutcome::Continue

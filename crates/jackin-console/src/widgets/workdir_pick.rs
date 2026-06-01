@@ -75,10 +75,7 @@ impl WorkdirPickState {
         // they're never useful workdir targets.
         choices.retain(|c| c.path != "/" && c.path != home_parent_str);
 
-        let mut list_state = ListState::default();
-        if !choices.is_empty() {
-            list_state.select(Some(0));
-        }
+        let list_state = super::list_state_for_count(choices.len());
         Self {
             choices,
             list_state,
@@ -96,9 +93,7 @@ impl WorkdirPickState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(i) = self.list_state.selected
-                    && let Some(c) = self.choices.get(i)
-                {
+                if let Some(c) = super::selected_choice(&self.choices, self.list_state.selected) {
                     return ModalOutcome::Commit(c.path.clone());
                 }
                 ModalOutcome::Continue
