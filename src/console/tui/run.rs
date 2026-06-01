@@ -118,15 +118,15 @@ pub async fn run_console<H: InstanceActionHandler>(
         // then resume. Done at the top of the loop (no live `&mut state.stage`
         // borrow, `config`/`paths`/`terminal` all in scope) so a request set by
         // the previous iteration's input is handled before the next frame.
-        let pending = if let ConsoleStage::Manager(ms) = &mut state.stage {
-            crate::console::effects::take_pending_token_generate(ms)
+        let pending = if let ConsoleStage::Manager(manager) = &mut state.stage {
+            manager.take_pending_token_generate()
         } else {
             None
         };
         if let Some(req) = pending {
             let mut out = std::io::stdout();
             suspend_console_terminal(&mut out);
-            let label = crate::console::effects::token_generate_label(&req);
+            let label = req.label();
             println!(
                 "\nGenerating Claude OAuth token for {label} — complete the browser \
                  sign-in, then paste the code below.\n",

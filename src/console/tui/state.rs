@@ -566,6 +566,20 @@ pub struct PendingTokenGenerate {
     pub args: crate::workspace::token_setup::TokenSetupArgs,
 }
 
+impl PendingTokenGenerate {
+    pub(crate) fn label(&self) -> String {
+        use crate::workspace::token_setup::TokenSetupScope;
+
+        match &self.scope {
+            TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
+            TokenSetupScope::WorkspaceRole { workspace, role } => {
+                format!("workspace {workspace:?} role {role:?}")
+            }
+            TokenSetupScope::Global => "global config".to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct EditorState<'a> {
     pub mode: EditorMode,
@@ -1405,6 +1419,14 @@ impl ManagerState<'_> {
 
     pub(crate) fn drain_effects(&mut self) -> Vec<ManagerEffect> {
         std::mem::take(&mut self.pending_effects)
+    }
+
+    pub(crate) fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
+        match &mut self.stage {
+            ManagerStage::Editor(editor) => editor.pending_token_generate.take(),
+            ManagerStage::Settings(settings) => settings.pending_token_generate.take(),
+            _ => None,
+        }
     }
 
     // ── Tree navigation helpers ────────────────────────────────────

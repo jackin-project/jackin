@@ -406,28 +406,6 @@ fn execute_trusted_role_source_persist(
     }
 }
 
-pub(crate) fn token_generate_label(req: &crate::console::tui::state::PendingTokenGenerate) -> String {
-    use crate::workspace::token_setup::TokenSetupScope;
-
-    match &req.scope {
-        TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
-        TokenSetupScope::WorkspaceRole { workspace, role } => {
-            format!("workspace {workspace:?} role {role:?}")
-        }
-        TokenSetupScope::Global => "global config".to_string(),
-    }
-}
-
-pub(crate) fn take_pending_token_generate(
-    state: &mut ManagerState<'_>,
-) -> Option<crate::console::tui::state::PendingTokenGenerate> {
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => editor.pending_token_generate.take(),
-        ManagerStage::Settings(settings) => settings.pending_token_generate.take(),
-        _ => None,
-    }
-}
-
 pub(crate) fn execute_token_generate(
     paths: &crate::paths::JackinPaths,
     config: &AppConfig,
