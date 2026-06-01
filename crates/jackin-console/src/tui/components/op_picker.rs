@@ -251,6 +251,26 @@ pub trait OpPickerRenderState {
     fn selected_index(&self) -> Option<usize>;
 }
 
+pub const fn selected_index_for_stage(
+    stage: OpPickerStage,
+    account: Option<usize>,
+    vault: Option<usize>,
+    item: Option<usize>,
+    section: Option<usize>,
+    field: Option<usize>,
+) -> Option<usize> {
+    match stage {
+        OpPickerStage::Account => account,
+        OpPickerStage::Vault => vault,
+        OpPickerStage::Item => item,
+        OpPickerStage::Section => section,
+        OpPickerStage::Field => field,
+        OpPickerStage::NewItemName
+        | OpPickerStage::FieldLabel
+        | OpPickerStage::NewSectionName => None,
+    }
+}
+
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
@@ -1150,6 +1170,43 @@ mod tests {
         assert!(matches!(rows[0], FieldDisplayRow::Field { field_idx: 1 }));
         assert!(matches!(rows[1], FieldDisplayRow::Field { field_idx: 2 }));
         assert!(matches!(rows[2], FieldDisplayRow::NewFieldSentinel));
+    }
+
+    #[test]
+    fn selected_index_routes_by_visible_stage() {
+        assert_eq!(
+            selected_index_for_stage(
+                OpPickerStage::Account,
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            selected_index_for_stage(
+                OpPickerStage::Field,
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+            ),
+            Some(5)
+        );
+        assert_eq!(
+            selected_index_for_stage(
+                OpPickerStage::FieldLabel,
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+            ),
+            None
+        );
     }
 
     #[test]

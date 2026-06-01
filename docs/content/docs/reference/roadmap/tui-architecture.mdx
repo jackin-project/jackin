@@ -298,7 +298,7 @@ Capsule parsed-input and prefix-command to semantic-action mapping now lives wit
 
 Capsule input binding data and key-binding parsing now live with terminal input parsing in <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />. The environment/logging resolver for those TUI-owned binding definitions lives under the non-TUI services boundary in <RepoFile path="crates/jackin-capsule/src/services/input_bindings.rs" />.
 
-Op-picker account/vault/item/field display metadata, query/filter helpers, field-row derivation, and the session cache type now live with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. Root `operator_env` keeps compatibility aliases while `op` CLI execution, blocking subscriptions, and cache invalidation remain in non-TUI service/root adapter code.
+Op-picker account/vault/item/field display metadata, query/filter helpers, selected-index routing, field-row derivation, and the session cache type now live with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. Root `operator_env` keeps compatibility aliases while `op` CLI execution, blocking subscriptions, and cache invalidation remain in non-TUI service/root adapter code.
 
 Console debug key-name formatting now lives in <RepoFile path="crates/jackin-console/src/tui/debug.rs" />. The root debug adapter still owns root-state location labels and supplies whether a focused widget is consuming text input.
 

@@ -6,7 +6,7 @@ use super::{OpLoadState, OpPickerStage, OpPickerState};
 use jackin_console::tui::components::op_picker::{
     OpPickerAccountRef, OpPickerFieldDisplayRef, OpPickerItemRef, OpPickerRenderState,
     OpPickerVaultRef, account_lines, field_lines, item_choice_lines, render_picker,
-    section_lines, vault_lines,
+    section_lines, selected_index_for_stage, vault_lines,
 };
 use jackin_tui::components::TextInputState;
 
@@ -117,16 +117,14 @@ impl OpPickerRenderState for OpPickerState {
     }
 
     fn selected_index(&self) -> Option<usize> {
-        match self.stage {
-            OpPickerStage::Account => self.account_list_state.selected,
-            OpPickerStage::Vault => self.vault_list_state.selected,
-            OpPickerStage::Item => self.item_list_state.selected,
-            OpPickerStage::Section => self.section_list_state.selected,
-            OpPickerStage::Field => self.field_list_state.selected,
-            OpPickerStage::NewItemName
-            | OpPickerStage::FieldLabel
-            | OpPickerStage::NewSectionName => None,
-        }
+        selected_index_for_stage(
+            self.stage,
+            self.account_list_state.selected,
+            self.vault_list_state.selected,
+            self.item_list_state.selected,
+            self.section_list_state.selected,
+            self.field_list_state.selected,
+        )
     }
 }
 
