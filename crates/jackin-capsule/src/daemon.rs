@@ -167,7 +167,7 @@ pub struct Multiplexer {
     /// into the shared `cmd_tx` until its socket finally closes.
     pub(crate) attached_task: Option<tokio::task::JoinHandle<()>>,
     /// Records the previous tab-cell click so a second click on the
-    /// same tab within `DOUBLE_CLICK_WINDOW` is treated as a
+    /// same tab within `TAB_DOUBLE_CLICK_WINDOW` is treated as a
     /// double-click (open the rename modal).
     last_tab_click: Option<(usize, std::time::Instant)>,
     /// Active mouse-drag resize, if any. Populated when the operator
