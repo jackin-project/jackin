@@ -2,7 +2,7 @@
 
 use crossterm::event::KeyEvent;
 
-use super::super::effect::ManagerEffect;
+use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use super::{InputOutcome, editor, global_mounts, list, prelude, save};
@@ -84,6 +84,12 @@ pub fn handle_key(
             editor::EditorModalOutcome::PersistTrustedRoleSource { key, source } => {
                 state.request_effect(ManagerEffect::PersistTrustedRoleSource { key, source });
             }
+            editor::EditorModalOutcome::ApplyFileBrowserOutcome(outcome) => {
+                state.request_effect(ManagerEffect::ApplyFileBrowserOutcome {
+                    context: FileBrowserEffectContext::Editor,
+                    outcome,
+                });
+            }
             editor::EditorModalOutcome::ResolveFileBrowserGitUrl(path) => {
                 state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
             }
@@ -154,20 +160,23 @@ pub fn handle_key(
         let mut open_url = None;
         let modal_outcome =
             global_mounts::handle_settings_confirm_modal(settings, key, &mut open_url);
-        if matches!(
-            modal_outcome,
-            global_mounts::SettingsModalOutcome::SaveSettings
-        ) {
-            state.request_effect(ConsoleEffect::SaveSettings.into());
-        }
-        if matches!(
-            modal_outcome,
-            global_mounts::SettingsModalOutcome::OpenGlobalMountFileBrowser
-        ) {
-            state.request_effect(ManagerEffect::OpenGlobalMountFileBrowser);
-        }
-        if let global_mounts::SettingsModalOutcome::ResolveFileBrowserGitUrl(path) = modal_outcome {
-            state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
+        match modal_outcome {
+            global_mounts::SettingsModalOutcome::Continue => {}
+            global_mounts::SettingsModalOutcome::SaveSettings => {
+                state.request_effect(ConsoleEffect::SaveSettings.into());
+            }
+            global_mounts::SettingsModalOutcome::OpenGlobalMountFileBrowser => {
+                state.request_effect(ManagerEffect::OpenGlobalMountFileBrowser);
+            }
+            global_mounts::SettingsModalOutcome::ResolveFileBrowserGitUrl(path) => {
+                state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
+            }
+            global_mounts::SettingsModalOutcome::ApplyFileBrowserOutcome(outcome) => {
+                state.request_effect(ManagerEffect::ApplyFileBrowserOutcome {
+                    context: FileBrowserEffectContext::SettingsMounts,
+                    outcome,
+                });
+            }
         }
         global_mounts::after_settings_event(state);
         if let Some(url) = open_url {
@@ -227,6 +236,16 @@ pub fn handle_key(
                 }
                 prelude::PreludeModalOutcome::ResolveFileBrowserGitUrl(path) => {
                     state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
+                    return Ok(InputOutcome::Continue);
+                }
+                prelude::PreludeModalOutcome::ApplyFileBrowserOutcome {
+                    outcome,
+                    browser_cwd,
+                } => {
+                    state.request_effect(ManagerEffect::ApplyFileBrowserOutcome {
+                        context: FileBrowserEffectContext::Prelude { browser_cwd },
+                        outcome,
+                    });
                     return Ok(InputOutcome::Continue);
                 }
             }

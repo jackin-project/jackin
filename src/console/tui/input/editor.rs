@@ -869,6 +869,9 @@ pub(super) enum EditorModalOutcome {
         key: String,
         source: crate::config::RoleSource,
     },
+    ApplyFileBrowserOutcome(
+        jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
+    ),
     ResolveFileBrowserGitUrl(std::path::PathBuf),
     ValidateOpRef(crate::operator_env::OpRef),
 }
@@ -924,13 +927,9 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Continue => {}
             }
         }
-        Modal::FileBrowser { target, state } => {
+        Modal::FileBrowser { state, .. } => {
             let outcome = state.handle_key(key);
-            match super::apply_file_browser_outcome(state, outcome) {
-                FileBrowserOutcome::Commit(path) => {
-                    let target = *target;
-                    apply_file_browser_to_editor(target, editor, path);
-                }
+            match outcome {
                 FileBrowserOutcome::Cancel => {
                     editor.pop_modal_chain();
                 }
@@ -939,9 +938,12 @@ pub(super) fn handle_editor_modal(
                 }
                 FileBrowserOutcome::OpenGitUrl(url) => *open_url = Some(url),
                 FileBrowserOutcome::Continue => {}
-                FileBrowserOutcome::NavigateTo(_)
+                FileBrowserOutcome::Commit(_)
+                | FileBrowserOutcome::NavigateTo(_)
                 | FileBrowserOutcome::NavigateUp
-                | FileBrowserOutcome::RequestCommit(_) => {}
+                | FileBrowserOutcome::RequestCommit(_) => {
+                    return EditorModalOutcome::ApplyFileBrowserOutcome(outcome);
+                }
             }
         }
         Modal::WorkdirPick { state } => match state.handle_key(key) {
@@ -2056,7 +2058,7 @@ fn dispatch_editor_mount_dst_choice(
     }
 }
 
-pub(super) fn apply_file_browser_to_editor(
+pub(in crate::console) fn apply_file_browser_to_editor(
     target: FileBrowserTarget,
     editor: &mut EditorState<'_>,
     path: std::path::PathBuf,

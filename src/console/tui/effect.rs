@@ -1,6 +1,7 @@
 //! Root-console TUI effect requests.
 
 use jackin_console::tui::effect::ConsoleEffect;
+use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 
 use crate::console::tui::state::PendingSaveCommit;
 
@@ -21,6 +22,10 @@ pub(crate) enum ManagerEffect {
     OpenCreatePreludeFileBrowserAtLastCwd,
     OpenEditorAddMountFileBrowser,
     OpenGlobalMountFileBrowser,
+    ApplyFileBrowserOutcome {
+        context: FileBrowserEffectContext,
+        outcome: FileBrowserOutcome<std::path::PathBuf>,
+    },
     ResolveFileBrowserGitUrl(std::path::PathBuf),
     PollFileBrowserGitUrls,
     PollPickerLoads,
@@ -33,6 +38,15 @@ pub(crate) enum ManagerEffect {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,
     },
+}
+
+#[derive(Debug)]
+pub(crate) enum FileBrowserEffectContext {
+    Editor,
+    Prelude {
+        browser_cwd: Option<std::path::PathBuf>,
+    },
+    SettingsMounts,
 }
 
 pub(crate) enum WorkspaceSaveEffect {

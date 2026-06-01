@@ -17,6 +17,11 @@ pub(super) enum PreludeModalOutcome {
     Continue,
     OpenUrl(String),
     ReopenFileBrowserAtLastCwd,
+    ApplyFileBrowserOutcome {
+        outcome:
+            jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
+        browser_cwd: Option<std::path::PathBuf>,
+    },
     ResolveFileBrowserGitUrl(std::path::PathBuf),
 }
 
@@ -116,29 +121,11 @@ pub(super) fn handle_prelude_modal(
                 if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
                     let cwd = state.cwd().to_path_buf();
                     let outcome = state.handle_key(key);
-                    (super::apply_file_browser_outcome(state, outcome), Some(cwd))
+                    (outcome, Some(cwd))
                 } else {
                     return PreludeModalOutcome::Continue;
                 };
             match outcome {
-                FileBrowserOutcome::Commit(path) => {
-                    prelude.modal = None;
-                    prelude.last_browser_cwd = browser_cwd;
-                    prelude.accept_mount_src(path);
-                    // Offer the 3-button choice: mount at same path (dst=src, skip TextInput),
-                    // Edit destination (open TextInput), or Cancel.
-                    let src = prelude
-                        .pending_mount_src
-                        .as_ref()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default();
-                    prelude.modal = Some(Modal::MountDstChoice {
-                        target: FileBrowserTarget::CreateFirstMountSrc,
-                        state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
-                            src,
-                        ),
-                    });
-                }
                 FileBrowserOutcome::Cancel => {
                     // Step 1 of the wizard — no prior state to rewind to.
                     // Close the modal; the outer dispatcher treats
@@ -153,9 +140,15 @@ pub(super) fn handle_prelude_modal(
                     return PreludeModalOutcome::OpenUrl(url);
                 }
                 FileBrowserOutcome::Continue => {}
-                FileBrowserOutcome::NavigateTo(_)
+                FileBrowserOutcome::Commit(_)
+                | FileBrowserOutcome::NavigateTo(_)
                 | FileBrowserOutcome::NavigateUp
-                | FileBrowserOutcome::RequestCommit(_) => {}
+                | FileBrowserOutcome::RequestCommit(_) => {
+                    return PreludeModalOutcome::ApplyFileBrowserOutcome {
+                        outcome,
+                        browser_cwd,
+                    };
+                }
             }
         }
         PreludeModalDis::MountDstChoice => {

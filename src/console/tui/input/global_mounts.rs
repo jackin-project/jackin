@@ -33,6 +33,9 @@ pub(super) enum SettingsModalOutcome {
     Continue,
     SaveSettings,
     OpenGlobalMountFileBrowser,
+    ApplyFileBrowserOutcome(
+        jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
+    ),
     ResolveFileBrowserGitUrl(std::path::PathBuf),
 }
 
@@ -1173,21 +1176,7 @@ pub(super) fn handle_settings_confirm_modal(
         },
         GlobalMountModal::FileBrowser { mut state } => {
             let browser_outcome = state.handle_key(key);
-            match super::apply_file_browser_outcome(&mut state, browser_outcome) {
-                FileBrowserOutcome::Commit(path) => {
-                    let src = path.display().to_string();
-                    if let Some(draft) = settings.mounts.add_draft.as_mut() {
-                        draft.src.clone_from(&src);
-                    }
-                    settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
-                    settings
-                        .mounts
-                        .open_sub_modal(GlobalMountModal::MountDstChoice {
-                            state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
-                                src,
-                            ),
-                        });
-                }
+            match browser_outcome {
                 FileBrowserOutcome::Cancel => {
                     settings.mounts.pop_modal_chain();
                     if settings.mounts.modal.is_none() {
@@ -1202,11 +1191,15 @@ pub(super) fn handle_settings_confirm_modal(
                     *open_url = Some(url);
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                 }
-                FileBrowserOutcome::Continue
+                FileBrowserOutcome::Continue => {
+                    settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                }
+                FileBrowserOutcome::Commit(_)
                 | FileBrowserOutcome::NavigateTo(_)
                 | FileBrowserOutcome::NavigateUp
                 | FileBrowserOutcome::RequestCommit(_) => {
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                    outcome = SettingsModalOutcome::ApplyFileBrowserOutcome(browser_outcome);
                 }
             }
         }

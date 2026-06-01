@@ -2,7 +2,10 @@
 
 use crate::config::AppConfig;
 use crate::console::tui::op_picker::OpPickerState;
-use crate::console::tui::effect::{ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode};
+use crate::console::tui::effect::{
+    FileBrowserEffectContext, ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput,
+    WorkspaceSaveWriteMode,
+};
 use crate::console::services::instances::load_instance_refresh_snapshot;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_tui::runtime::spawn_blocking_subscription;
@@ -13,6 +16,7 @@ use crate::console::tui::state::{
     ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck, PendingIsolationCleanup,
     PendingMountInfoRefresh, PendingRoleLoad,
 };
+use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 
 pub(crate) fn execute_manager_effect(
     state: &mut ManagerState<'_>,
@@ -90,6 +94,9 @@ pub(crate) fn execute_manager_effect(
         ManagerEffect::OpenGlobalMountFileBrowser => {
             execute_global_mount_file_browser_open(state);
             true
+        }
+        ManagerEffect::ApplyFileBrowserOutcome { context, outcome } => {
+            execute_file_browser_outcome(state, context, outcome)
         }
         ManagerEffect::ResolveFileBrowserGitUrl(path) => {
             execute_file_browser_git_url_resolution(state, path)
@@ -215,6 +222,140 @@ fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
         target: FileBrowserTarget::CreateFirstMountSrc,
         state: file_browser,
     });
+}
+
+fn execute_file_browser_outcome(
+    state: &mut ManagerState<'_>,
+    context: FileBrowserEffectContext,
+    outcome: FileBrowserOutcome<std::path::PathBuf>,
+) -> bool {
+    match context {
+        FileBrowserEffectContext::Editor => execute_editor_file_browser_outcome(state, outcome),
+        FileBrowserEffectContext::Prelude { browser_cwd } => {
+            execute_prelude_file_browser_outcome(state, outcome, browser_cwd)
+        }
+        FileBrowserEffectContext::SettingsMounts => {
+            execute_settings_file_browser_outcome(state, outcome)
+        }
+    }
+}
+
+fn execute_editor_file_browser_outcome(
+    state: &mut ManagerState<'_>,
+    outcome: FileBrowserOutcome<std::path::PathBuf>,
+) -> bool {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return false;
+    };
+    let (target, applied) = {
+        let Some(Modal::FileBrowser { target, state }) = editor.modal.as_mut() else {
+            return false;
+        };
+        (
+            *target,
+            crate::console::services::file_browser::apply_file_browser_outcome(state, outcome),
+        )
+    };
+    match applied {
+        FileBrowserOutcome::Commit(path) => {
+            crate::console::tui::input::editor::apply_file_browser_to_editor(target, editor, path);
+        }
+        FileBrowserOutcome::Cancel => editor.pop_modal_chain(),
+        FileBrowserOutcome::Continue
+        | FileBrowserOutcome::OpenGitUrl(_)
+        | FileBrowserOutcome::ResolveGitUrl(_)
+        | FileBrowserOutcome::NavigateTo(_)
+        | FileBrowserOutcome::NavigateUp
+        | FileBrowserOutcome::RequestCommit(_) => {}
+    }
+    true
+}
+
+fn execute_prelude_file_browser_outcome(
+    state: &mut ManagerState<'_>,
+    outcome: FileBrowserOutcome<std::path::PathBuf>,
+    browser_cwd: Option<std::path::PathBuf>,
+) -> bool {
+    let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
+        return false;
+    };
+    let applied = {
+        let Some(Modal::FileBrowser { state, .. }) = prelude.modal.as_mut() else {
+            return false;
+        };
+        crate::console::services::file_browser::apply_file_browser_outcome(state, outcome)
+    };
+    match applied {
+        FileBrowserOutcome::Commit(path) => {
+            prelude.modal = None;
+            prelude.last_browser_cwd = browser_cwd;
+            prelude.accept_mount_src(path);
+            let src = prelude
+                .pending_mount_src
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            prelude.modal = Some(Modal::MountDstChoice {
+                target: FileBrowserTarget::CreateFirstMountSrc,
+                state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
+                    src,
+                ),
+            });
+        }
+        FileBrowserOutcome::Cancel => {
+            prelude.modal = None;
+        }
+        FileBrowserOutcome::Continue
+        | FileBrowserOutcome::OpenGitUrl(_)
+        | FileBrowserOutcome::ResolveGitUrl(_)
+        | FileBrowserOutcome::NavigateTo(_)
+        | FileBrowserOutcome::NavigateUp
+        | FileBrowserOutcome::RequestCommit(_) => {}
+    }
+    true
+}
+
+fn execute_settings_file_browser_outcome(
+    state: &mut ManagerState<'_>,
+    outcome: FileBrowserOutcome<std::path::PathBuf>,
+) -> bool {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return false;
+    };
+    let applied = {
+        let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut() else {
+            return false;
+        };
+        crate::console::services::file_browser::apply_file_browser_outcome(state, outcome)
+    };
+    match applied {
+        FileBrowserOutcome::Commit(path) => {
+            let src = path.display().to_string();
+            if let Some(draft) = settings.mounts.add_draft.as_mut() {
+                draft.src.clone_from(&src);
+            }
+            settings
+                .mounts
+                .open_sub_modal(GlobalMountModal::MountDstChoice {
+                    state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
+                        src,
+                    ),
+                });
+        }
+        FileBrowserOutcome::Cancel => {
+            settings.mounts.pop_modal_chain();
+            if settings.mounts.modal.is_none() {
+                settings.mounts.add_draft = None;
+            }
+        }
+        FileBrowserOutcome::Continue
+        | FileBrowserOutcome::OpenGitUrl(_)
+        | FileBrowserOutcome::ResolveGitUrl(_)
+        | FileBrowserOutcome::NavigateTo(_)
+        | FileBrowserOutcome::NavigateUp
+        | FileBrowserOutcome::RequestCommit(_) => {}
+    }
+    true
 }
 
 fn execute_file_browser_git_url_resolution(

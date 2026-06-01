@@ -46,8 +46,6 @@ pub enum InputOutcome {
     },
 }
 
-pub(super) use crate::console::services::file_browser::apply_file_browser_outcome;
-
 /// Cross-submodule helpers for the input/* test modules. Lifted out of
 /// the per-submodule test blocks because `key()` and `mount()` show up in
 /// virtually every test file; keeping a single canonical definition
