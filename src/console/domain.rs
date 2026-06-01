@@ -10,6 +10,12 @@ use crate::workspace::{
     current_dir_workspace,
 };
 
+impl jackin_console::github_mounts::WorkspaceMounts for WorkspaceConfig {
+    fn mount_sources(&self) -> impl Iterator<Item = &str> {
+        self.mounts.iter().map(|mount| mount.src.as_str())
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct InstanceRefreshSnapshot {
     pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,

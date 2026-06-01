@@ -5,8 +5,8 @@
 // than peppering individual sites.
 #![allow(irrefutable_let_patterns)]
 
-pub mod manager;
 mod domain;
+pub(crate) mod effects;
 mod launch;
 mod outcome;
 mod preview;

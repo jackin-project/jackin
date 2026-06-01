@@ -1,4 +1,4 @@
-use super::{manager, tui};
+use super::{effects, tui};
 use super::prompts::{
     console_location_debug, dispatch_and_prompt_launch, invalidate_op_cache_for_ref,
     key_debug_name, launch_with_committed_agent, prompt_committed_role,
@@ -248,7 +248,7 @@ pub async fn run_console<H: InstanceActionHandler>(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let messages = manager::poll_background_messages(ms, &mut config, paths);
+            let messages = effects::poll_background_messages(ms, &mut config, paths);
             for message in messages {
                 match message {
                     crate::console::tui::message::ManagerBackgroundEvent::Message(message) => {

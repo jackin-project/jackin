@@ -1,6 +1,6 @@
 use crate::console::tui::message::ManagerBackgroundEvent;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::manager::effects::{
+use crate::console::effects::{
     execute_manager_effect, poll_background_messages,
 };
 use jackin_console::tui::effect::ConsoleEffect;
