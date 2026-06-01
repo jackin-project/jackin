@@ -447,6 +447,35 @@ pub fn vault_stage_commit_plan<Vault>(picked: Option<Vault>) -> VaultStageCommit
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AccountStageRefreshPlan {
+    pub clear_accounts: bool,
+    pub reset_account_list: bool,
+    pub clear_selected_account: bool,
+}
+
+pub const fn account_stage_refresh_plan() -> AccountStageRefreshPlan {
+    AccountStageRefreshPlan {
+        clear_accounts: true,
+        reset_account_list: true,
+        clear_selected_account: true,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccountStageCommitPlan<Account> {
+    ExistingAccount(Account),
+    NoSelection,
+}
+
+pub fn account_stage_commit_plan<Account>(
+    picked: Option<Account>,
+) -> AccountStageCommitPlan<Account> {
+    picked
+        .map(AccountStageCommitPlan::ExistingAccount)
+        .unwrap_or(AccountStageCommitPlan::NoSelection)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionCollapseIntent {
     Collapse,
     Expand,
@@ -1644,6 +1673,30 @@ mod tests {
         assert_eq!(
             vault_stage_commit_plan::<&str>(None),
             VaultStageCommitPlan::NoSelection
+        );
+    }
+
+    #[test]
+    fn account_stage_refresh_plan_clears_loaded_state() {
+        assert_eq!(
+            account_stage_refresh_plan(),
+            AccountStageRefreshPlan {
+                clear_accounts: true,
+                reset_account_list: true,
+                clear_selected_account: true,
+            }
+        );
+    }
+
+    #[test]
+    fn account_stage_commit_plan_routes_existing_and_empty() {
+        assert_eq!(
+            account_stage_commit_plan(Some("account")),
+            AccountStageCommitPlan::ExistingAccount("account")
+        );
+        assert_eq!(
+            account_stage_commit_plan::<&str>(None),
+            AccountStageCommitPlan::NoSelection
         );
     }
 

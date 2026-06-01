@@ -8,9 +8,10 @@ use jackin_tui::ModalOutcome;
 use jackin_tui::components::TextInputState;
 
 use super::{
-    FieldStageCommitPlan, ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError,
-    OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent,
-    SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan, build_op_ref_on_commit,
+    AccountStageCommitPlan, FieldStageCommitPlan, ItemStageCommitPlan, OpField, OpItem,
+    OpLoadState, OpPickerError, OpPickerSelection, OpPickerStage, OpPickerState,
+    SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan,
+    account_stage_commit_plan, account_stage_refresh_plan, build_op_ref_on_commit,
     field_label_cancel_plan, field_stage_back_plan, field_stage_commit_plan,
     filter_reset_selection_for_stage, item_stage_back_plan, item_stage_commit_plan,
     new_item_name_commit_plan, new_section_name_commit_plan, section_header_collapse_target,
@@ -63,10 +64,17 @@ impl OpPickerState {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Re-fires the probe so add/remove of signed-in
                 // accounts mid-session is picked up without restart.
+                let plan = account_stage_refresh_plan();
                 self.op_cache.borrow_mut().invalidate_accounts();
-                self.accounts.clear();
-                self.account_list_state = list_state_for_count(0);
-                self.selected_account = None;
+                if plan.clear_accounts {
+                    self.accounts.clear();
+                }
+                if plan.reset_account_list {
+                    self.account_list_state = list_state_for_count(0);
+                }
+                if plan.clear_selected_account {
+                    self.selected_account = None;
+                }
                 self.start_account_load();
                 ModalOutcome::Continue
             }
@@ -87,8 +95,11 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_accounts();
-                if let Some(a) = selected_choice(&visible, self.account_list_state.selected) {
-                    let a = (*a).clone();
+                let picked = selected_choice(&visible, self.account_list_state.selected)
+                    .map(|a| (*a).clone());
+                if let AccountStageCommitPlan::ExistingAccount(a) =
+                    account_stage_commit_plan(picked)
+                {
                     let id = a.id.clone();
                     self.selected_account = Some(a);
                     self.start_vault_load(Some(id));
