@@ -6,7 +6,8 @@
 
 use crate::console::tui::auth_kind::AuthKind;
 pub(crate) use super::effects::ManagerBackgroundEvent;
-use super::effects::{ManagerEffect, poll_file_browser_git_urls, poll_picker_loads};
+use super::effect::ManagerEffect;
+use super::effects::{poll_file_browser_git_urls, poll_picker_loads};
 use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerListRow,
     ManagerStage, ManagerState, MountScrollFocus, PendingMountInfoRefresh, SecretsScopeTag,

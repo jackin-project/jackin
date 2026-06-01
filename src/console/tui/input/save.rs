@@ -2,10 +2,10 @@
 //! `ConfirmSave` preview modal, and service-backed config writes.
 #![allow(clippy::items_after_test_module)]
 
-use super::super::effects::{
+use super::super::effect::{
     WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
-    execute_workspace_save_effect, execute_workspace_save_write,
 };
+use super::super::effects::{execute_workspace_save_effect, execute_workspace_save_write};
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
