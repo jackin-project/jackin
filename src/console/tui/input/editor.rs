@@ -1681,56 +1681,27 @@ fn apply_role_input(
     config: &AppConfig,
     value: &str,
 ) -> EditorModalOutcome {
-    let raw = value.trim();
-    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
-    let selector = match crate::selector::RoleSelector::parse(raw) {
-        Ok(selector) => selector,
-        Err(e) => {
-            crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
-            let err = anyhow::Error::new(e);
-            open_role_resolution_error(editor, raw, None, &err);
-            return EditorModalOutcome::Continue;
-        }
-    };
-    crate::debug_log!("role", "parsed role selector: {selector}");
-
-    let key = selector.key();
-    let result = (|| -> anyhow::Result<crate::config::RoleSource> {
-        let source = crate::console::domain::candidate_role_source(config, &selector)?;
-        crate::debug_log!(
-            "role",
-            "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
-            git = source.git.as_str(),
-            trusted = source.trusted
-        );
-        Ok(source)
-    })();
-
-    match result {
-        Ok(source) => EditorModalOutcome::StartRoleRegistration {
-            raw: raw.to_string(),
-            key,
-            selector,
-            source,
+    match crate::console::effects::resolve_role_input_source(config, value) {
+        Ok(resolved) => EditorModalOutcome::StartRoleRegistration {
+            raw: resolved.raw,
+            key: resolved.key,
+            selector: resolved.selector,
+            source: resolved.source,
         },
         Err(e) => {
-            crate::debug_log!(
-                "role",
-                "role loader failed for key={key:?} raw={raw:?}: {e:?}"
-            );
-            let err_text = e.to_string();
+            let err_text = e.error.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
                 open_role_input_error(
                     editor,
                     &format!(
-                        "Could not load role {raw:?}.\n\nThe role loader hit an internal \
-                         error while registering the repository.\n\n{panic_message}"
+                        "Could not load role {:?}.\n\nThe role loader hit an internal \
+                         error while registering the repository.\n\n{panic_message}",
+                        e.raw
                     ),
                 );
                 return EditorModalOutcome::Continue;
             }
-            let source = crate::console::domain::candidate_role_source(config, &selector).ok();
-            open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
+            open_role_resolution_error(editor, &e.raw, e.source_url.as_ref(), &e.error);
             EditorModalOutcome::Continue
         }
     }
