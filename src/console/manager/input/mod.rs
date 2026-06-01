@@ -11,14 +11,15 @@ pub(crate) mod prelude;
 pub mod save;
 
 use crossterm::event::KeyEvent;
+use std::path::PathBuf;
 
 use super::super::widgets::ModalOutcome;
 use super::message::{ManagerEffect, ManagerMessage, execute_manager_effect, update_manager};
 use super::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
-use jackin_console::services::file_browser::resolve_git_url;
-use jackin_console::tui::components::file_browser::FileBrowserState;
+use jackin_console::services::file_browser;
+use jackin_console::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 
 pub use mouse::{clickable_at, handle_mouse, handle_mouse_with_config};
 
@@ -36,9 +37,44 @@ pub(super) fn request_file_browser_git_url_resolution(
 ) {
     let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
         "jackin-file-browser-git-url",
-        move || resolve_git_url(&path),
+        move || file_browser::resolve_git_url(&path),
     );
     state.attach_git_url_resolution(rx);
+}
+
+pub(super) fn new_file_browser_from_home() -> anyhow::Result<FileBrowserState> {
+    Ok(FileBrowserState::from_listing(
+        file_browser::listing_from_home()?,
+    ))
+}
+
+pub(super) fn apply_file_browser_outcome(
+    state: &mut FileBrowserState,
+    outcome: FileBrowserOutcome<PathBuf>,
+) -> FileBrowserOutcome<PathBuf> {
+    match outcome {
+        FileBrowserOutcome::NavigateTo(path) => {
+            let listing = file_browser::clamped_listing(&state.root, &path);
+            state.apply_listing(listing);
+            FileBrowserOutcome::Continue
+        }
+        FileBrowserOutcome::NavigateUp => {
+            if let Some(listing) = file_browser::parent_listing(&state.root, state.cwd()) {
+                state.apply_listing(listing);
+            }
+            FileBrowserOutcome::Continue
+        }
+        FileBrowserOutcome::RequestCommit(path) => {
+            match file_browser::validate_commit(&state.root, &path) {
+                Ok(path) => FileBrowserOutcome::Commit(path),
+                Err(reason) => {
+                    state.reject_commit(reason);
+                    FileBrowserOutcome::Continue
+                }
+            }
+        }
+        other => other,
+    }
 }
 
 #[derive(Debug)]

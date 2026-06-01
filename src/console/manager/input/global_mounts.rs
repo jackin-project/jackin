@@ -16,7 +16,7 @@ use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
 use jackin_console::services::file_browser::open_git_url;
-use jackin_console::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
+use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_tui::components::{ConfirmState, TextInputState};
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
@@ -1148,40 +1148,45 @@ pub(super) fn handle_settings_confirm_modal(
                 settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
             }
         },
-        GlobalMountModal::FileBrowser { mut state } => match state.handle_key(key) {
-            FileBrowserOutcome::Commit(path) => {
-                let src = path.display().to_string();
-                if let Some(draft) = settings.mounts.add_draft.as_mut() {
-                    draft.src.clone_from(&src);
+        GlobalMountModal::FileBrowser { mut state } => {
+            let outcome = state.handle_key(key);
+            match super::apply_file_browser_outcome(&mut state, outcome) {
+                FileBrowserOutcome::Commit(path) => {
+                    let src = path.display().to_string();
+                    if let Some(draft) = settings.mounts.add_draft.as_mut() {
+                        draft.src.clone_from(&src);
+                    }
+                    settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                    settings
+                        .mounts
+                        .open_sub_modal(GlobalMountModal::MountDstChoice {
+                            state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
+                                src,
+                            ),
+                        });
                 }
-                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
-                settings
-                    .mounts
-                    .open_sub_modal(GlobalMountModal::MountDstChoice {
-                    state:
-                        jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
-                            src,
-                        ),
-                });
-            }
-            FileBrowserOutcome::Cancel => {
-                settings.mounts.pop_modal_chain();
-                if settings.mounts.modal.is_none() {
-                    settings.mounts.add_draft = None;
+                FileBrowserOutcome::Cancel => {
+                    settings.mounts.pop_modal_chain();
+                    if settings.mounts.modal.is_none() {
+                        settings.mounts.add_draft = None;
+                    }
+                }
+                FileBrowserOutcome::ResolveGitUrl(path) => {
+                    super::request_file_browser_git_url_resolution(&mut state, path);
+                    settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                }
+                FileBrowserOutcome::OpenGitUrl(url) => {
+                    open_git_url(&url);
+                    settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                }
+                FileBrowserOutcome::Continue
+                | FileBrowserOutcome::NavigateTo(_)
+                | FileBrowserOutcome::NavigateUp
+                | FileBrowserOutcome::RequestCommit(_) => {
+                    settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                 }
             }
-            FileBrowserOutcome::ResolveGitUrl(path) => {
-                super::request_file_browser_git_url_resolution(&mut state, path);
-                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
-            }
-            FileBrowserOutcome::OpenGitUrl(url) => {
-                open_git_url(&url);
-                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
-            }
-            FileBrowserOutcome::Continue => {
-                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
-            }
-        },
+        }
         GlobalMountModal::MountDstChoice { mut state } => {
             use jackin_console::tui::components::mount_dst_choice::MountDstChoice;
             let src = state.src.clone();
@@ -1689,7 +1694,7 @@ fn open_global_mount_scope_picker(global: &mut super::super::state::GlobalMounts
 }
 
 fn open_global_mount_file_browser(global: &mut super::super::state::GlobalMountsState<'_>) {
-    match FileBrowserState::new_from_home() {
+    match super::new_file_browser_from_home() {
         Ok(state) => {
             global.open_sub_modal(GlobalMountModal::FileBrowser {
                 state: Box::new(state),

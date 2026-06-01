@@ -17,7 +17,7 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::services::file_browser::open_git_url;
-use jackin_console::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
+use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
@@ -906,20 +906,26 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Continue => {}
             }
         }
-        Modal::FileBrowser { target, state } => match state.handle_key(key) {
-            FileBrowserOutcome::Commit(path) => {
-                let target = *target;
-                apply_file_browser_to_editor(target, editor, path);
+        Modal::FileBrowser { target, state } => {
+            let outcome = state.handle_key(key);
+            match super::apply_file_browser_outcome(state, outcome) {
+                FileBrowserOutcome::Commit(path) => {
+                    let target = *target;
+                    apply_file_browser_to_editor(target, editor, path);
+                }
+                FileBrowserOutcome::Cancel => {
+                    editor.pop_modal_chain();
+                }
+                FileBrowserOutcome::ResolveGitUrl(path) => {
+                    super::request_file_browser_git_url_resolution(state, path);
+                }
+                FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
+                FileBrowserOutcome::Continue => {}
+                FileBrowserOutcome::NavigateTo(_)
+                | FileBrowserOutcome::NavigateUp
+                | FileBrowserOutcome::RequestCommit(_) => {}
             }
-            FileBrowserOutcome::Cancel => {
-                editor.pop_modal_chain();
-            }
-            FileBrowserOutcome::ResolveGitUrl(path) => {
-                super::request_file_browser_git_url_resolution(state, path);
-            }
-            FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
-            FileBrowserOutcome::Continue => {}
-        },
+        }
         Modal::WorkdirPick { state } => match state.handle_key(key) {
             ModalOutcome::Commit(workdir) => {
                 editor.pending.workdir = workdir;
@@ -2152,7 +2158,7 @@ fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig
 }
 
 fn open_add_mount_file_browser(editor: &mut EditorState<'_>) {
-    match FileBrowserState::new_from_home() {
+    match super::new_file_browser_from_home() {
         Ok(state) => {
             editor.modal = Some(Modal::FileBrowser {
                 target: FileBrowserTarget::EditAddMountSrc,

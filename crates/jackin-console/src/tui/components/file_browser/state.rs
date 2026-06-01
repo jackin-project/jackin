@@ -5,13 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
-use directories::BaseDirs;
 use tui_widget_list::ListState;
 
 use super::git_prompt::GitPromptFocus;
-use crate::services::file_browser::{
-    FolderEntry, canonicalize_or_self, is_directory, is_within_root, load_entries,
-};
+use crate::services::file_browser::{FolderEntry, FolderListing};
 use crate::tui::components::list_helpers::{cycle_select, list_state_for_count, selected_choice};
 
 #[derive(Debug)]
@@ -70,10 +67,9 @@ impl FileBrowserState {
     /// Build a new browser starting at $HOME, filtered to directories only,
     /// excluding well-known noisy top-level folders.
     pub fn new_from_home() -> anyhow::Result<Self> {
-        let home = BaseDirs::new()
-            .map(|b| b.home_dir().to_path_buf())
-            .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
-        Ok(Self::new_at(home.clone(), home))
+        Ok(Self::from_listing(
+            crate::services::file_browser::listing_from_home()?,
+        ))
     }
 
     /// Build a browser with `root` as the sandbox boundary and `cwd` as
@@ -86,13 +82,11 @@ impl FileBrowserState {
     /// missing paths in tests), the uncanonicalized path is used —
     /// production `$HOME` is always canonicalizable.
     pub fn new_at(root: PathBuf, cwd: PathBuf) -> Self {
-        let root = canonicalize_or_self(root);
-        // Keep `root == cwd` invariant when the caller intended that —
-        // many tests pass the same path for both, relying on the
-        // "no ..`" affordance at root. Otherwise canonicalize `cwd`
-        // independently so downstream comparisons line up.
-        let cwd = canonicalize_or_self(cwd);
-        let entries = load_entries(&cwd, &root);
+        Self::from_listing(crate::services::file_browser::listing_at(root, cwd))
+    }
+
+    pub fn from_listing(listing: FolderListing) -> Self {
+        let FolderListing { root, cwd, entries } = listing;
         let list_state = list_state_for_count(entries.len());
         Self {
             root,
@@ -107,29 +101,17 @@ impl FileBrowserState {
         }
     }
 
+    pub fn apply_listing(&mut self, listing: FolderListing) {
+        self.root = listing.root;
+        self.cwd = listing.cwd;
+        self.entries = listing.entries;
+        self.list_state = list_state_for_count(self.entries.len());
+    }
+
     /// Current working directory. Exposed so the create-workspace wizard
     /// can breadcrumb this across a step-back.
     pub fn cwd(&self) -> &Path {
         &self.cwd
-    }
-
-    /// Re-point the browser at `cwd`, clamped to the sandbox root.
-    /// Silently falls back to the root when `cwd` is outside the sandbox
-    /// or not a readable directory.
-    pub fn set_cwd(&mut self, cwd: &Path) {
-        let target = if is_within_root(cwd, &self.root) && is_directory(cwd) {
-            canonicalize_or_self(cwd.to_path_buf())
-        } else {
-            self.root.clone()
-        };
-        self.cwd = target;
-        self.reload();
-    }
-
-    /// Re-read entries from disk and reset the selection to index 0.
-    pub fn reload(&mut self) {
-        self.entries = load_entries(&self.cwd, &self.root);
-        self.list_state = list_state_for_count(self.entries.len());
     }
 
     /// Move selection down one, wrapping at the end.
@@ -147,19 +129,8 @@ impl FileBrowserState {
         selected_choice(&self.entries, self.list_state.selected)
     }
 
-    /// Navigate up one level (`cwd` → `cwd.parent()`), clamped to `root`.
-    pub(super) fn navigate_up(&mut self) {
-        if self.cwd == self.root {
-            return;
-        }
-        let Some(parent) = self.cwd.parent() else {
-            return;
-        };
-        if !parent.starts_with(&self.root) {
-            return;
-        }
-        self.cwd = parent.to_path_buf();
-        self.reload();
+    pub fn reject_commit(&mut self, reason: String) {
+        self.rejected_reason = Some(reason);
     }
 }
 

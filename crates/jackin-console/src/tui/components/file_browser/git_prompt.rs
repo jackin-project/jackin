@@ -93,8 +93,7 @@ impl FileBrowserState {
             // (renamed from `Enter` to `Pick` in batch 16).
             KeyCode::Char('p' | 'P') => {
                 self.dismiss_git_prompt();
-                self.set_cwd(&path);
-                FileBrowserOutcome::Continue
+                FileBrowserOutcome::NavigateTo(path)
             }
             // `o` for "open the repo's web URL in the browser" — best-effort.
             // No-op when `pending_git_url` is `None` (non-GitHub origin or
@@ -116,10 +115,7 @@ impl FileBrowserState {
                 self.dismiss_git_prompt();
                 match focus {
                     GitPromptFocus::MountHere => self.commit_or_reject(path),
-                    GitPromptFocus::EnterIn => {
-                        self.set_cwd(&path);
-                        FileBrowserOutcome::Continue
-                    }
+                    GitPromptFocus::EnterIn => FileBrowserOutcome::NavigateTo(path),
                     GitPromptFocus::Cancel => FileBrowserOutcome::Continue,
                 }
             }
@@ -329,6 +325,45 @@ mod tests {
         FileBrowserState::new_at(root, cwd)
     }
 
+    fn apply_with_services(
+        state: &mut FileBrowserState,
+        outcome: FileBrowserOutcome<PathBuf>,
+    ) -> FileBrowserOutcome<PathBuf> {
+        match outcome {
+            FileBrowserOutcome::NavigateTo(path) => {
+                let listing = crate::services::file_browser::clamped_listing(&state.root, &path);
+                state.apply_listing(listing);
+                FileBrowserOutcome::Continue
+            }
+            FileBrowserOutcome::NavigateUp => {
+                if let Some(listing) =
+                    crate::services::file_browser::parent_listing(&state.root, state.cwd())
+                {
+                    state.apply_listing(listing);
+                }
+                FileBrowserOutcome::Continue
+            }
+            FileBrowserOutcome::RequestCommit(path) => {
+                match crate::services::file_browser::validate_commit(&state.root, &path) {
+                    Ok(path) => FileBrowserOutcome::Commit(path),
+                    Err(reason) => {
+                        state.reject_commit(reason);
+                        FileBrowserOutcome::Continue
+                    }
+                }
+            }
+            other => other,
+        }
+    }
+
+    fn handle_with_services(
+        state: &mut FileBrowserState,
+        key: KeyEvent,
+    ) -> FileBrowserOutcome<PathBuf> {
+        let outcome = state.handle_key(key);
+        apply_with_services(state, outcome)
+    }
+
     fn attach_git_url_resolution(state: &mut FileBrowserState, repo: PathBuf) {
         let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
             "jackin-file-browser-git-url-test",
@@ -358,8 +393,8 @@ mod tests {
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         // Index 0 is `..`; advance to `repo`.
-        state.handle_key(key(KeyCode::Down));
-        let outcome = state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(matches!(
             outcome,
             FileBrowserOutcome::ResolveGitUrl(path) if path == repo
@@ -389,8 +424,8 @@ mod tests {
         seed_git_repo_with_origin(&repo, "git@github.com:jackin-project/jackin.git");
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         assert!(state.pending_git_url.is_none());
         attach_git_url_resolution(&mut state, repo);
@@ -422,8 +457,8 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         attach_git_url_resolution(&mut state, repo);
         wait_for_git_url_resolution(&mut state);
@@ -438,10 +473,10 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
-        let outcome = state.handle_key(key(KeyCode::Enter));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
         match outcome {
             FileBrowserOutcome::Commit(p) => {
                 assert_eq!(p.canonicalize().unwrap(), repo.canonicalize().unwrap(),);
@@ -460,12 +495,12 @@ mod tests {
         std::fs::create_dir(repo.join("sub")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter)); // open prompt
-        state.handle_key(key(KeyCode::Tab)); // MountHere -> EnterIn
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter)); // open prompt
+        handle_with_services(&mut state, key(KeyCode::Tab)); // MountHere -> EnterIn
         assert_eq!(state.pending_git_focus, GitPromptFocus::EnterIn);
 
-        let outcome = state.handle_key(key(KeyCode::Enter));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
         assert_eq!(
@@ -482,13 +517,13 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent.clone());
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
-        state.handle_key(key(KeyCode::Tab));
-        state.handle_key(key(KeyCode::Tab));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Tab));
+        handle_with_services(&mut state, key(KeyCode::Tab));
         assert_eq!(state.pending_git_focus, GitPromptFocus::Cancel);
 
-        let outcome = state.handle_key(key(KeyCode::Enter));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
         assert_eq!(
@@ -505,10 +540,10 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
-        let outcome = state.handle_key(key(KeyCode::Esc));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Esc));
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
     }
@@ -521,10 +556,10 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
-        state.handle_key(key(KeyCode::Tab));
-        let outcome = state.handle_key(key(KeyCode::Char('m')));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Tab));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Char('m')));
         match outcome {
             FileBrowserOutcome::Commit(p) => {
                 assert_eq!(p.canonicalize().unwrap(), repo.canonicalize().unwrap(),);
@@ -548,13 +583,13 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         assert!(state.pending_git_url.is_none());
         let focus_before = state.pending_git_focus;
 
-        let outcome = state.handle_key(key(KeyCode::Char('o')));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Char('o')));
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         // Prompt still open, focus unchanged.
         assert!(state.pending_git_prompt.is_some());
@@ -572,13 +607,13 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         // Force a URL into state for the test; the real handler would have
         // populated this via `resolve_git_url` when origin is a GitHub URL.
         state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
 
-        let outcome = state.handle_key(key(KeyCode::Char('O')));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Char('O')));
         assert!(matches!(
             outcome,
             FileBrowserOutcome::OpenGitUrl(url) if url == "file:///tmp/definitely-not-real"

@@ -109,7 +109,8 @@ pub(super) fn handle_prelude_modal(
             let (outcome, browser_cwd) =
                 if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
                     let cwd = state.cwd().to_path_buf();
-                    (state.handle_key(key), Some(cwd))
+                    let outcome = state.handle_key(key);
+                    (super::apply_file_browser_outcome(state, outcome), Some(cwd))
                 } else {
                     return;
                 };
@@ -146,6 +147,9 @@ pub(super) fn handle_prelude_modal(
                 }
                 FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
                 FileBrowserOutcome::Continue => {}
+                FileBrowserOutcome::NavigateTo(_)
+                | FileBrowserOutcome::NavigateUp
+                | FileBrowserOutcome::RequestCommit(_) => {}
             }
         }
         PreludeModalDis::MountDstChoice => {
@@ -270,14 +274,13 @@ pub(super) fn handle_prelude_modal(
 /// `$HOME` when the browser fails to build or no cwd was recorded.
 fn reopen_file_browser_at_last_cwd(prelude: &mut super::super::state::CreatePreludeState<'_>) {
     use super::super::state::FileBrowserTarget;
-    let Ok(mut fb) =
-        jackin_console::tui::components::file_browser::FileBrowserState::new_from_home()
-    else {
+    let Ok(mut fb) = super::new_file_browser_from_home() else {
         prelude.modal = None;
         return;
     };
     if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
-        fb.set_cwd(cwd);
+        let listing = jackin_console::services::file_browser::clamped_listing(&fb.root, cwd);
+        fb.apply_listing(listing);
     }
     prelude.modal = Some(Modal::FileBrowser {
         target: FileBrowserTarget::CreateFirstMountSrc,

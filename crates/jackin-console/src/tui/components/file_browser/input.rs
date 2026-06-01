@@ -7,7 +7,6 @@ use ratatui::layout::Rect;
 
 use super::git_prompt::git_prompt_url_row_rect;
 use super::state::FileBrowserState;
-use crate::services::file_browser::{canonicalize_or_self, is_directory, is_within_root};
 
 /// Semantic result from file-browser input. External work such as opening
 /// URLs is requested here and executed by the owning console input layer.
@@ -18,6 +17,9 @@ pub enum FileBrowserOutcome<T> {
     Cancel,
     OpenGitUrl(String),
     ResolveGitUrl(PathBuf),
+    NavigateTo(PathBuf),
+    NavigateUp,
+    RequestCommit(PathBuf),
 }
 
 impl FileBrowserState {
@@ -40,10 +42,7 @@ impl FileBrowserState {
                 self.select_next();
                 FileBrowserOutcome::Continue
             }
-            KeyCode::Left | KeyCode::Char('h' | 'H') => {
-                self.navigate_up();
-                FileBrowserOutcome::Continue
-            }
+            KeyCode::Left | KeyCode::Char('h' | 'H') => FileBrowserOutcome::NavigateUp,
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l' | 'L') => self.handle_enter(),
             KeyCode::Char('s' | 'S') => {
                 // Prefer the highlighted entry (so the operator can pick a
@@ -63,8 +62,7 @@ impl FileBrowserState {
                 if self.cwd == self.root {
                     FileBrowserOutcome::Cancel
                 } else {
-                    self.navigate_up();
-                    FileBrowserOutcome::Continue
+                    FileBrowserOutcome::NavigateUp
                 }
             }
             _ => FileBrowserOutcome::Continue,
@@ -78,59 +76,20 @@ impl FileBrowserState {
             return FileBrowserOutcome::Continue;
         };
         if entry.is_parent {
-            self.navigate_up();
-            return FileBrowserOutcome::Continue;
+            return FileBrowserOutcome::NavigateUp;
         }
         if entry.is_git {
             let path = entry.path;
             self.open_git_prompt(path.clone());
             return FileBrowserOutcome::ResolveGitUrl(path);
         }
-        // Plain folder — navigate in. Canonicalize so a legitimate
-        // symlinked-dir-inside-root still resolves to its real path;
-        // out-of-root symlinks were already filtered by `load_entries`,
-        // but this belt-and-suspenders guards against races.
-        if is_within_root(&entry.path, &self.root) && is_directory(&entry.path) {
-            self.cwd = canonicalize_or_self(entry.path);
-            self.reload();
-        }
-        FileBrowserOutcome::Continue
+        FileBrowserOutcome::NavigateTo(entry.path)
     }
 
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
     /// "Mount this repository" option. Enforces the same sandbox rules.
     pub(super) fn commit_or_reject(&mut self, target: PathBuf) -> FileBrowserOutcome<PathBuf> {
-        // Canonicalize once — every reserved-target check below uses the
-        // canonical form so a symlink pointing to a reserved path cannot
-        // bypass the rule just because its lexical path looks innocent.
-        let canonical = canonicalize_or_self(target.clone());
-
-        // Sandbox: belt-and-suspenders check that `target`'s canonical
-        // form is inside `root`. Upstream steps (load_entries, set_cwd,
-        // handle_enter) already filter escaping symlinks, but a TOCTOU
-        // race between listing and commit could still slip one through.
-        if !is_within_root(&canonical, &self.root) {
-            self.rejected_reason = Some("Cannot commit a path outside $HOME.".into());
-            return FileBrowserOutcome::Continue;
-        }
-        // Reject root itself — user must navigate into a subfolder.
-        if canonical == self.root {
-            self.rejected_reason =
-                Some("Cannot use $HOME itself — navigate into a subfolder.".into());
-            return FileBrowserOutcome::Continue;
-        }
-        // Reject jackin's own data directory. Canonicalize the join so a
-        // symlinked `.jackin` can't fool `starts_with` either.
-        let jackin_data = canonicalize_or_self(self.root.join(".jackin"));
-        if canonical.starts_with(&jackin_data) {
-            self.rejected_reason =
-                Some("Cannot use ~/.jackin/* — those paths are reserved.".into());
-            return FileBrowserOutcome::Continue;
-        }
-        // Return the original (lexical) path — the UI displays it as the
-        // operator typed/clicked it; canonicalization is purely a policy
-        // check.
-        FileBrowserOutcome::Commit(target)
+        FileBrowserOutcome::RequestCommit(target)
     }
 
     /// Return the URL requested by a left-click at `(column, row)` in
@@ -184,6 +143,53 @@ mod tests {
         FileBrowserState::new_at(root, cwd)
     }
 
+    fn apply_with_services(
+        state: &mut FileBrowserState,
+        outcome: FileBrowserOutcome<PathBuf>,
+    ) -> FileBrowserOutcome<PathBuf> {
+        match outcome {
+            FileBrowserOutcome::NavigateTo(path) => {
+                let listing = crate::services::file_browser::clamped_listing(&state.root, &path);
+                state.apply_listing(listing);
+                FileBrowserOutcome::Continue
+            }
+            FileBrowserOutcome::NavigateUp => {
+                if let Some(listing) =
+                    crate::services::file_browser::parent_listing(&state.root, state.cwd())
+                {
+                    state.apply_listing(listing);
+                }
+                FileBrowserOutcome::Continue
+            }
+            FileBrowserOutcome::RequestCommit(path) => {
+                match crate::services::file_browser::validate_commit(&state.root, &path) {
+                    Ok(path) => FileBrowserOutcome::Commit(path),
+                    Err(reason) => {
+                        state.reject_commit(reason);
+                        FileBrowserOutcome::Continue
+                    }
+                }
+            }
+            other => other,
+        }
+    }
+
+    fn handle_with_services(
+        state: &mut FileBrowserState,
+        key: KeyEvent,
+    ) -> FileBrowserOutcome<PathBuf> {
+        let outcome = state.handle_key(key);
+        apply_with_services(state, outcome)
+    }
+
+    fn commit_with_services(
+        state: &mut FileBrowserState,
+        target: PathBuf,
+    ) -> FileBrowserOutcome<PathBuf> {
+        let outcome = state.commit_or_reject(target);
+        apply_with_services(state, outcome)
+    }
+
     // ── `s` behaviour ─────────────────────────────────────────────────
 
     #[test]
@@ -196,9 +202,9 @@ mod tests {
         // root = tmp so that neither parent nor child trip the $HOME guard.
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         // Highlighted entry at index 0 is `..`; advance to `child`.
-        state.handle_key(key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Down));
 
-        let outcome = state.handle_key(key(KeyCode::Char('s')));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
         match outcome {
             FileBrowserOutcome::Commit(path) => {
                 assert_eq!(path.canonicalize().unwrap(), child.canonicalize().unwrap(),);
@@ -215,7 +221,7 @@ mod tests {
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), empty.clone());
         // Empty except for `..` — `s` should commit cwd, not `..`.
-        let outcome = state.handle_key(key(KeyCode::Char('s')));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
         match outcome {
             FileBrowserOutcome::Commit(path) => {
                 assert_eq!(path.canonicalize().unwrap(), empty.canonicalize().unwrap(),);
@@ -228,7 +234,7 @@ mod tests {
     fn s_rejects_root_itself() {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
-        let outcome = state.handle_key(key(KeyCode::Char('s')));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.rejected_reason.is_some());
     }
@@ -240,7 +246,7 @@ mod tests {
         std::fs::create_dir_all(&jackin).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), jackin);
-        let outcome = state.handle_key(key(KeyCode::Char('s')));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.rejected_reason.is_some());
     }
@@ -249,9 +255,9 @@ mod tests {
     fn rejection_cleared_on_next_keypress() {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
-        state.handle_key(key(KeyCode::Char('s')));
+        handle_with_services(&mut state, key(KeyCode::Char('s')));
         assert!(state.rejected_reason.is_some());
-        state.handle_key(key(KeyCode::Char('j')));
+        handle_with_services(&mut state, key(KeyCode::Char('j')));
         assert!(state.rejected_reason.is_none());
     }
 
@@ -261,7 +267,7 @@ mod tests {
     fn esc_at_root_cancels_modal() {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
-        let outcome = state.handle_key(key(KeyCode::Esc));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Esc));
         assert!(matches!(outcome, FileBrowserOutcome::Cancel));
     }
 
@@ -272,7 +278,7 @@ mod tests {
         std::fs::create_dir(&sub).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), sub);
-        let outcome = state.handle_key(key(KeyCode::Esc));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Esc));
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
@@ -289,7 +295,7 @@ mod tests {
         std::fs::create_dir_all(&l3).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), l3);
-        state.handle_key(key(KeyCode::Esc));
+        handle_with_services(&mut state, key(KeyCode::Esc));
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
             l2.canonicalize().unwrap(),
@@ -301,7 +307,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
         state.rejected_reason = Some("stale reason".into());
-        let outcome = state.handle_key(key(KeyCode::Esc));
+        let outcome = handle_with_services(&mut state, key(KeyCode::Esc));
         assert!(matches!(outcome, FileBrowserOutcome::Cancel));
         assert!(state.rejected_reason.is_none());
     }
@@ -314,7 +320,7 @@ mod tests {
         let sub = tmp.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
         let mut state = state_rooted_at(tmp.path().to_path_buf(), sub);
-        state.handle_key(key(KeyCode::Char('h')));
+        handle_with_services(&mut state, key(KeyCode::Char('h')));
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
             tmp.path().canonicalize().unwrap(),
@@ -325,7 +331,7 @@ mod tests {
     fn h_at_root_is_noop() {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
-        state.handle_key(key(KeyCode::Char('h')));
+        handle_with_services(&mut state, key(KeyCode::Char('h')));
         // After `h` at the sandbox root, cwd must not have moved above
         // root. Compare root-to-root (both canonicalized by new_at) so the
         // assertion is platform-robust on macOS's /var → /private/var.
@@ -339,7 +345,7 @@ mod tests {
         std::fs::create_dir(&child).unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
         // No `..` at root — index 0 is `child`.
-        state.handle_key(key(KeyCode::Char('l')));
+        handle_with_services(&mut state, key(KeyCode::Char('l')));
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
             child.canonicalize().unwrap(),
@@ -354,8 +360,8 @@ mod tests {
         std::fs::create_dir_all(&plain).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_none());
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
@@ -401,8 +407,8 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         assert!(state.pending_git_url.is_none());
 
@@ -424,8 +430,8 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
 
         let modal = manufactured_modal_area();
@@ -450,8 +456,8 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter));
+        handle_with_services(&mut state, key(KeyCode::Down));
+        handle_with_services(&mut state, key(KeyCode::Enter));
         state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
 
         let modal = manufactured_modal_area();
@@ -481,7 +487,7 @@ mod tests {
         std::fs::create_dir_all(&outside).unwrap();
 
         let mut fb = FileBrowserState::new_at(root.clone(), root);
-        let outcome = fb.commit_or_reject(outside);
+        let outcome = commit_with_services(&mut fb, outside);
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
             .rejected_reason
@@ -506,7 +512,7 @@ mod tests {
         std::os::unix::fs::symlink(&root, &link).unwrap();
 
         let mut fb = FileBrowserState::new_at(root.clone(), root);
-        let outcome = fb.commit_or_reject(link);
+        let outcome = commit_with_services(&mut fb, link);
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
             .rejected_reason
@@ -532,7 +538,7 @@ mod tests {
         std::os::unix::fs::symlink(&jackin, &link).unwrap();
 
         let mut fb = FileBrowserState::new_at(root.clone(), root);
-        let outcome = fb.commit_or_reject(link);
+        let outcome = commit_with_services(&mut fb, link);
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
             .rejected_reason
@@ -558,7 +564,7 @@ mod tests {
         std::os::unix::fs::symlink(&plain, &link).unwrap();
 
         let mut fb = FileBrowserState::new_at(root.clone(), root);
-        let outcome = fb.commit_or_reject(link.clone());
+        let outcome = commit_with_services(&mut fb, link.clone());
         match outcome {
             FileBrowserOutcome::Commit(path) => {
                 // The lexical (returned) path is the symlink itself,

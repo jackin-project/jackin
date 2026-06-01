@@ -6,6 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
+use directories::BaseDirs;
+
 /// Directories excluded from the listing when browsing $HOME.
 pub const EXCLUDED: &[&str] = &[
     "Library",
@@ -27,6 +29,14 @@ pub struct FolderEntry {
     pub is_parent: bool,
     /// True iff `path` contains a `.git` child (dir or submodule file).
     pub is_git: bool,
+}
+
+/// Fully-resolved directory listing handed to the TUI state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderListing {
+    pub root: PathBuf,
+    pub cwd: PathBuf,
+    pub entries: Vec<FolderEntry>,
 }
 
 /// Does `path` contain a `.git` child? Dir (regular clone) OR file
@@ -111,6 +121,62 @@ pub fn load_entries(cwd: &Path, root: &Path) -> Vec<FolderEntry> {
     dirs.sort_by_key(|e| e.name.to_lowercase());
     out.extend(dirs);
     out
+}
+
+/// Build the initial browser listing rooted at `$HOME`.
+pub fn listing_from_home() -> anyhow::Result<FolderListing> {
+    let home = BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
+    Ok(listing_at(home.clone(), home))
+}
+
+/// Build a listing at `cwd`, canonicalizing paths but not clamping to root.
+pub fn listing_at(root: PathBuf, cwd: PathBuf) -> FolderListing {
+    let root = canonicalize_or_self(root);
+    let cwd = canonicalize_or_self(cwd);
+    let entries = load_entries(&cwd, &root);
+    FolderListing { root, cwd, entries }
+}
+
+/// Re-point a listing at `cwd`, clamped to the sandbox root.
+pub fn clamped_listing(root: &Path, cwd: &Path) -> FolderListing {
+    let target = if is_within_root(cwd, root) && is_directory(cwd) {
+        canonicalize_or_self(cwd.to_path_buf())
+    } else {
+        root.to_path_buf()
+    };
+    listing_at(root.to_path_buf(), target)
+}
+
+/// Move one level up inside the sandbox root.
+pub fn parent_listing(root: &Path, cwd: &Path) -> Option<FolderListing> {
+    if cwd == root {
+        return None;
+    }
+    let parent = cwd.parent()?;
+    if !parent.starts_with(root) {
+        return None;
+    }
+    Some(listing_at(root.to_path_buf(), parent.to_path_buf()))
+}
+
+/// Validate a candidate workspace source path.
+pub fn validate_commit(root: &Path, target: &Path) -> Result<PathBuf, String> {
+    let canonical = canonicalize_or_self(target.to_path_buf());
+
+    if !is_within_root(&canonical, root) {
+        return Err("Cannot commit a path outside $HOME.".into());
+    }
+    if canonical == root {
+        return Err("Cannot use $HOME itself — navigate into a subfolder.".into());
+    }
+    let jackin_data = canonicalize_or_self(root.join(".jackin"));
+    if canonical.starts_with(&jackin_data) {
+        return Err("Cannot use ~/.jackin/* — those paths are reserved.".into());
+    }
+
+    Ok(target.to_path_buf())
 }
 
 /// Resolve the web URL for a git-repo path via `mount_info::inspect`.

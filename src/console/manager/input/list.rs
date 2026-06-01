@@ -13,7 +13,6 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::paths::JackinPaths;
-use jackin_console::tui::components::file_browser::FileBrowserState;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_list_key(
@@ -93,7 +92,7 @@ pub(super) fn handle_list_key(
                 let mut prelude = CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
-                    state: FileBrowserState::new_from_home()?,
+                    state: super::new_file_browser_from_home()?,
                 });
                 dispatch_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
                 Ok(InputOutcome::Continue)
@@ -161,7 +160,7 @@ pub(super) fn handle_list_key(
                 let mut prelude = CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
-                    state: FileBrowserState::new_from_home()?,
+                    state: super::new_file_browser_from_home()?,
                 });
                 dispatch_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
             }
