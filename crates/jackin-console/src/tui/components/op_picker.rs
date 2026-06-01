@@ -7,8 +7,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 pub use crate::tui::components::list_helpers::matches_filter;
+use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Browse-only vs. creation-enabled picker mode.
 #[derive(Debug, Clone)]

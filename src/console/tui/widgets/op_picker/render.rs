@@ -10,7 +10,7 @@ use ratatui::{
 
 use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
-use jackin_console::widgets::op_picker::{
+use jackin_console::tui::components::op_picker::{
     OpPickerAccountRef, OpPickerItemRef, OpPickerVaultRef, account_lines, breadcrumb_title,
     fatal_body_lines, field_lines, item_choice_lines, loading_descriptor, loading_title_stage,
     section_lines, vault_lines,
@@ -180,7 +180,7 @@ fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
     field_lines(
         state.build_field_display_rows(),
         state.filtered_fields().into_iter().map(|field| {
-            jackin_console::widgets::op_picker::OpPickerFieldDisplayRef {
+            jackin_console::tui::components::op_picker::OpPickerFieldDisplayRef {
                 id: &field.id,
                 label: &field.label,
                 field_type: &field.field_type,

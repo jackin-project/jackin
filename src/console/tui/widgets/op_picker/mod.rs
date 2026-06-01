@@ -37,7 +37,7 @@ use jackin_tui::components::TextInputState;
 
 pub mod render;
 
-pub use jackin_console::widgets::op_picker::{
+pub use jackin_console::tui::components::op_picker::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,
     OpPickerFieldRef, OpPickerItemRef, OpPickerMode, OpPickerStage, OpPickerVaultRef,
     browse_field_display_rows, build_op_picker_ref, create_field_display_rows, matches_filter,
@@ -438,7 +438,9 @@ impl OpPickerState {
             SubscriptionPoll::Ready(LoadResult::Accounts(Err(e)) | LoadResult::Vaults(Err(e))) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(
-                    jackin_console::widgets::op_picker::classify_probe_error_message(e.to_string()),
+                    jackin_console::tui::components::op_picker::classify_probe_error_message(
+                        e.to_string(),
+                    ),
                 );
                 true
             }

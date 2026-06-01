@@ -10,6 +10,7 @@ pub mod modal_rects;
 pub mod mount_dst_choice;
 pub mod mount_rows;
 pub mod op_breadcrumb;
+pub mod op_picker;
 pub mod role_picker;
 pub mod scope_picker;
 pub mod source_picker;
