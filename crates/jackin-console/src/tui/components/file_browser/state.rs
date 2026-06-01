@@ -64,27 +64,6 @@ impl FileBrowserState {
         }
     }
 
-    /// Build a new browser starting at $HOME, filtered to directories only,
-    /// excluding well-known noisy top-level folders.
-    pub fn new_from_home() -> anyhow::Result<Self> {
-        Ok(Self::from_listing(
-            crate::services::file_browser::listing_from_home()?,
-        ))
-    }
-
-    /// Build a browser with `root` as the sandbox boundary and `cwd` as
-    /// the initial directory. Primarily for tests — production callers
-    /// should use `new_from_home`.
-    ///
-    /// `root` (and `cwd`, when it was passed as equal to `root`) is
-    /// canonicalized once here so later `is_within_root` checks compare
-    /// apples to apples. If canonicalization fails (exotic mounts,
-    /// missing paths in tests), the uncanonicalized path is used —
-    /// production `$HOME` is always canonicalizable.
-    pub fn new_at(root: PathBuf, cwd: PathBuf) -> Self {
-        Self::from_listing(crate::services::file_browser::listing_at(root, cwd))
-    }
-
     pub fn from_listing(listing: FolderListing) -> Self {
         let FolderListing { root, cwd, entries } = listing;
         let list_state = list_state_for_count(entries.len());
@@ -141,11 +120,14 @@ mod tests {
     use tempfile::tempdir;
 
     fn make_state_at(path: PathBuf) -> FileBrowserState {
-        FileBrowserState::new_at(path.clone(), path)
+        FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+            path.clone(),
+            path,
+        ))
     }
 
     fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
-        FileBrowserState::new_at(root, cwd)
+        FileBrowserState::from_listing(crate::services::file_browser::listing_at(root, cwd))
     }
 
     // ── Filtering + directory-only listing ────────────────────────────
@@ -296,7 +278,7 @@ mod tests {
         // correctly rejects it.
         std::os::unix::fs::symlink(&outside, root.join("escape_link")).unwrap();
 
-        let fb = FileBrowserState::new_at(root.clone(), root);
+        let fb = state_rooted_at(root.clone(), root);
         let names: Vec<&str> = fb.entries.iter().map(|e| e.name.as_str()).collect();
         assert!(
             names.contains(&"normal_dir"),
@@ -320,7 +302,7 @@ mod tests {
         std::fs::create_dir_all(&inner).unwrap();
         std::os::unix::fs::symlink(&inner, root.join("inner_link")).unwrap();
 
-        let fb = FileBrowserState::new_at(root.clone(), root);
+        let fb = state_rooted_at(root.clone(), root);
         let names: Vec<&str> = fb.entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"inner"));
         assert!(

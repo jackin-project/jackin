@@ -534,8 +534,10 @@ mod tests {
         // must close the modal so the outer dispatcher drops back to
         // the workspace list (today's "cancelled" contract).
         let mut prelude = super::super::super::state::CreatePreludeState::new();
-        let fb = jackin_console::tui::components::file_browser::FileBrowserState::new_from_home()
-            .expect("file browser should build in test env");
+        let fb = jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+            jackin_console::services::file_browser::listing_from_home()
+                .expect("file browser should build in test env"),
+        );
         prelude.modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::CreateFirstMountSrc,
             state: fb,

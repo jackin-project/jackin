@@ -136,11 +136,14 @@ mod tests {
     }
 
     fn make_state_at(path: PathBuf) -> FileBrowserState {
-        FileBrowserState::new_at(path.clone(), path)
+        FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+            path.clone(),
+            path,
+        ))
     }
 
     fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
-        FileBrowserState::new_at(root, cwd)
+        FileBrowserState::from_listing(crate::services::file_browser::listing_at(root, cwd))
     }
 
     fn apply_with_services(
@@ -486,7 +489,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
 
-        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let mut fb = state_rooted_at(root.clone(), root);
         let outcome = commit_with_services(&mut fb, outside);
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
@@ -511,7 +514,7 @@ mod tests {
         let link = root.join("escape_to_root");
         std::os::unix::fs::symlink(&root, &link).unwrap();
 
-        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let mut fb = state_rooted_at(root.clone(), root);
         let outcome = commit_with_services(&mut fb, link);
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
@@ -537,7 +540,7 @@ mod tests {
         let link = root.join("escape_to_jackin");
         std::os::unix::fs::symlink(&jackin, &link).unwrap();
 
-        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let mut fb = state_rooted_at(root.clone(), root);
         let outcome = commit_with_services(&mut fb, link);
         assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
@@ -563,7 +566,7 @@ mod tests {
         let link = root.join("link_to_plain");
         std::os::unix::fs::symlink(&plain, &link).unwrap();
 
-        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let mut fb = state_rooted_at(root.clone(), root);
         let outcome = commit_with_services(&mut fb, link.clone());
         match outcome {
             FileBrowserOutcome::Commit(path) => {

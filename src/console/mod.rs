@@ -211,7 +211,9 @@ mod quit_confirm_tests {
         // only checks `is_some`.
         ms.list_modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: FileBrowserState::new_from_home().unwrap(),
+            state: FileBrowserState::from_listing(
+                jackin_console::services::file_browser::listing_from_home().unwrap(),
+            ),
         });
         assert!(!is_on_main_screen(&state));
     }

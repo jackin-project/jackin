@@ -1859,7 +1859,9 @@ mod mouse_drag_tests {
 
         // Build a FileBrowser at `parent`, select the repo, open git prompt,
         // and inject a URL so the URL row renders.
-        let mut fb = FileBrowserState::new_at(tmp.path().to_path_buf(), parent);
+        let mut fb = FileBrowserState::from_listing(
+            jackin_console::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
+        );
         fb.handle_key(crossterm::event::KeyEvent {
             code: crossterm::event::KeyCode::Down,
             modifiers: KeyModifiers::NONE,
@@ -1902,7 +1904,9 @@ mod mouse_drag_tests {
         let repo = parent.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
-        let mut fb = FileBrowserState::new_at(tmp.path().to_path_buf(), parent);
+        let mut fb = FileBrowserState::from_listing(
+            jackin_console::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
+        );
         fb.handle_key(crossterm::event::KeyEvent {
             code: crossterm::event::KeyCode::Down,
             modifiers: KeyModifiers::NONE,

@@ -140,7 +140,10 @@ mod tests {
     use tempfile::tempdir;
 
     fn make_state_at(path: PathBuf) -> FileBrowserState {
-        FileBrowserState::new_at(path.clone(), path)
+        FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+            path.clone(),
+            path,
+        ))
     }
 
     // ── Render: ensure the ` (git)` suffix actually appears ───────────

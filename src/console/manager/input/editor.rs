@@ -2496,8 +2496,9 @@ plugins = []
         editor.active_field = FieldFocus::Row(0);
         editor.modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::EditAddMountSrc,
-            state: jackin_console::tui::components::file_browser::FileBrowserState::new_from_home()
-                .unwrap(),
+            state: jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+                jackin_console::services::file_browser::listing_from_home().unwrap(),
+            ),
         });
         apply_file_browser_to_editor(
             FileBrowserTarget::EditAddMountSrc,

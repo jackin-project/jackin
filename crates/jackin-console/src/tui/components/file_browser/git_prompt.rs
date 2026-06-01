@@ -322,7 +322,7 @@ mod tests {
     }
 
     fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
-        FileBrowserState::new_at(root, cwd)
+        FileBrowserState::from_listing(crate::services::file_browser::listing_at(root, cwd))
     }
 
     fn apply_with_services(
