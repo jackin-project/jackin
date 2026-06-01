@@ -3,14 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
-
-#[derive(Debug)]
-pub(crate) struct InstanceRefreshSnapshot {
-    pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,
-    pub(crate) sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
-    pub(crate) session_errors: HashSet<String>,
-    pub(crate) snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
-}
+use crate::console::domain::InstanceRefreshSnapshot;
 
 pub(crate) fn load_instance_refresh_snapshot(
     paths: &crate::paths::JackinPaths,

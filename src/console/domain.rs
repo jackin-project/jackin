@@ -1,5 +1,7 @@
 //! Pure console product rules.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::app::context::eligible_roles_for_workspace;
 use crate::config::{AppConfig, MountEntry, RoleSource};
 use crate::selector::RoleSelector;
@@ -7,6 +9,14 @@ use crate::workspace::{
     LoadWorkspaceInput, MountConfig, ResolvedWorkspace, WorkspaceConfig, WorkspaceEdit,
     current_dir_workspace,
 };
+
+#[derive(Debug)]
+pub(crate) struct InstanceRefreshSnapshot {
+    pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,
+    pub(crate) sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
+    pub(crate) session_errors: HashSet<String>,
+    pub(crate) snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
+}
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceChoice {

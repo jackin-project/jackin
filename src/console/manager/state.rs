@@ -12,7 +12,7 @@ use crate::console::manager::auth_kind::{
     AuthKind, AuthMode, auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github,
     role_override_present,
 };
-use crate::console::services::instances::InstanceRefreshSnapshot;
+use crate::console::domain::InstanceRefreshSnapshot;
 use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceConfig;
 

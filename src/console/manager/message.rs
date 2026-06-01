@@ -12,9 +12,8 @@ use super::state::{
     SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
-use crate::console::services::instances::{
-    InstanceRefreshSnapshot, load_instance_refresh_snapshot,
-};
+use crate::console::domain::InstanceRefreshSnapshot;
+use crate::console::services::instances::load_instance_refresh_snapshot;
 use jackin_console::focus::moved_selection;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::editor::update::{
