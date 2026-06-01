@@ -1,12 +1,13 @@
 //! Launch cockpit update helpers.
 
 use jackin_tui::components::StatusFooterHover;
-use jackin_tui::runtime::{NoEffect, UpdateResult};
+use jackin_tui::runtime::UpdateResult;
 
 use crate::tui::app::{LaunchStage, LaunchView, StageLabelTransition, StageStatus, StageView};
+use crate::tui::effect::LaunchEffect;
 use crate::tui::message::LaunchMessage;
 
-type LaunchUpdate = UpdateResult<NoEffect>;
+type LaunchUpdate = UpdateResult<LaunchEffect>;
 
 #[must_use]
 pub fn initial_view() -> LaunchView {
