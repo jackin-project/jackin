@@ -67,6 +67,33 @@ pub enum FieldDisplayRow {
     NewSectionSentinel,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OpPickerVaultRef<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OpPickerItemRef<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub subtitle: &'a str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OpPickerFieldRef<'a> {
+    pub id: &'a str,
+    pub label: &'a str,
+    pub reference: &'a str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuiltOpPickerRef {
+    pub op: String,
+    pub path: String,
+    pub empty_reference_with_sibling_refs: bool,
+}
+
 /// Multi-account titles lead with the chosen account's email so the
 /// operator can see which account they're drilling into; single-account
 /// titles omit it.
@@ -217,6 +244,61 @@ pub fn matches_filter<'a>(filter: &str, values: impl IntoIterator<Item = &'a str
         .any(|value| value.to_lowercase().contains(&needle))
 }
 
+/// Build the committed `op://` value and display path from the picker
+/// cache values. UUID-form `op` segments are paired with human-readable
+/// path segments, preserving a section segment from the field reference
+/// when 1Password supplies one.
+pub fn build_op_picker_ref<'a>(
+    vault: OpPickerVaultRef<'a>,
+    selected_item: OpPickerItemRef<'a>,
+    items_in_vault: impl IntoIterator<Item = OpPickerItemRef<'a>>,
+    field: OpPickerFieldRef<'a>,
+    fields_in_item: impl IntoIterator<Item = OpPickerFieldRef<'a>>,
+) -> BuiltOpPickerRef {
+    let item_name_collides = items_in_vault
+        .into_iter()
+        .any(|item| item.id != selected_item.id && item.name == selected_item.name);
+    let safe_to_embed = !selected_item.name.contains('[') && !selected_item.name.contains(']');
+    let item_segment = if item_name_collides && safe_to_embed && !selected_item.subtitle.is_empty()
+    {
+        format!("{}[{}]", selected_item.name, selected_item.subtitle)
+    } else {
+        selected_item.name.to_string()
+    };
+
+    if let Some(section_name) =
+        crate::op_reference::parse_op_reference(field.reference).and_then(|parts| parts.section)
+    {
+        return BuiltOpPickerRef {
+            op: format!(
+                "op://{}/{}/{}/{}",
+                vault.id, selected_item.id, section_name, field.id
+            ),
+            path: format!(
+                "{}/{}/{}/{}",
+                vault.name, item_segment, section_name, field.label
+            ),
+            empty_reference_with_sibling_refs: false,
+        };
+    }
+
+    let label = if field.label.is_empty() {
+        field.id
+    } else {
+        field.label
+    };
+    let empty_reference_with_sibling_refs = field.reference.is_empty()
+        && fields_in_item
+            .into_iter()
+            .any(|sibling| sibling.id != field.id && !sibling.reference.is_empty());
+
+    BuiltOpPickerRef {
+        op: format!("op://{}/{}/{}", vault.id, selected_item.id, field.id),
+        path: format!("{}/{}/{}", vault.name, item_segment, label),
+        empty_reference_with_sibling_refs,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +442,117 @@ mod tests {
             ["alice@example.com", "https://example.test"]
         ));
         assert!(!matches_filter("missing", ["one", "two"]));
+    }
+
+    #[test]
+    fn build_op_picker_ref_uses_uuid_op_and_clean_path_for_unique_item() {
+        let built = build_op_picker_ref(
+            OpPickerVaultRef {
+                id: "v_uuid",
+                name: "Private",
+            },
+            OpPickerItemRef {
+                id: "i_uuid",
+                name: "Stripe",
+                subtitle: "",
+            },
+            [OpPickerItemRef {
+                id: "i_uuid",
+                name: "Stripe",
+                subtitle: "",
+            }],
+            OpPickerFieldRef {
+                id: "f_uuid",
+                label: "api key",
+                reference: "op://Private/Stripe/api key",
+            },
+            [OpPickerFieldRef {
+                id: "f_uuid",
+                label: "api key",
+                reference: "op://Private/Stripe/api key",
+            }],
+        );
+        assert_eq!(built.op, "op://v_uuid/i_uuid/f_uuid");
+        assert_eq!(built.path, "Private/Stripe/api key");
+        assert!(!built.empty_reference_with_sibling_refs);
+    }
+
+    #[test]
+    fn build_op_picker_ref_preserves_sections_and_ambiguous_subtitles() {
+        let built = build_op_picker_ref(
+            OpPickerVaultRef {
+                id: "v_uuid",
+                name: "Private",
+            },
+            OpPickerItemRef {
+                id: "i_a",
+                name: "Claude",
+                subtitle: "alice@example.com",
+            },
+            [
+                OpPickerItemRef {
+                    id: "i_a",
+                    name: "Claude",
+                    subtitle: "alice@example.com",
+                },
+                OpPickerItemRef {
+                    id: "i_b",
+                    name: "Claude",
+                    subtitle: "bob@example.com",
+                },
+            ],
+            OpPickerFieldRef {
+                id: "f_uuid",
+                label: "token",
+                reference: "op://Private/Claude/Auth/token",
+            },
+            [OpPickerFieldRef {
+                id: "f_uuid",
+                label: "token",
+                reference: "op://Private/Claude/Auth/token",
+            }],
+        );
+        assert_eq!(built.op, "op://v_uuid/i_a/Auth/f_uuid");
+        assert_eq!(built.path, "Private/Claude[alice@example.com]/Auth/token");
+    }
+
+    #[test]
+    fn build_op_picker_ref_flags_empty_reference_with_sibling_refs() {
+        let built = build_op_picker_ref(
+            OpPickerVaultRef {
+                id: "v_uuid",
+                name: "Private",
+            },
+            OpPickerItemRef {
+                id: "i_uuid",
+                name: "MyItem",
+                subtitle: "",
+            },
+            [OpPickerItemRef {
+                id: "i_uuid",
+                name: "MyItem",
+                subtitle: "",
+            }],
+            OpPickerFieldRef {
+                id: "f_noref",
+                label: "notes",
+                reference: "",
+            },
+            [
+                OpPickerFieldRef {
+                    id: "f_noref",
+                    label: "notes",
+                    reference: "",
+                },
+                OpPickerFieldRef {
+                    id: "f_sectioned",
+                    label: "password",
+                    reference: "op://Private/MyItem/Auth/password",
+                },
+            ],
+        );
+        assert_eq!(built.op, "op://v_uuid/i_uuid/f_noref");
+        assert_eq!(built.path, "Private/MyItem/notes");
+        assert!(built.empty_reference_with_sibling_refs);
     }
 }

@@ -35,7 +35,8 @@ use jackin_tui::components::TextInputState;
 pub mod render;
 
 pub use jackin_console::widgets::op_picker::{
-    FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerMode, OpPickerStage,
+    FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerFieldRef,
+    OpPickerItemRef, OpPickerMode, OpPickerStage, OpPickerVaultRef,
 };
 
 /// What the operator chose when the picker commits.
@@ -1255,80 +1256,46 @@ pub(crate) fn build_op_ref_on_commit(
         .as_ref()
         .expect("item must be selected before commit");
 
-    // Ambiguity check: any other item in the vault sharing this name?
-    let item_name_collides = state
-        .items
-        .iter()
-        .any(|i| i.id != item.id && i.name == item.name);
+    let built = jackin_console::widgets::op_picker::build_op_picker_ref(
+        OpPickerVaultRef {
+            id: &vault.id,
+            name: &vault.name,
+        },
+        OpPickerItemRef {
+            id: &item.id,
+            name: &item.name,
+            subtitle: &item.subtitle,
+        },
+        state.items.iter().map(|item| OpPickerItemRef {
+            id: &item.id,
+            name: &item.name,
+            subtitle: &item.subtitle,
+        }),
+        OpPickerFieldRef {
+            id: &field.id,
+            label: &field.label,
+            reference: &field.reference,
+        },
+        state.fields.iter().map(|field| OpPickerFieldRef {
+            id: &field.id,
+            label: &field.label,
+            reference: &field.reference,
+        }),
+    );
 
-    // Defensive: bracket-bearing names would corrupt the `path` grammar.
-    let safe_to_embed = !item.name.contains('[') && !item.name.contains(']');
-
-    let item_segment = if item_name_collides && safe_to_embed && !item.subtitle.is_empty() {
-        format!("{}[{}]", item.name, item.subtitle)
-    } else {
-        item.name.clone()
-    };
-
-    // Section info comes from parsing the field's emitted reference,
-    // which `op item get` populates with the human-readable path. We
-    // rewrite vault/item/field segments to UUID form and preserve the
-    // section segment.
-    let parsed = jackin_console::op_reference::parse_op_reference(&field.reference);
-
-    let (op, path) = match parsed {
-        Some(p) if p.section.is_some() => {
-            let section_name = p.section.unwrap();
-            (
-                format!(
-                    "op://{}/{}/{}/{}",
-                    vault.id, item.id, section_name, field.id
-                ),
-                format!(
-                    "{}/{}/{}/{}",
-                    vault.name, item_segment, section_name, field.label
-                ),
-            )
-        }
-        _ => {
-            // No section, or reference was empty / unparseable — fall
-            // back to synthesizing from display names.
-            let label = if field.label.is_empty() {
-                field.id.clone()
-            } else {
-                field.label.clone()
-            };
-
-            // Anomaly detection: if this field's reference is empty but
-            // sibling fields in the same item carry non-empty references,
-            // that suggests a malformed `op item get` emission rather than
-            // a genuine 3-segment field. Log so triage can see it.
-            if field.reference.is_empty() {
-                let sibling_has_ref = state
-                    .fields
-                    .iter()
-                    .any(|f| f.id != field.id && !f.reference.is_empty());
-                if sibling_has_ref {
-                    crate::debug_log!(
-                        "op_picker",
-                        "empty field.reference for {}/{} (id {}); sibling fields have references — falling back to 3-segment URI",
-                        vault.name,
-                        item.name,
-                        field.id
-                    );
-                }
-            }
-
-            (
-                format!("op://{}/{}/{}", vault.id, item.id, field.id),
-                format!("{}/{}/{}", vault.name, item_segment, label),
-            )
-        }
-    };
+    if built.empty_reference_with_sibling_refs {
+        crate::debug_log!(
+            "op_picker",
+            "empty field.reference for {}/{} (id {}); sibling fields have references — falling back to 3-segment URI",
+            vault.name,
+            item.name,
+            field.id
+        );
+    }
 
     crate::operator_env::OpRef {
-        op,
-        path,
+        op: built.op,
+        path: built.path,
         account: state.selected_account_id(),
     }
 }
