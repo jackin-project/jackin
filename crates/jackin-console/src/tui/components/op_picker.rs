@@ -360,6 +360,41 @@ pub fn section_header_collapse_target(
     Some((name.clone(), collapsed))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamingStagePlan {
+    pub stage: OpPickerStage,
+    pub field_label_origin: Option<FieldLabelOrigin>,
+    pub pending_section: Option<String>,
+    pub clear_pending_section: bool,
+}
+
+pub const fn new_item_name_commit_plan() -> NamingStagePlan {
+    NamingStagePlan {
+        stage: OpPickerStage::FieldLabel,
+        field_label_origin: Some(FieldLabelOrigin::NewItem),
+        pending_section: None,
+        clear_pending_section: false,
+    }
+}
+
+pub fn new_section_name_commit_plan(name: &str) -> NamingStagePlan {
+    NamingStagePlan {
+        stage: OpPickerStage::FieldLabel,
+        field_label_origin: Some(FieldLabelOrigin::NewSection),
+        pending_section: Some(name.trim().to_string()),
+        clear_pending_section: false,
+    }
+}
+
+pub const fn field_label_cancel_plan(origin: FieldLabelOrigin) -> NamingStagePlan {
+    NamingStagePlan {
+        stage: origin.cancel_stage(),
+        field_label_origin: None,
+        pending_section: None,
+        clear_pending_section: true,
+    }
+}
+
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
@@ -1410,6 +1445,37 @@ mod tests {
                 SectionCollapseIntent::Toggle,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn naming_stage_plans_name_next_stage_and_pending_section() {
+        assert_eq!(
+            new_item_name_commit_plan(),
+            NamingStagePlan {
+                stage: OpPickerStage::FieldLabel,
+                field_label_origin: Some(FieldLabelOrigin::NewItem),
+                pending_section: None,
+                clear_pending_section: false,
+            }
+        );
+        assert_eq!(
+            new_section_name_commit_plan("  Deploy  "),
+            NamingStagePlan {
+                stage: OpPickerStage::FieldLabel,
+                field_label_origin: Some(FieldLabelOrigin::NewSection),
+                pending_section: Some("Deploy".to_string()),
+                clear_pending_section: false,
+            }
+        );
+        assert_eq!(
+            field_label_cancel_plan(FieldLabelOrigin::NewField),
+            NamingStagePlan {
+                stage: OpPickerStage::Field,
+                field_label_origin: None,
+                pending_section: None,
+                clear_pending_section: true,
+            }
         );
     }
 

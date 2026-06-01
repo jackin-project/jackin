@@ -10,7 +10,8 @@ use jackin_tui::components::TextInputState;
 use super::{
     FieldDisplayRow, FieldLabelOrigin, OpField, OpItem, OpLoadState, OpPickerError,
     OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent,
-    build_op_ref_on_commit, field_stage_back_plan, filter_reset_selection_for_stage,
+    build_op_ref_on_commit, field_label_cancel_plan, field_stage_back_plan,
+    filter_reset_selection_for_stage, new_item_name_commit_plan, new_section_name_commit_plan,
     section_header_collapse_target,
 };
 
@@ -427,8 +428,11 @@ impl OpPickerState {
             }
             // selected_item stays None => FieldLabel commit takes the new-item path.
             ModalOutcome::Commit(_) => {
-                self.field_label_origin = FieldLabelOrigin::NewItem;
-                self.stage = OpPickerStage::FieldLabel;
+                let plan = new_item_name_commit_plan();
+                self.stage = plan.stage;
+                if let Some(origin) = plan.field_label_origin {
+                    self.field_label_origin = origin;
+                }
                 ModalOutcome::Continue
             }
             ModalOutcome::Continue => ModalOutcome::Continue,
@@ -443,11 +447,12 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             ModalOutcome::Commit(name) => {
-                // Trim so a whitespace-padded section name can't reach the
-                // op section label / derived id.
-                self.pending_section = Some(name.trim().to_string());
-                self.field_label_origin = FieldLabelOrigin::NewSection;
-                self.stage = OpPickerStage::FieldLabel;
+                let plan = new_section_name_commit_plan(&name);
+                self.stage = plan.stage;
+                self.pending_section = plan.pending_section;
+                if let Some(origin) = plan.field_label_origin {
+                    self.field_label_origin = origin;
+                }
                 ModalOutcome::Continue
             }
             ModalOutcome::Continue => ModalOutcome::Continue,
@@ -457,12 +462,11 @@ impl OpPickerState {
     fn handle_field_label_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match self.field_label_input.handle_key(key) {
             ModalOutcome::Cancel => {
-                self.stage = self.field_label_origin.cancel_stage();
-                // The section was staged immediately before this stage
-                // (new-section name or the drilled section for a new field);
-                // backing out discards that choice so it cannot leak into a
-                // later commit on a different path.
-                self.pending_section = None;
+                let plan = field_label_cancel_plan(self.field_label_origin);
+                self.stage = plan.stage;
+                if plan.clear_pending_section {
+                    self.pending_section = None;
+                }
                 ModalOutcome::Continue
             }
             ModalOutcome::Commit(label) => {
