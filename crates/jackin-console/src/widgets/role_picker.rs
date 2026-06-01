@@ -40,11 +40,10 @@ impl<R: RoleChoice> RolePickerState<R> {
     }
 
     fn recompute_filtered(&mut self) {
-        let needle = self.filter.to_ascii_lowercase();
         self.filtered = self
             .roles
             .iter()
-            .filter(|role| needle.is_empty() || role.key().to_ascii_lowercase().contains(&needle))
+            .filter(|role| super::matches_filter(&self.filter, [role.key().as_str()]))
             .cloned()
             .collect();
         self.list_state

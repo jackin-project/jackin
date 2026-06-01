@@ -47,6 +47,17 @@ pub fn selected_choice<T>(choices: &[T], selected: Option<usize>) -> Option<&T> 
 }
 
 #[must_use]
+pub fn matches_filter<'a>(filter: &str, values: impl IntoIterator<Item = &'a str>) -> bool {
+    if filter.is_empty() {
+        return true;
+    }
+    let needle = filter.to_lowercase();
+    values
+        .into_iter()
+        .any(|value| value.to_lowercase().contains(&needle))
+}
+
+#[must_use]
 pub const fn first_selection(count: usize) -> Option<usize> {
     if count == 0 { None } else { Some(0) }
 }
@@ -68,7 +79,9 @@ pub const fn clamp_selection(selected: Option<usize>, count: usize) -> Option<us
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_selection, first_selection, list_state_for_count, selected_choice};
+    use super::{
+        clamp_selection, first_selection, list_state_for_count, matches_filter, selected_choice,
+    };
 
     #[test]
     fn first_selection_is_zero_only_when_nonempty() {
@@ -97,5 +110,13 @@ mod tests {
         assert_eq!(selected_choice(&choices, Some(1)), Some(&"beta"));
         assert_eq!(selected_choice(&choices, Some(2)), None);
         assert_eq!(selected_choice(&choices, None), None);
+    }
+
+    #[test]
+    fn matches_filter_accepts_empty_or_any_matching_value() {
+        assert!(matches_filter("", ["anything"]));
+        assert!(matches_filter("api", ["Stripe", "API token"]));
+        assert!(matches_filter("VAULT", ["Personal Vault", "Secure Notes"]));
+        assert!(!matches_filter("missing", ["one", "two"]));
     }
 }

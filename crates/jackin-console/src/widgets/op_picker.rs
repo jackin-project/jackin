@@ -7,6 +7,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
+pub use super::matches_filter;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Browse-only vs. creation-enabled picker mode.
@@ -284,16 +285,6 @@ pub fn create_field_display_rows<'a>(
         .collect();
     rows.push(FieldDisplayRow::NewFieldSentinel);
     rows
-}
-
-pub fn matches_filter<'a>(filter: &str, values: impl IntoIterator<Item = &'a str>) -> bool {
-    if filter.is_empty() {
-        return true;
-    }
-    let needle = filter.to_lowercase();
-    values
-        .into_iter()
-        .any(|value| value.to_lowercase().contains(&needle))
 }
 
 /// Build the committed `op://` value and display path from the picker
