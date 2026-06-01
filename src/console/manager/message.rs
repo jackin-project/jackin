@@ -1411,7 +1411,7 @@ mod tests {
         FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
         SettingsTab,
     };
-    use crate::console::widgets::auth_panel::AuthForm;
+    use crate::console::manager::auth_panel::AuthForm;
     use jackin_tui::components::ErrorPopupState;
     use ratatui::layout::Rect;
 

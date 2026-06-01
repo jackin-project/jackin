@@ -3,7 +3,7 @@
 
 use ratatui::Frame;
 
-use super::super::super::widgets::{auth_panel, op_picker};
+use super::super::super::{manager::auth_panel, op_picker};
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::state::Modal;
 

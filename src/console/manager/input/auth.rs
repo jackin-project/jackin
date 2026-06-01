@@ -12,7 +12,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
+use super::super::auth_panel::{AuthForm, CredentialInput};
 use super::super::super::widgets::op_picker::OpPickerState;
 use super::super::auth_kind::{
     AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,

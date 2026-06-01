@@ -578,7 +578,7 @@ fn render_auth_row(
     synthesized: &AppConfig,
     workspace_name: &str,
 ) -> ratatui::text::Line<'static> {
-    use crate::console::widgets::auth_panel::mode_str;
+    use crate::console::manager::auth_panel::mode_str;
 
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let dim_green = Style::default().fg(PHOSPHOR_DIM);
@@ -661,7 +661,7 @@ fn render_auth_source_line(
     kind: crate::console::manager::auth_kind::AuthKind,
     indent: usize,
 ) -> ratatui::text::Line<'static> {
-    use crate::console::widgets::auth_panel::mode_str;
+    use crate::console::manager::auth_panel::mode_str;
 
     let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
     let env_name = kind.required_env_var(mode);

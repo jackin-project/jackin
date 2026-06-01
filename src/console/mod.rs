@@ -28,7 +28,11 @@ pub use run::run_console;
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
 pub use terminal::TerminalSession;
-pub use tui::widgets;
+pub use tui::widgets::op_picker;
+
+pub mod widgets {
+    pub use super::op_picker;
+}
 
 #[cfg(test)]
 mod quit_confirm_tests {

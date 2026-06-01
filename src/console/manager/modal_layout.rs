@@ -1,7 +1,7 @@
 use ratatui::layout::Rect;
 
 use crate::console::manager::state::Modal;
-use crate::console::widgets::auth_panel;
+use crate::console::manager::auth_panel;
 use crate::selector::RolePickerState;
 use jackin_console::tui::components::confirm_save;
 use jackin_console::tui::components::modal_rects;

@@ -110,7 +110,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
 }
 
 fn auth_form_footer_items(
-    form: &crate::console::widgets::auth_panel::AuthForm,
+    form: &crate::console::manager::auth_panel::AuthForm,
     focus: AuthFormFocus,
 ) -> Vec<HintSpan<'static>> {
     shared_auth_form_footer_items(focus, form.shows_credential_block())
