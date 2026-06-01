@@ -76,6 +76,63 @@ pub fn toggle_mount_readonly(readonly: &mut bool) {
     *readonly = !*readonly;
 }
 
+pub fn toggle_allowed_role_at(
+    allowed_roles: &mut Vec<String>,
+    default_role: &mut Option<String>,
+    role_names: &[String],
+    index: usize,
+) {
+    let Some(role) = role_names.get(index) else {
+        return;
+    };
+    let is_all_mode = allowed_roles.is_empty();
+    let in_list = allowed_roles.iter().position(|allowed| allowed == role);
+
+    if is_all_mode {
+        *allowed_roles = role_names
+            .iter()
+            .filter(|allowed| allowed.as_str() != role.as_str())
+            .cloned()
+            .collect();
+        if default_role.as_deref() == Some(role.as_str()) {
+            *default_role = None;
+        }
+    } else if let Some(pos) = in_list {
+        allowed_roles.remove(pos);
+        if default_role.as_deref() == Some(role.as_str()) {
+            *default_role = None;
+        }
+    } else {
+        allowed_roles.push(role.clone());
+        if allowed_roles.len() == role_names.len()
+            && role_names.iter().all(|role| allowed_roles.contains(role))
+        {
+            allowed_roles.clear();
+        }
+    }
+}
+
+pub fn toggle_default_role_at(
+    allowed_roles: &[String],
+    default_role: &mut Option<String>,
+    role_names: &[String],
+    index: usize,
+) {
+    let Some(role) = role_names.get(index) else {
+        return;
+    };
+
+    if default_role.as_deref() == Some(role.as_str()) {
+        *default_role = None;
+        return;
+    }
+
+    let role_allowed = allowed_roles.is_empty() || allowed_roles.iter().any(|allowed| allowed == role);
+    if role_allowed {
+        *default_role = Some(role.clone());
+    }
+}
+
 pub fn toggle_secret_mask(
     unmasked_rows: &mut BTreeSet<(SecretsScopeTag, String)>,
     scope: SecretsScopeTag,
@@ -330,6 +387,44 @@ mod tests {
 
         assert_eq!(roles["alpha"].env.get("TOKEN"), Some(&"secret"));
         assert!(expanded.contains("alpha"));
+    }
+
+    #[test]
+    fn toggle_allowed_role_demotes_all_and_clears_default() {
+        let role_names = vec!["alpha".to_string(), "beta".to_string()];
+        let mut allowed_roles = Vec::new();
+        let mut default_role = Some("alpha".to_string());
+
+        toggle_allowed_role_at(&mut allowed_roles, &mut default_role, &role_names, 0);
+
+        assert_eq!(allowed_roles, vec!["beta".to_string()]);
+        assert_eq!(default_role, None);
+    }
+
+    #[test]
+    fn toggle_allowed_role_collapses_full_roster_to_all() {
+        let role_names = vec!["alpha".to_string(), "beta".to_string()];
+        let mut allowed_roles = vec!["alpha".to_string()];
+        let mut default_role = None;
+
+        toggle_allowed_role_at(&mut allowed_roles, &mut default_role, &role_names, 1);
+
+        assert!(allowed_roles.is_empty());
+    }
+
+    #[test]
+    fn toggle_default_role_requires_effective_allowance() {
+        let role_names = vec!["alpha".to_string(), "beta".to_string()];
+        let mut default_role = None;
+
+        toggle_default_role_at(&["alpha".to_string()], &mut default_role, &role_names, 1);
+        assert_eq!(default_role, None);
+
+        toggle_default_role_at(&["alpha".to_string()], &mut default_role, &role_names, 0);
+        assert_eq!(default_role.as_deref(), Some("alpha"));
+
+        toggle_default_role_at(&["alpha".to_string()], &mut default_role, &role_names, 0);
+        assert_eq!(default_role, None);
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

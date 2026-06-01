@@ -768,40 +768,16 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
     let FieldFocus::Row(n) = editor.active_field;
     // n is 0-based into config.roles (no header offset).
     let agent_names: Vec<String> = config.roles.keys().cloned().collect();
-    let Some(role) = agent_names.get(n) else {
+    if n >= agent_names.len() {
         return;
-    };
-
-    // Read "all" state before the mutable borrow on `allowed_roles`.
-    let is_all_mode = jackin_console::workspace::allows_all_agents(&editor.pending);
-    let list = &mut editor.pending.allowed_roles;
-    let in_list = list.iter().position(|a| a == role);
-
-    if is_all_mode {
-        // Demote "all" to "custom" without this row by enumerating
-        // the full roster minus the current role.
-        *list = agent_names
-            .iter()
-            .filter(|a| a.as_str() != role.as_str())
-            .cloned()
-            .collect();
-        if editor.pending.default_role.as_deref() == Some(role.as_str()) {
-            editor.pending.default_role = None;
-        }
-    } else if let Some(pos) = in_list {
-        list.remove(pos);
-        if editor.pending.default_role.as_deref() == Some(role.as_str()) {
-            editor.pending.default_role = None;
-        }
-    } else {
-        // Filling in the full roster collapses back to the "all"
-        // shorthand so the badge reads `all` rather than
-        // `custom (N of N)`.
-        list.push(role.clone());
-        if list.len() == agent_names.len() && agent_names.iter().all(|a| list.contains(a)) {
-            list.clear();
-        }
     }
+
+    editor_update::toggle_allowed_role_at(
+        &mut editor.pending.allowed_roles,
+        &mut editor.pending.default_role,
+        &agent_names,
+        n,
+    );
 }
 
 /// On the current default → clear; on allowed → set; on disallowed
@@ -809,20 +785,16 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
 fn toggle_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
     let agent_names: Vec<String> = config.roles.keys().cloned().collect();
-    let Some(role) = agent_names.get(n) else {
-        return;
-    };
-
-    if editor.pending.default_role.as_deref() == Some(role.as_str()) {
-        editor.pending.default_role = None;
+    if n >= agent_names.len() {
         return;
     }
 
-    if !jackin_console::workspace::agent_is_effectively_allowed(&editor.pending, role) {
-        return;
-    }
-
-    editor.pending.default_role = Some(role.clone());
+    editor_update::toggle_default_role_at(
+        &editor.pending.allowed_roles,
+        &mut editor.pending.default_role,
+        &agent_names,
+        n,
+    );
 }
 
 fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
