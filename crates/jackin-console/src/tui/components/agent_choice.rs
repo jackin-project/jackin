@@ -2,16 +2,16 @@
 //!
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
-use crate::widgets::ModalOutcome;
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_tui::ModalOutcome;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::PHOSPHOR_GREEN;
 use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::theme::PHOSPHOR_GREEN;
 
 pub trait AgentChoice: Copy + Eq + 'static {
     const ALL: &'static [Self];

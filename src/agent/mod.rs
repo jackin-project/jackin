@@ -12,7 +12,7 @@ pub enum Agent {
     Opencode,
 }
 
-impl jackin_console::widgets::agent_choice::AgentChoice for Agent {
+impl jackin_console::tui::components::agent_choice::AgentChoice for Agent {
     const ALL: &'static [Self] = Self::ALL;
 
     fn label(self) -> &'static str {
@@ -26,7 +26,7 @@ impl jackin_console::widgets::agent_choice::AgentChoice for Agent {
     }
 }
 
-pub type AgentChoiceState = jackin_console::widgets::agent_choice::AgentChoiceState<Agent>;
+pub type AgentChoiceState = jackin_console::tui::components::agent_choice::AgentChoiceState<Agent>;
 
 impl Agent {
     /// Every variant in declaration order. Iteration sites consult

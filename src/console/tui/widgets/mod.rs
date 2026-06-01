@@ -206,7 +206,7 @@ mod consistency_tests {
 
     fn render_agent_choice() -> (Buffer, Rect) {
         use crate::agent::AgentChoiceState;
-        use jackin_console::widgets::agent_choice::render;
+        use jackin_console::tui::components::agent_choice::render;
         let area = Rect::new(0, 0, 50, 7);
         let state = AgentChoiceState::new();
         let buf = draw(area.width, area.height, |f| render(f, area, &state));

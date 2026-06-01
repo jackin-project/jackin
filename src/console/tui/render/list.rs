@@ -550,7 +550,7 @@ fn render_agent_picker_sidebar(
         .iter()
         .map(|agent| {
             ListItem::new(Line::from(
-                jackin_console::widgets::agent_choice::agent_picker_label(*agent),
+                jackin_console::tui::components::agent_choice::agent_picker_label(*agent),
             ))
         })
         .collect();
