@@ -19,6 +19,7 @@ pub enum Action {
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
     FocusReport(bool),
+    Wheel { row: u16, col: u16, button: u8 },
     PaneData(Vec<u8>),
     StartDragResize { row: u16, col: u16 },
     DragMotion { row: u16, col: u16 },

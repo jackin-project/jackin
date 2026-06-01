@@ -3884,6 +3884,34 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_wheel_scrolls_scrollback() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_shell_session(20, 78);
+        for i in 0..40 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
+        mux.sessions.insert(1, session);
+
+        let frame = mux
+            .apply_action(Action::Wheel {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            })
+            .expect("wheel over retained scrollback should redraw");
+
+        assert!(
+            input_rx.try_recv().is_err(),
+            "mouse-disabled pane must not receive raw wheel bytes"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        assert!(
+            !frame.is_empty(),
+            "scrollback redraw frame should be emitted"
+        );
+    }
+
+    #[test]
     fn apply_action_end_drag_resize_clears_drag_state() {
         let mut mux = single_pane_tab_mux();
         mux.drag = Some(DragState {

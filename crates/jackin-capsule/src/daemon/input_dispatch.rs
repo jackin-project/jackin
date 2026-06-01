@@ -212,6 +212,83 @@ impl Multiplexer {
                 }
                 None
             }
+            Action::Wheel { row, col, button } => {
+                if self.dialog_open() {
+                    return None;
+                }
+                if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
+                    crate::cdebug!(
+                        "wheel dispatch: forwarded-to-pty row={} col={} button={}",
+                        row,
+                        col,
+                        button
+                    );
+                    return None;
+                }
+                let delta = if (button & 1) == 0 { 3 } else { -3 };
+                let focused = self.active_focused_id()?;
+                let session = self.sessions.get_mut(&focused)?;
+                let debug_enabled = crate::logging::debug_enabled();
+                let (filled, vt_filled, inline_filled) = if debug_enabled {
+                    let (vt_filled, inline_filled) = session.scrollback_counts();
+                    (
+                        vt_filled.saturating_add(inline_filled),
+                        vt_filled,
+                        inline_filled,
+                    )
+                } else {
+                    (session.scrollback_filled(), 0, 0)
+                };
+                if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
+                    && let Some(buf) = encode_wheel_cursor_fallback(session, button)
+                {
+                    crate::cdebug!(
+                        "wheel dispatch: cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} reason={} bytes={:02x?}",
+                        focused,
+                        session.agent,
+                        row,
+                        col,
+                        button,
+                        filled,
+                        fallback_reason,
+                        buf
+                    );
+                    session.send_input(&buf);
+                    return None;
+                }
+                if filled == 0 {
+                    crate::cdebug!(
+                        "wheel dispatch: no-scrollback session={} agent={:?} row={} col={} button={} alt_screen={} mouse_enabled={} vt_scrollback={} inline_scrollback={}",
+                        focused,
+                        session.agent,
+                        row,
+                        col,
+                        button,
+                        session.screen().alternate_screen(),
+                        session.mouse_enabled(),
+                        vt_filled,
+                        inline_filled
+                    );
+                    return None;
+                }
+                crate::cdebug!(
+                    "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={} filled={}",
+                    focused,
+                    row,
+                    col,
+                    button,
+                    delta,
+                    session.scrollback_offset,
+                    filled
+                );
+                session.scroll_by(delta);
+                crate::cdebug!(
+                    "wheel dispatch: jackin-scrollback session={} after={}",
+                    focused,
+                    session.scrollback_offset
+                );
+                Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
+            }
             Action::PaneData(bytes) => {
                 let mut snapped = false;
                 let mut unblocked = false;
@@ -338,89 +415,7 @@ impl Multiplexer {
                 None
             }
             InputEvent::MousePress { col, row, button } if is_wheel_button(button) => {
-                // Panes that requested mouse reporting own their wheel
-                // events. Alternate-screen panes without mouse reporting
-                // get cursor-key fallback regardless of retained primary-
-                // screen scrollback — the pane controls the surface, not
-                // jackin'. Normal-screen panes without mouse reporting use
-                // jackin's scrollback when available; otherwise the wheel
-                // is silenced so it does not become prompt cursor keys.
-                // Routing is based on screen state, not spawn origin.
-                if self.dialog_open() {
-                    return None;
-                }
-                if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
-                    crate::cdebug!(
-                        "wheel dispatch: forwarded-to-pty row={} col={} button={}",
-                        row,
-                        col,
-                        button
-                    );
-                    return None;
-                }
-                let delta = if (button & 1) == 0 { 3 } else { -3 };
-                let focused = self.active_focused_id()?;
-                let session = self.sessions.get_mut(&focused)?;
-                let debug_enabled = crate::logging::debug_enabled();
-                let (filled, vt_filled, inline_filled) = if debug_enabled {
-                    let (vt_filled, inline_filled) = session.scrollback_counts();
-                    (
-                        vt_filled.saturating_add(inline_filled),
-                        vt_filled,
-                        inline_filled,
-                    )
-                } else {
-                    (session.scrollback_filled(), 0, 0)
-                };
-                if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
-                    && let Some(buf) = encode_wheel_cursor_fallback(session, button)
-                {
-                    crate::cdebug!(
-                        "wheel dispatch: cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} reason={} bytes={:02x?}",
-                        focused,
-                        session.agent,
-                        row,
-                        col,
-                        button,
-                        filled,
-                        fallback_reason,
-                        buf
-                    );
-                    session.send_input(&buf);
-                    return None;
-                }
-                if filled == 0 {
-                    crate::cdebug!(
-                        "wheel dispatch: no-scrollback session={} agent={:?} row={} col={} button={} alt_screen={} mouse_enabled={} vt_scrollback={} inline_scrollback={}",
-                        focused,
-                        session.agent,
-                        row,
-                        col,
-                        button,
-                        session.screen().alternate_screen(),
-                        session.mouse_enabled(),
-                        vt_filled,
-                        inline_filled
-                    );
-                    return None;
-                }
-                crate::cdebug!(
-                    "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={} filled={}",
-                    focused,
-                    row,
-                    col,
-                    button,
-                    delta,
-                    session.scrollback_offset,
-                    filled
-                );
-                session.scroll_by(delta);
-                crate::cdebug!(
-                    "wheel dispatch: jackin-scrollback session={} after={}",
-                    focused,
-                    session.scrollback_offset
-                );
-                Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
+                self.apply_action(Action::Wheel { row, col, button })
             }
             InputEvent::MousePress {
                 row,
