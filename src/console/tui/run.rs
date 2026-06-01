@@ -82,7 +82,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
     use futures_util::{FutureExt as _, StreamExt as _};
 
-    let op_available = crate::console::effects::detect_op_available();
+    let op_available = crate::console::services::op::cli_available();
     let mut state =
         crate::console::tui::new_console_state_with_op_available(&config, cwd, op_available)?;
     // When the launch flow in `app` already owns the host screen, draw into it

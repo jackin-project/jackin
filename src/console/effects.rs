@@ -214,10 +214,6 @@ fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
     });
 }
 
-pub(crate) fn detect_op_available() -> bool {
-    crate::console::services::op::cli_available()
-}
-
 async fn resolve_supported_agents_for_console(
     paths: &crate::paths::JackinPaths,
     config: &AppConfig,
