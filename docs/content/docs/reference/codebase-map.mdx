@@ -65,11 +65,11 @@ The container lifecycle lives in `src/runtime/`:
   the image on the host Docker engine, start the DinD sidecar and the
   agent container, attach. It emits structured launch progress stages
   rather than writing raw status directly to the terminal.
-- <RepoFile path="src/runtime/progress.rs" /> — launch progress event
+- <RepoFile path="crates/jackin-launch/src/progress.rs" /> — launch progress event
   vocabulary plus rich, compact, non-interactive, and test rendering support.
   The rich launch cockpit model, update, subscriptions, terminal checks, and
-  Ratatui model/message/update/effect/run/view live under <RepoFile path="crates/jackin-launch/src/tui.rs" />
-  and <RepoFile path="crates/jackin-launch/src/tui/view.rs" />, with launch-local
+  Ratatui model/message/update/effect/run/view live under <RepoFile path="crates/jackin-launch/src/tui.rs" />,
+  <RepoFile path="crates/jackin-launch/src/tui/run.rs" />, and <RepoFile path="crates/jackin-launch/src/tui/view.rs" />, with launch-local
   visual components under <RepoFile path="crates/jackin-launch/src/tui/components.rs" />.
 - <RepoFile path="src/runtime/attach.rs" /> — the attach + reconnect path
   (`hardline`).

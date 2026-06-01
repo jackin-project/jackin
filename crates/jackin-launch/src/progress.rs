@@ -2,15 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_tui::components::ConfirmState;
-use ratatui::layout::Rect;
 use ratatui::text::Line;
 
-use crate::tui::components::build_log_dialog::build_log_scroll_filled;
-use crate::tui::run::RichRenderer;
-use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
+use crate::tui::run::{RichDriver, RichRenderer};
+use crate::tui::subscriptions::SharedView;
 use crate::{
-    LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage,
-    LaunchStage, PromptResult, StageStatus, initial_view, update_launch_view,
+    LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage, LaunchStage,
+    PromptResult, StageStatus, initial_view, update_launch_view,
 };
 
 const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
@@ -28,83 +26,6 @@ enum Renderer {
     /// trailer) so the interactive capsule attach owns the terminal alone.
     Done,
     Test,
-}
-
-/// Owns the background render task that ticks the cockpit independently of the
-/// launch work, so the rain and animation never freeze while a launch step is
-/// blocked on I/O. The task shares the renderer behind a `try_lock` (so the
-/// reclaiming picker is never blocked) and a stop flag.
-struct RichDriver {
-    renderer: Arc<std::sync::Mutex<RichRenderer>>,
-    stop: Arc<std::sync::atomic::AtomicBool>,
-    handle: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl RichDriver {
-    fn spawn(
-        renderer: RichRenderer,
-        view: SharedView,
-        run_id: String,
-        run_log_path: String,
-        host: &'static dyn LaunchHostTerminal,
-        jackin_version: &'static str,
-    ) -> Self {
-        use std::sync::atomic::Ordering;
-        let renderer = Arc::new(std::sync::Mutex::new(renderer));
-        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let handle = {
-            let renderer = renderer.clone();
-            let stop = stop.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_millis(33));
-                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                loop {
-                    interval.tick().await;
-                    if stop.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    // Try-lock so a picker reclaiming the renderer is never
-                    // blocked; snapshot the view (advancing the animation frame)
-                    // without holding the view lock across the draw.
-                    let Ok(mut rr) = renderer.try_lock() else {
-                        continue;
-                    };
-                    // Drain input only while this task owns the renderer. When
-                    // a forced-choice picker holds it, the picker reads events
-                    // itself and this poll would steal its keystrokes.
-                    handle_cockpit_input(&view, &run_id, host, jackin_version);
-                    let snapshot = match view.lock() {
-                        Ok(mut v) => {
-                            let build_log_filled = if v.build_log_open {
-                                let area = crossterm::terminal::size()
-                                    .ok()
-                                    .map(|(width, height)| Rect::new(0, 0, width, height))
-                                    .unwrap_or_default();
-                                Some(build_log_scroll_filled(area))
-                            } else {
-                                None
-                            };
-                            let _dirty = update_launch_view(
-                                &mut v,
-                                LaunchMessage::RenderTick {
-                                    advance_frame: !rr.no_motion(),
-                                    build_log_filled,
-                                },
-                            );
-                            v.clone()
-                        }
-                        Err(_) => continue,
-                    };
-                    let _ = rr.render(&snapshot, &run_id, &run_log_path);
-                }
-            })
-        };
-        Self {
-            renderer,
-            stop,
-            handle: Some(handle),
-        }
-    }
 }
 
 impl LaunchProgress {
@@ -273,13 +194,11 @@ impl LaunchProgress {
     /// handoff, so the capsule attach owns the terminal alone. Idempotent;
     /// no-op for the test renderer.
     pub fn finish(&mut self) {
-        use std::sync::atomic::Ordering;
         if let Renderer::Rich(driver) = &mut self.renderer {
             // Signal the task to stop drawing; it exits on its next tick and
             // drops its renderer (any stray final frame is wiped by the
             // capsule's clear-on-attach). Detach the handle — we do not block.
-            driver.stop.store(true, Ordering::Relaxed);
-            let _ = driver.handle.take();
+            driver.stop_detached();
             // The interactive attach must inherit the terminal, not be
             // captured, so clear the rich-surface flag now regardless of when
             // the task's renderer finally drops.
@@ -298,11 +217,7 @@ impl LaunchProgress {
         f: impl FnOnce(&mut RichRenderer) -> anyhow::Result<T>,
     ) -> anyhow::Result<T> {
         if let Renderer::Rich(driver) = &mut self.renderer {
-            let mut renderer = driver
-                .renderer
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            f(&mut renderer)
+            driver.with_renderer(f)
         } else {
             anyhow::bail!("{what} requires the rich launch dialog")
         }
@@ -367,12 +282,11 @@ impl LaunchProgress {
 
 impl Drop for LaunchProgress {
     fn drop(&mut self) {
-        use std::sync::atomic::Ordering;
         // Dropped without an explicit finish (e.g. an error path): stop the
         // render task. Its renderer drops when the task exits, restoring the
         // terminal — the host-screen guard is the ultimate safety net.
         if let Renderer::Rich(driver) = &self.renderer {
-            driver.stop.store(true, Ordering::Relaxed);
+            driver.request_stop();
             self.host.set_rich_surface_active(false);
         }
     }

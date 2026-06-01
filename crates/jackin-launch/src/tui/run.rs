@@ -14,6 +14,10 @@ use ratatui::text::Line;
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
+use crate::tui::components::build_log_dialog::build_log_scroll_filled;
+use crate::tui::message::LaunchMessage;
+use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
+use crate::tui::update::update_launch_view;
 use crate::tui::view::{emit_launch_hyperlink_overlays, render_launch_frame};
 use crate::{LaunchHostTerminal, LaunchView, PromptResult};
 
@@ -30,6 +34,97 @@ pub struct RichRenderer {
     rain: Option<crate::tui::components::rain::RainState>,
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
+}
+
+/// Owns the background render task that ticks the cockpit independently of
+/// launch work, so rain and animation continue while a launch step waits on I/O.
+pub struct RichDriver {
+    renderer: std::sync::Arc<std::sync::Mutex<RichRenderer>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl RichDriver {
+    pub fn spawn(
+        renderer: RichRenderer,
+        view: SharedView,
+        run_id: String,
+        run_log_path: String,
+        host: &'static dyn LaunchHostTerminal,
+        jackin_version: &'static str,
+    ) -> Self {
+        use std::sync::atomic::Ordering;
+        let renderer = std::sync::Arc::new(std::sync::Mutex::new(renderer));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = {
+            let renderer = renderer.clone();
+            let stop = stop.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    if stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let Ok(mut rr) = renderer.try_lock() else {
+                        continue;
+                    };
+                    handle_cockpit_input(&view, &run_id, host, jackin_version);
+                    let snapshot = match view.lock() {
+                        Ok(mut v) => {
+                            let build_log_filled = if v.build_log_open {
+                                let area = crossterm::terminal::size()
+                                    .ok()
+                                    .map(|(width, height)| Rect::new(0, 0, width, height))
+                                    .unwrap_or_default();
+                                Some(build_log_scroll_filled(area))
+                            } else {
+                                None
+                            };
+                            let _dirty = update_launch_view(
+                                &mut v,
+                                LaunchMessage::RenderTick {
+                                    advance_frame: !rr.no_motion(),
+                                    build_log_filled,
+                                },
+                            );
+                            v.clone()
+                        }
+                        Err(_) => continue,
+                    };
+                    let _ = rr.render(&snapshot, &run_id, &run_log_path);
+                }
+            })
+        };
+        Self {
+            renderer,
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    pub fn stop_detached(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.stop.store(true, Ordering::Relaxed);
+        let _ = self.handle.take();
+    }
+
+    pub fn request_stop(&self) {
+        use std::sync::atomic::Ordering;
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    pub fn with_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut RichRenderer) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
+        let mut renderer = self
+            .renderer
+            .lock()
+            .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+        f(&mut renderer)
+    }
 }
 
 fn read_pressed_key(context: &'static str) -> anyhow::Result<KeyEvent> {
