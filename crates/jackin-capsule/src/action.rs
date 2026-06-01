@@ -40,6 +40,10 @@ pub enum Action {
         row: u16,
         col: u16,
     },
+    PanePrimaryPress {
+        row: u16,
+        col: u16,
+    },
     StatusBarClick {
         col: u16,
     },

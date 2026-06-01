@@ -340,6 +340,31 @@ impl Multiplexer {
             Action::FocusPaneAt { row, col } => self
                 .focus_pane_at(row, col)
                 .then(|| self.compose_full_frame(FullRedrawReason::FocusChange)),
+            Action::PanePrimaryPress { row, col } => {
+                // Press on a shared pane border starts a drag — skip focus
+                // switch and PTY forward in that case.
+                if self.detect_drag_start(row, col).is_some() {
+                    self.apply_action(Action::StartDragResize { row, col });
+                    return None;
+                }
+                // Click on a pane other than the currently-focused one switches
+                // focus first so the operator never has to click twice. Selection
+                // or PTY-mouse forwarding then runs against the freshly-focused
+                // pane.
+                let focus_frame = self.apply_action(Action::FocusPaneAt { row, col });
+                // Press inside a pane whose program never asked for a mouse
+                // protocol starts a text selection.
+                if self.detect_selection_start(row, col).is_some() {
+                    return self.apply_action(Action::StartSelection { row, col });
+                }
+                self.apply_action(Action::ForwardMouse {
+                    row,
+                    col,
+                    button: 0,
+                    press: true,
+                });
+                focus_frame
+            }
             Action::StatusBarClick { col } => {
                 // 1) Click on a tab cell switches active tab. A
                 //    second click on the same cell within the
@@ -559,30 +584,7 @@ impl Multiplexer {
                     });
                 }
                 if button == 0 {
-                    // Press on a shared pane border starts a drag —
-                    // skip focus switch and PTY forward in that case.
-                    if self.detect_drag_start(row, col).is_some() {
-                        self.apply_action(Action::StartDragResize { row, col });
-                        return None;
-                    }
-                    // Click on a pane other than the currently-focused
-                    // one switches focus first so the operator never
-                    // has to click twice (once to focus, once to act).
-                    // Selection or PTY-mouse forwarding then runs
-                    // against the freshly-focused pane.
-                    let focus_frame = self.apply_action(Action::FocusPaneAt { row, col });
-                    // Press inside a pane whose program never asked
-                    // for a mouse protocol starts a text selection.
-                    if self.detect_selection_start(row, col).is_some() {
-                        return self.apply_action(Action::StartSelection { row, col });
-                    }
-                    self.apply_action(Action::ForwardMouse {
-                        row,
-                        col,
-                        button,
-                        press: true,
-                    });
-                    return focus_frame;
+                    return self.apply_action(Action::PanePrimaryPress { row, col });
                 }
                 self.apply_action(Action::ForwardMouse {
                     row,

@@ -4057,6 +4057,44 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_pane_primary_press_starts_drag_on_border() {
+        let mut mux = split_tab_mux();
+        let (row, col) = (0..mux.term_rows)
+            .flat_map(|row| (0..mux.term_cols).map(move |col| (row, col)))
+            .find(|(row, col)| mux.detect_drag_start(*row, *col).is_some())
+            .expect("split tab should expose a draggable border");
+
+        let frame = mux.apply_action(Action::PanePrimaryPress { row, col });
+
+        assert!(frame.is_none(), "drag start should not redraw yet");
+        assert!(mux.drag.is_some(), "drag state should be active");
+    }
+
+    #[test]
+    fn apply_action_pane_primary_press_starts_selection_for_shell() {
+        let mut mux = single_pane_tab_mux();
+        let (session, mut input_rx) = test_shell_session(20, 78);
+        mux.sessions.insert(1, session);
+
+        let frame = mux
+            .apply_action(Action::PanePrimaryPress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+            })
+            .expect("selection start should repaint");
+
+        assert!(
+            input_rx.try_recv().is_err(),
+            "mouse-disabled pane should start selection instead of receiving raw mouse"
+        );
+        assert!(mux.selection.is_some(), "selection should be active");
+        assert!(
+            !frame.is_empty(),
+            "selection repaint frame should be emitted"
+        );
+    }
+
+    #[test]
     fn apply_action_start_selection_sets_selection_state() {
         let mut mux = single_pane_tab_mux();
         let (session, _input_rx) = test_shell_session(20, 78);
