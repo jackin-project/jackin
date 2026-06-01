@@ -9,14 +9,13 @@ pub mod input;
 pub mod message;
 #[cfg(test)]
 mod message_tests;
-mod pre_render;
 pub mod state;
 
 pub use crate::console::tui::render::render;
 pub use input::{InputOutcome, handle_key};
 pub(crate) use effects::poll_background_messages;
 pub(crate) use message::{ManagerMessage, update_manager};
-pub use pre_render::prepare_for_render;
+pub use crate::console::tui::render::prepare_for_render;
 pub use state::{ManagerStage, ManagerState};
 
 impl jackin_console::github_mounts::WorkspaceMounts for crate::workspace::WorkspaceConfig {

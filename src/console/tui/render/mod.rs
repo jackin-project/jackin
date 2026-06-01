@@ -10,12 +10,14 @@ pub(crate) mod list_geometry;
 pub(crate) mod modal;
 pub(crate) mod modal_layout;
 pub(crate) mod mount_display;
+mod pre_render;
 pub(crate) mod settings;
 pub(crate) mod settings_geometry;
 #[cfg(test)]
 mod snapshot_tests;
 
 pub use frame::render;
+pub use pre_render::prepare_for_render;
 
 pub(super) use jackin_console::tui::layout::centered_rect_fixed;
 
