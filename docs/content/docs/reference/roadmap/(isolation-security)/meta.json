@@ -7,7 +7,6 @@
     "../orbstack-isolated-machine-backend",
     "../smolvm-backend-research",
     "../selectable-sandbox-backends",
-    "../supply-chain-ci",
     "../reproducibility-pinning",
     "../devcontainer-parity",
     "../open-review-findings"
