@@ -6,7 +6,6 @@ pub mod client;
 pub mod config;
 pub mod daemon;
 pub mod git_context;
-pub mod layout;
 pub mod logging;
 pub mod mouse_protocol;
 pub mod mux_mode;

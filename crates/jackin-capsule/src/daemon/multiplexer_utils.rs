@@ -104,7 +104,7 @@ impl Multiplexer {
     /// fall back to a placeholder so the snapshot still covers every
     /// leaf the tree references — the host UI can dim those rows.
     pub(super) fn tab_snapshots(&self) -> Vec<crate::protocol::control::TabSnapshot> {
-        use crate::layout::Rect;
+        use crate::tui::layout::Rect;
         use crate::protocol::control::{PaneSnapshot, TabSnapshot};
         let placeholder_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
         self.tabs

@@ -500,7 +500,7 @@ impl Multiplexer {
     /// `false` when no tab references the id, leaving state
     /// untouched.
     pub(super) fn focus_session_globally(&mut self, session_id: u64) -> bool {
-        use crate::layout::Rect;
+        use crate::tui::layout::Rect;
         let probe_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
         let prev_focused = self.active_focused_id();
         for (tab_idx, tab) in self.tabs.iter().enumerate() {

@@ -4,7 +4,7 @@
 //! The helper functions here extract text and paint the inverse-video
 //! highlight overlay that the compositor writes on top of pane bodies.
 
-use crate::layout::Rect;
+use crate::tui::layout::Rect;
 use crate::tui::render::{PaneBodyDim, RowSnapshot, render_row_range_inverse};
 
 /// Active mouse text selection on a pane. Held until the operator

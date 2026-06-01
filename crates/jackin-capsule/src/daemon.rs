@@ -51,7 +51,7 @@ use crate::git_context::{
     WorkdirContext, git_current_context, resolve_default_branch, start_git_context_watcher,
 };
 use crate::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
-use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
+use crate::tui::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
 #[cfg(test)]
 use crate::mouse_protocol::mouse_event_allowed_for_mode;
 use crate::mouse_protocol::{

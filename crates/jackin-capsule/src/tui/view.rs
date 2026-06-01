@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::tui::input::PrefixCommand;
 use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
-use crate::layout::Tab;
+use crate::tui::layout::Tab;
 use crate::tui::render::draw_scrollbar;
 use crate::session::Session;
 use crate::tui::components::status_bar::draw_pane_box;

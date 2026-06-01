@@ -26,7 +26,7 @@ use jackin_tui::{
     lay_out_tabs,
 };
 
-use crate::layout::Tab;
+use crate::tui::layout::Tab;
 
 /// Column width in terminal cells for a label, measured with
 /// `unicode-width`. Saturates to `u16::MAX` for absurdly wide labels
@@ -568,7 +568,7 @@ use jackin_protocol::instance_id_from_container_base as instance_id_from_contain
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::Tab;
+    use crate::tui::layout::Tab;
 
     #[test]
     fn tab_click_region_width_matches_layout() {

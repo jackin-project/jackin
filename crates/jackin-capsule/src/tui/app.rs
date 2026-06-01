@@ -4,7 +4,7 @@
 //! state enums live here so hover and pointer rendering share the TUI boundary
 //! instead of being defined in daemon internals.
 
-use crate::layout::{Rect, SplitOrient};
+use crate::tui::layout::{Rect, SplitOrient};
 use crate::tui::render::PaneBodyDim;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

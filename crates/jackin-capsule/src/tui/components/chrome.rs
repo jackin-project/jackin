@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Widget},
 };
 
-use crate::layout::Tab;
+use crate::tui::layout::Tab;
 
 use jackin_tui::{
     PHOSPHOR_DARK,

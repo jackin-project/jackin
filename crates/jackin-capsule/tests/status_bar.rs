@@ -1,6 +1,6 @@
 /// Status bar layout regressions: brand pill, tab click regions,
 /// menu hint, overflow indicator.
-use jackin_capsule::layout::Tab;
+use jackin_capsule::tui::layout::Tab;
 use jackin_capsule::protocol::AgentState;
 use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar};
 
