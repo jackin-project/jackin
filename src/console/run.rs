@@ -86,7 +86,8 @@ pub async fn run_console<H: InstanceActionHandler>(
 
     use crate::console::manager::state::{ManagerStage, Modal};
 
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let op_available = crate::console::services::op::cli_available();
+    let mut state = ConsoleState::new_with_op_available(&config, cwd, op_available)?;
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).
