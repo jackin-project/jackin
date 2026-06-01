@@ -24,6 +24,7 @@ use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
     AuthSourceDisplay, SecretValueDisplay, render_tab_strip,
 };
+use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::screens::settings::view::{
     SettingsAuthLineRow, auth_lines as settings_auth_lines, env_lines as settings_env_lines,
     general_lines as settings_general_lines, global_mount_lines as settings_global_mount_lines,
@@ -272,7 +273,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
             jackin_tui::components::render_text_input(frame, area, state);
         }
         GlobalMountModal::FileBrowser { state } => {
-            let area = super::centered_rect_fixed(frame.area(), 70, 22);
+            let area = modal_rects::modal_rect_for_mode(frame.area(), ModalRectMode::FileBrowser);
             jackin_console::tui::components::file_browser::render(frame, area, state);
         }
         GlobalMountModal::MountDstChoice { state } => {
@@ -293,8 +294,12 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
         }
         GlobalMountModal::PreviewSave { state } => {
             use jackin_console::tui::components::confirm_save;
-            let height = confirm_save::required_height(state).min(frame.area().height);
-            let area = super::centered_rect_fixed(frame.area(), 80, height);
+            let area = modal_rects::modal_rect_for_mode(
+                frame.area(),
+                ModalRectMode::ConfirmSave {
+                    required_height: confirm_save::required_height(state),
+                },
+            );
             confirm_save::render(frame, area, state);
         }
     }
