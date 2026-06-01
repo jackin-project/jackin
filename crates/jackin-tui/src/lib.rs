@@ -153,12 +153,12 @@ pub const CYAN: Rgb = Rgb::new(0, 180, 180);
 /// Dimmed cyan for secondary live-state text.
 pub const CYAN_DIM: Rgb = Rgb::new(0, 120, 120);
 
-/// Light-green accent used for permitted-action role markers and similar
+/// Light-green accent used for permitted-action markers and similar
 /// affirmative highlights.
 pub const ACTION_ACCENT: Rgb = Rgb::new(180, 255, 180);
 
 /// Amber-yellow accent used for disclosure indicators (expandable
-/// sections, role-trust prompts, and similar expand/collapse cues).
+/// sections, trust prompts, and similar expand/collapse cues).
 pub const DISCLOSURE_ACCENT: Rgb = Rgb::new(255, 208, 102);
 
 /// Cross-surface single-line text-input model. Holds the buffer,

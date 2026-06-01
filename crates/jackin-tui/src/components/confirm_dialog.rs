@@ -404,18 +404,15 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
         let s = ConfirmState::details(
-            "Trust role source",
-            "Trust this role source?",
+            "Review source",
+            "Use this source?",
             vec![
-                ("Role".into(), "acme/agent-jones".into()),
-                (
-                    "Repository".into(),
-                    "https://github.com/acme/jackin-agent-jones.git".into(),
-                ),
+                ("Name".into(), "primary".into()),
+                ("Location".into(), "https://example.com/source.git".into()),
             ],
             vec![
-                "Dockerfile can run during image builds.".into(),
-                "The role can access mounted workspace files.".into(),
+                "External content may run commands.".into(),
+                "Review the source before continuing.".into(),
             ],
         );
         let area = Rect::new(0, 0, 100, required_height(&s));
@@ -432,10 +429,10 @@ mod tests {
             rendered.push('\n');
         }
 
-        assert!(rendered.contains("Trust role source"));
-        assert!(rendered.contains("Role: acme/agent-jones"));
-        assert!(rendered.contains("Repository: https://github.com/acme/jackin-agent-jones.git"));
-        assert!(rendered.contains("Dockerfile can run during image builds."));
-        assert!(rendered.contains("The role can access mounted workspace files."));
+        assert!(rendered.contains("Review source"));
+        assert!(rendered.contains("Name: primary"));
+        assert!(rendered.contains("Location: https://example.com/source.git"));
+        assert!(rendered.contains("External content may run commands."));
+        assert!(rendered.contains("Review the source before continuing."));
     }
 }
