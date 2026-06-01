@@ -469,7 +469,7 @@ readonly = false
                 &cwd,
                 Modal::FileBrowser {
                     target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
-                    state: crate::console::widgets::file_browser::FileBrowserState::new_at(
+                    state: jackin_console::widgets::file_browser::FileBrowserState::new_at(
                         cwd.clone(),
                         cwd.clone(),
                     ),
@@ -677,7 +677,7 @@ readonly = false
                 &cwd,
                 GlobalMountModal::FileBrowser {
                     state: Box::new(
-                        crate::console::widgets::file_browser::FileBrowserState::new_at(
+                        jackin_console::widgets::file_browser::FileBrowserState::new_at(
                             cwd.clone(),
                             cwd.clone(),
                         ),

@@ -4,7 +4,7 @@
 use ratatui::Frame;
 
 use super::super::super::widgets::{
-    auth_panel, confirm_save, file_browser, op_picker, role_picker, workdir_pick,
+    auth_panel, confirm_save, op_picker, role_picker, workdir_pick,
 };
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::state::Modal;
@@ -18,7 +18,9 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::TextInput { state, .. } => {
             jackin_tui::components::render_text_input(frame, modal_area, state);
         }
-        Modal::FileBrowser { state, .. } => file_browser::render(frame, modal_area, state),
+        Modal::FileBrowser { state, .. } => {
+            jackin_console::widgets::file_browser::render(frame, modal_area, state);
+        }
         Modal::WorkdirPick { state } => workdir_pick::render(frame, modal_area, state),
         Modal::Confirm { state, .. } => {
             jackin_tui::components::render_confirm_dialog(frame, modal_area, state);

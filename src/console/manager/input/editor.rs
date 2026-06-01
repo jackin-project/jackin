@@ -5,8 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::FutureExt as _;
 
 use super::super::super::widgets::{
-    ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
-    workdir_pick::WorkdirPickState,
+    ModalOutcome, op_picker::OpPickerState, workdir_pick::WorkdirPickState,
 };
 use super::super::auth_rows::auth_flat_rows;
 use super::super::message::{ManagerMessage, update_manager};
@@ -19,6 +18,7 @@ use super::super::state::{
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::widgets::file_browser::FileBrowserState;
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     jackin_console::editor::update::secrets_flat_rows(
@@ -2487,7 +2487,7 @@ plugins = []
         editor.active_field = FieldFocus::Row(0);
         editor.modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::EditAddMountSrc,
-            state: crate::console::widgets::file_browser::FileBrowserState::new_from_home()
+            state: jackin_console::widgets::file_browser::FileBrowserState::new_from_home()
                 .unwrap(),
         });
         apply_file_browser_to_editor(

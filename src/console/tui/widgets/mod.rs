@@ -16,7 +16,6 @@ pub mod agent_choice;
 pub mod auth_panel;
 pub mod confirm_save;
 pub(crate) mod editor_rows;
-pub mod file_browser;
 pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;

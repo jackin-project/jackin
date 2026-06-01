@@ -261,7 +261,7 @@ pub(super) fn handle_prelude_modal(
 /// `$HOME` when the browser fails to build or no cwd was recorded.
 fn reopen_file_browser_at_last_cwd(prelude: &mut super::super::state::CreatePreludeState<'_>) {
     use super::super::state::FileBrowserTarget;
-    let Ok(mut fb) = crate::console::widgets::file_browser::FileBrowserState::new_from_home()
+    let Ok(mut fb) = jackin_console::widgets::file_browser::FileBrowserState::new_from_home()
     else {
         prelude.modal = None;
         return;
@@ -521,7 +521,7 @@ mod tests {
         // must close the modal so the outer dispatcher drops back to
         // the workspace list (today's "cancelled" contract).
         let mut prelude = super::super::super::state::CreatePreludeState::new();
-        let fb = crate::console::widgets::file_browser::FileBrowserState::new_from_home()
+        let fb = jackin_console::widgets::file_browser::FileBrowserState::new_from_home()
             .expect("file browser should build in test env");
         prelude.modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::CreateFirstMountSrc,

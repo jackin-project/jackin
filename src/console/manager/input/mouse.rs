@@ -4,7 +4,6 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::list_geometry::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
@@ -27,6 +26,7 @@ use super::super::state::{
 use jackin_console::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
 };
+use jackin_console::widgets::file_browser::FileBrowserState;
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
 use jackin_tui::components::scrollable_panel::{
@@ -1843,7 +1843,7 @@ mod mouse_drag_tests {
     #[test]
     fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
         use crate::console::manager::state::CreatePreludeState;
-        use crate::console::widgets::file_browser::FileBrowserState;
+        use jackin_console::widgets::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("parent");
@@ -1888,7 +1888,7 @@ mod mouse_drag_tests {
     #[test]
     fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
         use crate::console::manager::state::CreatePreludeState;
-        use crate::console::widgets::file_browser::FileBrowserState;
+        use jackin_console::widgets::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("parent");

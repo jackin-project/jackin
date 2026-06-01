@@ -3,7 +3,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::super::super::widgets::{ModalOutcome, file_browser::FileBrowserState};
+use super::super::super::widgets::ModalOutcome;
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{
     CreatePreludeState, EditorState, FileBrowserTarget, ManagerListRow, ManagerState, Modal,
@@ -13,6 +13,7 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::paths::JackinPaths;
+use jackin_console::widgets::file_browser::FileBrowserState;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_list_key(
