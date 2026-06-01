@@ -46,7 +46,7 @@ pub enum InputOutcome {
     },
 }
 
-pub(super) use crate::console::effects::{
+pub(super) use crate::console::services::file_browser::{
     apply_file_browser_outcome,
     request_file_browser_git_url_resolution,
 };

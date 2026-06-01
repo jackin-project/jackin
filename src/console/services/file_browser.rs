@@ -8,7 +8,10 @@ use std::path::PathBuf;
 
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 
-pub(in crate::console) fn request_git_url_resolution(state: &mut FileBrowserState, path: PathBuf) {
+pub(in crate::console) fn request_file_browser_git_url_resolution(
+    state: &mut FileBrowserState,
+    path: PathBuf,
+) {
     let rx = jackin_console::services::file_browser::start_git_url_resolution(path);
     state.attach_git_url_resolution(rx);
 }
@@ -24,7 +27,7 @@ pub(in crate::console) fn clamp_to_cwd(state: &mut FileBrowserState, cwd: &std::
     state.apply_listing(listing);
 }
 
-pub(in crate::console) fn apply_outcome(
+pub(in crate::console) fn apply_file_browser_outcome(
     state: &mut FileBrowserState,
     outcome: FileBrowserOutcome<PathBuf>,
 ) -> FileBrowserOutcome<PathBuf> {
