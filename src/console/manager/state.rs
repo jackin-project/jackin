@@ -22,6 +22,7 @@ use jackin_console::widgets::github_picker::GithubPickerState;
 use jackin_console::widgets::mount_dst_choice::MountDstChoiceState;
 use jackin_console::widgets::{scope_picker::ScopePickerState, source_picker::SourcePickerState};
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};
 pub use crate::console::manager::mount_info_cache::MountInfoCache;
@@ -1814,10 +1815,10 @@ impl ManagerState<'_> {
         let Some(rx) = self.mount_info_refresh_rx.as_mut() else {
             return None;
         };
-        let result = match rx.try_recv() {
-            Ok(result) => result,
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
-            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
                 self.mount_info_refresh_rx = None;
                 return None;
             }
@@ -1916,10 +1917,10 @@ impl ManagerState<'_> {
             return None;
         };
         let check = editor.pending_drift_check.as_mut()?;
-        let result = match check.rx.try_recv() {
-            Ok(result) => Some(result),
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
-            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+        let result = match check.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => Some(result),
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
                 Some(Err(anyhow::anyhow!("drift check worker disconnected")))
             }
         };
@@ -1937,10 +1938,10 @@ impl ManagerState<'_> {
             return None;
         };
         let cleanup = editor.pending_isolation_cleanup.as_mut()?;
-        let result = match cleanup.rx.try_recv() {
-            Ok(result) => Some(result),
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
-            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => Some(Err(anyhow::anyhow!(
+        let result = match cleanup.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => Some(result),
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
                 "isolation cleanup worker disconnected"
             ))),
         };
@@ -1971,10 +1972,10 @@ impl ManagerState<'_> {
         // Editor path.
         if let ManagerStage::Editor(editor) = &mut self.stage {
             if let Some(pending) = editor.pending_op_commit.as_mut() {
-                let result = match pending.rx.try_recv() {
-                    Ok(result) => Some(result),
-                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
-                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                let result = match pending.rx.poll_next() {
+                    SubscriptionPoll::Ready(result) => Some(result),
+                    SubscriptionPoll::Pending => None,
+                    SubscriptionPoll::Closed => {
                         Some(Err(anyhow::anyhow!("op read worker disconnected")))
                     }
                 };
@@ -1990,10 +1991,10 @@ impl ManagerState<'_> {
         // Settings path.
         if let ManagerStage::Settings(settings) = &mut self.stage {
             if let Some(pending) = settings.auth.pending_op_commit.as_mut() {
-                let result = match pending.rx.try_recv() {
-                    Ok(result) => Some(result),
-                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
-                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                let result = match pending.rx.poll_next() {
+                    SubscriptionPoll::Ready(result) => Some(result),
+                    SubscriptionPoll::Pending => None,
+                    SubscriptionPoll::Closed => {
                         Some(Err(anyhow::anyhow!("op read worker disconnected")))
                     }
                 };
@@ -2038,8 +2039,8 @@ impl ManagerState<'_> {
 
     fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {
         let rx = self.instances_refresh_rx.as_mut()?;
-        match rx.try_recv() {
-            Ok((generation, result)) => {
+        match rx.poll_next() {
+            SubscriptionPoll::Ready((generation, result)) => {
                 self.instances_refresh_rx = None;
                 if generation == self.instances_refresh_generation {
                     Some(result)
@@ -2047,11 +2048,11 @@ impl ManagerState<'_> {
                     None
                 }
             }
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+            SubscriptionPoll::Pending => {
                 // Worker still running — keep the receiver.
                 None
             }
-            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+            SubscriptionPoll::Closed => {
                 self.instances_refresh_rx = None;
                 Some(Err("instance refresh worker disconnected".into()))
             }

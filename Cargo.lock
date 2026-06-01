@@ -1787,6 +1787,7 @@ dependencies = [
  "base64",
  "crossterm",
  "ratatui",
+ "tokio",
  "tui-scrollbar",
  "unicode-width",
 ]
