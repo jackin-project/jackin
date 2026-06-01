@@ -21,7 +21,9 @@ use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::tui::screens::editor::update as editor_update;
-use jackin_console::tui::screens::editor::view::{secrets_forbidden_label, secrets_scope_label};
+use jackin_console::tui::screens::editor::view::{
+    secret_delete_confirm_prompt, secrets_forbidden_label, secrets_scope_label,
+};
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use jackin_tui::ModalOutcome;
@@ -668,7 +670,7 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
     let Some((scope, key)) = editor_update::secret_delete_target_for_row(rows.get(n)) else {
         return;
     };
-    let prompt = format!("Delete environment variable {key}?");
+    let prompt = secret_delete_confirm_prompt(&key);
     editor.modal = Some(Modal::Confirm {
         target: ConfirmTarget::DeleteEnvVar { scope, key },
         state: ConfirmState::new(prompt),

@@ -68,6 +68,11 @@ pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
     }
 }
 
+#[must_use]
+pub fn secret_delete_confirm_prompt(key: &str) -> String {
+    format!("Delete environment variable {key}?")
+}
+
 pub fn clamp_editor_scroll_for_frame(
     body: Rect,
     geometry: EditorScrollGeometry,
@@ -582,6 +587,14 @@ mod tests {
         assert_eq!(areas.body, Rect::new(0, 5, 80, 13));
         assert_eq!(areas.footer, Rect::new(0, 18, 80, 2));
         assert_eq!(editor_body_area(Rect::new(0, 0, 80, 20), 2), areas.body);
+    }
+
+    #[test]
+    fn secret_delete_confirm_prompt_names_key() {
+        assert_eq!(
+            secret_delete_confirm_prompt("TOKEN"),
+            "Delete environment variable TOKEN?"
+        );
     }
 
     #[test]
