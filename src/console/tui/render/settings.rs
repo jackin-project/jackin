@@ -31,7 +31,9 @@ use jackin_console::tui::components::editor_rows::{
     SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
     render_tab_strip,
 };
-use jackin_console::tui::screens::settings::view::tab_labels;
+use jackin_console::tui::screens::settings::view::{
+    general_lines as settings_general_lines, tab_labels,
+};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
 pub(super) fn render_settings(
@@ -73,43 +75,14 @@ pub(super) fn render_settings(
 }
 
 fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    let lines = general_lines(state);
     let focused = !state.tab_bar_focused && state.error_popup.is_none();
+    let lines = settings_general_lines(
+        state.general.selected,
+        state.general.pending_coauthor_trailer,
+        state.general.pending_dco,
+        focused,
+    );
     super::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
-}
-
-fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    let label_bold = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let label_normal = Style::default().fg(WHITE);
-    let value_bold = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-    let value_normal = Style::default().fg(PHOSPHOR_GREEN);
-
-    let rows: [(usize, &str, bool); 2] = [
-        (
-            0,
-            "Co-author trailer",
-            state.general.pending_coauthor_trailer,
-        ),
-        (1, "DCO sign-off", state.general.pending_dco),
-    ];
-
-    let show_cursor = !state.tab_bar_focused && state.error_popup.is_none();
-    rows.iter()
-        .map(|(i, label, pending)| {
-            let selected = show_cursor && (state.general.selected == *i);
-            let prefix = if selected { "\u{25b8} " } else { "  " };
-            let ls = if selected { label_bold } else { label_normal };
-            let vs = if selected { value_bold } else { value_normal };
-            let value = if *pending { "enabled" } else { "disabled" };
-            Line::from(vec![
-                Span::styled(prefix, ls),
-                Span::styled(format!("{label:<26}"), ls),
-                Span::styled(value, vs),
-            ])
-        })
-        .collect()
 }
 
 fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
