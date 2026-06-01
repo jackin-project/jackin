@@ -57,6 +57,7 @@ impl Multiplexer {
             role: self.status_bar.role().to_string(),
             focused_agent,
             workdir: self.workdir.to_string_lossy().into_owned(),
+            diagnostics: crate::container_context::resolve_container_diagnostics(),
             copied: false,
         });
     }

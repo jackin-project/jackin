@@ -26,6 +26,7 @@ use jackin_tui::{
     lay_out_tabs,
 };
 
+use crate::container_context::StatusIdentity;
 use crate::tui::layout::Tab;
 
 /// Column width in terminal cells for a label, measured with
@@ -38,9 +39,6 @@ fn display_cols(s: &str) -> u16 {
     u16::try_from(jackin_tui::display_cols(s)).unwrap_or(u16::MAX)
 }
 use crate::protocol::AgentState;
-
-const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";
-const JACKIN_INSTANCE_ID_ENV: &str = "JACKIN_INSTANCE_ID";
 
 const BRAND_BG: &str = rgb_bg(PHOSPHOR_GREEN);
 const BRAND_FG: &str = rgb_fg(BLACK);
@@ -102,13 +100,19 @@ impl Default for StatusBar {
 
 impl StatusBar {
     pub fn new() -> Self {
-        Self::new_with_role(String::new())
+        Self::new_with_role_and_container(String::new(), String::new())
     }
 
     pub fn new_with_role(role: String) -> Self {
-        let identity_label = resolve_container_name();
-        let instance_id_label = resolve_instance_id(&identity_label);
-        Self::new_with_role_container_and_instance(role, identity_label, instance_id_label)
+        Self::new_with_role_and_container(role, String::new())
+    }
+
+    pub fn new_with_role_identity(role: String, identity: StatusIdentity) -> Self {
+        Self::new_with_role_container_and_instance(
+            role,
+            identity.container_name,
+            identity.instance_id,
+        )
     }
 
     pub fn new_with_role_and_container(role: String, identity_label: String) -> Self {
@@ -516,51 +520,6 @@ fn take_display_cols(s: &str, max_cols: u16) -> String {
 
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row, col);
-}
-
-/// Container name used by the bottom context row. The role is shown
-/// in the `ContainerInfo` dialog opened from that row, not in the top
-/// chrome.
-fn resolve_container_name() -> String {
-    if let Some(value) = std::env::var(JACKIN_CONTAINER_NAME_ENV)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    {
-        return value;
-    }
-    if let Some(value) = std::env::var("HOSTNAME")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    {
-        crate::clog!("statusbar: container name resolved from HOSTNAME");
-        return value;
-    }
-    const ETC_HOSTNAME_MAX_BYTES: u64 = 256;
-    if let Some(value) = crate::util::read_text_bounded(
-        "/etc/hostname",
-        std::path::Path::new("/etc/hostname"),
-        ETC_HOSTNAME_MAX_BYTES,
-    )
-    .map(|value| value.trim().to_string())
-    .filter(|value| !value.is_empty())
-    {
-        crate::clog!("statusbar: container name resolved from /etc/hostname");
-        return value;
-    }
-    crate::clog!(
-        "statusbar: container name unresolved \u{2014} {JACKIN_CONTAINER_NAME_ENV}, HOSTNAME, and /etc/hostname all empty or unreadable; chrome chip will be blank"
-    );
-    String::new()
-}
-
-fn resolve_instance_id(container_name: &str) -> String {
-    std::env::var(JACKIN_INSTANCE_ID_ENV)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| {
-            instance_id_from_container_name(container_name)
-                .map_or_else(|| container_name.to_string(), str::to_string)
-        })
 }
 
 use jackin_protocol::instance_id_from_container_base as instance_id_from_container_name;

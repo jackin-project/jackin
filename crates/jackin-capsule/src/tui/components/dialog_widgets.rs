@@ -234,6 +234,7 @@ impl Dialog {
                 role,
                 focused_agent,
                 workdir,
+                diagnostics: _,
                 copied,
             } => {
                 let agent_label = focused_agent

@@ -390,7 +390,10 @@ impl Multiplexer {
             workdir_context.is_git_repo,
             workdir_context.default_branch
         );
-        let mut status_bar = StatusBar::new_with_role(launch_config.role.clone());
+        let mut status_bar = StatusBar::new_with_role_identity(
+            launch_config.role.clone(),
+            crate::container_context::resolve_status_identity(),
+        );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
 
         Self {
@@ -3351,6 +3354,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace".to_string(),
+            diagnostics: crate::container_context::ContainerDiagnostics::default(),
             copied: true,
         });
         let now = Instant::now();
@@ -3372,6 +3376,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace".to_string(),
+            diagnostics: crate::container_context::ContainerDiagnostics::default(),
             copied: false,
         });
         let (tx, mut rx) = mpsc::unbounded_channel();

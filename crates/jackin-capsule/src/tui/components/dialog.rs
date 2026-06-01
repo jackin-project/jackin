@@ -15,6 +15,7 @@
 /// - **Hint footer** follows the console TUI's structured format:
 ///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
+use crate::container_context::ContainerDiagnostics;
 use crate::session::PullRequestInfo;
 
 /// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
@@ -150,6 +151,7 @@ pub enum Dialog {
         role: String,
         focused_agent: Option<String>,
         workdir: String,
+        diagnostics: ContainerDiagnostics,
         copied: bool,
     },
     /// Read-only modal opened from the bottom branch/PR context.
@@ -1085,6 +1087,7 @@ impl Dialog {
                 role,
                 focused_agent,
                 workdir,
+                diagnostics,
                 copied,
             } => {
                 render_container_info(
@@ -1097,6 +1100,7 @@ impl Dialog {
                     role,
                     focused_agent.as_deref(),
                     workdir,
+                    diagnostics,
                     *copied,
                     copy_target_hovered,
                 );
@@ -2051,40 +2055,31 @@ fn render_container_info(
     role: &str,
     focused_agent: Option<&str>,
     workdir: &str,
+    diagnostics: &ContainerDiagnostics,
     copied: bool,
     copy_target_hovered: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "Container info");
 
     let capsule_ver = env!("JACKIN_CAPSULE_VERSION");
-    let host_ver = std::env::var("JACKIN_HOST_VERSION").unwrap_or_else(|_| "unknown".to_string());
 
     if crate::logging::debug_enabled() {
-        let run_id = std::env::var("JACKIN_RUN_ID").unwrap_or_default();
-        let run_id_display = if run_id.is_empty() {
+        let run_id_display = if diagnostics.run_id.is_empty() {
             "(not set)".to_string()
         } else {
-            run_id.clone()
+            diagnostics.run_id.clone()
         };
-        let (run_log_display, run_log_href) = if run_id.is_empty() {
-            ("(not set)".to_string(), None)
-        } else {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
-            let full_path = format!("{home}/.jackin/data/diagnostics/runs/{run_id}.jsonl");
-            let file_url = format!("file://{full_path}");
-            let display = format!("~/.jackin/data/diagnostics/runs/{run_id}.jsonl");
-            (display, Some(file_url))
-        };
-        let run_log_href_ref = run_log_href.as_deref();
+        let run_log_href_ref = diagnostics.run_log_href.as_deref();
         let rows: [ContainerInfoRow<'_>; 8] = [
             ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
             ContainerInfoRow::new("Role", non_empty_or_dim(role)),
             ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
             ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
-            ContainerInfoRow::new("jackin", host_ver.clone()),
+            ContainerInfoRow::new("jackin", diagnostics.host_version.clone()),
             ContainerInfoRow::new("jackin-capsule", capsule_ver.to_string()),
             ContainerInfoRow::new("Run ID", run_id_display),
-            ContainerInfoRow::new("Run log", run_log_display).hyperlink(run_log_href_ref),
+            ContainerInfoRow::new("Run log", diagnostics.run_log_display.clone())
+                .hyperlink(run_log_href_ref),
         ];
         render_info_rows(
             buf,
@@ -2101,7 +2096,7 @@ fn render_container_info(
             ContainerInfoRow::new("Role", non_empty_or_dim(role)),
             ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
             ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
-            ContainerInfoRow::new("jackin", host_ver),
+            ContainerInfoRow::new("jackin", diagnostics.host_version.clone()),
             ContainerInfoRow::new("jackin-capsule", capsule_ver.to_string()),
         ];
         render_info_rows(
@@ -2857,6 +2852,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
+            diagnostics: ContainerDiagnostics::default(),
             copied: false,
         }
     }
@@ -2945,6 +2941,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
+            diagnostics: ContainerDiagnostics::default(),
             copied: true,
         };
         assert!(d.clear_copy_feedback());
@@ -2961,6 +2958,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
+            diagnostics: ContainerDiagnostics::default(),
             copied: true,
         };
         let mut buf = Vec::new();
