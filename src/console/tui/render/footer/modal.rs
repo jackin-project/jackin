@@ -1,49 +1,64 @@
 //! Footer hint items for manager modal states.
 
 use jackin_tui::HintSpan;
-use jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT;
 
 use crate::console::tui::state::{
-    AuthFormFocus, GlobalMountModal, Modal, SettingsAuthModal, SettingsAuthState, SettingsEnvModal,
+    GlobalMountModal, Modal, SettingsAuthModal, SettingsAuthState, SettingsEnvModal,
 };
 use jackin_console::tui::components::footer_hints::{
-    append_generate_token_footer_item, auth_form_footer_items as shared_auth_form_footer_items,
-    confirm_save_footer_items, container_info_footer_items, error_popup_footer_items,
-    filtered_picker_footer_items, mount_destination_footer_items, op_section_footer_items,
-    pick_list_footer_items, save_discard_cancel_footer_items, segmented_choice_footer_items,
-    status_popup_footer_items, yes_no_footer_items,
+    ModalFooterMode, modal_footer_items as shared_modal_footer_items,
 };
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
     match modal {
-        Modal::AuthForm { state, focus, .. } => auth_form_footer_items(state.as_ref(), *focus),
-        Modal::TextInput { .. } => CONFIRM_DISMISS_HINT.to_vec(),
+        Modal::AuthForm { state, focus, .. } => shared_modal_footer_items(ModalFooterMode::AuthForm {
+            focus: *focus,
+            shows_credential_block: state.shows_credential_block(),
+            can_generate_token: false,
+        }),
+        Modal::TextInput { .. } => shared_modal_footer_items(ModalFooterMode::ConfirmDismiss),
         Modal::FileBrowser { state, .. } => state.footer_items(),
-        Modal::MountDstChoice { .. } => mount_destination_footer_items(),
-        Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } | Modal::ScopePicker { .. } => {
-            segmented_choice_footer_items()
+        Modal::MountDstChoice { .. } => {
+            shared_modal_footer_items(ModalFooterMode::MountDestination)
         }
-        Modal::WorkdirPick { .. } => pick_list_footer_items("select"),
-        Modal::GithubPicker { .. } => pick_list_footer_items("confirm"),
-        Modal::ConfirmSave { state } => confirm_save_footer_items(!state.lines.is_empty()),
-        Modal::SaveDiscardCancel { .. } => save_discard_cancel_footer_items(),
-        Modal::ErrorPopup { .. } => error_popup_footer_items(),
-        Modal::ContainerInfo { .. } => container_info_footer_items(),
-        Modal::StatusPopup { .. } => status_popup_footer_items(),
+        Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } | Modal::ScopePicker { .. } => {
+            shared_modal_footer_items(ModalFooterMode::SegmentedChoice)
+        }
+        Modal::WorkdirPick { .. } => {
+            shared_modal_footer_items(ModalFooterMode::PickList { commit_label: "select" })
+        }
+        Modal::GithubPicker { .. } => {
+            shared_modal_footer_items(ModalFooterMode::PickList { commit_label: "confirm" })
+        }
+        Modal::ConfirmSave { state } => shared_modal_footer_items(ModalFooterMode::ConfirmSave {
+            scrollable: !state.lines.is_empty(),
+        }),
+        Modal::SaveDiscardCancel { .. } => {
+            shared_modal_footer_items(ModalFooterMode::SaveDiscardCancel)
+        }
+        Modal::ErrorPopup { .. } => shared_modal_footer_items(ModalFooterMode::ErrorPopup),
+        Modal::ContainerInfo { .. } => shared_modal_footer_items(ModalFooterMode::ContainerInfo),
+        Modal::StatusPopup { .. } => shared_modal_footer_items(ModalFooterMode::StatusPopup),
         Modal::OpPicker { state } if state.naming_stage_input().is_some() => {
-            CONFIRM_DISMISS_HINT.to_vec()
+            shared_modal_footer_items(ModalFooterMode::OpNamingTextInput)
         }
         Modal::OpPicker { state }
             if state.stage == crate::console::tui::op_picker::OpPickerStage::Section =>
         {
-            op_section_footer_items()
+            shared_modal_footer_items(ModalFooterMode::OpSection)
         }
-        Modal::OpPicker { .. } => filtered_picker_footer_items(true),
+        Modal::OpPicker { .. } => shared_modal_footer_items(ModalFooterMode::FilteredPicker {
+            include_refresh: true,
+        }),
         Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
-        | Modal::AuthRolePicker { .. } => filtered_picker_footer_items(false),
-        Modal::Confirm { .. } => yes_no_footer_items(),
+        | Modal::AuthRolePicker { .. } => {
+            shared_modal_footer_items(ModalFooterMode::FilteredPicker {
+                include_refresh: false,
+            })
+        }
+        Modal::Confirm { .. } => shared_modal_footer_items(ModalFooterMode::YesNo),
     }
 }
 
@@ -51,14 +66,26 @@ pub(crate) fn settings_mounts_modal_footer_items(
     modal: &GlobalMountModal<'_>,
 ) -> Vec<HintSpan<'static>> {
     match modal {
-        GlobalMountModal::Text { .. } => CONFIRM_DISMISS_HINT.to_vec(),
+        GlobalMountModal::Text { .. } => {
+            shared_modal_footer_items(ModalFooterMode::ConfirmDismiss)
+        }
         GlobalMountModal::FileBrowser { state } => state.footer_items(),
-        GlobalMountModal::MountDstChoice { .. } => mount_destination_footer_items(),
-        GlobalMountModal::ScopePicker { .. } => segmented_choice_footer_items(),
-        GlobalMountModal::RolePicker { .. } => filtered_picker_footer_items(false),
-        GlobalMountModal::Confirm { .. } => yes_no_footer_items(),
+        GlobalMountModal::MountDstChoice { .. } => {
+            shared_modal_footer_items(ModalFooterMode::MountDestination)
+        }
+        GlobalMountModal::ScopePicker { .. } => {
+            shared_modal_footer_items(ModalFooterMode::SegmentedChoice)
+        }
+        GlobalMountModal::RolePicker { .. } => {
+            shared_modal_footer_items(ModalFooterMode::FilteredPicker {
+                include_refresh: false,
+            })
+        }
+        GlobalMountModal::Confirm { .. } => shared_modal_footer_items(ModalFooterMode::YesNo),
         GlobalMountModal::PreviewSave { state } => {
-            confirm_save_footer_items(!state.lines.is_empty())
+            shared_modal_footer_items(ModalFooterMode::ConfirmSave {
+                scrollable: !state.lines.is_empty(),
+            })
         }
     }
 }
@@ -67,14 +94,18 @@ pub(crate) fn settings_env_modal_footer_items(
     modal: &SettingsEnvModal<'_>,
 ) -> Vec<HintSpan<'static>> {
     match modal {
-        SettingsEnvModal::Text { .. } => CONFIRM_DISMISS_HINT.to_vec(),
+        SettingsEnvModal::Text { .. } => {
+            shared_modal_footer_items(ModalFooterMode::ConfirmDismiss)
+        }
         SettingsEnvModal::SourcePicker { .. } | SettingsEnvModal::ScopePicker { .. } => {
-            segmented_choice_footer_items()
+            shared_modal_footer_items(ModalFooterMode::SegmentedChoice)
         }
         SettingsEnvModal::OpPicker { .. } | SettingsEnvModal::RolePicker { .. } => {
-            filtered_picker_footer_items(false)
+            shared_modal_footer_items(ModalFooterMode::FilteredPicker {
+                include_refresh: false,
+            })
         }
-        SettingsEnvModal::Confirm { .. } => yes_no_footer_items(),
+        SettingsEnvModal::Confirm { .. } => shared_modal_footer_items(ModalFooterMode::YesNo),
     }
 }
 
@@ -83,31 +114,34 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
         return Vec::new();
     };
     match modal {
-        SettingsAuthModal::AuthForm { state, focus, .. } => {
-            let mut items = auth_form_footer_items(state.as_ref(), *focus);
-            if crate::console::tui::input::global_mounts::settings_auth_can_generate_token(auth)
-            {
-                append_generate_token_footer_item(&mut items);
-            }
-            items
+        SettingsAuthModal::AuthForm { state, focus, .. } => shared_modal_footer_items(
+            ModalFooterMode::AuthForm {
+                focus: *focus,
+                shows_credential_block: state.shows_credential_block(),
+                can_generate_token:
+                    crate::console::tui::input::global_mounts::settings_auth_can_generate_token(
+                        auth,
+                    ),
+            },
+        ),
+        SettingsAuthModal::TextInput { .. } => {
+            shared_modal_footer_items(ModalFooterMode::ConfirmDismiss)
         }
-        SettingsAuthModal::TextInput { .. } => CONFIRM_DISMISS_HINT.to_vec(),
-        SettingsAuthModal::SourcePicker { .. } => segmented_choice_footer_items(),
+        SettingsAuthModal::SourcePicker { .. } => {
+            shared_modal_footer_items(ModalFooterMode::SegmentedChoice)
+        }
         SettingsAuthModal::OpPicker { state } if state.naming_stage_input().is_some() => {
-            CONFIRM_DISMISS_HINT.to_vec()
+            shared_modal_footer_items(ModalFooterMode::OpNamingTextInput)
         }
         SettingsAuthModal::OpPicker { state }
             if state.stage == crate::console::tui::op_picker::OpPickerStage::Section =>
         {
-            op_section_footer_items()
+            shared_modal_footer_items(ModalFooterMode::OpSection)
         }
-        SettingsAuthModal::OpPicker { .. } => filtered_picker_footer_items(false),
+        SettingsAuthModal::OpPicker { .. } => {
+            shared_modal_footer_items(ModalFooterMode::FilteredPicker {
+                include_refresh: false,
+            })
+        }
     }
-}
-
-fn auth_form_footer_items(
-    form: &crate::console::tui::auth_panel::AuthForm,
-    focus: AuthFormFocus,
-) -> Vec<HintSpan<'static>> {
-    shared_auth_form_footer_items(focus, form.shows_credential_block())
 }

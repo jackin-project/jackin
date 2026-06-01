@@ -378,6 +378,69 @@ pub fn op_section_footer_items() -> Vec<HintSpan<'static>> {
     ]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModalFooterMode {
+    AuthForm {
+        focus: AuthFormFocus,
+        shows_credential_block: bool,
+        can_generate_token: bool,
+    },
+    ConfirmDismiss,
+    FileBrowser,
+    MountDestination,
+    SegmentedChoice,
+    PickList {
+        commit_label: &'static str,
+    },
+    ConfirmSave {
+        scrollable: bool,
+    },
+    SaveDiscardCancel,
+    ErrorPopup,
+    ContainerInfo,
+    StatusPopup,
+    OpNamingTextInput,
+    OpSection,
+    FilteredPicker {
+        include_refresh: bool,
+    },
+    YesNo,
+}
+
+#[must_use]
+pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
+    match mode {
+        ModalFooterMode::AuthForm {
+            focus,
+            shows_credential_block,
+            can_generate_token,
+        } => {
+            let mut items = auth_form_footer_items(focus, shows_credential_block);
+            if can_generate_token {
+                append_generate_token_footer_item(&mut items);
+            }
+            items
+        }
+        ModalFooterMode::ConfirmDismiss | ModalFooterMode::OpNamingTextInput => {
+            jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT.to_vec()
+        }
+        ModalFooterMode::FileBrowser => Vec::new(),
+        ModalFooterMode::MountDestination => mount_destination_footer_items(),
+        ModalFooterMode::SegmentedChoice => segmented_choice_footer_items(),
+        ModalFooterMode::PickList { commit_label } => pick_list_footer_items(commit_label),
+        ModalFooterMode::ConfirmSave { scrollable } => confirm_save_footer_items(scrollable),
+        ModalFooterMode::SaveDiscardCancel => save_discard_cancel_footer_items(),
+        ModalFooterMode::ErrorPopup => error_popup_footer_items(),
+        ModalFooterMode::ContainerInfo => container_info_footer_items(),
+        ModalFooterMode::StatusPopup => status_popup_footer_items(),
+        ModalFooterMode::OpSection => op_section_footer_items(),
+        ModalFooterMode::FilteredPicker { include_refresh } => {
+            filtered_picker_footer_items(include_refresh)
+        }
+        ModalFooterMode::YesNo => yes_no_footer_items(),
+    }
+}
+
 #[must_use]
 pub fn confirm_save_footer_items(scrollable: bool) -> Vec<HintSpan<'static>> {
     let mut items = vec![
