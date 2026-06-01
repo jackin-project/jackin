@@ -22,12 +22,34 @@ pub(in crate::console) use global_mounts::{
     apply_plain_text_to_settings_auth_form,
 };
 
-pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
-    crate::selector::RoleSelector,
-    crate::agent::Agent,
-    crate::console::ConsoleInstanceAction,
-    jackin_protocol::Provider,
->;
+#[derive(Debug)]
+pub enum InputOutcome {
+    Continue,
+    ExitJackin,
+    LaunchNamed(String),
+    LaunchCurrentDir,
+    LaunchWithAgent(crate::selector::RoleSelector),
+    LaunchWithRuntimeAgent(crate::agent::Agent),
+    InstanceAction {
+        container: String,
+        action: crate::console::ConsoleInstanceAction,
+    },
+    OpenUrl(String),
+    RemoveWorkspace(String),
+    OpenCreatePreludeFileBrowser,
+    OpenCreatePreludeFileBrowserAtLastCwd,
+    OpenEditorAddMountFileBrowser,
+    NewSessionWithProvider {
+        container: String,
+        agent: crate::agent::Agent,
+        provider: jackin_protocol::Provider,
+    },
+    LaunchWithProvider {
+        selector: crate::selector::RoleSelector,
+        agent: crate::agent::Agent,
+        provider: jackin_protocol::Provider,
+    },
+}
 
 pub(super) use crate::console::effects::{
     apply_file_browser_outcome,
