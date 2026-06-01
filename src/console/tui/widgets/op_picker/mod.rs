@@ -37,7 +37,9 @@ pub mod render;
 
 pub use jackin_console::widgets::op_picker::{
     FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerFieldRef,
-    OpPickerItemRef, OpPickerMode, OpPickerStage, OpPickerVaultRef,
+    OpPickerItemRef, OpPickerMode, OpPickerStage, OpPickerVaultRef, browse_field_display_rows,
+    build_op_picker_ref, create_field_display_rows, matches_filter,
+    section_choices_from_references,
 };
 
 /// What the operator chose when the picker commits.
@@ -550,7 +552,7 @@ impl OpPickerState {
         self.accounts
             .iter()
             .filter(|account| {
-                jackin_console::widgets::op_picker::matches_filter(
+                matches_filter(
                     &self.filter_buf,
                     [account.email.as_str(), account.url.as_str()],
                 )
@@ -561,12 +563,7 @@ impl OpPickerState {
     pub fn filtered_vaults(&self) -> Vec<&OpVault> {
         self.vaults
             .iter()
-            .filter(|vault| {
-                jackin_console::widgets::op_picker::matches_filter(
-                    &self.filter_buf,
-                    [vault.name.as_str()],
-                )
-            })
+            .filter(|vault| matches_filter(&self.filter_buf, [vault.name.as_str()]))
             .collect()
     }
 
@@ -574,7 +571,7 @@ impl OpPickerState {
         self.items
             .iter()
             .filter(|item| {
-                jackin_console::widgets::op_picker::matches_filter(
+                matches_filter(
                     &self.filter_buf,
                     [item.name.as_str(), item.subtitle.as_str()],
                 )
@@ -596,10 +593,7 @@ impl OpPickerState {
         self.fields
             .iter()
             .filter(|field| {
-                jackin_console::widgets::op_picker::matches_filter(
-                    &self.filter_buf,
-                    [field.label.as_str(), field.id.as_str()],
-                )
+                matches_filter(&self.filter_buf, [field.label.as_str(), field.id.as_str()])
             })
             .collect()
     }
@@ -609,9 +603,7 @@ impl OpPickerState {
     /// stage list (Create mode). The render appends a `+ New section`
     /// sentinel after these choices.
     pub fn section_choices(&self) -> Vec<Option<String>> {
-        jackin_console::widgets::op_picker::section_choices_from_references(
-            self.fields.iter().map(|field| field.reference.as_str()),
-        )
+        section_choices_from_references(self.fields.iter().map(|field| field.reference.as_str()))
     }
 
     /// Build the ordered display rows for the field picker.
@@ -631,7 +623,7 @@ impl OpPickerState {
             return self.build_create_field_rows();
         }
         let visible = self.filtered_fields();
-        jackin_console::widgets::op_picker::browse_field_display_rows(
+        browse_field_display_rows(
             visible.iter().map(|field| field.reference.as_str()),
             &self.collapsed_sections,
         )
@@ -643,7 +635,7 @@ impl OpPickerState {
     /// section was already chosen on the Section stage.
     fn build_create_field_rows(&self) -> Vec<FieldDisplayRow> {
         let visible = self.filtered_fields();
-        jackin_console::widgets::op_picker::create_field_display_rows(
+        create_field_display_rows(
             visible.iter().map(|field| field.reference.as_str()),
             self.selected_section.as_deref(),
         )
@@ -1247,7 +1239,7 @@ pub(crate) fn build_op_ref_on_commit(
         .as_ref()
         .expect("item must be selected before commit");
 
-    let built = jackin_console::widgets::op_picker::build_op_picker_ref(
+    let built = build_op_picker_ref(
         OpPickerVaultRef {
             id: &vault.id,
             name: &vault.name,
