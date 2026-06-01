@@ -13,7 +13,7 @@ pub mod save;
 use crossterm::event::KeyEvent;
 
 use super::super::widgets::ModalOutcome;
-use super::message::{ManagerMessage, update_manager};
+use super::message::{ManagerEffect, ManagerMessage, execute_manager_effect, update_manager};
 use super::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -115,7 +115,12 @@ pub fn handle_key(
         && editor.modal.is_some()
     {
         editor::handle_editor_modal(editor, key, op_available, op_cache, config, paths);
-        state.request_active_mount_info_refresh(config);
+        execute_manager_effect(
+            state,
+            config,
+            paths,
+            ManagerEffect::RequestActiveMountInfoRefresh,
+        );
 
         // Drain the ConfirmSave → commit signal FIRST. The modal handler
         // only closes the modal and stashes the plan; this outer layer
@@ -316,7 +321,12 @@ pub fn handle_key(
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
     };
-    state.request_active_mount_info_refresh(config);
+    execute_manager_effect(
+        state,
+        config,
+        paths,
+        ManagerEffect::RequestActiveMountInfoRefresh,
+    );
     outcome
 }
 
