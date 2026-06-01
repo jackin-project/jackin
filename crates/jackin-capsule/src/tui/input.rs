@@ -21,6 +21,21 @@
 /// — so the bind collides with editing in those programs; set only
 /// when the trade-off is acceptable.
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InputBindings {
+    pub prefix: Option<u8>,
+    pub palette_key: Option<u8>,
+}
+
+impl Default for InputBindings {
+    fn default() -> Self {
+        Self {
+            prefix: None,
+            palette_key: Some(0x1C),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
     Data(Vec<u8>),
@@ -120,7 +135,7 @@ enum State {
 
 impl Default for InputParser {
     fn default() -> Self {
-        let bindings = crate::input_bindings::InputBindings::default();
+        let bindings = InputBindings::default();
         Self::new(bindings.prefix, bindings.palette_key)
     }
 }
@@ -355,7 +370,41 @@ fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
 }
 
 pub fn parse_prefix(s: &str) -> Option<u8> {
-    crate::input_bindings::parse_key_binding(s)
+    parse_key_binding(s)
+}
+
+/// Accept:
+/// - `C-a` ... `C-z` (case-insensitive) - `Ctrl+letter`, maps to `0x01..=0x1A`
+/// - `C-\` / `C-]` / `C-^` / `C-_` - `Ctrl+symbol`, maps to `0x1C..=0x1F`
+/// - `C-Space` or `C-@` - `Ctrl+Space` / `Ctrl+@`, maps to `0x00`
+/// - A single ASCII control byte in hex form `0xNN`
+/// - A single literal byte
+pub fn parse_key_binding(s: &str) -> Option<u8> {
+    let s = s.trim();
+    if let Some(rest) = s.strip_prefix("C-").or_else(|| s.strip_prefix("c-")) {
+        if rest.eq_ignore_ascii_case("space") || rest == "@" {
+            return Some(0x00);
+        }
+        let c = rest.chars().next()?;
+        if c.is_ascii_alphabetic() {
+            let upper = c.to_ascii_uppercase() as u8;
+            return Some(upper - b'A' + 1);
+        }
+        return match c {
+            '\\' => Some(0x1C),
+            ']' => Some(0x1D),
+            '^' => Some(0x1E),
+            '_' => Some(0x1F),
+            _ => None,
+        };
+    }
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        return u8::from_str_radix(hex, 16).ok();
+    }
+    if s.len() == 1 {
+        return Some(s.as_bytes()[0]);
+    }
+    None
 }
 
 fn prefix_binding(b: u8) -> Option<PrefixCommand> {

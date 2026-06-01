@@ -288,6 +288,8 @@ Capsule initial attach-frame labels now live with attach-client effect vocabular
 
 Capsule visible multiplexer mode vocabulary (`Normal`, prefix-await, dialog, drag, selection) now lives with the visible TUI model in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> instead of a root crate module.
 
+Capsule input binding data and key-binding parsing now live with terminal input parsing in <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />. The root <RepoFile path="crates/jackin-capsule/src/input_bindings.rs" /> module is now only the environment/logging resolver for those TUI-owned binding definitions.
+
 Op-picker account/vault/item/field display metadata and the session cache type now live with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. Root `operator_env` keeps compatibility aliases while `op` CLI execution and cache invalidation remain in non-TUI service code.
 
 1. **Classify existing modules.** For each root-level file in the three surface crates, decide whether it is TUI, pure non-visual domain logic, or side-effect/service/runtime logic.
