@@ -265,64 +265,6 @@ pub(crate) fn global_mounts_require_sensitive_confirmation(
     crate::console::domain::global_rows_have_sensitive_mount(mounts)
 }
 
-pub(crate) struct ResolvedRoleInput {
-    pub(crate) raw: String,
-    pub(crate) key: String,
-    pub(crate) selector: crate::selector::RoleSelector,
-    pub(crate) source: crate::config::RoleSource,
-}
-
-pub(crate) struct RoleInputResolutionError {
-    pub(crate) raw: String,
-    pub(crate) source_url: Option<String>,
-    pub(crate) error: anyhow::Error,
-}
-
-pub(crate) fn resolve_role_input_source(
-    config: &AppConfig,
-    value: &str,
-) -> Result<ResolvedRoleInput, RoleInputResolutionError> {
-    let raw = value.trim();
-    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
-    let selector = crate::selector::RoleSelector::parse(raw).map_err(|e| {
-        crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
-        RoleInputResolutionError {
-            raw: raw.to_string(),
-            source_url: None,
-            error: anyhow::Error::new(e),
-        }
-    })?;
-    crate::debug_log!("role", "parsed role selector: {selector}");
-
-    let key = selector.key();
-    let source = crate::console::domain::candidate_role_source(config, &selector).map_err(|error| {
-        crate::debug_log!(
-            "role",
-            "role loader failed for key={key:?} raw={raw:?}: {error:?}"
-        );
-        let source_url = crate::console::domain::candidate_role_source(config, &selector)
-            .ok()
-            .map(|source| source.git);
-        RoleInputResolutionError {
-            raw: raw.to_string(),
-            source_url,
-            error,
-        }
-    })?;
-    crate::debug_log!(
-        "role",
-        "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
-        git = source.git.as_str(),
-        trusted = source.trusted
-    );
-    Ok(ResolvedRoleInput {
-        raw: raw.to_string(),
-        key,
-        selector,
-        source,
-    })
-}
-
 pub(crate) fn apply_role_load_completion(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,

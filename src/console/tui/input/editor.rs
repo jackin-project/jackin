@@ -1681,7 +1681,7 @@ fn apply_role_input(
     config: &AppConfig,
     value: &str,
 ) -> EditorModalOutcome {
-    match crate::console::effects::resolve_role_input_source(config, value) {
+    match crate::console::domain::resolve_role_input_source(config, value) {
         Ok(resolved) => EditorModalOutcome::StartRoleRegistration {
             raw: resolved.raw,
             key: resolved.key,
