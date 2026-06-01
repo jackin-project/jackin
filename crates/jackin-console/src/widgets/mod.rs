@@ -14,6 +14,9 @@ pub mod scope_picker;
 pub mod source_picker;
 pub mod workdir_pick;
 
+/// Braille spinner animation shared across modal loading panels.
+pub const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`
 /// for Up, `+1` for Down. No-op when `count == 0`.
 pub fn cycle_select(list_state: &mut tui_widget_list::ListState, count: usize, delta: i32) {
