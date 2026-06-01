@@ -73,6 +73,19 @@ pub fn secret_delete_confirm_prompt(key: &str) -> String {
     format!("Delete environment variable {key}?")
 }
 
+#[must_use]
+pub fn role_trust_confirm_state(role: String, repository: String) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::details(
+        "Trust role source",
+        "Trust this role source?",
+        vec![("Role".into(), role), ("Repository".into(), repository)],
+        vec![
+            "Dockerfile can run during image builds.".into(),
+            "The role can access mounted workspace files.".into(),
+        ],
+    )
+}
+
 pub fn clamp_editor_scroll_for_frame(
     body: Rect,
     geometry: EditorScrollGeometry,
@@ -595,6 +608,21 @@ mod tests {
             secret_delete_confirm_prompt("TOKEN"),
             "Delete environment variable TOKEN?"
         );
+    }
+
+    #[test]
+    fn role_trust_confirm_state_names_role_and_repository() {
+        let state = role_trust_confirm_state("alpha".to_string(), "https://example.test/role".to_string());
+
+        assert_eq!(state.title(), "Trust role source");
+        let jackin_tui::components::ConfirmKind::Details { prompt, rows, .. } = state.kind()
+        else {
+            panic!("expected detail confirm");
+        };
+        assert_eq!(prompt, "Trust this role source?");
+        assert!(rows
+            .iter()
+            .any(|(label, value)| label == "Repository" && value == "https://example.test/role"));
     }
 
     #[test]

@@ -22,7 +22,8 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
-    secret_delete_confirm_prompt, secrets_forbidden_label, secrets_scope_label,
+    role_trust_confirm_state, secret_delete_confirm_prompt, secrets_forbidden_label,
+    secrets_scope_label,
 };
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -1817,18 +1818,6 @@ pub(crate) fn open_role_trust_confirm(
         target: ConfirmTarget::TrustRoleSource { key, source },
         state,
     });
-}
-
-fn role_trust_confirm_state(role: String, repository: String) -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::details(
-        "Trust role source",
-        "Trust this role source?",
-        vec![("Role".into(), role), ("Repository".into(), repository)],
-        vec![
-            "Dockerfile can run during image builds.".into(),
-            "The role can access mounted workspace files.".into(),
-        ],
-    )
 }
 
 pub(crate) fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
