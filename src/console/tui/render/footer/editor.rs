@@ -12,7 +12,9 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    content_footer_items, tab_bar_footer_items, workspace_mount_row_footer_items,
+    content_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
+    secret_plain_row_footer_items, secret_role_header_footer_items, tab_bar_footer_items,
+    workspace_mount_row_footer_items,
 };
 
 pub(crate) fn editor_footer_items(
@@ -115,69 +117,14 @@ pub(crate) fn contextual_row_items(
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. })
                     if focused_value_is_op_ref =>
                 {
-                    let mut items = if op_available {
-                        vec![
-                            HintSpan::Key("↵"),
-                            HintSpan::Sep,
-                            HintSpan::Key("P"),
-                            HintSpan::Text("re-pick from 1Password"),
-                            HintSpan::Sep,
-                        ]
-                    } else {
-                        Vec::new()
-                    };
-                    items.extend([
-                        HintSpan::Key("D"),
-                        HintSpan::Text("delete"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                    ]);
-                    items
+                    secret_op_ref_row_footer_items(op_available)
                 }
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
-                    let mut items = vec![
-                        HintSpan::Key("↵"),
-                        HintSpan::Text("edit"),
-                        HintSpan::Sep,
-                        HintSpan::Key("D"),
-                        HintSpan::Text("delete"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                        HintSpan::Sep,
-                        HintSpan::Key("M"),
-                        HintSpan::Text("mask/unmask"),
-                    ];
-                    if op_available {
-                        items.extend([
-                            HintSpan::Sep,
-                            HintSpan::Key("P"),
-                            HintSpan::Text("1Password"),
-                        ]);
-                    }
-                    items
+                    secret_plain_row_footer_items(op_available)
                 }
-                Some(SecretsRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("↵"),
-                    HintSpan::Text("expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("←/→"),
-                    HintSpan::Text("collapse/expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("A"),
-                    HintSpan::Text("add"),
-                ],
+                Some(SecretsRow::RoleHeader { .. }) => secret_role_header_footer_items(),
                 Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::RoleAddSentinel(_)) => {
-                    let mut items = vec![HintSpan::Key("↵"), HintSpan::Text("add")];
-                    if op_available {
-                        items.extend([
-                            HintSpan::Sep,
-                            HintSpan::Key("P"),
-                            HintSpan::Text("1Password"),
-                        ]);
-                    }
-                    items
+                    secret_add_row_footer_items(op_available)
                 }
                 Some(SecretsRow::SectionSpacer) | None => vec![],
             }

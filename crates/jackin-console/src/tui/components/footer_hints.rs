@@ -263,6 +263,81 @@ pub fn global_mount_row_footer_items(has_github_url: bool) -> Vec<HintSpan<'stat
 }
 
 #[must_use]
+pub fn secret_op_ref_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
+    let mut items = if op_available {
+        vec![
+            HintSpan::Key("↵"),
+            HintSpan::Sep,
+            HintSpan::Key("P"),
+            HintSpan::Text("re-pick from 1Password"),
+            HintSpan::Sep,
+        ]
+    } else {
+        Vec::new()
+    };
+    items.extend([
+        HintSpan::Key("D"),
+        HintSpan::Text("delete"),
+        HintSpan::Sep,
+        HintSpan::Key("A"),
+        HintSpan::Text("add"),
+    ]);
+    items
+}
+
+#[must_use]
+pub fn secret_plain_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
+    let mut items = vec![
+        HintSpan::Key("↵"),
+        HintSpan::Text("edit"),
+        HintSpan::Sep,
+        HintSpan::Key("D"),
+        HintSpan::Text("delete"),
+        HintSpan::Sep,
+        HintSpan::Key("A"),
+        HintSpan::Text("add"),
+        HintSpan::Sep,
+        HintSpan::Key("M"),
+        HintSpan::Text("mask/unmask"),
+    ];
+    if op_available {
+        items.extend([
+            HintSpan::Sep,
+            HintSpan::Key("P"),
+            HintSpan::Text("1Password"),
+        ]);
+    }
+    items
+}
+
+#[must_use]
+pub fn secret_add_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
+    let mut items = vec![HintSpan::Key("↵"), HintSpan::Text("add")];
+    if op_available {
+        items.extend([
+            HintSpan::Sep,
+            HintSpan::Key("P"),
+            HintSpan::Text("1Password"),
+        ]);
+    }
+    items
+}
+
+#[must_use]
+pub fn secret_role_header_footer_items() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("↵"),
+        HintSpan::Text("expand"),
+        HintSpan::Sep,
+        HintSpan::Key("←/→"),
+        HintSpan::Text("collapse/expand"),
+        HintSpan::Sep,
+        HintSpan::Key("A"),
+        HintSpan::Text("add"),
+    ]
+}
+
+#[must_use]
 pub fn auth_form_footer_items(
     focus: AuthFormFocus,
     shows_credential_block: bool,
