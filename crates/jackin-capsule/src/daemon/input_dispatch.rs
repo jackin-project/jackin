@@ -416,6 +416,23 @@ impl Multiplexer {
                 }
                 None
             }
+            Action::BranchContextBarClick { row, col } => {
+                let action = match branch_context_bar_hit(
+                    row + 1,
+                    col + 1,
+                    self.term_rows,
+                    self.term_cols,
+                    self.context_bar_branch(),
+                    self.pull_request_context.as_deref(),
+                    self.pull_request_context_loading(),
+                    self.status_bar.instance_id_label(),
+                ) {
+                    Some(BranchContextBarHit::Context) => Action::OpenGithubContext,
+                    Some(BranchContextBarHit::Container) => Action::OpenContainerInfo,
+                    None => return None,
+                };
+                self.apply_action(action)
+            }
             Action::ForwardMouse {
                 row,
                 col,
@@ -573,11 +590,8 @@ impl Multiplexer {
                 self.status_bar.instance_id_label(),
             ) =>
             {
-                let action = match hit {
-                    BranchContextBarHit::Context => Action::OpenGithubContext,
-                    BranchContextBarHit::Container => Action::OpenContainerInfo,
-                };
-                self.apply_action(action)
+                let _ = hit;
+                self.apply_action(Action::BranchContextBarClick { row, col })
             }
             InputEvent::MousePress {
                 row: 0,

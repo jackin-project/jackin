@@ -56,6 +56,10 @@ pub enum Action {
     StatusBarClick {
         col: u16,
     },
+    BranchContextBarClick {
+        row: u16,
+        col: u16,
+    },
     ForwardMouse {
         row: u16,
         col: u16,

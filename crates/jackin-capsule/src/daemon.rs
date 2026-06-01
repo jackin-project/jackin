@@ -3894,6 +3894,39 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_branch_context_bar_click_opens_container_info() {
+        let mut mux = test_mux(24, 80);
+        mux.status_bar.identity_label = "jk-test-container".to_string();
+        mux.status_bar.instance_id_label = "test".to_string();
+        mux.status_bar.role = "the-architect".to_string();
+        mux.pull_request_context_branch = Some(branch("feature/context"));
+        let hit = branch_context_bar_layout(
+            mux.term_rows,
+            mux.term_cols,
+            mux.pull_request_context_branch.as_deref(),
+            mux.pull_request_context.as_deref(),
+            mux.pull_request_context_loading(),
+            mux.status_bar.instance_id_label(),
+        )
+        .and_then(|layout| layout.container_region)
+        .expect("container should fit");
+
+        mux.apply_action(Action::BranchContextBarClick {
+            row: mux.term_rows - 1,
+            col: hit.start - 1,
+        });
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::ContainerInfo {
+                container_name,
+                copied: false,
+                ..
+            }) if container_name == "jk-test-container"
+        ));
+    }
+
+    #[test]
     fn apply_action_palette_new_tab_pushes_agent_picker() {
         let mut mux = single_pane_tab_mux();
         mux.open_command_palette();
