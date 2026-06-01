@@ -16,10 +16,9 @@ use crate::console::tui::render::modal_layout::{
 use crate::console::tui::render::mount_display::{
     format_mount_rows_with_cache,
 };
-pub(crate) use crate::console::tui::state::SettingsEnvRow;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
-    SettingsState, SettingsTab,
+    SettingsState, SettingsTab, settings_env_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
@@ -171,13 +170,6 @@ fn secret_value_display(value: &EnvValue) -> SecretValueDisplay<'_> {
         EnvValue::Plain(value) => SecretValueDisplay::Plain(value),
         EnvValue::OpRef(op_ref) => SecretValueDisplay::OpRefPath(&op_ref.path),
     }
-}
-
-fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-        &state.env.pending,
-        &state.env.expanded,
-    )
 }
 
 fn settings_env_value<'a>(

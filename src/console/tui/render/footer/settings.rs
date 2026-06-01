@@ -7,7 +7,7 @@ use crate::console::tui::render::footer::modal::{
     settings_mounts_modal_footer_items,
 };
 use crate::console::tui::state::{
-    SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab,
+    SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab, settings_env_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
@@ -117,13 +117,6 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
             }
         }
     }
-}
-
-fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-        &state.env.pending,
-        &state.env.expanded,
-    )
 }
 
 fn settings_env_value<'a>(

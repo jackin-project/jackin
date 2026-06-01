@@ -5,8 +5,8 @@ use crate::console::tui::render::mount_display::settings_global_mounts_content_w
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
-    SettingsEnvModal, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsState,
-    SettingsTab,
+    SettingsEnvModal, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
+    settings_env_flat_rows,
 };
 use jackin_tui::ModalOutcome;
 use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
@@ -16,13 +16,6 @@ use crate::workspace::{MountConfig, resolve_path};
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::view::{env_forbidden_label, env_scope_label};
 use jackin_tui::components::{ConfirmState, TextInputState};
-
-fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-        &state.env.pending,
-        &state.env.expanded,
-    )
-}
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
