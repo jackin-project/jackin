@@ -3,9 +3,9 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +163,48 @@ pub fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(why_lines).block(why_block), rows[1]);
 }
 
+#[must_use]
+pub fn provider_picker_title(container_id: Option<&str>) -> String {
+    container_id.map_or_else(
+        || " provider ".to_string(),
+        |container_id| format!(" {container_id} — provider "),
+    )
+}
+
+pub fn render_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    labels: Vec<String>,
+    selected: Option<usize>,
+    focused: bool,
+) {
+    let block = jackin_tui::components::Panel::new()
+        .title(title)
+        .focus(if focused {
+            jackin_tui::components::PanelFocus::Focused
+        } else {
+            jackin_tui::components::PanelFocus::Unfocused
+        })
+        .block();
+    let items: Vec<ListItem> = labels
+        .into_iter()
+        .map(|label| ListItem::new(Line::from(label)))
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN))
+        .highlight_style(
+            Style::default()
+                .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .fg(Color::Black),
+        )
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(selected);
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +248,15 @@ mod tests {
         let state = create_prelude_mount_dst_choice_state("/host/project");
 
         assert_eq!(state.src, "/host/project");
+    }
+
+    #[test]
+    fn launch_provider_picker_uses_single_word_title() {
+        assert_eq!(provider_picker_title(None), " provider ");
+    }
+
+    #[test]
+    fn inline_provider_picker_keeps_instance_context() {
+        assert_eq!(provider_picker_title(Some("abc123")), " abc123 — provider ");
     }
 }

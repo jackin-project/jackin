@@ -24,7 +24,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, ListState, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::{
@@ -57,7 +57,8 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
-    Disclosure, render_compact_instances_summary, render_sentinel_description_pane,
+    Disclosure, provider_picker_title, render_compact_instances_summary, render_picker_sidebar,
+    render_sentinel_description_pane,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -468,44 +469,11 @@ fn render_provider_picker_sidebar(
     selected: usize,
 ) {
     let title = provider_picker_title(container_id);
-    let block = Panel::new()
-        .title(&title)
-        .focus(PanelFocus::Unfocused)
-        .block();
-    let items: Vec<ListItem> = providers
+    let labels = providers
         .iter()
-        .map(|provider| ListItem::new(Line::from(provider.label())))
+        .map(|provider| provider.label().to_string())
         .collect();
-    let list = List::new(items)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN))
-        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
-        .highlight_symbol("▸ ");
-    let mut list_state = ListState::default();
-    list_state.select(Some(selected));
-    frame.render_stateful_widget(list, area, &mut list_state);
-}
-
-fn provider_picker_title(container_id: Option<&str>) -> String {
-    container_id.map_or_else(
-        || " provider ".to_string(),
-        |container_id| format!(" {container_id} — provider "),
-    )
-}
-
-#[cfg(test)]
-mod provider_picker_tests {
-    use super::provider_picker_title;
-
-    #[test]
-    fn launch_provider_picker_uses_single_word_title() {
-        assert_eq!(provider_picker_title(None), " provider ");
-    }
-
-    #[test]
-    fn inline_provider_picker_keeps_instance_context() {
-        assert_eq!(provider_picker_title(Some("abc123")), " abc123 — provider ");
-    }
+    render_picker_sidebar(frame, area, &title, labels, Some(selected), false);
 }
 
 fn render_role_picker_sidebar(
@@ -516,27 +484,8 @@ fn render_role_picker_sidebar(
     focused: bool,
 ) {
     let title = format!(" {workspace_name} ");
-    let block = Panel::new()
-        .title(&title)
-        .focus(if focused {
-            PanelFocus::Focused
-        } else {
-            PanelFocus::Unfocused
-        })
-        .block();
-    let items: Vec<ListItem> = picker
-        .filtered
-        .iter()
-        .map(|role| ListItem::new(Line::from(role.key())))
-        .collect();
-    let list = List::new(items)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN))
-        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
-        .highlight_symbol("▸ ");
-    let mut list_state = ListState::default();
-    list_state.select(picker.list_state.selected);
-    frame.render_stateful_widget(list, area, &mut list_state);
+    let labels = picker.filtered.iter().map(|role| role.key()).collect();
+    render_picker_sidebar(frame, area, &title, labels, picker.list_state.selected, focused);
 }
 
 fn render_agent_picker_sidebar(
@@ -547,36 +496,19 @@ fn render_agent_picker_sidebar(
     focused: bool,
 ) {
     let title = format!(" {role_name} ");
-    let block = Panel::new()
-        .title(&title)
-        .focus(if focused {
-            PanelFocus::Focused
-        } else {
-            PanelFocus::Unfocused
-        })
-        .block();
-    let items: Vec<ListItem> = picker
+    let labels = picker
         .choices
         .iter()
         .map(|agent| {
-            ListItem::new(Line::from(
-                jackin_console::tui::components::agent_choice::agent_picker_label(*agent),
-            ))
+            jackin_console::tui::components::agent_choice::agent_picker_label(*agent).to_string()
         })
         .collect();
-    let list = List::new(items)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN))
-        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
-        .highlight_symbol("▸ ");
-    let mut list_state = ListState::default();
-    list_state.select(
+    let selected =
         picker
             .choices
             .iter()
-            .position(|agent| *agent == picker.focused),
-    );
-    frame.render_stateful_widget(list, area, &mut list_state);
+            .position(|agent| *agent == picker.focused);
+    render_picker_sidebar(frame, area, &title, labels, selected, focused);
 }
 
 fn render_sidebar_body(
