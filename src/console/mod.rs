@@ -7,7 +7,6 @@
 
 mod domain;
 pub(crate) mod effects;
-mod launch;
 mod outcome;
 mod preview;
 mod prompts;

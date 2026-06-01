@@ -7,6 +7,7 @@ mod create;
 pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;
+mod launch;
 pub mod message;
 #[cfg(test)]
 mod message_tests;
