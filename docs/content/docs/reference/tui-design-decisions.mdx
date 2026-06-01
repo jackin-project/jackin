@@ -30,72 +30,105 @@ The host console uses a Ratatui-style Model/Update/View separation. This is a **
 
 ## TUI source code location — mandatory directory convention
 
-All code for the terminal user interface (Model, Update, View, and event-loop wiring) lives in a single `tui/` directory per surface crate. Everything NOT in `tui/` is business logic — workspace resolution, Docker commands, config writes, network I/O, data models that have no visual representation.
+All code for a terminal user interface lives under one `src/tui/` directory per surface crate and follows The Elm Architecture: Model, Message, Update, Effects/Subscriptions, View, and event-loop wiring. Everything outside `src/tui/` is non-visual product code: workspace resolution, Docker commands, config writes, network I/O, credential handling, capsule protocol/session authority, and data models that have no terminal-interaction role.
 
-**The one rule:** if it is about what the operator sees and interacts with → `tui/`. If it is about data, Docker, or disk → outside `tui/`.
+**The one rule:** if it is terminal interaction state, terminal events, terminal rendering, terminal lifecycle, or local UI composition → `src/tui/`. If it executes external work or owns non-visual product behavior → outside `src/tui/`.
 
 **Rule: TUI code has exactly two homes:**
 
-1. **`crates/jackin-tui/`** — Shared component library. Panels, pickers, scrollable blocks, hint bars, confirm dialogs, tab strips. Nothing surface-specific. Consumed by every other TUI crate.
+1. **`crates/jackin-tui/`** — Shared component library. Panels, pickers, scrollable blocks, hint bars, confirm dialogs, tab strips, tokens, theme adapters, and geometry helpers. Nothing surface-specific. Consumed by every other TUI crate.
 
-2. **`crates/<surface-crate>/src/`** — Everything TUI for that surface: Model (state structs), Update (message handlers, key dispatch), View (render functions, widgets), and event-loop wiring. `tui/` is the View layer inside that surface crate. For single-screen crates one root `tui/` is enough. For multi-screen crates (e.g. `jackin-console`), screens are sub-folders at the crate root, each with its own `tui/`.
+2. **`crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens/<screen>/` under `src/tui/`.
 
 **Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
 ```
 src/
-├── run.rs          ← event-loop wiring
-├── state.rs        ← Model (state structs)
-├── update.rs       ← Update (message handlers, input dispatch)
-└── tui/            ← View (render fns, pure &State reads)
-    ├── cockpit.rs
-    ├── dialog.rs
-    └── ...
+├── lib.rs
+├── domain/              ← optional pure non-visual rules
+├── services/            ← optional side-effect adapters
+└── tui/
+    ├── mod.rs
+    ├── app.rs           ← TUI Model
+    ├── message.rs       ← Message / Action vocabulary
+    ├── update.rs        ← update(model, message) -> effects
+    ├── effect.rs        ← typed effect requests only
+    ├── subscriptions.rs
+    ├── run.rs           ← event-loop wiring
+    ├── terminal.rs      ← terminal lifecycle/backend
+    ├── view.rs          ← top-level render composition
+    └── components/
 ```
 
 **Multi-screen crate layout** (`jackin-console`):
 ```
 src/
-├── run.rs          ← ConsoleState/event-loop wiring
-├── state.rs        ← top-level console model
-├── workspaces/     ← workspace list screen
-│   ├── state.rs
-│   ├── update.rs
-│   └── tui/
-├── editor/         ← workspace editor screen
-│   ├── state.rs
-│   ├── update.rs
-│   └── tui/
-├── settings/       ← settings screen
-│   ├── state.rs
-│   ├── update.rs
-│   └── tui/
-└── widgets/        ← surface-specific sub-components
+├── lib.rs
+├── domain/              ← optional pure non-visual rules
+├── services/            ← optional side-effect adapters
+└── tui/
+    ├── mod.rs
+    ├── app.rs           ← top-level TUI Model
+    ├── message.rs
+    ├── update.rs
+    ├── effect.rs
+    ├── subscriptions.rs
+    ├── run.rs
+    ├── terminal.rs
+    ├── view.rs
+    ├── components/
+    └── screens/
+        ├── workspaces/
+        │   ├── mod.rs
+        │   ├── model.rs
+        │   ├── message.rs
+        │   ├── update.rs
+        │   ├── effect.rs
+        │   ├── view.rs
+        │   └── components/
+        ├── editor/
+        │   ├── model.rs
+        │   ├── message.rs
+        │   ├── update.rs
+        │   ├── effect.rs
+        │   ├── view.rs
+        │   └── components/
+        └── settings/
+            ├── model.rs
+            ├── message.rs
+            ├── update.rs
+            ├── effect.rs
+            ├── view.rs
+            └── components/
 ```
 
 **MUV contract inside each surface crate:**
-- `state.rs` — pure data structs; no rendering, no I/O.
-- `update.rs` — pure fn(Model + Message) → Effects; no rendering.
-- `tui/` — pure `&State` reads; no mutations, no I/O, no side effects.
-- `run.rs` / wiring — event loop that connects M + U + V; not M, U, or V itself.
+- `tui/app.rs` and screen `model.rs` files — terminal interaction model only; no external I/O.
+- `tui/message.rs` — semantic events/results that drive the update loop.
+- `tui/update.rs` — state transition logic; may return effects but must not execute external commands.
+- `tui/effect.rs` — typed effect requests only; no Docker/git/`op`/`gh`/filesystem/network execution.
+- `tui/view.rs` and screen `view.rs` files — pure rendering from the current model.
+- `tui/run.rs` / `tui/subscriptions.rs` — event-loop wiring that maps terminal events and completed non-TUI work into messages.
 
-**What belongs in `tui/`** (the View layer):
-- Ratatui widget implementations
-- Raw ANSI rendering functions
-- Pure frame composition and geometry helpers
-- View-only hover/click hitbox descriptions
+**What belongs in `src/tui/`:**
+- TUI model structs and enums
+- `Message` / `Action` enums
+- Update functions that mutate only TUI state and return typed effects
+- Effect and subscription type definitions
+- Event-loop wiring and terminal lifecycle/backend adapters
+- Ratatui widget implementations and raw-ANSI rendering where still required
+- Frame composition, geometry helpers, hitboxes, focus-visible rendering, hint bars, and local lookbook stories
 
-**What does NOT belong in `tui/`**:
-- Model state (`state.rs`), including focus state, scroll state, and modal state
-- Update logic (`update.rs`), including message handlers and input dispatch
-- Event-loop wiring and terminal lifecycle (`run.rs`, `terminal.rs`)
-- Workspace resolution, role loading, Docker commands
-- Network and I/O calls
-- Config file writes and reads
-- Data models that have no visual representation (e.g. `session.rs` PTY management in the capsule)
+**What does NOT belong in `src/tui/`:**
+- Docker/runtime command execution
+- Git, GitHub CLI, 1Password CLI, shell command, filesystem, and network operations
+- Config/schema loading, migration, and persistence
+- Workspace resolution, role loading, mount inspection, and durable state cleanup
+- Capsule PTY/session/control-plane authority and wire protocol definitions
+- Non-visual domain rules that do not depend on terminal interaction
 
-**Enforcement:** before adding any file, ask: "Does this file mutate state, dispatch input, manage terminal lifecycle, or touch workspace resolution, Docker, or config?" Yes → it does not go in `tui/`. No → it belongs in `tui/`.
+**Enforcement:** before adding any file under `src/tui/`, ask: "Does this execute external work, own durable product state, or define non-visual behavior?" Yes → it does not go in `src/tui/`. Before adding a TUI file outside `src/tui/`, ask: "Is this about terminal interaction or terminal rendering?" Yes → it belongs under `src/tui/`.
 
-**Migration status:** Capsule `tui/` started (Phase 9). Console and launch surface migrations are Phase 10. New files must go into the correct directory now regardless of migration status.
+**Migration status:** Capsule `tui/` started (Phase 9). Console and launch surface migrations are Phase 10. New files must go into the final directory shape now regardless of migration status.
 
 ---
 
