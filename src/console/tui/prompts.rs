@@ -1,8 +1,7 @@
 //! Agent and role prompting helpers for the workspace manager event loop.
 
 use crate::config::AppConfig;
-use crate::console::domain::{build_workspace_choice, providers_for_launch};
-use crate::console::{ConsoleOutcome, preview};
+use crate::console::ConsoleOutcome;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
@@ -211,15 +210,11 @@ where
     B: ratatui::backend::Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
-    // Rebuild the choice now so edits between open and commit take
-    // effect. `take()` clears the pin even on concurrent delete.
-    let Some(input) = state.pending_launch.take() else {
+    let Some(resolved) =
+        crate::console::effects::resolve_committed_role_launch(state, config, cwd, &role)?
+    else {
         return Ok(None);
     };
-    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
-        return Ok(None);
-    };
-    let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
     match prompt_agent_for_launch(
         terminal,
         state,
@@ -228,15 +223,15 @@ where
         cwd,
         runner,
         &role,
-        &workspace,
-        input,
+        &resolved.workspace,
+        resolved.input,
         OnPromptFailure::RestorePending,
     )
     .await?
     {
         PromptOutcome::Launch => {
             state.pending_launch_role = None;
-            Ok(Some(ConsoleOutcome::Launch(role, workspace, None)))
+            Ok(Some(ConsoleOutcome::Launch(role, resolved.workspace, None)))
         }
         PromptOutcome::Defer => Ok(None),
     }
@@ -248,30 +243,27 @@ pub(super) fn launch_with_committed_agent(
     cwd: &std::path::Path,
     agent: crate::agent::Agent,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
-    let (Some(input), Some(role)) = (
-        state.pending_launch.take(),
-        state.pending_launch_role.take(),
-    ) else {
+    let Some(resolved) =
+        crate::console::effects::resolve_committed_agent_launch(state, config, cwd, agent)?
+    else {
         return Ok(None);
     };
-    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
-        return Ok(None);
-    };
-    let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
-
-    let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
-    if providers.is_empty() {
-        return Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))));
+    if resolved.providers.is_empty() {
+        return Ok(Some(ConsoleOutcome::Launch(
+            resolved.role,
+            resolved.workspace,
+            Some(agent),
+        )));
     }
 
     if let ConsoleStage::Manager(ms) = &mut state.stage {
         ms.launch_provider_picker = Some(crate::console::tui::state::ProviderPickerState::new(
-            role.clone(),
+            resolved.role.clone(),
             agent,
-            providers,
+            resolved.providers,
         ));
     }
-    state.pending_launch = Some(input);
-    state.pending_launch_role = Some(role);
+    state.pending_launch = Some(resolved.input);
+    state.pending_launch_role = Some(resolved.role);
     Ok(None)
 }

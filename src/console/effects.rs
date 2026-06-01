@@ -274,6 +274,59 @@ pub(crate) fn resolve_pending_provider_launch(
     crate::console::preview::resolve_selected_workspace(config, cwd, &choice, selector).map(Some)
 }
 
+pub(crate) struct CommittedRoleLaunch {
+    pub(crate) input: crate::workspace::LoadWorkspaceInput,
+    pub(crate) workspace: crate::workspace::ResolvedWorkspace,
+}
+
+pub(crate) fn resolve_committed_role_launch(
+    state: &mut crate::console::ConsoleState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    role: &crate::selector::RoleSelector,
+) -> anyhow::Result<Option<CommittedRoleLaunch>> {
+    let Some(input) = state.pending_launch.take() else {
+        return Ok(None);
+    };
+    let Some(choice) = crate::console::domain::build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let workspace = crate::console::preview::resolve_selected_workspace(config, cwd, &choice, role)?;
+    Ok(Some(CommittedRoleLaunch { input, workspace }))
+}
+
+pub(crate) struct CommittedAgentLaunch {
+    pub(crate) input: crate::workspace::LoadWorkspaceInput,
+    pub(crate) role: crate::selector::RoleSelector,
+    pub(crate) workspace: crate::workspace::ResolvedWorkspace,
+    pub(crate) providers: Vec<jackin_protocol::Provider>,
+}
+
+pub(crate) fn resolve_committed_agent_launch(
+    state: &mut crate::console::ConsoleState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    agent: crate::agent::Agent,
+) -> anyhow::Result<Option<CommittedAgentLaunch>> {
+    let (Some(input), Some(role)) = (
+        state.pending_launch.take(),
+        state.pending_launch_role.take(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(choice) = crate::console::domain::build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let workspace = crate::console::preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+    let providers = crate::console::domain::providers_for_launch(config, &choice.name, &role.key(), agent);
+    Ok(Some(CommittedAgentLaunch {
+        input,
+        role,
+        workspace,
+        providers,
+    }))
+}
+
 pub(crate) fn apply_role_load_completion(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
