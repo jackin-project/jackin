@@ -26,6 +26,10 @@
 pub(crate) const TAB_DOUBLE_CLICK_WINDOW: std::time::Duration =
     std::time::Duration::from_millis(500);
 
+/// XTerm SGR any-event mouse tracking reports passive motion as
+/// button code 35 (`32` motion bit + `3` no-button code).
+pub(crate) const SGR_NO_BUTTON_MOTION: u8 = 35;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputBindings {
     pub prefix: Option<u8>,

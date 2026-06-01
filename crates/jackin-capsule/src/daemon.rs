@@ -54,7 +54,9 @@ use crate::git_context::{
     WorkdirContext, git_current_context, resolve_default_branch, start_git_context_watcher,
 };
 use crate::tui::effect::InitialFrameKind;
-use crate::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
+use crate::tui::input::{
+    ArrowDir, InputEvent, InputParser, PrefixCommand, SGR_NO_BUTTON_MOTION,
+};
 use crate::tui::layout::{
     Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, local_mouse_position,
     split_spawn_inner_size,
@@ -328,10 +330,6 @@ const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
 /// 50 ms matches tmux's default. Below human perception while
 /// surviving slow ssh / paste chunks.
 const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_millis(50);
-
-/// XTerm SGR any-event mouse tracking reports passive motion as
-/// button code 35 (`32` motion bit + `3` no-button code).
-const SGR_NO_BUTTON_MOTION: u8 = 35;
 
 /// One row reserved for the persistent hint bar shown in the main pane view.
 const CAPSULE_HINT_BAR_ROWS: u16 = 1;
