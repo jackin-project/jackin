@@ -199,6 +199,10 @@ pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
 
 pub(crate) enum ManagerBackgroundEvent {
     Message(ManagerMessage),
+    RoleLoadFinished {
+        load: super::state::PendingRoleLoad,
+        result: anyhow::Result<()>,
+    },
     DriftCheckFinished {
         check: PendingDriftCheck,
         detection: anyhow::Result<crate::config::DriftDetection>,
@@ -214,13 +218,15 @@ pub(crate) fn poll_background_messages(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
 ) -> (Vec<ManagerBackgroundEvent>, bool) {
-    let mut dirty = false;
+    let dirty = false;
     let mut messages = vec![
         ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls),
         ManagerBackgroundEvent::Message(ManagerMessage::PollPickerLoads),
     ];
     if let ManagerStage::Editor(editor) = &mut state.stage {
-        dirty |= super::input::editor::poll_role_load(editor, config, paths);
+        if let Some((load, result)) = super::input::editor::poll_role_load_completion(editor) {
+            messages.push(ManagerBackgroundEvent::RoleLoadFinished { load, result });
+        }
     }
     state.request_active_mount_info_refresh(config);
     if let Some(result) = state.poll_mount_info_refresh() {

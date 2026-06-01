@@ -263,6 +263,18 @@ pub async fn run_console<H: InstanceActionHandler>(
                     manager::message::ManagerBackgroundEvent::Message(message) => {
                         needs_redraw |= manager::update_manager(ms, message).is_dirty();
                     }
+                    manager::message::ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
+                        if let manager::ManagerStage::Editor(editor) = &mut ms.stage {
+                            manager::input::editor::apply_role_load_completion(
+                                editor,
+                                &mut config,
+                                paths,
+                                load,
+                                result,
+                            );
+                        }
+                        needs_redraw = true;
+                    }
                     manager::message::ManagerBackgroundEvent::DriftCheckFinished {
                         check,
                         detection,

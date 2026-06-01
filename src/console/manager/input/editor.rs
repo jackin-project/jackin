@@ -1779,12 +1779,22 @@ pub(in crate::console::manager) fn poll_role_load(
     config: &mut AppConfig,
     paths: &JackinPaths,
 ) -> bool {
-    let Some(load) = editor.pending_role_load.as_mut() else {
+    let Some((load, result)) = poll_role_load_completion(editor) else {
         return false;
+    };
+    apply_role_load_completion(editor, config, paths, load, result);
+    true
+}
+
+pub(in crate::console::manager) fn poll_role_load_completion(
+    editor: &mut EditorState<'_>,
+) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
+    let Some(load) = editor.pending_role_load.as_mut() else {
+        return None;
     };
     let result = match load.rx.try_recv() {
         Ok(result) => result,
-        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return false,
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
         Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
             Err(anyhow::anyhow!("role loader worker disconnected"))
         }
@@ -1793,6 +1803,16 @@ pub(in crate::console::manager) fn poll_role_load(
         .pending_role_load
         .take()
         .expect("pending role load checked above");
+    Some((load, result))
+}
+
+pub(crate) fn apply_role_load_completion(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    load: PendingRoleLoad,
+    result: anyhow::Result<()>,
+) {
     match result {
         Ok(()) => {
             if let Err(e) = persist_role_source_registration(config, paths, &load.key, &load.source)
@@ -1809,7 +1829,7 @@ pub(in crate::console::manager) fn poll_role_load(
                     Some(&load.source.git),
                     &e.context("role repository loaded, but registration could not be persisted"),
                 );
-                return true;
+                return;
             }
             crate::debug_log!(
                 "role",
@@ -1851,12 +1871,11 @@ pub(in crate::console::manager) fn poll_role_load(
                         load.raw
                     ),
                 );
-                return true;
+                return;
             }
             open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
         }
     }
-    true
 }
 
 #[cfg(test)]
