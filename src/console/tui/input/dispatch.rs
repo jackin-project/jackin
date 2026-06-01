@@ -5,7 +5,7 @@ use crossterm::event::KeyEvent;
 use super::super::effect::ManagerEffect;
 use super::super::effects::execute_manager_effect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
+use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use super::{InputOutcome, editor, global_mounts, list, prelude, save};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -117,30 +117,9 @@ pub fn handle_key(
             return Ok(InputOutcome::OpenUrl(url));
         }
 
-        // Drain the ConfirmSave → commit signal FIRST. The modal handler
-        // only closes the modal and stashes the plan; this outer layer
-        // has `paths`/`cwd` and actually performs the write.
-        let pending = if let ManagerStage::Editor(editor) = &mut state.stage {
-            match std::mem::replace(&mut editor.save_flow, EditorSaveFlow::Idle) {
-                EditorSaveFlow::PendingCommit {
-                    plan,
-                    exit_on_success,
-                } => Some((plan, exit_on_success)),
-                other => {
-                    // Not a commit transition — put the flow back untouched.
-                    editor.save_flow = other;
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        if let Some((plan, exit_on_success)) = pending {
-            if let Some(effect) = save::commit_editor_save(state, config, plan, exit_on_success)? {
-                crate::console::effects::execute_workspace_save_effect(
-                    state, config, paths, cwd, effect,
-                );
-            }
+        if crate::console::effects::execute_pending_workspace_save_commit(
+            state, config, paths, cwd,
+        )? {
             return Ok(InputOutcome::Continue);
         }
 

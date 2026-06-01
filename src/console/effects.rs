@@ -9,7 +9,7 @@ use jackin_tui::runtime::spawn_blocking_subscription;
 
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    CreatePreludeState, EditorMode, EditorState, FileBrowserTarget, GlobalMountModal,
+    CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget, GlobalMountModal,
     ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck, PendingIsolationCleanup,
     PendingMountInfoRefresh, PendingRoleLoad,
 };
@@ -83,6 +83,38 @@ pub(crate) fn execute_manager_effect(
             is_settings,
         } => execute_op_commit_validation(state, op_ref, is_settings),
     }
+}
+
+pub(crate) fn execute_pending_workspace_save_commit(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    cwd: &std::path::Path,
+) -> anyhow::Result<bool> {
+    let pending = if let ManagerStage::Editor(editor) = &mut state.stage {
+        match std::mem::replace(&mut editor.save_flow, EditorSaveFlow::Idle) {
+            EditorSaveFlow::PendingCommit {
+                plan,
+                exit_on_success,
+            } => Some((plan, exit_on_success)),
+            other => {
+                editor.save_flow = other;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let Some((plan, exit_on_success)) = pending else {
+        return Ok(false);
+    };
+
+    if let Some(effect) =
+        crate::console::tui::input::save::commit_editor_save(state, config, plan, exit_on_success)?
+    {
+        execute_workspace_save_effect(state, config, paths, cwd, effect);
+    }
+    Ok(true)
 }
 
 fn execute_global_mount_file_browser_open(state: &mut ManagerState<'_>) {
