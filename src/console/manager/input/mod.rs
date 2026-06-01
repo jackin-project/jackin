@@ -12,7 +12,8 @@ pub mod save;
 
 use crossterm::event::KeyEvent;
 
-use super::message::{ManagerEffect, ManagerMessage, execute_manager_effect, update_manager};
+use super::effects::{ManagerEffect, execute_manager_effect};
+use super::message::{ManagerMessage, update_manager};
 use super::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;

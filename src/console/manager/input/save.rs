@@ -2,7 +2,7 @@
 //! `ConfirmSave` preview modal, and service-backed config writes.
 #![allow(clippy::items_after_test_module)]
 
-use super::super::message::{
+use super::super::effects::{
     WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
     execute_workspace_save_effect, execute_workspace_save_write,
 };

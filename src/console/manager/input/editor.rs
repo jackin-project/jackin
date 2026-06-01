@@ -6,7 +6,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::FutureExt as _;
 
 use super::super::super::widgets::op_picker::OpPickerState;
-use super::super::message::{ManagerMessage, execute_role_source_persist, update_manager};
+use super::super::effects::execute_role_source_persist;
+use super::super::message::{ManagerMessage, update_manager};
 use super::super::mount_display::workspace_mounts_content_width_with_cache;
 use super::super::state::auth_flat_rows;
 use super::super::state::{

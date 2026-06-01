@@ -6,6 +6,7 @@ pub mod auth_kind;
 mod create;
 pub(crate) mod editor_footer;
 pub(crate) mod editor_geometry;
+pub(crate) mod effects;
 pub(crate) mod file_browser;
 pub mod input;
 pub(crate) mod list_geometry;
@@ -20,7 +21,8 @@ pub mod state;
 
 pub use crate::console::tui::render::render;
 pub use input::{InputOutcome, handle_key};
-pub(crate) use message::{ManagerMessage, poll_background_messages, update_manager};
+pub(crate) use effects::poll_background_messages;
+pub(crate) use message::{ManagerMessage, update_manager};
 pub use pre_render::prepare_for_render;
 pub use state::{ManagerStage, ManagerState};
 
