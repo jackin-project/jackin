@@ -10,8 +10,6 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
-use std::collections::BTreeMap;
-
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use jackin_console::tui::auth::AuthKind;
 use crate::console::tui::render::modal_layout::{
@@ -28,11 +26,11 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
-    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
-    render_tab_strip,
+    SecretValueDisplay, action_row_style, render_tab_strip,
 };
 use jackin_console::tui::screens::settings::view::{
-    general_lines as settings_general_lines, tab_labels, trust_lines as settings_trust_lines,
+    env_lines as settings_env_lines, general_lines as settings_general_lines, tab_labels,
+    trust_lines as settings_trust_lines,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
@@ -219,57 +217,17 @@ fn global_mount_lines(
 
 fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
     let rows = settings_env_flat_rows(state);
-    let mut lines = Vec::with_capacity(rows.len());
-    let label_width = 22;
     let show_cursor =
         !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
-    for (i, row) in rows.iter().enumerate() {
-        let selected = show_cursor && (state.env.selected == i);
-        let cursor_col = if selected { "▸ " } else { "  " };
-        match row {
-            SettingsEnvRow::Key { scope, key } => {
-                let Some(value) = settings_env_value(state, scope, key) else {
-                    continue;
-                };
-                let masked = !state
-                    .env
-                    .unmasked_rows
-                    .contains(&(scope.clone(), key.clone()));
-                lines.push(render_secret_key_line(
-                    selected,
-                    cursor_col,
-                    key,
-                    secret_value_display(value),
-                    masked,
-                    area_width,
-                    label_width,
-                ));
-            }
-            SettingsEnvRow::GlobalAddSentinel => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}+ Add environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SettingsEnvRow::RoleHeader { role, expanded } => {
-                let arrow = if *expanded { "▼" } else { "▶" };
-                let count = state.env.pending.roles.get(role).map_or(0, BTreeMap::len);
-                lines.push(Line::from(vec![
-                    Span::raw(cursor_col.to_string()),
-                    Span::styled(arrow.to_string(), disclosure_style()),
-                    Span::styled(format!(" Role: {role}  ({count} vars)"), disclosure_style()),
-                ]));
-            }
-            SettingsEnvRow::RoleAddSentinel(role) => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}+ Add {role} environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SettingsEnvRow::SectionSpacer => lines.push(Line::from("")),
-        }
-    }
-    lines
+    settings_env_lines(
+        &rows,
+        state.env.selected,
+        show_cursor,
+        area_width,
+        |scope, key| settings_env_value(state, scope, key).map(secret_value_display),
+        |scope, key| state.env.unmasked_rows.contains(&(scope.clone(), key.to_string())),
+        |role| state.env.pending.roles.get(role).map_or(0, std::collections::BTreeMap::len),
+    )
 }
 
 fn secret_value_display(value: &EnvValue) -> SecretValueDisplay<'_> {

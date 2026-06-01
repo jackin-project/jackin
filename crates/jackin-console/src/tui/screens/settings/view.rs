@@ -1,6 +1,7 @@
 //! Settings screen view helpers.
 
 use super::model::SettingsAuthRow;
+use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
 use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
@@ -8,6 +9,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
+};
+
+use crate::tui::components::editor_rows::{
+    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
 };
 
 #[must_use]
@@ -124,6 +129,65 @@ pub fn trust_lines(
     lines
 }
 
+#[must_use]
+pub fn env_lines<'a>(
+    rows: &[SettingsEnvRow],
+    selected_row: usize,
+    show_cursor: bool,
+    area_width: u16,
+    value_for: impl Fn(&SettingsEnvScope, &str) -> Option<SecretValueDisplay<'a>>,
+    is_unmasked: impl Fn(&SettingsEnvScope, &str) -> bool,
+    role_var_count: impl Fn(&str) -> usize,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::with_capacity(rows.len());
+    let label_width = 22;
+    for (i, row) in rows.iter().enumerate() {
+        let selected = show_cursor && (selected_row == i);
+        let cursor_col = if selected { "\u{25b8} " } else { "  " };
+        match row {
+            SettingsEnvRow::Key { scope, key } => {
+                let Some(value) = value_for(scope, key) else {
+                    continue;
+                };
+                lines.push(render_secret_key_line(
+                    selected,
+                    cursor_col,
+                    key,
+                    value,
+                    !is_unmasked(scope, key),
+                    area_width,
+                    label_width,
+                ));
+            }
+            SettingsEnvRow::GlobalAddSentinel => {
+                lines.push(Line::from(Span::styled(
+                    format!("{cursor_col}+ Add environment variable"),
+                    action_row_style(selected),
+                )));
+            }
+            SettingsEnvRow::RoleHeader { role, expanded } => {
+                let arrow = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
+                lines.push(Line::from(vec![
+                    Span::raw(cursor_col.to_string()),
+                    Span::styled(arrow.to_string(), disclosure_style()),
+                    Span::styled(
+                        format!(" Role: {role}  ({} vars)", role_var_count(role)),
+                        disclosure_style(),
+                    ),
+                ]));
+            }
+            SettingsEnvRow::RoleAddSentinel(role) => {
+                lines.push(Line::from(Span::styled(
+                    format!("{cursor_col}+ Add {role} environment variable"),
+                    action_row_style(selected),
+                )));
+            }
+            SettingsEnvRow::SectionSpacer => lines.push(Line::from("")),
+        }
+    }
+    lines
+}
+
 fn truncate(value: &str, width: usize) -> String {
     let mut out: String = value.chars().take(width).collect();
     if value.chars().count() > width && width > 1 {
@@ -211,6 +275,37 @@ mod tests {
         assert!(rendered.starts_with("\u{25b8} very-long-role-name-that-wi\u{2026}"));
         assert!(rendered.contains("trusted"));
         assert!(rendered.contains("https://github.com/example/role"));
+    }
+
+    #[test]
+    fn env_lines_render_key_header_and_sentinels() {
+        let rows = vec![
+            SettingsEnvRow::Key {
+                scope: SettingsEnvScope::Global,
+                key: "TOKEN".to_string(),
+            },
+            SettingsEnvRow::GlobalAddSentinel,
+            SettingsEnvRow::RoleHeader {
+                role: "architect".to_string(),
+                expanded: true,
+            },
+            SettingsEnvRow::RoleAddSentinel("architect".to_string()),
+        ];
+
+        let lines = env_lines(
+            &rows,
+            1,
+            true,
+            80,
+            |_, key| (key == "TOKEN").then_some(SecretValueDisplay::Plain("secret")),
+            |_, key| key == "TOKEN",
+            |_| 2,
+        );
+
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} + Add environment variable");
+        assert!(lines[2].spans[2].content.contains("Role: architect  (2 vars)"));
+        assert_eq!(lines[3].spans[0].content.as_ref(), "  + Add architect environment variable");
     }
 
     #[test]
