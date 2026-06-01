@@ -32,6 +32,7 @@ const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.
 pub(super) enum SettingsModalOutcome {
     Continue,
     SaveSettings,
+    OpenGlobalMountFileBrowser,
 }
 
 #[derive(Debug)]
@@ -1157,7 +1158,7 @@ pub(super) fn handle_settings_confirm_modal(
             ModalOutcome::Commit(value) => {
                 let committed_target = target.clone();
                 settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
-                commit_text(&mut settings.mounts, &committed_target, &value);
+                outcome = commit_text(&mut settings.mounts, &committed_target, &value);
             }
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
@@ -1248,7 +1249,7 @@ pub(super) fn handle_settings_confirm_modal(
                 // otherwise stash this already-committed picker as
                 // the RolePicker's parent — Esc on RolePicker would
                 // then resurrect a consumed ScopePicker.
-                commit_add_scope_choice(settings, choice);
+                outcome = commit_add_scope_choice(settings, choice);
             }
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
@@ -1265,7 +1266,7 @@ pub(super) fn handle_settings_confirm_modal(
                 if let Some(draft) = settings.mounts.add_draft.as_mut() {
                     draft.scope = Some(role.key());
                     settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });
-                    open_global_mount_file_browser(&mut settings.mounts);
+                    outcome = SettingsModalOutcome::OpenGlobalMountFileBrowser;
                 } else {
                     settings.mounts.error = Some(ADD_DRAFT_LOST.into());
                 }
@@ -1537,11 +1538,11 @@ fn commit_text(
     global: &mut crate::console::tui::state::GlobalMountsState<'_>,
     target: &GlobalMountTextTarget,
     value: &str,
-) {
+) -> SettingsModalOutcome {
     let trimmed = value.trim();
     match target {
         GlobalMountTextTarget::AddScope => {
-            commit_add_scope_text(global, trimmed);
+            return commit_add_scope_text(global, trimmed);
         }
         GlobalMountTextTarget::AddName => {
             commit_add_name_text(global, trimmed);
@@ -1555,7 +1556,7 @@ fn commit_text(
         GlobalMountTextTarget::Source => {
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(MOUNT_GONE.into());
-                return;
+                return SettingsModalOutcome::Continue;
             };
             row.mount.src = resolve_path(trimmed);
             global.clear_modal_chain();
@@ -1563,7 +1564,7 @@ fn commit_text(
         GlobalMountTextTarget::Destination => {
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(MOUNT_GONE.into());
-                return;
+                return SettingsModalOutcome::Continue;
             };
             row.mount.dst = trimmed.to_string();
             global.clear_modal_chain();
@@ -1571,7 +1572,7 @@ fn commit_text(
         GlobalMountTextTarget::Scope => {
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(MOUNT_GONE.into());
-                return;
+                return SettingsModalOutcome::Continue;
             };
             row.scope = scope_value(trimmed);
             global.clear_modal_chain();
@@ -1579,16 +1580,17 @@ fn commit_text(
         GlobalMountTextTarget::Rename => {
             if trimmed.is_empty() {
                 global.error = Some(MOUNT_NAME_EMPTY.into());
-                return;
+                return SettingsModalOutcome::Continue;
             }
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(MOUNT_GONE.into());
-                return;
+                return SettingsModalOutcome::Continue;
             };
             row.name = trimmed.to_string();
             global.clear_modal_chain();
         }
     }
+    SettingsModalOutcome::Continue
 }
 
 fn commit_env_text(
@@ -1656,13 +1658,16 @@ fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsE
     });
 }
 
-fn commit_add_scope_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
+fn commit_add_scope_text(
+    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
+    value: &str,
+) -> SettingsModalOutcome {
     let Some(draft) = global.add_draft.as_mut() else {
         global.error = Some(ADD_DRAFT_LOST.into());
-        return;
+        return SettingsModalOutcome::Continue;
     };
     draft.scope = scope_value(value);
-    open_global_mount_file_browser(global);
+    SettingsModalOutcome::OpenGlobalMountFileBrowser
 }
 
 fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
@@ -1708,20 +1713,6 @@ fn open_global_mount_scope_picker(global: &mut crate::console::tui::state::Globa
     global.add_draft = Some(GlobalMountDraft::default());
     global.modal_parents.clear();
     global.modal = Some(scope_picker_modal());
-}
-
-fn open_global_mount_file_browser(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
-    match super::new_file_browser_from_home() {
-        Ok(state) => {
-            global.open_sub_modal(GlobalMountModal::FileBrowser {
-                state: Box::new(state),
-            });
-        }
-        Err(err) => {
-            global.add_draft = None;
-            global.error = Some(err.to_string());
-        }
-    }
 }
 
 fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
@@ -2091,13 +2082,14 @@ const fn scope_picker_modal() -> GlobalMountModal<'static> {
 fn commit_add_scope_choice(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     choice: jackin_console::tui::components::scope_picker::ScopeChoice,
-) {
+) -> SettingsModalOutcome {
     match choice {
         jackin_console::tui::components::scope_picker::ScopeChoice::AllAgents => {
-            commit_text(&mut settings.mounts, &GlobalMountTextTarget::AddScope, "");
+            commit_text(&mut settings.mounts, &GlobalMountTextTarget::AddScope, "")
         }
         jackin_console::tui::components::scope_picker::ScopeChoice::SpecificAgent => {
             open_global_mount_role_picker(settings);
+            SettingsModalOutcome::Continue
         }
     }
 }
@@ -2197,6 +2189,21 @@ mod tests {
                     settings.mounts.exit_requested = true;
                 }
                 Err(err) => settings.mounts.error = Some(err.to_string()),
+            }
+        }
+        if matches!(outcome, SettingsModalOutcome::OpenGlobalMountFileBrowser) {
+            match crate::console::services::file_browser::from_home() {
+                Ok(file_browser) => {
+                    settings
+                        .mounts
+                        .open_sub_modal(GlobalMountModal::FileBrowser {
+                            state: Box::new(file_browser),
+                        });
+                }
+                Err(error) => {
+                    settings.mounts.add_draft = None;
+                    settings.mounts.error = Some(error.to_string());
+                }
             }
         }
         assert!(open_url.is_none(), "test helper did not expect URL-open");

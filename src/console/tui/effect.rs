@@ -19,6 +19,7 @@ pub(crate) enum ManagerEffect {
     },
     OpenCreatePreludeFileBrowser,
     OpenEditorAddMountFileBrowser,
+    OpenGlobalMountFileBrowser,
     ValidateOpCommit {
         op_ref: crate::operator_env::OpRef,
         is_settings: bool,

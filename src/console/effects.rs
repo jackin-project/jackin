@@ -72,10 +72,32 @@ pub(crate) fn execute_manager_effect(
         ManagerEffect::OpenEditorAddMountFileBrowser => {
             execute_editor_add_mount_file_browser_open(state);
         }
+        ManagerEffect::OpenGlobalMountFileBrowser => {
+            execute_global_mount_file_browser_open(state);
+        }
         ManagerEffect::ValidateOpCommit {
             op_ref,
             is_settings,
         } => execute_op_commit_validation(state, op_ref, is_settings),
+    }
+}
+
+fn execute_global_mount_file_browser_open(state: &mut ManagerState<'_>) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    match crate::console::services::file_browser::from_home() {
+        Ok(file_browser) => {
+            settings
+                .mounts
+                .open_sub_modal(GlobalMountModal::FileBrowser {
+                    state: Box::new(file_browser),
+                });
+        }
+        Err(error) => {
+            settings.mounts.add_draft = None;
+            settings.mounts.error = Some(error.to_string());
+        }
     }
 }
 

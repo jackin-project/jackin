@@ -204,6 +204,17 @@ pub fn handle_key(
         ) {
             execute_manager_effect(state, config, paths, ConsoleEffect::SaveSettings.into());
         }
+        if matches!(
+            modal_outcome,
+            global_mounts::SettingsModalOutcome::OpenGlobalMountFileBrowser
+        ) {
+            execute_manager_effect(
+                state,
+                config,
+                paths,
+                ManagerEffect::OpenGlobalMountFileBrowser,
+            );
+        }
         global_mounts::after_settings_event(state);
         if let Some(url) = open_url {
             return Ok(InputOutcome::OpenUrl(url));
