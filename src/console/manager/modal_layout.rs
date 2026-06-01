@@ -1,55 +1,41 @@
-//! Modal geometry shared by render and input hit-testing.
-
-use jackin_console::layout::centered_rect_fixed;
 use ratatui::layout::Rect;
 
 use crate::console::manager::state::Modal;
 use crate::console::widgets::auth_panel;
 use crate::selector::RolePickerState;
 use jackin_console::widgets::confirm_save;
+use jackin_console::widgets::modal_rects;
 
 pub(crate) fn text_input_rect(outer: Rect) -> Rect {
-    centered_rect_fixed(outer, 60, 5)
+    modal_rects::text_input_rect(outer)
 }
 
 pub(crate) fn source_picker_rect(outer: Rect) -> Rect {
-    centered_rect_fixed(outer, 50, 5)
+    modal_rects::source_picker_rect(outer)
 }
 
 pub(crate) fn scope_picker_rect(outer: Rect) -> Rect {
-    centered_rect_fixed(outer, 50, 5)
+    modal_rects::scope_picker_rect(outer)
 }
 
 pub(crate) fn op_picker_rect(outer: Rect) -> Rect {
-    centered_rect_fixed(outer, 80, 22)
+    modal_rects::op_picker_rect(outer)
 }
 
 pub(crate) fn role_picker_rect(outer: Rect, state: &RolePickerState) -> Rect {
-    let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
-    centered_rect_fixed(outer, 50, rows)
+    modal_rects::role_picker_rect_for_count(outer, state.filtered.len())
 }
 
 pub(crate) fn confirm_rect(outer: Rect, state: &jackin_tui::components::ConfirmState) -> Rect {
-    centered_rect_fixed(
-        outer,
-        jackin_tui::components::confirm_width_pct(state),
-        jackin_tui::components::confirm_required_height(state),
-    )
+    modal_rects::confirm_rect(outer, state)
 }
 
 pub(crate) fn mount_choice_rect(outer: Rect) -> Rect {
-    let w = outer.width.min(80);
-    let h = 6.min(outer.height);
-    Rect {
-        x: outer.x + outer.width.saturating_sub(w) / 2,
-        y: outer.y + outer.height.saturating_sub(h) / 2,
-        width: w,
-        height: h,
-    }
+    modal_rects::mount_choice_rect(outer)
 }
 
 pub(crate) fn auth_form_rect(outer: Rect, state: &auth_panel::AuthForm) -> Rect {
-    centered_rect_fixed(outer, 80, auth_panel::required_height(state))
+    modal_rects::auth_form_rect_for_height(outer, auth_panel::required_height(state))
 }
 
 /// Single source of truth for modal size and placement.
@@ -100,5 +86,5 @@ pub(crate) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
         Modal::ScopePicker { .. } => return scope_picker_rect(outer),
         Modal::AuthForm { state, .. } => return auth_form_rect(outer, state.as_ref()),
     };
-    centered_rect_fixed(outer, pct_w, height_rows)
+    jackin_console::layout::centered_rect_fixed(outer, pct_w, height_rows)
 }
