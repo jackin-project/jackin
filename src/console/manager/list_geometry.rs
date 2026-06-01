@@ -398,58 +398,93 @@ pub(crate) fn sidebar_inputs_for_workspace<'a>(
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
     let picker_role = picker_role_from_state(state);
-    let global_rows = global_rows_for_selected_row(state, config);
     let inline_picker_active =
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
-    let agent_count = if inline_picker_active {
-        0
-    } else {
-        agents_block_agent_count(ws_config, config)
-    };
-    SidebarInputs {
-        workdir: ws.workdir.as_str(),
-        mounts,
-        mount_info_cache: state.mount_info_cache.clone(),
-        ws_config,
-        global_rows,
-        picker_role_label: picker_role
-            .as_ref()
-            .map_or_else(String::new, crate::selector::RoleSelector::key),
-        instance_count: workspace_active_count(
-            &state.instances,
-            Some(ws.name.as_str()),
-            &ws.name,
-            &ws.workdir,
-        ),
-        instance_expanded: state
-            .workspaces
-            .iter()
-            .position(|s| s.name == ws.name)
-            .is_some_and(|idx| state.is_workspace_expanded(idx)),
-        inline_picker_active,
-        show_envs: ws_config.is_some_and(workspace_has_any_env),
-        agent_count,
-    }
+    sidebar_inputs_for_selection(
+        SidebarSelectionInputs {
+            workspace_name: Some(ws.name.as_str()),
+            workspace_label: ws.name.as_str(),
+            workdir: ws.workdir.as_str(),
+            mounts,
+            ws_config,
+            picker_role_label: picker_role
+                .as_ref()
+                .map_or_else(String::new, crate::selector::RoleSelector::key),
+            instance_expanded: state
+                .workspaces
+                .iter()
+                .position(|s| s.name == ws.name)
+                .is_some_and(|idx| state.is_workspace_expanded(idx)),
+            inline_picker_active,
+            show_envs: ws_config.is_some_and(workspace_has_any_env),
+        },
+        config,
+        state,
+    )
 }
 
 pub(crate) fn sidebar_inputs_for_current_dir<'a>(
     cwd_str: &'a str,
     mounts: &'a [crate::workspace::MountConfig],
-    config: &AppConfig,
+    config: &'a AppConfig,
     state: &ManagerState<'_>,
 ) -> SidebarInputs<'a> {
+    sidebar_inputs_for_selection(
+        SidebarSelectionInputs {
+            workspace_name: None,
+            workspace_label: cwd_str,
+            workdir: cwd_str,
+            mounts,
+            ws_config: None,
+            picker_role_label: String::new(),
+            instance_expanded: state.current_dir_expanded,
+            inline_picker_active: false,
+            show_envs: false,
+        },
+        config,
+        state,
+    )
+}
+
+struct SidebarSelectionInputs<'a> {
+    workspace_name: Option<&'a str>,
+    workspace_label: &'a str,
+    workdir: &'a str,
+    mounts: &'a [crate::workspace::MountConfig],
+    ws_config: Option<&'a crate::workspace::WorkspaceConfig>,
+    picker_role_label: String,
+    instance_expanded: bool,
+    inline_picker_active: bool,
+    show_envs: bool,
+}
+
+fn sidebar_inputs_for_selection<'a>(
+    selection: SidebarSelectionInputs<'a>,
+    config: &'a AppConfig,
+    state: &ManagerState<'_>,
+) -> SidebarInputs<'a> {
+    let agent_count = if selection.inline_picker_active {
+        0
+    } else {
+        agents_block_agent_count(selection.ws_config, config)
+    };
     SidebarInputs {
-        workdir: cwd_str,
-        mounts,
+        workdir: selection.workdir,
+        mounts: selection.mounts,
         mount_info_cache: state.mount_info_cache.clone(),
-        ws_config: None,
+        ws_config: selection.ws_config,
         global_rows: global_rows_for_selected_row(state, config),
-        picker_role_label: String::new(),
-        instance_count: workspace_active_count(&state.instances, None, cwd_str, cwd_str),
-        instance_expanded: state.current_dir_expanded,
-        inline_picker_active: false,
-        show_envs: false,
-        agent_count: agents_block_agent_count(None, config),
+        picker_role_label: selection.picker_role_label,
+        instance_count: workspace_active_count(
+            &state.instances,
+            selection.workspace_name,
+            selection.workspace_label,
+            selection.workdir,
+        ),
+        instance_expanded: selection.instance_expanded,
+        inline_picker_active: selection.inline_picker_active,
+        show_envs: selection.show_envs,
+        agent_count,
     }
 }
 
