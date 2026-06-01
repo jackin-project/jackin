@@ -74,6 +74,62 @@ pub fn secret_delete_confirm_prompt(key: &str) -> String {
 }
 
 #[must_use]
+pub fn secret_delete_confirm_state(key: &str) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::new(secret_delete_confirm_prompt(key))
+}
+
+#[must_use]
+pub fn editor_name_input_state<'a>(
+    current: impl Into<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    jackin_tui::components::TextInputState::new("Rename workspace", current)
+}
+
+#[must_use]
+pub fn editor_workdir_pick_state<M: crate::tui::components::workdir_pick::WorkdirMount>(
+    mounts: &[M],
+) -> crate::tui::components::workdir_pick::WorkdirPickState {
+    crate::tui::components::workdir_pick::WorkdirPickState::from_mounts(mounts)
+}
+
+#[must_use]
+pub fn secret_value_input_state<'a>(
+    key: &str,
+    current: impl Into<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    jackin_tui::components::TextInputState::new_allow_empty(format!("Edit {key}"), current)
+}
+
+#[must_use]
+pub fn secret_scope_picker_state() -> crate::tui::components::scope_picker::ScopePickerState {
+    crate::tui::components::scope_picker::ScopePickerState::new()
+}
+
+#[must_use]
+pub fn role_load_input_state<'a>(
+    trusted_roles: Vec<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    let mut state =
+        jackin_tui::components::TextInputState::new_with_forbidden("Load role", "", trusted_roles);
+    state.forbidden_label = "trusted role registry".into();
+    state
+}
+
+#[must_use]
+pub fn mount_destination_input_state<'a>(
+    current: impl Into<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    jackin_tui::components::TextInputState::new("Destination", current)
+}
+
+#[must_use]
+pub fn mount_dst_choice_state(
+    src: impl Into<String>,
+) -> crate::tui::components::mount_dst_choice::MountDstChoiceState {
+    crate::tui::components::mount_dst_choice::MountDstChoiceState::new(src)
+}
+
+#[must_use]
 pub fn role_trust_confirm_state(role: String, repository: String) -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::details(
         "Trust role source",
@@ -624,6 +680,36 @@ mod tests {
             secret_delete_confirm_prompt("TOKEN"),
             "Delete environment variable TOKEN?"
         );
+    }
+
+    #[test]
+    fn editor_modal_state_helpers_name_fields() {
+        assert_eq!(editor_name_input_state("demo").label, "Rename workspace");
+        assert_eq!(editor_name_input_state("demo").value(), "demo");
+        assert_eq!(secret_value_input_state("TOKEN", "value").label, "Edit TOKEN");
+        assert!(secret_value_input_state("TOKEN", "").is_valid());
+        assert_eq!(mount_destination_input_state("/workspace").label, "Destination");
+        assert_eq!(mount_destination_input_state("/workspace").value(), "/workspace");
+    }
+
+    #[test]
+    fn role_load_input_state_names_registry_guard() {
+        let state = role_load_input_state(vec!["known/role".to_string()]);
+
+        assert_eq!(state.label, "Load role");
+        assert_eq!(state.forbidden_label, "trusted role registry");
+        assert_eq!(state.value(), "");
+    }
+
+    #[test]
+    fn secret_delete_confirm_state_uses_key_prompt() {
+        let state = secret_delete_confirm_state("TOKEN");
+
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
+        else {
+            panic!("expected default confirm");
+        };
+        assert_eq!(prompt, "Delete environment variable TOKEN?");
     }
 
     #[test]

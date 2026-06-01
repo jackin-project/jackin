@@ -19,11 +19,12 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
-use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
-    role_trust_confirm_state, secret_delete_confirm_prompt, secret_key_input_state,
-    secrets_scope_label,
+    editor_name_input_state, editor_workdir_pick_state, mount_destination_input_state,
+    mount_dst_choice_state, role_load_input_state, role_trust_confirm_state,
+    secret_delete_confirm_state, secret_key_input_state, secret_scope_picker_state,
+    secret_value_input_state, secrets_scope_label,
 };
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -552,7 +553,6 @@ fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, Stri
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
-    use jackin_tui::components::TextInputState;
     if editor.active_tab == EditorTab::General {
         let FieldFocus::Row(n) = editor.active_field;
         match n {
@@ -565,12 +565,12 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
                 };
                 editor.modal = Some(Modal::TextInput {
                     target: TextInputTarget::Name,
-                    state: TextInputState::new("Rename workspace", current),
+                    state: editor_name_input_state(current),
                 });
             }
             1 if !editor.pending.mounts.is_empty() => {
                 editor.modal = Some(Modal::WorkdirPick {
-                    state: WorkdirPickState::from_mounts(&editor.pending.mounts),
+                    state: editor_workdir_pick_state(&editor.pending.mounts),
                 });
             }
             _ => {}
@@ -579,7 +579,6 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
 }
 
 fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
-    use jackin_tui::components::TextInputState;
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
     let plan = editor_update::secret_enter_plan_for_row(rows.get(n), |scope, key| {
@@ -595,15 +594,14 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
                     scope,
                     key: key.clone(),
                 },
-                state: TextInputState::new_allow_empty(format!("Edit {key}"), current),
+                state: secret_value_input_state(&key, current),
             });
         }
         SecretsEnterPlan::OpenScopePicker => {
             // Workspace sentinel asks the scope question first; the
             // per-role sentinel fast-path stays direct.
-            use jackin_console::tui::components::scope_picker::ScopePickerState;
             editor.modal = Some(Modal::ScopePicker {
-                state: ScopePickerState::new(),
+                state: secret_scope_picker_state(),
             });
         }
         SecretsEnterPlan::ExpandRole(role) => {
@@ -643,8 +641,6 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
 }
 
 fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
-    use jackin_tui::components::TextInputState;
-
     let trusted_roles: Vec<String> = config
         .roles
         .iter()
@@ -656,25 +652,22 @@ fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
         "opening role loader input; {trusted_roles_count} trusted role(s) are blocked by the duplicate guard",
         trusted_roles_count = trusted_roles.len()
     );
-    let mut state = TextInputState::new_with_forbidden("Load role", "", trusted_roles);
-    state.forbidden_label = "trusted role registry".into();
     editor.modal = Some(Modal::TextInput {
         target: TextInputTarget::Role,
-        state,
+        state: role_load_input_state(trusted_roles),
     });
 }
 
 fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
-    use jackin_tui::components::ConfirmState;
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
     let Some((scope, key)) = editor_update::secret_delete_target_for_row(rows.get(n)) else {
         return;
     };
-    let prompt = secret_delete_confirm_prompt(&key);
+    let state = secret_delete_confirm_state(&key);
     editor.modal = Some(Modal::Confirm {
         target: ConfirmTarget::DeleteEnvVar { scope, key },
-        state: ConfirmState::new(prompt),
+        state,
     });
 }
 
@@ -1909,7 +1902,7 @@ fn dispatch_editor_mount_dst_choice(
                     .push(crate::console::domain::shared_mount_config(src, src, false));
                 editor.open_sub_modal(Modal::TextInput {
                     target: crate::console::tui::state::TextInputTarget::MountDst,
-                    state: jackin_tui::components::TextInputState::new("Destination", src),
+                    state: mount_destination_input_state(src),
                 });
             } else {
                 editor.clear_modal_chain();
@@ -1927,7 +1920,6 @@ pub(in crate::console) fn apply_file_browser_to_editor(
     editor: &mut EditorState<'_>,
     path: std::path::PathBuf,
 ) {
-    use jackin_console::tui::components::mount_dst_choice::MountDstChoiceState;
     match target {
         FileBrowserTarget::EditAddMountSrc => {
             // Defer the mount push to the choice modal: in the common case
@@ -1936,7 +1928,7 @@ pub(in crate::console) fn apply_file_browser_to_editor(
             // a provisional mount and opens the TextInput.
             editor.open_sub_modal(Modal::MountDstChoice {
                 target,
-                state: MountDstChoiceState::new(path.display().to_string()),
+                state: mount_dst_choice_state(path.display().to_string()),
             });
         }
         FileBrowserTarget::CreateFirstMountSrc => {
