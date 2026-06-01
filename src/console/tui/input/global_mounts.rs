@@ -1803,28 +1803,10 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
 
 fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
-    let Some(row) = rows.get(settings.env.selected).cloned() else {
+    let Some((scope, label)) =
+        settings_update::settings_env_add_target_for_row(rows.get(settings.env.selected))
+    else {
         return;
-    };
-    let (scope, label) = match row {
-        SettingsEnvRow::Key {
-            scope: SettingsEnvScope::Global,
-            ..
-        }
-        | SettingsEnvRow::GlobalAddSentinel => (
-            SettingsEnvScope::Global,
-            "New global environment key".to_string(),
-        ),
-        SettingsEnvRow::RoleHeader { role, .. }
-        | SettingsEnvRow::Key {
-            scope: SettingsEnvScope::Role(role),
-            ..
-        }
-        | SettingsEnvRow::RoleAddSentinel(role) => (
-            SettingsEnvScope::Role(role.clone()),
-            format!("New {role} environment key"),
-        ),
-        SettingsEnvRow::SectionSpacer => return,
     };
     let state = settings_env_key_input_state(&settings.env, &scope, label, "");
     settings.env.modal = Some(SettingsEnvModal::Text {
@@ -1859,16 +1841,9 @@ fn open_settings_env_picker_modal(
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let rows = settings_env_flat_rows(settings);
-    let Some(row) = rows.get(settings.env.selected).cloned() else {
-        return;
-    };
-    let target = match row {
-        SettingsEnvRow::Key { scope, key } => Some((scope, Some(key))),
-        SettingsEnvRow::GlobalAddSentinel => Some((SettingsEnvScope::Global, None)),
-        SettingsEnvRow::RoleAddSentinel(role) => Some((SettingsEnvScope::Role(role), None)),
-        SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer => None,
-    };
-    let Some(target) = target else {
+    let Some(target) =
+        settings_update::settings_env_picker_target_for_row(rows.get(settings.env.selected))
+    else {
         return;
     };
     settings.env.pending_picker_target = Some(target);

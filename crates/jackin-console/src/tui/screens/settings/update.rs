@@ -224,6 +224,45 @@ pub fn remove_settings_env_row<V>(
 }
 
 #[must_use]
+pub fn settings_env_add_target_for_row(
+    row: Option<&SettingsEnvRow>,
+) -> Option<(SettingsEnvScope, String)> {
+    match row? {
+        SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Global,
+            ..
+        }
+        | SettingsEnvRow::GlobalAddSentinel => {
+            Some((SettingsEnvScope::Global, "New global environment key".to_string()))
+        }
+        SettingsEnvRow::RoleHeader { role, .. }
+        | SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Role(role),
+            ..
+        }
+        | SettingsEnvRow::RoleAddSentinel(role) => Some((
+            SettingsEnvScope::Role(role.clone()),
+            format!("New {role} environment key"),
+        )),
+        SettingsEnvRow::SectionSpacer => None,
+    }
+}
+
+#[must_use]
+pub fn settings_env_picker_target_for_row(
+    row: Option<&SettingsEnvRow>,
+) -> Option<(SettingsEnvScope, Option<String>)> {
+    match row? {
+        SettingsEnvRow::Key { scope, key } => Some((scope.clone(), Some(key.clone()))),
+        SettingsEnvRow::GlobalAddSentinel => Some((SettingsEnvScope::Global, None)),
+        SettingsEnvRow::RoleAddSentinel(role) => {
+            Some((SettingsEnvScope::Role(role.clone()), None))
+        }
+        SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer => None,
+    }
+}
+
+#[must_use]
 pub fn step_cursor_down_by<F>(candidate: usize, max: usize, mut is_skipped: F) -> usize
 where
     F: FnMut(usize) -> bool,
@@ -426,5 +465,54 @@ mod tests {
 
         assert!(!pending.roles["alpha"].contains_key("ROLE_B"));
         assert_eq!(selected, settings_env_flat_row_count(&pending, &expanded) - 1);
+    }
+
+    #[test]
+    fn settings_env_add_target_follows_row_scope() {
+        let global = SettingsEnvRow::GlobalAddSentinel;
+        let role = SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Role("alpha".to_string()),
+            key: "TOKEN".to_string(),
+        };
+
+        assert_eq!(
+            settings_env_add_target_for_row(Some(&global)),
+            Some((
+                SettingsEnvScope::Global,
+                "New global environment key".to_string()
+            ))
+        );
+        assert_eq!(
+            settings_env_add_target_for_row(Some(&role)),
+            Some((
+                SettingsEnvScope::Role("alpha".to_string()),
+                "New alpha environment key".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn settings_env_picker_target_skips_headers_and_spacers() {
+        let key = SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Role("alpha".to_string()),
+            key: "TOKEN".to_string(),
+        };
+        let header = SettingsEnvRow::RoleHeader {
+            role: "alpha".to_string(),
+            expanded: true,
+        };
+
+        assert_eq!(
+            settings_env_picker_target_for_row(Some(&key)),
+            Some((
+                SettingsEnvScope::Role("alpha".to_string()),
+                Some("TOKEN".to_string())
+            ))
+        );
+        assert_eq!(settings_env_picker_target_for_row(Some(&header)), None);
+        assert_eq!(
+            settings_env_picker_target_for_row(Some(&SettingsEnvRow::GlobalAddSentinel)),
+            Some((SettingsEnvScope::Global, None))
+        );
     }
 }
