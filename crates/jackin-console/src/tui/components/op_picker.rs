@@ -613,6 +613,32 @@ pub fn field_label_commit_plan<Account, Vault, Item>(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExistingFieldCommitPlan {
+    ExistingReference,
+    EditItemField {
+        section: Option<String>,
+        field_id: String,
+        field_label: String,
+    },
+}
+
+pub fn existing_field_commit_plan(
+    mode: &OpPickerMode,
+    field_id: &str,
+    field_label: &str,
+    selected_section: Option<String>,
+) -> ExistingFieldCommitPlan {
+    if mode.is_create() {
+        return ExistingFieldCommitPlan::EditItemField {
+            section: selected_section,
+            field_id: field_id.to_string(),
+            field_label: field_label.to_string(),
+        };
+    }
+    ExistingFieldCommitPlan::ExistingReference
+}
+
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
@@ -2162,6 +2188,30 @@ mod tests {
                 section: None,
                 field_label: "password".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn existing_field_commit_plan_routes_create_mode_to_field_target_data() {
+        assert_eq!(
+            existing_field_commit_plan(
+                &OpPickerMode::Create {
+                    item_name_default: String::new(),
+                    field_label_default: String::new(),
+                },
+                "field-id",
+                "token",
+                Some("api".to_string()),
+            ),
+            ExistingFieldCommitPlan::EditItemField {
+                section: Some("api".to_string()),
+                field_id: "field-id".to_string(),
+                field_label: "token".to_string(),
+            }
+        );
+        assert_eq!(
+            existing_field_commit_plan(&OpPickerMode::Browse, "field-id", "token", None),
+            ExistingFieldCommitPlan::ExistingReference,
         );
     }
 
