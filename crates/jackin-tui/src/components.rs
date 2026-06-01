@@ -55,4 +55,4 @@ pub use status_footer::{
 };
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_label_line, tab_underline_line};
-pub use text_input::{BorderStyle, TextInput, TextInputState, render_text_input};
+pub use text_input::{BorderStyle, TextField, TextInput, TextInputState, render_text_input};

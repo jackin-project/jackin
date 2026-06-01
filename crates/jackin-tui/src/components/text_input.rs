@@ -16,7 +16,149 @@ use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::{
     INPUT_BG_DIM as INPUT_BG_DIM_RGB, PHOSPHOR_GREEN as PHOSPHOR_GREEN_RGB, WHITE as WHITE_RGB,
 };
-use crate::{ModalOutcome, TextField};
+use crate::ModalOutcome;
+
+/// Cross-surface single-line text-input model. Holds the buffer,
+/// cursor position (in bytes), an optional max length, and an
+/// optional forbidden set used for duplicate detection.
+#[derive(Debug, Clone)]
+pub struct TextField {
+    value: String,
+    cursor: usize,
+    max_chars: Option<usize>,
+    forbidden: Vec<String>,
+    allow_empty: bool,
+}
+
+impl Default for TextField {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
+
+impl TextField {
+    pub fn new(initial: impl Into<String>) -> Self {
+        let value: String = initial.into();
+        let cursor = value.len();
+        Self {
+            value,
+            cursor,
+            max_chars: None,
+            forbidden: Vec::new(),
+            allow_empty: false,
+        }
+    }
+
+    pub fn with_max_chars(mut self, n: usize) -> Self {
+        self.max_chars = Some(n);
+        self
+    }
+
+    pub fn with_forbidden(mut self, forbidden: Vec<String>) -> Self {
+        self.forbidden = forbidden;
+        self
+    }
+
+    pub fn with_allow_empty(mut self, allow: bool) -> Self {
+        self.allow_empty = allow;
+        self
+    }
+
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    pub fn trimmed_value(&self) -> String {
+        self.value.trim().to_string()
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let prev = self.value[..self.cursor]
+            .char_indices()
+            .last()
+            .map_or(0, |(idx, _)| idx);
+        self.cursor = prev;
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        if self.cursor >= self.value.len() {
+            return;
+        }
+        let next = self.value[self.cursor..]
+            .chars()
+            .next()
+            .map_or(self.value.len(), |ch| self.cursor + ch.len_utf8());
+        self.cursor = next;
+    }
+
+    pub fn move_cursor_to_start(&mut self) {
+        self.cursor = 0;
+    }
+
+    pub fn move_cursor_to_end(&mut self) {
+        self.cursor = self.value.len();
+    }
+
+    pub fn len_chars(&self) -> usize {
+        self.value.chars().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.value.is_empty()
+    }
+
+    pub fn insert_char(&mut self, c: char) {
+        if c.is_control() {
+            return;
+        }
+        if self.max_chars.is_some_and(|max| self.len_chars() >= max) {
+            return;
+        }
+        self.value.insert(self.cursor, c);
+        self.cursor += c.len_utf8();
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let prev = self.value[..self.cursor]
+            .char_indices()
+            .last()
+            .map_or(0, |(idx, _)| idx);
+        self.value.replace_range(prev..self.cursor, "");
+        self.cursor = prev;
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.cursor >= self.value.len() {
+            return;
+        }
+        let next = self.value[self.cursor..]
+            .chars()
+            .next()
+            .map_or(self.value.len(), |ch| self.cursor + ch.len_utf8());
+        self.value.replace_range(self.cursor..next, "");
+    }
+
+    pub fn is_duplicate(&self) -> bool {
+        let v = self.trimmed_value();
+        !v.is_empty() && self.forbidden.iter().any(|f| f == &v)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let v = self.trimmed_value();
+        let empty_ok = self.allow_empty || !v.is_empty();
+        empty_ok && !self.forbidden.iter().any(|f| f == &v)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorderStyle {
