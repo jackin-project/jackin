@@ -30,6 +30,13 @@ pub struct SidebarLayout {
     pub roles: Option<Rect>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarScrollArea {
+    pub area: Rect,
+    pub content_width: usize,
+    pub content_height: usize,
+}
+
 #[must_use]
 pub fn compute_sidebar_layout(area: Rect, metrics: SidebarLayoutMetrics) -> SidebarLayout {
     let mut constraints = Vec::new();
@@ -106,6 +113,24 @@ pub fn env_block_height(workspace_keys: usize, role_keys: usize) -> u16 {
     (total_rows + 2).min(20) as u16
 }
 
+pub fn clamp_scroll_area_x(area: SidebarScrollArea, value: &mut u16) {
+    clamp_scroll_x(area.content_width, scroll_viewport_width(area.area), value);
+}
+
+pub fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
+    clamp_scroll_x(
+        area.content_height,
+        scroll_viewport_height(area.area),
+        value,
+    );
+}
+
+#[must_use]
+pub fn scroll_area_scrollable(area: SidebarScrollArea) -> bool {
+    is_scrollable(area.content_width, scroll_viewport_width(area.area))
+        || is_scrollable(area.content_height, scroll_viewport_height(area.area))
+}
+
 fn mount_data_row_count(same_path_rows: impl IntoIterator<Item = bool>) -> Option<usize> {
     let mut saw_row = false;
     let mut lines = 0;
@@ -114,6 +139,22 @@ fn mount_data_row_count(same_path_rows: impl IntoIterator<Item = bool>) -> Optio
         lines += if same_path { 1 } else { 2 };
     }
     saw_row.then_some(lines)
+}
+
+fn clamp_scroll_x(content: usize, viewport: usize, value: &mut u16) {
+    jackin_tui::components::scrollable_panel::clamp_scroll_offset(content, viewport, value);
+}
+
+fn scroll_viewport_width(area: Rect) -> usize {
+    jackin_tui::components::scrollable_panel::viewport_width(area)
+}
+
+fn scroll_viewport_height(area: Rect) -> usize {
+    jackin_tui::components::scrollable_panel::viewport_height(area)
+}
+
+fn is_scrollable(content: usize, viewport: usize) -> bool {
+    jackin_tui::components::scrollable_panel::is_scrollable(content, viewport)
 }
 
 #[cfg(test)]
@@ -151,5 +192,25 @@ mod tests {
         assert_eq!(global_mounts_content_height([]), 1);
         assert_eq!(global_mounts_content_height([true, false]), 4);
         assert_eq!(global_mount_rows_height([true, false]), 6);
+    }
+
+    #[test]
+    fn scroll_area_detects_horizontal_and_vertical_overflow() {
+        let area = Rect::new(0, 0, 10, 5);
+        assert!(!scroll_area_scrollable(SidebarScrollArea {
+            area,
+            content_width: 8,
+            content_height: 3,
+        }));
+        assert!(scroll_area_scrollable(SidebarScrollArea {
+            area,
+            content_width: 30,
+            content_height: 3,
+        }));
+        assert!(scroll_area_scrollable(SidebarScrollArea {
+            area,
+            content_width: 8,
+            content_height: 30,
+        }));
     }
 }

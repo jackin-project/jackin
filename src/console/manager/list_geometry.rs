@@ -12,7 +12,7 @@ use crate::console::manager::state::{
 };
 use crate::isolation::MountIsolation;
 use crate::workspace::MountConfig;
-pub(crate) use jackin_console::sidebar_layout::SidebarLayout;
+pub(crate) use jackin_console::sidebar_layout::{SidebarLayout, SidebarScrollArea};
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_selected = state.visual_selected();
@@ -145,20 +145,15 @@ pub(crate) fn current_dir_mount_config(cwd_str: &str) -> MountConfig {
 }
 
 fn clamp_scroll_area(area: SidebarScrollArea, value: &mut u16) {
-    clamp_scroll_x(area.content_width, scroll_viewport_width(area.area), value);
+    jackin_console::sidebar_layout::clamp_scroll_area_x(area, value);
 }
 
 fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
-    clamp_scroll_x(
-        area.content_height,
-        scroll_viewport_height(area.area),
-        value,
-    );
+    jackin_console::sidebar_layout::clamp_scroll_area_y(area, value);
 }
 
 fn scroll_area_scrollable(area: SidebarScrollArea) -> bool {
-    is_scrollable(area.content_width, scroll_viewport_width(area.area))
-        || is_scrollable(area.content_height, scroll_viewport_height(area.area))
+    jackin_console::sidebar_layout::scroll_area_scrollable(area)
 }
 
 fn focused_block_still_scrollable(
@@ -178,16 +173,8 @@ fn focused_block_still_scrollable(
     }
 }
 
-fn clamp_scroll_x(content: usize, viewport: usize, value: &mut u16) {
-    jackin_tui::components::scrollable_panel::clamp_scroll_offset(content, viewport, value);
-}
-
 fn scroll_viewport_width(area: Rect) -> usize {
     jackin_tui::components::scrollable_panel::viewport_width(area)
-}
-
-fn scroll_viewport_height(area: Rect) -> usize {
-    jackin_tui::components::scrollable_panel::viewport_height(area)
 }
 
 fn is_scrollable(content: usize, viewport: usize) -> bool {
@@ -272,13 +259,6 @@ pub(crate) struct SidebarInputs<'a> {
     pub inline_picker_active: bool,
     pub show_envs: bool,
     pub agent_count: usize,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct SidebarScrollArea {
-    pub area: Rect,
-    pub content_width: usize,
-    pub content_height: usize,
 }
 
 pub(crate) struct SidebarScrollAreas {
