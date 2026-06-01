@@ -817,10 +817,8 @@ pub(crate) fn poll_background_messages(
         ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls),
         ManagerBackgroundEvent::Message(ManagerMessage::PollPickerLoads),
     ];
-    if let ManagerStage::Editor(editor) = &mut state.stage {
-        if let Some((load, result)) = crate::console::tui::input::editor::poll_role_load_completion(editor) {
-            messages.push(ManagerBackgroundEvent::RoleLoadFinished { load, result });
-        }
+    if let Some((load, result)) = state.poll_pending_role_load() {
+        messages.push(ManagerBackgroundEvent::RoleLoadFinished { load, result });
     }
     execute_manager_effect(
         state,

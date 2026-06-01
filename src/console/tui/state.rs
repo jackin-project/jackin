@@ -1922,6 +1922,25 @@ impl ManagerState<'_> {
         result.map(|r| (cleanup, r))
     }
 
+    pub(crate) fn poll_pending_role_load(
+        &mut self,
+    ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return None;
+        };
+        let load = editor.pending_role_load.as_mut()?;
+        let result = match load.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Err(anyhow::anyhow!("role loader worker disconnected")),
+        };
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            unreachable!()
+        };
+        let load = editor.pending_role_load.take().expect("polled above");
+        Some((load, result))
+    }
+
     /// Poll the in-flight 1Password op-ref read for the auth-form op picker commit.
     ///
     /// Returns `Some((op_ref, result, is_settings))` when the read has finished,

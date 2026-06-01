@@ -10,15 +10,18 @@ use crate::console::tui::render::mount_display::workspace_mounts_content_width_w
 use crate::console::tui::state::auth_flat_rows;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
-    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,
-    SecretsScopeTag, TextInputTarget,
+    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
+    TextInputTarget,
 };
+#[cfg(test)]
+use crate::console::tui::state::PendingRoleLoad;
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::tui::screens::editor::view::{secrets_forbidden_label, secrets_scope_label};
+#[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use jackin_tui::ModalOutcome;
 
@@ -1724,7 +1727,8 @@ fn poll_role_load(
     true
 }
 
-pub(in crate::console) fn poll_role_load_completion(
+#[cfg(test)]
+fn poll_role_load_completion(
     editor: &mut EditorState<'_>,
 ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
     let Some(load) = editor.pending_role_load.as_mut() else {
