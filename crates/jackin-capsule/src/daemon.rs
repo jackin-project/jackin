@@ -64,11 +64,12 @@ use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
+use crate::pull_request::PullRequestInfo;
 use crate::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode};
 use crate::tui::selection::{SelectionState, selection_text};
 use crate::session::{
-    BranchName, GitContext, Oid, PullRequestInfo, PullRequestLookupOutcome,
-    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
+    BranchName, GitContext, Oid, PullRequestLookupOutcome, SESSION_ENV_PASSTHROUGH, Session,
+    SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};

@@ -8,7 +8,8 @@ use std::path::Path;
 
 use jackin_tui::sanitize_terminal_title;
 
-use crate::session::{PullRequestInfo, Session};
+use crate::pull_request::PullRequestInfo;
+use crate::session::Session;
 
 const OUTER_TERMINAL_TITLE_MAX_CHARS: usize = 180;
 

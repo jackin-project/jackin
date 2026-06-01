@@ -1,7 +1,7 @@
 use jackin_tui::ansi::RESET;
 use jackin_tui::{display_cols, take_display_cols};
 
-use crate::session::PullRequestInfo;
+use crate::pull_request::PullRequestInfo;
 use crate::tui::app::HoverTarget;
 
 pub const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
@@ -244,7 +244,7 @@ pub(crate) fn branch_context_bar_hit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::PullRequestInfo;
+    use crate::pull_request::PullRequestInfo;
 
     fn pull_request_fixture(number: u64) -> PullRequestInfo {
         PullRequestInfo {

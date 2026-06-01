@@ -16,7 +16,7 @@
 ///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
 use crate::container_context::ContainerDiagnostics;
-use crate::session::PullRequestInfo;
+use crate::pull_request::PullRequestInfo;
 
 /// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
 /// rendering and dispatch stay live without copying the data into
@@ -3007,7 +3007,7 @@ mod tests {
     #[test]
     fn github_context_renders_branch_pr_url_and_ci_status() {
         let mut pr = pull_request_fixture();
-        pr.checks = Some(crate::session::PullRequestChecks::from_buckets([
+        pr.checks = Some(crate::pull_request::PullRequestChecks::from_buckets([
             "pass", "pass", "pass", "pass", "skipping",
         ]));
         let view = github_view_for_fixture(&pr);

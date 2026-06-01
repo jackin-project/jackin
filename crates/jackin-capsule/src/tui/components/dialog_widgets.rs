@@ -21,7 +21,7 @@ use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use ratatui::style::Color;
 
 use crate::tui::dialog::Dialog;
-use crate::session::PullRequestInfo;
+use crate::pull_request::PullRequestInfo;
 
 // ---------------------------------------------------------------------------
 // Snapshot type — fully owned so it outlives the Multiplexer borrow

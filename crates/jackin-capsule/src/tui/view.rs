@@ -8,7 +8,7 @@ use crate::tui::layout::Tab;
 use crate::tui::render::{
     PaneBodyCache, PaneBodyRenderStats, RowSnapshot, draw_scrollbar, fill_screen,
 };
-use crate::session::PullRequestInfo;
+use crate::pull_request::PullRequestInfo;
 use crate::tui::selection::{SelectionState, paint_selection_highlight};
 use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
 use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
