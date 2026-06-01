@@ -3819,6 +3819,47 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_open_container_info_pushes_dialog() {
+        let mut mux = single_pane_tab_mux();
+        mux.status_bar.identity_label = "jk-test-container".to_string();
+        mux.status_bar.role = "test-role".to_string();
+
+        mux.apply_action(Action::OpenContainerInfo);
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::ContainerInfo {
+                container_name,
+                copied: false,
+                ..
+            }) if container_name == "jk-test-container"
+        ));
+    }
+
+    #[test]
+    fn apply_action_open_rename_tab_pushes_dialog() {
+        let mut mux = single_pane_tab_mux();
+
+        mux.apply_action(Action::OpenRenameTab(0));
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::RenameTab { tab_idx: 0, .. })
+        ));
+        assert!(mux.last_tab_click.is_none());
+    }
+
+    #[test]
+    fn apply_action_switch_tab_moves_active_tab() {
+        let mut mux = single_pane_tab_mux();
+        mux.tabs.push(Tab::new_single("Shell", 2));
+
+        mux.apply_action(Action::SwitchTab(1));
+
+        assert_eq!(mux.active_tab, 1);
+    }
+
+    #[test]
     fn apply_action_dialog_consume_keeps_dialog_open() {
         let mut mux = single_pane_tab_mux();
         mux.open_command_palette();

@@ -144,6 +144,42 @@ impl Multiplexer {
                 }
                 Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
             }
+            Action::OpenContainerInfo => {
+                self.open_container_info_dialog();
+                Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange))
+            }
+            Action::OpenGithubContext => {
+                self.open_github_context_dialog(Instant::now());
+                Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange))
+            }
+            Action::OpenRenameTab(idx) => {
+                if idx >= self.tabs.len() {
+                    return None;
+                }
+                self.cancel_drag();
+                let initial = self.tabs[idx]
+                    .custom_label()
+                    .map(str::to_owned)
+                    .unwrap_or_default();
+                let input = jackin_tui::TextField::new(initial)
+                    .with_max_chars(crate::dialog::MAX_CUSTOM_LABEL_LEN);
+                self.dialog_push(Dialog::RenameTab {
+                    tab_idx: idx,
+                    input,
+                });
+                self.last_tab_click = None;
+                Some(self.compose_full_frame(FullRedrawReason::DialogChange))
+            }
+            Action::SwitchTab(idx) => {
+                if idx >= self.tabs.len() || idx == self.active_tab {
+                    return None;
+                }
+                self.cancel_drag();
+                let prev = self.active_focused_id();
+                self.active_tab = idx;
+                self.synthesise_focus_swap(prev, self.active_focused_id());
+                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+            }
             Action::Prefix(cmd) => {
                 if self.dialog_captures_input() {
                     None
@@ -391,11 +427,11 @@ impl Multiplexer {
                 self.status_bar.instance_id_label(),
             ) =>
             {
-                match hit {
-                    BranchContextBarHit::Context => self.open_github_context_dialog(Instant::now()),
-                    BranchContextBarHit::Container => self.open_container_info_dialog(),
-                }
-                Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange))
+                let action = match hit {
+                    BranchContextBarHit::Context => Action::OpenGithubContext,
+                    BranchContextBarHit::Container => Action::OpenContainerInfo,
+                };
+                self.apply_action(action)
             }
             InputEvent::MousePress {
                 row: 0,
@@ -416,33 +452,13 @@ impl Multiplexer {
                         })
                         .is_some();
                     if is_double {
-                        self.cancel_drag();
-                        let initial = self.tabs[idx]
-                            .custom_label()
-                            .map(str::to_owned)
-                            .unwrap_or_default();
-                        let input = jackin_tui::TextField::new(initial)
-                            .with_max_chars(crate::dialog::MAX_CUSTOM_LABEL_LEN);
-                        self.dialog_push(Dialog::RenameTab {
-                            tab_idx: idx,
-                            input,
-                        });
-                        self.last_tab_click = None;
-                        return Some(self.compose_full_frame(FullRedrawReason::DialogChange));
+                        return self.apply_action(Action::OpenRenameTab(idx));
                     }
                     self.last_tab_click = Some((idx, now));
-                    if idx != self.active_tab {
-                        self.cancel_drag();
-                        let prev = self.active_focused_id();
-                        self.active_tab = idx;
-                        self.synthesise_focus_swap(prev, self.active_focused_id());
-                        return Some(self.compose_full_frame(FullRedrawReason::TabSwitch));
-                    }
-                    return None;
+                    return self.apply_action(Action::SwitchTab(idx));
                 }
                 if self.status_bar.hint_at(1, col + 1) {
-                    self.open_command_palette();
-                    return Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay));
+                    return self.apply_action(Action::OpenPalette);
                 }
                 None
             }

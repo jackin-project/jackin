@@ -12,6 +12,10 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     OpenPalette,
+    OpenContainerInfo,
+    OpenGithubContext,
+    OpenRenameTab(usize),
+    SwitchTab(usize),
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
     FocusReport(bool),
