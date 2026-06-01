@@ -14,23 +14,32 @@ Every PR review that touches a TUI surface must verify the diff against this pag
 
 ## Architecture — Model / Update / View
 
-The host console uses a Ratatui-style Model/Update/View separation. This is a **hard requirement** for every new TUI path: it is what makes the update layer testable, the render layer pure, and background I/O non-blocking.
+Every jackin' terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
 
-**Messages and central update.** Every state change that could be driven by a test goes through `ManagerMessage` and `update_manager` instead of mutating `ManagerState` inline in the event handler. Event handlers translate terminal input into messages; `update_manager` applies the message and returns `UpdateResult` carrying a dirty flag. Adding a new input path means adding a `ManagerMessage` variant and a match arm in `update_manager`.
+**Messages and central update.** Every state change that could be driven by a test goes through a semantic `Message` and an update function instead of mutating model state inline in the event handler. Event handlers translate terminal input into messages; update applies the message and returns dirty state plus typed effects. Existing console code may still use names such as `ManagerMessage`, `ManagerState`, `update_manager`, and `UpdateResult`, but new structure should use the same pattern under the owning surface's `src/tui/`.
 
-**Pure view.** Render functions take immutable model state (`&ManagerState`, `&EditorState`, `&SettingsState`). The only mutations allowed before `render` are geometry-prep calls (`prepare_for_render`) that run immediately before the draw and cache content geometry into the state. Nothing that runs inside `terminal.draw(...)` may write to the model, spawn background tasks, or perform I/O.
+**Pure view.** Render functions take immutable model state. The only mutations allowed before `render` are geometry-prep calls that run immediately before the draw and cache render geometry into the model. Nothing that runs inside `terminal.draw(...)` may write to the model, spawn background tasks, persist config, call Docker/git/`op`/`gh`, touch the filesystem, or perform network I/O.
 
-**Background I/O through channels.** Long-running work (instance refresh, role loading, 1Password lookups) runs on background threads that communicate with the event loop through channels. The event loop polls those channels on each tick and routes the results through `ManagerMessage`. No blocking disk, socket, or subprocess call runs on the event-loop thread.
+**External work through typed effects.** Long-running work and non-visual product behavior live outside `src/tui/`. Update returns typed effect requests; the run loop or an effect executor calls non-TUI service/runtime code; completed work returns as typed messages. No blocking disk, socket, subprocess, Docker, git, 1Password, GitHub CLI, config persistence, or network call runs from a renderer, component, or update function.
 
-**Async event loop.** The console event loop uses `crossterm::event::EventStream` + `tokio::select!` instead of `event::poll(50ms)`. This yields to the Tokio reactor between events so background tasks can advance. An `animation_tick` interval drives periodic redraws for spinners and other animated components.
+**Async event loop.** Event loops should use async event streams and `tokio::select!` where the surface already runs inside Tokio, so background work can advance between terminal events. Animation ticks drive periodic redraws for spinners and animated components. Synchronous adapters are allowed only at the terminal/backend edge; they must still route state changes through messages.
 
-**Component library.** Repeated visual patterns live in `crates/jackin-tui/src/components/`. New screens compose existing components; they do not hand-roll a second panel, picker, confirm dialog, or hint bar. Every `jackin-tui` component has a lookbook story in `crates/jackin-tui-lookbook/` visible in the terminal browser (`cargo run -p jackin-tui-lookbook -- --terminal`) and a generated SVG in the docs site that must never drift from the real widget.
+**Component library.** Repeated cross-surface visual patterns live in `crates/jackin-tui/src/components/`. Surface-specific components live under that surface's `src/tui/components/` and graduate to `jackin-tui` only when multiple surfaces should consume the same implementation. New screens compose existing components; they do not hand-roll a second panel, picker, confirm dialog, hint bar, or text input. Every reusable `jackin-tui` component has a lookbook story in `crates/jackin-tui-lookbook/` visible in the terminal browser (`cargo run -p jackin-tui-lookbook -- --terminal`) and a generated SVG in the docs site that must never drift from the real widget.
+
+**Refactor safety.** Moving code into this structure is primarily a refactor. Existing workflows must keep the same command semantics, launch flow, capsule attach behavior, saved state, keyboard/mouse contracts, error handling, and visual affordances unless a PR explicitly calls out and justifies a behavior change. Capture or verify the current behavior before structural moves and rerun the relevant checks afterward.
 
 ---
 
 ## TUI source code location — mandatory directory convention
 
-All code for a terminal user interface lives under one `src/tui/` directory per surface crate and follows The Elm Architecture: Model, Message, Update, Effects/Subscriptions, View, and event-loop wiring. Everything outside `src/tui/` is non-visual product code: workspace resolution, Docker commands, config writes, network I/O, credential handling, capsule protocol/session authority, and data models that have no terminal-interaction role.
+Each surface crate has one TUI module root plus one TUI implementation directory:
+
+```text
+crates/<surface-crate>/src/tui.rs
+crates/<surface-crate>/src/tui/
+```
+
+`src/tui.rs` is a thin module root: module declarations, intentional re-exports, and short `//!` orientation docs only. The implementation lives in `src/tui/` and follows The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and event-loop wiring. Everything outside `src/tui/` is non-visual product code: workspace resolution, Docker commands, config writes, network I/O, credential handling, capsule protocol/session authority, and data models that have no terminal-interaction role.
 
 **The one rule:** if it is terminal interaction state, terminal events, terminal rendering, terminal lifecycle, or local UI composition → `src/tui/`. If it executes external work or owns non-visual product behavior → outside `src/tui/`.
 
@@ -38,7 +47,7 @@ All code for a terminal user interface lives under one `src/tui/` directory per 
 
 1. **`crates/jackin-tui/`** — Shared component library. Panels, pickers, scrollable blocks, hint bars, confirm dialogs, tab strips, tokens, theme adapters, and geometry helpers. Nothing surface-specific. Consumed by every other TUI crate.
 
-2. **`crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens/<screen>/` under `src/tui/`.
+2. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
 
 **Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
 ```
@@ -46,8 +55,8 @@ src/
 ├── lib.rs
 ├── domain/              ← optional pure non-visual rules
 ├── services/            ← optional side-effect adapters
+├── tui.rs               ← thin module root
 └── tui/
-    ├── mod.rs
     ├── app.rs           ← TUI Model
     ├── message.rs       ← Message / Action vocabulary
     ├── update.rs        ← update(model, message) -> effects
@@ -56,6 +65,7 @@ src/
     ├── run.rs           ← event-loop wiring
     ├── terminal.rs      ← terminal lifecycle/backend
     ├── view.rs          ← top-level render composition
+    ├── components.rs    ← thin local-component module root
     └── components/
 ```
 
@@ -65,8 +75,8 @@ src/
 ├── lib.rs
 ├── domain/              ← optional pure non-visual rules
 ├── services/            ← optional side-effect adapters
+├── tui.rs               ← thin module root
 └── tui/
-    ├── mod.rs
     ├── app.rs           ← top-level TUI Model
     ├── message.rs
     ├── update.rs
@@ -75,7 +85,9 @@ src/
     ├── run.rs
     ├── terminal.rs
     ├── view.rs
+    ├── components.rs    ← thin local-component module root
     ├── components/
+    ├── screens.rs       ← thin screen module root
     └── screens/
         ├── workspaces/
         │   ├── mod.rs
@@ -109,6 +121,11 @@ src/
 - `tui/view.rs` and screen `view.rs` files — pure rendering from the current model.
 - `tui/run.rs` / `tui/subscriptions.rs` — event-loop wiring that maps terminal events and completed non-TUI work into messages.
 
+**`domain/` and `services/` are optional non-TUI homes, not mandatory boilerplate.**
+- Use `domain/` for pure product rules that do not know about terminals: validation, derivation, immutable transforms, durable data semantics, and decisions that can be unit-tested without Ratatui or process I/O.
+- Use `services/` for side-effect adapters that execute the work requested by TUI effects: Docker/runtime calls, git/GitHub CLI/1Password commands, filesystem reads/writes, network calls, config persistence, role loading, and workspace resolution.
+- Do not add these directories just to satisfy a template. If a crate already has an established non-TUI module that owns the work clearly, keep using it. The binding rule is the boundary: TUI code describes work with typed effects; non-TUI code executes it.
+
 **What belongs in `src/tui/`:**
 - TUI model structs and enums
 - `Message` / `Action` enums
@@ -128,7 +145,7 @@ src/
 
 **Enforcement:** before adding any file under `src/tui/`, ask: "Does this execute external work, own durable product state, or define non-visual behavior?" Yes → it does not go in `src/tui/`. Before adding a TUI file outside `src/tui/`, ask: "Is this about terminal interaction or terminal rendering?" Yes → it belongs under `src/tui/`.
 
-**Migration status:** Capsule `tui/` started (Phase 9). Console and launch surface migrations are Phase 10. New files must go into the final directory shape now regardless of migration status.
+**Migration status:** Capsule `tui/` started (Phase 9). Console and launch surface migrations are Phase 10 in the [TUI architecture roadmap](/reference/roadmap/tui-architecture/). New TUI files must go into the final directory shape now regardless of migration status. Existing transitional files may remain until migrated, but do not add new canonical TUI code to old locations.
 
 ---
 
@@ -835,7 +852,7 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 1. **Every visual pattern that appears in more than one place must use one shared implementation.** A single widget, render function, or helper — not two near-copies. When the existing implementation cannot serve a new call site without modification, extend it (add a parameter, generalize a branch, add an enum variant) rather than forking it.
 
-2. **Components live in `crates/jackin-console/src/widgets/` first, with temporary compatibility adapters in `src/console/tui/widgets/`.** Before writing any new TUI state machine or renderer, `grep` both directories. If a widget handles the same visual pattern (drill-down picker, text input box, 2-button choice, yes/no confirm, filter list), extend that widget rather than creating a parallel one.
+2. **Components have two canonical homes.** Cross-surface components live in `crates/jackin-tui/src/components/`. Surface-local components live in `crates/<surface-crate>/src/tui/components/`. Existing console widgets in `crates/jackin-console/src/widgets/` and `src/console/tui/widgets/` are transitional until migrated; use them when extending current behavior, but do not add new canonical component patterns there.
 
 3. **A genuinely new component is only ever written once.** The first time a new UX pattern appears, it is acceptable to implement it in the most focused way that serves the immediate need. The second time the same pattern is needed somewhere else, the two implementations must be consolidated into one shared widget before the second PR lands — not "as a follow-up."
 
@@ -845,14 +862,18 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 6. **Settings screens mirror workspace screens.** Settings surfaces that intentionally parallel workspace editor screens must reuse the workspace widgets and flow helpers wherever behavior is the same; keep separate code only for the different persistence target or config scope. Visual drift between the two is a bug.
 
+7. **Component APIs follow the TUI boundary.** Component props/state/messages may describe UI state and emit semantic outcomes. They must not own Docker/git/`op`/`gh` calls, config persistence, workspace resolution, or protocol authority. When a component needs work done, it emits an outcome/message that update turns into a typed effect.
+
 ### What to check before writing new code
 
 Before adding any new TUI widget or state type:
 
-1. Run `grep -r 'struct.*State' crates/jackin-console/src/widgets/ src/console/tui/widgets/` and `ls crates/jackin-console/src/widgets src/console/tui/widgets`. Read the matches. Is there a widget that already owns the pattern?
-2. Run `grep -r 'fn render_' crates/jackin-console/src/widgets/ src/console/tui/widgets/` for the render-level equivalent.
-3. If yes — extend the existing widget. Add a mode enum, a new bool flag, or a new variant. Do not create a second module.
-4. If no — propose the design first; get explicit approval; then implement. The first implementation goes into `crates/jackin-console/src/widgets/` so the next caller can find it.
+1. Search the shared component crate first: `rg 'struct .*State|fn render_|impl Widget|impl StatefulWidget' crates/jackin-tui/src/components crates/jackin-tui/src`.
+2. Search the owning surface's final local component area: `rg 'struct .*State|fn render_|impl Widget|impl StatefulWidget' crates/<surface-crate>/src/tui`.
+3. While the console migration is incomplete, also search the transitional console widget locations before adding or moving anything: `rg 'struct .*State|fn render_' crates/jackin-console/src/widgets src/console/tui/widgets`.
+4. If a component already owns the pattern, extend it. Add a mode enum, parameter, flag, or semantic variant. Do not create a second module.
+5. If no component owns the pattern and only one surface needs it, add it under `crates/<surface-crate>/src/tui/components/` with a thin `components.rs` export. If more than one surface needs it, add it under `crates/jackin-tui/src/components/` with a lookbook story and visual regression coverage.
+6. When moving an existing component into the final structure, preserve behavior first: identify existing tests/snapshots or add focused coverage, move the code, keep compatibility shims only where needed for the migration, and verify the same keyboard, mouse, focus, footer, error, and render behavior afterward.
 
 ### Why this rule exists — canonical lesson
 
@@ -862,17 +883,17 @@ A `token_store_picker` widget once duplicated the Account → Vault → Item nav
 
 ## Reusable Component Catalog
 
-Shared TUI widgets live in `crates/jackin-tui/src/components/`, `crates/jackin-console/src/widgets/`, and the remaining console-local `src/console/tui/widgets/` modules. Use this table to identify the right component before writing new code.
+Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-local widgets should live under the owning surface's `src/tui/components/`. The console still has transitional widgets in `crates/jackin-console/src/widgets/` and `src/console/tui/widgets/`; they remain valid current owners until migrated, but they are not the target structure for new canonical component work. Use this table to identify the right component before writing new code or moving an existing widget.
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
 | Op picker (1Password drill-down) | <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
 | Role picker | <RepoFile path="crates/jackin-console/src/widgets/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
 | Text input box | <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
-| Scope picker | <RepoFile path="crates/jackin-console/src/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
-| Source picker | <RepoFile path="crates/jackin-console/src/widgets/source_picker.rs" /> | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
-| Agent choice | <RepoFile path="crates/jackin-console/src/widgets/agent_choice.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
-| Mount destination choice | <RepoFile path="crates/jackin-console/src/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
+| Scope picker | `crates/jackin-console/src/widgets/scope_picker.rs` today; migrating to `crates/jackin-console/src/tui/components/scope_picker.rs` | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
+| Source picker | `crates/jackin-console/src/widgets/source_picker.rs` today; migrating to `crates/jackin-console/src/tui/components/source_picker.rs` | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
+| Agent choice | <RepoFile path="crates/jackin-console/src/tui/components/agent_choice.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
+| Mount destination choice | <RepoFile path="crates/jackin-console/src/tui/components/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
 | Confirm dialog | <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule) | Any destructive or irreversible action |
 | Save / discard strip | <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
 | File browser | <RepoFile path="crates/jackin-console/src/widgets/file_browser/mod.rs" /> | Host filesystem navigation | Any flow needing to pick a local file or directory |
