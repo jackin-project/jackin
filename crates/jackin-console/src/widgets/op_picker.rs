@@ -75,6 +75,12 @@ pub enum FieldDisplayRow {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct OpPickerAccountRef<'a> {
+    pub email: &'a str,
+    pub url: &'a str,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct OpPickerVaultRef<'a> {
     pub id: &'a str,
     pub name: &'a str,
@@ -317,6 +323,94 @@ pub fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
         Style::default().fg(PHOSPHOR_DIM)
     };
     Line::from(Span::styled(format!("{prefix}{text}"), style))
+}
+
+pub fn account_lines<'a>(
+    accounts: impl IntoIterator<Item = OpPickerAccountRef<'a>>,
+    selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    accounts
+        .into_iter()
+        .enumerate()
+        .map(|(i, account)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let label_style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            Line::from(vec![
+                Span::styled(format!("{prefix}{}", account.email), label_style),
+                Span::raw("  "),
+                Span::styled(
+                    format!("({})", account.url),
+                    Style::default().fg(PHOSPHOR_DIM),
+                ),
+            ])
+        })
+        .collect()
+}
+
+pub fn vault_lines<'a>(
+    vaults: impl IntoIterator<Item = OpPickerVaultRef<'a>>,
+    selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    vaults
+        .into_iter()
+        .enumerate()
+        .map(|(i, vault)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            Line::from(Span::styled(format!("{prefix}{}", vault.name), style))
+        })
+        .collect()
+}
+
+pub fn item_choice_lines<'a>(
+    item_choices: impl IntoIterator<Item = Option<OpPickerItemRef<'a>>>,
+    selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    item_choices
+        .into_iter()
+        .enumerate()
+        .map(|(i, choice)| {
+            let is_selected = Some(i) == selected;
+            choice.map_or_else(
+                || sentinel_line("+ New item", is_selected),
+                |item| {
+                    let prefix = if is_selected { "\u{25b8} " } else { "  " };
+                    let title_style = if is_selected {
+                        Style::default()
+                            .fg(PHOSPHOR_GREEN)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(WHITE)
+                    };
+                    let mut spans = vec![
+                        Span::styled(prefix, title_style),
+                        Span::styled(item.name.to_string(), title_style),
+                    ];
+                    if !item.subtitle.is_empty() {
+                        let dim = Style::default().fg(PHOSPHOR_DIM);
+                        spans.push(Span::styled(" (", dim));
+                        spans.push(Span::styled(item.subtitle.to_string(), dim));
+                        spans.push(Span::styled(")", dim));
+                    }
+                    Line::from(spans)
+                },
+            )
+        })
+        .collect()
 }
 
 /// Render section-stage rows: `(root)`, named sections, then a creation
@@ -627,5 +721,48 @@ mod tests {
             "\u{25b8} + New section",
             "sentinel renders last and selected"
         );
+    }
+
+    #[test]
+    fn account_vault_and_item_lines_apply_selected_prefixes() {
+        let account = account_lines(
+            [OpPickerAccountRef {
+                email: "alice@example.com",
+                url: "alice.1password.com",
+            }],
+            Some(0),
+        );
+        assert_eq!(
+            account[0].spans[0].content.as_ref(),
+            "\u{25b8} alice@example.com"
+        );
+        assert_eq!(
+            account[0].spans[2].content.as_ref(),
+            "(alice.1password.com)"
+        );
+
+        let vault = vault_lines(
+            [OpPickerVaultRef {
+                id: "v1",
+                name: "Private",
+            }],
+            None,
+        );
+        assert_eq!(vault[0].spans[0].content.as_ref(), "  Private");
+
+        let items = item_choice_lines(
+            [
+                Some(OpPickerItemRef {
+                    id: "i1",
+                    name: "Claude",
+                    subtitle: "alice@example.com",
+                }),
+                None,
+            ],
+            Some(1),
+        );
+        assert_eq!(items[0].spans[1].content.as_ref(), "Claude");
+        assert_eq!(items[0].spans[3].content.as_ref(), "alice@example.com");
+        assert_eq!(items[1].spans[0].content.as_ref(), "\u{25b8} + New item");
     }
 }

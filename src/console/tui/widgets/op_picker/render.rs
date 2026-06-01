@@ -14,7 +14,10 @@ use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{
     FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState,
 };
-use jackin_console::widgets::op_picker::{breadcrumb_title, section_lines, sentinel_line};
+use jackin_console::widgets::op_picker::{
+    OpPickerAccountRef, OpPickerItemRef, OpPickerVaultRef, account_lines, breadcrumb_title,
+    item_choice_lines, section_lines, sentinel_line, vault_lines,
+};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus};
 
@@ -128,92 +131,45 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
 fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {
     // Server order — do not alphabetize. `op` lists accounts in
     // sign-in order; preserve it.
-    let visible = state.filtered_accounts();
-    let selected = state.account_list_state.selected;
-    visible
-        .into_iter()
-        .enumerate()
-        .map(|(i, a)| {
-            let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let label_style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            // Pre-v2 op may omit email/url; render as empty rather
-            // than panicking.
-            Line::from(vec![
-                Span::styled(format!("{prefix}{}", a.email), label_style),
-                Span::raw("  "),
-                Span::styled(format!("({})", a.url), Style::default().fg(PHOSPHOR_DIM)),
-            ])
-        })
-        .collect()
+    // Pre-v2 op may omit email/url; render as empty rather than panicking.
+    account_lines(
+        state
+            .filtered_accounts()
+            .into_iter()
+            .map(|account| OpPickerAccountRef {
+                email: &account.email,
+                url: &account.url,
+            }),
+        state.account_list_state.selected,
+    )
 }
 
 fn render_vault_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    let visible = state.filtered_vaults();
-    let selected = state.vault_list_state.selected;
-    visible
-        .into_iter()
-        .enumerate()
-        .map(|(i, v)| {
-            let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            Line::from(Span::styled(format!("{prefix}{}", v.name), style))
-        })
-        .collect()
+    vault_lines(
+        state
+            .filtered_vaults()
+            .into_iter()
+            .map(|vault| OpPickerVaultRef {
+                id: &vault.id,
+                name: &vault.name,
+            }),
+        state.vault_list_state.selected,
+    )
 }
 
 fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    let selected = state.item_list_state.selected;
     // Use the choice list so the trailing `+ New item` sentinel (Create
     // mode) is rendered and selectable at the same index the handler uses.
-    state
-        .filtered_item_choices()
-        .into_iter()
-        .enumerate()
-        .map(|(i, choice)| {
-            let is_selected = Some(i) == selected;
-            choice.map_or_else(
-                || sentinel_line("+ New item", is_selected),
-                |item| {
-                    let prefix = if is_selected { "\u{25b8} " } else { "  " };
-                    let title_style = if is_selected {
-                        Style::default()
-                            .fg(PHOSPHOR_GREEN)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(WHITE)
-                    };
-                    // Subtitle stays dim even on the focused row so the
-                    // title remains the primary anchor. Empty subtitle →
-                    // no parens.
-                    let mut spans = vec![
-                        Span::styled(prefix, title_style),
-                        Span::styled(item.name.clone(), title_style),
-                    ];
-                    if !item.subtitle.is_empty() {
-                        let dim = Style::default().fg(PHOSPHOR_DIM);
-                        spans.push(Span::styled(" (", dim));
-                        spans.push(Span::styled(item.subtitle.clone(), dim));
-                        spans.push(Span::styled(")", dim));
-                    }
-                    Line::from(spans)
-                },
-            )
-        })
-        .collect()
+    item_choice_lines(
+        state.filtered_item_choices().into_iter().map(|choice| {
+            choice.map(|item| OpPickerItemRef {
+                id: &item.id,
+                name: &item.name,
+                subtitle: &item.subtitle,
+            })
+        }),
+        state.item_list_state.selected,
+    )
 }
 
 /// Section stage (Create mode): `(root)`, each named section, then a
