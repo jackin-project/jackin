@@ -8,30 +8,6 @@ use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
 use super::{ConsoleStage, ConsoleState};
 
-pub(super) async fn open_inline_agent_picker(
-    state: &mut ConsoleState,
-    paths: &JackinPaths,
-    config: &AppConfig,
-    runner: &mut impl crate::docker::CommandRunner,
-    role: &RoleSelector,
-) -> anyhow::Result<bool> {
-    let agents =
-        crate::console::effects::resolve_supported_agents_for_console(paths, config, role, runner)
-            .await?;
-    if agents.len() < 2 {
-        return Ok(false);
-    }
-
-    let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.inline_agent_picker = Some((
-        role.clone(),
-        crate::agent::AgentChoiceState::with_choices(agents),
-    ));
-    ms.inline_role_picker = None;
-    state.pending_launch_role = Some(role.clone());
-    Ok(true)
-}
-
 pub(super) enum AgentPickerResolution {
     Opened,
     NotNeeded,
@@ -97,7 +73,11 @@ where
 
     draw_role_resolution_dialog(terminal, state, config, cwd, role)?;
     Ok(
-        match open_inline_agent_picker(state, paths, config, runner, role).await {
+        match crate::console::effects::execute_inline_agent_picker_open(
+            state, paths, config, runner, role,
+        )
+        .await
+        {
             Ok(true) => AgentPickerResolution::Opened,
             Ok(false) => AgentPickerResolution::NotNeeded,
             Err(error) => AgentPickerResolution::Failed(error),
