@@ -241,26 +241,17 @@ async fn resolve_supported_agents_for_console(
     crate::console::services::agents::resolve_supported_for_console(paths, config, role, runner).await
 }
 
-pub(crate) async fn execute_inline_agent_picker_open(
-    state: &mut crate::console::ConsoleState,
+pub(crate) async fn load_inline_agent_picker_choices(
     paths: &crate::paths::JackinPaths,
     config: &AppConfig,
     runner: &mut impl crate::docker::CommandRunner,
     role: &crate::selector::RoleSelector,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<Option<Vec<crate::agent::Agent>>> {
     let agents = resolve_supported_agents_for_console(paths, config, role, runner).await?;
     if agents.len() < 2 {
-        return Ok(false);
+        return Ok(None);
     }
-
-    let crate::console::ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.inline_agent_picker = Some((
-        role.clone(),
-        crate::agent::AgentChoiceState::with_choices(agents),
-    ));
-    ms.inline_role_picker = None;
-    state.pending_launch_role = Some(role.clone());
-    Ok(true)
+    Ok(Some(agents))
 }
 
 pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {

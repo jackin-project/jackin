@@ -72,17 +72,23 @@ where
     }
 
     draw_role_resolution_dialog(terminal, state, config, cwd, role)?;
-    Ok(
-        match crate::console::effects::execute_inline_agent_picker_open(
-            state, paths, config, runner, role,
-        )
-        .await
+    let choices =
+        match crate::console::effects::load_inline_agent_picker_choices(paths, config, runner, role)
+            .await
         {
-            Ok(true) => AgentPickerResolution::Opened,
-            Ok(false) => AgentPickerResolution::NotNeeded,
-            Err(error) => AgentPickerResolution::Failed(error),
-        },
-    )
+            Ok(Some(choices)) => choices,
+            Ok(None) => return Ok(AgentPickerResolution::NotNeeded),
+            Err(error) => return Ok(AgentPickerResolution::Failed(error)),
+        };
+
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    ms.inline_agent_picker = Some((
+        role.clone(),
+        crate::agent::AgentChoiceState::with_choices(choices),
+    ));
+    ms.inline_role_picker = None;
+    state.pending_launch_role = Some(role.clone());
+    Ok(AgentPickerResolution::Opened)
 }
 
 /// Outcome of `prompt_agent_for_launch`. Two states because callers
