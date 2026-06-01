@@ -406,8 +406,10 @@ fn execute_op_commit_validation(
 }
 
 pub(crate) fn execute_workspace_save_effect(
-    editor: &mut EditorState<'_>,
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
+    cwd: &std::path::Path,
     effect: WorkspaceSaveEffect,
 ) {
     match effect {
@@ -417,6 +419,27 @@ pub(crate) fn execute_workspace_save_effect(
             plan,
             exit_on_success,
         } => {
+            let has_records =
+                crate::isolation::state::list_records_for_workspace(&paths.data_dir, &original_name)
+                    .is_ok_and(|records| !records.is_empty());
+            if !has_records {
+                let (_tx, rx) = tokio::sync::oneshot::channel();
+                let check = PendingDriftCheck::new(rx, original_name, plan, exit_on_success);
+                if let Ok(Some(effect)) =
+                    crate::console::tui::input::save::continue_save_after_drift_check(
+                        state,
+                        config,
+                        check,
+                        Ok(crate::config::DriftDetection::default()),
+                    )
+                {
+                    execute_workspace_save_effect(state, config, paths, cwd, effect);
+                }
+                return;
+            }
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                return;
+            };
             let rx = crate::console::services::workspace_save::start_drift_check(
                 paths.clone(),
                 original_name.clone(),
@@ -440,6 +463,9 @@ pub(crate) fn execute_workspace_save_effect(
             plan,
             exit_on_success,
         } => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                return;
+            };
             let rx = crate::console::services::workspace_save::start_isolation_cleanup(
                 paths.clone(),
                 records,
@@ -452,6 +478,25 @@ pub(crate) fn execute_workspace_save_effect(
                     "Deleting isolated state...",
                 ),
             });
+        }
+        WorkspaceSaveEffect::WriteWorkspace {
+            mode,
+            original,
+            pending,
+            exit_on_success,
+        } => {
+            execute_workspace_save_write(
+                state,
+                config,
+                paths,
+                cwd,
+                WorkspaceSaveWriteInput {
+                    mode,
+                    original: &original,
+                    pending: &pending,
+                },
+                exit_on_success,
+            );
         }
     }
 }

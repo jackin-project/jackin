@@ -181,28 +181,40 @@ pub async fn run_console<H: InstanceActionHandler>(
                         check,
                         detection,
                     } => {
-                        let _ = crate::console::tui::input::save::continue_save_after_drift_check(
+                        if let Ok(Some(effect)) = crate::console::tui::input::save::continue_save_after_drift_check(
                             ms,
                             &mut config,
-                            paths,
-                            cwd,
                             check,
                             detection,
-                        );
+                        ) {
+                            crate::console::effects::execute_workspace_save_effect(
+                                ms,
+                                &mut config,
+                                paths,
+                                cwd,
+                                effect,
+                            );
+                        }
                         needs_redraw = true;
                     }
                     crate::console::tui::message::ManagerBackgroundEvent::IsolationCleanupFinished {
                         cleanup,
                         result,
                     } => {
-                        let _ = crate::console::tui::input::save::continue_save_after_isolation_cleanup(
+                        if let Ok(Some(effect)) = crate::console::tui::input::save::continue_save_after_isolation_cleanup(
                             ms,
                             &mut config,
-                            paths,
-                            cwd,
                             cleanup,
                             result,
-                        );
+                        ) {
+                            crate::console::effects::execute_workspace_save_effect(
+                                ms,
+                                &mut config,
+                                paths,
+                                cwd,
+                                effect,
+                            );
+                        }
                         needs_redraw = true;
                     }
                 }

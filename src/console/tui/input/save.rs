@@ -3,15 +3,13 @@
 #![allow(clippy::items_after_test_module)]
 
 use super::super::effect::{
-    WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
+    WorkspaceSaveEffect, WorkspaceSaveWriteMode,
 };
-use super::super::effects::{execute_workspace_save_effect, execute_workspace_save_write};
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
 };
 use crate::config::AppConfig;
-use crate::paths::JackinPaths;
 
 /// Continue the editor save flow after an async drift check completes.
 ///
@@ -23,13 +21,11 @@ use crate::paths::JackinPaths;
 pub fn continue_save_after_drift_check(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &JackinPaths,
-    cwd: &std::path::Path,
     drift_check: PendingDriftCheck,
     detection: anyhow::Result<crate::config::DriftDetection>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<WorkspaceSaveEffect>> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
-        return Ok(());
+        return Ok(None);
     };
 
     // Clear the "Checking..." status popup — results or errors replace it.
@@ -40,7 +36,7 @@ pub fn continue_save_after_drift_check(
     match detection {
         Err(e) => {
             open_save_error_popup(editor, &e.to_string());
-            return Ok(());
+            return Ok(None);
         }
         Ok(detection) => {
             if !detection.running_containers.is_empty() {
@@ -50,20 +46,15 @@ pub fn continue_save_after_drift_check(
                     detection.running_containers.join(", "),
                 );
                 open_save_error_popup(editor, &msg);
-                return Ok(());
+                return Ok(None);
             }
             if !detection.stopped_records.is_empty() {
                 if drift_check.plan.delete_isolated_acknowledged {
-                    execute_workspace_save_effect(
-                        editor,
-                        paths,
-                        WorkspaceSaveEffect::StartIsolationCleanup {
+                    return Ok(Some(WorkspaceSaveEffect::StartIsolationCleanup {
                             records: detection.stopped_records,
                             plan: drift_check.plan,
                             exit_on_success: drift_check.exit_on_success,
-                        },
-                    );
-                    return Ok(());
+                    }));
                 }
                 let affected_containers: Vec<String> = detection
                     .stopped_records
@@ -87,18 +78,19 @@ pub fn continue_save_after_drift_check(
                 editor.save_flow = EditorSaveFlow::Confirming {
                     exit_on_success: drift_check.exit_on_success,
                 };
-                return Ok(());
+                return Ok(None);
             }
         }
     }
 
-    // No drift detected — proceed with the workspace write.
+    // No drift detected — mark the drift gate complete before proceeding
+    // so the write pass does not request the same check again.
+    let mut plan = drift_check.plan;
+    plan.isolated_cleanup_complete = true;
     commit_editor_save_with_runner(
         state,
         config,
-        paths,
-        cwd,
-        drift_check.plan,
+        plan,
         drift_check.exit_on_success,
     )
 }
@@ -106,24 +98,22 @@ pub fn continue_save_after_drift_check(
 pub fn continue_save_after_isolation_cleanup(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &JackinPaths,
-    cwd: &std::path::Path,
     cleanup: PendingIsolationCleanup,
     result: anyhow::Result<()>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<WorkspaceSaveEffect>> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
-        return Ok(());
+        return Ok(None);
     };
     if matches!(editor.modal, Some(Modal::StatusPopup { .. })) {
         editor.modal = None;
     }
     if let Err(e) = result {
         open_save_error_popup(editor, &e.to_string());
-        return Ok(());
+        return Ok(None);
     }
     let mut plan = cleanup.plan;
     plan.isolated_cleanup_complete = true;
-    commit_editor_save_with_runner(state, config, paths, cwd, plan, cleanup.exit_on_success)
+    commit_editor_save_with_runner(state, config, plan, cleanup.exit_on_success)
 }
 
 /// Phase 1: validate, plan, open `ConfirmSave`. Validation failures
@@ -257,12 +247,10 @@ pub(super) fn begin_editor_save(
 pub(super) fn commit_editor_save(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &JackinPaths,
-    cwd: &std::path::Path,
     plan: crate::console::tui::state::PendingSaveCommit,
     exit_on_success: bool,
-) -> anyhow::Result<()> {
-    commit_editor_save_with_runner(state, config, paths, cwd, plan, exit_on_success)
+) -> anyhow::Result<Option<WorkspaceSaveEffect>> {
+    commit_editor_save_with_runner(state, config, plan, exit_on_success)
 }
 
 #[allow(
@@ -273,13 +261,11 @@ pub(super) fn commit_editor_save(
 pub(super) fn commit_editor_save_with_runner(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &JackinPaths,
-    cwd: &std::path::Path,
     plan: crate::console::tui::state::PendingSaveCommit,
     exit_on_success: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<WorkspaceSaveEffect>> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
-        return Ok(());
+        return Ok(None);
     };
 
     // Same classify-first pattern as begin_editor_save.
@@ -320,70 +306,12 @@ pub(super) fn commit_editor_save_with_runner(
                 &editor.pending.mounts,
                 &plan.effective_removals,
             );
-            // Fast-path: no isolation records means no drift possible, skip Docker.
-            let has_records =
-                crate::isolation::state::list_records_for_workspace(&paths.data_dir, original_name)
-                    .is_ok_and(|r| !r.is_empty());
-
-            let detect_result: anyhow::Result<_> = if !has_records {
-                Ok(crate::config::DriftDetection::default())
-            } else {
-                execute_workspace_save_effect(
-                    editor,
-                    paths,
-                    WorkspaceSaveEffect::StartDriftCheck {
-                        original_name: original_name.clone(),
-                        prospective_mounts,
-                        plan,
-                        exit_on_success,
-                    },
-                );
-                return Ok(());
-            };
-            match detect_result {
-                Err(e) => {
-                    open_save_error_popup(editor, &e.to_string());
-                    return Ok(());
-                }
-                Ok(detection) => {
-                    if !detection.running_containers.is_empty() {
-                        let msg = format!(
-                            "Cannot save: {} container(s) are running with isolated state for an affected mount: {}; eject them first.",
-                            detection.running_containers.len(),
-                            detection.running_containers.join(", "),
-                        );
-                        open_save_error_popup(editor, &msg);
-                        return Ok(());
-                    }
-                    if !detection.stopped_records.is_empty() {
-                        let affected_containers: Vec<String> = detection
-                            .stopped_records
-                            .iter()
-                            .map(|r| r.container_name.clone())
-                            .collect();
-                        let prompt = format!(
-                            "Edit affects preserved isolated state for {} stopped container(s):\n  {}\n\n\
-                             Delete the preserved state and save?",
-                            affected_containers.len(),
-                            affected_containers.join("\n  "),
-                        );
-                        editor.modal = Some(Modal::Confirm {
-                            target: crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave {
-                                plan,
-                                exit_on_success,
-                                affected_containers,
-                            },
-                            state: jackin_tui::components::ConfirmState::new(prompt),
-                        });
-                        // Park the save flow until the operator answers the
-                        // modal. The modal handler re-stashes the plan
-                        // with `delete_isolated_acknowledged = true` on Yes.
-                        editor.save_flow =
-                            crate::console::tui::state::EditorSaveFlow::Confirming { exit_on_success };
-                        return Ok(());
-                    }
-                }
-            }
+            return Ok(Some(WorkspaceSaveEffect::StartDriftCheck {
+                original_name: original_name.clone(),
+                prospective_mounts,
+                plan,
+                exit_on_success,
+            }));
         }
     }
 
@@ -402,26 +330,15 @@ pub(super) fn commit_editor_save_with_runner(
                 &editor.pending.mounts,
                 &plan.effective_removals,
             );
-            // Re-detect to avoid a TOCTOU window where state changed
-            // between the confirm modal opening and the operator's Yes.
-            // `force_cleanup_isolated` is idempotent so re-running is safe.
-            let has_records2 =
-                crate::isolation::state::list_records_for_workspace(&paths.data_dir, original_name)
-                    .is_ok_and(|r| !r.is_empty());
-
-            if has_records2 {
-                execute_workspace_save_effect(
-                    editor,
-                    paths,
-                    WorkspaceSaveEffect::StartDriftCheck {
-                        original_name: original_name.clone(),
-                        prospective_mounts,
-                        plan,
-                        exit_on_success,
-                    },
-                );
-                return Ok(());
-            }
+            // Re-detect outside the TUI boundary to avoid a TOCTOU window
+            // where state changed between the confirm modal opening and the
+            // operator's Yes.
+            return Ok(Some(WorkspaceSaveEffect::StartDriftCheck {
+                original_name: original_name.clone(),
+                prospective_mounts,
+                plan,
+                exit_on_success,
+            }));
         }
     }
 
@@ -434,27 +351,18 @@ pub(super) fn commit_editor_save_with_runner(
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
                 open_save_error_popup(editor, "missing workspace name");
-                return Ok(());
+                return Ok(None);
             };
             WorkspaceSaveWriteMode::Create { name }
         }
     };
 
-    let original = editor.original.clone();
-    let pending = editor.pending.clone();
-    execute_workspace_save_write(
-        state,
-        config,
-        paths,
-        cwd,
-        WorkspaceSaveWriteInput {
-            mode: service_mode,
-            original: &original,
-            pending: &pending,
-        },
+    Ok(Some(WorkspaceSaveEffect::WriteWorkspace {
+        mode: service_mode,
+        original: editor.original.clone(),
+        pending: editor.pending.clone(),
         exit_on_success,
-    );
-    Ok(())
+    }))
 }
 
 pub(crate) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
@@ -1489,7 +1397,16 @@ mod tests {
             delete_isolated_acknowledged: false,
             isolated_cleanup_complete: false,
         };
-        commit_editor_save(&mut state, &mut config, &paths, cwd, bad_plan, false).unwrap();
+        if let Some(effect) = commit_editor_save(&mut state, &mut config, bad_plan, false).unwrap()
+        {
+            crate::console::effects::execute_workspace_save_effect(
+                &mut state,
+                &mut config,
+                &paths,
+                cwd,
+                effect,
+            );
+        }
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected after failed save");
@@ -1993,8 +1910,6 @@ mod tests {
         super::continue_save_after_drift_check(
             &mut state,
             &mut config,
-            &paths,
-            cwd,
             drift_check,
             detection,
         )
@@ -2075,8 +1990,6 @@ mod tests {
         super::continue_save_after_drift_check(
             &mut state,
             &mut config,
-            &paths,
-            cwd,
             drift_check,
             detection,
         )

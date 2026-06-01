@@ -35,6 +35,12 @@ pub(crate) enum WorkspaceSaveEffect {
         plan: PendingSaveCommit,
         exit_on_success: bool,
     },
+    WriteWorkspace {
+        mode: WorkspaceSaveWriteMode,
+        original: crate::workspace::WorkspaceConfig,
+        pending: crate::workspace::WorkspaceConfig,
+        exit_on_success: bool,
+    },
 }
 
 pub(crate) enum WorkspaceSaveWriteMode {

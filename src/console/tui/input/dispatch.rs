@@ -136,7 +136,11 @@ pub fn handle_key(
             None
         };
         if let Some((plan, exit_on_success)) = pending {
-            save::commit_editor_save(state, config, paths, cwd, plan, exit_on_success)?;
+            if let Some(effect) = save::commit_editor_save(state, config, plan, exit_on_success)? {
+                crate::console::effects::execute_workspace_save_effect(
+                    state, config, paths, cwd, effect,
+                );
+            }
             return Ok(InputOutcome::Continue);
         }
 
