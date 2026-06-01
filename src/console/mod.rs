@@ -7,6 +7,8 @@
 
 pub mod manager;
 mod domain;
+mod launch;
+mod outcome;
 mod preview;
 mod prompts;
 pub mod run;
@@ -19,6 +21,7 @@ use prompts::{prompt_agent_for_launch, providers_for_launch};
 pub(super) use run::consumes_letter_input;
 #[cfg(test)]
 use run::is_on_main_screen;
+pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
 pub use run::run_console;
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
@@ -26,137 +29,6 @@ pub use state::WorkspaceChoice;
 pub use state::build_workspace_choice;
 pub use tui::terminal::TerminalSession;
 pub use tui::widgets;
-
-use crate::app::context::preferred_agent_index;
-use crate::config::AppConfig;
-use crate::selector::RoleSelector;
-use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConsoleOutcome {
-    Launch(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>),
-    InstanceAction {
-        container: String,
-        action: ConsoleInstanceAction,
-    },
-    /// Operator selected an agent AND a provider in the console picker.
-    /// The chosen `Provider` drives the env redirection (e.g. Z.AI's
-    /// Anthropic-compatible endpoint) and the tab-name suffix.
-    NewSessionWithProvider {
-        container: String,
-        agent: crate::agent::Agent,
-        provider: jackin_protocol::Provider,
-    },
-    /// Initial launch with a provider selected in the console before the
-    /// container is created. The provider flows into the capsule's initial
-    /// attach so the first session uses the chosen provider.
-    LaunchWithProvider {
-        selector: RoleSelector,
-        workspace: ResolvedWorkspace,
-        agent: crate::agent::Agent,
-        provider: jackin_protocol::Provider,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConsoleInstanceAction {
-    Reconnect,
-    /// Reconnect and ask the in-container daemon to focus this
-    /// pane (`session_id`) before forwarding output. Carries through
-    /// to `attach::reconnect_or_create_session_with_focus` which
-    /// appends the `--focus <id>` flag on the `docker exec`.
-    ReconnectFocus(u64),
-    NewSession,
-    NewSessionWithAgent(crate::agent::Agent),
-    Shell,
-    Inspect,
-    Stop,
-    Purge,
-}
-
-impl ConsoleInstanceAction {
-    /// Actions that don't replace the TUI with another foreground process
-    /// (Stop/Purge) run inside the console event loop via
-    /// `InstanceActionHandler`. The rest tear down the TUI so the launched
-    /// container/agent can own the terminal.
-    pub const fn runs_in_place(self) -> bool {
-        matches!(self, Self::Stop | Self::Purge)
-    }
-}
-
-/// Callback invoked for `runs_in_place` actions.
-///
-/// The handler performs the docker work (eject, purge). Making it async lets
-/// the caller `.await` the work on the existing runtime without building a
-/// separate runtime, so the reactor can service other tasks between awaits
-/// while Docker/git calls are in flight.
-pub trait InstanceActionHandler {
-    async fn run_in_place(
-        &mut self,
-        container: &str,
-        action: ConsoleInstanceAction,
-    ) -> anyhow::Result<()>;
-}
-
-impl ConsoleState {
-    /// Open the inline role picker for every eligible role count except zero.
-    /// `WorkspaceChoice` is built fresh each call so manager edits take effect
-    /// immediately.
-    pub fn dispatch_launch_for_workspace(
-        &mut self,
-        config: &AppConfig,
-        cwd: &std::path::Path,
-        input: LoadWorkspaceInput,
-    ) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>)>>
-    {
-        let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
-            // Workspace was deleted between keypress and dispatch.
-            return Ok(None);
-        };
-        let roles = choice.allowed_roles.clone();
-
-        if roles.is_empty() {
-            // Stay so the operator can fix `allowed_roles`
-            // — a single Enter shouldn't terminate the TUI.
-            let name = choice.name;
-            if let ConsoleStage::Manager(ms) = &mut self.stage {
-                let _ = manager::update_manager(
-                    ms,
-                    manager::ManagerMessage::OpenListErrorPopup {
-                        title: "No eligible roles".into(),
-                        message: format!(
-                            "Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
-                        ),
-                    },
-                );
-            }
-            self.pending_launch = None;
-            self.pending_launch_role = None;
-        } else if roles.len() == 1 {
-            // Single role — skip picker and proceed directly to agent selection.
-            let role = roles.into_iter().next().unwrap();
-            return preview::resolve_selected_workspace(config, cwd, &choice, &role)
-                .map(|workspace| Some((role, workspace, None)));
-        } else {
-            let selected = preferred_agent_index(
-                &roles,
-                choice.last_role.as_deref(),
-                choice.default_role.as_deref(),
-            );
-            self.pending_launch = Some(input);
-            self.pending_launch_role = None;
-            if let ConsoleStage::Manager(ms) = &mut self.stage {
-                let mut picker =
-                    crate::selector::RolePickerState::with_confirm_label(roles, "launch");
-                if let Some(selected) = selected {
-                    picker.list_state.select(Some(selected));
-                }
-                ms.inline_role_picker = Some(picker);
-            }
-        }
-        Ok(None)
-    }
-}
 
 #[cfg(test)]
 mod quit_confirm_tests {
