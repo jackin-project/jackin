@@ -19,7 +19,7 @@ use jackin_console::tui::screens::workspaces::view::{
     WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane,
     WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
-    current_directory_display_row, current_directory_workspace_title,
+    current_directory_display_row, current_directory_workspace_title, global_mounts_title,
     instance_sessions_empty_message, list_name_lines as workspace_list_name_lines,
     new_workspace_display_row, picker_sidebar_title, provider_picker_title,
     render_compact_instances_summary, render_environments_subpanel, render_general_subpanel,
@@ -490,7 +490,7 @@ pub(crate) fn render_sidebar_body(
             render_global_mount_rows_section(
                 frame,
                 area,
-                " Global mounts ",
+                global_mounts_title(),
                 &global_rows,
                 &inputs.mount_info_cache,
                 state.list_global_mounts_scroll_x,

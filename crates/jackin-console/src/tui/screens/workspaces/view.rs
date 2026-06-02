@@ -117,6 +117,11 @@ pub fn role_global_mounts_title(role_label: &str) -> String {
 }
 
 #[must_use]
+pub const fn global_mounts_title() -> &'static str {
+    " Global mounts "
+}
+
+#[must_use]
 pub const fn instance_sessions_empty_message(session_load_error: bool) -> &'static str {
     if session_load_error {
         "Sessions unavailable (manifest read error)"
@@ -1009,6 +1014,7 @@ mod tests {
             role_global_mounts_title("agent-smith"),
             " Role global mounts · agent-smith "
         );
+        assert_eq!(global_mounts_title(), " Global mounts ");
     }
 
     #[test]
