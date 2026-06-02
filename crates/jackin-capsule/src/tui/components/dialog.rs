@@ -50,24 +50,10 @@ pub enum PullRequestStatus<'a> {
     Idle,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContainerInfoDiagnostics {
-    pub host_version: String,
-    pub run_id: String,
-    pub run_log_display: String,
-    pub run_log_href: Option<String>,
-}
-
-impl Default for ContainerInfoDiagnostics {
-    fn default() -> Self {
-        Self {
-            host_version: "unknown".to_string(),
-            run_id: String::new(),
-            run_log_display: "(not set)".to_string(),
-            run_log_href: None,
-        }
-    }
-}
+pub use super::container_info_dialog::ContainerInfoDiagnostics;
+use super::container_info_dialog::{ContainerInfoRow, non_empty_or_dim};
+pub use super::palette::{PaletteCloseLabel, PaletteCommand};
+pub(super) use super::palette::{PALETTE_ITEMS, palette_filtered_indices, palette_item_label};
 
 impl<'a> PullRequestStatus<'a> {
     pub fn loaded(&self) -> Option<&'a PullRequestInfo> {
@@ -263,29 +249,6 @@ impl ConfirmKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PaletteCloseLabel {
-    ChooseTarget,
-    CloseTab,
-}
-
-impl PaletteCloseLabel {
-    pub(crate) fn for_pane_count(count: usize) -> Self {
-        if count == 1 {
-            Self::CloseTab
-        } else {
-            Self::ChooseTarget
-        }
-    }
-
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::ChooseTarget => "Close",
-            Self::CloseTab => "Close tab",
-        }
-    }
-}
-
 pub(crate) const CLOSE_TARGET_ITEMS: &[(ConfirmKind, &str)] = &[
     (ConfirmKind::ClosePane, "Close pane"),
     (ConfirmKind::CloseTab, "Close tab"),
@@ -338,42 +301,6 @@ pub enum DialogAction {
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PaletteCommand {
-    NewTab,
-    NextTab,
-    PrevTab,
-    /// Open the SplitDirectionPicker. The operator picks Right /
-    /// Left / Below / Above in the sub-dialog, then the agent
-    /// picker for the new pane. Top-level entry is one item; the
-    /// directional detail lives in the sub-dialog so the palette
-    /// stays scannable.
-    Split,
-    ZoomPane,
-    /// Close the active tab or open the CloseTargetPicker when the
-    /// active tab has multiple panes. The chosen target then routes
-    /// through `ConfirmAction` before the destructive call fires.
-    Close,
-    ClearPane,
-    Exit,
-}
-
-/// Next/Previous tab are not exposed in the palette: the operator
-/// already clicks tabs directly in the status bar, and the
-/// keyboard-driven shortcut for cycle-tab is the tmux-style prefix
-/// gesture (`Ctrl+B n` / `Ctrl+B p`). Keeping list entries that only
-/// duplicate those existing paths bloats the modal with no new
-/// capability. `PaletteCommand::NextTab` / `PrevTab` stay in the enum
-/// so prefix-mode bindings continue to work.
-pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
-    (PaletteCommand::NewTab, "New tab"),
-    (PaletteCommand::Split, "Split pane"),
-    (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
-    (PaletteCommand::ClearPane, "Clear pane"),
-    (PaletteCommand::Close, "Close"),
-    (PaletteCommand::Exit, "Exit"),
-];
 
 /// Items in the SplitDirectionPicker sub-dialog. Prefer the common
 /// forward/default placement first, then its opposite, then the
@@ -1486,33 +1413,6 @@ fn split_direction_filtered_indices(filter: &str) -> Vec<usize> {
         .collect()
 }
 
-/// Indices into `PALETTE_ITEMS` whose label contains `filter` as a
-/// case-insensitive substring. An empty filter returns every item.
-fn palette_item_label(
-    command: &PaletteCommand,
-    label: &'static str,
-    close_label: PaletteCloseLabel,
-) -> &'static str {
-    if matches!(command, PaletteCommand::Close) {
-        close_label.label()
-    } else {
-        label
-    }
-}
-
-fn palette_filtered_indices(filter: &str, close_label: PaletteCloseLabel) -> Vec<usize> {
-    let needle = filter.to_ascii_lowercase();
-    PALETTE_ITEMS
-        .iter()
-        .enumerate()
-        .filter(|(_, (command, label))| {
-            let label = palette_item_label(command, label, close_label);
-            needle.is_empty() || label.to_ascii_lowercase().contains(&needle)
-        })
-        .map(|(idx, _)| idx)
-        .collect()
-}
-
 /// One renderable row inside an `AgentPicker` after filtering. The
 /// `Section` variant carries a non-selectable label that groups the
 /// selectable rows beneath it ("agents" before agent rows, "shells"
@@ -2341,44 +2241,6 @@ fn render_info_rows(
             }
         }
         buf.extend_from_slice(RESET.as_bytes());
-    }
-}
-
-struct ContainerInfoRow<'a> {
-    label: &'static str,
-    value: String,
-    emphasise: bool,
-    href: Option<&'a str>,
-}
-
-impl<'a> ContainerInfoRow<'a> {
-    fn new(label: &'static str, value: String) -> Self {
-        Self {
-            label,
-            value,
-            emphasise: false,
-            href: None,
-        }
-    }
-
-    fn emphasised(mut self) -> Self {
-        self.emphasise = true;
-        self
-    }
-
-    fn hyperlink(mut self, href: Option<&'a str>) -> Self {
-        self.href = href;
-        self
-    }
-}
-
-/// Show `"(none)"` for empty role / agent strings so a missing value
-/// is visibly missing rather than a confusingly empty gutter.
-fn non_empty_or_dim(s: &str) -> String {
-    if s.is_empty() {
-        "(none)".to_string()
-    } else {
-        s.to_string()
     }
 }
 
