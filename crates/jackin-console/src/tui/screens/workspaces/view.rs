@@ -102,6 +102,21 @@ pub fn workspace_instance_pane_agent_label(agent: Option<&str>) -> String {
 }
 
 #[must_use]
+pub const fn current_directory_workspace_title() -> &'static str {
+    "Current directory"
+}
+
+#[must_use]
+pub fn picker_sidebar_title(label: &str) -> String {
+    format!(" {label} ")
+}
+
+#[must_use]
+pub fn role_global_mounts_title(role_label: &str) -> String {
+    format!(" Role global mounts · {role_label} ")
+}
+
+#[must_use]
 pub const fn instance_sessions_empty_message(session_load_error: bool) -> &'static str {
     if session_load_error {
         "Sessions unavailable (manifest read error)"
@@ -987,6 +1002,12 @@ mod tests {
         assert_eq!(
             workspace_instance_pane_agent_label(Some("claude")),
             "claude"
+        );
+        assert_eq!(current_directory_workspace_title(), "Current directory");
+        assert_eq!(picker_sidebar_title("alpha"), " alpha ");
+        assert_eq!(
+            role_global_mounts_title("agent-smith"),
+            " Role global mounts · agent-smith "
         );
     }
 
