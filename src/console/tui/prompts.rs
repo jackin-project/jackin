@@ -4,6 +4,10 @@ use crate::config::AppConfig;
 use crate::console::ConsoleOutcome;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
+use jackin_console::tui::components::error_popup::{
+    role_resolution_error_message, role_resolution_error_title,
+};
+use jackin_console::tui::components::status_popup::role_resolution_status_popup_state;
 
 use super::{ConsoleStage, ConsoleState};
 
@@ -31,10 +35,7 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
 {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.status_overlay = Some(jackin_console::tui::components::status_popup::status_popup_state(
-        "Resolving agent role",
-        format!("Loading and resolving {}", role.key()),
-    ));
+    ms.status_overlay = Some(role_resolution_status_popup_state(role.key()));
     terminal.draw(|frame| {
         crate::console::tui::render(frame, frame.area(), ms, config, cwd);
     })?;
@@ -51,8 +52,8 @@ pub(in crate::console) fn show_role_resolution_error(
     let _ = crate::console::tui::update_manager(
         ms,
         crate::console::tui::ManagerMessage::OpenListErrorPopup {
-            title: "Role resolution failed".into(),
-            message: format!("Could not resolve {}.\n\n{error:#}", role.key()),
+            title: role_resolution_error_title().into(),
+            message: role_resolution_error_message(role.key(), error),
         },
     );
 }

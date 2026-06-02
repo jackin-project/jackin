@@ -41,6 +41,17 @@ pub fn op_read_failed_error_popup_state(
     error_popup_state("1Password read failed", error.to_string())
 }
 
+pub fn role_resolution_error_title() -> &'static str {
+    "Role resolution failed"
+}
+
+pub fn role_resolution_error_message(
+    role_key: impl std::fmt::Display,
+    error: impl std::fmt::Display,
+) -> String {
+    format!("Could not resolve {role_key}.\n\n{error:#}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,5 +94,14 @@ mod tests {
 
         assert_eq!(state.title, "1Password read failed");
         assert_eq!(state.message, "Touch ID rejected");
+    }
+
+    #[test]
+    fn role_resolution_error_names_role() {
+        assert_eq!(role_resolution_error_title(), "Role resolution failed");
+        assert_eq!(
+            role_resolution_error_message("agent-smith", "not found"),
+            "Could not resolve agent-smith.\n\nnot found"
+        );
     }
 }
