@@ -1088,105 +1088,30 @@ fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
     SettingsTrustState::from_rows(pending)
 }
 
-// `TextInputState` is ~600B while other variants are ~330B. Boxing the state
-// field would cascade through 19 construction/match sites (including wizard
-// step transitions that move state in and out of `Modal`). The ergonomic cost
-// is worse than the small stack-size win here, so we accept the variance.
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum Modal<'a> {
-    TextInput {
-        target: TextInputTarget,
-        state: TextInputState<'a>,
-    },
-    FileBrowser {
-        target: FileBrowserTarget,
-        state: FileBrowserState,
-    },
-    MountDstChoice {
-        target: FileBrowserTarget,
-        state: MountDstChoiceState,
-    },
-    WorkdirPick {
-        state: WorkdirPickState,
-    },
-    Confirm {
-        target: ConfirmTarget,
-        state: ConfirmState,
-    },
-    SaveDiscardCancel {
-        state: jackin_tui::components::SaveDiscardState,
-    },
-    /// Workspace list, when ≥2 GitHub mounts and operator pressed `o`.
-    GithubPicker {
-        state: GithubPickerState,
-    },
-    ConfirmSave {
-        state: ConfirmSaveState<crate::workspace::MountConfig>,
-    },
-    ErrorPopup {
-        state: ErrorPopupState,
-    },
-    ContainerInfo {
-        state: ContainerInfoState,
-    },
-    StatusPopup {
-        state: jackin_tui::components::StatusPopupState,
-    },
-    /// Boxed because the picker's `Vec`s + runner + channel are
-    /// substantially larger than other variants.
-    OpPicker {
-        state: Box<OpPickerState>,
-    },
-    /// Manager-list disambiguation picker (`ManagerState.list_modal`
-    /// slot, same as `GithubPicker`).
-    RolePicker {
-        state: RolePickerState,
-    },
-    /// Editor-tab override picker (`EditorState.modal` slot, not the
-    /// launch-disambiguation slot on `ManagerState`) so the editor's
-    /// commit handler can create the override entry and auto-expand.
-    RoleOverridePicker {
-        state: RolePickerState,
-    },
-    /// Auth-tab role picker — opened from the `+ Override for a role`
-    /// sentinel when an auth kind is already focused. Commit reads
-    /// `editor.auth_selected_kind` to build the `AuthFormTarget`
-    /// directly, then hands off to `Modal::AuthForm`.
-    AuthRolePicker {
-        state: RolePickerState,
-    },
-    SourcePicker {
-        state: SourcePickerState,
-        /// Key context for the two-step env-add flow: scope + key name
-        /// typed in the preceding `EnvKey` `TextInput`. Replaces the
-        /// `pending_env_key` stash slot so the context travels with the
-        /// modal rather than in a separate field.
-        env_key: Option<(SecretsScopeTag, String)>,
-    },
-    AuthSourcePicker {
-        state: SourcePickerState,
-    },
-    ScopePicker {
-        state: ScopePickerState,
-    },
-    /// Auth-form modal opened from the Auth tab. `target` identifies
-    /// which scope (workspace or workspace × role) and which auth
-    /// kind (Claude / Codex / Github) the form is editing so commit
-    /// can write back to the correct slot on `editor.pending`.
-    AuthForm {
-        target: AuthFormTarget,
-        state: Box<AuthForm>,
-        /// Active focus inside the form: mode picker, credential
-        /// source row, or one of the Save/Cancel/Reset buttons.
-        focus: AuthFormFocus,
-        /// Buffer used to round-trip a previously-typed literal
-        /// credential through the source-picker → text-input detour
-        /// so the value isn't lost on cancel and the text-input
-        /// modal can re-open pre-populated.
-        literal_buffer: String,
-    },
-}
+pub type Modal<'a> = jackin_console::tui::app::ConsoleModal<
+    TextInputTarget,
+    TextInputState<'a>,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    jackin_tui::components::SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState<crate::workspace::MountConfig>,
+    ErrorPopupState,
+    ContainerInfoState,
+    jackin_tui::components::StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+>;
 
 pub type CreatePreludeState<'a> = jackin_console::tui::app::ConsoleCreatePreludeState<Modal<'a>>;
 

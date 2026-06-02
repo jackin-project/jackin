@@ -30,6 +30,99 @@ pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     },
 }
 
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub enum ConsoleModal<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+> {
+    TextInput {
+        target: TextInputTarget,
+        state: TextInputState,
+    },
+    FileBrowser {
+        target: FileBrowserTarget,
+        state: FileBrowserState,
+    },
+    MountDstChoice {
+        target: FileBrowserTarget,
+        state: MountDstChoiceState,
+    },
+    WorkdirPick {
+        state: WorkdirPickState,
+    },
+    Confirm {
+        target: ConfirmTarget,
+        state: ConfirmState,
+    },
+    SaveDiscardCancel {
+        state: SaveDiscardState,
+    },
+    GithubPicker {
+        state: GithubPickerState,
+    },
+    ConfirmSave {
+        state: ConfirmSaveState,
+    },
+    ErrorPopup {
+        state: ErrorPopupState,
+    },
+    ContainerInfo {
+        state: ContainerInfoState,
+    },
+    StatusPopup {
+        state: StatusPopupState,
+    },
+    OpPicker {
+        state: Box<OpPickerState>,
+    },
+    RolePicker {
+        state: RolePickerState,
+    },
+    RoleOverridePicker {
+        state: RolePickerState,
+    },
+    AuthRolePicker {
+        state: RolePickerState,
+    },
+    SourcePicker {
+        state: SourcePickerState,
+        env_key: Option<(SecretsScopeTag, String)>,
+    },
+    AuthSourcePicker {
+        state: SourcePickerState,
+    },
+    ScopePicker {
+        state: ScopePickerState,
+    },
+    AuthForm {
+        target: AuthFormTarget,
+        state: Box<AuthForm>,
+        focus: AuthFormFocus,
+        literal_buffer: String,
+    },
+}
+
 #[derive(Debug)]
 pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
     pub stage: ConsoleAppStage<Manager>,
