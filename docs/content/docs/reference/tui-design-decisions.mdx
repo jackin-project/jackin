@@ -157,7 +157,7 @@ Capsule outer-terminal title, pane-title, pane-agent-label, and OSC window-title
 
 Capsule branch-context default-branch suppression now lives with the branch-context bar component in <RepoFile path="crates/jackin-capsule/src/tui/components/branch_context_bar.rs" />. Daemon code supplies Git/default-branch facts and handles resulting actions.
 
-Capsule dialog state construction defaults for rename-tab, split-direction, close-target, confirm-action, container-info, and GitHub-context dialogs now also live under <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />; the container-info dialog carries a TUI-owned diagnostics display snapshot, while daemon code supplies runtime facts and executes terminal actions.
+Capsule dialog state construction defaults for rename-tab, split-direction, close-target, confirm-action, container-info, provider-picker, and GitHub-context dialogs now also live under <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />; container-info diagnostics and provider choices are TUI-owned display snapshots, while daemon code supplies runtime facts and executes terminal actions.
 
 ---
 

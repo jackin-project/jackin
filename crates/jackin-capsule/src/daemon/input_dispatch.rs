@@ -52,7 +52,13 @@ impl Multiplexer {
                 if providers.len() > 1 {
                     // Multiple providers available — push ProviderPicker
                     // on top so the operator chooses before spawning.
-                    self.dialog_push(Dialog::new_provider_picker(agent, providers, intent));
+                    let choices = providers
+                        .into_iter()
+                        .map(|provider| {
+                            crate::tui::components::dialog::ProviderChoice::new(provider.label())
+                        })
+                        .collect();
+                    self.dialog_push(Dialog::new_provider_picker(agent, choices, intent));
                 } else {
                     // Zero or one provider — spawn immediately without
                     // a picker step (operator experience unchanged when
@@ -63,17 +69,26 @@ impl Multiplexer {
             }
             DialogAction::SpawnAgentWithProvider {
                 agent,
-                provider,
+                provider_label,
                 intent,
             } => {
                 self.dialog_clear();
                 // Token resolved here from the container's ZAI_API_KEY.
-                let env_overrides = provider.env_overrides(self.zai_key.as_deref());
+                let env_overrides =
+                    jackin_protocol::Provider::from_label(&provider_label).map_or_else(
+                        || {
+                            crate::clog!(
+                                "spawn: unknown provider label {provider_label:?}; no env redirect applied"
+                            );
+                            Vec::new()
+                        },
+                        |provider| provider.env_overrides(self.zai_key.as_deref()),
+                    );
                 self.dispatch_spawn_intent_with_provider(
                     agent,
                     intent,
                     &env_overrides,
-                    Some(provider.label()),
+                    Some(provider_label.as_str()),
                 );
             }
             DialogAction::RenameTab { tab_idx, label } => {

@@ -117,6 +117,19 @@ impl SplitDirection {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderChoice {
+    pub label: String,
+}
+
+impl ProviderChoice {
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+        }
+    }
+}
+
 /// Cap on operator-typed tab labels. Long names break the tab-strip
 /// layout (each tab cell grows with its label width), so the input
 /// stops accepting characters past this limit. 16 is enough for the
@@ -200,12 +213,11 @@ pub enum Dialog {
         selected_yes: bool,
     },
     /// Two-step provider picker shown after agent selection when multiple
-    /// providers (e.g. Anthropic and Z.AI) are available. The env
-    /// redirection is derived from each `Provider` at spawn time, so the
-    /// dialog cannot carry a label that has drifted from its overrides.
+    /// providers (e.g. Anthropic and Z.AI) are available. The daemon keeps
+    /// the provider enum/env mapping; the dialog owns only visible labels.
     ProviderPicker {
         agent: Option<String>,
-        providers: Vec<jackin_protocol::Provider>,
+        providers: Vec<ProviderChoice>,
         selected: usize,
         intent: PickerIntent,
     },
@@ -286,11 +298,11 @@ pub enum DialogAction {
         agent: Option<String>,
         intent: PickerIntent,
     },
-    /// User confirmed a provider in the ProviderPicker — the daemon
-    /// derives the env overrides and label from the chosen `Provider`.
+    /// User confirmed a provider in the ProviderPicker — the daemon maps
+    /// the chosen visible label back to provider/env facts.
     SpawnAgentWithProvider {
         agent: Option<String>,
-        provider: jackin_protocol::Provider,
+        provider_label: String,
         intent: PickerIntent,
     },
     /// Operator typed a new tab label and pressed Enter. Empty
@@ -421,7 +433,7 @@ impl Dialog {
 
     pub fn new_provider_picker(
         agent: Option<String>,
-        providers: Vec<jackin_protocol::Provider>,
+        providers: Vec<ProviderChoice>,
         intent: PickerIntent,
     ) -> Self {
         Self::ProviderPicker {
@@ -693,7 +705,7 @@ impl Dialog {
                 } => match providers.get(*selected) {
                     Some(provider) => DialogAction::SpawnAgentWithProvider {
                         agent: agent.clone(),
-                        provider: *provider,
+                        provider_label: provider.label.clone(),
                         intent: *intent,
                     },
                     None => DialogAction::Redraw,
@@ -832,7 +844,7 @@ impl Dialog {
             *selected = idx;
             return DialogAction::SpawnAgentWithProvider {
                 agent: agent.clone(),
-                provider: *provider,
+                provider_label: provider.label.clone(),
                 intent: *intent,
             };
         }
@@ -1989,7 +2001,7 @@ fn render_provider_picker(
     start_col: u16,
     height: u16,
     width: u16,
-    providers: &[jackin_protocol::Provider],
+    providers: &[ProviderChoice],
     selected: usize,
 ) {
     render_box(buf, start_row, start_col, height, width, "Choose provider");
@@ -2001,7 +2013,7 @@ fn render_provider_picker(
             start_row + 1 + i as u16,
             start_col + 1,
             width,
-            provider.label(),
+            provider.label.as_str(),
             i == selected,
         );
     }

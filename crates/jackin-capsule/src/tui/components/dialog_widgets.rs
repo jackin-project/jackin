@@ -212,7 +212,7 @@ impl Dialog {
                     .unwrap_or_else(|| "Provider".into());
                 let items: Vec<PickerItem> = providers
                     .iter()
-                    .map(|p| PickerItem::Item(p.label().to_string()))
+                    .map(|p| PickerItem::Item(p.label.clone()))
                     .collect();
                 DialogRatatuiSnapshot::FilterPicker {
                     title,
