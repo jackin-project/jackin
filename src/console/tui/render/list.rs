@@ -22,14 +22,9 @@ use jackin_tui::components::{Panel, PanelFocus};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::Paragraph,
+    text::Line,
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-#[cfg(test)]
-use jackin_tui::theme::TAB_BG_INACTIVE_HOVER;
 use crate::config::AppConfig;
 use crate::console::tui::render::list_geometry::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
@@ -60,8 +55,10 @@ use jackin_console::tui::screens::workspaces::view::{
     render_compact_instances_summary, render_picker_sidebar, render_environments_subpanel,
     render_general_subpanel, render_global_mounts_subpanel,
     render_mounts_subpanel as render_workspace_mounts_panel, render_roles_subpanel,
-    render_sentinel_description_pane, WorkspaceEnvRow, WorkspaceListDisplayRow,
-    WorkspaceListRowTone, WorkspaceRoleRow,
+    render_instance_details_pane as render_workspace_instance_details_pane,
+    render_sentinel_description_pane, WorkspaceEnvRow, WorkspaceInstancePane,
+    WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow, WorkspaceInstanceTab,
+    WorkspaceInstanceTabPane, WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -498,130 +495,82 @@ fn render_instance_details_pane(
     selected_pane: Option<u64>,
     preview_focused: bool,
 ) {
-    let instance_title = format!(" Instance: {} ", entry.instance_id);
-    let block = Panel::new()
-        .title(&instance_title)
-        .focus(if preview_focused {
-            PanelFocus::Focused
-        } else {
-            PanelFocus::Unfocused
-        })
-        .block();
-
-    let mut lines: Vec<Line<'static>> = Vec::new();
-
-    if let Some(snapshot) = snapshot {
-        let active_tab = snapshot.active_tab as usize;
-        if snapshot.tabs.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  Daemon reports no tabs",
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        } else {
-            lines.push(Line::from(Span::styled(
-                "  Live tab/pane tree (from container daemon)",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            )));
-            for (tab_idx, tab) in snapshot.tabs.iter().enumerate() {
-                let active = tab_idx == active_tab;
-                let prefix = if active { "▸" } else { " " };
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("  {prefix} Tab {}:  ", tab_idx + 1),
-                        Style::default().fg(if active { PHOSPHOR_GREEN } else { PHOSPHOR_DIM }),
-                    ),
-                    Span::styled(
-                        tab.label.clone(),
-                        Style::default().fg(WHITE).add_modifier(if active {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                    ),
-                ]));
-                for pane in &tab.panes {
-                    let focused = pane.session_id == tab.focused_pane;
-                    let selected = selected_pane == Some(pane.session_id);
-                    let marker = if focused { "●" } else { "○" };
-                    let cursor_prefix = if selected { "▶ " } else { "  " };
-                    let agent_label = pane.agent.clone().unwrap_or_else(|| "shell".to_string());
-                    let state_label = pane.state.label();
-                    let label_style = if selected {
-                        Style::default()
-                            .fg(WHITE)
-                            .bg(PHOSPHOR_DARK)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(PHOSPHOR_GREEN)
-                    };
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            format!("    {cursor_prefix}{marker} "),
-                            Style::default().fg(if focused {
-                                PHOSPHOR_GREEN
-                            } else {
-                                PHOSPHOR_DIM
-                            }),
-                        ),
-                        Span::styled(format!("{:<16}", pane.label), label_style),
-                        Span::styled(
-                            format!("  ({agent_label}) "),
-                            Style::default().fg(PHOSPHOR_DIM),
-                        ),
-                        Span::styled(
-                            format!("[{state_label}]"),
-                            Style::default().fg(PHOSPHOR_DIM),
-                        ),
-                    ]));
-                }
-            }
-        }
-    } else if sessions.is_empty() {
-        let msg = if session_load_error {
-            "  Sessions unavailable (manifest read error)"
-        } else {
-            "  No sessions recorded"
-        };
-        lines.push(Line::from(Span::styled(
-            msg,
-            Style::default().fg(PHOSPHOR_DIM),
-        )));
-    } else {
-        lines.push(Line::from(Span::styled(
-            format!("  {:<24}  Agent", "Session"),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        )));
-        for session in sessions {
-            let name = if session.tmux_name.chars().count() > 24 {
-                let cut: String = session.tmux_name.chars().take(23).collect();
-                format!("{cut}…")
-            } else {
-                session.tmux_name.clone()
-            };
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {name:<24}  "),
-                    Style::default().fg(PHOSPHOR_GREEN),
-                ),
-                Span::styled(
-                    session.agent_runtime.clone(),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
-            ]));
-        }
-    }
-
-    // Inline footer hints inside a pane body violate the TUI design
-    // rule "keyboard hints live in the footer bar only" (see
-    // reference/tui-design-decisions.mdx); these keys are surfaced
-    // by the list-stage footer items in render/mod.rs.
-
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .style(Style::default().fg(PHOSPHOR_GREEN)),
-        area,
+    let pane = instance_details_pane(
+        entry,
+        sessions,
+        session_load_error,
+        snapshot,
+        selected_pane,
+        preview_focused,
     );
+    render_workspace_instance_details_pane(frame, area, &pane);
+}
+
+fn instance_details_pane(
+    entry: &crate::instance::InstanceIndexEntry,
+    sessions: &[crate::instance::SessionRecord],
+    session_load_error: bool,
+    snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
+    selected_pane: Option<u64>,
+    preview_focused: bool,
+) -> WorkspaceInstancePane {
+    WorkspaceInstancePane {
+        instance_id: entry.instance_id.clone(),
+        focused: preview_focused,
+        content: instance_details_content(sessions, session_load_error, snapshot, selected_pane),
+    }
+}
+
+fn instance_details_content(
+    sessions: &[crate::instance::SessionRecord],
+    session_load_error: bool,
+    snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
+    selected_pane: Option<u64>,
+) -> WorkspaceInstancePaneContent {
+    if let Some(snapshot) = snapshot {
+        return WorkspaceInstancePaneContent::Live {
+            tabs: snapshot
+                .tabs
+                .iter()
+                .enumerate()
+                .map(|(tab_idx, tab)| WorkspaceInstanceTab {
+                    index: tab_idx,
+                    label: tab.label.clone(),
+                    active: tab_idx == snapshot.active_tab as usize,
+                    panes: tab
+                        .panes
+                        .iter()
+                        .map(|pane| WorkspaceInstanceTabPane {
+                            label: pane.label.clone(),
+                            agent_label: pane.agent.clone().unwrap_or_else(|| "shell".to_string()),
+                            state_label: pane.state.label().to_string(),
+                            focused: pane.session_id == tab.focused_pane,
+                            selected: selected_pane == Some(pane.session_id),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        };
+    }
+    if sessions.is_empty() {
+        return WorkspaceInstancePaneContent::Empty {
+            message: if session_load_error {
+                "Sessions unavailable (manifest read error)"
+            } else {
+                "No sessions recorded"
+            }
+            .to_string(),
+        };
+    }
+    WorkspaceInstancePaneContent::Sessions {
+        rows: sessions
+            .iter()
+            .map(|session| WorkspaceInstanceSessionRow {
+                name: session.tmux_name.clone(),
+                agent_runtime: session.agent_runtime.clone(),
+            })
+            .collect(),
+    }
 }
 
 /// Number of leading spaces every content row in the General / Mounts /
@@ -740,7 +689,8 @@ fn role_scoped_mount_count(config: &AppConfig, role: &str) -> usize {
 
 #[cfg(test)]
 mod list_name_scroll_tests {
-    use super::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, render_list_body};
+    use super::render_list_body;
+    use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
     use crate::config::AppConfig;
     use crate::console::tui::render::list_geometry::{
         clamp_list_scroll_for_area, list_names_content_width,

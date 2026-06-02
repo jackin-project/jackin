@@ -584,6 +584,178 @@ pub fn render_roles_subpanel(
     );
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceInstancePane {
+    pub instance_id: String,
+    pub focused: bool,
+    pub content: WorkspaceInstancePaneContent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceInstancePaneContent {
+    Live { tabs: Vec<WorkspaceInstanceTab> },
+    Sessions { rows: Vec<WorkspaceInstanceSessionRow> },
+    Empty { message: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceInstanceTab {
+    pub index: usize,
+    pub label: String,
+    pub active: bool,
+    pub panes: Vec<WorkspaceInstanceTabPane>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceInstanceTabPane {
+    pub label: String,
+    pub agent_label: String,
+    pub state_label: String,
+    pub focused: bool,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceInstanceSessionRow {
+    pub name: String,
+    pub agent_runtime: String,
+}
+
+pub fn render_instance_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    pane: &WorkspaceInstancePane,
+) {
+    let instance_title = format!(" Instance: {} ", pane.instance_id);
+    let block = jackin_tui::components::Panel::new()
+        .title(&instance_title)
+        .focus(if pane.focused {
+            jackin_tui::components::PanelFocus::Focused
+        } else {
+            jackin_tui::components::PanelFocus::Unfocused
+        })
+        .block();
+    let lines = instance_detail_lines(&pane.content);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)),
+        area,
+    );
+}
+
+fn instance_detail_lines(content: &WorkspaceInstancePaneContent) -> Vec<Line<'static>> {
+    match content {
+        WorkspaceInstancePaneContent::Live { tabs } => live_instance_lines(tabs),
+        WorkspaceInstancePaneContent::Sessions { rows } => session_instance_lines(rows),
+        WorkspaceInstancePaneContent::Empty { message } => vec![Line::from(Span::styled(
+            format!("  {message}"),
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+        ))],
+    }
+}
+
+fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    if tabs.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  Daemon reports no tabs",
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+        )));
+        return lines;
+    }
+
+    lines.push(Line::from(Span::styled(
+        "  Live tab/pane tree (from container daemon)",
+        Style::default()
+            .fg(jackin_tui::theme::WHITE)
+            .add_modifier(Modifier::BOLD),
+    )));
+    for tab in tabs {
+        let prefix = if tab.active { "▸" } else { " " };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {prefix} Tab {}:  ", tab.index + 1),
+                Style::default().fg(if tab.active {
+                    jackin_tui::theme::PHOSPHOR_GREEN
+                } else {
+                    jackin_tui::theme::PHOSPHOR_DIM
+                }),
+            ),
+            Span::styled(
+                tab.label.clone(),
+                Style::default()
+                    .fg(jackin_tui::theme::WHITE)
+                    .add_modifier(if tab.active {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            ),
+        ]));
+        for pane in &tab.panes {
+            let marker = if pane.focused { "●" } else { "○" };
+            let cursor_prefix = if pane.selected { "▶ " } else { "  " };
+            let label_style = if pane.selected {
+                Style::default()
+                    .fg(jackin_tui::theme::WHITE)
+                    .bg(jackin_tui::theme::PHOSPHOR_DARK)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("    {cursor_prefix}{marker} "),
+                    Style::default().fg(if pane.focused {
+                        jackin_tui::theme::PHOSPHOR_GREEN
+                    } else {
+                        jackin_tui::theme::PHOSPHOR_DIM
+                    }),
+                ),
+                Span::styled(format!("{:<16}", pane.label), label_style),
+                Span::styled(
+                    format!("  ({}) ", pane.agent_label),
+                    Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                ),
+                Span::styled(
+                    format!("[{}]", pane.state_label),
+                    Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+                ),
+            ]));
+        }
+    }
+    lines
+}
+
+fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled(
+        format!("  {:<24}  Agent", "Session"),
+        Style::default()
+            .fg(jackin_tui::theme::WHITE)
+            .add_modifier(Modifier::BOLD),
+    ))];
+    for row in rows {
+        let name = if row.name.chars().count() > 24 {
+            let cut: String = row.name.chars().take(23).collect();
+            format!("{cut}…")
+        } else {
+            row.name.clone()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {name:<24}  "),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+            ),
+            Span::styled(
+                row.agent_runtime.clone(),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ),
+        ]));
+    }
+    lines
+}
+
 fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
     const SUBPANEL_CONTENT_INDENT: usize = 2;
     let outer_indent = " ".repeat(SUBPANEL_CONTENT_INDENT);

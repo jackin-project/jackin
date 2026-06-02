@@ -33,6 +33,3 @@ pub(super) use jackin_tui::components::scrollable_panel::{
     render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll, render_scrollable_block_at,
     render_vertical_scrollbar,
 };
-pub(super) use jackin_tui::theme::{
-    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
-};
