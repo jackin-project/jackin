@@ -11,9 +11,6 @@ use crate::console::tui::components::settings::{
     render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab,
     render_settings_tab_strip, render_trust_tab,
 };
-pub(super) use crate::console::tui::components::settings::{
-    render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
-};
 use crate::console::tui::state::{SettingsState, SettingsTab};
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
 use jackin_console::tui::view::{footer_height, render_footer, render_header};

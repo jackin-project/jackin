@@ -3,6 +3,9 @@ use ratatui::{Frame, layout::Rect};
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
+use crate::console::tui::components::settings::{
+    render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
+};
 use crate::console::tui::components::workspace_list::render_list_body;
 use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_console::tui::components::footer_hints::{
@@ -107,11 +110,11 @@ pub fn render(
                     let popup_area = settings_error_area(area, h);
                     jackin_tui::components::render_error_dialog(frame, popup_area, popup);
                 } else if let Some(modal) = &settings.mounts.modal {
-                    settings::render_global_mount_modal(frame, modal);
+                    render_global_mount_modal(frame, modal);
                 } else if let Some(modal) = &settings.env.modal {
-                    settings::render_settings_env_modal(frame, modal);
+                    render_settings_env_modal(frame, modal);
                 } else if let Some(modal) = &settings.auth.modal {
-                    settings::render_settings_auth_modal(frame, modal);
+                    render_settings_auth_modal(frame, modal);
                 }
             }
         }
