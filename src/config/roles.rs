@@ -26,8 +26,35 @@ use std::collections::BTreeMap;
 /// way for non-workspace-scoped callers (e.g. `jackin config auth show`)
 /// to read the global default through the same code path.
 pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) -> AuthForwardMode {
-    // Layer 3 (most specific): workspace × role × agent
-    if let Some(m) = cfg
+    resolve_mode_with_trace(cfg, agent, workspace, role).0
+}
+
+/// Like [`resolve_mode`] but also returns the resolution trace.
+///
+/// The trace is a vector of `(layer_label, value_at_layer)` pairs, lowest
+/// precedence last. Used by `runtime::launch` to build error messages that
+/// show the operator exactly which config layer resolved the credential mode.
+pub fn resolve_mode_with_trace(
+    cfg: &AppConfig,
+    agent: Agent,
+    workspace: &str,
+    role: &str,
+) -> (AuthForwardMode, Vec<(String, Option<AuthForwardMode>)>) {
+    let agent_at_global = match agent {
+        Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
+        Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
+        Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Kimi => cfg.kimi.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
+    };
+    let agent_at_workspace = cfg.workspaces.get(workspace).and_then(|ws| match agent {
+        Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
+        Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
+        Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Kimi => ws.kimi.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
+    });
+    let agent_at_ws_role = cfg
         .workspaces
         .get(workspace)
         .and_then(|ws| ws.roles.get(role))
@@ -37,31 +64,17 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
             Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
             Agent::Kimi => ro.kimi.as_ref().map(|c| c.auth_forward),
             Agent::Opencode => ro.opencode.as_ref().map(|c| c.auth_forward),
-        })
-    {
-        return m;
-    }
-
-    // Layer 2: workspace × agent
-    if let Some(m) = cfg.workspaces.get(workspace).and_then(|ws| match agent {
-        Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
-        Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
-        Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
-        Agent::Kimi => ws.kimi.as_ref().map(|c| c.auth_forward),
-        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
-    }) {
-        return m;
-    }
-
-    // Layer 1: global agent
-    match agent {
-        Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
-        Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
-        Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
-        Agent::Kimi => cfg.kimi.as_ref().map(|c| c.auth_forward),
-        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
-    }
-    .unwrap_or_default()
+        });
+    let winning = agent_at_ws_role
+        .or(agent_at_workspace)
+        .or(agent_at_global)
+        .unwrap_or_default();
+    let trace = vec![
+        (format!("workspace × role × {agent}"), agent_at_ws_role),
+        (format!("workspace × {agent}"), agent_at_workspace),
+        (format!("global × {agent}"), agent_at_global),
+    ];
+    (winning, trace)
 }
 
 /// Resolve the effective GitHub CLI auth-forward mode for a

@@ -30,7 +30,9 @@ pub use migrations::{
 };
 pub(crate) use mounts::MountEntry;
 pub use mounts::{DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows};
-pub use roles::{build_github_env_layers, resolve_github_mode, resolve_mode};
+pub use roles::{
+    build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
+};
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
 /// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.

@@ -99,6 +99,22 @@ pub struct DockerResources {
     pub certs_volume: String,
 }
 
+impl DockerResources {
+    /// Derive all four Docker resource names from the role container name.
+    ///
+    /// Invariant: all derived names follow the same suffix conventions used
+    /// by `runtime::naming` helpers, so `docker inspect` on any of the four
+    /// names produces results consistent with the naming registry.
+    pub fn from_container_name(container_name: &str) -> Self {
+        Self {
+            role_container: container_name.to_string(),
+            dind_container: format!("{container_name}-dind"),
+            network: format!("{container_name}-net"),
+            certs_volume: format!("{container_name}-dind-certs"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceManifest {
     pub version: u32,

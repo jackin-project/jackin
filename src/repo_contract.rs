@@ -12,11 +12,10 @@ use dockerfile_parser_rs::{Dockerfile, Instruction};
 
 use crate::repo::RoleRepoValidationError;
 
-/// Filename of the role manifest that every role repo must contain.
-pub const MANIFEST_FILENAME: &str = "jackin.role.toml";
-
-/// Name of the Dockerfile that every role repo must contain.
-pub const DOCKERFILE_NAME: &str = "Dockerfile";
+pub use jackin_core::constants::DOCKERFILE_NAME;
+/// Re-exported from `jackin-core` — callers use `crate::repo_contract::MANIFEST_FILENAME`
+/// for backward compat while the canonical definition lives in the leaf crate.
+pub use jackin_core::constants::MANIFEST_FILENAME;
 
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
 pub const CONSTRUCT_STABLE_TAG: &str = "trixie";

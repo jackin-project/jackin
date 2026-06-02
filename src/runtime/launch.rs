@@ -41,7 +41,7 @@ use super::identity::{GitIdentity, load_git_identity, load_host_identity};
 use super::image::{build_agent_image, prepare_runtime_binaries};
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
-    image_name, image_name_for_branch,
+    dind_container_name, image_name, image_name_for_branch, role_network_name,
 };
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 use super::universe::ExitClaim;
@@ -1998,8 +1998,8 @@ async fn load_role_with(
         };
 
         let container_state = paths.data_dir.join(&container_name);
-        let network = format!("{container_name}-net");
-        let dind = format!("{container_name}-dind");
+        let network = role_network_name(&container_name);
+        let dind = dind_container_name(&container_name);
         let certs_volume = dind_certs_volume(&container_name);
         let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
@@ -3568,37 +3568,7 @@ fn build_mode_resolution(
     workspace: &str,
     role: &str,
 ) -> Vec<(String, Option<crate::config::AuthForwardMode>)> {
-    use crate::agent::Agent;
-    let agent_at_global = match agent {
-        Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
-        Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
-        Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
-        Agent::Kimi => cfg.kimi.as_ref().map(|c| c.auth_forward),
-        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
-    };
-    let agent_at_workspace = cfg.workspaces.get(workspace).and_then(|ws| match agent {
-        Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
-        Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
-        Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
-        Agent::Kimi => ws.kimi.as_ref().map(|c| c.auth_forward),
-        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
-    });
-    let agent_at_ws_role = cfg
-        .workspaces
-        .get(workspace)
-        .and_then(|ws| ws.roles.get(role))
-        .and_then(|ro| match agent {
-            Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
-            Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
-            Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
-            Agent::Kimi => ro.kimi.as_ref().map(|c| c.auth_forward),
-            Agent::Opencode => ro.opencode.as_ref().map(|c| c.auth_forward),
-        });
-    vec![
-        (format!("workspace × role × {agent}"), agent_at_ws_role),
-        (format!("workspace × {agent}"), agent_at_workspace),
-        (format!("global × {agent}"), agent_at_global),
-    ]
+    crate::config::resolve_mode_with_trace(cfg, agent, workspace, role).1
 }
 
 /// Build the 4-layer env-layer trace (lowest precedence first) for the
@@ -3843,12 +3813,7 @@ mod tests {
             role_source_git: &role_source_git,
             role_source_ref: None,
             image_tag: &image_tag,
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
+            docker: DockerResources::from_container_name(container_name),
         })
     }
 
