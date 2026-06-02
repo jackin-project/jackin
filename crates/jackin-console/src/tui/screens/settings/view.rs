@@ -171,6 +171,11 @@ pub fn settings_env_new_key_after_picker_label(scope: &SettingsEnvScope) -> Stri
 }
 
 #[must_use]
+pub fn settings_env_empty_key_label() -> &'static str {
+    "Key cannot be empty"
+}
+
+#[must_use]
 pub fn env_forbidden_label(scope: &SettingsEnvScope) -> String {
     match scope {
         SettingsEnvScope::Global => "global env".to_string(),
@@ -752,6 +757,11 @@ mod tests {
             settings_env_new_key_after_picker_label(&SettingsEnvScope::Global),
             "New environment key for global"
         );
+        assert_eq!(
+            settings_env_new_key_after_picker_label(&SettingsEnvScope::Role("alpha".to_string())),
+            "New environment key for alpha"
+        );
+        assert_eq!(settings_env_empty_key_label(), "Key cannot be empty");
     }
 
     #[test]

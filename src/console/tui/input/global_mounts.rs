@@ -22,9 +22,10 @@ use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     global_mount_confirm_state, global_mount_scope_picker_state, global_mount_text_input_state,
     global_mount_text_target_label, settings_env_delete_confirm_state,
-    settings_env_key_input_state, settings_env_new_key_after_picker_label,
-    settings_env_new_key_label, settings_env_scope_picker_state, settings_env_source_picker_state,
-    settings_env_text_input_state, settings_env_value_text_label,
+    settings_env_empty_key_label, settings_env_key_input_state,
+    settings_env_new_key_after_picker_label, settings_env_new_key_label,
+    settings_env_scope_picker_state, settings_env_source_picker_state, settings_env_text_input_state,
+    settings_env_value_text_label,
 };
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
@@ -1290,7 +1291,7 @@ pub(super) fn handle_settings_env_modal(
                             scope,
                             key: key.clone(),
                         },
-                        &format!("Value for {key}"),
+                        &settings_env_value_text_label(&key),
                         "",
                     ));
                 }
@@ -1550,8 +1551,12 @@ fn commit_env_text(
         SettingsEnvTextTarget::EnvKey { scope } => {
             if trimmed.is_empty() {
                 env.error = Some("Env key cannot be empty.".into());
-                let state =
-                    settings_env_key_input_state(&env.pending, scope, "Key cannot be empty", "");
+                let state = settings_env_key_input_state(
+                    &env.pending,
+                    scope,
+                    settings_env_empty_key_label(),
+                    "",
+                );
                 env.modal = Some(SettingsEnvModal::Text {
                     target: SettingsEnvTextTarget::EnvKey {
                         scope: scope.clone(),
