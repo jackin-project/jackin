@@ -13,13 +13,13 @@ use crate::console::tui::state::{
     PendingIsolationCleanup,
 };
 use crate::config::AppConfig;
-use crate::console::tui::render::save_preview::{
+use crate::console::tui::components::save_preview::{
     build_confirm_save_lines, collapse_section_lines,
 };
 use jackin_console::tui::screens::editor::view::isolated_state_save_confirm_state;
 #[cfg(test)]
-pub(super) use crate::console::tui::render::save_preview::append_env_map_diff_lines;
-pub(super) use crate::console::tui::render::save_preview::build_settings_save_lines;
+pub(super) use crate::console::tui::components::save_preview::append_env_map_diff_lines;
+pub(super) use crate::console::tui::components::save_preview::build_settings_save_lines;
 
 /// Continue the editor save flow after an async drift check completes.
 ///

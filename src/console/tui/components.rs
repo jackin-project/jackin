@@ -3,3 +3,4 @@
 pub(crate) mod auth_panel;
 pub(crate) mod mount_display;
 pub(crate) mod op_picker;
+pub(crate) mod save_preview;
