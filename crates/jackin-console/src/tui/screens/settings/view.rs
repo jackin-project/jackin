@@ -196,6 +196,16 @@ pub fn settings_no_registered_roles_error_message() -> &'static str {
 }
 
 #[must_use]
+pub fn settings_sensitive_paths_not_confirmed_message() -> &'static str {
+    "Save aborted: sensitive paths not confirmed."
+}
+
+#[must_use]
+pub fn settings_error_popup_title() -> &'static str {
+    "Settings error"
+}
+
+#[must_use]
 pub fn settings_auth_op_read_failed_message(error: impl std::fmt::Display) -> String {
     format!("1Password read failed: {error}")
 }
@@ -800,6 +810,11 @@ mod tests {
             settings_no_registered_roles_error_message(),
             "No registered roles available."
         );
+        assert_eq!(
+            settings_sensitive_paths_not_confirmed_message(),
+            "Save aborted: sensitive paths not confirmed."
+        );
+        assert_eq!(settings_error_popup_title(), "Settings error");
         assert_eq!(
             settings_auth_op_read_failed_message("bad"),
             "1Password read failed: bad"

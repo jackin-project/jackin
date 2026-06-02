@@ -26,6 +26,7 @@ use jackin_console::tui::screens::settings::view::{
     settings_env_edit_cancelled_message, settings_env_empty_key_error_message,
     settings_env_empty_key_label, settings_env_key_input_state,
     settings_env_new_key_after_picker_label, settings_env_new_key_label,
+    settings_error_popup_title, settings_sensitive_paths_not_confirmed_message,
     settings_env_scope_picker_state, settings_env_source_picker_state, settings_env_text_input_state,
     settings_env_value_text_label, settings_no_registered_roles_error_message,
 };
@@ -1228,8 +1229,8 @@ pub(super) fn handle_settings_confirm_modal(
                 }
                 settings_update::SettingsConfirmPlan::Cancel { abort_sensitive } => {
                     if abort_sensitive {
-                    settings.mounts.error =
-                        Some("Save aborted: sensitive paths not confirmed.".into());
+                        settings.mounts.error =
+                            Some(settings_sensitive_paths_not_confirmed_message().into());
                     }
                     settings.mounts.clear_modal_chain();
                 }
@@ -1861,7 +1862,7 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
         dispatch_manager(
             state,
             ManagerMessage::OpenSettingsErrorPopup {
-                title: "Settings error".into(),
+                title: settings_error_popup_title().into(),
                 message: msg,
             },
         );
