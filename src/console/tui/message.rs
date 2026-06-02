@@ -16,8 +16,9 @@ use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use jackin_console::focus::moved_selection;
 use jackin_console::tui::screens::editor::update::{
-    editor_tab_move_plan, set_role_expanded as set_editor_role_expanded, step_cursor_down,
-    step_cursor_up, toggle_general_selected as toggle_editor_general_row,
+    clear_editor_auth_kind_plan, editor_tab_move_plan, enter_editor_auth_kind_plan,
+    set_role_expanded as set_editor_role_expanded, step_cursor_down, step_cursor_up,
+    toggle_general_selected as toggle_editor_general_row,
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
@@ -425,20 +426,22 @@ const fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    editor.auth_selected_kind = None;
-    editor.active_field = FieldFocus::Row(0);
-    editor.tab_scroll_x = 0;
-    editor.tab_scroll_y = 0;
+    let plan = clear_editor_auth_kind_plan();
+    editor.auth_selected_kind = plan.selected_kind;
+    editor.active_field = FieldFocus::Row(plan.active_row);
+    editor.tab_scroll_x = plan.tab_scroll_x;
+    editor.tab_scroll_y = plan.tab_scroll_y;
 }
 
-const fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
+fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    editor.auth_selected_kind = Some(kind);
-    editor.active_field = FieldFocus::Row(0);
-    editor.tab_scroll_x = 0;
-    editor.tab_scroll_y = 0;
+    let plan = enter_editor_auth_kind_plan(kind);
+    editor.auth_selected_kind = plan.selected_kind;
+    editor.active_field = FieldFocus::Row(plan.active_row);
+    editor.tab_scroll_x = plan.tab_scroll_x;
+    editor.tab_scroll_y = plan.tab_scroll_y;
 }
 
 fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {

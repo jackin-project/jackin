@@ -57,6 +57,34 @@ pub const fn editor_tab_move_plan(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorAuthKindPlan<K> {
+    pub selected_kind: Option<K>,
+    pub active_row: usize,
+    pub tab_scroll_x: u16,
+    pub tab_scroll_y: u16,
+}
+
+#[must_use]
+pub const fn clear_editor_auth_kind_plan<K>() -> EditorAuthKindPlan<K> {
+    EditorAuthKindPlan {
+        selected_kind: None,
+        active_row: 0,
+        tab_scroll_x: 0,
+        tab_scroll_y: 0,
+    }
+}
+
+#[must_use]
+pub fn enter_editor_auth_kind_plan<K>(kind: K) -> EditorAuthKindPlan<K> {
+    EditorAuthKindPlan {
+        selected_kind: Some(kind),
+        active_row: 0,
+        tab_scroll_x: 0,
+        tab_scroll_y: 0,
+    }
+}
+
 #[must_use]
 pub fn step_cursor_down(skipped_rows: &[usize], candidate: usize, max_row: usize) -> usize {
     let mut idx = candidate;
@@ -436,6 +464,32 @@ mod tests {
                 tab_scroll_y: 0,
                 clear_auth_kind: true,
                 clear_secret_view_state: false,
+            }
+        );
+    }
+
+    #[test]
+    fn editor_auth_kind_entry_plan_selects_kind_and_resets_view_state() {
+        assert_eq!(
+            enter_editor_auth_kind_plan(TestAuthKind::Claude),
+            EditorAuthKindPlan {
+                selected_kind: Some(TestAuthKind::Claude),
+                active_row: 0,
+                tab_scroll_x: 0,
+                tab_scroll_y: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn editor_auth_kind_clear_plan_clears_kind_and_resets_view_state() {
+        assert_eq!(
+            clear_editor_auth_kind_plan::<TestAuthKind>(),
+            EditorAuthKindPlan {
+                selected_kind: None,
+                active_row: 0,
+                tab_scroll_x: 0,
+                tab_scroll_y: 0,
             }
         );
     }
