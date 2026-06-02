@@ -1,5 +1,7 @@
 //! Console-local error popup state construction.
 
+use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;
+
 pub fn error_popup_state(
     title: impl Into<String>,
     message: impl Into<String>,
@@ -98,6 +100,14 @@ pub fn no_purgeable_instance_for_workspace_message() -> &'static str {
     "No purgeable instance for this workspace."
 }
 
+pub fn instance_action_failed_error_title(action: WorkspaceInstanceAction) -> &'static str {
+    match action {
+        WorkspaceInstanceAction::Stop => "Stop failed",
+        WorkspaceInstanceAction::Purge => "Purge failed",
+        _ => "Action failed",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,6 +201,22 @@ mod tests {
         assert_eq!(
             no_purgeable_instance_for_workspace_message(),
             "No purgeable instance for this workspace."
+        );
+    }
+
+    #[test]
+    fn instance_action_failed_title_names_in_place_actions() {
+        assert_eq!(
+            instance_action_failed_error_title(WorkspaceInstanceAction::Stop),
+            "Stop failed"
+        );
+        assert_eq!(
+            instance_action_failed_error_title(WorkspaceInstanceAction::Purge),
+            "Purge failed"
+        );
+        assert_eq!(
+            instance_action_failed_error_title(WorkspaceInstanceAction::Inspect),
+            "Action failed"
         );
     }
 }

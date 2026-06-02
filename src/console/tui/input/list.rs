@@ -12,12 +12,12 @@ use jackin_console::tui::components::error_popup::{
 };
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewPaneKeyPlan, WorkspaceInstanceAction, WorkspaceInstanceStatus,
-    instance_action_accepts_status, is_preview_pane_entry_target, preview_pane_key_plan,
-    should_enter_preview_pane,
+    PreviewPaneKeyPlan, WorkspaceInstanceStatus, instance_action_accepts_status,
+    is_preview_pane_entry_target, preview_pane_key_plan, should_enter_preview_pane,
 };
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
+use crate::console::tui::instance_action::workspace_instance_action_fact;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     EditorState, ManagerListRow, ManagerState, Modal, ProviderPickerState, SettingsState,
@@ -399,22 +399,10 @@ const fn accepts_instance_status(
     action: ConsoleInstanceAction,
     status: crate::instance::InstanceStatus,
 ) -> bool {
-    instance_action_accepts_status(instance_action_fact(action), instance_status_fact(status))
-}
-
-const fn instance_action_fact(action: ConsoleInstanceAction) -> WorkspaceInstanceAction {
-    match action {
-        ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::ReconnectFocus(_) => {
-            WorkspaceInstanceAction::Reconnect
-        }
-        ConsoleInstanceAction::NewSession | ConsoleInstanceAction::NewSessionWithAgent(_) => {
-            WorkspaceInstanceAction::NewSession
-        }
-        ConsoleInstanceAction::Shell => WorkspaceInstanceAction::Shell,
-        ConsoleInstanceAction::Inspect => WorkspaceInstanceAction::Inspect,
-        ConsoleInstanceAction::Stop => WorkspaceInstanceAction::Stop,
-        ConsoleInstanceAction::Purge => WorkspaceInstanceAction::Purge,
-    }
+    instance_action_accepts_status(
+        workspace_instance_action_fact(action),
+        instance_status_fact(status),
+    )
 }
 
 const fn instance_status_fact(status: crate::instance::InstanceStatus) -> WorkspaceInstanceStatus {

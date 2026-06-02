@@ -8,8 +8,11 @@ use crate::console::terminal::{
     resume_console_terminal, suspend_console_terminal,
 };
 use crate::console::tui::debug::{console_location_debug, key_debug_name};
-use crate::console::{
-    ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
+use crate::console::tui::instance_action::workspace_instance_action_fact;
+use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
+use jackin_console::tui::components::error_popup::instance_action_failed_error_title;
+use jackin_console::tui::components::status_popup::{
+    instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
     LetterInputModalKind, LetterInputState, QuitInterceptState, quit_confirm_area,
@@ -507,12 +510,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                         crate::console::tui::InputOutcome::InstanceAction { container, action } => {
                             if action.runs_in_place() {
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let busy_title = match action {
-                                        ConsoleInstanceAction::Stop => "Stopping",
-                                        ConsoleInstanceAction::Purge => "Purging",
-                                        _ => "Working",
-                                    };
-                                    let busy_body = format!("{busy_title} {container}…");
+                                    let action_fact = workspace_instance_action_fact(action);
+                                    let busy_title = instance_action_busy_title(action_fact);
+                                    let busy_body = instance_action_busy_message(action_fact, &container);
                                     let _ = crate::console::tui::update_manager(
                                         ms,
                                         crate::console::tui::ManagerMessage::OpenStatusPopup {
@@ -536,11 +536,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                                         crate::console::tui::ManagerMessage::DismissStatusPopup,
                                     );
                                     if let Err(error) = result {
-                                        let err_title = match action {
-                                            ConsoleInstanceAction::Stop => "Stop failed",
-                                            ConsoleInstanceAction::Purge => "Purge failed",
-                                            _ => "Action failed",
-                                        };
+                                        let err_title = instance_action_failed_error_title(
+                                            workspace_instance_action_fact(action),
+                                        );
                                         let _ = crate::console::tui::update_manager(
                                             ms,
                                             crate::console::tui::ManagerMessage::OpenListErrorPopup {
