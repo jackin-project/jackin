@@ -7,13 +7,30 @@ use crate::console::tui::components::env_value_secret_display;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
-    SettingsState, settings_env_flat_rows,
+    SettingsState, SettingsTab, settings_env_flat_rows,
 };
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
 use jackin_console::tui::screens::settings::view::{
     env_lines as settings_env_lines, global_mount_lines as settings_global_mount_lines,
-    general_lines as settings_general_lines, trust_lines as settings_trust_lines,
+    general_lines as settings_general_lines, tab_labels,
+    trust_lines as settings_trust_lines,
 };
+
+pub(crate) fn render_settings_tab_strip(
+    frame: &mut Frame,
+    area: Rect,
+    active: SettingsTab,
+    tab_bar_focused: bool,
+    hovered: Option<usize>,
+) {
+    jackin_console::tui::components::editor_rows::render_tab_strip(
+        frame,
+        area,
+        &tab_labels(active),
+        tab_bar_focused,
+        hovered,
+    );
+}
 
 pub(crate) fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
     let focused = !state.tab_bar_focused && state.error_popup.is_none();
