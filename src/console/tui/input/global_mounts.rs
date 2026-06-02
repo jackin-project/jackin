@@ -9,7 +9,7 @@ use crate::console::tui::state::{
     SettingsEnvTextTarget, SettingsTab, settings_env_flat_rows, settings_env_state_flat_rows,
 };
 use jackin_tui::ModalOutcome;
-use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
+use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;

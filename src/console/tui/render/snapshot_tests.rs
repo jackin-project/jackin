@@ -198,7 +198,7 @@ readonly = false
         let kind = jackin_console::tui::auth::AuthKind::Claude;
         Modal::AuthForm {
             target: crate::console::tui::state::AuthFormTarget::Workspace { kind },
-            state: Box::new(crate::console::tui::auth_panel::AuthForm::new(kind)),
+            state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(kind)),
             focus: crate::console::tui::state::AuthFormFocus::Mode,
             literal_buffer: String::new(),
         }
@@ -863,7 +863,7 @@ readonly = false
                 &cwd,
                 crate::console::tui::state::SettingsAuthModal::AuthForm {
                     target: crate::console::tui::state::AuthFormTarget::Workspace { kind },
-                    state: Box::new(crate::console::tui::auth_panel::AuthForm::new(kind)),
+                    state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(kind)),
                     focus: crate::console::tui::state::AuthFormFocus::Mode,
                     literal_buffer: String::new(),
                 },

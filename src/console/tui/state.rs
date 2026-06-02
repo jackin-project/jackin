@@ -14,7 +14,7 @@ use jackin_console::tui::auth::AuthKind;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 
-use crate::console::tui::auth_panel::AuthForm;
+use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::components::op_picker::OpPickerState;
 use crate::selector::RolePickerState;
 use jackin_console::tui::components::confirm_save::ConfirmSaveState;

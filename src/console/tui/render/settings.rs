@@ -178,7 +178,7 @@ fn settings_env_value<'a>(
 }
 
 fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    use crate::console::tui::auth_panel::mode_str;
+    use crate::console::tui::components::auth_panel::mode_str;
 
     let show_cursor =
         !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
@@ -214,7 +214,7 @@ fn settings_auth_source_display(
     mode: jackin_console::tui::auth::AuthMode,
     env_name: &str,
 ) -> AuthSourceDisplay {
-    use crate::console::tui::auth_panel::mode_str;
+    use crate::console::tui::components::auth_panel::mode_str;
 
     auth_source_display(
         settings_auth_source_value(state, kind, env_name).map(|value| match value {
@@ -348,10 +348,10 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuth
             let area = modal_rects::modal_rect(
                 frame.area(),
                 ModalRectSpec::AuthForm {
-                    required_height: crate::console::tui::auth_panel::required_height(state),
+                    required_height: crate::console::tui::components::auth_panel::required_height(state),
                 },
             );
-            crate::console::tui::auth_panel::render_form(frame, area, state, *focus);
+            crate::console::tui::components::auth_panel::render_form(frame, area, state, *focus);
         }
         SettingsAuthModal::SourcePicker { state } => {
             let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::SourcePicker);

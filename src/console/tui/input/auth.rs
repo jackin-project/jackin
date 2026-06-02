@@ -17,7 +17,7 @@ use crate::console::domain::{
     auth_mode_to_github, role_override_present,
 };
 use jackin_console::tui::auth::{AuthKind, AuthMode};
-use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
+use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use jackin_console::tui::components::auth_panel::{
     auth_credential_input_state, auth_source_picker_state,
 };

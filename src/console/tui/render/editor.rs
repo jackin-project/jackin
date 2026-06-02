@@ -272,7 +272,7 @@ fn auth_display_row(
     synthesized: &AppConfig,
     workspace_name: &str,
 ) -> EditorAuthLineRow {
-    use crate::console::tui::auth_panel::mode_str;
+    use crate::console::tui::components::auth_panel::mode_str;
 
     match row {
         AuthRow::AuthKindRow { kind } => EditorAuthLineRow::AuthKind {
@@ -317,7 +317,7 @@ fn editor_auth_source_display(
     role: &str,
     kind: jackin_console::tui::auth::AuthKind,
 ) -> AuthSourceDisplay {
-    use crate::console::tui::auth_panel::mode_str;
+    use crate::console::tui::components::auth_panel::mode_str;
 
     let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
     let env_name = kind.required_env_var(mode);
