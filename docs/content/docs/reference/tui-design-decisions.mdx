@@ -197,7 +197,7 @@ Console GitHub auth mode changes preserve existing `[github.env]` maps through <
 
 Console settings-auth global GitHub env extraction and source lookup also live in <RepoFile path="src/console/domain.rs" />. Root settings state stores pending/original maps for UI dirty tracking, form mounting, and save previews; it does not decide inline whether a credential comes from `[github.env]` or normal environment maps.
 
-Editor auth row/form adapters ask <RepoFile path="src/console/domain.rs" /> for effective-mode credential requirements, eligible role keys, and workspace/role mode-plus-credential derivation. The root TUI state maps those facts into crate-owned editor row planning and shared auth forms; it does not own those product rules inline.
+Editor auth row/form adapters ask <RepoFile path="src/console/domain.rs" /> for effective-mode credential requirements, eligible role keys, explicit workspace modes, display source-layer lookup, and workspace/role mode-plus-credential derivation. The root TUI state maps those facts into crate-owned editor row planning and shared auth forms; it does not own those product rules inline.
 
 Launch rich-terminal capability checks, terminal-size-to-frame-area fallback, and the canonical rich-terminal requirement error now live with launch terminal helpers in <RepoFile path="crates/jackin-launch/src/tui/terminal.rs" />. Progress orchestration, rich renderer entry points, render ticks, and cockpit input subscriptions call those helpers so terminal-gating behavior, build-log scroll geometry, and operator-facing copy cannot drift.
 

@@ -175,6 +175,92 @@ pub fn workspace_auth_mode_and_credential(
 }
 
 #[must_use]
+pub fn explicit_workspace_auth_mode(
+    workspace: &WorkspaceConfig,
+    kind: AuthKind,
+) -> Option<AuthMode> {
+    workspace_auth_mode_and_credential(workspace, kind).0
+}
+
+#[must_use]
+pub fn panel_auth_source_value<'a>(
+    cfg: &'a AppConfig,
+    workspace: &str,
+    role: &str,
+    env_name: &str,
+    kind: AuthKind,
+) -> Option<&'a crate::operator_env::EnvValue> {
+    match kind {
+        AuthKind::Github => github_panel_source_value(cfg, workspace, role, env_name),
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode
+        | AuthKind::Zai => agent_panel_source_value(cfg, workspace, role, env_name),
+    }
+}
+
+fn agent_panel_source_value<'a>(
+    cfg: &'a AppConfig,
+    workspace: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a crate::operator_env::EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = cfg
+            .workspaces
+            .get(workspace)
+            .and_then(|workspace| workspace.roles.get(role))
+            .and_then(|role| role.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|workspace| workspace.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if !role.is_empty()
+        && let Some(value) = cfg.roles.get(role).and_then(|role| role.env.get(env_name))
+    {
+        return Some(value);
+    }
+    cfg.env.get(env_name)
+}
+
+fn github_panel_source_value<'a>(
+    cfg: &'a AppConfig,
+    workspace: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a crate::operator_env::EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = cfg
+            .workspaces
+            .get(workspace)
+            .and_then(|workspace| workspace.roles.get(role))
+            .and_then(|role| role.github.as_ref())
+            .and_then(|github| github.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|workspace| workspace.github.as_ref())
+        .and_then(|github| github.env.get(env_name))
+    {
+        return Some(value);
+    }
+    cfg.github
+        .as_ref()
+        .and_then(|github| github.env.get(env_name))
+}
+
+#[must_use]
 pub fn role_auth_mode_and_credential(
     role: Option<&WorkspaceRoleOverride>,
     kind: AuthKind,
@@ -1084,6 +1170,99 @@ mod tests {
             role_auth_mode_and_credential(None, AuthKind::Github),
             (None, None)
         );
+    }
+
+    #[test]
+    fn explicit_workspace_auth_mode_reads_workspace_block() {
+        let workspace = WorkspaceConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Token,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            explicit_workspace_auth_mode(&workspace, AuthKind::Github),
+            Some(AuthMode::Token)
+        );
+        assert_eq!(
+            explicit_workspace_auth_mode(&workspace, AuthKind::Claude),
+            None
+        );
+    }
+
+    #[test]
+    fn panel_auth_source_value_prefers_workspace_role_then_workspace_then_global() {
+        let env_name = AuthKind::Claude
+            .required_env_var(AuthMode::ApiKey)
+            .expect("Claude API key env var");
+        let mut cfg = AppConfig::default();
+        cfg.env.insert(
+            env_name.into(),
+            crate::operator_env::EnvValue::Plain("global".into()),
+        );
+        let mut workspace = WorkspaceConfig::default();
+        workspace.env.insert(
+            env_name.into(),
+            crate::operator_env::EnvValue::Plain("workspace".into()),
+        );
+        let mut role = WorkspaceRoleOverride::default();
+        role.env.insert(
+            env_name.into(),
+            crate::operator_env::EnvValue::Plain("workspace-role".into()),
+        );
+        workspace.roles.insert("smith".into(), role);
+        cfg.workspaces.insert("ws".into(), workspace);
+
+        assert!(matches!(
+            panel_auth_source_value(&cfg, "ws", "smith", env_name, AuthKind::Claude),
+            Some(crate::operator_env::EnvValue::Plain(value)) if value == "workspace-role"
+        ));
+        assert!(matches!(
+            panel_auth_source_value(&cfg, "ws", "", env_name, AuthKind::Claude),
+            Some(crate::operator_env::EnvValue::Plain(value)) if value == "workspace"
+        ));
+        assert!(matches!(
+            panel_auth_source_value(&cfg, "missing", "", env_name, AuthKind::Claude),
+            Some(crate::operator_env::EnvValue::Plain(value)) if value == "global"
+        ));
+    }
+
+    #[test]
+    fn panel_auth_source_value_uses_github_env_layers() {
+        let mut cfg = AppConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Token,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        cfg.github.as_mut().expect("github").env.insert(
+            "GH_TOKEN".into(),
+            crate::operator_env::EnvValue::Plain("global-gh".into()),
+        );
+        let mut workspace = WorkspaceConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Token,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        workspace.github.as_mut().expect("github").env.insert(
+            "GH_TOKEN".into(),
+            crate::operator_env::EnvValue::Plain("workspace-gh".into()),
+        );
+        cfg.workspaces.insert("ws".into(), workspace);
+
+        assert!(matches!(
+            panel_auth_source_value(&cfg, "ws", "", "GH_TOKEN", AuthKind::Github),
+            Some(crate::operator_env::EnvValue::Plain(value)) if value == "workspace-gh"
+        ));
+        assert!(matches!(
+            panel_auth_source_value(&cfg, "missing", "", "GH_TOKEN", AuthKind::Github),
+            Some(crate::operator_env::EnvValue::Plain(value)) if value == "global-gh"
+        ));
     }
 
     #[test]
