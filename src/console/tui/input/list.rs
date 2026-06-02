@@ -5,7 +5,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
-    WorkspaceInstanceAction, WorkspaceInstanceStatus, instance_action_accepts_status,
+    PreviewPaneKeyPlan, WorkspaceInstanceAction, WorkspaceInstanceStatus,
+    instance_action_accepts_status, preview_pane_key_plan,
 };
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
@@ -283,14 +284,6 @@ fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
     InputOutcome::Continue
 }
 
-/// Preview-pane navigation: the operator pressed a key while
-/// `state.preview_focused` is `true`.
-///
-/// ↑/↓ cycles the selected pane inside the snapshot, Esc / ← /
-/// `BackTab` pops focus back to the tree, Enter reattaches with
-/// `--focus <session_id>`. Any other key is a no-op so a stray Tab
-/// or text key cannot dump the operator back to the workspace tree
-/// mid-pick.
 fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(container) = selected_instance_container(state, ConsoleInstanceAction::Reconnect)
     else {
@@ -301,50 +294,35 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
         return InputOutcome::Continue;
     };
     let panes = state.flattened_preview_panes(&container);
-    if panes.is_empty() {
-        dispatch_manager(state, ManagerMessage::ExitPreview);
-        return InputOutcome::Continue;
-    }
     let cursor = state
         .preview_pane_cursor
         .get(&container)
         .copied()
-        .unwrap_or(0)
-        .min(panes.len() - 1);
-    match key.code {
-        KeyCode::Esc | KeyCode::BackTab | KeyCode::Left => {
+        .unwrap_or(0);
+    match preview_pane_key_plan(key.code, panes.len()) {
+        PreviewPaneKeyPlan::ExitPreview => {
             dispatch_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::Continue
         }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+        PreviewPaneKeyPlan::Move { delta } => {
             dispatch_manager(
                 state,
                 ManagerMessage::MovePreviewPane {
                     container,
-                    delta: -1,
+                    delta,
                 },
             );
             InputOutcome::Continue
         }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MovePreviewPane {
-                    container,
-                    delta: 1,
-                },
-            );
-            InputOutcome::Continue
-        }
-        KeyCode::Enter => {
-            let (_, session_id) = panes[cursor];
+        PreviewPaneKeyPlan::ReconnectSelected => {
+            let (_, session_id) = panes[cursor.min(panes.len() - 1)];
             dispatch_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::InstanceAction {
                 container,
                 action: ConsoleInstanceAction::ReconnectFocus(session_id),
             }
         }
-        _ => InputOutcome::Continue,
+        PreviewPaneKeyPlan::Continue => InputOutcome::Continue,
     }
 }
 

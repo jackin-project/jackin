@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use crossterm::event::KeyCode;
+
 use super::model::ManagerListRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +26,14 @@ pub enum WorkspaceInstanceStatus {
     Superseded,
     Purged,
     FailedSetup,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewPaneKeyPlan {
+    Continue,
+    ExitPreview,
+    Move { delta: isize },
+    ReconnectSelected,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -73,6 +83,22 @@ pub fn moved_selection(selected: usize, row_count: usize, delta: isize) -> usize
 #[must_use]
 pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::focus::selected_index(selected, row_count)
+}
+
+/// Preview-pane navigation mode: Esc / Left / BackTab exits, Up/Down
+/// move inside the snapshot, and Enter reconnects to the selected pane.
+#[must_use]
+pub const fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPaneKeyPlan {
+    if pane_count == 0 {
+        return PreviewPaneKeyPlan::ExitPreview;
+    }
+    match key {
+        KeyCode::Esc | KeyCode::BackTab | KeyCode::Left => PreviewPaneKeyPlan::ExitPreview,
+        KeyCode::Up | KeyCode::Char('k' | 'K') => PreviewPaneKeyPlan::Move { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => PreviewPaneKeyPlan::Move { delta: 1 },
+        KeyCode::Enter => PreviewPaneKeyPlan::ReconnectSelected,
+        _ => PreviewPaneKeyPlan::Continue,
+    }
 }
 
 /// Action x status acceptance grid. Each arm enumerates the exact set
@@ -146,5 +172,24 @@ mod tests {
         assert!(!instance_action_accepts_status(A::Purge, S::Purged));
         assert!(instance_action_accepts_status(A::Reconnect, S::Crashed));
         assert!(!instance_action_accepts_status(A::Reconnect, S::Purged));
+    }
+
+    #[test]
+    fn preview_pane_key_plan_routes_navigation() {
+        assert_eq!(preview_pane_key_plan(KeyCode::Esc, 2), PreviewPaneKeyPlan::ExitPreview);
+        assert_eq!(
+            preview_pane_key_plan(KeyCode::Char('K'), 2),
+            PreviewPaneKeyPlan::Move { delta: -1 }
+        );
+        assert_eq!(
+            preview_pane_key_plan(KeyCode::Down, 2),
+            PreviewPaneKeyPlan::Move { delta: 1 }
+        );
+        assert_eq!(
+            preview_pane_key_plan(KeyCode::Enter, 2),
+            PreviewPaneKeyPlan::ReconnectSelected
+        );
+        assert_eq!(preview_pane_key_plan(KeyCode::Tab, 2), PreviewPaneKeyPlan::Continue);
+        assert_eq!(preview_pane_key_plan(KeyCode::Enter, 0), PreviewPaneKeyPlan::ExitPreview);
     }
 }
