@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_pub_crate)]
+
 pub mod agent;
 pub mod agent_binary;
 pub mod ansi_text;

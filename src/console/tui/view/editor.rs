@@ -13,7 +13,6 @@ pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{EditorState, EditorTab};
-pub(crate) use crate::console::tui::state::{auth_flat_rows, secrets_flat_rows};
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::{
     eligible_agents_for_override, resolve_auth_row_target,
@@ -338,7 +337,7 @@ mod mounts_tab_render_tests {
         let backend = TestBackend::new(80, 10);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_editor(f, f.area(), &mut editor, &config, true);
+            render_editor(f, f.area(), &editor, &config, true);
         })
         .unwrap();
 
@@ -671,7 +670,7 @@ mod secrets_tab_render_tests {
     #[test]
     fn secrets_tab_cursor_skips_workspace_header_label() {
         let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let rows = super::secrets_flat_rows(&editor);
+        let rows = crate::console::tui::state::secrets_flat_rows(&editor);
         assert!(
             !rows.is_empty(),
             "secrets_flat_rows must always include at least the WorkspaceAddSentinel"
@@ -737,7 +736,7 @@ mod secrets_tab_render_tests {
         // Expand agent-a, leave agent-b collapsed.
         editor.secrets_expanded.insert("agent-a".into());
 
-        let rows = super::secrets_flat_rows(&editor);
+        let rows = crate::console::tui::state::secrets_flat_rows(&editor);
         // Expected sequence:
         //  0  WorkspaceKeyRow("ALPHA")
         //  1  WorkspaceKeyRow("BETA")
@@ -1054,7 +1053,7 @@ mod secrets_tab_render_tests {
             ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
-        let rows = super::secrets_flat_rows(&editor);
+        let rows = crate::console::tui::state::secrets_flat_rows(&editor);
         assert!(
             matches!(rows.get(3), Some(super::SecretsRow::SectionSpacer)),
             "row 3 must be a SectionSpacer between workspace add row \
@@ -1105,7 +1104,7 @@ mod secrets_tab_render_tests {
             ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
-        let rows = super::secrets_flat_rows(&editor);
+        let rows = crate::console::tui::state::secrets_flat_rows(&editor);
         assert!(
             matches!(rows.get(1), Some(super::SecretsRow::SectionSpacer)),
             "spacer expected before the first role header; rows={rows:?}"
@@ -1490,10 +1489,10 @@ mod eligible_agents_for_override_tests {
 
 #[cfg(test)]
 mod auth_flat_rows_tests {
-    use super::{AuthRow, auth_flat_rows};
     use crate::config::AppConfig;
     use crate::console::domain::resolve_panel_mode;
     use crate::console::tui::state::EditorState;
+    use crate::console::tui::state::{AuthRow, auth_flat_rows};
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
     use jackin_console::tui::auth::{AuthKind, AuthMode};
 

@@ -32,7 +32,11 @@ use jackin_console::tui::update::{
 };
 use jackin_tui::ModalOutcome;
 
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::items_after_statements,
+    clippy::unnecessary_wraps
+)]
 pub(super) fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,

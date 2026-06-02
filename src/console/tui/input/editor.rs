@@ -456,11 +456,10 @@ pub(super) fn handle_editor_key(
                 if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
                     state.request_effect(ManagerEffect::OpenUrl(web_url));
                     return Ok(InputOutcome::Continue);
-                } else {
-                    editor.modal = Some(Modal::ErrorPopup {
-                        state: no_github_url_error_popup_state(),
-                    });
                 }
+                editor.modal = Some(Modal::ErrorPopup {
+                    state: no_github_url_error_popup_state(),
+                });
             }
         }
         _ => {}
@@ -572,7 +571,9 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     match plan {
         SecretsEnterPlan::EditValue { scope, key } => {
             let value = secret_value(editor, &scope, &key);
-            let current = secret_value_current_text(value.map(|v| v.as_persisted_str()));
+            let current = secret_value_current_text(
+                value.map(crate::operator_env::EnvValue::as_persisted_str),
+            );
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
                     scope,
@@ -752,7 +753,12 @@ pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditor
     crate::operator_env::OpRef,
 >;
 
-#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::needless_pass_by_value,
+    clippy::option_if_let_else,
+    clippy::needless_pass_by_ref_mut
+)]
 pub(super) fn handle_editor_modal(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
@@ -772,9 +778,8 @@ pub(super) fn handle_editor_modal(
                     if target == TextInputTarget::Role {
                         editor.clear_modal_chain();
                         return apply_role_input(editor, config, &value);
-                    } else {
-                        apply_text_input_to_pending(&target, editor, &value, op_available);
                     }
+                    apply_text_input_to_pending(&target, editor, &value, op_available);
                 }
                 ModalOutcome::Cancel => {
                     let target = target.clone();
@@ -916,7 +921,7 @@ pub(super) fn handle_editor_modal(
                     // `pending.roles` here, so a cancel mid-flow leaves
                     // no empty placeholder.
                     let role_name = role.key();
-                    let scope = SecretsScopeTag::Role(role_name.clone());
+                    let scope = SecretsScopeTag::Role(role_name);
                     let label = secret_new_key_label(&scope);
                     let state = env_key_input_state(editor, &scope, label, "");
                     editor.open_sub_modal(Modal::TextInput {
@@ -1559,9 +1564,7 @@ fn poll_role_load(
 fn poll_role_load_completion(
     editor: &mut EditorState<'_>,
 ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
-    let Some(load) = editor.pending_role_load.as_mut() else {
-        return None;
-    };
+    let load = editor.pending_role_load.as_mut()?;
     let result = match load.rx.poll_next() {
         SubscriptionPoll::Ready(result) => result,
         SubscriptionPoll::Pending => return None,
@@ -1748,7 +1751,7 @@ mod tests {
             EditorModalOutcome::PersistTrustedRoleSource { key, mut source } => {
                 source.trusted = true;
                 crate::console::effects::persist_trusted_role_source_for_tests(
-                    editor, config, paths, &key, source,
+                    editor, config, paths, &key, &source,
                 );
             }
             EditorModalOutcome::OpenUrl(_) => panic!("test helper did not expect URL-open"),

@@ -346,6 +346,7 @@ impl OpPickerState {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {

@@ -6,7 +6,7 @@ pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;
 pub(crate) mod instance_action;
-mod launch;
+pub mod launch;
 pub(crate) mod layout;
 pub mod message;
 #[cfg(test)]
@@ -18,7 +18,7 @@ pub mod state;
 pub mod view;
 
 pub use app::{ConsoleStage, ConsoleState, new_console_state, new_console_state_with_op_available};
-pub(crate) use input::{InputOutcome, handle_key};
+pub use input::{InputOutcome, handle_key};
 pub use layout::prepare_for_render;
 pub(crate) use message::{ManagerMessage, update_manager};
 pub(crate) use run::consumes_letter_input;

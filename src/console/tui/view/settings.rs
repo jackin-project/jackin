@@ -1,7 +1,4 @@
-#![expect(
-    clippy::redundant_pub_crate,
-    reason = "manager update code uses selected render geometry helpers through the moved tui facade"
-)]
+#![allow(clippy::redundant_pub_crate)]
 
 use crate::console::tui::components::settings::{
     render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab,

@@ -7,11 +7,13 @@
 
 mod domain;
 pub(crate) mod effects;
+pub mod manager;
 mod outcome;
 mod preview;
 mod services;
 pub mod terminal;
 pub mod tui;
+pub mod widgets;
 
 #[cfg(test)]
 use domain::providers_for_launch;

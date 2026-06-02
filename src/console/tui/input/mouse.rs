@@ -591,6 +591,7 @@ fn editor_mount_index_at_visual_row(
     (row == visual).then_some(editor.pending.mounts.len())
 }
 
+#[allow(clippy::items_after_statements, clippy::too_many_lines)]
 fn try_drag_horizontal_scrollbar(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -725,18 +726,28 @@ fn update_scroll_focus(
             };
             let in_left_pane = point_in(mouse, left_pane_area);
             let areas = list_scroll_areas(state, term_size, config);
-            let plan = if let Some(areas) = areas {
-                workspace_list_scroll_focus_plan(
-                    in_left_pane,
-                    true,
-                    point_in(mouse, areas.workspace.area),
-                    point_in(mouse, areas.global.area) && areas.global.area.height > 0,
-                    areas.role_global.is_some_and(|r| point_in(mouse, r.area)),
-                    areas.roles.is_some_and(|r| point_in(mouse, r.area)),
-                )
-            } else {
-                workspace_list_scroll_focus_plan(in_left_pane, false, false, false, false, false)
-            };
+            let plan = areas.map_or_else(
+                || {
+                    workspace_list_scroll_focus_plan(
+                        in_left_pane,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                    )
+                },
+                |areas| {
+                    workspace_list_scroll_focus_plan(
+                        in_left_pane,
+                        true,
+                        point_in(mouse, areas.workspace.area),
+                        point_in(mouse, areas.global.area) && areas.global.area.height > 0,
+                        areas.role_global.is_some_and(|r| point_in(mouse, r.area)),
+                        areas.roles.is_some_and(|r| point_in(mouse, r.area)),
+                    )
+                },
+            );
             dispatch_manager(
                 state,
                 ManagerMessage::SetListNamesFocused(plan.list_names_focused),

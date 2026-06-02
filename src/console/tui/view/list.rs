@@ -1,22 +1,10 @@
 //! List-stage rendering: the left-column workspace list and right-pane
 //! details (saved workspace / current-directory / "+ New workspace"
 //! sentinel).
-#![expect(
-    clippy::redundant_pub_crate,
-    reason = "manager update code uses selected render geometry helpers through the moved tui facade"
-)]
-#![expect(
-    clippy::too_many_lines,
-    reason = "Phase 9 only moves render files; later component splits own shortening these helpers"
-)]
-#![expect(
-    clippy::too_many_arguments,
-    reason = "existing row-builder shape is preserved during the directory migration"
-)]
-#![expect(
-    clippy::fn_params_excessive_bools,
-    reason = "existing row-builder shape is preserved during the directory migration"
-)]
+#![allow(clippy::redundant_pub_crate)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::fn_params_excessive_bools)]
 
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::format_mount_rows;

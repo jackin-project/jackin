@@ -75,7 +75,7 @@ pub(crate) fn execute_manager_effect(
             selector,
             source,
         } => {
-            execute_role_registration_start(state, paths, raw, key, selector, source);
+            execute_role_registration_start(state, paths, raw, &key, selector, source);
             true
         }
         ManagerEffect::PersistTrustedRoleSource { key, source } => {
@@ -102,7 +102,7 @@ pub(crate) fn execute_manager_effect(
             execute_file_browser_outcome(state, context, outcome)
         }
         ManagerEffect::ResolveFileBrowserGitUrl(path) => {
-            execute_file_browser_git_url_resolution(state, path)
+            execute_file_browser_git_url_resolution(state, &path)
         }
         ManagerEffect::PollFileBrowserGitUrls => poll_file_browser_git_urls(state),
         ManagerEffect::PollPickerLoads => poll_picker_loads(state),
@@ -383,43 +383,44 @@ fn execute_settings_file_browser_outcome(
     true
 }
 
+#[allow(clippy::option_if_let_else)]
 fn execute_file_browser_git_url_resolution(
     state: &mut ManagerState<'_>,
-    path: std::path::PathBuf,
+    path: &std::path::Path,
 ) -> bool {
     if let Some(modal) = state.list_modal.as_mut()
-        && attach_modal_file_browser_git_url(modal, path.clone())
+        && attach_modal_file_browser_git_url(modal, path.to_owned())
     {
         return true;
     }
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
             if let Some(modal) = editor.modal.as_mut()
-                && attach_modal_file_browser_git_url(modal, path.clone())
+                && attach_modal_file_browser_git_url(modal, path.to_owned())
             {
                 return true;
             }
             for modal in &mut editor.modal_parents {
-                if attach_modal_file_browser_git_url(modal, path.clone()) {
+                if attach_modal_file_browser_git_url(modal, path.to_owned()) {
                     return true;
                 }
             }
         }
         ManagerStage::CreatePrelude(prelude) => {
             if let Some(modal) = prelude.modal.as_mut()
-                && attach_modal_file_browser_git_url(modal, path.clone())
+                && attach_modal_file_browser_git_url(modal, path.to_owned())
             {
                 return true;
             }
         }
         ManagerStage::Settings(settings) => {
             if let Some(modal) = settings.mounts.modal.as_mut()
-                && attach_global_mount_file_browser_git_url(modal, path.clone())
+                && attach_global_mount_file_browser_git_url(modal, path.to_owned())
             {
                 return true;
             }
             for modal in &mut settings.mounts.modal_parents {
-                if attach_global_mount_file_browser_git_url(modal, path.clone()) {
+                if attach_global_mount_file_browser_git_url(modal, path.to_owned()) {
                     return true;
                 }
             }
@@ -641,9 +642,9 @@ pub(crate) fn persist_trusted_role_source_for_tests(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
-    source: crate::config::RoleSource,
+    source: &crate::config::RoleSource,
 ) {
-    match execute_role_source_persist(config, paths, key, &source) {
+    match execute_role_source_persist(config, paths, key, source) {
         Ok(()) => {
             crate::console::tui::state::add_role_to_workspace_editor(editor, config, key);
         }
@@ -750,7 +751,7 @@ fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
             editor.modal = Some(Modal::ErrorPopup {
-                state: error_popup::failed_to_open_url_error_popup_state(&error),
+                state: error_popup::failed_to_open_url_error_popup_state(error),
             });
         }
         ManagerStage::Settings(_) => {
@@ -778,7 +779,7 @@ fn execute_role_registration_start(
     state: &mut ManagerState<'_>,
     paths: &crate::paths::JackinPaths,
     raw: String,
-    key: String,
+    key: &str,
     selector: crate::selector::RoleSelector,
     source: crate::config::RoleSource,
 ) {
@@ -795,12 +796,12 @@ fn execute_role_registration_start(
     if let ManagerStage::Editor(editor) = &mut state.stage {
         editor.pending_role_load = Some(crate::console::tui::state::PendingRoleLoad {
             raw,
-            key: key.clone(),
+            key: key.to_owned(),
             source,
             rx,
         });
         editor.modal = Some(Modal::StatusPopup {
-            state: status_popup::role_loading_status_popup_state(&key),
+            state: status_popup::role_loading_status_popup_state(key),
         });
     }
 }

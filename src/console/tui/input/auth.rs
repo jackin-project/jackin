@@ -18,7 +18,7 @@ use crate::console::domain::{
     clear_workspace_auth_layer, role_auth_mode_and_credential, role_override_present,
     workspace_auth_mode_and_credential,
 };
-use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
+use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
@@ -730,6 +730,7 @@ mod tests {
     use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use jackin_console::tui::auth::AuthKind;
+    use jackin_console::tui::components::auth_panel::CredentialInput;
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {

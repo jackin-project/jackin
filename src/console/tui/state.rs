@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use ratatui::layout::Rect;
@@ -286,13 +285,13 @@ pub(crate) fn open_role_resolution_error(
     source_url: Option<&String>,
     err: &anyhow::Error,
 ) {
+    use jackin_console::tui::components::error_popup::{
+        configured_role_load_error_message, repository_role_load_error_message,
+    };
     crate::debug_log!(
         "role",
         "showing role-load error popup for raw={raw:?}: {err:?}"
     );
-    use jackin_console::tui::components::error_popup::{
-        configured_role_load_error_message, repository_role_load_error_message,
-    };
     let message = source_url.map_or_else(
         || configured_role_load_error_message(raw),
         |source_url| {
@@ -928,6 +927,7 @@ impl ManagerState<'_> {
         std::mem::take(&mut self.pending_effects)
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub(crate) fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
         match &mut self.stage {
             ManagerStage::Editor(editor) => editor.pending_token_generate.take(),
@@ -1285,7 +1285,7 @@ impl ManagerState<'_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn instance_refresh_in_flight(&self) -> bool {
+    pub(crate) const fn instance_refresh_in_flight(&self) -> bool {
         self.instances_refresh_rx.is_some()
     }
 
@@ -1296,7 +1296,7 @@ impl ManagerState<'_> {
         self.instances_refresh_rx = Some(rx);
     }
 
-    pub(crate) fn mount_info_refresh_in_flight(&self) -> bool {
+    pub(crate) const fn mount_info_refresh_in_flight(&self) -> bool {
         self.mount_info_refresh_rx.is_some()
     }
 
@@ -1308,9 +1308,7 @@ impl ManagerState<'_> {
     }
 
     pub(crate) fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
-        let Some(rx) = self.mount_info_refresh_rx.as_mut() else {
-            return None;
-        };
+        let rx = self.mount_info_refresh_rx.as_mut()?;
         let result = match rx.poll_next() {
             SubscriptionPoll::Ready(result) => result,
             SubscriptionPoll::Pending => return None,
@@ -1482,10 +1480,7 @@ impl ManagerState<'_> {
     /// `is_settings` is `true` when the pending commit belongs to the Settings
     /// auth state rather than the editor auth form.
     /// Returns `None` when the read is still in progress or no commit is pending.
-    #[expect(
-        clippy::collapsible_if,
-        reason = "nested matches keep the mutable borrow short before taking pending ownership"
-    )]
+    #[allow(clippy::collapsible_if)]
     pub(crate) fn poll_pending_op_commit(
         &mut self,
     ) -> Option<(crate::operator_env::OpRef, anyhow::Result<()>, bool)> {
@@ -1667,7 +1662,7 @@ impl ManagerState<'_> {
     }
 }
 
-pub(crate) trait EditorStateExt {
+pub trait EditorStateExt {
     fn is_dirty(&self) -> bool;
     fn change_count(&self) -> usize;
     fn cycle_isolation_for_selected_mount(&mut self);
@@ -1820,6 +1815,7 @@ mod tests {
     use crate::console::services::instances::load_instance_refresh_snapshot;
     use crate::console::services::instances::overlay_running_instances;
     use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
+    use std::path::PathBuf;
 
     fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinPaths) {
         const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);

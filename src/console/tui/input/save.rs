@@ -227,7 +227,8 @@ pub(crate) fn commit_editor_save(
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
-    clippy::unnecessary_wraps
+    clippy::unnecessary_wraps,
+    clippy::needless_pass_by_ref_mut
 )]
 pub(super) fn commit_editor_save_with_runner(
     state: &mut ManagerState<'_>,
@@ -255,6 +256,7 @@ pub(super) fn commit_editor_save_with_runner(
     // Operator already approved the collapsed mount set in
     // ConfirmSave; honour it now. Clone so subsequent source-drift logic
     // can still inspect the full `plan`.
+    #[allow(clippy::redundant_clone)]
     if let Some(final_mounts) = plan.final_mounts.clone() {
         editor.pending.mounts = final_mounts;
     }

@@ -7,13 +7,14 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 use jackin::{
     config::{AppConfig, ConfigEditor},
     console::{
-        ConsoleStage, ConsoleState,
+        ConsoleStage,
         manager::{
             InputOutcome, ManagerStage, ManagerState,
             auth_kind::AuthKind,
-            handle_key,
+            dispatch_launch_for_workspace, handle_key, new_console_state,
             state::{
-                AuthRow, EditorState, EditorTab, FieldFocus, Modal, TextInputTarget, auth_flat_rows,
+                AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal,
+                TextInputTarget, auth_flat_rows,
             },
         },
     },
@@ -173,10 +174,10 @@ fn delete_workspace_via_manager() -> Result<()> {
         cwd,
         key(KeyCode::Char('y')),
     )?;
-    match outcome {
-        InputOutcome::RemoveWorkspace(name) => assert_eq!(name, "big-monorepo"),
-        other => panic!("expected RemoveWorkspace outcome, got {other:?}"),
-    }
+    assert!(
+        matches!(outcome, InputOutcome::Continue),
+        "expected Continue outcome after confirm delete, got {outcome:?}"
+    );
 
     config.workspaces.remove("big-monorepo");
     let mut editor = ConfigEditor::open(&paths)?;
@@ -1394,9 +1395,10 @@ fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
         None,
     )?;
     let cwd = temp.path();
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
-    let outcome = state.dispatch_launch_for_workspace(
+    let outcome = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -1429,9 +1431,10 @@ fn agent_picker_opens_with_default_agent_preselected() -> Result<()> {
         Some("chainargos/agent-smith"),
     )?;
     let cwd = temp.path();
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
-    let outcome = state.dispatch_launch_for_workspace(
+    let outcome = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -1460,9 +1463,10 @@ fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
     let paths = JackinPaths::for_tests(temp.path());
     let config = seed_config_with_agents(&paths, temp.path(), &["chainargos/agent-smith"], None)?;
     let cwd = temp.path();
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
-    let outcome = state.dispatch_launch_for_workspace(
+    let outcome = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -1495,9 +1499,10 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
         None,
     )?;
     let cwd = temp.path();
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
-    state.dispatch_launch_for_workspace(
+    dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -1540,9 +1545,10 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
         None,
     )?;
     let cwd = temp.path();
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
-    state.dispatch_launch_for_workspace(
+    dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -2473,7 +2479,7 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
     let cwd = temp.path();
 
     // Build the console state BEFORE the new workspace exists.
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
     // Now create a second workspace via ConfigEditor — same code path
     // the manager save flow uses (no CLI subprocess, no UX detour).
@@ -2499,7 +2505,8 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
     // Dispatch a launch against the freshly-created name. The dispatcher
     // must build the choice from the current `config` and auto-select the
     // single role, proving it reads fresh data rather than a startup snapshot.
-    let outcome = state.dispatch_launch_for_workspace(
+    let outcome = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("freshly-created".into()),
@@ -2531,7 +2538,7 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     )?;
     let cwd = temp.path();
 
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
     // Rename "multi-role-ws" → "renamed-ws" via ConfigEditor.
     {
@@ -2542,7 +2549,8 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
 
     // Dispatch against the new name — must resolve and auto-select the
     // single eligible role, proving the dispatcher uses the new name.
-    let outcome = state.dispatch_launch_for_workspace(
+    let outcome = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("renamed-ws".into()),
@@ -2553,7 +2561,8 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     assert!(agent.is_none());
 
     // OLD name must not resolve — under the snapshot bug it did.
-    let stale_outcome = state.dispatch_launch_for_workspace(
+    let stale_outcome = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -2579,11 +2588,12 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
     )?;
     let cwd = temp.path();
 
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
     // Confirm baseline: dispatch against the seeded workspace opens the
     // picker (no short-circuit).
-    let baseline = state.dispatch_launch_for_workspace(
+    let baseline = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -2613,7 +2623,8 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
 
     // Dispatch again — with the new default_role in config, the
     // dispatcher must preselect that role in the picker.
-    let after = state.dispatch_launch_for_workspace(
+    let after = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -2667,7 +2678,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     };
     let cwd = temp.path();
 
-    let mut state = ConsoleState::new(&config, cwd)?;
+    let mut state = new_console_state(&config, cwd)?;
 
     // Delete the first workspace via ConfigEditor.
     {
@@ -2677,7 +2688,8 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     }
 
     // Attempt a launch against the deleted name — must no-op.
-    let outcome = state.dispatch_launch_for_workspace(
+    let outcome = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
@@ -2690,7 +2702,8 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     );
 
     // Sanity: the surviving workspace still resolves and auto-selects its single role.
-    let alive = state.dispatch_launch_for_workspace(
+    let alive = dispatch_launch_for_workspace(
+        &mut state,
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("survivor-ws".into()),

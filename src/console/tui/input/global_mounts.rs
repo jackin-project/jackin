@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::console::domain::{apply_settings_auth_env_commit, clear_settings_auth_env_values};
-use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
+use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::components::mount_display::settings_global_mounts_content_width_with_cache;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
@@ -10,7 +10,7 @@ use crate::console::tui::state::{
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
     SettingsEnvTextTarget, SettingsStateExt, SettingsTab, settings_env_flat_rows,
-    settings_env_state_flat_rows, settings_state_from_config,
+    settings_env_state_flat_rows,
 };
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
@@ -49,6 +49,7 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     handle_settings_key_with_effects(state, key);
 }
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
@@ -813,7 +814,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
         return;
     };
     match validate(&op_ref) {
-        Ok(_) => {
+        Ok(()) => {
             state.set_op_ref(op_ref);
             auth.modal = Some(SettingsAuthModal::AuthForm {
                 target,
@@ -1322,7 +1323,7 @@ pub(super) fn handle_settings_env_modal(
         SettingsEnvModal::RolePicker { state: mut picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
                 let role_key = role.key();
-                let scope = SettingsEnvScope::Role(role_key.clone());
+                let scope = SettingsEnvScope::Role(role_key);
                 let state = settings_env_key_input_state(
                     &env.pending,
                     &scope,
@@ -1681,7 +1682,9 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
     match plan {
         SettingsEnvEnterPlan::EditValue { scope, key } => {
             let value = settings_update::settings_env_value(&settings.env.pending, &scope, &key);
-            let current = settings_env_value_current_text(value.map(|v| v.as_persisted_str()));
+            let current = settings_env_value_current_text(
+                value.map(crate::operator_env::EnvValue::as_persisted_str),
+            );
             let target = SettingsEnvTextTarget::EnvValue {
                 scope,
                 key: key.clone(),
@@ -1903,11 +1906,13 @@ mod tests {
     use super::super::test_support::key;
     use super::*;
     use crate::config::{AppConfig, RoleSource};
+    use crate::console::tui::state::settings_state_from_config;
     use crate::console::tui::state::{
         ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvTextTarget, SettingsState,
         SettingsTab,
     };
     use crate::paths::JackinPaths;
+    use jackin_console::tui::components::auth_panel::CredentialInput;
     use std::collections::BTreeMap;
 
     fn confirm_modal(

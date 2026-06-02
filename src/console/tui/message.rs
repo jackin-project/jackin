@@ -817,7 +817,7 @@ fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
     }
 }
 
-fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
+const fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
@@ -826,7 +826,7 @@ fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
 }
 
-fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
+const fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
@@ -835,6 +835,7 @@ fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     settings.tab_bar_focused = plan.tab_bar_focused;
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;

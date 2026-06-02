@@ -159,6 +159,7 @@ impl OpPickerState {
     }
 
     fn handle_accounts_loaded(&mut self, accounts: Vec<OpPickerAccount>) {
+        #[allow(clippy::redundant_clone)]
         self.op_cache.borrow_mut().put_accounts(accounts.clone());
         match jackin_console::tui::components::op_picker::accounts_loaded_plan(accounts.len()) {
             AccountsLoadedPlan::NotSignedIn => {
@@ -252,6 +253,7 @@ impl OpPickerState {
         });
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub(in crate::console) fn take_pending_load(&mut self) -> Option<OpPickerPendingLoad> {
         if self.rx.is_some() {
             return None;
@@ -295,6 +297,7 @@ impl OpPickerState {
 
     /// Public so the outer console event loop can drain pending
     /// results every tick; keeps the picker responsive without keystrokes.
+    #[allow(clippy::too_many_lines)]
     pub fn poll_load(&mut self) -> bool {
         let Some(rx) = self.rx.as_mut() else {
             return false;
@@ -418,7 +421,7 @@ impl OpPickerState {
         self.load_state = OpLoadState::Ready;
     }
 
-    pub fn tick(&mut self) -> bool {
+    pub const fn tick(&mut self) -> bool {
         if let OpLoadState::Loading { spinner_tick } = &mut self.load_state {
             *spinner_tick = spinner_tick.wrapping_add(1);
             true

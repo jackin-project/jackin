@@ -73,15 +73,15 @@ fn workspace_save_preview(
         .into_iter()
         .map(|diff| match diff {
             crate::console::tui::state::MountDiff::Added(mount) => WorkspaceMountDiff::Added(
-                workspace_mount_preview_row(&mount, &editor.mount_info_cache),
+                workspace_mount_preview_row(mount, &editor.mount_info_cache),
             ),
             crate::console::tui::state::MountDiff::Removed(mount) => WorkspaceMountDiff::Removed(
-                workspace_mount_preview_row(&mount, &editor.mount_info_cache),
+                workspace_mount_preview_row(mount, &editor.mount_info_cache),
             ),
             crate::console::tui::state::MountDiff::Modified { original, pending } => {
                 WorkspaceMountDiff::Modified {
-                    original: workspace_mount_preview_row(&original, &editor.mount_info_cache),
-                    pending: workspace_mount_preview_row(&pending, &editor.mount_info_cache),
+                    original: workspace_mount_preview_row(original, &editor.mount_info_cache),
+                    pending: workspace_mount_preview_row(pending, &editor.mount_info_cache),
                 }
             }
             crate::console::tui::state::MountDiff::Unchanged(_) => WorkspaceMountDiff::Unchanged,

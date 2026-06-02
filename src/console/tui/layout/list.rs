@@ -50,8 +50,7 @@ pub(crate) fn clamp_list_scroll_for_area(
     let sidebar_available = sidebar_areas.is_some();
     let focused_block_scrollable = state
         .list_scroll_focus
-        .map(|focus| focused_block_still_scrollable(focus, sidebar_areas.as_ref()))
-        .unwrap_or(true);
+        .is_none_or(|focus| focused_block_still_scrollable(focus, sidebar_areas.as_ref()));
     let role_global_available = sidebar_areas
         .as_ref()
         .and_then(|areas| areas.role_global)

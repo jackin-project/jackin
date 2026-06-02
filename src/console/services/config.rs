@@ -67,6 +67,7 @@ pub struct SettingsSaveInput<'a> {
 }
 
 /// Save all settings tabs and return the reloaded config model.
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub fn save_settings(
     paths: &JackinPaths,
     input: SettingsSaveInput<'_>,
@@ -172,6 +173,7 @@ pub struct WorkspaceSaveResult {
 }
 
 /// Persist a workspace create/edit and return the reloaded config model.
+#[allow(clippy::useless_let_if_seq)]
 pub fn save_workspace(
     paths: &JackinPaths,
     input: WorkspaceSaveInput<'_>,
@@ -183,12 +185,12 @@ pub fn save_workspace(
             pending_name,
             effective_removals,
         } => {
-            let mut current_name = original_name.clone();
+            let mut current_name = original_name;
             let mut rename_to = None;
             if let Some(new_name) = pending_name
-                && new_name != original_name
+                && new_name != current_name
             {
-                editor_doc.rename_workspace(&original_name, &new_name)?;
+                editor_doc.rename_workspace(&current_name, &new_name)?;
                 current_name.clone_from(&new_name);
                 rename_to = Some(new_name);
             }

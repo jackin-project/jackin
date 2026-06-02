@@ -391,7 +391,11 @@ pub(crate) fn render_role_picker_sidebar(
     focused: bool,
 ) {
     let title = picker_sidebar_title(workspace_name);
-    let labels = picker.filtered.iter().map(|role| role.key()).collect();
+    let labels = picker
+        .filtered
+        .iter()
+        .map(crate::selector::RoleSelector::key)
+        .collect();
     render_picker_sidebar(
         frame,
         area,
@@ -437,6 +441,7 @@ pub(crate) fn render_mounts_subpanel(
     render_workspace_mounts_panel(frame, area, &rows, scroll_x, scroll_y, focused);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_global_mount_rows_section(
     frame: &mut Frame,
     area: Rect,
@@ -578,13 +583,11 @@ pub(crate) fn render_agents_subpanel_scrollable(
 }
 
 fn role_scoped_mount_count(config: &AppConfig, role: &str) -> usize {
-    if let Ok(selector) = crate::selector::RoleSelector::parse(role) {
+    crate::selector::RoleSelector::parse(role).map_or(0, |selector| {
         config
             .resolve_mount_rows(&selector)
             .into_iter()
             .filter(|row| row.scope.is_some())
             .count()
-    } else {
-        0
-    }
+    })
 }

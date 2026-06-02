@@ -11,7 +11,7 @@ use super::{ConsoleStage, ConsoleState};
 /// Open the inline role picker for every eligible role count except zero.
 /// `WorkspaceChoice` is built fresh each call so manager edits take effect
 /// immediately.
-pub(crate) fn dispatch_launch_for_workspace(
+pub fn dispatch_launch_for_workspace(
     state: &mut ConsoleState,
     config: &AppConfig,
     cwd: &std::path::Path,
