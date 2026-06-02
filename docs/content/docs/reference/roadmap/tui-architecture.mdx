@@ -308,6 +308,8 @@ The root-dependent console op-picker adapter now lives under <RepoFile path="src
 
 The op-picker background-worker disconnect message now lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. The root adapter still owns the `operator_env` runner, subscriptions, and cache binding, but visible recoverable-error wording stays with the component boundary.
 
+Console subscription-worker disconnect fallback messages now live with the console TUI subscription vocabulary in <RepoFile path="crates/jackin-console/src/tui/subscriptions.rs" />. Root polling in <RepoFile path="src/console/tui/state.rs" /> and root test helpers still own concrete worker receivers, but they no longer hard-code the operator-facing disconnected-worker text.
+
 Settings screen view geometry now owns the reusable global-mount scroll-frame calculation in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root settings geometry supplies only root mount rows and cache-derived content width.
 
 Settings header title wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering asks the screen helper for the title instead of carrying settings-screen copy.

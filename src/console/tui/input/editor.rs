@@ -1577,7 +1577,9 @@ fn poll_role_load_completion(
     let result = match load.rx.poll_next() {
         SubscriptionPoll::Ready(result) => result,
         SubscriptionPoll::Pending => return None,
-        SubscriptionPoll::Closed => Err(anyhow::anyhow!("role loader worker disconnected")),
+        SubscriptionPoll::Closed => Err(anyhow::anyhow!(
+            jackin_console::tui::subscriptions::role_loader_worker_disconnected_message()
+        )),
     };
     let load = editor
         .pending_role_load

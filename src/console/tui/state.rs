@@ -2042,9 +2042,9 @@ impl ManagerState<'_> {
         let result = match check.rx.poll_next() {
             SubscriptionPoll::Ready(result) => Some(result),
             SubscriptionPoll::Pending => return None,
-            SubscriptionPoll::Closed => {
-                Some(Err(anyhow::anyhow!("drift check worker disconnected")))
-            }
+            SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
+                jackin_console::tui::subscriptions::drift_check_worker_disconnected_message()
+            ))),
         };
         let ManagerStage::Editor(editor) = &mut self.stage else {
             unreachable!()
@@ -2064,7 +2064,7 @@ impl ManagerState<'_> {
             SubscriptionPoll::Ready(result) => Some(result),
             SubscriptionPoll::Pending => return None,
             SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
-                "isolation cleanup worker disconnected"
+                jackin_console::tui::subscriptions::isolation_cleanup_worker_disconnected_message()
             ))),
         };
         let ManagerStage::Editor(editor) = &mut self.stage else {
@@ -2087,7 +2087,9 @@ impl ManagerState<'_> {
         let result = match load.rx.poll_next() {
             SubscriptionPoll::Ready(result) => result,
             SubscriptionPoll::Pending => return None,
-            SubscriptionPoll::Closed => Err(anyhow::anyhow!("role loader worker disconnected")),
+            SubscriptionPoll::Closed => Err(anyhow::anyhow!(
+                jackin_console::tui::subscriptions::role_loader_worker_disconnected_message()
+            )),
         };
         let ManagerStage::Editor(editor) = &mut self.stage else {
             unreachable!()
@@ -2116,9 +2118,9 @@ impl ManagerState<'_> {
                 let result = match pending.rx.poll_next() {
                     SubscriptionPoll::Ready(result) => Some(result),
                     SubscriptionPoll::Pending => None,
-                    SubscriptionPoll::Closed => {
-                        Some(Err(anyhow::anyhow!("op read worker disconnected")))
-                    }
+                    SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
+                        jackin_console::tui::subscriptions::op_read_worker_disconnected_message()
+                    ))),
                 };
                 if result.is_some() {
                     let ManagerStage::Editor(editor) = &mut self.stage else {
@@ -2135,9 +2137,9 @@ impl ManagerState<'_> {
                 let result = match pending.rx.poll_next() {
                     SubscriptionPoll::Ready(result) => Some(result),
                     SubscriptionPoll::Pending => None,
-                    SubscriptionPoll::Closed => {
-                        Some(Err(anyhow::anyhow!("op read worker disconnected")))
-                    }
+                    SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
+                        jackin_console::tui::subscriptions::op_read_worker_disconnected_message()
+                    ))),
                 };
                 if result.is_some() {
                     let ManagerStage::Settings(settings) = &mut self.stage else {
@@ -2172,7 +2174,9 @@ impl ManagerState<'_> {
             }
             SubscriptionPoll::Closed => {
                 self.instances_refresh_rx = None;
-                Some(Err("instance refresh worker disconnected".into()))
+                let message =
+                    jackin_console::tui::subscriptions::instance_refresh_worker_disconnected_message();
+                Some(Err(message.into()))
             }
         }
     }
