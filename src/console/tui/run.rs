@@ -17,7 +17,7 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    LetterInputModalKind, LetterInputState, QuitInterceptState, quit_confirm_area,
+    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_bar_chip_area, quit_confirm_area,
     quit_confirm_state, render_debug_bar, should_debug_log_mouse, should_open_quit_confirm,
     split_debug_area, token_generate_status_message,
 };
@@ -285,14 +285,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     let run_id = crate::diagnostics::active_run()
                         .map(|r| r.run_id().to_string())
                         .unwrap_or_default();
-                    let chip_width = (run_id.chars().count() + 2) as u16;
-                    let chip_rect = ratatui::layout::Rect {
-                        x: bar_area.x + bar_area.width.saturating_sub(chip_width),
-                        y: bar_area.y,
-                        width: chip_width.min(bar_area.width),
-                        height: 1,
-                    };
-                    last_debug_chip_area = Some(chip_rect);
+                    last_debug_chip_area = Some(debug_bar_chip_area(bar_area, &run_id, None));
                     render_debug_bar(frame, bar_area, &run_id, None);
                 }
             })?;

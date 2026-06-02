@@ -212,6 +212,35 @@ mod tests {
             "\nGenerating Claude OAuth token for global config -- complete the browser sign-in, then paste the code below.\n"
         );
     }
+
+    #[test]
+    fn debug_bar_chip_area_matches_right_aligned_chip_width() {
+        let area = Rect {
+            x: 2,
+            y: 5,
+            width: 20,
+            height: 1,
+        };
+
+        assert_eq!(
+            debug_bar_chip_area(area, "run", None),
+            Rect {
+                x: 17,
+                y: 5,
+                width: 5,
+                height: 1,
+            }
+        );
+        assert_eq!(
+            debug_bar_chip_area(area, "run", Some("inst")),
+            Rect {
+                x: 12,
+                y: 5,
+                width: 10,
+                height: 1,
+            }
+        );
+    }
 }
 
 /// Render the 1-row debug status bar.
@@ -222,10 +251,12 @@ mod tests {
 pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id: Option<&str>) {
     let chip_text =
         instance_id.map_or_else(|| format!(" {run_id} "), |iid| format!(" {run_id}:{iid} "));
-    let chip_width = chip_text.chars().count() as u16;
-
     let [left_area, chip_area] =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(chip_width)]).areas(area);
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(debug_bar_chip_width(
+            run_id,
+            instance_id,
+        ))])
+        .areas(area);
 
     let white_bg = Style::default()
         .bg(jackin_tui::theme::WHITE)
@@ -243,6 +274,23 @@ pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id
         Paragraph::new(Line::from(vec![Span::styled(chip_text, chip_style)])),
         chip_area,
     );
+}
+
+#[must_use]
+pub fn debug_bar_chip_area(area: Rect, run_id: &str, instance_id: Option<&str>) -> Rect {
+    let chip_width = debug_bar_chip_width(run_id, instance_id);
+    Rect {
+        x: area.x + area.width.saturating_sub(chip_width),
+        y: area.y,
+        width: chip_width.min(area.width),
+        height: 1,
+    }
+}
+
+fn debug_bar_chip_width(run_id: &str, instance_id: Option<&str>) -> u16 {
+    let content_width = run_id.chars().count()
+        + instance_id.map_or(0, |instance_id| instance_id.chars().count() + 1);
+    (content_width + 2) as u16
 }
 
 #[must_use]
