@@ -26,6 +26,19 @@ pub struct GithubContextView<'a> {
     pub status: PullRequestStatus<'a>,
 }
 
+pub fn github_context_view_from_state<'a>(
+    branch: Option<&'a str>,
+    pull_request: Option<&'a PullRequestInfo>,
+    loading: bool,
+) -> GithubContextView<'a> {
+    let status = match pull_request {
+        Some(pr) => PullRequestStatus::Loaded(pr),
+        None if loading => PullRequestStatus::Resolving,
+        None => PullRequestStatus::Idle,
+    };
+    GithubContextView { branch, status }
+}
+
 /// Resolution state of the multiplexer's PR lookup. Mirrors the
 /// daemon's `(in_flight, Option<PullRequestInfo>)` pair but rules
 /// out the impossible `Loaded + Resolving` combination at the type

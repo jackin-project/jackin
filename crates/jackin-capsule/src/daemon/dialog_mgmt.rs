@@ -71,15 +71,11 @@ impl Multiplexer {
     }
 
     pub(super) fn github_context_view(&self) -> GithubContextView<'_> {
-        let status = match self.pull_request_context.as_deref() {
-            Some(pr) => PullRequestStatus::Loaded(pr),
-            None if self.pull_request_context_loading() => PullRequestStatus::Resolving,
-            None => PullRequestStatus::Idle,
-        };
-        GithubContextView {
-            branch: self.pull_request_context_branch.as_deref(),
-            status,
-        }
+        github_context_view_from_state(
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_deref(),
+            self.pull_request_context_loading(),
+        )
     }
 
     /// Single `&mut self.dialog_stack` borrow alongside a
@@ -96,16 +92,11 @@ impl Multiplexer {
         // the compiler splits the borrow into `pull_request_context*`
         // (immutable) and `dialog_stack` (mutable) — disjoint fields
         // that NLL accepts only through direct field access.
-        let loading = self.pull_request_context_loading();
-        let status = match self.pull_request_context.as_deref() {
-            Some(pr) => PullRequestStatus::Loaded(pr),
-            None if loading => PullRequestStatus::Resolving,
-            None => PullRequestStatus::Idle,
-        };
-        let view = GithubContextView {
-            branch: self.pull_request_context_branch.as_deref(),
-            status,
-        };
+        let view = github_context_view_from_state(
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_deref(),
+            self.pull_request_context_loading(),
+        );
         let dialog = self.dialog_stack.last_mut()?;
         Some(f(dialog, Some(&view)))
     }

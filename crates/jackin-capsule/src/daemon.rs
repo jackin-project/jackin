@@ -42,7 +42,7 @@ use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
 use crate::tui::components::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
-    PickerIntent, PullRequestStatus, SplitDirection,
+    PickerIntent, SplitDirection, github_context_view_from_state,
 };
 #[cfg(test)]
 use crate::git_context::{
@@ -969,6 +969,7 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    use crate::tui::components::dialog::PullRequestStatus;
     use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
     use portable_pty::{ChildKiller, MasterPty, PtySize};
 
