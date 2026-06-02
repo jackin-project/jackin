@@ -116,7 +116,7 @@ Role identity, workspace workdir, supported-agent order, and model overrides are
 
 Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/reference/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
 
-Implementation: <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
+Implementation: <RepoFile path="crates/jackin-capsule/src/daemon/mod.rs" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
 ### Stopping
 
@@ -162,7 +162,7 @@ The container no longer runs tmux for agent sessions. The Capsule owns the PTYs 
 | Escape timing | The input parser treats Escape as data for the pane except when a jackin' dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
 | Mouse | The client keeps the outer terminal in SGR any-event mode. The daemon handles clicks on jackin' chrome and forwards pane mouse events only when the pane's program opted into mouse reporting. |
 
-Implementation: <RepoFile path="crates/jackin-capsule/src/client.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />, <RepoFile path="crates/jackin-capsule/src/session.rs" />, and <RepoFile path="crates/jackin-capsule/src/daemon.rs" />.
+Implementation: <RepoFile path="crates/jackin-capsule/src/client.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />, <RepoFile path="crates/jackin-capsule/src/session.rs" />, and <RepoFile path="crates/jackin-capsule/src/daemon/mod.rs" />.
 
 Operators running `jackin console` from inside their own tmux session need matching host-side configuration so that modified keys are forwarded through the host tmux before they reach the container. See the [Running inside tmux](/guides/tmux/) operator guide.
 

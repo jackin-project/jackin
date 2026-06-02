@@ -44,7 +44,7 @@ vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715..." }
 <RepoFile path="TODO.md" /> historically framed this fork as *"temporary — waiting for OSC/CSI callbacks to land upstream."* **That framing was wrong, and the truth is worse.** The June 2026 research established:
 
 - The four callbacks the TODO named **already shipped** in canonical [`vt100` 0.16.2](https://docs.rs/vt100/latest/vt100/trait.Callbacks.html) (January 2025). They are not what the fork adds.
-- The fork's **real** delta over upstream is a single additive method, `Screen::clear_scrollback()`, used by `clear_scrollback_and_request_screen_clear` in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and the focused-pane handler in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />.
+- The fork's **real** delta over upstream is a single additive method, `Screen::clear_scrollback()`, used by `clear_scrollback_and_request_screen_clear` in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and the focused-pane handler in <RepoFile path="crates/jackin-capsule/src/daemon/mod.rs" />.
 - **That exact patch is already submitted upstream as `doy/vt100-rust` PR #31 ("Support clearing scrollback", May 22 2026) — and it is not merged.**
 
 And the upstream is not moving:
@@ -331,7 +331,7 @@ None. This item is entirely in-container / in-binary terminal modeling and emits
 - <RepoFile path="crates/jackin-capsule/Cargo.toml" /> — the pinned `vt100` git fork line.
 - <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `OscCapture` (the `vt100::Callbacks` impl), the scrollback model, and `clear_scrollback_and_request_screen_clear`; **the home of the Experiment 1 `t_parse`/`t_diff` instrumentation.**
 - <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> — the `vt100::Screen` → host-terminal present path; **the home of the Experiment 1 `t_write` instrumentation.**
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
+- <RepoFile path="crates/jackin-capsule/src/daemon/mod.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
 
 ## Open questions the verification must answer
 

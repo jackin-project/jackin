@@ -379,7 +379,7 @@ Out of scope for the first implementation:
 ## Related Files
 
 - <RepoFile path="crates/jackin-capsule/src/session.rs" /> — current weak state timer; future PTY/process/screen signal source.
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — event loop, 1Hz state ticker, and session lifecycle.
+- <RepoFile path="crates/jackin-capsule/src/daemon/mod.rs" /> — event loop, 1Hz state ticker, and session lifecycle.
 - <RepoFile path="crates/jackin-protocol/src/control.rs" /> — status/event protocol surface.
 - <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — existing Capsule socket at `/jackin/run/jackin.sock`.
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — runtime-local setup path for container-owned hooks/plugins/API bridges.
