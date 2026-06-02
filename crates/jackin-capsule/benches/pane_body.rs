@@ -182,7 +182,7 @@ fn bench_pane_body(c: &mut Criterion) {
 }
 
 fn bench_socket_backend_output(c: &mut Criterion) {
-    use jackin_capsule::socket_backend::SocketBackend;
+    use jackin_capsule::tui::socket_backend::SocketBackend;
     use ratatui::Terminal;
     use ratatui::layout::Rect;
 

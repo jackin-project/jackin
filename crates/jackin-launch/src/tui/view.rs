@@ -17,6 +17,7 @@ use crate::tui::components::header::render_cockpit_header;
 use crate::tui::components::progress_rail::render_progress;
 use crate::tui::components::rain::{RainState, render_rain};
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,

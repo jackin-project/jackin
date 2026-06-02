@@ -519,6 +519,7 @@ pub fn forbidden_secret_keys<R, V>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_secret_value<R, V>(
     workspace_env: &mut BTreeMap<String, V>,
     roles: &mut BTreeMap<String, R>,

@@ -502,6 +502,7 @@ pub fn role_lines(
 }
 
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn secret_lines<'a>(
     rows: &[super::model::SecretsRow],
     cursor: usize,
