@@ -1328,7 +1328,8 @@ mod mouse_drag_tests {
     };
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-    use jackin_tui::components::{ConfirmState, SaveDiscardState};
+    use jackin_console::tui::screens::settings::view::global_mount_confirm_state;
+    use jackin_tui::components::SaveDiscardState;
     use ratatui::layout::Rect;
 
     /// Build a `ManagerState` in the List stage at the default split,
@@ -2549,7 +2550,7 @@ mod mouse_drag_tests {
             .collect();
         settings.mounts.modal = Some(GlobalMountModal::Confirm {
             action: GlobalMountConfirm::Save,
-            state: ConfirmState::new("Save global mounts?"),
+            state: global_mount_confirm_state(GlobalMountConfirm::Save),
         });
         state.stage = ManagerStage::Settings(settings);
 
