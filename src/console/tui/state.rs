@@ -550,29 +550,14 @@ pub struct SettingsEnvState<'a> {
     pub scroll_focused: bool,
 }
 
-#[derive(Debug)]
-pub enum SettingsEnvModal<'a> {
-    Text {
-        target: SettingsEnvTextTarget,
-        state: Box<TextInputState<'a>>,
-    },
-    SourcePicker {
-        state: SourcePickerState,
-    },
-    OpPicker {
-        state: Box<OpPickerState>,
-    },
-    RolePicker {
-        state: RolePickerState,
-    },
-    ScopePicker {
-        state: ScopePickerState,
-    },
-    Confirm {
-        action: SettingsEnvConfirm,
-        state: ConfirmState,
-    },
-}
+pub type SettingsEnvModal<'a> = jackin_console::tui::screens::settings::model::SettingsEnvModal<
+    TextInputState<'a>,
+    SourcePickerState,
+    OpPickerState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+>;
 
 #[derive(Debug)]
 pub struct SettingsAuthState {
@@ -605,54 +590,24 @@ pub struct SettingsAuthState {
     pub scroll_focused: bool,
 }
 
-#[derive(Debug)]
-pub enum SettingsAuthModal<'a> {
-    TextInput {
-        state: Box<TextInputState<'a>>,
-    },
-    SourcePicker {
-        state: SourcePickerState,
-    },
-    OpPicker {
-        state: Box<OpPickerState>,
-    },
-    AuthForm {
-        target: AuthFormTarget,
-        state: Box<AuthForm>,
-        focus: AuthFormFocus,
-        literal_buffer: String,
-    },
-}
+pub type SettingsAuthModal<'a> = jackin_console::tui::screens::settings::model::SettingsAuthModal<
+    TextInputState<'a>,
+    SourcePickerState,
+    OpPickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+>;
 
-#[derive(Debug)]
-pub enum GlobalMountModal<'a> {
-    Text {
-        target: GlobalMountTextTarget,
-        state: Box<TextInputState<'a>>,
-    },
-    FileBrowser {
-        state: Box<FileBrowserState>,
-    },
-    MountDstChoice {
-        state: MountDstChoiceState,
-    },
-    ScopePicker {
-        state: ScopePickerState,
-    },
-    RolePicker {
-        state: RolePickerState,
-    },
-    Confirm {
-        action: GlobalMountConfirm,
-        state: ConfirmState,
-    },
-    /// Full change-preview dialog shown before committing a settings save.
-    /// Reuses the `ConfirmSave` widget so the operator sees the same
-    /// scrollable diff format as the workspace editor.
-    PreviewSave {
-        state: ConfirmSaveState<crate::workspace::MountConfig>,
-    },
-}
+pub type GlobalMountModal<'a> = jackin_console::tui::screens::settings::model::GlobalMountModal<
+    TextInputState<'a>,
+    FileBrowserState,
+    MountDstChoiceState,
+    ScopePickerState,
+    RolePickerState,
+    ConfirmState,
+    ConfirmSaveState<crate::workspace::MountConfig>,
+>;
 
 pub type PendingTokenGenerate = jackin_console::tui::subscriptions::PendingTokenGenerate<
     crate::workspace::token_setup::TokenSetupScope,

@@ -121,6 +121,37 @@ pub enum SettingsEnvEnterPlan {
     Noop,
 }
 
+#[derive(Debug)]
+pub enum SettingsEnvModal<
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+> {
+    Text {
+        target: SettingsEnvTextTarget,
+        state: Box<TextInputState>,
+    },
+    SourcePicker {
+        state: SourcePickerState,
+    },
+    OpPicker {
+        state: Box<OpPickerState>,
+    },
+    RolePicker {
+        state: RolePickerState,
+    },
+    ScopePicker {
+        state: ScopePickerState,
+    },
+    Confirm {
+        action: SettingsEnvConfirm,
+        state: ConfirmState,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsEnvConfig<V> {
     pub env: BTreeMap<String, V>,
@@ -145,6 +176,41 @@ pub enum GlobalMountTextTarget {
     Destination,
     Scope,
     Rename,
+}
+
+#[derive(Debug)]
+pub enum GlobalMountModal<
+    TextInputState,
+    FileBrowserState,
+    MountDstChoiceState,
+    ScopePickerState,
+    RolePickerState,
+    ConfirmState,
+    ConfirmSaveState,
+> {
+    Text {
+        target: GlobalMountTextTarget,
+        state: Box<TextInputState>,
+    },
+    FileBrowser {
+        state: Box<FileBrowserState>,
+    },
+    MountDstChoice {
+        state: MountDstChoiceState,
+    },
+    ScopePicker {
+        state: ScopePickerState,
+    },
+    RolePicker {
+        state: RolePickerState,
+    },
+    Confirm {
+        action: GlobalMountConfirm,
+        state: ConfirmState,
+    },
+    PreviewSave {
+        state: ConfirmSaveState,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +266,32 @@ pub struct GlobalMountDraft {
     pub src: String,
     pub dst: String,
     pub scope: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum SettingsAuthModal<
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+> {
+    TextInput {
+        state: Box<TextInputState>,
+    },
+    SourcePicker {
+        state: SourcePickerState,
+    },
+    OpPicker {
+        state: Box<OpPickerState>,
+    },
+    AuthForm {
+        target: AuthFormTarget,
+        state: Box<AuthForm>,
+        focus: AuthFormFocus,
+        literal_buffer: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
