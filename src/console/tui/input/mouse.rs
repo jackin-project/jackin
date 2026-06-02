@@ -657,11 +657,14 @@ fn try_drag_horizontal_scrollbar(
                 )
             };
             if dragged {
-                if editor.active_tab == EditorTab::Mounts {
-                    editor.workspace_mounts_scroll_focused = true;
-                } else {
-                    editor.tab_content_scroll_focused = true;
-                }
+                let plan = editor_scroll_focus_plan(
+                    editor.active_tab,
+                    false,
+                    editor.active_tab == EditorTab::Mounts,
+                    editor.active_tab != EditorTab::Mounts,
+                );
+                editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+                editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
             }
             dragged
         }
