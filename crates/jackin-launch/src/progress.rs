@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_tui::components::ConfirmState;
 use ratatui::text::Line;
 
 use crate::tui::run::{RichDriver, RichRenderer};
@@ -255,7 +254,7 @@ impl LaunchProgress {
 
     pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
         self.with_rich_renderer("launch confirmation", |renderer| {
-            renderer.confirm(ConfirmState::new(prompt))
+            renderer.confirm_prompt(prompt)
         })
     }
 
@@ -265,7 +264,7 @@ impl LaunchProgress {
         repository: impl Into<String>,
     ) -> anyhow::Result<bool> {
         self.with_rich_renderer("role trust prompt", |renderer| {
-            renderer.confirm(role_trust_confirm_state(role.into(), repository.into()))
+            renderer.confirm_role_trust(role, repository)
         })
     }
 
@@ -278,18 +277,6 @@ impl LaunchProgress {
         // awaited work no longer needs to interleave a draw — just await it.
         future.await
     }
-}
-
-fn role_trust_confirm_state(role: String, repository: String) -> ConfirmState {
-    ConfirmState::details(
-        "Trust role source",
-        "Trust this role source?",
-        vec![("Role".into(), role), ("Repository".into(), repository)],
-        vec![
-            "Dockerfile can run during image builds.".into(),
-            "The role can access mounted workspace files.".into(),
-        ],
-    )
 }
 
 impl Drop for LaunchProgress {

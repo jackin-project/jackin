@@ -502,6 +502,18 @@ impl RichRenderer {
         }
     }
 
+    pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
+        self.confirm(ConfirmState::new(prompt))
+    }
+
+    pub fn confirm_role_trust(
+        &mut self,
+        role: impl Into<String>,
+        repository: impl Into<String>,
+    ) -> anyhow::Result<bool> {
+        self.confirm(role_trust_confirm_state(role.into(), repository.into()))
+    }
+
     pub fn confirm(&mut self, mut state: ConfirmState) -> anyhow::Result<bool> {
         self.with_raw_mode("entering raw mode for launch confirmation", |renderer| {
             renderer.confirm_loop(&mut state)
@@ -538,6 +550,18 @@ impl RichRenderer {
             }
         }
     }
+}
+
+fn role_trust_confirm_state(role: String, repository: String) -> ConfirmState {
+    ConfirmState::details(
+        "Trust role source",
+        "Trust this role source?",
+        vec![("Role".into(), role), ("Repository".into(), repository)],
+        vec![
+            "Dockerfile can run during image builds.".into(),
+            "The role can access mounted workspace files.".into(),
+        ],
+    )
 }
 
 impl Drop for RichRenderer {
