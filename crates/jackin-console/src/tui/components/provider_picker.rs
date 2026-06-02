@@ -1,3 +1,5 @@
+use crossterm::event::{KeyCode, KeyEvent};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderPickerState<C, A, P> {
     pub context: C,
@@ -16,6 +18,18 @@ pub enum ProviderPickerKey {
     Commit,
     Cancel,
     Other,
+}
+
+impl From<KeyEvent> for ProviderPickerKey {
+    fn from(key: KeyEvent) -> Self {
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => Self::Up,
+            KeyCode::Down | KeyCode::Char('j') => Self::Down,
+            KeyCode::Enter => Self::Commit,
+            KeyCode::Esc => Self::Cancel,
+            _ => Self::Other,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +110,8 @@ impl<C, A, P> ProviderPickerState<C, A, P> {
 
 #[cfg(test)]
 mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
     use super::{ProviderPickerKey, ProviderPickerOutcome, ProviderPickerState};
 
     #[test]
@@ -138,6 +154,36 @@ mod tests {
         assert_eq!(
             picker.handle_key(ProviderPickerKey::Cancel),
             ProviderPickerOutcome::Cancel
+        );
+    }
+
+    #[test]
+    fn provider_picker_key_maps_terminal_keys() {
+        assert_eq!(
+            ProviderPickerKey::from(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
+            ProviderPickerKey::Up
+        );
+        assert_eq!(
+            ProviderPickerKey::from(KeyEvent::new(
+                KeyCode::Char('j'),
+                KeyModifiers::NONE,
+            )),
+            ProviderPickerKey::Down
+        );
+        assert_eq!(
+            ProviderPickerKey::from(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            ProviderPickerKey::Commit
+        );
+        assert_eq!(
+            ProviderPickerKey::from(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            ProviderPickerKey::Cancel
+        );
+        assert_eq!(
+            ProviderPickerKey::from(KeyEvent::new(
+                KeyCode::Char('x'),
+                KeyModifiers::NONE,
+            )),
+            ProviderPickerKey::Other
         );
     }
 }
