@@ -18,15 +18,6 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 
-pub(crate) async fn load_inline_agent_picker_choices(
-    paths: &crate::paths::JackinPaths,
-    config: &AppConfig,
-    role: &crate::selector::RoleSelector,
-    runner: &mut impl crate::docker::CommandRunner,
-) -> anyhow::Result<Option<Vec<crate::agent::Agent>>> {
-    crate::console::services::agents::load_inline_picker_choices(paths, config, role, runner).await
-}
-
 pub(crate) fn op_cli_available() -> bool {
     crate::console::services::op::cli_available()
 }

@@ -276,7 +276,7 @@ Root-console list pre-render preparation now also uses the crate-owned workspace
 
 Console startup `op` CLI availability probing now happens before `src/console/tui/run.rs` enters the TUI loop. The run loop receives the already-probed availability fact and initializes visible state from it instead of probing 1Password from inside the TUI boundary.
 
-Agent-picker choice resolution now runs through the root effect executor before `src/console/tui/prompts.rs` opens inline prompt state. The prompt helper owns terminal drawing and state transitions only; Docker-backed agent resolution stays behind `src/console/effects.rs` and `src/console/services/agents.rs`.
+Launch prompt agent-choice lookup now calls the non-TUI agent service boundary in <RepoFile path="src/console/services/agents.rs" /> directly from the root run loop before `src/console/tui/prompts.rs` opens inline prompt state. The TUI prompt code owns only prompt drawing and state transitions; Docker-backed role/agent resolution remains outside `src/console/tui/`.
 
 The shared confirm dialog in <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> now exposes only generic prompt/detail/note rendering. Console and launch role-trust flows build their role/repository text in their owning surface code instead of storing role-specific product semantics in `jackin-tui`.
 

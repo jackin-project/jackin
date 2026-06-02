@@ -116,7 +116,7 @@ where
     let choices = if request.workspace.default_agent.is_some() {
         AgentPickerChoices::NotNeeded
     } else {
-        match crate::console::effects::load_inline_agent_picker_choices(
+        match crate::console::services::agents::load_inline_picker_choices(
             paths,
             config,
             &request.role,
