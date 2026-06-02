@@ -32,7 +32,9 @@ All priority files from both tables below received `//!` blocks following the `e
 
 ## Remaining undocumented modules
 
-The second pass should cover all remaining `src/` files that lack `//!`, plus the undocumented files in `crates/`. Re-run `grep -rL '^//!' src/ --include='*.rs'` to get the current list before starting.
+`src/` coverage is complete as of 2026-06-02 — only `main.rs`, `bin/role.rs`, and two `_tests.rs` files lack `//!` blocks (all intentional: binary entry points and test modules do not need orientation headers).
+
+The next pass is `crates/`: `grep -rL '^//!' crates/ --include='*.rs'` to get the current list. The `jackin-tui` and `jackin-console` crates have higher `//!` coverage already; the `jackin-capsule` crate's large files are the most urgent.
 
 ## Steps
 
