@@ -13,8 +13,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::console::domain::{
-    auth_mode_to_auth_forward, github_auth_config_with_preserved_env, role_auth_mode_and_credential,
-    role_override_present, workspace_auth_mode_and_credential,
+    apply_role_auth_commit, apply_workspace_auth_commit, clear_role_auth_layer,
+    clear_workspace_auth_layer, role_auth_mode_and_credential, role_override_present,
+    workspace_auth_mode_and_credential,
 };
 use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
@@ -28,11 +29,9 @@ use crate::console::tui::state::{
 };
 use crate::console::tui::op_picker::OpPickerState;
 use crate::config::AppConfig;
-use crate::config::{AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, KimiAuthConfig, OpencodeAuthConfig};
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
 use crate::selector::RolePickerState;
-use crate::workspace::WorkspaceRoleOverride;
 
 /// Open the auth-edit form modal for the row currently under the
 /// cursor on the Auth tab. Pre-populates the form from the row's
@@ -681,49 +680,23 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
     };
     match target {
         AuthFormTarget::Workspace { kind } => {
-            set_workspace_mode(&mut editor.pending, *kind, Some(outcome.mode));
-            if *kind == AuthKind::Zai && outcome.mode == AuthMode::Ignore {
-                editor.pending.env.remove("ZAI_API_KEY");
-            }
-            if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
-                match kind {
-                    AuthKind::Claude
-                    | AuthKind::Codex
-                    | AuthKind::Amp
-                    | AuthKind::Kimi
-                    | AuthKind::Opencode
-                    | AuthKind::Zai => {
-                        editor.pending.env.insert(name.to_string(), value);
-                    }
-                    AuthKind::Github => {
-                        let github = editor.pending.github.get_or_insert_with(Default::default);
-                        github.env.insert(name.to_string(), value);
-                    }
-                }
-            }
+            apply_workspace_auth_commit(
+                &mut editor.pending,
+                *kind,
+                outcome.mode,
+                outcome.env_var_name,
+                outcome.env_value.clone(),
+            );
         }
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let entry = editor.pending.roles.entry(role.clone()).or_default();
-            set_role_mode(entry, *kind, Some(outcome.mode));
-            if *kind == AuthKind::Zai && outcome.mode == AuthMode::Ignore {
-                entry.env.remove("ZAI_API_KEY");
-            }
-            if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
-                match kind {
-                    AuthKind::Claude
-                    | AuthKind::Codex
-                    | AuthKind::Amp
-                    | AuthKind::Kimi
-                    | AuthKind::Opencode
-                    | AuthKind::Zai => {
-                        entry.env.insert(name.to_string(), value);
-                    }
-                    AuthKind::Github => {
-                        let github = entry.github.get_or_insert_with(Default::default);
-                        github.env.insert(name.to_string(), value);
-                    }
-                }
-            }
+            apply_role_auth_commit(
+                entry,
+                *kind,
+                outcome.mode,
+                outcome.env_var_name,
+                outcome.env_value.clone(),
+            );
         }
     }
 }
@@ -735,88 +708,12 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
 fn clear_layer(editor: &mut EditorState<'_>, target: &AuthFormTarget) {
     match target {
         AuthFormTarget::Workspace { kind } => {
-            set_workspace_mode(&mut editor.pending, *kind, None);
+            clear_workspace_auth_layer(&mut editor.pending, *kind);
         }
         AuthFormTarget::WorkspaceRole { role, kind } => {
             if let Some(entry) = editor.pending.roles.get_mut(role) {
-                set_role_mode(entry, *kind, None);
+                clear_role_auth_layer(entry, *kind);
             }
-        }
-    }
-}
-
-fn set_workspace_mode(
-    ws: &mut crate::workspace::WorkspaceConfig,
-    kind: AuthKind,
-    mode: Option<AuthMode>,
-) {
-    match kind {
-        AuthKind::Claude => {
-            ws.claude = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| AgentAuthConfig { auth_forward });
-        }
-        AuthKind::Codex => {
-            ws.codex = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Amp => {
-            ws.amp = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Kimi => {
-            ws.kimi = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| KimiAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Opencode => {
-            ws.opencode = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Github => {
-            ws.github = github_auth_config_with_preserved_env(mode, ws.github.as_ref());
-        }
-        AuthKind::Zai => {
-            // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
-        }
-    }
-}
-
-fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option<AuthMode>) {
-    match kind {
-        AuthKind::Claude => {
-            entry.claude = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| AgentAuthConfig { auth_forward });
-        }
-        AuthKind::Codex => {
-            entry.codex = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Amp => {
-            entry.amp = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Kimi => {
-            entry.kimi = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| KimiAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Opencode => {
-            entry.opencode = mode
-                .and_then(auth_mode_to_auth_forward)
-                .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward }));
-        }
-        AuthKind::Github => {
-            entry.github = github_auth_config_with_preserved_env(mode, entry.github.as_ref());
-        }
-        AuthKind::Zai => {
-            // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
         }
     }
 }
@@ -824,7 +721,7 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode};
+    use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode};
     use jackin_console::tui::auth::AuthKind;
     use crate::console::tui::state::AuthRow;
     use crate::console::tui::state::auth_flat_rows;

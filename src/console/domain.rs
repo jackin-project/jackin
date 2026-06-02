@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::app::context::eligible_roles_for_workspace;
 use crate::agent::Agent;
 use crate::config::{
-    AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode, MountEntry, RoleSource,
+    AgentAuthConfig, AmpAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig, GithubAuthConfig,
+    GithubAuthMode, KimiAuthConfig, MountEntry, OpencodeAuthConfig, RoleSource,
     WorkspaceRoleOverride,
 };
 use crate::isolation::MountIsolation;
@@ -77,6 +78,205 @@ pub fn github_auth_config_with_preserved_env(
         auth_forward,
         env: existing.map(|github| github.env.clone()).unwrap_or_default(),
     })
+}
+
+pub fn set_workspace_auth_mode(
+    ws: &mut WorkspaceConfig,
+    kind: AuthKind,
+    mode: Option<AuthMode>,
+) {
+    set_auth_mode(ws, kind, mode);
+}
+
+pub fn set_role_auth_mode(
+    role: &mut WorkspaceRoleOverride,
+    kind: AuthKind,
+    mode: Option<AuthMode>,
+) {
+    set_auth_mode(role, kind, mode);
+}
+
+trait AuthLayerMut {
+    fn github_auth(&self) -> Option<&GithubAuthConfig>;
+    fn set_claude_auth(&mut self, auth: Option<AgentAuthConfig>);
+    fn set_codex_auth(&mut self, auth: Option<CodexAuthConfig>);
+    fn set_amp_auth(&mut self, auth: Option<AmpAuthConfig>);
+    fn set_kimi_auth(&mut self, auth: Option<KimiAuthConfig>);
+    fn set_opencode_auth(&mut self, auth: Option<OpencodeAuthConfig>);
+    fn set_github_auth(&mut self, auth: Option<GithubAuthConfig>);
+}
+
+impl AuthLayerMut for WorkspaceConfig {
+    fn github_auth(&self) -> Option<&GithubAuthConfig> {
+        self.github.as_ref()
+    }
+
+    fn set_claude_auth(&mut self, auth: Option<AgentAuthConfig>) {
+        self.claude = auth;
+    }
+
+    fn set_codex_auth(&mut self, auth: Option<CodexAuthConfig>) {
+        self.codex = auth;
+    }
+
+    fn set_amp_auth(&mut self, auth: Option<AmpAuthConfig>) {
+        self.amp = auth;
+    }
+
+    fn set_kimi_auth(&mut self, auth: Option<KimiAuthConfig>) {
+        self.kimi = auth;
+    }
+
+    fn set_opencode_auth(&mut self, auth: Option<OpencodeAuthConfig>) {
+        self.opencode = auth;
+    }
+
+    fn set_github_auth(&mut self, auth: Option<GithubAuthConfig>) {
+        self.github = auth;
+    }
+}
+
+impl AuthLayerMut for WorkspaceRoleOverride {
+    fn github_auth(&self) -> Option<&GithubAuthConfig> {
+        self.github.as_ref()
+    }
+
+    fn set_claude_auth(&mut self, auth: Option<AgentAuthConfig>) {
+        self.claude = auth;
+    }
+
+    fn set_codex_auth(&mut self, auth: Option<CodexAuthConfig>) {
+        self.codex = auth;
+    }
+
+    fn set_amp_auth(&mut self, auth: Option<AmpAuthConfig>) {
+        self.amp = auth;
+    }
+
+    fn set_kimi_auth(&mut self, auth: Option<KimiAuthConfig>) {
+        self.kimi = auth;
+    }
+
+    fn set_opencode_auth(&mut self, auth: Option<OpencodeAuthConfig>) {
+        self.opencode = auth;
+    }
+
+    fn set_github_auth(&mut self, auth: Option<GithubAuthConfig>) {
+        self.github = auth;
+    }
+}
+
+fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<AuthMode>) {
+    match kind {
+        AuthKind::Claude => {
+            layer.set_claude_auth(
+                mode
+                .and_then(auth_mode_to_auth_forward)
+                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
+            );
+        }
+        AuthKind::Codex => {
+            layer.set_codex_auth(
+                mode
+                .and_then(auth_mode_to_auth_forward)
+                    .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward })),
+            );
+        }
+        AuthKind::Amp => {
+            layer.set_amp_auth(
+                mode
+                .and_then(auth_mode_to_auth_forward)
+                    .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward })),
+            );
+        }
+        AuthKind::Kimi => {
+            layer.set_kimi_auth(
+                mode
+                .and_then(auth_mode_to_auth_forward)
+                    .map(|auth_forward| KimiAuthConfig(AgentAuthConfig { auth_forward })),
+            );
+        }
+        AuthKind::Opencode => {
+            layer.set_opencode_auth(
+                mode
+                .and_then(auth_mode_to_auth_forward)
+                    .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward })),
+            );
+        }
+        AuthKind::Github => {
+            layer.set_github_auth(github_auth_config_with_preserved_env(mode, layer.github_auth()));
+        }
+        AuthKind::Zai => {}
+    }
+}
+
+pub fn apply_workspace_auth_commit(
+    ws: &mut WorkspaceConfig,
+    kind: AuthKind,
+    mode: AuthMode,
+    env_var_name: Option<&str>,
+    env_value: Option<crate::operator_env::EnvValue>,
+) {
+    set_workspace_auth_mode(ws, kind, Some(mode));
+    if kind == AuthKind::Zai && mode == AuthMode::Ignore {
+        ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+    }
+    apply_auth_env_value(&mut ws.env, ws.github.as_mut(), kind, env_var_name, env_value);
+}
+
+pub fn apply_role_auth_commit(
+    role: &mut WorkspaceRoleOverride,
+    kind: AuthKind,
+    mode: AuthMode,
+    env_var_name: Option<&str>,
+    env_value: Option<crate::operator_env::EnvValue>,
+) {
+    set_role_auth_mode(role, kind, Some(mode));
+    if kind == AuthKind::Zai && mode == AuthMode::Ignore {
+        role.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+    }
+    apply_auth_env_value(
+        &mut role.env,
+        role.github.as_mut(),
+        kind,
+        env_var_name,
+        env_value,
+    );
+}
+
+pub fn clear_workspace_auth_layer(ws: &mut WorkspaceConfig, kind: AuthKind) {
+    set_workspace_auth_mode(ws, kind, None);
+}
+
+pub fn clear_role_auth_layer(role: &mut WorkspaceRoleOverride, kind: AuthKind) {
+    set_role_auth_mode(role, kind, None);
+}
+
+fn apply_auth_env_value(
+    env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
+    github: Option<&mut GithubAuthConfig>,
+    kind: AuthKind,
+    env_var_name: Option<&str>,
+    env_value: Option<crate::operator_env::EnvValue>,
+) {
+    let (Some(name), Some(value)) = (env_var_name, env_value) else {
+        return;
+    };
+    match kind {
+        AuthKind::Github => {
+            if let Some(github) = github {
+                github.env.insert(name.to_string(), value);
+            }
+        }
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode
+        | AuthKind::Zai => {
+            env.insert(name.to_string(), value);
+        }
+    }
 }
 
 #[must_use]
@@ -1019,6 +1219,56 @@ mod tests {
         assert_eq!(next.env, existing.env);
         assert!(github_auth_config_with_preserved_env(Some(AuthMode::ApiKey), Some(&existing)).is_none());
         assert!(github_auth_config_with_preserved_env(None, Some(&existing)).is_none());
+    }
+
+    #[test]
+    fn apply_workspace_auth_commit_updates_mode_and_env_layer() {
+        let mut ws = WorkspaceConfig::default();
+
+        apply_workspace_auth_commit(
+            &mut ws,
+            AuthKind::Github,
+            AuthMode::Token,
+            Some("GH_TOKEN"),
+            Some(crate::operator_env::EnvValue::Plain("token".into())),
+        );
+
+        let github = ws.github.expect("github auth should be stored");
+        assert_eq!(github.auth_forward, GithubAuthMode::Token);
+        assert_eq!(
+            github.env.get("GH_TOKEN"),
+            Some(&crate::operator_env::EnvValue::Plain("token".into()))
+        );
+        assert!(ws.env.is_empty());
+    }
+
+    #[test]
+    fn apply_role_auth_commit_updates_mode_and_zai_ignore_removes_key() {
+        let mut role = WorkspaceRoleOverride::default();
+        role.env.insert(
+            crate::env_model::ZAI_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("stale".into()),
+        );
+
+        apply_role_auth_commit(&mut role, AuthKind::Zai, AuthMode::Ignore, None, None);
+
+        assert!(!role.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME));
+    }
+
+    #[test]
+    fn clear_workspace_auth_layer_removes_github_block() {
+        let mut ws = WorkspaceConfig::default();
+        apply_workspace_auth_commit(
+            &mut ws,
+            AuthKind::Github,
+            AuthMode::Token,
+            Some("GH_TOKEN"),
+            Some(crate::operator_env::EnvValue::Plain("token".into())),
+        );
+
+        clear_workspace_auth_layer(&mut ws, AuthKind::Github);
+
+        assert!(ws.github.is_none());
     }
 
     #[test]

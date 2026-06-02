@@ -193,7 +193,7 @@ Console startup `op` CLI availability probing now happens before <RepoFile path=
 
 Console launch prompt agent-choice lookup calls the non-TUI agent service boundary in <RepoFile path="src/console/services/agents.rs" /> from the root run loop. Prompt helpers keep terminal drawing and state transitions only; Docker-backed role/agent resolution stays outside `src/console/tui/`.
 
-Console GitHub auth mode changes preserve existing `[github.env]` maps through <RepoFile path="src/console/domain.rs" />. Root auth-tab input applies the selected mode to concrete workspace or role config, but the product rule that mode changes must not clobber staged `GH_TOKEN` values stays outside TUI input handlers.
+Console GitHub auth mode changes preserve existing `[github.env]` maps through <RepoFile path="src/console/domain.rs" />. Editor Auth-tab commit/reset mutation for workspace and role auth layers also lives there: root auth input commits the shared auth form, then delegates mode-block updates, Github env insertion, and Zai ignore cleanup.
 
 Console settings-auth global GitHub env extraction and source lookup also live in <RepoFile path="src/console/domain.rs" />. Root settings state stores pending/original maps for UI dirty tracking, form mounting, and save previews; it does not decide inline whether a credential comes from `[github.env]` or normal environment maps.
 
