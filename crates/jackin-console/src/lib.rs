@@ -10,7 +10,6 @@ pub mod op_breadcrumb;
 pub mod op_cache;
 pub mod op_reference;
 pub mod services;
-pub mod split;
 pub mod tui;
 pub mod workspace;
 

@@ -226,7 +226,7 @@ pub struct ManagerState<'a> {
 }
 
 pub use jackin_console::focus::MountScrollFocus;
-pub use jackin_console::split::{
+pub use jackin_console::tui::split::{
     DEFAULT_SPLIT_PCT, DragState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, clamp_split,
 };
 

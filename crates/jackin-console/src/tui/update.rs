@@ -135,14 +135,14 @@ pub fn inline_provider_followup_plan<C, A, P>(
 
 #[must_use]
 pub const fn drag_state_plan(
-    drag: Option<crate::split::DragState>,
-) -> Option<crate::split::DragState> {
+    drag: Option<crate::tui::split::DragState>,
+) -> Option<crate::tui::split::DragState> {
     drag
 }
 
 #[must_use]
 pub const fn list_split_pct_plan(pct: u16) -> u16 {
-    crate::split::clamp_split(pct)
+    crate::tui::split::clamp_split(pct)
 }
 
 #[must_use]
@@ -275,13 +275,13 @@ mod tests {
             Some(crate::focus::MountScrollFocus::Workspace)
         );
         assert!(list_names_focus_plan(true));
-        let drag = crate::split::DragState {
+        let drag = crate::tui::split::DragState {
             anchor_pct: 30,
             anchor_x: 12,
         };
         assert_eq!(drag_state_plan(Some(drag)), Some(drag));
-        assert_eq!(list_split_pct_plan(1), crate::split::MIN_SPLIT_PCT);
-        assert_eq!(list_split_pct_plan(99), crate::split::MAX_SPLIT_PCT);
+        assert_eq!(list_split_pct_plan(1), crate::tui::split::MIN_SPLIT_PCT);
+        assert_eq!(list_split_pct_plan(99), crate::tui::split::MAX_SPLIT_PCT);
     }
 
     #[test]

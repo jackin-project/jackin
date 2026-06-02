@@ -11,6 +11,7 @@ pub mod message;
 pub mod run;
 pub mod screens;
 pub mod sidebar_layout;
+pub mod split;
 pub mod subscriptions;
 pub mod terminal;
 pub mod update;
