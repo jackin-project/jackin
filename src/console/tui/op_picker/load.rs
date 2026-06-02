@@ -9,7 +9,8 @@ use std::sync::Arc;
 use jackin_console::tui::components::list_helpers::list_state_for_count;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 use jackin_console::tui::components::op_picker::{
-    field_label_input_state, item_name_input_state, section_name_input_state,
+    background_worker_disconnected_error_message, field_label_input_state, item_name_input_state,
+    section_name_input_state,
 };
 
 use super::{
@@ -416,7 +417,7 @@ impl OpPickerState {
             SubscriptionPoll::Closed => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
-                    message: "background worker disconnected".into(),
+                    message: background_worker_disconnected_error_message().into(),
                 });
                 true
             }

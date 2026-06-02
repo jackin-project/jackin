@@ -110,6 +110,10 @@ pub enum OpPickerError {
     Recoverable { message: String },
 }
 
+pub fn background_worker_disconnected_error_message() -> &'static str {
+    "background worker disconnected"
+}
+
 #[derive(Debug, Clone)]
 pub enum OpPickerFatalState {
     NotInstalled,
@@ -1572,6 +1576,14 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_worker_disconnected_message_is_component_owned() {
+        assert_eq!(
+            background_worker_disconnected_error_message(),
+            "background worker disconnected",
+        );
+    }
 
     #[test]
     fn breadcrumb_omits_pane_type_suffix_multi_account() {
