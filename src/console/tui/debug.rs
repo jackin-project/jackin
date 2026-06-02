@@ -1,29 +1,53 @@
 //! Debug-log naming helpers for the root console TUI.
 
 use crate::console::{ConsoleStage, ConsoleState};
+use jackin_console::tui::debug::{
+    modal_debug_name, settings_mount_modal_debug_name, ModalDebugKind,
+    SettingsMountModalDebugKind,
+};
 
-const fn modal_debug_name(modal: &crate::console::tui::state::Modal<'_>) -> &'static str {
+const fn modal_debug_kind(modal: &crate::console::tui::state::Modal<'_>) -> ModalDebugKind {
     use crate::console::tui::state::Modal;
     match modal {
-        Modal::TextInput { .. } => "TextInput",
-        Modal::FileBrowser { .. } => "FileBrowser",
-        Modal::MountDstChoice { .. } => "MountDstChoice",
-        Modal::WorkdirPick { .. } => "WorkdirPick",
-        Modal::Confirm { .. } => "Confirm",
-        Modal::SaveDiscardCancel { .. } => "SaveDiscardCancel",
-        Modal::GithubPicker { .. } => "GithubPicker",
-        Modal::ConfirmSave { .. } => "ConfirmSave",
-        Modal::ErrorPopup { .. } => "ErrorPopup",
-        Modal::StatusPopup { .. } => "StatusPopup",
-        Modal::ContainerInfo { .. } => "ContainerInfo",
-        Modal::OpPicker { .. } => "OpPicker",
-        Modal::RolePicker { .. } => "RolePicker",
-        Modal::RoleOverridePicker { .. } => "RoleOverridePicker",
-        Modal::SourcePicker { .. } => "SourcePicker",
-        Modal::AuthSourcePicker { .. } => "AuthSourcePicker",
-        Modal::ScopePicker { .. } => "ScopePicker",
-        Modal::AuthForm { .. } => "AuthForm",
-        Modal::AuthRolePicker { .. } => "AuthRolePicker",
+        Modal::TextInput { .. } => ModalDebugKind::TextInput,
+        Modal::FileBrowser { .. } => ModalDebugKind::FileBrowser,
+        Modal::MountDstChoice { .. } => ModalDebugKind::MountDstChoice,
+        Modal::WorkdirPick { .. } => ModalDebugKind::WorkdirPick,
+        Modal::Confirm { .. } => ModalDebugKind::Confirm,
+        Modal::SaveDiscardCancel { .. } => ModalDebugKind::SaveDiscardCancel,
+        Modal::GithubPicker { .. } => ModalDebugKind::GithubPicker,
+        Modal::ConfirmSave { .. } => ModalDebugKind::ConfirmSave,
+        Modal::ErrorPopup { .. } => ModalDebugKind::ErrorPopup,
+        Modal::StatusPopup { .. } => ModalDebugKind::StatusPopup,
+        Modal::ContainerInfo { .. } => ModalDebugKind::ContainerInfo,
+        Modal::OpPicker { .. } => ModalDebugKind::OpPicker,
+        Modal::RolePicker { .. } => ModalDebugKind::RolePicker,
+        Modal::RoleOverridePicker { .. } => ModalDebugKind::RoleOverridePicker,
+        Modal::SourcePicker { .. } => ModalDebugKind::SourcePicker,
+        Modal::AuthSourcePicker { .. } => ModalDebugKind::AuthSourcePicker,
+        Modal::ScopePicker { .. } => ModalDebugKind::ScopePicker,
+        Modal::AuthForm { .. } => ModalDebugKind::AuthForm,
+        Modal::AuthRolePicker { .. } => ModalDebugKind::AuthRolePicker,
+    }
+}
+
+const fn settings_mount_modal_debug_kind(
+    modal: &crate::console::tui::state::GlobalMountModal<'_>,
+) -> SettingsMountModalDebugKind {
+    use crate::console::tui::state::{GlobalMountConfirm, GlobalMountModal};
+    match modal {
+        GlobalMountModal::Text { .. } => SettingsMountModalDebugKind::TextInput,
+        GlobalMountModal::FileBrowser { .. } => SettingsMountModalDebugKind::FileBrowser,
+        GlobalMountModal::MountDstChoice { .. } => SettingsMountModalDebugKind::MountDstChoice,
+        GlobalMountModal::ScopePicker { .. } => SettingsMountModalDebugKind::ScopePicker,
+        GlobalMountModal::RolePicker { .. } => SettingsMountModalDebugKind::RolePicker,
+        GlobalMountModal::Confirm { action, .. } => match action {
+            GlobalMountConfirm::Remove => SettingsMountModalDebugKind::ConfirmRemove,
+            GlobalMountConfirm::Save => SettingsMountModalDebugKind::ConfirmSave,
+            GlobalMountConfirm::Sensitive => SettingsMountModalDebugKind::ConfirmSensitive,
+            GlobalMountConfirm::Discard => SettingsMountModalDebugKind::ConfirmDiscard,
+        },
+        GlobalMountModal::PreviewSave { .. } => SettingsMountModalDebugKind::PreviewSave,
     }
 }
 
@@ -34,19 +58,25 @@ pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
 
     let ConsoleStage::Manager(ms) = &console_state.stage;
     let list_modal = ms.list_modal.as_ref().map_or_else(String::new, |modal| {
-        format!(" list_modal={}", modal_debug_name(modal))
+        format!(" list_modal={}", modal_debug_name(modal_debug_kind(modal)))
     });
     let location = match &ms.stage {
         crate::console::tui::state::ManagerStage::List => "list".to_string(),
         crate::console::tui::state::ManagerStage::Editor(editor) => {
-            let modal = editor.modal.as_ref().map_or("none", modal_debug_name);
+            let modal = editor
+                .modal
+                .as_ref()
+                .map_or("none", |modal| modal_debug_name(modal_debug_kind(modal)));
             format!(
                 "editor mode={:?} tab={:?} field={:?} modal={modal}",
                 editor.mode, editor.active_tab, editor.active_field
             )
         }
         crate::console::tui::state::ManagerStage::CreatePrelude(prelude) => {
-            let modal = prelude.modal.as_ref().map_or("none", modal_debug_name);
+            let modal = prelude
+                .modal
+                .as_ref()
+                .map_or("none", |modal| modal_debug_name(modal_debug_kind(modal)));
             format!("create-prelude step={:?} modal={modal}", prelude.step)
         }
         crate::console::tui::state::ManagerStage::ConfirmDelete { .. } => {
@@ -60,37 +90,8 @@ pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
                 .mounts
                 .modal
                 .as_ref()
-                .map_or("none", |modal| match modal {
-                    crate::console::tui::state::GlobalMountModal::Text { .. } => "text-input",
-                    crate::console::tui::state::GlobalMountModal::FileBrowser { .. } => {
-                        "file-browser"
-                    }
-                    crate::console::tui::state::GlobalMountModal::MountDstChoice { .. } => {
-                        "mount-dst-choice"
-                    }
-                    crate::console::tui::state::GlobalMountModal::ScopePicker { .. } => {
-                        "scope-picker"
-                    }
-                    crate::console::tui::state::GlobalMountModal::RolePicker { .. } => {
-                        "role-picker"
-                    }
-                    crate::console::tui::state::GlobalMountModal::Confirm {
-                        action, ..
-                    } => match action {
-                        crate::console::tui::state::GlobalMountConfirm::Remove => {
-                            "confirm-remove"
-                        }
-                        crate::console::tui::state::GlobalMountConfirm::Save => "confirm-save",
-                        crate::console::tui::state::GlobalMountConfirm::Sensitive => {
-                            "confirm-sensitive"
-                        }
-                        crate::console::tui::state::GlobalMountConfirm::Discard => {
-                            "confirm-discard"
-                        }
-                    },
-                    crate::console::tui::state::GlobalMountModal::PreviewSave { .. } => {
-                        "preview-save"
-                    }
+                .map_or("none", |modal| {
+                    settings_mount_modal_debug_name(settings_mount_modal_debug_kind(modal))
                 });
             format!(
                 "settings tab={:?} selected={} modal={modal}",
