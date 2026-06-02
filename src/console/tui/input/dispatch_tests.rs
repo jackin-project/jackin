@@ -7,10 +7,10 @@
 //! handlers in a single test (e.g. open the in-editor rename modal,
 //! commit it via `handle_key`, then drive the save flow through the
 //! same `handle_key`).
-use crate::console::tui::state::{EditorState, FieldFocus, ManagerStage, ManagerState};
 use super::test_support::{key, mount};
 use super::*;
 use crate::config::AppConfig;
+use crate::console::tui::state::{EditorState, FieldFocus, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
 use crossterm::event::KeyCode;
 

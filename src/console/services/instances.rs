@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::Context;
 use crate::console::domain::InstanceRefreshSnapshot;
+use anyhow::Context;
 
 pub(crate) fn load_instance_refresh_snapshot(
     paths: &crate::paths::JackinPaths,

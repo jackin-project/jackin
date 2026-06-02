@@ -39,7 +39,9 @@ pub struct ConfirmState {
 /// Discriminated payload for the Confirm modal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmKind {
-    Default { prompt: String },
+    Default {
+        prompt: String,
+    },
     Details {
         prompt: String,
         rows: Vec<(String, String)>,
@@ -224,13 +226,13 @@ fn render_details(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // rows[0]: prompt
-            Constraint::Length(1), // rows[1]: separator
+            Constraint::Length(1),           // rows[0]: prompt
+            Constraint::Length(1),           // rows[1]: separator
             Constraint::Length(detail_rows), // rows[2]: detail rows
-            Constraint::Length(1), // rows[3]: separator
-            Constraint::Length(note_rows), // rows[4]: note rows
-            Constraint::Length(1), // rows[5]: empty row before buttons
-            Constraint::Length(1), // rows[6]: buttons
+            Constraint::Length(1),           // rows[3]: separator
+            Constraint::Length(note_rows),   // rows[4]: note rows
+            Constraint::Length(1),           // rows[5]: empty row before buttons
+            Constraint::Length(1),           // rows[6]: buttons
         ])
         .split(inner);
 

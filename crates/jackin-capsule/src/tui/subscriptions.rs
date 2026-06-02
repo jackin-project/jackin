@@ -17,8 +17,7 @@ pub(crate) const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: std::time::Duration =
 pub(crate) const STATE_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Render ticker: about 30 fps. Coalesces PTY-output bursts into one frame.
-pub(crate) const RENDER_TICK_INTERVAL: std::time::Duration =
-    std::time::Duration::from_millis(33);
+pub(crate) const RENDER_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(33);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subscription {

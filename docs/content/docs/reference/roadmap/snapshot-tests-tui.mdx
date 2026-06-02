@@ -10,7 +10,7 @@ The TUI has no snapshot-style regression net for the largest composite panes. Th
 
 - <RepoFile path="src/console/tui/view/editor.rs" /> is now **3231L** (was ~1682L — nearly doubled)
 - <RepoFile path="src/console/tui/view/list.rs" /> is now **2816L** (was ~2069L)
-- <RepoFile path="src/console/tui/view/mod.rs" /> is now **1165L** (was ~500L)
+- <RepoFile path="src/console/tui/view.rs" /> (module root) plus sub-modules grew to ~1165L combined (was ~500L)
 - <RepoFile path="src/console/tui/view/settings.rs" /> is now **839L** (new sub-module)
 
 No `insta` or other snapshot testing library exists in the dependency tree. All render testing uses manual `TestBackend` + `assert!` assertions against buffer contents.

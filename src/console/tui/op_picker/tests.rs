@@ -34,11 +34,7 @@ impl OpStructRunner for StubRunner {
         *self.last_vault_list_account.lock().unwrap() = Some(account.map(String::from));
         Ok(Vec::new())
     }
-    fn item_list(
-        &self,
-        _vault_id: &str,
-        _account: Option<&str>,
-    ) -> anyhow::Result<Vec<OpItem>> {
+    fn item_list(&self, _vault_id: &str, _account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
         Ok(Vec::new())
     }
     fn item_get(
@@ -72,8 +68,7 @@ fn key(code: KeyCode) -> KeyEvent {
 /// out — the constructor's `account_list` probe is async.
 fn drain_initial_account_load(s: &mut OpPickerState) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline
-    {
+    while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
         poll_load_for_test(s);
         if s.rx.is_none() && s.pending_load.is_none() {
             break;
@@ -507,8 +502,7 @@ fn create_mode_existing_item_lands_on_section_stage() {
     // Drive the existing-item Enter through start_field_load + drain.
     s.start_field_load("i-login".into(), "v-Personal".into(), None);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline
-    {
+    while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
         poll_load_for_test(&mut s);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -1292,7 +1286,10 @@ fn loading_panel_title_during_item_load_shows_breadcrumb() {
     assert!(dump.contains("alice@example.com"), "dump:\n{dump}");
     assert!(dump.contains("Personal"), "dump:\n{dump}");
     assert!(dump.contains('\u{2192}'), "dump:\n{dump}");
-    assert!(dump.contains("loading items from Personal"), "dump:\n{dump}");
+    assert!(
+        dump.contains("loading items from Personal"),
+        "dump:\n{dump}"
+    );
 }
 
 #[test]
@@ -1317,7 +1314,10 @@ fn picker_field_load_title_shows_parent_and_body_includes_subtitle() {
 
     let (dump, top_row) = render_picker_dump(&state, 80, 12);
 
-    assert!(top_row.contains("alexey@chainargos.com"), "top row:\n{top_row}");
+    assert!(
+        top_row.contains("alexey@chainargos.com"),
+        "top row:\n{top_row}"
+    );
     assert!(top_row.contains("ChainArgos"), "top row:\n{top_row}");
     assert!(!top_row.contains("Redshift"), "top row:\n{top_row}");
     assert!(
@@ -1418,8 +1418,7 @@ impl OpStructRunner for RecorderRunner {
 
 fn drain_worker_load(s: &mut OpPickerState) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
-    while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline
-    {
+    while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
         poll_load_for_test(s);
         if s.rx.is_none() && s.pending_load.is_none() {
             break;
@@ -1788,8 +1787,10 @@ impl ParityStub {
         concealed: bool,
         reference: &str,
     ) -> Self {
-        self.fields.entry(item_id.to_string()).or_default().push(
-            crate::operator_env::OpField {
+        self.fields
+            .entry(item_id.to_string())
+            .or_default()
+            .push(crate::operator_env::OpField {
                 id: id.to_string(),
                 label: label.to_string(),
                 field_type: if concealed {
@@ -1799,8 +1800,7 @@ impl ParityStub {
                 },
                 concealed,
                 reference: reference.to_string(),
-            },
-        );
+            });
         self
     }
 }
@@ -2015,12 +2015,9 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
             true,
             "op://Private/Claude/Security/auth token",
         );
-    let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
-        "op://Private/Claude/auth token",
-        &stub,
-        None,
-    )
-    .unwrap();
+    let cli_ref =
+        crate::operator_env::resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub, None)
+            .unwrap();
 
     assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");

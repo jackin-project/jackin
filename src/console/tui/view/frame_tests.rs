@@ -35,11 +35,10 @@ fn list_vertical_clamp_uses_rendered_sidebar_height() {
     state.selected = 1;
 
     let body = Rect::new(0, 0, 100, 10);
-    let columns = jackin_console::tui::list_geometry::split_list_columns(
-        body,
-        state.list_split_pct,
-    );
-    let areas = selected_sidebar_scroll_areas(columns.preview, &state, &config, tmp.path()).unwrap();
+    let columns =
+        jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
+    let areas =
+        selected_sidebar_scroll_areas(columns.preview, &state, &config, tmp.path()).unwrap();
     let rendered_viewport = scroll_viewport_height(areas.workspace.area);
     let desired_viewport = scroll_viewport_height(Rect::new(0, 0, 0, 12));
     assert!(rendered_viewport < desired_viewport);

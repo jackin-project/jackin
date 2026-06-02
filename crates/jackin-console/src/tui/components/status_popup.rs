@@ -12,7 +12,10 @@ pub fn status_popup_state(
 pub fn role_resolution_status_popup_state(
     role_key: impl std::fmt::Display,
 ) -> jackin_tui::components::StatusPopupState {
-    status_popup_state("Resolving agent role", format!("Loading and resolving {role_key}"))
+    status_popup_state(
+        "Resolving agent role",
+        format!("Loading and resolving {role_key}"),
+    )
 }
 
 pub fn role_loading_status_popup_state(
@@ -26,8 +29,7 @@ pub fn workspace_save_drift_check_status_popup_state() -> jackin_tui::components
 }
 
 pub fn workspace_save_isolation_cleanup_status_popup_state()
-    -> jackin_tui::components::StatusPopupState
-{
+-> jackin_tui::components::StatusPopupState {
     status_popup_state("Saving", "Deleting isolated state...")
 }
 

@@ -6,8 +6,7 @@ pub(crate) type ManagerEffect = jackin_console::tui::effect::ConsoleManagerEffec
     crate::operator_env::OpRef,
 >;
 
-pub(crate) type FileBrowserEffectContext =
-    jackin_console::tui::effect::FileBrowserEffectContext;
+pub(crate) type FileBrowserEffectContext = jackin_console::tui::effect::FileBrowserEffectContext;
 
 pub(crate) type WorkspaceSaveEffect = jackin_console::tui::effect::WorkspaceSaveEffect<
     crate::workspace::MountConfig,
@@ -16,8 +15,7 @@ pub(crate) type WorkspaceSaveEffect = jackin_console::tui::effect::WorkspaceSave
     crate::workspace::WorkspaceConfig,
 >;
 
-pub(crate) type WorkspaceSaveWriteMode =
-    jackin_console::tui::effect::WorkspaceSaveWriteMode;
+pub(crate) type WorkspaceSaveWriteMode = jackin_console::tui::effect::WorkspaceSaveWriteMode;
 
 pub(crate) type WorkspaceSaveWriteInput<'a> =
     jackin_console::tui::effect::WorkspaceSaveWriteInput<'a, crate::workspace::WorkspaceConfig>;

@@ -9,14 +9,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
-use crate::ansi::{
-    BG_DARK, BOLD, INVERSE, RESET, bg, fg, move_to,
-};
+use crate::ModalOutcome;
+use crate::ansi::{BG_DARK, BOLD, INVERSE, RESET, bg, fg, move_to};
 use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::{
     INPUT_BG_DIM as INPUT_BG_DIM_RGB, PHOSPHOR_GREEN as PHOSPHOR_GREEN_RGB, WHITE as WHITE_RGB,
 };
-use crate::ModalOutcome;
 
 /// Cross-surface single-line text-input model. Holds the buffer,
 /// cursor position (in bytes), an optional max length, and an

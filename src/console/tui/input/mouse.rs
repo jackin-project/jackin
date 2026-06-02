@@ -4,11 +4,6 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-use crate::console::tui::layout::list::{
-    SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
-};
-use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::components::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use crate::console::tui::components::mount_display::global_mounts_content_width;
@@ -17,25 +12,30 @@ use crate::console::tui::components::mount_display::workspace_mounts_content_wid
 use crate::console::tui::components::mount_display::{
     settings_global_mounts_content_width_with_cache, workspace_mounts_content_width_with_cache,
 };
+use crate::console::tui::effect::ManagerEffect;
+use crate::console::tui::layout::list::{
+    SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
+};
 use crate::console::tui::layout::settings::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
 };
+use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
-use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
-use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
-use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
     MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
     apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
     is_horizontally_scrollable, list_content_visual_index_at, near_seam, point_in_rect,
-    scrollbar_drag_offset, scroll_viewport_width, split_pct_from_drag, split_seam_column,
+    scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
     tab_cell_at_position, tabbed_content_area,
 };
+use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
+use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
+use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
 
@@ -611,10 +611,9 @@ fn try_drag_horizontal_scrollbar(
                 areas.workspace.area,
                 areas.workspace.content_width,
             ) {
-                state.list_scroll_focus = workspace_list_scroll_focus_plan(
-                    false, true, true, false, false, false,
-                )
-                .scroll_focus;
+                state.list_scroll_focus =
+                    workspace_list_scroll_focus_plan(false, true, true, false, false, false)
+                        .scroll_focus;
                 return true;
             }
             if drag_scrollbar(
@@ -623,10 +622,9 @@ fn try_drag_horizontal_scrollbar(
                 areas.global.area,
                 areas.global.content_width,
             ) {
-                state.list_scroll_focus = workspace_list_scroll_focus_plan(
-                    false, true, false, true, false, false,
-                )
-                .scroll_focus;
+                state.list_scroll_focus =
+                    workspace_list_scroll_focus_plan(false, true, false, true, false, false)
+                        .scroll_focus;
                 return true;
             }
             if let Some(role) = areas.role_global
@@ -637,10 +635,9 @@ fn try_drag_horizontal_scrollbar(
                     role.content_width,
                 )
             {
-                state.list_scroll_focus = workspace_list_scroll_focus_plan(
-                    false, true, false, false, true, false,
-                )
-                .scroll_focus;
+                state.list_scroll_focus =
+                    workspace_list_scroll_focus_plan(false, true, false, false, true, false)
+                        .scroll_focus;
                 return true;
             }
             false
@@ -821,13 +818,8 @@ fn drag_scrollbar_axis(
     area: Rect,
     content_len: usize,
 ) -> bool {
-    let Some(offset) = scrollbar_drag_offset(
-        axis,
-        area,
-        content_len,
-        mouse.column,
-        mouse.row,
-    ) else {
+    let Some(offset) = scrollbar_drag_offset(axis, area, content_len, mouse.column, mouse.row)
+    else {
         return false;
     };
     *value = offset;
@@ -980,12 +972,7 @@ fn scroll_active_panel(
                 };
                 let viewport = scroll_viewport_width(area);
                 let content_width = list_names_content_width(state, viewport);
-                apply_horizontal_scroll(
-                    &mut state.list_names_scroll_x,
-                    delta,
-                    area,
-                    content_width,
-                );
+                apply_horizontal_scroll(&mut state.list_names_scroll_x, delta, area, content_width);
                 return;
             }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
@@ -1042,12 +1029,8 @@ fn scroll_active_panel(
             let area = editor_scroll_area(editor, term_size);
             let in_scrollable_workspace = point_in(mouse, area.area)
                 && is_horizontally_scrollable(area.area, area.content_width);
-            let plan = editor_scroll_focus_plan(
-                editor.active_tab,
-                false,
-                in_scrollable_workspace,
-                false,
-            );
+            let plan =
+                editor_scroll_focus_plan(editor.active_tab, false, in_scrollable_workspace, false);
             editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
             editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
             if plan.workspace_mounts_scroll_focused {
@@ -1640,9 +1623,11 @@ mod mouse_drag_tests {
         state.list_modal = Some(Modal::ContainerInfo {
             state: jackin_tui::components::ContainerInfoState::new(
                 "Container info",
-                vec![jackin_tui::components::ContainerInfoRow::new("Run ID", "run-123")
-                    .copyable()
-                    .emphasised()],
+                vec![
+                    jackin_tui::components::ContainerInfoRow::new("Run ID", "run-123")
+                        .copyable()
+                        .emphasised(),
+                ],
             ),
         });
         let term = term_120x40();

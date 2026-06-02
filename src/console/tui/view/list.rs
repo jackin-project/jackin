@@ -19,14 +19,14 @@
 )]
 
 #[cfg(test)]
-pub(super) use crate::console::tui::layout::list::{
-    global_mounts_content_height, mount_block_height,
-};
-#[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::format_mount_rows;
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 pub(super) use crate::console::tui::components::workspace_list::render_list_body;
+#[cfg(test)]
+pub(super) use crate::console::tui::layout::list::{
+    global_mounts_content_height, mount_block_height,
+};
 #[cfg(test)]
 pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
 #[cfg(test)]
@@ -47,14 +47,12 @@ const SUBPANEL_CONTENT_INDENT: usize = 2;
 #[cfg(test)]
 mod list_name_scroll_tests {
     use super::render_list_body;
-    use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
     use crate::config::AppConfig;
-    use crate::console::tui::layout::list::{
-        clamp_list_scroll_for_area, list_names_content_width,
-    };
+    use crate::console::tui::layout::list::{clamp_list_scroll_for_area, list_names_content_width};
     use crate::console::tui::state::{ManagerListRow, ManagerState};
     use crate::workspace::WorkspaceConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
+    use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
@@ -1425,11 +1423,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(60, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_environments_subpanel(
-                f,
-                Rect::new(0, 0, 60, 4),
-                workspace_env_rows(Some(&ws)),
-            );
+            render_environments_subpanel(f, Rect::new(0, 0, 60, 4), workspace_env_rows(Some(&ws)));
         })
         .unwrap();
 
@@ -1487,7 +1481,13 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(
+                f,
+                Rect::new(0, 0, 60, 24),
+                &summary,
+                &cfg,
+                &state,
+            );
         })
         .unwrap();
 
@@ -1547,7 +1547,13 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(
+                f,
+                Rect::new(0, 0, 72, 24),
+                &summary(),
+                &cfg,
+                &state,
+            );
         })
         .unwrap();
 
@@ -1588,7 +1594,13 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(
+                f,
+                Rect::new(0, 0, 60, 24),
+                &summary,
+                &cfg,
+                &state,
+            );
         })
         .unwrap();
 
@@ -1661,7 +1673,13 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(
+                f,
+                Rect::new(0, 0, 72, 24),
+                &summary,
+                &cfg,
+                &state,
+            );
         })
         .unwrap();
 
@@ -1709,7 +1727,13 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(
+                f,
+                Rect::new(0, 0, 60, 24),
+                &summary,
+                &cfg,
+                &state,
+            );
         })
         .unwrap();
 
@@ -1772,7 +1796,13 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(
+                f,
+                Rect::new(0, 0, 60, 24),
+                &summary,
+                &cfg,
+                &state,
+            );
         })
         .unwrap();
 

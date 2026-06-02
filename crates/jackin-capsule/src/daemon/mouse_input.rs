@@ -189,7 +189,9 @@ impl Multiplexer {
         // drag motion lands anchor==end and would otherwise OSC 52
         // whatever character sat under the cursor — a silent host-
         // clipboard overwrite on every focus click.
-        if selection_was_dragged(&sel) && let Some(session) = self.sessions.get_mut(&sel.session_id) {
+        if selection_was_dragged(&sel)
+            && let Some(session) = self.sessions.get_mut(&sel.session_id)
+        {
             let rows = session.render_snapshot(sel.inner.rows, sel.inner.cols);
             let text = selection_text(&rows, &sel);
             if !text.is_empty() && self.attached_out.is_some() {

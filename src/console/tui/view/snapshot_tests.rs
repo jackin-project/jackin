@@ -15,12 +15,12 @@ mod tests {
 
     use crate::{
         config::AppConfig,
-        console::tui::{prepare_for_render, render},
         console::tui::state::{
             EditorState, EditorTab, GlobalMountConfirm, GlobalMountModal, ManagerStage,
             ManagerState, Modal, MountScrollFocus, SettingsEnvModal, SettingsEnvScope,
             SettingsEnvTextTarget, settings_state_from_config,
         },
+        console::tui::{prepare_for_render, render},
         workspace::WorkspaceConfig,
     };
 
@@ -198,7 +198,9 @@ readonly = false
         let kind = jackin_console::tui::auth::AuthKind::Claude;
         Modal::AuthForm {
             target: crate::console::tui::state::AuthFormTarget::Workspace { kind },
-            state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(kind)),
+            state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(
+                kind,
+            )),
             focus: crate::console::tui::state::AuthFormFocus::Mode,
             literal_buffer: String::new(),
         }
@@ -318,13 +320,11 @@ readonly = false
             let mut settings = settings_state_from_config(&config);
             settings.active_tab = tab;
             settings.tab_bar_focused = false;
-            settings.mounts.scroll_focused =
-                tab == crate::console::tui::state::SettingsTab::Mounts;
+            settings.mounts.scroll_focused = tab == crate::console::tui::state::SettingsTab::Mounts;
             settings.env.scroll_focused =
                 tab == crate::console::tui::state::SettingsTab::Environments;
             settings.auth.scroll_focused = tab == crate::console::tui::state::SettingsTab::Auth;
-            settings.trust.scroll_focused =
-                tab == crate::console::tui::state::SettingsTab::Trust;
+            settings.trust.scroll_focused = tab == crate::console::tui::state::SettingsTab::Trust;
             state.stage = ManagerStage::Settings(settings);
             cases.push((tab.label(), state));
         }
@@ -819,14 +819,12 @@ readonly = false
         settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
         settings.tab_bar_focused = false;
         settings.auth.scroll_focused = true;
-        settings.auth.modal = Some(
-            crate::console::tui::state::SettingsAuthModal::TextInput {
-                state: Box::new(jackin_tui::components::TextInputState::new(
-                    "Credential",
-                    "token",
-                )),
-            },
-        );
+        settings.auth.modal = Some(crate::console::tui::state::SettingsAuthModal::TextInput {
+            state: Box::new(jackin_tui::components::TextInputState::new(
+                "Credential",
+                "token",
+            )),
+        });
         settings_auth_text.stage = ManagerStage::Settings(settings);
         cases.push(("settings auth text", settings_auth_text));
 
@@ -863,7 +861,9 @@ readonly = false
                 &cwd,
                 crate::console::tui::state::SettingsAuthModal::AuthForm {
                     target: crate::console::tui::state::AuthFormTarget::Workspace { kind },
-                    state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(kind)),
+                    state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(
+                        kind,
+                    )),
                     focus: crate::console::tui::state::AuthFormFocus::Mode,
                     literal_buffer: String::new(),
                 },

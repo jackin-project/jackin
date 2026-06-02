@@ -3,12 +3,12 @@
 use crossterm::event::KeyEvent;
 
 use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
+use super::{InputOutcome, editor, global_mounts, list, prelude, save};
+use crate::config::AppConfig;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     CreatePreludeWorkspaceExt, ExitIntent, ManagerStage, ManagerState,
 };
-use super::{InputOutcome, editor, global_mounts, list, prelude, save};
-use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{
@@ -60,14 +60,8 @@ pub fn handle_key(
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {
-        let editor_outcome = editor::handle_editor_modal(
-            editor,
-            key,
-            op_available,
-            op_cache,
-            config,
-            paths,
-        );
+        let editor_outcome =
+            editor::handle_editor_modal(editor, key, op_available, op_cache, config, paths);
         match editor_outcome {
             editor::EditorModalOutcome::Continue => {}
             editor::EditorModalOutcome::StartRoleRegistration {
@@ -144,12 +138,10 @@ pub fn handle_key(
     if let ManagerStage::Settings(settings) = &mut state.stage
         && settings.error_popup.is_some()
     {
-        let dismiss = settings.error_popup.as_ref().is_some_and(|p| {
-            matches!(
-                p.handle_key(key),
-                jackin_tui::ModalOutcome::Cancel
-            )
-        });
+        let dismiss = settings
+            .error_popup
+            .as_ref()
+            .is_some_and(|p| matches!(p.handle_key(key), jackin_tui::ModalOutcome::Cancel));
         if dismiss {
             let _ = update_manager(state, ManagerMessage::DismissSettingsErrorPopup);
         }

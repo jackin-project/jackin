@@ -325,7 +325,10 @@ fn story_confirm_role_trust(frame: &mut Frame<'_>, area: Rect) {
         "Trust this role source?",
         vec![
             ("Role".into(), "rust".into()),
-            ("Repository".into(), "https://github.com/jackin-project/roles".into()),
+            (
+                "Repository".into(),
+                "https://github.com/jackin-project/roles".into(),
+            ),
         ],
         vec![
             "Dockerfile can run during image builds.".into(),

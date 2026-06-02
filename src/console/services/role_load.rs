@@ -1,7 +1,7 @@
 //! Non-TUI role loading side-effect services.
 
-use jackin_tui::runtime::BlockingSubscription;
 use futures_util::FutureExt as _;
+use jackin_tui::runtime::BlockingSubscription;
 
 pub fn start_role_registration(
     paths: crate::paths::JackinPaths,

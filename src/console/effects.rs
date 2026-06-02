@@ -1,23 +1,23 @@
 //! Workspace-manager effect executors and background polling.
 
 use crate::config::AppConfig;
-use crate::console::tui::op_picker::OpPickerState;
+use crate::console::services::instances::load_instance_refresh_snapshot;
 use crate::console::tui::effect::{
     FileBrowserEffectContext, ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput,
     WorkspaceSaveWriteMode,
 };
-use crate::console::services::instances::load_instance_refresh_snapshot;
+use crate::console::tui::op_picker::OpPickerState;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
 use crate::console::tui::message::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget, GlobalMountModal,
-    ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck, PendingIsolationCleanup,
-    PendingMountInfoRefresh, PendingRoleLoad, SettingsStateExt,
+    CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget,
+    GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, SettingsStateExt,
 };
-use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::error_popup;
+use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::status_popup;
 
 pub(crate) fn op_cli_available() -> bool {
@@ -42,10 +42,7 @@ pub(crate) fn execute_manager_effect(
                 let entries = jackin_console::services::mount_info::inspect_entries(sources);
                 return update_manager(
                     state,
-                    ManagerMessage::MountInfoRefreshed(PendingMountInfoRefresh {
-                        target,
-                        entries,
-                    }),
+                    ManagerMessage::MountInfoRefreshed(PendingMountInfoRefresh { target, entries }),
                 )
                 .is_dirty();
             }
@@ -364,9 +361,10 @@ fn execute_settings_file_browser_outcome(
             settings
                 .mounts
                 .open_sub_modal(GlobalMountModal::MountDstChoice {
-                    state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
-                        src,
-                    ),
+                    state:
+                        jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
+                            src,
+                        ),
                 });
         }
         FileBrowserOutcome::Cancel => {
@@ -536,9 +534,7 @@ pub(crate) fn apply_role_load_completion(
                     "role source is trusted; adding key={key:?} directly to the workspace",
                     key = load.key
                 );
-                crate::console::tui::state::add_role_to_workspace_editor(
-                    editor, config, &load.key,
-                );
+                crate::console::tui::state::add_role_to_workspace_editor(editor, config, &load.key);
             } else {
                 crate::debug_log!(
                     "role",
@@ -546,11 +542,7 @@ pub(crate) fn apply_role_load_completion(
                     key = load.key,
                     git = load.source.git.as_str()
                 );
-                crate::console::tui::state::open_role_trust_confirm(
-                    editor,
-                    load.key,
-                    load.source,
-                );
+                crate::console::tui::state::open_role_trust_confirm(editor, load.key, load.source);
             }
         }
         Err(e) => {
@@ -687,12 +679,7 @@ pub(crate) fn execute_token_generate(
     config: &AppConfig,
     req: &crate::console::tui::state::PendingTokenGenerate,
 ) -> anyhow::Result<crate::operator_env::EnvValue> {
-    crate::console::services::token_setup::mint_token_value(
-        paths,
-        config,
-        &req.scope,
-        &req.args,
-    )
+    crate::console::services::token_setup::mint_token_value(paths, config, &req.scope, &req.args)
 }
 
 pub(crate) fn apply_token_generate_result(
@@ -705,10 +692,7 @@ pub(crate) fn apply_token_generate_result(
     }
 }
 
-fn apply_generated_token(
-    state: &mut ManagerState<'_>,
-    env_value: crate::operator_env::EnvValue,
-) {
+fn apply_generated_token(state: &mut ManagerState<'_>, env_value: crate::operator_env::EnvValue) {
     if let crate::operator_env::EnvValue::OpRef(op_ref) = &env_value {
         crate::console::services::op_picker::invalidate_cache_for_ref(&state.op_cache, op_ref);
     }
@@ -717,8 +701,7 @@ fn apply_generated_token(
         ManagerStage::Editor(editor) => match env_value {
             crate::operator_env::EnvValue::OpRef(op_ref) => {
                 crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
-                    editor,
-                    op_ref,
+                    editor, op_ref,
                 );
             }
             crate::operator_env::EnvValue::Plain(value) => {
@@ -834,7 +817,8 @@ fn execute_op_commit_validation(
                 Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
         }
     } else if let ManagerStage::Editor(editor) = &mut state.stage {
-        editor.pending_op_commit = Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
+        editor.pending_op_commit =
+            Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
     }
 }
 
@@ -852,9 +836,11 @@ pub(crate) fn execute_workspace_save_effect(
             plan,
             exit_on_success,
         } => {
-            let has_records =
-                crate::isolation::state::list_records_for_workspace(&paths.data_dir, &original_name)
-                    .is_ok_and(|records| !records.is_empty());
+            let has_records = crate::isolation::state::list_records_for_workspace(
+                &paths.data_dir,
+                &original_name,
+            )
+            .is_ok_and(|records| !records.is_empty());
             if !has_records {
                 let (_tx, rx) = tokio::sync::oneshot::channel();
                 let check = PendingDriftCheck::new(rx, original_name, plan, exit_on_success);
@@ -1075,7 +1061,12 @@ pub(crate) fn poll_background_messages(
             ManagerMessage::InstancesRefreshed(result),
         ));
     }
-    execute_manager_effect(state, config, paths, ConsoleEffect::RequestInstanceRefresh.into());
+    execute_manager_effect(
+        state,
+        config,
+        paths,
+        ConsoleEffect::RequestInstanceRefresh.into(),
+    );
     if let Some((op_ref, result, is_settings)) = state.poll_pending_op_commit() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::OpCommitResolved {

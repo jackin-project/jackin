@@ -6,9 +6,8 @@ use crate::operator_env::OpCache;
 use crate::selector::RoleSelector;
 use crate::workspace::LoadWorkspaceInput;
 
-pub type ConsoleStage = jackin_console::tui::app::ConsoleAppStage<
-    crate::console::tui::ManagerState<'static>,
->;
+pub type ConsoleStage =
+    jackin_console::tui::app::ConsoleAppStage<crate::console::tui::ManagerState<'static>>;
 
 pub type ConsoleState = jackin_console::tui::app::ConsoleApp<
     crate::console::tui::ManagerState<'static>,
@@ -17,7 +16,10 @@ pub type ConsoleState = jackin_console::tui::app::ConsoleApp<
     Rc<RefCell<OpCache>>,
 >;
 
-pub fn new_console_state(config: &AppConfig, cwd: &std::path::Path) -> anyhow::Result<ConsoleState> {
+pub fn new_console_state(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) -> anyhow::Result<ConsoleState> {
     new_console_state_with_op_available(config, cwd, false)
 }
 

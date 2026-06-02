@@ -41,10 +41,7 @@ impl OpPickerState {
     }
 
     #[cfg(test)]
-    pub fn new_with_runner_and_cache(
-        runner: PickerRunner,
-        op_cache: Rc<RefCell<OpCache>>,
-    ) -> Self {
+    pub fn new_with_runner_and_cache(runner: PickerRunner, op_cache: Rc<RefCell<OpCache>>) -> Self {
         Self::new_with_mode_and_runner(op_cache, OpPickerMode::Browse, runner)
     }
 
@@ -79,10 +76,7 @@ impl OpPickerState {
         )
     }
 
-    fn new_with_mode(
-        op_cache: Rc<RefCell<OpCache>>,
-        mode: OpPickerMode,
-    ) -> Self {
+    fn new_with_mode(op_cache: Rc<RefCell<OpCache>>, mode: OpPickerMode) -> Self {
         #[cfg(test)]
         let runner = crate::operator_env::default_op_struct_runner();
         #[cfg(not(test))]
@@ -273,7 +267,9 @@ impl OpPickerState {
     }
 
     pub(super) fn selected_account_id(&self) -> Option<String> {
-        super::selected_account_id(self.selected_account.as_ref(), |account| account.id.as_str())
+        super::selected_account_id(self.selected_account.as_ref(), |account| {
+            account.id.as_str()
+        })
     }
 
     fn selected_account_id_ref(&self) -> Option<&str> {
@@ -327,7 +323,9 @@ impl OpPickerState {
                 self.load_state = OpLoadState::Ready;
                 true
             }
-            SubscriptionPoll::Ready(LoadResult::Accounts(Err(err)) | LoadResult::Vaults(Err(err))) => {
+            SubscriptionPoll::Ready(
+                LoadResult::Accounts(Err(err)) | LoadResult::Vaults(Err(err)),
+            ) => {
                 self.rx = None;
                 self.load_state = probe_load_error_state(err.to_string());
                 true

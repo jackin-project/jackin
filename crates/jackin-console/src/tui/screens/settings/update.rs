@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{
-    GlobalMountConfirm, SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow,
-    SettingsEnvScope, SettingsGeneralState, SettingsTab, SettingsTrustState,
+    GlobalMountConfirm, SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope,
+    SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use jackin_tui::ModalOutcome;
@@ -471,9 +471,7 @@ pub fn remove_settings_env_row<V>(
 }
 
 #[must_use]
-pub fn settings_env_add_target_for_row(
-    row: Option<&SettingsEnvRow>,
-) -> Option<SettingsEnvScope> {
+pub fn settings_env_add_target_for_row(row: Option<&SettingsEnvRow>) -> Option<SettingsEnvScope> {
     match row? {
         SettingsEnvRow::Key {
             scope: SettingsEnvScope::Global,
@@ -497,9 +495,7 @@ pub fn settings_env_picker_target_for_row(
     match row? {
         SettingsEnvRow::Key { scope, key } => Some((scope.clone(), Some(key.clone()))),
         SettingsEnvRow::GlobalAddSentinel => Some((SettingsEnvScope::Global, None)),
-        SettingsEnvRow::RoleAddSentinel(role) => {
-            Some((SettingsEnvScope::Role(role.clone()), None))
-        }
+        SettingsEnvRow::RoleAddSentinel(role) => Some((SettingsEnvScope::Role(role.clone()), None)),
         SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer => None,
     }
 }
@@ -527,11 +523,9 @@ pub fn settings_env_enter_plan_for_row<V>(
             role,
             expanded: false,
         }) => SettingsEnvEnterPlan::ExpandRole(role.clone()),
-        Some(SettingsEnvRow::RoleAddSentinel(role)) => {
-            SettingsEnvEnterPlan::AddRoleKey {
-                scope: SettingsEnvScope::Role(role.clone()),
-            }
-        }
+        Some(SettingsEnvRow::RoleAddSentinel(role)) => SettingsEnvEnterPlan::AddRoleKey {
+            scope: SettingsEnvScope::Role(role.clone()),
+        },
         Some(SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer) | None => {
             SettingsEnvEnterPlan::Noop
         }
@@ -905,7 +899,10 @@ mod tests {
         ));
 
         assert!(!pending.roles["alpha"].contains_key("ROLE_B"));
-        assert_eq!(selected, settings_env_flat_row_count(&pending, &expanded) - 1);
+        assert_eq!(
+            selected,
+            settings_env_flat_row_count(&pending, &expanded) - 1
+        );
     }
 
     #[test]

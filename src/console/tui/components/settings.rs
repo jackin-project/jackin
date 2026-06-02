@@ -12,8 +12,8 @@ use crate::console::tui::state::{
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
 use jackin_console::tui::screens::settings::view::{
-    env_lines as settings_env_lines, global_mount_lines as settings_global_mount_lines,
-    general_lines as settings_general_lines, tab_labels,
+    env_lines as settings_env_lines, general_lines as settings_general_lines,
+    global_mount_lines as settings_global_mount_lines, tab_labels,
     trust_lines as settings_trust_lines,
 };
 
@@ -86,7 +86,10 @@ pub(crate) fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area:
 }
 
 pub(crate) fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
-    let title = state.auth.selected_kind.map(|k| auth_panel_title(k.label()));
+    let title = state
+        .auth
+        .selected_kind
+        .map(|k| auth_panel_title(k.label()));
     let lines = settings_auth_lines_for_state(state);
     let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
@@ -253,14 +256,24 @@ pub(crate) fn settings_env_lines_for_state(
         show_cursor,
         area_width,
         |scope, key| settings_env_value(state, scope, key).map(env_value_secret_display),
-        |scope, key| state.env.unmasked_rows.contains(&(scope.clone(), key.to_string())),
-        |role| state.env.pending.roles.get(role).map_or(0, std::collections::BTreeMap::len),
+        |scope, key| {
+            state
+                .env
+                .unmasked_rows
+                .contains(&(scope.clone(), key.to_string()))
+        },
+        |role| {
+            state
+                .env
+                .pending
+                .roles
+                .get(role)
+                .map_or(0, std::collections::BTreeMap::len)
+        },
     )
 }
 
-pub(crate) fn settings_trust_lines_for_state(
-    state: &SettingsState<'_>,
-) -> Vec<Line<'static>> {
+pub(crate) fn settings_trust_lines_for_state(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     let show_cursor = !state.tab_bar_focused
         && state.trust.scroll_focused
         && state.auth.modal.is_none()

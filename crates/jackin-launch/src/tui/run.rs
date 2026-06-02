@@ -12,10 +12,10 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
-use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
 use crate::tui::message::LaunchMessage;
 use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
 use crate::tui::terminal::current_terminal_area;

@@ -9,9 +9,7 @@ use jackin_console::tui::components::error_popup::{
 };
 use jackin_console::tui::components::status_popup::role_resolution_status_popup_state;
 use jackin_console::tui::message::AgentPickerResolution;
-pub(in crate::console) use jackin_console::tui::message::{
-    OnPromptFailure, PromptOutcome,
-};
+pub(in crate::console) use jackin_console::tui::message::{OnPromptFailure, PromptOutcome};
 
 use super::{ConsoleStage, ConsoleState};
 
@@ -110,7 +108,12 @@ pub(super) fn dispatch_launch_prompt(
     input: LoadWorkspaceInput,
 ) -> anyhow::Result<LaunchPromptDispatch> {
     let Some((role, workspace, agent)) =
-        crate::console::tui::launch::dispatch_launch_for_workspace(state, config, cwd, input.clone())?
+        crate::console::tui::launch::dispatch_launch_for_workspace(
+            state,
+            config,
+            cwd,
+            input.clone(),
+        )?
     else {
         return Ok(LaunchPromptDispatch::None);
     };
@@ -152,12 +155,11 @@ pub(super) fn committed_role_prompt(
 pub(super) type LaunchPromptDispatch =
     jackin_console::tui::message::LaunchPromptDispatch<ConsoleOutcome, LaunchPromptRequest>;
 
-pub(super) type LaunchPromptRequest =
-    jackin_console::tui::message::LaunchPromptRequest<
-        RoleSelector,
-        ResolvedWorkspace,
-        LoadWorkspaceInput,
-    >;
+pub(super) type LaunchPromptRequest = jackin_console::tui::message::LaunchPromptRequest<
+    RoleSelector,
+    ResolvedWorkspace,
+    LoadWorkspaceInput,
+>;
 
 pub(super) fn launch_with_committed_agent(
     state: &mut ConsoleState,

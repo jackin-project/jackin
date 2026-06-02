@@ -2,8 +2,8 @@
 
 pub mod agent_choice;
 pub mod auth_panel;
-pub mod container_info;
 pub mod confirm_save;
+pub mod container_info;
 pub mod editor_rows;
 pub mod error_popup;
 pub mod file_browser;

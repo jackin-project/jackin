@@ -4,21 +4,20 @@
 //! Input handlers should increasingly translate terminal events into these
 //! messages instead of mutating `ManagerState` inline.
 
-use jackin_console::tui::auth::AuthKind;
 use super::effect::ManagerEffect;
+use crate::config::AppConfig;
+use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState,
     MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh,
     PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab, settings_env_flat_rows,
 };
-use crate::config::AppConfig;
-use crate::console::domain::InstanceRefreshSnapshot;
+use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::screens::editor::update::{
-    clear_editor_auth_kind_plan, editor_field_selection_plan,
-    editor_mount_row_select_plan, editor_tab_bar_focus_plan, editor_tab_horizontal_scroll_plan,
-    editor_tab_move_plan, editor_tab_select_plan, editor_workspace_mounts_horizontal_scroll_plan,
-    enter_editor_auth_kind_plan,
-    set_role_expanded as set_editor_role_expanded,
+    clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
+    editor_tab_bar_focus_plan, editor_tab_horizontal_scroll_plan, editor_tab_move_plan,
+    editor_tab_select_plan, editor_workspace_mounts_horizontal_scroll_plan,
+    enter_editor_auth_kind_plan, set_role_expanded as set_editor_role_expanded,
     toggle_general_selected as toggle_editor_general_row,
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
@@ -305,10 +304,7 @@ fn apply_list_modal_plan(state: &mut ManagerState<'_>, plan: ListModalPlan) {
     };
 }
 
-fn apply_inline_picker_dismissal_plan(
-    state: &mut ManagerState<'_>,
-    plan: InlinePickerDismissal,
-) {
+fn apply_inline_picker_dismissal_plan(state: &mut ManagerState<'_>, plan: InlinePickerDismissal) {
     match plan {
         InlinePickerDismissal::NewSession => state.inline_new_session_picker = None,
         InlinePickerDismissal::Role => state.inline_role_picker = None,
@@ -417,9 +413,8 @@ fn open_settings_error_popup(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.error_popup = Some(
-        jackin_console::tui::components::error_popup::error_popup_state(title, message),
-    );
+    settings.error_popup =
+        Some(jackin_console::tui::components::error_popup::error_popup_state(title, message));
 }
 
 fn apply_op_commit_result(
@@ -665,12 +660,8 @@ fn scroll_settings_global_mounts_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.mounts.scroll_x = settings_horizontal_scroll_plan(
-        settings.mounts.scroll_x,
-        delta,
-        term_width,
-        content_width,
-    );
+    settings.mounts.scroll_x =
+        settings_horizontal_scroll_plan(settings.mounts.scroll_x, delta, term_width, content_width);
 }
 
 fn scroll_settings_trust_horizontal(
@@ -682,12 +673,8 @@ fn scroll_settings_trust_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.trust.scroll_x = settings_horizontal_scroll_plan(
-        settings.trust.scroll_x,
-        delta,
-        term_width,
-        content_width,
-    );
+    settings.trust.scroll_x =
+        settings_horizontal_scroll_plan(settings.trust.scroll_x, delta, term_width, content_width);
 }
 
 fn move_settings_global_mounts_selection(

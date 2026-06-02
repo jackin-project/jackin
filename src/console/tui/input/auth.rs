@@ -12,26 +12,26 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use crate::config::AppConfig;
 use crate::console::domain::{
     apply_role_auth_commit, apply_workspace_auth_commit, clear_role_auth_layer,
     clear_workspace_auth_layer, role_auth_mode_and_credential, role_override_present,
     workspace_auth_mode_and_credential,
 };
-use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
-use jackin_console::tui::components::auth_panel::{
-    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
-    generated_token_source_picker_state,
-};
+use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
     auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
 };
-use crate::console::tui::op_picker::OpPickerState;
-use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
 use crate::selector::RolePickerState;
+use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
+use jackin_console::tui::components::auth_panel::{
+    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
+    generated_token_source_picker_state,
+};
 
 /// Open the auth-edit form modal for the row currently under the
 /// cursor on the Auth tab. Pre-populates the form from the row's
@@ -178,7 +178,9 @@ fn current_mode_and_credential(
     target: &AuthFormTarget,
 ) -> (Option<AuthMode>, Option<EnvValue>) {
     match target {
-        AuthFormTarget::Workspace { kind } => workspace_auth_mode_and_credential(&editor.pending, *kind),
+        AuthFormTarget::Workspace { kind } => {
+            workspace_auth_mode_and_credential(&editor.pending, *kind)
+        }
         AuthFormTarget::WorkspaceRole { role, kind } => {
             role_auth_mode_and_credential(editor.pending.roles.get(role), *kind)
         }
@@ -639,12 +641,7 @@ fn apply_op_picker_to_auth_form_with_validator(
 }
 
 fn commit_auth_form_save(editor: &mut EditorState<'_>) -> bool {
-    let Some(Modal::AuthForm {
-        target,
-        state,
-        ..
-    }) = editor.modal.as_mut()
-    else {
+    let Some(Modal::AuthForm { target, state, .. }) = editor.modal.as_mut() else {
         return false;
     };
     let committed_target = target.clone();
@@ -721,8 +718,9 @@ fn clear_layer(editor: &mut EditorState<'_>, target: &AuthFormTarget) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode};
-    use jackin_console::tui::auth::AuthKind;
+    use crate::config::{
+        AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode,
+    };
     use crate::console::tui::state::AuthRow;
     use crate::console::tui::state::auth_flat_rows;
     use crate::console::tui::state::{
@@ -731,6 +729,7 @@ mod tests {
     use crate::operator_env::{OpRef, OpRunner};
     use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use jackin_console::tui::auth::AuthKind;
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {

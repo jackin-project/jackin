@@ -52,10 +52,7 @@ pub struct ListPreRenderScrollResetPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InlineProviderFollowupPlan<C, A, P> {
-    StartSession {
-        context: C,
-        agent: A,
-    },
+    StartSession { context: C, agent: A },
     OpenProviderPicker(ProviderPickerState<C, A, P>),
 }
 
@@ -145,12 +142,8 @@ pub fn inline_provider_followup_plan<C, A, P>(
 #[must_use]
 pub fn inline_picker_shell_plan(key: KeyEvent, exit_on_q: bool) -> InlinePickerShellPlan {
     match key.code {
-        KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            InlinePickerShellPlan::ScrollHorizontal(-8)
-        }
-        KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            InlinePickerShellPlan::ScrollHorizontal(8)
-        }
+        KeyCode::Left | KeyCode::Char('h' | 'H') => InlinePickerShellPlan::ScrollHorizontal(-8),
+        KeyCode::Right | KeyCode::Char('l' | 'L') => InlinePickerShellPlan::ScrollHorizontal(8),
         KeyCode::Char('q' | 'Q') if exit_on_q => InlinePickerShellPlan::Exit,
         _ => InlinePickerShellPlan::Delegate,
     }
@@ -394,9 +387,11 @@ mod tests {
     fn inline_provider_followup_plan_opens_picker_only_when_supported() {
         assert_eq!(
             inline_provider_followup_plan("container", "claude", vec!["zai"], true),
-            InlineProviderFollowupPlan::OpenProviderPicker(
-                ProviderPickerState::new("container", "claude", vec!["zai"])
-            )
+            InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
+                "container",
+                "claude",
+                vec!["zai"]
+            ))
         );
         assert_eq!(
             inline_provider_followup_plan("container", "codex", vec!["zai"], false),

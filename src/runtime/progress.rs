@@ -2,18 +2,6 @@ use std::io::Write;
 #[cfg(test)]
 use std::time::Duration;
 
-#[cfg(test)]
-use jackin_tui::components::ConfirmState;
-#[cfg(test)]
-use jackin_tui::components::{ErrorPopupState, TextInputState};
-#[cfg(test)]
-use jackin_tui::theme::DANGER_RED;
-#[cfg(test)]
-use ratatui::Frame;
-#[cfg(test)]
-use ratatui::layout::Rect;
-#[cfg(test)]
-use ratatui::style::Color;
 pub use jackin_launch::progress::LaunchProgress;
 #[cfg(test)]
 use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
@@ -46,6 +34,18 @@ pub use jackin_launch::{
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
 use jackin_launch::{LaunchDiagnostics, LaunchHostTerminal};
+#[cfg(test)]
+use jackin_tui::components::ConfirmState;
+#[cfg(test)]
+use jackin_tui::components::{ErrorPopupState, TextInputState};
+#[cfg(test)]
+use jackin_tui::theme::DANGER_RED;
+#[cfg(test)]
+use ratatui::Frame;
+#[cfg(test)]
+use ratatui::layout::Rect;
+#[cfg(test)]
+use ratatui::style::Color;
 
 impl LaunchDiagnostics for crate::diagnostics::RunDiagnostics {
     fn run_id(&self) -> &str {

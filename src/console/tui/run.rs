@@ -1,14 +1,14 @@
-use crate::console::tui::prompts::{
-    AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest, PromptOutcome,
-    committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
-    launch_with_committed_agent, prompt_agent_for_launch,
-};
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
 };
 use crate::console::tui::debug::{console_location_debug, key_debug_name};
 use crate::console::tui::instance_action::workspace_instance_action_fact;
+use crate::console::tui::prompts::{
+    AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest, PromptOutcome,
+    committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
+    launch_with_committed_agent, prompt_agent_for_launch,
+};
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
 use jackin_console::tui::components::error_popup::{
     instance_action_failed_error_message, instance_action_failed_error_title,
@@ -31,8 +31,7 @@ use crate::workspace::LoadWorkspaceInput;
 /// (editor, prelude, confirm, list modal) pops the exit prompt.
 pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
-    matches!(ms.stage, crate::console::tui::state::ManagerStage::List)
-        && ms.list_modal.is_none()
+    matches!(ms.stage, crate::console::tui::state::ManagerStage::List) && ms.list_modal.is_none()
 }
 
 /// Modals that consume letters (`TextInput`, pickers with filter-as-
@@ -236,9 +235,9 @@ pub async fn run_console<H: InstanceActionHandler>(
             suspend_console_terminal(&mut out);
             println!(
                 "{}",
-                token_generate_status_message(crate::console::tui::state::token_generate_scope_label(
-                    &req
-                ))
+                token_generate_status_message(
+                    crate::console::tui::state::token_generate_scope_label(&req)
+                )
             );
             let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
             let _ = resume_console_terminal(&mut out);
@@ -261,7 +260,8 @@ pub async fn run_console<H: InstanceActionHandler>(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let messages = crate::console::effects::poll_background_messages(ms, &mut config, paths);
+            let messages =
+                crate::console::effects::poll_background_messages(ms, &mut config, paths);
             for message in messages {
                 needs_redraw |= crate::console::effects::apply_background_event(
                     ms,
@@ -297,7 +297,9 @@ pub async fn run_console<H: InstanceActionHandler>(
             if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
                 ms.list_modal.as_ref()
             {
-                let rect = crate::console::tui::components::modal_layout::modal_outer_rect(modal, main_area);
+                let rect = crate::console::tui::components::modal_layout::modal_outer_rect(
+                    modal, main_area,
+                );
                 let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
                 if !overlay.is_empty() {
                     let mut out = std::io::stdout();
@@ -449,8 +451,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                             }
                         }
                         crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
-                            let dispatch =
-                                committed_role_prompt(&mut state, &config, cwd, role)?;
+                            let dispatch = committed_role_prompt(&mut state, &config, cwd, role)?;
                             if let Some(outcome) = execute_launch_prompt_dispatch(
                                 &mut terminal,
                                 &mut state,
@@ -491,12 +492,10 @@ pub async fn run_console<H: InstanceActionHandler>(
                             let Some(input) = state.pending_launch.take() else {
                                 break 'main Ok(None);
                             };
-                            let workspace = crate::console::domain::resolve_provider_launch_workspace(
-                                &config,
-                                cwd,
-                                &input,
-                                &selector,
-                            )?;
+                            let workspace =
+                                crate::console::domain::resolve_provider_launch_workspace(
+                                    &config, cwd, &input, &selector,
+                                )?;
                             let Some(workspace) = workspace else {
                                 break 'main Ok(None);
                             };
@@ -512,7 +511,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
                                     let action_fact = workspace_instance_action_fact(action);
                                     let busy_title = instance_action_busy_title(action_fact);
-                                    let busy_body = instance_action_busy_message(action_fact, &container);
+                                    let busy_body =
+                                        instance_action_busy_message(action_fact, &container);
                                     let _ = crate::console::tui::update_manager(
                                         ms,
                                         crate::console::tui::ManagerMessage::OpenStatusPopup {
@@ -526,7 +526,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                                             full_area,
                                             crate::tui::is_debug_mode(),
                                         );
-                                        crate::console::tui::render(frame, main_area, ms, &config, cwd);
+                                        crate::console::tui::render(
+                                            frame, main_area, ms, &config, cwd,
+                                        );
                                     })?;
                                 }
                                 let result = action_handler.run_in_place(&container, action).await;
@@ -610,8 +612,12 @@ pub async fn run_console<H: InstanceActionHandler>(
                         // Switch the terminal pointer to the hand shape over any
                         // clickable element (and back off it), per the clickable
                         // affordance rule — only when the state changes.
-                        let hand =
-                            crate::console::tui::input::clickable_at(ms, mouse, term_size, Some(&config));
+                        let hand = crate::console::tui::input::clickable_at(
+                            ms,
+                            mouse,
+                            term_size,
+                            Some(&config),
+                        );
                         if hand != pointer_is_hand {
                             pointer_is_hand = hand;
                             let seq = if hand {

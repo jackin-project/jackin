@@ -3,25 +3,25 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::console::tui::effect::ManagerEffect;
-use crate::console::tui::op_picker::OpPickerState;
-use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
-use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache;
-use crate::console::tui::state::{
-    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorStateExt, EditorTab, ExitIntent,
-    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan,
-    SecretsRow, SecretsScopeTag, TextInputTarget, open_editor_action_error,
-    open_role_input_error, open_role_resolution_error, auth_flat_rows, secrets_flat_rows,
-};
-#[cfg(test)]
-use crate::console::tui::state::PendingRoleLoad;
 use super::InputOutcome;
 use crate::config::AppConfig;
+use crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache;
+use crate::console::tui::effect::ManagerEffect;
+use crate::console::tui::message::{ManagerMessage, update_manager};
+use crate::console::tui::op_picker::OpPickerState;
+#[cfg(test)]
+use crate::console::tui::state::PendingRoleLoad;
+use crate::console::tui::state::{
+    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorStateExt, EditorTab, ExitIntent,
+    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan, SecretsRow,
+    SecretsScopeTag, TextInputTarget, auth_flat_rows, open_editor_action_error,
+    open_role_input_error, open_role_resolution_error, secrets_flat_rows,
+};
 use crate::paths::JackinPaths;
+use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
-use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
+use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     editor_name_input_state, editor_name_value, editor_workdir_pick_state,
@@ -31,9 +31,9 @@ use jackin_console::tui::screens::editor::view::{
     secret_scope_picker_state, secret_source_picker_state, secret_value_current_text,
     secret_value_input_state,
 };
+use jackin_tui::ModalOutcome;
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
-use jackin_tui::ModalOutcome;
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.
@@ -439,14 +439,18 @@ pub(super) fn handle_editor_key(
         {
             open_secrets_add_modal(editor);
         }
-        KeyCode::Char('i' | 'I') if editor.active_tab == crate::console::tui::state::EditorTab::Mounts => {
+        KeyCode::Char('i' | 'I')
+            if editor.active_tab == crate::console::tui::state::EditorTab::Mounts =>
+        {
             // Cycle the per-mount isolation strategy on the highlighted row.
             // Mirrors the R (readonly) toggle but threads through the
             // dedicated state helper so the cycling rule lives in one place.
             // Silent no-op on the `+ Add mount` sentinel.
             editor.cycle_isolation_for_selected_mount();
         }
-        KeyCode::Char('o' | 'O') if editor.active_tab == crate::console::tui::state::EditorTab::Mounts => {
+        KeyCode::Char('o' | 'O')
+            if editor.active_tab == crate::console::tui::state::EditorTab::Mounts =>
+        {
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
                 if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
@@ -742,12 +746,11 @@ fn step_auth_cursor_up(rows: &[AuthRow], mut candidate: usize) -> usize {
     candidate
 }
 
-pub(super) type EditorModalOutcome =
-    jackin_console::tui::message::ConsoleEditorModalOutcome<
-        crate::selector::RoleSelector,
-        crate::config::RoleSource,
-        crate::operator_env::OpRef,
-    >;
+pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditorModalOutcome<
+    crate::selector::RoleSelector,
+    crate::config::RoleSource,
+    crate::operator_env::OpRef,
+>;
 
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub(super) fn handle_editor_modal(
@@ -1409,7 +1412,12 @@ fn set_pending_env_op_ref(
     key: &str,
     op_ref: crate::operator_env::OpRef,
 ) {
-    set_pending_env_value_typed(editor, scope, key, crate::operator_env::EnvValue::OpRef(op_ref));
+    set_pending_env_value_typed(
+        editor,
+        scope,
+        key,
+        crate::operator_env::EnvValue::OpRef(op_ref),
+    );
 }
 
 /// Write an already-typed `EnvValue` into the pending env map.
@@ -1525,10 +1533,7 @@ fn apply_role_input(
                         &e.raw,
                         panic_message,
                     );
-                open_role_input_error(
-                    editor,
-                    &message,
-                );
+                open_role_input_error(editor, &message);
                 return EditorModalOutcome::Continue;
             }
             open_role_resolution_error(editor, &e.raw, e.source_url.as_ref(), &e.error);
@@ -1574,7 +1579,7 @@ fn poll_role_load_completion(
 fn apply_editor_confirm(
     editor: &mut EditorState<'_>,
     target: &ConfirmTarget,
- ) -> anyhow::Result<EditorModalOutcome> {
+) -> anyhow::Result<EditorModalOutcome> {
     match target {
         ConfirmTarget::DeleteEnvVar { scope, key } => {
             // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned by the
@@ -1694,19 +1699,19 @@ pub(in crate::console) fn apply_file_browser_to_editor(
 mod tests {
     //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
     //! bindings, and mount-row readonly toggle.
+    use super::super::test_support::{key, mount};
+    use super::{
+        EditorModalOutcome, apply_file_browser_to_editor, apply_text_input_to_pending,
+        env_key_input_state, handle_editor_modal, poll_role_load, role_load_input_state,
+        secret_new_key_label, secrets_flat_rows,
+    };
+    use crate::config::AppConfig;
+    use crate::console::tui::input::handle_key;
     use crate::console::tui::state::{
         ConfirmTarget, EditorState, EditorStateExt, EditorTab, FieldFocus, FileBrowserTarget,
         ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag,
         TextInputTarget,
     };
-    use super::super::test_support::{key, mount};
-    use super::{
-        apply_file_browser_to_editor, apply_text_input_to_pending, env_key_input_state,
-        handle_editor_modal, poll_role_load, role_load_input_state, secret_new_key_label,
-        secrets_flat_rows, EditorModalOutcome,
-    };
-    use crate::config::AppConfig;
-    use crate::console::tui::input::handle_key;
     use crate::operator_env::OpCache;
     use crate::paths::JackinPaths;
     use crate::workspace::{MountConfig, WorkspaceConfig};
@@ -2104,7 +2109,12 @@ plugins = []
         )
         .unwrap();
         for effect in state.drain_effects() {
-            crate::console::effects::execute_manager_effect(&mut state, &mut config, &paths, effect);
+            crate::console::effects::execute_manager_effect(
+                &mut state,
+                &mut config,
+                &paths,
+                effect,
+            );
         }
 
         let ManagerStage::Editor(editor) = &state.stage else {
@@ -2419,15 +2429,19 @@ plugins = []
                     panic!("expected Details kind, got {:?}", state.kind());
                 };
                 assert!(
-                    rows.iter().any(|(label, value)| label == "Role"
-                        && value == "chainargos/agent-brown")
+                    rows.iter()
+                        .any(|(label, value)| label == "Role" && value == "chainargos/agent-brown")
                 );
                 assert!(
                     rows.iter().any(|(label, value)| label == "Repository"
                         && value == "https://github.com/chainargos/jackin-agent-brown.git"),
                     "trust prompt should show the repository URL",
                 );
-                assert!(notes.iter().any(|note| note == "Dockerfile can run during image builds."));
+                assert!(
+                    notes
+                        .iter()
+                        .any(|note| note == "Dockerfile can run during image builds.")
+                );
                 match target {
                     ConfirmTarget::TrustRoleSource { key, source } => {
                         assert_eq!(key, "chainargos/agent-brown");
@@ -4116,9 +4130,9 @@ mod auth_cursor_step_tests {
     //! Spacer-skip tests for the Auth-tab cursor stepping helpers.
     //! `Spacer` rows are intentionally non-selectable so the cursor
     //! never lands on a blank line in the rendered list.
-    use jackin_console::tui::auth::AuthKind;
-    use crate::console::tui::state::AuthRow;
     use super::{step_auth_cursor_down, step_auth_cursor_up};
+    use crate::console::tui::state::AuthRow;
+    use jackin_console::tui::auth::AuthKind;
 
     fn rows() -> Vec<AuthRow> {
         // Mirrors the focused-mode shape: WorkspaceMode → Spacer →

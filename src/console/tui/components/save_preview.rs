@@ -12,9 +12,11 @@ pub(crate) fn build_confirm_save_lines(
     config: &AppConfig,
     collapse_lines: &[ratatui::text::Line<'static>],
 ) -> Vec<ratatui::text::Line<'static>> {
-    jackin_console::tui::components::save_preview::workspace_save_lines(
-        &workspace_save_preview(editor, config, collapse_lines),
-    )
+    jackin_console::tui::components::save_preview::workspace_save_lines(&workspace_save_preview(
+        editor,
+        config,
+        collapse_lines,
+    ))
 }
 
 fn workspace_mount_preview_row(
@@ -47,10 +49,7 @@ fn workspace_save_preview(
         },
         EditorMode::Edit { name } => WorkspaceSaveMode::Edit {
             original_name: name.clone(),
-            display_name: editor
-                .pending_name
-                .clone()
-                .unwrap_or_else(|| name.clone()),
+            display_name: editor.pending_name.clone().unwrap_or_else(|| name.clone()),
             pending_name: editor.pending_name.clone(),
         },
     };
@@ -73,18 +72,12 @@ fn workspace_save_preview(
         )
         .into_iter()
         .map(|diff| match diff {
-            crate::console::tui::state::MountDiff::Added(mount) => {
-                WorkspaceMountDiff::Added(workspace_mount_preview_row(
-                    &mount,
-                    &editor.mount_info_cache,
-                ))
-            }
-            crate::console::tui::state::MountDiff::Removed(mount) => {
-                WorkspaceMountDiff::Removed(workspace_mount_preview_row(
-                    &mount,
-                    &editor.mount_info_cache,
-                ))
-            }
+            crate::console::tui::state::MountDiff::Added(mount) => WorkspaceMountDiff::Added(
+                workspace_mount_preview_row(&mount, &editor.mount_info_cache),
+            ),
+            crate::console::tui::state::MountDiff::Removed(mount) => WorkspaceMountDiff::Removed(
+                workspace_mount_preview_row(&mount, &editor.mount_info_cache),
+            ),
             crate::console::tui::state::MountDiff::Modified { original, pending } => {
                 WorkspaceMountDiff::Modified {
                     original: workspace_mount_preview_row(&original, &editor.mount_info_cache),
@@ -174,9 +167,9 @@ pub(crate) fn collapse_section_lines(
 pub(crate) fn build_settings_save_lines(
     settings: &crate::console::tui::state::SettingsState<'_>,
 ) -> Vec<ratatui::text::Line<'static>> {
-    jackin_console::tui::components::save_preview::settings_save_lines(
-        &settings_save_preview(settings),
-    )
+    jackin_console::tui::components::save_preview::settings_save_lines(&settings_save_preview(
+        settings,
+    ))
 }
 
 fn settings_save_preview(

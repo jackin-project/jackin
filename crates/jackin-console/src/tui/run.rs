@@ -17,10 +17,7 @@ pub struct QuitInterceptState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenGenerateScopeLabel<'a> {
     Workspace(&'a str),
-    WorkspaceRole {
-        workspace: &'a str,
-        role: &'a str,
-    },
+    WorkspaceRole { workspace: &'a str, role: &'a str },
     Global,
 }
 
@@ -257,12 +254,11 @@ mod tests {
 pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id: Option<&str>) {
     let chip_text =
         instance_id.map_or_else(|| format!(" {run_id} "), |iid| format!(" {run_id}:{iid} "));
-    let [left_area, chip_area] =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(debug_bar_chip_width(
-            run_id,
-            instance_id,
-        ))])
-        .areas(area);
+    let [left_area, chip_area] = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(debug_bar_chip_width(run_id, instance_id)),
+    ])
+    .areas(area);
 
     let white_bg = Style::default()
         .bg(jackin_tui::theme::WHITE)

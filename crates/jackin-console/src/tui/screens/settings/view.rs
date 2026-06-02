@@ -16,12 +16,12 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
     AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
     render_secret_key_line,
 };
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
+use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsAuthLineRow {
@@ -81,7 +81,9 @@ pub const fn global_mount_confirm_prompt(action: GlobalMountConfirm) -> &'static
 }
 
 #[must_use]
-pub fn global_mount_confirm_state(action: GlobalMountConfirm) -> jackin_tui::components::ConfirmState {
+pub fn global_mount_confirm_state(
+    action: GlobalMountConfirm,
+) -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::new(global_mount_confirm_prompt(action))
 }
 
@@ -106,7 +108,9 @@ pub fn global_mount_scope_text_value(scope: Option<&str>) -> String {
 }
 
 #[must_use]
-pub const fn global_mount_text_target_label(target: &GlobalMountTextTarget) -> Option<&'static str> {
+pub const fn global_mount_text_target_label(
+    target: &GlobalMountTextTarget,
+) -> Option<&'static str> {
     match target {
         GlobalMountTextTarget::AddScope => Some("Scope (empty = global)"),
         GlobalMountTextTarget::AddName => Some("Mount name"),
@@ -627,9 +631,10 @@ where
 {
     let height = match selected_kind {
         None => rows.len(),
-        Some(kind) => rows.iter().find(|row| row.kind == kind).map_or(0, |row| {
-            1 + detail_row_count(kind, &row.mode)
-        }),
+        Some(kind) => rows
+            .iter()
+            .find(|row| row.kind == kind)
+            .map_or(0, |row| 1 + detail_row_count(kind, &row.mode)),
     };
     content_height_with_error_rows(height, has_error)
 }
@@ -711,8 +716,7 @@ mod tests {
         let state = global_mount_confirm_state(GlobalMountConfirm::Discard);
 
         assert_eq!(state.title(), "Confirm");
-        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
-        else {
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind() else {
             panic!("expected default confirm state");
         };
         assert_eq!(prompt, "Discard unsaved global mount changes?");
@@ -754,8 +758,7 @@ mod tests {
     fn settings_env_delete_confirm_state_uses_key_prompt() {
         let state = settings_env_delete_confirm_state("TOKEN");
 
-        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
-        else {
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind() else {
             panic!("expected default confirm state");
         };
         assert_eq!(prompt, "Delete environment variable TOKEN?");
@@ -857,10 +860,7 @@ mod tests {
         );
         assert_eq!(settings_env_edit_cancelled_message(), "Env edit cancelled.");
         assert_eq!(settings_env_add_cancelled_message(), "Add env cancelled.");
-        assert_eq!(
-            global_mount_add_cancelled_message(),
-            "Add mount cancelled."
-        );
+        assert_eq!(global_mount_add_cancelled_message(), "Add mount cancelled.");
         assert_eq!(
             global_mount_name_empty_message(),
             "Mount name cannot be empty."
@@ -905,7 +905,10 @@ mod tests {
         }];
 
         let empty = trust_lines(&[], 0, None, false);
-        assert_eq!(empty[0].spans[0].content.as_ref(), "  Role                         Trust      Git");
+        assert_eq!(
+            empty[0].spans[0].content.as_ref(),
+            "  Role                         Trust      Git"
+        );
         assert_eq!(empty[1].spans[0].content.as_ref(), "  (none)");
 
         let lines = trust_lines(&rows, 0, None, true);
@@ -935,7 +938,10 @@ mod tests {
         assert_eq!(lines[0].spans[0].content.as_ref(), "  Claude");
         assert_eq!(lines[1].spans[1].content.as_ref(), "Mode          ");
         assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} ");
-        assert_eq!(lines[2].spans[2].content.as_ref(), "\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}");
+        assert_eq!(
+            lines[2].spans[2].content.as_ref(),
+            "\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}"
+        );
         assert!(lines[3].spans.is_empty());
     }
 
@@ -965,9 +971,19 @@ mod tests {
         );
 
         assert_eq!(lines.len(), 4);
-        assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} + Add environment variable");
-        assert!(lines[2].spans[2].content.contains("Role: architect  (2 vars)"));
-        assert_eq!(lines[3].spans[0].content.as_ref(), "  + Add architect environment variable");
+        assert_eq!(
+            lines[1].spans[0].content.as_ref(),
+            "\u{25b8} + Add environment variable"
+        );
+        assert!(
+            lines[2].spans[2]
+                .content
+                .contains("Role: architect  (2 vars)")
+        );
+        assert_eq!(
+            lines[3].spans[0].content.as_ref(),
+            "  + Add architect environment variable"
+        );
     }
 
     #[test]
@@ -982,7 +998,10 @@ mod tests {
 
         let lines = global_mount_lines(&rows, Some(1), true);
 
-        assert_eq!(lines[0].spans[0].content.as_ref(), "  Destination      Mode  Type");
+        assert_eq!(
+            lines[0].spans[0].content.as_ref(),
+            "  Destination      Mode  Type"
+        );
         assert_eq!(lines[1].spans[0].content.as_ref(), "  /workspace       ");
         assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
         assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");

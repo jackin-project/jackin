@@ -140,7 +140,9 @@ pub enum SettingsEnvEnterPlan {
     },
     OpenScopePicker,
     ExpandRole(String),
-    AddRoleKey { scope: SettingsEnvScope },
+    AddRoleKey {
+        scope: SettingsEnvScope,
+    },
     Noop,
 }
 
@@ -212,15 +214,13 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         EnvValue: Clone,
     {
         self.pending = self.original.clone();
-        self.selected = self
-            .selected
-            .min(
-                crate::tui::screens::settings::update::settings_env_flat_row_count(
-                    &self.pending,
-                    &self.expanded,
-                )
-                .saturating_sub(1),
-            );
+        self.selected = self.selected.min(
+            crate::tui::screens::settings::update::settings_env_flat_row_count(
+                &self.pending,
+                &self.expanded,
+            )
+            .saturating_sub(1),
+        );
         self.modal = None;
         self.modal_parents.clear();
 

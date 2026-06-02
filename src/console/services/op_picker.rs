@@ -2,9 +2,7 @@
 
 use std::sync::Arc;
 
-use jackin_console::tui::components::op_picker::{
-    OpPickerLoadRequest, OpPickerLoadResult,
-};
+use jackin_console::tui::components::op_picker::{OpPickerLoadRequest, OpPickerLoadResult};
 use jackin_tui::runtime::BlockingSubscription;
 
 use crate::operator_env::{OpAccount, OpField, OpItem, OpStructRunner, OpVault};

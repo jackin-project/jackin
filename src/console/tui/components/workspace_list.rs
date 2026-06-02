@@ -1,10 +1,6 @@
 //! Root-console workspace-list display adapters.
 
-use ratatui::{
-    Frame,
-    layout::Rect,
-    text::Line,
-};
+use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
@@ -16,18 +12,17 @@ use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
 use jackin_console::tui::screens::workspaces::view::{
-    WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
-    WorkspaceInstanceTab, WorkspaceInstanceTabPane,
-    WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
-    current_directory_display_row, current_directory_workspace_title, global_mounts_title,
-    instance_sessions_empty_message, list_name_lines as workspace_list_name_lines,
-    new_workspace_display_row, picker_sidebar_title, provider_picker_title,
-    render_compact_instances_summary, render_environments_subpanel, render_general_subpanel,
-    render_global_mounts_subpanel, render_mounts_subpanel as render_workspace_mounts_panel,
+    WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent,
+    WorkspaceInstanceSessionRow, WorkspaceInstanceTab, WorkspaceInstanceTabPane,
+    WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow, current_directory_display_row,
+    current_directory_workspace_title, global_mounts_title, instance_sessions_empty_message,
+    list_name_lines as workspace_list_name_lines, new_workspace_display_row, picker_sidebar_title,
+    provider_picker_title, render_compact_instances_summary, render_environments_subpanel,
+    render_general_subpanel, render_global_mounts_subpanel,
     render_instance_details_pane as render_workspace_instance_details_pane,
-    render_list_names_block, render_picker_sidebar, render_roles_subpanel,
-    render_sentinel_description_pane, role_global_mounts_title, workspace_instance_list_label,
-    workspace_instance_pane_agent_label,
+    render_list_names_block, render_mounts_subpanel as render_workspace_mounts_panel,
+    render_picker_sidebar, render_roles_subpanel, render_sentinel_description_pane,
+    role_global_mounts_title, workspace_instance_list_label, workspace_instance_pane_agent_label,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -45,10 +40,8 @@ pub(crate) fn render_list_body(
     //   CurrentDirectory  → current-dir details
     //   SavedWorkspace(i) → saved-workspace details
     //   NewWorkspace      → description-of-what-a-workspace-is pane
-    let columns = jackin_console::tui::list_geometry::split_list_columns(
-        area,
-        state.list_split_pct,
-    );
+    let columns =
+        jackin_console::tui::list_geometry::split_list_columns(area, state.list_split_pct);
     let list_area = columns.names;
 
     match state.selected_row() {
@@ -158,7 +151,9 @@ fn workspace_list_display_row(
         ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
             .current_dir_active_instances()
             .get(*inst_idx)
-            .map(|entry| instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)),
+            .map(|entry| {
+                instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)
+            }),
         ManagerListRow::SavedWorkspace(i) => {
             let ws = state.workspaces.get(*i)?;
             Some(WorkspaceListDisplayRow {
@@ -173,7 +168,9 @@ fn workspace_list_display_row(
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
             .workspace_active_instances(*ws_idx)
             .get(*inst_idx)
-            .map(|entry| instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)),
+            .map(|entry| {
+                instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)
+            }),
         ManagerListRow::NewWorkspace => Some(new_workspace_display_row(selected, hovered)),
     }
 }
@@ -303,7 +300,9 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame, area: Rect, state: &Manager
     } else if let Some(picker) = state.inline_role_picker.as_ref() {
         let title = state
             .selected_workspace_summary()
-            .map_or(current_directory_workspace_title(), |summary| summary.name.as_str());
+            .map_or(current_directory_workspace_title(), |summary| {
+                summary.name.as_str()
+            });
         render_role_picker_sidebar(frame, area, title, picker, state.list_names_focused);
     } else {
         let (list_lines, content_width) = list_name_lines(
@@ -393,7 +392,14 @@ pub(crate) fn render_role_picker_sidebar(
 ) {
     let title = picker_sidebar_title(workspace_name);
     let labels = picker.filtered.iter().map(|role| role.key()).collect();
-    render_picker_sidebar(frame, area, &title, labels, picker.list_state.selected, focused);
+    render_picker_sidebar(
+        frame,
+        area,
+        &title,
+        labels,
+        picker.list_state.selected,
+        focused,
+    );
 }
 
 pub(crate) fn render_agent_picker_sidebar(
@@ -411,11 +417,10 @@ pub(crate) fn render_agent_picker_sidebar(
             jackin_console::tui::components::agent_choice::agent_picker_label(*agent).to_string()
         })
         .collect();
-    let selected =
-        picker
-            .choices
-            .iter()
-            .position(|agent| *agent == picker.focused);
+    let selected = picker
+        .choices
+        .iter()
+        .position(|agent| *agent == picker.focused);
     render_picker_sidebar(frame, area, &title, labels, selected, focused);
 }
 
@@ -445,7 +450,15 @@ pub(crate) fn render_global_mount_rows_section(
     let mounts: Vec<crate::workspace::MountConfig> =
         rows.iter().map(|row| row.mount.clone()).collect();
     let display_rows = format_mount_rows_with_cache(&mounts, cache);
-    render_global_mounts_subpanel(frame, area, title, &display_rows, scroll_x, scroll_y, focused);
+    render_global_mounts_subpanel(
+        frame,
+        area,
+        title,
+        &display_rows,
+        scroll_x,
+        scroll_y,
+        focused,
+    );
 }
 
 pub(crate) fn render_sidebar_body(

@@ -397,8 +397,7 @@ impl Dialog {
     }
 
     pub fn new_rename_tab(tab_idx: usize, initial: impl Into<String>) -> Self {
-        let input =
-            jackin_tui::TextField::new(initial.into()).with_max_chars(MAX_CUSTOM_LABEL_LEN);
+        let input = jackin_tui::TextField::new(initial.into()).with_max_chars(MAX_CUSTOM_LABEL_LEN);
         Self::RenameTab { tab_idx, input }
     }
 
@@ -1106,7 +1105,8 @@ impl Dialog {
             .saturating_sub(1)
             .max(3);
         let height = natural_height.min(max_height);
-        let row = crate::tui::components::status_bar::STATUS_BAR_ROWS + (max_height.saturating_sub(height)) / 2;
+        let row = crate::tui::components::status_bar::STATUS_BAR_ROWS
+            + (max_height.saturating_sub(height)) / 2;
         let col = (term_cols.saturating_sub(width)) / 2;
         (row, col, height, width)
     }

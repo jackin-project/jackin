@@ -161,9 +161,11 @@ mod tests {
 
     #[test]
     fn claude_supported_modes_include_oauth_token() {
-        assert!(AuthKind::Claude
-            .supported_modes()
-            .contains(&AuthMode::OAuthToken));
+        assert!(
+            AuthKind::Claude
+                .supported_modes()
+                .contains(&AuthMode::OAuthToken)
+        );
     }
 
     #[test]

@@ -10,28 +10,22 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-pub use crate::tui::components::list_helpers::matches_filter;
 use crate::tui::components::list_helpers::first_selection;
+pub use crate::tui::components::list_helpers::matches_filter;
 use crate::tui::components::spinner::SPINNER_FRAMES;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus, TextInputState};
 use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
-pub fn item_name_input_state<'a>(
-    item_default: impl Into<String>,
-) -> TextInputState<'a> {
+pub fn item_name_input_state<'a>(item_default: impl Into<String>) -> TextInputState<'a> {
     TextInputState::new("Item name", item_default)
 }
 
-pub fn field_label_input_state<'a>(
-    field_default: impl Into<String>,
-) -> TextInputState<'a> {
+pub fn field_label_input_state<'a>(field_default: impl Into<String>) -> TextInputState<'a> {
     TextInputState::new("Field label", field_default)
 }
 
-pub fn section_name_input_state<'a>(
-    initial: impl Into<String>,
-) -> TextInputState<'a> {
+pub fn section_name_input_state<'a>(initial: impl Into<String>) -> TextInputState<'a> {
     TextInputState::new("Section name", initial)
 }
 
@@ -146,9 +140,9 @@ pub fn blocked_load_key_plan(
                 OpPickerBlockedLoadKeyPlan::Continue
             })
         }
-        OpLoadState::Idle | OpLoadState::Ready | OpLoadState::Error(OpPickerError::Recoverable { .. }) => {
-            None
-        }
+        OpLoadState::Idle
+        | OpLoadState::Ready
+        | OpLoadState::Error(OpPickerError::Recoverable { .. }) => None,
     }
 }
 
@@ -456,9 +450,9 @@ pub const fn selected_index_for_stage(
         OpPickerStage::Item => item,
         OpPickerStage::Section => section,
         OpPickerStage::Field => field,
-        OpPickerStage::NewItemName
-        | OpPickerStage::FieldLabel
-        | OpPickerStage::NewSectionName => None,
+        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
+            None
+        }
     }
 }
 
@@ -735,8 +729,13 @@ pub fn section_header_collapse_target(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldStageCommitPlan {
-    ToggleSection { name: String, collapsed: bool },
-    ExistingField { field_idx: usize },
+    ToggleSection {
+        name: String,
+        collapsed: bool,
+    },
+    ExistingField {
+        field_idx: usize,
+    },
     NewField {
         pending_section: Option<String>,
         field_label_origin: FieldLabelOrigin,
@@ -1027,12 +1026,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) 
     }
 }
 
-fn render_loading(
-    frame: &mut Frame,
-    area: Rect,
-    state: &impl OpPickerRenderState,
-    tick: u8,
-) {
+fn render_loading(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState, tick: u8) {
     let multi_account = state.account_count() > 1;
     let title = breadcrumb_title(
         loading_title_stage(state.stage()),
@@ -1248,10 +1242,7 @@ pub fn filtered_accounts<'a>(
         .collect()
 }
 
-pub fn filtered_vaults<'a>(
-    filter: &str,
-    vaults: &'a [OpPickerVault],
-) -> Vec<&'a OpPickerVault> {
+pub fn filtered_vaults<'a>(filter: &str, vaults: &'a [OpPickerVault]) -> Vec<&'a OpPickerVault> {
     vaults
         .iter()
         .filter(|vault| matches_filter(filter, [vault.name.as_str()]))
@@ -1270,8 +1261,10 @@ pub fn filtered_item_choices<'a>(
     items: &'a [OpPickerItem],
     mode: &OpPickerMode,
 ) -> Vec<Option<&'a OpPickerItem>> {
-    let mut out: Vec<Option<&OpPickerItem>> =
-        filtered_items(filter, items).into_iter().map(Some).collect();
+    let mut out: Vec<Option<&OpPickerItem>> = filtered_items(filter, items)
+        .into_iter()
+        .map(Some)
+        .collect();
     if mode.is_create() {
         out.push(None);
     }
@@ -2203,11 +2196,7 @@ mod tests {
         let mut collapsed = HashSet::new();
 
         assert_eq!(
-            section_header_collapse_target(
-                Some(&row),
-                &collapsed,
-                SectionCollapseIntent::Collapse
-            ),
+            section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Collapse),
             Some(("Auth".to_string(), true))
         );
         assert_eq!(
@@ -2840,7 +2829,10 @@ mod tests {
             selected_account_id_ref(Some(&account), |account| account.id),
             Some("acct_1")
         );
-        assert_eq!(selected_account_id::<Account>(None, |account| account.id), None);
+        assert_eq!(
+            selected_account_id::<Account>(None, |account| account.id),
+            None
+        );
         assert_eq!(
             selected_account_id_ref::<Account>(None, |account| account.id),
             None

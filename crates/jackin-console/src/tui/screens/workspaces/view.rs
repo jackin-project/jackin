@@ -9,11 +9,11 @@ use ratatui::{
 };
 
 use crate::{
-    tui::mount_display::{MountDisplayRow, mount_path_width},
     tui::components::mount_rows::{
         render_global_mount_header, render_global_mount_lines, render_mount_header,
         render_mount_lines,
     },
+    tui::mount_display::{MountDisplayRow, mount_path_width},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,7 +157,9 @@ pub fn list_name_lines(
             continue;
         };
         match row.tone {
-            WorkspaceListRowTone::Instance => push_tree_instance_line(&mut lines, row, show_cursor, &mut max_w),
+            WorkspaceListRowTone::Instance => {
+                push_tree_instance_line(&mut lines, row, show_cursor, &mut max_w)
+            }
             WorkspaceListRowTone::White | WorkspaceListRowTone::Workspace => {
                 push_tree_workspace_line(&mut lines, row, show_cursor, &mut max_w);
             }
@@ -283,7 +285,11 @@ fn push_tree_workspace_line(
     show_cursor: bool,
     max_w: &mut usize,
 ) {
-    let cursor = if row.selected && show_cursor { "▸" } else { " " };
+    let cursor = if row.selected && show_cursor {
+        "▸"
+    } else {
+        " "
+    };
     let disclosure = Disclosure::for_instances(row.has_instances, row.expanded);
     let color = row_fg(row);
     let line = if let Some(arrow) = disclosure.glyph() {
@@ -343,7 +349,11 @@ fn push_tree_instance_line(
     show_cursor: bool,
     max_w: &mut usize,
 ) {
-    let cursor = if row.selected && show_cursor { "▸" } else { " " };
+    let cursor = if row.selected && show_cursor {
+        "▸"
+    } else {
+        " "
+    };
     let text_w = 1 + 4 + jackin_tui::display_cols(&row.label);
     *max_w = (*max_w).max(text_w);
 
@@ -368,7 +378,10 @@ fn push_tree_instance_line(
                 Style::default().fg(jackin_tui::theme::CYAN_DIM),
             ),
             Span::styled("  ", Style::default()),
-            Span::styled(role_key.to_string(), Style::default().fg(jackin_tui::theme::CYAN)),
+            Span::styled(
+                role_key.to_string(),
+                Style::default().fg(jackin_tui::theme::CYAN),
+            ),
         ])
     };
     lines.push(line);
@@ -419,7 +432,12 @@ pub fn create_prelude_workdir_pick_state<M: crate::tui::components::workdir_pick
 
 /// Compact running-instances badge (3 rows: border + count line + border).
 /// Cyan border and text distinguish live state from config panels.
-pub fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize, expanded: bool) {
+pub fn render_compact_instances_summary(
+    frame: &mut Frame,
+    area: Rect,
+    count: usize,
+    expanded: bool,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(jackin_tui::theme::CYAN))
@@ -458,10 +476,7 @@ pub fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: us
 pub fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5),
-            Constraint::Min(9),
-        ])
+        .constraints([Constraint::Length(5), Constraint::Min(9)])
         .split(area);
 
     let intro_block = jackin_tui::components::Panel::new()
@@ -552,7 +567,10 @@ pub fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir_display: &
         .block();
     let lines = vec![Line::from(vec![
         Span::raw("  "),
-        Span::styled("Working dir ", Style::default().fg(jackin_tui::theme::WHITE)),
+        Span::styled(
+            "Working dir ",
+            Style::default().fg(jackin_tui::theme::WHITE),
+        ),
         Span::raw(workdir_display.to_string()),
     ])];
     let panel = Paragraph::new(lines)
@@ -568,11 +586,7 @@ pub struct WorkspaceEnvRow {
     pub is_op: bool,
 }
 
-pub fn render_environments_subpanel(
-    frame: &mut Frame,
-    area: Rect,
-    mut rows: Vec<WorkspaceEnvRow>,
-) {
+pub fn render_environments_subpanel(frame: &mut Frame, area: Rect, mut rows: Vec<WorkspaceEnvRow>) {
     let block = jackin_tui::components::Panel::new()
         .title(" Environments ")
         .focus(jackin_tui::components::PanelFocus::Unfocused)
@@ -682,10 +696,12 @@ pub fn render_roles_subpanel(
 ) {
     let mut lines: Vec<Line> = Vec::new();
     let (value_text, value_style): (String, Style) = default_role.map_or_else(
-        || (
-            "(none)".to_string(),
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
-        ),
+        || {
+            (
+                "(none)".to_string(),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            )
+        },
         |name| {
             (
                 name.to_string(),
@@ -742,9 +758,15 @@ pub struct WorkspaceInstancePane {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceInstancePaneContent {
-    Live { tabs: Vec<WorkspaceInstanceTab> },
-    Sessions { rows: Vec<WorkspaceInstanceSessionRow> },
-    Empty { message: String },
+    Live {
+        tabs: Vec<WorkspaceInstanceTab>,
+    },
+    Sessions {
+        rows: Vec<WorkspaceInstanceSessionRow>,
+    },
+    Empty {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -770,11 +792,7 @@ pub struct WorkspaceInstanceSessionRow {
     pub agent_runtime: String,
 }
 
-pub fn render_instance_details_pane(
-    frame: &mut Frame,
-    area: Rect,
-    pane: &WorkspaceInstancePane,
-) {
+pub fn render_instance_details_pane(frame: &mut Frame, area: Rect, pane: &WorkspaceInstancePane) {
     let instance_title = format!(" Instance: {} ", pane.instance_id);
     let block = jackin_tui::components::Panel::new()
         .title(&instance_title)

@@ -113,7 +113,9 @@ fn roles_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabG
         .max()
         .unwrap_or(0);
     EditorTabGeometry {
-        content_width: status_width.max(role_width).max(editor_role_load_row_width()),
+        content_width: status_width
+            .max(role_width)
+            .max(editor_role_load_row_width()),
         content_height: 2 + config.roles.len() + usize::from(!config.roles.is_empty()) + 1,
     }
 }
@@ -131,9 +133,19 @@ fn secrets_tab_geometry(
                 row,
                 area.width,
                 |scope, key| secret_value_display(state, scope, key),
-                |scope, key| state.unmasked_rows.contains(&(scope.clone(), key.to_string())),
+                |scope, key| {
+                    state
+                        .unmasked_rows
+                        .contains(&(scope.clone(), key.to_string()))
+                },
                 |role| config.roles.contains_key(role),
-                |role| state.pending.roles.get(role).map_or(0, |role| role.env.len()),
+                |role| {
+                    state
+                        .pending
+                        .roles
+                        .get(role)
+                        .map_or(0, |role| role.env.len())
+                },
             )
         })
         .max()
@@ -151,12 +163,11 @@ fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGe
     let content_width = rows
         .iter()
         .map(|row| {
-            let display_row =
-                crate::console::tui::components::auth_panel::editor_auth_display_row(
-                    row,
-                    &synthesized,
-                    &workspace_name,
-                );
+            let display_row = crate::console::tui::components::auth_panel::editor_auth_display_row(
+                row,
+                &synthesized,
+                &workspace_name,
+            );
             editor_auth_line_width(&display_row)
         })
         .max()
@@ -180,5 +191,7 @@ fn secret_value_display<'a>(
             .get(role)
             .and_then(|role| role.env.get(key)),
     }?;
-    Some(crate::console::tui::components::env_value::secret_display(value))
+    Some(crate::console::tui::components::env_value::secret_display(
+        value,
+    ))
 }

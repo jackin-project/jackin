@@ -12,19 +12,18 @@ use ratatui::text::Line;
 use tui_widget_list::ListState;
 
 use super::{
-    FieldDisplayRow, FieldLabelOrigin, LoadResult, OpLoadState, OpPickerAccount,
+    FieldDisplayRow, FieldLabelOrigin, LoadResult, OpCache, OpLoadState, OpPickerAccount,
     OpPickerField, OpPickerItem, OpPickerMode, OpPickerPendingLoad, OpPickerStage, OpPickerVault,
-    OpCache,
 };
+#[cfg(test)]
+use crate::operator_env::OpStructRunner;
 use jackin_console::tui::components::op_picker::{
     OpPickerAccountRef, OpPickerFieldDisplayRef, OpPickerItemRef, OpPickerRenderState,
     OpPickerVaultRef, account_lines, build_op_picker_ref, field_display_rows_for_picker,
     field_lines, filtered_accounts, filtered_fields, filtered_item_choices, filtered_items,
-    filtered_vaults, item_choice_lines, naming_stage_input_for_stage, section_choices_from_references,
-    section_lines, selected_index_for_stage, vault_lines,
+    filtered_vaults, item_choice_lines, naming_stage_input_for_stage,
+    section_choices_from_references, section_lines, selected_index_for_stage, vault_lines,
 };
-#[cfg(test)]
-use crate::operator_env::OpStructRunner;
 
 pub struct OpPickerState {
     pub stage: OpPickerStage,

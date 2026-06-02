@@ -28,8 +28,8 @@ use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_s
 use tokio::sync::mpsc;
 use vt100::{Callbacks, Screen};
 
-use crate::pull_request::PullRequestInfo;
 use crate::protocol::AgentState;
+use crate::pull_request::PullRequestInfo;
 use crate::tui::render::{RowSnapshot, pane_snapshot_with_scrollback_prefix, snapshot_screen_row};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -1947,5 +1947,4 @@ mod tests {
             "not in launch config allowlist"
         );
     }
-
 }

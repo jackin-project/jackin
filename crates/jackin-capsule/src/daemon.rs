@@ -29,26 +29,10 @@ use tokio::time::{Duration, interval};
 
 use portable_pty::CommandBuilder;
 
-use crate::tui::message::{
-    Action, ConfirmedActionRoute, InputDispatchContext, branch_context_bar_click_action,
-    confirmed_action_route, input_event_action, mouse_chrome_update_action,
-    mouse_release_action, palette_command_route, palette_toggle_route, pane_button_motion_action,
-    prefix_command_action, status_bar_click_action, PaletteCommandRoute, PaletteToggleRoute,
-    StatusBarClickState,
-};
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
     initial_spawn_request, perform_handshake, spawn_request_label,
 };
-#[cfg(test)]
-use crate::tui::components::branch_context_bar::branch_context_bar_layout;
-use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
-use crate::tui::components::dialog::{
-    Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand, PickerIntent,
-    SplitDirection, github_context_view_from_state,
-};
-#[cfg(test)]
-use crate::tui::components::dialog::ConfirmKind;
 #[cfg(test)]
 use crate::git_context::{
     PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, read_branch_from_git_head,
@@ -58,64 +42,80 @@ use crate::git_context::{
 use crate::git_context::{
     WorkdirContext, git_current_context, resolve_default_branch, start_git_context_watcher,
 };
-use crate::tui::effect::InitialFrameKind;
-use crate::tui::input::{
-    DEFAULT_ESCAPE_TIME, ENV_ESCAPE_TIME, ArrowDir, InputEvent, InputParser, PrefixCommand,
-    SGR_NO_BUTTON_MOTION, encode_mouse_for_protocol, encode_wheel_cursor_fallback,
-    mouse_event_encoding_for_mode, pane_wheel_cursor_fallback_reason,
-};
-use crate::tui::layout::{
-    Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, available_content_rows,
-    content_rect, local_mouse_position, split_spawn_inner_size,
-};
-#[cfg(test)]
-use crate::tui::layout::SplitOrient;
-#[cfg(test)]
-use crate::tui::input::mouse_event_allowed_for_mode;
 use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
 use crate::protocol::control::SessionInfo;
 use crate::pull_request::PullRequestInfo;
-use crate::tui::render::{PaneBodyCache, PaneBodyRenderMode};
-use crate::tui::selection::{
-    SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,
-    selection_was_dragged,
-};
-use crate::tui::subscriptions::{
-    GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL,
-    RENDER_TICK_INTERVAL, STATE_TICK_INTERVAL,
-};
 use crate::session::{
     BranchName, GitContext, Oid, PullRequestLookupOutcome, SESSION_ENV_PASSTHROUGH, Session,
     SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
-use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
-use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
-use crate::tui::title::{
-    append_osc_window_title, compose_outer_terminal_title, pane_display_title,
-};
 use crate::tui::app::{
     ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
     MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
     cursor_visible_for_state, hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
     visible_panes_for_layout,
 };
-use crate::tui::update::{
-    ActionFramePlan, DialogActionFramePlan, FullRedrawReason, HoverFramePlan, PartialFramePlan,
-    PartialFrameState, dialog_action_frame_plan, dialog_change_redraw_reason,
-    drag_resize_ratio, drag_resize_redraw_reason, explicit_redraw_reason,
-    first_attach_redraw_reason, focus_change_redraw_reason, hover_frame_plan,
-    pane_data_redraw_reason, partial_frame_plan, palette_route_redraw_reason,
-    pane_cache_miss_redraw_reason, resize_redraw_reason, selection_change_redraw_reason,
-    selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
-    unsafe_partial_fallback_redraw_reason, wheel_scrollback_redraw_reason,
+#[cfg(test)]
+use crate::tui::components::branch_context_bar::branch_context_bar_layout;
+#[cfg(test)]
+use crate::tui::components::dialog::ConfirmKind;
+use crate::tui::components::dialog::{
+    Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand, PickerIntent,
+    SplitDirection, github_context_view_from_state,
 };
-use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
+use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
+use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
+use crate::tui::effect::InitialFrameKind;
+#[cfg(test)]
+use crate::tui::input::mouse_event_allowed_for_mode;
+use crate::tui::input::{
+    ArrowDir, DEFAULT_ESCAPE_TIME, ENV_ESCAPE_TIME, InputEvent, InputParser, PrefixCommand,
+    SGR_NO_BUTTON_MOTION, encode_mouse_for_protocol, encode_wheel_cursor_fallback,
+    mouse_event_encoding_for_mode, pane_wheel_cursor_fallback_reason,
+};
+#[cfg(test)]
+use crate::tui::layout::SplitOrient;
+use crate::tui::layout::{
+    Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, available_content_rows,
+    content_rect, local_mouse_position, split_spawn_inner_size,
+};
+use crate::tui::message::{
+    Action, ConfirmedActionRoute, InputDispatchContext, PaletteCommandRoute, PaletteToggleRoute,
+    StatusBarClickState, branch_context_bar_click_action, confirmed_action_route,
+    input_event_action, mouse_chrome_update_action, mouse_release_action, palette_command_route,
+    palette_toggle_route, pane_button_motion_action, prefix_command_action,
+    status_bar_click_action,
+};
+use crate::tui::render::{PaneBodyCache, PaneBodyRenderMode};
+use crate::tui::selection::{
+    SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,
+    selection_was_dragged,
+};
+use crate::tui::subscriptions::{
+    GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, RENDER_TICK_INTERVAL,
+    STATE_TICK_INTERVAL,
+};
+use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
+use crate::tui::title::{
+    append_osc_window_title, compose_outer_terminal_title, pane_display_title,
+};
 #[cfg(test)]
 use crate::tui::update::prefix_full_redraw_reason;
+use crate::tui::update::{
+    ActionFramePlan, DialogActionFramePlan, FullRedrawReason, HoverFramePlan, PartialFramePlan,
+    PartialFrameState, dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
+    drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
+    focus_change_redraw_reason, hover_frame_plan, palette_route_redraw_reason,
+    pane_cache_miss_redraw_reason, pane_data_redraw_reason, partial_frame_plan,
+    resize_redraw_reason, selection_change_redraw_reason, selection_start_redraw_reason,
+    session_exit_redraw_reason, status_change_redraw_reason, unsafe_partial_fallback_redraw_reason,
+    wheel_scrollback_redraw_reason,
+};
+use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
 
 mod compositor;
 mod context_mgmt;
@@ -414,9 +414,9 @@ impl Multiplexer {
             workdir,
             workdir_context,
             zai_key,
-            ratatui_terminal: ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(
-                cols, rows,
-            ))
+            ratatui_terminal: ratatui::Terminal::new(
+                crate::tui::socket_backend::SocketBackend::new(cols, rows),
+            )
             .expect("SocketBackend::new never fails"),
         }
     }
@@ -974,8 +974,8 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    use crate::tui::components::dialog::PullRequestStatus;
     use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
+    use crate::tui::components::dialog::PullRequestStatus;
     use portable_pty::{ChildKiller, MasterPty, PtySize};
 
     #[derive(Debug)]
@@ -1410,10 +1410,7 @@ mod tests {
         // because zero-row PTYs collapse vt100 rendering.
         let mut mux = test_mux(48, 160);
         mux.resize(0, 0);
-        assert_eq!(
-            (mux.term_rows, mux.term_cols),
-            (DEFAULT_ROWS, DEFAULT_COLS)
-        );
+        assert_eq!((mux.term_rows, mux.term_cols), (DEFAULT_ROWS, DEFAULT_COLS));
     }
 
     #[test]
@@ -3444,7 +3441,10 @@ mod tests {
 
         mux.apply_action(Action::OpenPalette);
 
-        assert!(!mux.dialog_open(), "palette toggle should close open dialog");
+        assert!(
+            !mux.dialog_open(),
+            "palette toggle should close open dialog"
+        );
         assert_eq!(mux.mux_mode(), MuxMode::Normal);
     }
 

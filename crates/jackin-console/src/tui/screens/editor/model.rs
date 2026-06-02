@@ -233,10 +233,7 @@ pub enum SecretsRow {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SecretsEnterPlan {
-    EditValue {
-        scope: SecretsScopeTag,
-        key: String,
-    },
+    EditValue { scope: SecretsScopeTag, key: String },
     OpenScopePicker,
     ExpandRole(String),
     AddRoleKey { scope: SecretsScopeTag },

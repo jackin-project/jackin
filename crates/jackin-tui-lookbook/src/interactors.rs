@@ -332,7 +332,10 @@ fn role_trust_confirm_state() -> ConfirmState {
         "Trust this role source?",
         vec![
             ("Role".into(), "rust".into()),
-            ("Repository".into(), "https://github.com/jackin-project/roles".into()),
+            (
+                "Repository".into(),
+                "https://github.com/jackin-project/roles".into(),
+            ),
         ],
         vec![
             "Dockerfile can run during image builds.".into(),

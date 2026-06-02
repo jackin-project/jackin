@@ -5,8 +5,8 @@ use crate::console::domain::{
     explicit_workspace_auth_mode, panel_auth_source_value, resolve_panel_mode,
 };
 use crate::console::tui::state::{
-    AuthRow, EditorState, FieldFocus, SettingsState, auth_flat_rows,
-    synthesize_appconfig_for_auth, workspace_name_for_panel,
+    AuthRow, EditorState, FieldFocus, SettingsState, auth_flat_rows, synthesize_appconfig_for_auth,
+    workspace_name_for_panel,
 };
 use crate::operator_env::{EnvValue, OpRef};
 use jackin_console::tui::components::editor_rows::{
@@ -20,9 +20,9 @@ use jackin_console::tui::screens::settings::view::{
 
 pub type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvValue>;
 
-pub use jackin_console::tui::components::auth_panel::{CredentialInput, required_height};
 pub(crate) use jackin_console::tui::components::auth_panel::mode_str;
 pub use jackin_console::tui::components::auth_panel::render_form;
+pub use jackin_console::tui::components::auth_panel::{CredentialInput, required_height};
 
 impl jackin_console::tui::components::auth_panel::AuthCredentialRef for OpRef {
     fn path(&self) -> &str {
@@ -116,7 +116,9 @@ pub(crate) fn editor_auth_lines_for_state(
     editor_auth_lines(&display_rows, cursor_clamped, show_cursor)
 }
 
-pub(crate) fn settings_auth_lines_for_state(state: &SettingsState<'_>) -> Vec<ratatui::text::Line<'static>> {
+pub(crate) fn settings_auth_lines_for_state(
+    state: &SettingsState<'_>,
+) -> Vec<ratatui::text::Line<'static>> {
     let show_cursor =
         !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     let Some(kind) = state.auth.selected_kind else {

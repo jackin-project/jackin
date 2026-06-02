@@ -103,8 +103,8 @@ pub fn key_debug_name_for_input(
 #[cfg(test)]
 mod tests {
     use super::{
-        key_debug_name_for_input, modal_debug_name, settings_mount_modal_debug_name,
-        ModalDebugKind, SettingsMountModalDebugKind,
+        ModalDebugKind, SettingsMountModalDebugKind, key_debug_name_for_input, modal_debug_name,
+        settings_mount_modal_debug_name,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -132,7 +132,10 @@ mod tests {
     #[test]
     fn modal_debug_names_match_root_log_vocabulary() {
         assert_eq!(modal_debug_name(ModalDebugKind::TextInput), "TextInput");
-        assert_eq!(modal_debug_name(ModalDebugKind::GithubPicker), "GithubPicker");
+        assert_eq!(
+            modal_debug_name(ModalDebugKind::GithubPicker),
+            "GithubPicker"
+        );
         assert_eq!(
             modal_debug_name(ModalDebugKind::AuthRolePicker),
             "AuthRolePicker"

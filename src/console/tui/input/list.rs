@@ -3,12 +3,21 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use super::InputOutcome;
+use crate::config::AppConfig;
+use crate::console::ConsoleInstanceAction;
+use crate::console::tui::effect::ManagerEffect;
+use crate::console::tui::instance_action::workspace_instance_action_fact;
+use crate::console::tui::message::{ManagerMessage, update_manager};
+use crate::console::tui::state::{
+    EditorState, ManagerListRow, ManagerState, Modal, settings_state_from_config,
+};
+use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::{
-    instance_unavailable_error_message, instance_unavailable_error_title,
-    no_instance_error_title, no_instance_state_for_workspace_message,
-    no_purgeable_instance_for_workspace_message, no_recoverable_instance_for_workspace_message,
-    no_recoverable_instance_selected_message, no_running_instance_for_workspace_message,
-    no_running_instance_to_stop_message,
+    instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
+    no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,
+    no_recoverable_instance_for_workspace_message, no_recoverable_instance_selected_message,
+    no_running_instance_for_workspace_message, no_running_instance_to_stop_message,
 };
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
@@ -22,16 +31,6 @@ use jackin_console::tui::update::{
     inline_provider_followup_plan,
 };
 use jackin_tui::ModalOutcome;
-use crate::console::tui::effect::ManagerEffect;
-use crate::console::tui::instance_action::workspace_instance_action_fact;
-use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::state::{
-    EditorState, ManagerListRow, ManagerState, Modal, settings_state_from_config,
-};
-use super::InputOutcome;
-use crate::config::AppConfig;
-use crate::console::ConsoleInstanceAction;
-use crate::paths::JackinPaths;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_list_key(
@@ -318,13 +317,7 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
             InputOutcome::Continue
         }
         PreviewPaneKeyPlan::Move { delta } => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MovePreviewPane {
-                    container,
-                    delta,
-                },
-            );
+            dispatch_manager(state, ManagerMessage::MovePreviewPane { container, delta });
             InputOutcome::Continue
         }
         PreviewPaneKeyPlan::ReconnectSelected => {
@@ -437,8 +430,10 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
     let Some(ws) = config.workspaces.get(&summary.name) else {
         return InputOutcome::Continue;
     };
-    let choices =
-        jackin_console::github_mounts::resolve_for_workspace_from_cache(ws, &state.mount_info_cache);
+    let choices = jackin_console::github_mounts::resolve_for_workspace_from_cache(
+        ws,
+        &state.mount_info_cache,
+    );
     match choices.len() {
         0 => InputOutcome::Continue,
         1 => {
@@ -666,13 +661,13 @@ pub(super) fn handle_launch_provider_picker(
 mod tests {
     //! List-stage tests: row-0 (current dir) gating, Enter routing,
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
-    use crate::console::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
     use super::{InputOutcome, accepts_instance_status, handle_new_session_picker};
     use crate::agent::AgentChoiceState;
     use crate::config::AppConfig;
     use crate::console::tui::effect::ManagerEffect;
     use crate::console::tui::input::handle_key;
+    use crate::console::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
     use crate::paths::JackinPaths;
     use crate::workspace::WorkspaceConfig;
@@ -1143,10 +1138,7 @@ mod tests {
             "N must return Continue (no dispatch); got {outcome:?}"
         );
         assert!(
-            matches!(
-                state.stage,
-                crate::console::tui::state::ManagerStage::List
-            ),
+            matches!(state.stage, crate::console::tui::state::ManagerStage::List),
             "N must reset stage to List"
         );
     }

@@ -416,8 +416,8 @@ pub enum SplitPosition {
 #[cfg(test)]
 mod rect_shrink_tests {
     use super::{
-        Rect, SplitDirectionGeometry, available_content_rows, content_rect,
-        local_mouse_position, split_spawn_inner_size,
+        Rect, SplitDirectionGeometry, available_content_rows, content_rect, local_mouse_position,
+        split_spawn_inner_size,
     };
 
     #[test]

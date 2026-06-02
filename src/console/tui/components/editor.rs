@@ -106,7 +106,9 @@ pub(crate) fn render_auth_tab(
     config: &AppConfig,
 ) {
     let lines = editor_auth_lines_for_state(state, config);
-    let title = state.auth_selected_kind.map(|k| auth_panel_title(k.label()));
+    let title = state
+        .auth_selected_kind
+        .map(|k| auth_panel_title(k.label()));
     let focused =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
@@ -199,7 +201,11 @@ pub(crate) fn editor_secret_lines_for_state(
                 .and_then(|role_override| role_override.env.get(key))
                 .map(env_value_secret_display),
         },
-        |scope, key| state.unmasked_rows.contains(&(scope.clone(), key.to_string())),
+        |scope, key| {
+            state
+                .unmasked_rows
+                .contains(&(scope.clone(), key.to_string()))
+        },
         |role| config.roles.contains_key(role),
         |role| state.pending.roles.get(role).map_or(0, |o| o.env.len()),
     )

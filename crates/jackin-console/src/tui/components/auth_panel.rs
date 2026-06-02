@@ -72,9 +72,7 @@ pub fn generated_token_op_item_name(item_template: &str, scope_label: &str) -> S
 }
 
 #[must_use]
-pub fn auth_credential_input_state<'a>(
-    literal: impl Into<String>,
-) -> TextInputState<'a> {
+pub fn auth_credential_input_state<'a>(literal: impl Into<String>) -> TextInputState<'a> {
     TextInputState::new("Credential", literal)
 }
 
@@ -353,10 +351,7 @@ pub fn required_height<V: AuthCredential>(form: &AuthForm<V>) -> u16 {
     inner + 2
 }
 
-fn build_form_lines<V: AuthCredential>(
-    form: &AuthForm<V>,
-    focus: AuthFormFocus,
-) -> Vec<FormLine> {
+fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus) -> Vec<FormLine> {
     let mut lines: Vec<FormLine> = Vec::new();
 
     lines.push(FormLine::left(Line::from("")));

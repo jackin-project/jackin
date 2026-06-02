@@ -179,14 +179,14 @@ pub(crate) fn cursor_visible_for_state(state: CursorVisibilityState) -> bool {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum VisibleAgentState {
+pub enum VisibleAgentState {
     Idle,
     Working,
     Done,
     Blocked,
 }
 
-pub(crate) fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState {
+pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState {
     match state {
         AgentState::Idle => VisibleAgentState::Idle,
         AgentState::Working => VisibleAgentState::Working,
@@ -196,7 +196,10 @@ pub(crate) fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAge
 }
 
 /// Human-readable label for an agent/shell visible in tab and pane chrome.
-pub(crate) fn visible_agent_label(agent_slug: Option<&str>, provider_label: Option<&str>) -> String {
+pub(crate) fn visible_agent_label(
+    agent_slug: Option<&str>,
+    provider_label: Option<&str>,
+) -> String {
     let Some(slug) = agent_slug else {
         return "Shell".to_string();
     };
@@ -274,10 +277,9 @@ pub(crate) struct VisibleTabPaneFacts<'a> {
 
 pub(crate) fn visible_tab_pane_kind(facts: VisibleTabPaneFacts<'_>) -> VisibleTabPaneKind {
     match facts.agent_slug {
-        Some(agent) => VisibleTabPaneKind::Agent(visible_agent_label(
-            Some(agent),
-            facts.provider_label,
-        )),
+        Some(agent) => {
+            VisibleTabPaneKind::Agent(visible_agent_label(Some(agent), facts.provider_label))
+        }
         None => VisibleTabPaneKind::Shell,
     }
 }
@@ -338,10 +340,11 @@ mod tests {
 
     use super::{
         ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
-        PointerShape, PointerShapeState, VisibleAgentState, VisibleTabPaneFacts, VisibleTabPaneKind,
-        chrome_hover_target_for_state, cursor_visible_for_state, hover_target_for_state,
-        mux_mode_for_state, pointer_shape_for_state, tab_auto_label, visible_agent_label,
-        visible_agent_state_from_protocol, visible_panes_for_layout, visible_tab_pane_kind,
+        PointerShape, PointerShapeState, VisibleAgentState, VisibleTabPaneFacts,
+        VisibleTabPaneKind, chrome_hover_target_for_state, cursor_visible_for_state,
+        hover_target_for_state, mux_mode_for_state, pointer_shape_for_state, tab_auto_label,
+        visible_agent_label, visible_agent_state_from_protocol, visible_panes_for_layout,
+        visible_tab_pane_kind,
     };
 
     #[test]
@@ -556,12 +559,7 @@ mod tests {
             ratio: 0.5,
         };
 
-        let panes = visible_panes_for_layout(
-            Rect::new(1, 0, 10, 20),
-            Some(2),
-            None,
-            Some(&tab),
-        );
+        let panes = visible_panes_for_layout(Rect::new(1, 0, 10, 20), Some(2), None, Some(&tab));
 
         assert_eq!(panes.len(), 2);
         assert_eq!(panes[0].id, 1);
@@ -575,12 +573,7 @@ mod tests {
     #[test]
     fn zoomed_visible_pane_uses_whole_content_rect() {
         let tab = Tab::new_single("tab", 1);
-        let panes = visible_panes_for_layout(
-            Rect::new(1, 0, 10, 20),
-            Some(1),
-            Some(1),
-            Some(&tab),
-        );
+        let panes = visible_panes_for_layout(Rect::new(1, 0, 10, 20), Some(1), Some(1), Some(&tab));
 
         assert_eq!(panes.len(), 1);
         assert_eq!(panes[0].id, 1);
@@ -610,7 +603,10 @@ mod tests {
         assert_eq!(
             tab_auto_label(
                 2,
-                [VisibleTabPaneKind::Agent("Claude".into()), VisibleTabPaneKind::Shell],
+                [
+                    VisibleTabPaneKind::Agent("Claude".into()),
+                    VisibleTabPaneKind::Shell
+                ],
             ),
             "Mix (2)"
         );

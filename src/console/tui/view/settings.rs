@@ -3,19 +3,14 @@
     reason = "manager update code uses selected render geometry helpers through the moved tui facade"
 )]
 
-use ratatui::{
-    Frame,
-    layout::Rect,
-};
 use crate::console::tui::components::settings::{
     render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab,
     render_settings_tab_strip, render_trust_tab,
 };
 use crate::console::tui::state::{SettingsState, SettingsTab};
-use jackin_console::tui::screens::settings::view::{
-    settings_frame_areas, settings_header_title,
-};
+use jackin_console::tui::screens::settings::view::{settings_frame_areas, settings_header_title};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
+use ratatui::{Frame, layout::Rect};
 
 pub(super) fn render_settings(
     frame: &mut Frame,
@@ -23,8 +18,10 @@ pub(super) fn render_settings(
     state: &SettingsState<'_>,
     op_available: bool,
 ) {
-    let footer =
-        crate::console::tui::components::footer::settings::settings_footer_items(state, op_available);
+    let footer = crate::console::tui::components::footer::settings::settings_footer_items(
+        state,
+        op_available,
+    );
     let footer_h = footer_height(&footer, area.width).max(1);
     let areas = settings_frame_areas(area, footer_h);
     render_header(frame, areas.header, settings_header_title());

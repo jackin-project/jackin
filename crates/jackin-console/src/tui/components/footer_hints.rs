@@ -269,17 +269,10 @@ pub fn editor_role_row_footer_items(is_existing_role: bool) -> Vec<HintSpan<'sta
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorContextFooterMode {
-    General {
-        row: usize,
-        has_mounts: bool,
-    },
-    MountRow {
-        has_github_url: bool,
-    },
+    General { row: usize, has_mounts: bool },
+    MountRow { has_github_url: bool },
     MountAddRow,
-    RoleRow {
-        is_existing_role: bool,
-    },
+    RoleRow { is_existing_role: bool },
     SecretOpRefRow,
     SecretPlainRow,
     SecretRoleHeader,
@@ -312,12 +305,8 @@ pub fn editor_contextual_row_footer_items(
         EditorContextFooterMode::SecretPlainRow => secret_plain_row_footer_items(op_available),
         EditorContextFooterMode::SecretRoleHeader => secret_role_header_footer_items(),
         EditorContextFooterMode::SecretAddRow => secret_add_row_footer_items(op_available),
-        EditorContextFooterMode::AuthManage => {
-            auth_row_footer_items(AuthRowFooterMode::ManageAuth)
-        }
-        EditorContextFooterMode::AuthEditMode => {
-            auth_row_footer_items(AuthRowFooterMode::EditMode)
-        }
+        EditorContextFooterMode::AuthManage => auth_row_footer_items(AuthRowFooterMode::ManageAuth),
+        EditorContextFooterMode::AuthEditMode => auth_row_footer_items(AuthRowFooterMode::EditMode),
         EditorContextFooterMode::AuthRoleHeader => {
             auth_row_footer_items(AuthRowFooterMode::RoleHeader)
         }
@@ -387,9 +376,7 @@ pub fn settings_trust_row_footer_items(has_roles: bool) -> Vec<HintSpan<'static>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsContextFooterMode {
     General,
-    MountRow {
-        has_github_url: bool,
-    },
+    MountRow { has_github_url: bool },
     MountAddRow,
     EnvOpRefRow,
     EnvPlainRow,
@@ -399,9 +386,7 @@ pub enum SettingsContextFooterMode {
     AuthManage,
     AuthEditMode,
     AuthEditSource,
-    Trust {
-        has_roles: bool,
-    },
+    Trust { has_roles: bool },
 }
 
 #[must_use]
@@ -1258,20 +1243,15 @@ mod tests {
                 EditorContextFooterMode::AuthRoleHeader,
                 false,
             )),
-            vec![
-                "↵",
-                "expand",
-                "←/→",
-                "collapse/expand",
-                "D",
-                "reset",
-            ]
+            vec!["↵", "expand", "←/→", "collapse/expand", "D", "reset",]
         );
-        assert!(labels(editor_contextual_row_footer_items(
-            EditorContextFooterMode::Empty,
-            true,
-        ))
-        .is_empty());
+        assert!(
+            labels(editor_contextual_row_footer_items(
+                EditorContextFooterMode::Empty,
+                true,
+            ))
+            .is_empty()
+        );
     }
 
     #[test]
@@ -1344,7 +1324,10 @@ mod tests {
 
     #[test]
     fn add_row_footer_uses_enter_or_a() {
-        assert_eq!(labels(add_row_footer_items("add override")), vec!["↵/A", "add override"]);
+        assert_eq!(
+            labels(add_row_footer_items("add override")),
+            vec!["↵/A", "add override"]
+        );
     }
 
     #[test]

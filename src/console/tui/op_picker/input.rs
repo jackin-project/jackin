@@ -8,17 +8,18 @@ use jackin_console::tui::components::op_picker::section_name_input_state;
 use jackin_tui::ModalOutcome;
 
 use super::{
-    AccountStageCommitPlan, FieldStageCommitPlan,
-    ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerBlockedLoadKeyPlan, OpPickerSelection,
-    OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan,
-    VaultStageCommitPlan, account_stage_commit_plan, account_stage_refresh_plan,
-    blocked_load_key_plan, existing_field_commit_plan, existing_field_commit_selection,
-    ExistingFieldCommitSelectionInput, field_label_cancel_plan, field_label_commit_plan,
+    AccountStageCommitPlan, ExistingFieldCommitSelectionInput, FieldStageCommitPlan,
+    ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerBlockedLoadKeyPlan,
+    OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan,
+    VaultStageBackPlan, VaultStageCommitPlan, account_stage_commit_plan,
+    account_stage_refresh_plan, blocked_load_key_plan, existing_field_commit_plan,
+    existing_field_commit_selection, field_label_cancel_plan, field_label_commit_plan,
     field_label_commit_selection, field_stage_back_plan, field_stage_commit_plan,
     field_stage_refresh_plan, filter_reset_selection_for_stage, item_stage_back_plan,
     item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
     new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
-    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan, vault_stage_refresh_plan,
+    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
+    vault_stage_refresh_plan,
 };
 
 impl OpPickerState {
@@ -32,7 +33,9 @@ impl OpPickerState {
             _ => {}
         }
 
-        if let Some(plan) = blocked_load_key_plan(&self.load_state, matches!(key.code, KeyCode::Esc)) {
+        if let Some(plan) =
+            blocked_load_key_plan(&self.load_state, matches!(key.code, KeyCode::Esc))
+        {
             return match plan {
                 OpPickerBlockedLoadKeyPlan::Cancel => ModalOutcome::Cancel,
                 OpPickerBlockedLoadKeyPlan::Continue => ModalOutcome::Continue,
@@ -128,34 +131,32 @@ impl OpPickerState {
                 self.start_vault_load(account_id);
                 ModalOutcome::Continue
             }
-            KeyCode::Esc => {
-                match vault_stage_back_plan(self.accounts.len()) {
-                    VaultStageBackPlan::BackToAccount {
-                        stage,
-                        clear_selected_vault,
-                        clear_vaults,
-                        reset_vault_list,
-                        ready_load_state,
-                    } => {
-                        self.stage = stage;
-                        self.filter_buf.clear();
-                        if clear_selected_vault {
-                            self.selected_vault = None;
-                        }
-                        if clear_vaults {
-                            self.vaults.clear();
-                        }
-                        if reset_vault_list {
-                            self.vault_list_state = list_state_for_count(0);
-                        }
-                        if ready_load_state {
-                            self.load_state = OpLoadState::Ready;
-                        }
-                        ModalOutcome::Continue
+            KeyCode::Esc => match vault_stage_back_plan(self.accounts.len()) {
+                VaultStageBackPlan::BackToAccount {
+                    stage,
+                    clear_selected_vault,
+                    clear_vaults,
+                    reset_vault_list,
+                    ready_load_state,
+                } => {
+                    self.stage = stage;
+                    self.filter_buf.clear();
+                    if clear_selected_vault {
+                        self.selected_vault = None;
                     }
-                    VaultStageBackPlan::Cancel => ModalOutcome::Cancel,
+                    if clear_vaults {
+                        self.vaults.clear();
+                    }
+                    if reset_vault_list {
+                        self.vault_list_state = list_state_for_count(0);
+                    }
+                    if ready_load_state {
+                        self.load_state = OpLoadState::Ready;
+                    }
+                    ModalOutcome::Continue
                 }
-            }
+                VaultStageBackPlan::Cancel => ModalOutcome::Cancel,
+            },
             KeyCode::Up => {
                 let n = self.filtered_vaults().len();
                 cycle_select(&mut self.vault_list_state, n, -1);

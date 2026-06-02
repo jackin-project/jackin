@@ -44,7 +44,9 @@ pub fn current_terminal_area() -> Rect {
 
 #[must_use]
 pub fn terminal_area_from_size(size: Option<(u16, u16)>) -> Rect {
-    size.map_or_else(Rect::default, |(width, height)| Rect::new(0, 0, width, height))
+    size.map_or_else(Rect::default, |(width, height)| {
+        Rect::new(0, 0, width, height)
+    })
 }
 
 #[cfg(test)]

@@ -7,8 +7,8 @@ use jackin_tui::HintSpan;
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::modal::modal_footer_items;
 use crate::console::tui::state::{
-    AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal, SecretsRow,
-    auth_flat_rows, secrets_flat_rows,
+    AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal, SecretsRow, auth_flat_rows,
+    secrets_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
@@ -115,15 +115,11 @@ fn editor_context_footer_mode(
         EditorTab::Auth => {
             let flat = auth_flat_rows(state, config);
             match flat.get(cursor) {
-                Some(AuthRow::AuthKindRow { .. }) => {
-                    EditorContextFooterMode::AuthManage
-                }
+                Some(AuthRow::AuthKindRow { .. }) => EditorContextFooterMode::AuthManage,
                 Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
                     EditorContextFooterMode::AuthEditMode
                 }
-                Some(AuthRow::RoleHeader { .. }) => {
-                    EditorContextFooterMode::AuthRoleHeader
-                }
+                Some(AuthRow::RoleHeader { .. }) => EditorContextFooterMode::AuthRoleHeader,
                 Some(AuthRow::AddSentinel { .. }) => EditorContextFooterMode::AuthAddOverride,
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
                     EditorContextFooterMode::AuthEditSource

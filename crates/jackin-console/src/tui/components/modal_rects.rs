@@ -99,7 +99,9 @@ pub fn modal_rect(outer: Rect, spec: ModalRectSpec) -> Rect {
         ModalRectSpec::SourcePicker => source_picker_rect(outer),
         ModalRectSpec::ScopePicker => scope_picker_rect(outer),
         ModalRectSpec::OpPicker => op_picker_rect(outer),
-        ModalRectSpec::RolePicker { filtered_len } => role_picker_rect_for_count(outer, filtered_len),
+        ModalRectSpec::RolePicker { filtered_len } => {
+            role_picker_rect_for_count(outer, filtered_len)
+        }
         ModalRectSpec::Confirm { width_pct, height } => {
             centered_rect_fixed(outer, width_pct, height)
         }

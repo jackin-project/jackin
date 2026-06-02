@@ -223,7 +223,8 @@ pub fn editor_field_selection_plan(
     term_height: u16,
     footer_h: u16,
 ) -> EditorFieldSelectionPlan {
-    let candidate = crate::tui::focus::moved_selection(active_row, max_row.saturating_add(1), delta);
+    let candidate =
+        crate::tui::focus::moved_selection(active_row, max_row.saturating_add(1), delta);
     let next = if delta.is_negative() {
         step_cursor_up(skipped_rows, candidate)
     } else {
@@ -343,7 +344,8 @@ pub fn toggle_default_role_at(
         return;
     }
 
-    let role_allowed = allowed_roles.is_empty() || allowed_roles.iter().any(|allowed| allowed == role);
+    let role_allowed =
+        allowed_roles.is_empty() || allowed_roles.iter().any(|allowed| allowed == role);
     if role_allowed {
         *default_role = Some(role.clone());
     }
@@ -361,9 +363,7 @@ pub fn toggle_secret_mask(
 }
 
 #[must_use]
-pub fn secret_delete_target_for_row(
-    row: Option<&SecretsRow>,
-) -> Option<(SecretsScopeTag, String)> {
+pub fn secret_delete_target_for_row(row: Option<&SecretsRow>) -> Option<(SecretsScopeTag, String)> {
     match row? {
         SecretsRow::WorkspaceKeyRow(key) => Some((SecretsScopeTag::Workspace, key.clone())),
         SecretsRow::RoleKeyRow { role, key } => {
@@ -815,9 +815,12 @@ mod tests {
         )]);
 
         assert_eq!(
-            forbidden_secret_keys(&workspace_env, &roles, &SecretsScopeTag::Workspace, |role| {
-                &role.env
-            }),
+            forbidden_secret_keys(
+                &workspace_env,
+                &roles,
+                &SecretsScopeTag::Workspace,
+                |role| { &role.env }
+            ),
             vec!["GLOBAL".to_string()]
         );
         assert_eq!(

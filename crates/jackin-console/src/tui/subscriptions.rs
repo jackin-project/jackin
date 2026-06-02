@@ -81,9 +81,7 @@ impl<DriftDetection, SavePlan> PendingDriftCheck<DriftDetection, SavePlan> {
     }
 }
 
-impl<DriftDetection, SavePlan> std::fmt::Debug
-    for PendingDriftCheck<DriftDetection, SavePlan>
-{
+impl<DriftDetection, SavePlan> std::fmt::Debug for PendingDriftCheck<DriftDetection, SavePlan> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PendingDriftCheck")
             .field("original_name", &self.original_name)

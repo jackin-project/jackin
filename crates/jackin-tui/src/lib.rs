@@ -15,13 +15,13 @@ pub mod runtime;
 pub mod scroll;
 pub mod theme;
 
+pub use components::text_input::TextField;
 pub use geometry::{
     FixedPrefixSegment, HintSpan, TAB_GAP, TabCell, agent_display_name, centered_rect,
     display_cols, fixed_prefix_scroll_segments, hint_row_cols, is_terminal_control_char,
     lay_out_tabs, leading_space_cols, padded_line_display_cols, sanitize_terminal_title,
     shorten_home, tab_at_column, take_display_cols,
 };
-pub use components::text_input::TextField;
 
 /// Outcome of a modal or component event-handling cycle.
 ///
@@ -271,7 +271,6 @@ pub mod ansi {
     pub fn bg(buf: &mut Vec<u8>, rgb: Rgb) {
         let _ = write!(buf, "\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
     }
-
 }
 
 #[cfg(test)]

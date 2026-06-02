@@ -20,10 +20,7 @@ pub(crate) use crate::console::tui::state::{
 };
 use jackin_console::tui::screens::editor::view::{editor_frame_areas, editor_header_title};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
-use ratatui::{
-    Frame,
-    layout::Rect,
-};
+use ratatui::{Frame, layout::Rect};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
@@ -34,8 +31,11 @@ pub(super) fn render_editor(
     config: &AppConfig,
     op_available: bool,
 ) {
-    let items =
-        crate::console::tui::components::footer::editor::editor_footer_items(state, config, op_available);
+    let items = crate::console::tui::components::footer::editor::editor_footer_items(
+        state,
+        config,
+        op_available,
+    );
     let footer_h = footer_height(&items, area.width).max(1);
     let areas = editor_frame_areas(area, footer_h);
 

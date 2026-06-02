@@ -1,20 +1,20 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
+use crate::pull_request::PullRequestInfo;
 use crate::tui::app::{HoverTarget, VisibleAgentState, VisiblePane};
 use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
 };
-use crate::tui::layout::Tab;
-use crate::tui::render::{
-    PaneBodyCache, PaneBodyRenderStats, RowSnapshot, draw_scrollbar, fill_screen,
-};
-use crate::pull_request::PullRequestInfo;
-use crate::tui::selection::{SelectionState, paint_selection_highlight};
-use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
+use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
+use crate::tui::layout::Tab;
+use crate::tui::render::{
+    PaneBodyCache, PaneBodyRenderStats, RowSnapshot, draw_scrollbar, fill_screen,
+};
+use crate::tui::selection::{SelectionState, paint_selection_highlight};
 use ratatui::{Frame, layout::Rect as RatatuiRect};
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
@@ -213,12 +213,8 @@ pub(crate) fn render_capsule_raw_dialog_overlay(
         view.copy_target_hovered,
         Some(&view.github),
     );
-    view.dialog.render_footer_hint(
-        buf,
-        view.term_rows,
-        view.term_cols,
-        Some(&view.github),
-    );
+    view.dialog
+        .render_footer_hint(buf, view.term_rows, view.term_cols, Some(&view.github));
 }
 
 pub(crate) fn render_capsule_dialog_backdrop(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
@@ -236,10 +232,7 @@ pub(crate) struct CapsuleBottomChrome<'a> {
     pub(crate) scrollback_active: bool,
 }
 
-pub(crate) fn render_capsule_bottom_chrome(
-    buf: &mut Vec<u8>,
-    view: CapsuleBottomChrome<'_>,
-) {
+pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBottomChrome<'_>) {
     render_branch_context_bar(
         buf,
         view.term_rows,
@@ -305,10 +298,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) pane_screens: &'a [(u64, &'a vt100::Screen)],
 }
 
-pub(crate) fn render_capsule_ratatui_frame(
-    frame: &mut Frame<'_>,
-    view: CapsuleRatatuiFrame<'_>,
-) {
+pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>) {
     let status_area = RatatuiRect {
         x: 0,
         y: 0,
@@ -445,10 +435,7 @@ pub(crate) fn screen_scroll_affordance_metrics(
 /// → bold red text → clear to end of line → restore cursor. The
 /// save/restore wrap prevents the banner from scrolling whichever
 /// pane the composed frame left the cursor in.
-pub(crate) fn spawn_failure_message(
-    agent_label: &str,
-    error: impl std::fmt::Display,
-) -> String {
+pub(crate) fn spawn_failure_message(agent_label: &str, error: impl std::fmt::Display) -> String {
     format!("{agent_label}: {error:#}")
 }
 

@@ -93,15 +93,16 @@ impl<C, A, P> ProviderPickerState<C, A, P> {
                 self.move_down();
                 ProviderPickerOutcome::Continue
             }
-            ProviderPickerKey::Commit => self
-                .selected_provider()
-                .map_or(ProviderPickerOutcome::Continue, |provider| {
-                    ProviderPickerOutcome::Commit {
-                        context: self.context.clone(),
-                        agent: self.agent,
-                        provider,
-                    }
-                }),
+            ProviderPickerKey::Commit => {
+                self.selected_provider()
+                    .map_or(ProviderPickerOutcome::Continue, |provider| {
+                        ProviderPickerOutcome::Commit {
+                            context: self.context.clone(),
+                            agent: self.agent,
+                            provider,
+                        }
+                    })
+            }
             ProviderPickerKey::Cancel => ProviderPickerOutcome::Cancel,
             ProviderPickerKey::Other => ProviderPickerOutcome::Continue,
         }
@@ -164,10 +165,7 @@ mod tests {
             ProviderPickerKey::Up
         );
         assert_eq!(
-            ProviderPickerKey::from(KeyEvent::new(
-                KeyCode::Char('j'),
-                KeyModifiers::NONE,
-            )),
+            ProviderPickerKey::from(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE,)),
             ProviderPickerKey::Down
         );
         assert_eq!(
@@ -179,10 +177,7 @@ mod tests {
             ProviderPickerKey::Cancel
         );
         assert_eq!(
-            ProviderPickerKey::from(KeyEvent::new(
-                KeyCode::Char('x'),
-                KeyModifiers::NONE,
-            )),
+            ProviderPickerKey::from(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE,)),
             ProviderPickerKey::Other
         );
     }

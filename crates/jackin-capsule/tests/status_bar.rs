@@ -1,15 +1,15 @@
+use jackin_capsule::tui::app::VisibleAgentState;
+use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar};
 /// Status bar layout regressions: brand pill, tab click regions,
 /// menu hint, overflow indicator.
 use jackin_capsule::tui::layout::Tab;
-use jackin_capsule::protocol::AgentState;
-use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar};
 
 fn render(
     bar: &mut StatusBar,
     cols: u16,
     tabs: &[Tab],
     active: usize,
-    states: &[(u64, AgentState)],
+    states: &[(u64, VisibleAgentState)],
 ) -> String {
     let mut buf = Vec::new();
     bar.render(&mut buf, cols, tabs, active, states, None, false);
@@ -21,7 +21,7 @@ fn render_with_hover(
     cols: u16,
     tabs: &[Tab],
     active: usize,
-    states: &[(u64, AgentState)],
+    states: &[(u64, VisibleAgentState)],
     hovered_tab: Option<usize>,
 ) -> String {
     let mut buf = Vec::new();
@@ -83,7 +83,7 @@ fn tab_click_region_includes_state_glyph_width() {
     let mut bar = StatusBar::new();
     let tab = Tab::new_single("Codex", 7);
     let tabs = vec![tab];
-    let states = vec![(7u64, AgentState::Done)];
+    let states = vec![(7u64, VisibleAgentState::Done)];
     let _ = render(&mut bar, 80, &tabs, 0, &states);
     let (start, end) = bar.tab_regions[0];
     // Cell layout: 1 pad + name(5) + 1 sep + 1 glyph + 1 pad = 9 cols.

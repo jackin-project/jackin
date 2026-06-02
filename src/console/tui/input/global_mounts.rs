@@ -1,51 +1,45 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::console::domain::{
-    apply_settings_auth_env_commit, clear_settings_auth_env_values,
-};
-use crate::console::tui::message::{ManagerMessage, update_manager};
+use crate::console::domain::{apply_settings_auth_env_commit, clear_settings_auth_env_values};
+use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use crate::console::tui::components::mount_display::settings_global_mounts_content_width_with_cache;
+use crate::console::tui::effect::ManagerEffect;
+use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
     SettingsEnvTextTarget, SettingsStateExt, SettingsTab, settings_env_flat_rows,
-    settings_env_state_flat_rows,
-    settings_state_from_config,
+    settings_env_state_flat_rows, settings_state_from_config,
 };
-use crate::console::tui::effect::ManagerEffect;
-use jackin_tui::ModalOutcome;
-use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
+use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
     generated_token_op_item_name, generated_token_source_picker_state,
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
-use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
-    global_mount_add_cancelled_message, global_mount_confirm_state,
-    global_mount_add_draft_lost_message, global_mount_destination_empty_message,
-    global_mount_gone_message, global_mount_name_empty_message,
-    global_mount_no_github_url_message,
-    global_mount_scope_picker_state, global_mount_scope_text_value,
-    global_mount_text_input_state, global_mount_text_target_label,
-    settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
-    settings_env_add_cancelled_message, settings_env_edit_cancelled_message,
-    settings_env_empty_key_error_message,
+    global_mount_add_cancelled_message, global_mount_add_draft_lost_message,
+    global_mount_confirm_state, global_mount_destination_empty_message, global_mount_gone_message,
+    global_mount_name_empty_message, global_mount_no_github_url_message,
+    global_mount_scope_picker_state, global_mount_scope_text_value, global_mount_text_input_state,
+    global_mount_text_target_label, settings_auth_op_read_failed_message,
+    settings_env_add_cancelled_message, settings_env_delete_confirm_state,
+    settings_env_edit_cancelled_message, settings_env_empty_key_error_message,
     settings_env_empty_key_label, settings_env_key_input_state,
     settings_env_new_key_after_picker_label, settings_env_new_key_label,
-    settings_error_popup_title, settings_sensitive_paths_not_confirmed_message,
-    settings_env_scope_picker_state, settings_env_source_picker_state, settings_env_text_input_state,
-    settings_env_value_current_text, settings_env_value_text_label,
-    settings_no_registered_roles_error_message,
+    settings_env_scope_picker_state, settings_env_source_picker_state,
+    settings_env_text_input_state, settings_env_value_current_text, settings_env_value_text_label,
+    settings_error_popup_title, settings_no_registered_roles_error_message,
+    settings_sensitive_paths_not_confirmed_message,
 };
+use jackin_tui::ModalOutcome;
 
-pub(super) type SettingsModalOutcome =
-    jackin_console::tui::message::ConsoleSettingsModalOutcome;
+pub(super) type SettingsModalOutcome = jackin_console::tui::message::ConsoleSettingsModalOutcome;
 
 pub(super) type SettingsAuthOutcome =
     jackin_console::tui::message::ConsoleSettingsAuthOutcome<crate::operator_env::OpRef>;
@@ -173,10 +167,7 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 }
 
 #[allow(clippy::too_many_lines)]
-fn handle_global_mounts_key(
-    state: &mut ManagerState<'_>,
-    key: KeyEvent,
-) {
+fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     // S is handled here, before `global` borrows `settings.mounts`, so
     // `open_settings_save_preview` can receive all of `settings`.
     if matches!(key.code, KeyCode::Char('s' | 'S')) {
@@ -469,7 +460,9 @@ fn open_settings_auth_form(
 /// generate trigger: an `AuthForm` showing the global Claude
 /// `oauth_token` slot. Settings generate is always global Claude, so —
 /// unlike the workspace editor — there is no per-target gate.
-pub fn settings_auth_can_generate_token(auth: &crate::console::tui::state::SettingsAuthState) -> bool {
+pub fn settings_auth_can_generate_token(
+    auth: &crate::console::tui::state::SettingsAuthState,
+) -> bool {
     matches!(
         auth.modal.as_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
@@ -531,16 +524,16 @@ pub(super) fn handle_settings_auth_modal(
                 AuthFormKeyPlan::Focus(next) => *focus = next,
                 AuthFormKeyPlan::CycleMode => state.cycle_mode(),
                 AuthFormKeyPlan::OpenCredentialSource => {
-                        let Some(env_var) = state.mode.and_then(|m| state.kind.required_env_var(m))
-                        else {
-                            auth.modal = Some(modal);
-                            return SettingsAuthOutcome::Continue;
-                        };
-                        auth.modal_parents.push(modal);
-                        auth.modal = Some(SettingsAuthModal::SourcePicker {
-                            state: auth_source_picker_state(env_var, op_available),
-                        });
+                    let Some(env_var) = state.mode.and_then(|m| state.kind.required_env_var(m))
+                    else {
+                        auth.modal = Some(modal);
                         return SettingsAuthOutcome::Continue;
+                    };
+                    auth.modal_parents.push(modal);
+                    auth.modal = Some(SettingsAuthModal::SourcePicker {
+                        state: auth_source_picker_state(env_var, op_available),
+                    });
+                    return SettingsAuthOutcome::Continue;
                 }
                 AuthFormKeyPlan::Save => {
                     persist_settings_auth_form(auth, env, state);
@@ -566,13 +559,14 @@ pub(super) fn handle_settings_auth_modal(
                 match outcome {
                     ModalOutcome::Commit(SourceChoice::Plain) => {
                         auth.generating_token = false;
-                        *pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
-                            scope: crate::workspace::token_setup::TokenSetupScope::Global,
-                            args: crate::workspace::token_setup::TokenSetupArgs {
-                                plain_text: true,
-                                ..Default::default()
-                            },
-                        });
+                        *pending_token_generate =
+                            Some(crate::console::tui::state::PendingTokenGenerate {
+                                scope: crate::workspace::token_setup::TokenSetupScope::Global,
+                                args: crate::workspace::token_setup::TokenSetupArgs {
+                                    plain_text: true,
+                                    ..Default::default()
+                                },
+                            });
                     }
                     ModalOutcome::Commit(SourceChoice::Op) => {
                         // `generating_token` stays set so the Create-mode
@@ -622,9 +616,7 @@ pub(super) fn handle_settings_auth_modal(
                 ModalOutcome::Commit(SourceChoice::Op) => {
                     auth.modal = Some(SettingsAuthModal::OpPicker {
                         state: Box::new(
-                            crate::console::tui::op_picker::OpPickerState::new_with_cache(
-                                op_cache,
-                            ),
+                            crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
                         ),
                     });
                 }
@@ -1124,12 +1116,10 @@ pub(super) fn handle_settings_confirm_modal(
                         draft.dst.clone_from(&src);
                     }
                     settings.mounts.modal = Some(GlobalMountModal::MountDstChoice { state });
-                    settings
-                        .mounts
-                        .open_sub_modal(text_modal_for_target(
-                            GlobalMountTextTarget::AddDestination,
-                            &src,
-                        ));
+                    settings.mounts.open_sub_modal(text_modal_for_target(
+                        GlobalMountTextTarget::AddDestination,
+                        &src,
+                    ));
                 }
                 ModalOutcome::Cancel => {
                     settings.mounts.pop_modal_chain();
@@ -1268,9 +1258,7 @@ pub(super) fn handle_settings_env_modal(
                     env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
                     env.open_sub_modal(SettingsEnvModal::OpPicker {
                         state: Box::new(
-                            crate::console::tui::op_picker::OpPickerState::new_with_cache(
-                                op_cache,
-                            ),
+                            crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
                         ),
                     });
                 }
@@ -1290,9 +1278,9 @@ pub(super) fn handle_settings_env_modal(
                 crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
                 | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
             ) => unreachable!("settings-env OpPicker runs in Browse mode"),
-            ModalOutcome::Commit(
-                crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
-            ) => {
+            ModalOutcome::Commit(crate::console::tui::op_picker::OpPickerSelection::Existing(
+                op_ref,
+            )) => {
                 let target = env.pending_picker_target.take();
                 match target {
                     Some((scope, Some(key))) => {
@@ -1584,7 +1572,10 @@ fn commit_add_scope_text(
     SettingsModalOutcome::OpenGlobalMountFileBrowser
 }
 
-fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
+fn commit_add_name_text(
+    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
+    value: &str,
+) {
     if value.is_empty() {
         global.error = Some(global_mount_name_empty_message().into());
         global.modal = Some(text_modal_for_target(GlobalMountTextTarget::AddName, ""));
@@ -1598,7 +1589,10 @@ fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsSta
     global.open_sub_modal(text_modal_for_target(GlobalMountTextTarget::AddSource, ""));
 }
 
-fn commit_add_source_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
+fn commit_add_source_text(
+    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
+    value: &str,
+) {
     let Some(draft) = global.add_draft.as_mut() else {
         global.error = Some(global_mount_add_draft_lost_message().into());
         return;
@@ -1692,8 +1686,11 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
                 scope,
                 key: key.clone(),
             };
-            let state =
-                settings_env_text_input_state(&target, settings_env_value_text_label(&key), current);
+            let state = settings_env_text_input_state(
+                &target,
+                settings_env_value_text_label(&key),
+                current,
+            );
             settings.env.modal = Some(SettingsEnvModal::Text {
                 target,
                 state: Box::new(state),
@@ -1721,7 +1718,8 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
 
 fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
-    let Some(scope) = settings_update::settings_env_add_target_for_row(rows.get(settings.env.selected))
+    let Some(scope) =
+        settings_update::settings_env_add_target_for_row(rows.get(settings.env.selected))
     else {
         return;
     };
@@ -1766,9 +1764,7 @@ fn open_settings_env_picker_modal(
     };
     settings.env.pending_picker_target = Some(target);
     settings.env.modal = Some(SettingsEnvModal::OpPicker {
-        state: Box::new(
-            crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
-        ),
+        state: Box::new(crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache)),
     });
 }
 
@@ -1789,13 +1785,7 @@ fn set_settings_env_value_typed(
     key: &str,
     value: crate::operator_env::EnvValue,
 ) {
-    settings_update::set_settings_env_value(
-        &mut env.pending,
-        &mut env.expanded,
-        scope,
-        key,
-        value,
-    );
+    settings_update::set_settings_env_value(&mut env.pending, &mut env.expanded, scope, key, value);
 }
 
 /// Promote any pending error from a settings sub-tab to `settings.error_popup`,
@@ -1888,7 +1878,10 @@ fn text_modal(
     }
 }
 
-fn text_modal_for_target(target: GlobalMountTextTarget, initial: &str) -> GlobalMountModal<'static> {
+fn text_modal_for_target(
+    target: GlobalMountTextTarget,
+    initial: &str,
+) -> GlobalMountModal<'static> {
     let label = global_mount_text_target_label(&target).unwrap_or("Value");
     text_modal(target, label, initial)
 }
@@ -1907,13 +1900,13 @@ fn env_text_modal(
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_support::key;
+    use super::*;
+    use crate::config::{AppConfig, RoleSource};
     use crate::console::tui::state::{
         ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvTextTarget, SettingsState,
         SettingsTab,
     };
-    use super::super::test_support::key;
-    use super::*;
-    use crate::config::{AppConfig, RoleSource};
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
 
@@ -1982,7 +1975,9 @@ mod tests {
             },
         }];
 
-        assert!(crate::console::domain::global_rows_have_sensitive_mount(&rows));
+        assert!(crate::console::domain::global_rows_have_sensitive_mount(
+            &rows
+        ));
     }
 
     #[test]
@@ -2480,8 +2475,8 @@ mod tests {
     /// injected stub `OpRunner` so no real `op` binary runs.
     #[test]
     fn settings_auth_generate_op_mint_remounts_form_focus_save() {
-        use jackin_console::tui::auth::{AuthKind, AuthMode};
         use crate::operator_env::{OpRef, OpRunner};
+        use jackin_console::tui::auth::{AuthKind, AuthMode};
 
         struct StubRunner;
         impl OpRunner for StubRunner {

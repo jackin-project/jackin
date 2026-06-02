@@ -1,16 +1,14 @@
+use crate::console::effects::{execute_manager_effect, poll_background_messages};
+use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::message::ManagerBackgroundEvent;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::effects::{
-    execute_manager_effect, poll_background_messages,
-};
-use jackin_console::tui::effect::ConsoleEffect;
-use jackin_console::tui::auth::AuthKind;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsTab,
     settings_state_from_config,
 };
-use crate::console::tui::components::auth_panel::AuthForm;
+use jackin_console::tui::auth::AuthKind;
+use jackin_console::tui::effect::ConsoleEffect;
 use jackin_tui::components::ErrorPopupState;
 use ratatui::layout::Rect;
 
@@ -417,9 +415,7 @@ fn settings_general_selection_and_toggle_update_state() {
         )
         .is_dirty()
     );
-    assert!(
-        update_manager(&mut state, ManagerMessage::ToggleSettingsGeneralSelected).is_dirty()
-    );
+    assert!(update_manager(&mut state, ManagerMessage::ToggleSettingsGeneralSelected).is_dirty());
 
     let ManagerStage::Settings(settings) = state.stage else {
         panic!("expected settings stage");

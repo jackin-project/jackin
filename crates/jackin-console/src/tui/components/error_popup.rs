@@ -216,7 +216,11 @@ mod tests {
             "Could not load role \"bad-role\".\n\nUse a configured role such as \"agent-smith\" or a GitHub selector like \"owner/agent-name\"."
         );
         assert_eq!(
-            repository_role_load_error_message("bad-role", "https://example.test/repo.git", "not valid"),
+            repository_role_load_error_message(
+                "bad-role",
+                "https://example.test/repo.git",
+                "not valid"
+            ),
             "Could not load role \"bad-role\".\n\nLooked for repository:\nhttps://example.test/repo.git\n\nnot valid"
         );
         assert_eq!(

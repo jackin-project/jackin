@@ -9,14 +9,12 @@ use std::time::Instant;
 use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
 use crate::tui::view::{
     CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleDialogBottomChrome,
-    CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar,
-    render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
-    render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
-    render_capsule_pane_body_partial, render_capsule_pane_body_snapshot,
-    render_capsule_pane_chrome,
+    CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar, render_capsule_bottom_chrome,
+    render_capsule_chrome_hover_frame, render_capsule_dialog_backdrop,
+    render_capsule_dialog_bottom_chrome, render_capsule_pane_body_partial,
+    render_capsule_pane_body_snapshot, render_capsule_pane_chrome,
     render_capsule_raw_dialog_overlay, render_capsule_selection_highlight,
-    render_capsule_status_bar,
-    screen_scroll_affordance_metrics,
+    render_capsule_status_bar, screen_scroll_affordance_metrics,
 };
 
 use super::*;
@@ -424,10 +422,10 @@ impl Multiplexer {
         }) {
             PartialFramePlan::Empty => return Vec::new(),
             PartialFramePlan::OverlayDiff => {
-            // Prefer the Ratatui diff path so dialog state that hasn't
-            // changed produces an empty diff instead of a full fill_screen.
-            // The raw-ANSI fallback is kept for the (rare) case where the
-            // Ratatui terminal fails to draw.
+                // Prefer the Ratatui diff path so dialog state that hasn't
+                // changed produces an empty diff instead of a full fill_screen.
+                // The raw-ANSI fallback is kept for the (rare) case where the
+                // Ratatui terminal fails to draw.
                 if let Some(ratatui_output) = self.compose_ratatui_frame() {
                     let mut out = Vec::with_capacity(ratatui_output.len() + 64);
                     self.append_outer_terminal_title(&mut out);

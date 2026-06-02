@@ -3,14 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
-use crate::console::domain::{
-    auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
-};
-use jackin_console::tui::auth::AuthKind;
+use crate::console::domain::{auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github};
 use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
 use crate::workspace::WorkspaceConfig;
+use jackin_console::tui::auth::AuthKind;
 
 /// Upsert one role source into the operator config and reload the saved model.
 pub fn upsert_role_source(
@@ -69,7 +67,10 @@ pub struct SettingsSaveInput<'a> {
 }
 
 /// Save all settings tabs and return the reloaded config model.
-pub fn save_settings(paths: &JackinPaths, input: SettingsSaveInput<'_>) -> anyhow::Result<AppConfig> {
+pub fn save_settings(
+    paths: &JackinPaths,
+    input: SettingsSaveInput<'_>,
+) -> anyhow::Result<AppConfig> {
     AppConfig::validate_global_mount_rows(input.mounts_pending)?;
     validate_settings_env(input.env_pending, input.trust_pending)?;
     let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
@@ -192,7 +193,8 @@ pub fn save_workspace(
                 rename_to = Some(new_name);
             }
 
-            let mut edit = crate::console::domain::build_workspace_edit(input.original, input.pending);
+            let mut edit =
+                crate::console::domain::build_workspace_edit(input.original, input.pending);
             edit.remove_destinations = effective_removals;
             editor_doc.edit_workspace(&current_name, edit)?;
             apply_auth_forward_diff(
@@ -296,12 +298,7 @@ pub(crate) fn apply_auth_forward_diff(
             .and_then(|p| p.amp.as_ref())
             .map(|c| c.0.auth_forward);
         if orig_amp != pend_amp {
-            editor_doc.set_workspace_role_auth_forward(
-                workspace_name,
-                role,
-                Agent::Amp,
-                pend_amp,
-            );
+            editor_doc.set_workspace_role_auth_forward(workspace_name, role, Agent::Amp, pend_amp);
         }
         let orig_opencode = orig_override
             .and_then(|o| o.opencode.as_ref())

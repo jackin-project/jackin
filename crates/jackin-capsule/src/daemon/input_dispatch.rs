@@ -2,8 +2,8 @@
 
 use crate::tui::components::branch_context_bar::branch_context_bar_hit;
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
-use crate::tui::update::action_frame_plan;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
+use crate::tui::update::action_frame_plan;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
 
@@ -216,8 +216,7 @@ impl Multiplexer {
             }
             Action::NextTab => {
                 self.next_tab();
-                action_frame_plan(&Action::NextTab)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                action_frame_plan(&Action::NextTab).map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::PreviousTab => {
                 self.prev_tab();
@@ -263,8 +262,7 @@ impl Multiplexer {
             }
             Action::Detach => {
                 self.detach_requested = true;
-                action_frame_plan(&Action::Detach)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                action_frame_plan(&Action::Detach).map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
@@ -337,13 +335,11 @@ impl Multiplexer {
                 if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(
                     session.mouse_enabled(),
                     session.screen().alternate_screen(),
-                )
-                    && let Some(buf) = encode_wheel_cursor_fallback(
-                        session.mouse_enabled(),
-                        session.screen().application_cursor(),
-                        button,
-                    )
-                {
+                ) && let Some(buf) = encode_wheel_cursor_fallback(
+                    session.mouse_enabled(),
+                    session.screen().application_cursor(),
+                    button,
+                ) {
                     crate::cdebug!(
                         "wheel dispatch: cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} reason={} bytes={:02x?}",
                         focused,
@@ -391,10 +387,10 @@ impl Multiplexer {
                 );
                 Some(self.compose_full_frame(wheel_scrollback_redraw_reason()))
             }
-            Action::FocusPaneAt { row, col } => focus_change_redraw_reason(
-                self.focus_pane_at(row, col),
-            )
-            .map(|reason| self.compose_full_frame(reason)),
+            Action::FocusPaneAt { row, col } => {
+                focus_change_redraw_reason(self.focus_pane_at(row, col))
+                    .map(|reason| self.compose_full_frame(reason))
+            }
             Action::PanePrimaryPress { row, col } => {
                 // Press on a shared pane border starts a drag — skip focus
                 // switch and PTY forward in that case.
@@ -549,17 +545,17 @@ impl Multiplexer {
             self.apply_action(action);
         }
         if let InputEvent::Data(bytes) = event {
-                if let Some(action) =
-                    self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
-                {
-                    self.apply_action(Action::Dialog(action))
-                } else {
-                    // Any keyboard input from the operator returns the
-                    // focused pane to the live tail. Matches the
-                    // common multiplexer convention that "I'm typing
-                    // again" implies "show me what's happening now."
-                    self.apply_action(Action::PaneData(bytes))
-                }
+            if let Some(action) =
+                self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
+            {
+                self.apply_action(Action::Dialog(action))
+            } else {
+                // Any keyboard input from the operator returns the
+                // focused pane to the live tail. Matches the
+                // common multiplexer convention that "I'm typing
+                // again" implies "show me what's happening now."
+                self.apply_action(Action::PaneData(bytes))
+            }
         } else {
             let branch_context_hit = match &event {
                 InputEvent::MousePress {

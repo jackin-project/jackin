@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::app::context::eligible_roles_for_workspace;
 use crate::agent::Agent;
+use crate::app::context::eligible_roles_for_workspace;
 use crate::config::{
     AgentAuthConfig, AmpAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig, GithubAuthConfig,
     GithubAuthMode, KimiAuthConfig, MountEntry, OpencodeAuthConfig, RoleSource,
@@ -74,17 +74,16 @@ pub fn github_auth_config_with_preserved_env(
     mode: Option<AuthMode>,
     existing: Option<&GithubAuthConfig>,
 ) -> Option<GithubAuthConfig> {
-    mode.and_then(auth_mode_to_github).map(|auth_forward| GithubAuthConfig {
-        auth_forward,
-        env: existing.map(|github| github.env.clone()).unwrap_or_default(),
-    })
+    mode.and_then(auth_mode_to_github)
+        .map(|auth_forward| GithubAuthConfig {
+            auth_forward,
+            env: existing
+                .map(|github| github.env.clone())
+                .unwrap_or_default(),
+        })
 }
 
-pub fn set_workspace_auth_mode(
-    ws: &mut WorkspaceConfig,
-    kind: AuthKind,
-    mode: Option<AuthMode>,
-) {
+pub fn set_workspace_auth_mode(ws: &mut WorkspaceConfig, kind: AuthKind, mode: Option<AuthMode>) {
     set_auth_mode(ws, kind, mode);
 }
 
@@ -170,41 +169,39 @@ fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<Aut
     match kind {
         AuthKind::Claude => {
             layer.set_claude_auth(
-                mode
-                .and_then(auth_mode_to_auth_forward)
+                mode.and_then(auth_mode_to_auth_forward)
                     .map(|auth_forward| AgentAuthConfig { auth_forward }),
             );
         }
         AuthKind::Codex => {
             layer.set_codex_auth(
-                mode
-                .and_then(auth_mode_to_auth_forward)
+                mode.and_then(auth_mode_to_auth_forward)
                     .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward })),
             );
         }
         AuthKind::Amp => {
             layer.set_amp_auth(
-                mode
-                .and_then(auth_mode_to_auth_forward)
+                mode.and_then(auth_mode_to_auth_forward)
                     .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward })),
             );
         }
         AuthKind::Kimi => {
             layer.set_kimi_auth(
-                mode
-                .and_then(auth_mode_to_auth_forward)
+                mode.and_then(auth_mode_to_auth_forward)
                     .map(|auth_forward| KimiAuthConfig(AgentAuthConfig { auth_forward })),
             );
         }
         AuthKind::Opencode => {
             layer.set_opencode_auth(
-                mode
-                .and_then(auth_mode_to_auth_forward)
+                mode.and_then(auth_mode_to_auth_forward)
                     .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward })),
             );
         }
         AuthKind::Github => {
-            layer.set_github_auth(github_auth_config_with_preserved_env(mode, layer.github_auth()));
+            layer.set_github_auth(github_auth_config_with_preserved_env(
+                mode,
+                layer.github_auth(),
+            ));
         }
         AuthKind::Zai => {}
     }
@@ -221,7 +218,13 @@ pub fn apply_workspace_auth_commit(
     if kind == AuthKind::Zai && mode == AuthMode::Ignore {
         ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
     }
-    apply_auth_env_value(&mut ws.env, ws.github.as_mut(), kind, env_var_name, env_value);
+    apply_auth_env_value(
+        &mut ws.env,
+        ws.github.as_mut(),
+        kind,
+        env_var_name,
+        env_value,
+    );
 }
 
 pub fn apply_role_auth_commit(
@@ -342,7 +345,10 @@ pub fn panel_mode_requires_credential(
 /// Roles already carrying an override stay eligible: operators may add
 /// more keys to an existing override.
 #[must_use]
-pub fn eligible_role_keys_for_override(cfg: &AppConfig, workspace: &WorkspaceConfig) -> Vec<String> {
+pub fn eligible_role_keys_for_override(
+    cfg: &AppConfig,
+    workspace: &WorkspaceConfig,
+) -> Vec<String> {
     if workspace.allowed_roles.is_empty() {
         cfg.roles.keys().cloned().collect()
     } else {
@@ -855,7 +861,10 @@ pub(crate) fn resolve_launch_dispatch(
         let role = roles.into_iter().next().unwrap();
         let workspace =
             crate::console::preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
-        return Ok(Some(LaunchDispatchResolution::SingleRole { role, workspace }));
+        return Ok(Some(LaunchDispatchResolution::SingleRole {
+            role,
+            workspace,
+        }));
     }
 
     let selected = crate::app::context::preferred_agent_index(
@@ -884,7 +893,8 @@ pub(crate) fn resolve_committed_role_launch(
     let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
         return Ok(None);
     };
-    let workspace = crate::console::preview::resolve_selected_workspace(config, cwd, &choice, role)?;
+    let workspace =
+        crate::console::preview::resolve_selected_workspace(config, cwd, &choice, role)?;
     Ok(Some(CommittedRoleLaunch { input, workspace }))
 }
 
@@ -1100,11 +1110,15 @@ pub(crate) fn plan_editor_save_preview(
             original,
             pending,
         } => {
-            let current_ws = config.workspaces.get(original_name).cloned().ok_or_else(|| {
-                EditorSavePreviewError::Message(format!(
-                    "workspace {original_name:?} no longer exists in config"
-                ))
-            })?;
+            let current_ws = config
+                .workspaces
+                .get(original_name)
+                .cloned()
+                .ok_or_else(|| {
+                    EditorSavePreviewError::Message(format!(
+                        "workspace {original_name:?} no longer exists in config"
+                    ))
+                })?;
             let edit_delta = build_workspace_edit(original, pending);
             let plan = crate::workspace::planner::plan_edit(
                 &current_ws,
@@ -1238,10 +1252,7 @@ mod tests {
             GithubAuthMode::Token,
             GithubAuthMode::Ignore,
         ] {
-            assert_eq!(
-                auth_mode_to_github(auth_mode_from_github(mode)),
-                Some(mode)
-            );
+            assert_eq!(auth_mode_to_github(auth_mode_from_github(mode)), Some(mode));
         }
     }
 
@@ -1258,7 +1269,10 @@ mod tests {
 
         assert_eq!(next.auth_forward, GithubAuthMode::Ignore);
         assert_eq!(next.env, existing.env);
-        assert!(github_auth_config_with_preserved_env(Some(AuthMode::ApiKey), Some(&existing)).is_none());
+        assert!(
+            github_auth_config_with_preserved_env(Some(AuthMode::ApiKey), Some(&existing))
+                .is_none()
+        );
         assert!(github_auth_config_with_preserved_env(None, Some(&existing)).is_none());
     }
 
@@ -1293,7 +1307,11 @@ mod tests {
 
         apply_role_auth_commit(&mut role, AuthKind::Zai, AuthMode::Ignore, None, None);
 
-        assert!(!role.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME));
+        assert!(
+            !role
+                .env
+                .contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME)
+        );
     }
 
     #[test]
@@ -1442,13 +1460,10 @@ mod tests {
             settings_auth_env_value(AuthKind::Claude, AuthMode::ApiKey, &github_env, &agent_env),
             Some(crate::operator_env::EnvValue::Plain(value)) if value == "anthropic-key"
         ));
-        assert!(settings_auth_env_value(
-            AuthKind::Claude,
-            AuthMode::Sync,
-            &github_env,
-            &agent_env
-        )
-        .is_none());
+        assert!(
+            settings_auth_env_value(AuthKind::Claude, AuthMode::Sync, &github_env, &agent_env)
+                .is_none()
+        );
     }
 
     #[test]

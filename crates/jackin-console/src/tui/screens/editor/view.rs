@@ -2,7 +2,6 @@
 
 use super::model::{EditorMode, EditorTab, SecretsScopeTag};
 use super::update::forbidden_secret_keys;
-use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
     AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
     render_secret_key_line,
@@ -10,6 +9,7 @@ use crate::tui::components::editor_rows::{
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
 };
+use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -127,9 +127,7 @@ pub fn secret_value_current_text(value: Option<&str>) -> String {
 }
 
 #[must_use]
-pub fn secret_new_value_input_state<'a>(
-    key: &str,
-) -> jackin_tui::components::TextInputState<'a> {
+pub fn secret_new_value_input_state<'a>(key: &str) -> jackin_tui::components::TextInputState<'a> {
     jackin_tui::components::TextInputState::new_allow_empty(
         format!("Value for {key}"),
         String::new(),
@@ -192,7 +190,10 @@ pub fn mount_dst_choice_state(
 }
 
 #[must_use]
-pub fn role_trust_confirm_state(role: String, repository: String) -> jackin_tui::components::ConfirmState {
+pub fn role_trust_confirm_state(
+    role: String,
+    repository: String,
+) -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::details(
         "Trust role source",
         "Trust this role source?",
@@ -415,11 +416,7 @@ pub fn mount_lines(
 
     let sentinel_idx = rows.len();
     let sentinel_selected = show_cursor && (cursor == sentinel_idx);
-    let sentinel_prefix = if sentinel_selected {
-        "\u{25b8} "
-    } else {
-        "  "
-    };
+    let sentinel_prefix = if sentinel_selected { "\u{25b8} " } else { "  " };
     if !rows.is_empty() {
         lines.push(Line::from(""));
     }
@@ -472,7 +469,11 @@ pub fn role_lines(
 
     for (i, row) in rows.iter().enumerate() {
         let selected = show_cursor && (i == cursor);
-        let check = if row.effectively_allowed { "[x]" } else { "[ ]" };
+        let check = if row.effectively_allowed {
+            "[x]"
+        } else {
+            "[ ]"
+        };
         let star = if row.is_default { "\u{2605}" } else { " " };
         let prefix = if selected { "\u{25b8} " } else { "  " };
         let text = format!("{prefix}{check} {star} {}", row.name);
@@ -488,11 +489,7 @@ pub fn role_lines(
 
     let sentinel_idx = rows.len();
     let sentinel_selected = show_cursor && (cursor == sentinel_idx);
-    let sentinel_prefix = if sentinel_selected {
-        "\u{25b8} "
-    } else {
-        "  "
-    };
+    let sentinel_prefix = if sentinel_selected { "\u{25b8} " } else { "  " };
     if !rows.is_empty() {
         lines.push(Line::from(""));
     }
@@ -654,7 +651,9 @@ fn secret_key_line_width(
     const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let op_breadcrumb = match value {
-        SecretValueDisplay::OpRefPath(path) => crate::tui::op_breadcrumb::parse_path_breadcrumb(path),
+        SecretValueDisplay::OpRefPath(path) => {
+            crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
+        }
         SecretValueDisplay::Plain(_) => None,
     };
     let marker = if op_breadcrumb.is_some() {
@@ -940,11 +939,8 @@ pub fn secret_key_input_state<'a>(
     initial: impl Into<String>,
     forbidden_keys: Vec<String>,
 ) -> jackin_tui::components::TextInputState<'a> {
-    let mut state = jackin_tui::components::TextInputState::new_with_forbidden(
-        label,
-        initial,
-        forbidden_keys,
-    );
+    let mut state =
+        jackin_tui::components::TextInputState::new_with_forbidden(label, initial, forbidden_keys);
     state.forbidden_label = secrets_forbidden_label(scope);
     state
 }
@@ -976,7 +972,10 @@ mod tests {
 
         assert_eq!(lines.len(), 4);
         assert_eq!(lines[0].spans[0].content.as_ref(), "  Name           ");
-        assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} Keep awake     ");
+        assert_eq!(
+            lines[2].spans[0].content.as_ref(),
+            "\u{25b8} Keep awake     "
+        );
         assert_eq!(lines[2].spans[1].content.as_ref(), "enabled (macOS only)");
         assert_eq!(lines[3].spans[1].content.as_ref(), "disabled");
     }
@@ -1004,14 +1003,26 @@ mod tests {
     fn editor_modal_state_helpers_name_fields() {
         assert_eq!(editor_name_input_state("demo").label, "Rename workspace");
         assert_eq!(editor_name_input_state("demo").value(), "demo");
-        assert_eq!(secret_value_input_state("TOKEN", "value").label, "Edit TOKEN");
+        assert_eq!(
+            secret_value_input_state("TOKEN", "value").label,
+            "Edit TOKEN"
+        );
         assert!(secret_value_input_state("TOKEN", "").is_valid());
         assert_eq!(secret_value_current_text(Some("value")), "value");
         assert_eq!(secret_value_current_text(None), "");
-        assert_eq!(secret_new_value_input_state("TOKEN").label, "Value for TOKEN");
+        assert_eq!(
+            secret_new_value_input_state("TOKEN").label,
+            "Value for TOKEN"
+        );
         assert!(secret_new_value_input_state("TOKEN").is_valid());
-        assert_eq!(mount_destination_input_state("/workspace").label, "Destination");
-        assert_eq!(mount_destination_input_state("/workspace").value(), "/workspace");
+        assert_eq!(
+            mount_destination_input_state("/workspace").label,
+            "Destination"
+        );
+        assert_eq!(
+            mount_destination_input_state("/workspace").value(),
+            "/workspace"
+        );
     }
 
     #[test]
@@ -1056,8 +1067,7 @@ mod tests {
     fn secret_delete_confirm_state_uses_key_prompt() {
         let state = secret_delete_confirm_state("TOKEN");
 
-        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
-        else {
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind() else {
             panic!("expected default confirm");
         };
         assert_eq!(prompt, "Delete environment variable TOKEN?");
@@ -1065,11 +1075,11 @@ mod tests {
 
     #[test]
     fn role_trust_confirm_state_names_role_and_repository() {
-        let state = role_trust_confirm_state("alpha".to_string(), "https://example.test/role".to_string());
+        let state =
+            role_trust_confirm_state("alpha".to_string(), "https://example.test/role".to_string());
 
         assert_eq!(state.title(), "Trust role source");
-        let jackin_tui::components::ConfirmKind::Details { prompt, rows, .. } = state.kind()
-        else {
+        let jackin_tui::components::ConfirmKind::Details { prompt, rows, .. } = state.kind() else {
             panic!("expected detail confirm");
         };
         assert_eq!(prompt, "Trust this role source?");
@@ -1082,8 +1092,7 @@ mod tests {
     fn isolated_state_save_confirm_state_lists_containers() {
         let state = isolated_state_save_confirm_state(&["one".to_string(), "two".to_string()]);
 
-        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
-        else {
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind() else {
             panic!("expected default confirm");
         };
         assert!(prompt.contains("2 stopped container(s)"));
@@ -1093,10 +1102,8 @@ mod tests {
 
     #[test]
     fn running_isolated_state_save_block_message_lists_containers() {
-        let message = running_isolated_state_save_block_message(&[
-            "alpha".to_string(),
-            "beta".to_string(),
-        ]);
+        let message =
+            running_isolated_state_save_block_message(&["alpha".to_string(), "beta".to_string()]);
 
         assert_eq!(
             message,
@@ -1132,7 +1139,8 @@ mod tests {
                 env: std::collections::BTreeMap::from([("TOKEN".to_string(), "x".to_string())]),
             },
         );
-        let workspace = std::collections::BTreeMap::from([("WORKSPACE".to_string(), "x".to_string())]);
+        let workspace =
+            std::collections::BTreeMap::from([("WORKSPACE".to_string(), "x".to_string())]);
 
         let state = secret_key_input_state_from_pending(
             &workspace,
@@ -1159,7 +1167,10 @@ mod tests {
 
         let lines = mount_lines(&rows, 1, Some(0), true);
 
-        assert_eq!(lines[0].spans[0].content.as_ref(), "  Destination      Mode  Isolation  Type");
+        assert_eq!(
+            lines[0].spans[0].content.as_ref(),
+            "  Destination      Mode  Isolation  Type"
+        );
         assert_eq!(lines[1].spans[0].content.as_ref(), "  /workspace       ");
         assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
         assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
@@ -1237,10 +1248,7 @@ mod tests {
             editor_roles_status_width(false, 1, 2),
             text_width("  Allowed roles:    custom     (1 of 2 allowed)")
         );
-        assert_eq!(
-            editor_role_row_width("alpha"),
-            text_width("  [x] * alpha")
-        );
+        assert_eq!(editor_role_row_width("alpha"), text_width("  [x] * alpha"));
         assert_eq!(editor_role_load_row_width(), text_width("  + Load role"));
     }
 
@@ -1278,16 +1286,23 @@ mod tests {
         );
 
         assert_eq!(lines[0].spans[2].content.as_ref(), "TOKEN                 ");
-        assert_eq!(lines[1].spans[0].content.as_ref(), "  + Add environment variable");
+        assert_eq!(
+            lines[1].spans[0].content.as_ref(),
+            "  + Add environment variable"
+        );
         assert_eq!(lines[2].spans[2].content.as_ref(), " Role: alpha  (1 vars)");
         assert_eq!(lines[3].spans[0].content.as_ref(), "\u{25b8} ");
-        assert_eq!(lines[4].spans[0].content.as_ref(), "       + Add alpha environment variable");
+        assert_eq!(
+            lines[4].spans[0].content.as_ref(),
+            "       + Add alpha environment variable"
+        );
         assert_eq!(
             editor_secret_line_width(
                 &rows[0],
                 80,
                 |scope, key| match (scope, key) {
-                    (SecretsScopeTag::Workspace, "TOKEN") => Some(SecretValueDisplay::Plain("secret")),
+                    (SecretsScopeTag::Workspace, "TOKEN") =>
+                        Some(SecretValueDisplay::Plain("secret")),
                     _ => None,
                 },
                 |scope, key| matches!((scope, key), (SecretsScopeTag::Workspace, "TOKEN")),
@@ -1339,9 +1354,15 @@ mod tests {
         assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} ");
         assert_eq!(lines[1].spans[2].content.as_ref(), "api-key");
         assert_eq!(lines[1].spans[3].content.as_ref(), " (inherited)");
-        assert_eq!(lines[2].spans[2].content.as_ref(), "unset  (CLAUDE_API_KEY for api-key)");
+        assert_eq!(
+            lines[2].spans[2].content.as_ref(),
+            "unset  (CLAUDE_API_KEY for api-key)"
+        );
         assert_eq!(lines[3].spans[1].content.as_ref(), " Role: alpha");
-        assert_eq!(lines[4].spans[2].content.as_ref(), "   (all roles overridden)");
+        assert_eq!(
+            lines[4].spans[2].content.as_ref(),
+            "   (all roles overridden)"
+        );
         assert_eq!(editor_auth_line_width(&rows[0]), padded_width("  Claude"));
         assert_eq!(
             editor_auth_line_width(&rows[1]),

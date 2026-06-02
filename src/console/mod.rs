@@ -15,15 +15,15 @@ pub mod tui;
 
 #[cfg(test)]
 use domain::providers_for_launch;
+pub use domain::{WorkspaceChoice, build_workspace_choice};
+pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
+pub use terminal::TerminalSession;
 #[cfg(test)]
 pub(super) use tui::consumes_letter_input;
 #[cfg(test)]
 use tui::is_on_main_screen;
 #[cfg(test)]
 use tui::prompts::prompt_agent_for_launch;
-pub use domain::{WorkspaceChoice, build_workspace_choice};
-pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
-pub use terminal::TerminalSession;
 pub use tui::{ConsoleStage, ConsoleState, run_console};
 
 #[cfg(test)]
@@ -35,14 +35,14 @@ mod quit_confirm_tests {
         AgentPickerChoices, OnPromptFailure, PromptOutcome, show_role_resolution_error,
     };
     use super::*;
+    use crate::config::AppConfig;
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
-    use crate::config::AppConfig;
     use crate::selector::RoleSelector;
     use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
-    use jackin_tui::ModalOutcome;
     use jackin_console::tui::components::file_browser::FileBrowserState;
+    use jackin_tui::ModalOutcome;
     use jackin_tui::components::{ConfirmState, TextInputState};
 
     fn fresh_state() -> ConsoleState {

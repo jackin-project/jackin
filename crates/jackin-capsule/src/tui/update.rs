@@ -245,9 +245,7 @@ pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<F
     selection_started.then_some(FullRedrawReason::SelectionRepaint)
 }
 
-pub(crate) fn palette_route_redraw_reason(
-    route: PaletteCommandRoute,
-) -> Option<FullRedrawReason> {
+pub(crate) fn palette_route_redraw_reason(route: PaletteCommandRoute) -> Option<FullRedrawReason> {
     match route {
         PaletteCommandRoute::ClearPane => Some(FullRedrawReason::PaneClear),
         _ => None,
@@ -258,14 +256,14 @@ pub(crate) fn palette_route_redraw_reason(
 mod tests {
     use super::{
         ActionFramePlan, DialogActionFramePlan, HoverFramePlan, PartialFramePlan,
-        PartialFrameState, action_frame_plan, dialog_action_frame_plan, dialog_change_redraw_reason,
-        drag_resize_ratio, drag_resize_redraw_reason, explicit_redraw_reason,
-        first_attach_redraw_reason, focus_change_redraw_reason, hover_frame_plan,
-        pane_data_redraw_reason, partial_frame_plan, palette_route_redraw_reason,
-        pane_cache_miss_redraw_reason, prefix_full_redraw_reason, resize_redraw_reason,
-        selection_change_redraw_reason, selection_start_redraw_reason, session_exit_redraw_reason,
-        status_change_redraw_reason, unsafe_partial_fallback_redraw_reason,
-        wheel_scrollback_redraw_reason,
+        PartialFrameState, action_frame_plan, dialog_action_frame_plan,
+        dialog_change_redraw_reason, drag_resize_ratio, drag_resize_redraw_reason,
+        explicit_redraw_reason, first_attach_redraw_reason, focus_change_redraw_reason,
+        hover_frame_plan, palette_route_redraw_reason, pane_cache_miss_redraw_reason,
+        pane_data_redraw_reason, partial_frame_plan, prefix_full_redraw_reason,
+        resize_redraw_reason, selection_change_redraw_reason, selection_start_redraw_reason,
+        session_exit_redraw_reason, status_change_redraw_reason,
+        unsafe_partial_fallback_redraw_reason, wheel_scrollback_redraw_reason,
     };
     use crate::tui::components::dialog::{DialogAction, PickerIntent};
     use crate::tui::input::{ArrowDir, PrefixCommand};
@@ -342,18 +340,12 @@ mod tests {
     #[test]
     fn drag_resize_ratio_clamps_to_visible_resize_bounds() {
         let rect = Rect::new(2, 4, 20, 100);
-        assert_eq!(
-            drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 0),
-            0.05
-        );
+        assert_eq!(drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 0), 0.05);
         assert_eq!(
             drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 200),
             0.95
         );
-        assert_eq!(
-            drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 54),
-            0.5
-        );
+        assert_eq!(drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 54), 0.5);
 
         let rect = Rect::new(2, 4, 20, 100);
         assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 0, 4), 0.05);
@@ -453,8 +445,14 @@ mod tests {
         assert_eq!(first_attach_redraw_reason(), FullRedrawReason::FirstAttach);
         assert_eq!(resize_redraw_reason(), FullRedrawReason::Resize);
         assert_eq!(session_exit_redraw_reason(), FullRedrawReason::SessionExit);
-        assert_eq!(status_change_redraw_reason(), FullRedrawReason::StatusChange);
-        assert_eq!(dialog_change_redraw_reason(), FullRedrawReason::DialogChange);
+        assert_eq!(
+            status_change_redraw_reason(),
+            FullRedrawReason::StatusChange
+        );
+        assert_eq!(
+            dialog_change_redraw_reason(),
+            FullRedrawReason::DialogChange
+        );
         assert_eq!(explicit_redraw_reason(), FullRedrawReason::ExplicitRedraw);
     }
 

@@ -67,7 +67,9 @@ fn settings_context_footer_mode(state: &SettingsState<'_>) -> SettingsContextFoo
                         .mounts
                         .pending
                         .get(cursor)
-                        .and_then(|row| state.mounts.mount_info_cache.github_web_url(&row.mount.src))
+                        .and_then(|row| {
+                            state.mounts.mount_info_cache.github_web_url(&row.mount.src)
+                        })
                         .is_some(),
                 }
             }

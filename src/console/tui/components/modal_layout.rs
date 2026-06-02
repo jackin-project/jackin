@@ -1,7 +1,7 @@
 use ratatui::layout::Rect;
 
-use crate::console::tui::state::Modal;
 use crate::console::tui::components::auth_panel;
+use crate::console::tui::state::Modal;
 use jackin_console::tui::components::confirm_save;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 
@@ -47,13 +47,11 @@ pub(crate) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
         | Modal::AuthRolePicker { state } => ModalRectMode::RolePicker {
             filtered_len: state.filtered.len(),
         },
-        Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } => {
-            ModalRectMode::SourcePicker
-        }
+        Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } => ModalRectMode::SourcePicker,
         Modal::ScopePicker { .. } => ModalRectMode::ScopePicker,
         Modal::AuthForm { state, .. } => ModalRectMode::AuthForm {
             required_height: auth_panel::required_height(state.as_ref()),
-        }
+        },
     };
     modal_rects::modal_rect_for_mode(outer, mode)
 }

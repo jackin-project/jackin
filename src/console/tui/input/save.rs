@@ -2,26 +2,24 @@
 //! `ConfirmSave` preview modal, and service-backed config writes.
 #![allow(clippy::items_after_test_module)]
 
-use super::super::effect::{
-    WorkspaceSaveEffect, WorkspaceSaveWriteMode,
-};
+use super::super::effect::{WorkspaceSaveEffect, WorkspaceSaveWriteMode};
+use crate::config::AppConfig;
 use crate::console::domain::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
+};
+#[cfg(test)]
+pub(super) use crate::console::tui::components::save_preview::append_env_map_diff_lines;
+pub(super) use crate::console::tui::components::save_preview::build_settings_save_lines;
+use crate::console::tui::components::save_preview::{
+    build_confirm_save_lines, collapse_section_lines,
 };
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
 };
-use crate::config::AppConfig;
-use crate::console::tui::components::save_preview::{
-    build_confirm_save_lines, collapse_section_lines,
-};
 use jackin_console::tui::screens::editor::view::{
     isolated_state_save_confirm_state, running_isolated_state_save_block_message,
 };
-#[cfg(test)]
-pub(super) use crate::console::tui::components::save_preview::append_env_map_diff_lines;
-pub(super) use crate::console::tui::components::save_preview::build_settings_save_lines;
 
 /// Continue the editor save flow after an async drift check completes.
 ///
@@ -52,17 +50,16 @@ pub fn continue_save_after_drift_check(
         }
         Ok(detection) => {
             if !detection.running_containers.is_empty() {
-                let msg =
-                    running_isolated_state_save_block_message(&detection.running_containers);
+                let msg = running_isolated_state_save_block_message(&detection.running_containers);
                 open_save_error_popup(editor, &msg);
                 return Ok(None);
             }
             if !detection.stopped_records.is_empty() {
                 if drift_check.plan.delete_isolated_acknowledged {
                     return Ok(Some(WorkspaceSaveEffect::StartIsolationCleanup {
-                            records: detection.stopped_records,
-                            plan: drift_check.plan,
-                            exit_on_success: drift_check.exit_on_success,
+                        records: detection.stopped_records,
+                        plan: drift_check.plan,
+                        exit_on_success: drift_check.exit_on_success,
                     }));
                 }
                 let affected_containers: Vec<String> = detection
@@ -91,12 +88,7 @@ pub fn continue_save_after_drift_check(
     // so the write pass does not request the same check again.
     let mut plan = drift_check.plan;
     plan.isolated_cleanup_complete = true;
-    commit_editor_save_with_runner(
-        state,
-        config,
-        plan,
-        drift_check.exit_on_success,
-    )
+    commit_editor_save_with_runner(state, config, plan, drift_check.exit_on_success)
 }
 
 pub fn continue_save_after_isolation_cleanup(
@@ -346,9 +338,7 @@ pub(super) fn commit_editor_save_with_runner(
 
 pub(crate) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
     editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::save_failed_error_popup_state(
-            message,
-        ),
+        state: jackin_console::tui::components::error_popup::save_failed_error_popup_state(message),
     });
     editor.save_flow = EditorSaveFlow::Error {
         message: message.to_string(),
@@ -358,13 +348,13 @@ pub(crate) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str)
 #[cfg(test)]
 #[allow(clippy::too_many_lines)]
 mod tests {
-    use crate::console::tui::state::{
-        EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal,
-    };
     use super::super::test_support::{key, mount};
     use super::{begin_editor_save, commit_editor_save};
     use crate::config::AppConfig;
     use crate::console::tui::input::handle_key;
+    use crate::console::tui::state::{
+        EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal,
+    };
     use crate::paths::JackinPaths;
     use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
@@ -1529,13 +1519,8 @@ mod tests {
             exit_on_success: false,
             original_name: "driftws".into(),
         };
-        super::continue_save_after_drift_check(
-            &mut state,
-            &mut config,
-            drift_check,
-            detection,
-        )
-        .unwrap();
+        super::continue_save_after_drift_check(&mut state, &mut config, drift_check, detection)
+            .unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
@@ -1609,13 +1594,8 @@ mod tests {
             exit_on_success: false,
             original_name: "driftws2".into(),
         };
-        super::continue_save_after_drift_check(
-            &mut state,
-            &mut config,
-            drift_check,
-            detection,
-        )
-        .unwrap();
+        super::continue_save_after_drift_check(&mut state, &mut config, drift_check, detection)
+            .unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");

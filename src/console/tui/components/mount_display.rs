@@ -46,9 +46,7 @@ pub(crate) fn workspace_mounts_content_width_with_cache(
 }
 
 pub(crate) fn workspace_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    jackin_console::tui::mount_display::mounts_content_height(
-        mounts.iter().map(|m| m.src == m.dst),
-    )
+    jackin_console::tui::mount_display::mounts_content_height(mounts.iter().map(|m| m.src == m.dst))
 }
 
 #[cfg(test)]

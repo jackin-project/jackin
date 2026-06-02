@@ -128,8 +128,7 @@ pub fn scrollbar_drag_offset(
             )
         }
     };
-    if !is_scrollable(content_len, viewport)
-        || !point_in_rect(pointer_col, pointer_row, scrollbar)
+    if !is_scrollable(content_len, viewport) || !point_in_rect(pointer_col, pointer_row, scrollbar)
     {
         return None;
     }
@@ -207,10 +206,7 @@ pub const fn scroll_viewport_height(area: ratatui::layout::Rect) -> usize {
 }
 
 #[must_use]
-pub const fn is_horizontally_scrollable(
-    area: ratatui::layout::Rect,
-    content_width: usize,
-) -> bool {
+pub const fn is_horizontally_scrollable(area: ratatui::layout::Rect, content_width: usize) -> bool {
     jackin_tui::components::scrollable_panel::is_scrollable(
         content_width,
         scroll_viewport_width(area),
@@ -239,10 +235,9 @@ mod tests {
     use super::{
         MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP, MOUSE_VERTICAL_SCROLL_STEP,
         SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis, TAB_STRIP_HEIGHT,
-        horizontal_split_pane_dims,
-        apply_horizontal_scroll, apply_vertical_scroll, is_horizontally_scrollable,
-        list_body_area, list_content_visual_index_at, near_seam, point_in_rect,
-        scrollbar_drag_offset, scroll_viewport_height, scroll_viewport_width,
+        apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
+        is_horizontally_scrollable, list_body_area, list_content_visual_index_at, near_seam,
+        point_in_rect, scroll_viewport_height, scroll_viewport_width, scrollbar_drag_offset,
         split_pct_from_drag, split_seam_column, tab_cell_at_position, tabbed_content_area,
     };
     use ratatui::layout::Rect;
@@ -409,7 +404,10 @@ mod tests {
             tab_cell_at_position(SCREEN_HEADER_HEIGHT + 1, 11, &labels),
             Some(1)
         );
-        assert_eq!(tab_cell_at_position(SCREEN_HEADER_HEIGHT - 1, 1, &labels), None);
+        assert_eq!(
+            tab_cell_at_position(SCREEN_HEADER_HEIGHT - 1, 1, &labels),
+            None
+        );
         assert_eq!(
             tab_cell_at_position(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT, 1, &labels),
             None

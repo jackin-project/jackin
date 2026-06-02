@@ -6,8 +6,8 @@ pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;
 pub(crate) mod instance_action;
-pub(crate) mod layout;
 mod launch;
+pub(crate) mod layout;
 pub mod message;
 #[cfg(test)]
 mod message_tests;
@@ -17,15 +17,13 @@ pub mod run;
 pub mod state;
 pub mod view;
 
-pub use app::{
-    ConsoleStage, ConsoleState, new_console_state, new_console_state_with_op_available,
-};
+pub use app::{ConsoleStage, ConsoleState, new_console_state, new_console_state_with_op_available};
 pub(crate) use input::{InputOutcome, handle_key};
 pub use layout::prepare_for_render;
 pub(crate) use message::{ManagerMessage, update_manager};
 pub(crate) use run::consumes_letter_input;
-pub use run::run_console;
 #[cfg(test)]
 pub(crate) use run::is_on_main_screen;
+pub use run::run_console;
 pub use state::{ManagerStage, ManagerState};
 pub use view::render;

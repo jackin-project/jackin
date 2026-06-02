@@ -4,21 +4,20 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use jackin_tui::ModalOutcome;
-use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;
+use crate::console::tui::message::{ManagerMessage, update_manager};
+use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::workspaces::view::{
     create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,
-    create_prelude_mount_dst_choice_state,
-    create_prelude_workdir_pick_state, create_prelude_workspace_name_input_state,
+    create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
+    create_prelude_workspace_name_input_state,
 };
+use jackin_tui::ModalOutcome;
 
-pub(super) type PreludeModalOutcome =
-    jackin_console::tui::message::ConsolePreludeModalOutcome;
+pub(super) type PreludeModalOutcome = jackin_console::tui::message::ConsolePreludeModalOutcome;
 
 pub(super) fn handle_prelude_key(
     state: &mut ManagerState<'_>,
@@ -46,7 +45,9 @@ pub(super) fn handle_prelude_key(
 /// the `TextInputDst` commit path (operator edited dst) end the same way.
 /// Callers are responsible for having already pushed the mount dst onto
 /// the prelude (via `accept_mount_dst`).
-fn prelude_advance_to_workdir_pick(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
+fn prelude_advance_to_workdir_pick(
+    prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
+) {
     let mount = crate::console::domain::shared_mount_config(
         prelude
             .pending_mount_src
@@ -284,13 +285,13 @@ mod tests {
     //! Create-wizard tests: the prelude's multi-step modal sequence
     //! (`FileBrowserSrc` → `MountDstChoice` → `TextInputDst` → `WorkdirPick` →
     //! `TextInputName`) and its step-back / Esc semantics.
-    use crate::console::tui::state::{FileBrowserTarget, Modal};
     use super::super::test_support::key;
     use super::{
         PreludeModalOutcome, create_prelude_mount_dst_choice_state,
         create_prelude_workdir_pick_state, create_prelude_workspace_name_input_state,
         handle_prelude_modal,
     };
+    use crate::console::tui::state::{FileBrowserTarget, Modal};
     use crossterm::event::KeyCode;
 
     /// Seed a `CreatePreludeState` whose `MountDstChoice` modal is open
@@ -483,14 +484,12 @@ mod tests {
         prelude.used_edit_dst = true;
         prelude.accept_mount_dst("/home/user/project".into(), false);
         prelude.modal = Some(Modal::WorkdirPick {
-            state: create_prelude_workdir_pick_state(&[
-                crate::workspace::MountConfig {
-                    src: "/home/user/project".into(),
-                    dst: "/home/user/project".into(),
-                    readonly: false,
-                    isolation: crate::isolation::MountIsolation::Shared,
-                },
-            ]),
+            state: create_prelude_workdir_pick_state(&[crate::workspace::MountConfig {
+                src: "/home/user/project".into(),
+                dst: "/home/user/project".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }]),
         });
 
         handle_prelude_modal(&mut prelude, key(KeyCode::Esc));

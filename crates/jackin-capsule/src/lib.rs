@@ -1,8 +1,8 @@
+pub mod attach_context;
 /// Library target so integration tests under `tests/` can exercise
 /// the protocol, prefix-key parser, VT round-trips, and status bar
 /// without spawning a PTY.
 pub mod attach_protocol;
-pub mod attach_context;
 pub mod client;
 pub mod config;
 pub mod container_context;
@@ -14,8 +14,8 @@ pub mod pr_context;
 pub mod protocol;
 pub mod pull_request;
 pub mod runtime_setup;
-pub mod session;
 pub mod services;
+pub mod session;
 pub mod socket;
 pub mod util;
 

@@ -13,9 +13,9 @@ use crate::console::domain::{
     panel_mode_requires_credential, role_override_present,
 };
 use crate::console::tui::effect::ManagerEffect;
-use jackin_console::tui::auth::AuthKind;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
+use jackin_console::tui::auth::AuthKind;
 
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
@@ -24,9 +24,7 @@ use jackin_console::tui::components::confirm_save::ConfirmSaveState;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::github_picker::GithubPickerState;
 use jackin_console::tui::components::mount_dst_choice::MountDstChoiceState;
-use jackin_console::tui::components::provider_picker::{
-    ProviderPickerState as GenericProviderPickerState,
-};
+use jackin_console::tui::components::provider_picker::ProviderPickerState as GenericProviderPickerState;
 use jackin_console::tui::components::scope_picker::ScopePickerState;
 use jackin_console::tui::components::source_picker::SourcePickerState;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
@@ -297,17 +295,16 @@ pub(crate) fn open_role_resolution_error(
     };
     let message = source_url.map_or_else(
         || configured_role_load_error_message(raw),
-        |source_url| repository_role_load_error_message(raw, source_url, friendly_role_resolution_error(err)),
+        |source_url| {
+            repository_role_load_error_message(raw, source_url, friendly_role_resolution_error(err))
+        },
     );
     editor.modal = Some(Modal::ErrorPopup {
         state: jackin_console::tui::components::error_popup::role_load_error_popup_state(message),
     });
 }
 
-pub(crate) fn open_editor_action_error(
-    editor: &mut EditorState<'_>,
-    err: &dyn std::fmt::Display,
-) {
+pub(crate) fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
     crate::debug_log!("editor", "failed to apply confirmed editor action: {err}");
     editor.modal = Some(Modal::ErrorPopup {
         state: jackin_console::tui::components::error_popup::editor_action_error_popup_state(err),
@@ -558,10 +555,7 @@ pub(crate) fn token_generate_scope_label(
             jackin_console::tui::run::TokenGenerateScopeLabel::Workspace(name)
         }
         TokenSetupScope::WorkspaceRole { workspace, role } => {
-            jackin_console::tui::run::TokenGenerateScopeLabel::WorkspaceRole {
-                workspace,
-                role,
-            }
+            jackin_console::tui::run::TokenGenerateScopeLabel::WorkspaceRole { workspace, role }
         }
         TokenSetupScope::Global => jackin_console::tui::run::TokenGenerateScopeLabel::Global,
     }
@@ -584,11 +578,9 @@ pub type EditorState<'a> = jackin_console::tui::screens::editor::model::EditorSt
 pub type PendingOpCommit =
     jackin_console::tui::subscriptions::PendingOpCommit<crate::operator_env::OpRef>;
 
-pub(crate) type PendingMountInfoRefresh =
-    jackin_console::tui::message::PendingMountInfoRefresh;
+pub(crate) type PendingMountInfoRefresh = jackin_console::tui::message::PendingMountInfoRefresh;
 
-pub(crate) type MountInfoRefreshTarget =
-    jackin_console::tui::message::MountInfoRefreshTarget;
+pub(crate) type MountInfoRefreshTarget = jackin_console::tui::message::MountInfoRefreshTarget;
 
 pub type PendingDriftCheck = jackin_console::tui::subscriptions::PendingDriftCheck<
     crate::config::DriftDetection,
@@ -1331,7 +1323,10 @@ impl ManagerState<'_> {
         Some(result)
     }
 
-    pub(in crate::console) fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
+    pub(in crate::console) fn apply_mount_info_refresh(
+        &mut self,
+        result: PendingMountInfoRefresh,
+    ) -> bool {
         match result.target {
             MountInfoRefreshTarget::ManagerList => {
                 self.mount_info_cache.store_entries(result.entries);

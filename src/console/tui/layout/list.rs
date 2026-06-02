@@ -13,12 +13,10 @@ use crate::console::tui::state::{
 use jackin_console::tui::screens::workspaces::view::{
     current_directory_workspace_title, new_workspace_list_label,
 };
-use jackin_console::tui::update::{
-    list_pre_render_focus_plan, list_pre_render_scroll_reset_plan,
-};
 pub(crate) use jackin_console::tui::sidebar_layout::{
     SidebarLayout, SidebarScrollArea, SidebarScrollAreas,
 };
+use jackin_console::tui::update::{list_pre_render_focus_plan, list_pre_render_scroll_reset_plan};
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_selected = state.visual_selected();
@@ -46,10 +44,8 @@ pub(crate) fn clamp_list_scroll_for_area(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    let columns = jackin_console::tui::list_geometry::split_list_columns(
-        area,
-        state.list_split_pct,
-    );
+    let columns =
+        jackin_console::tui::list_geometry::split_list_columns(area, state.list_split_pct);
     let sidebar_areas = selected_sidebar_scroll_areas(columns.preview, state, config, cwd);
     let sidebar_available = sidebar_areas.is_some();
     let focused_block_scrollable = state

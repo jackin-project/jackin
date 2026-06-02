@@ -147,12 +147,14 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
                 button: *button,
             })
         }
-        InputEvent::MousePress { row, col, button: 0 } if context.branch_context_hit => {
-            Some(Action::BranchContextBarClick {
-                row: *row,
-                col: *col,
-            })
-        }
+        InputEvent::MousePress {
+            row,
+            col,
+            button: 0,
+        } if context.branch_context_hit => Some(Action::BranchContextBarClick {
+            row: *row,
+            col: *col,
+        }),
         InputEvent::MousePress {
             row: 0,
             col,
@@ -331,19 +333,19 @@ fn is_wheel_button(button: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::prefix_command_action;
     use super::{
-        Action, ConfirmedActionRoute, InputDispatchContext, branch_context_bar_click_action,
+        Action, ConfirmedActionRoute, InputDispatchContext, PaletteCommandRoute,
+        PaletteToggleRoute, StatusBarClickState, branch_context_bar_click_action,
         confirmed_action_route, input_event_action, mouse_chrome_update_action,
         mouse_release_action, palette_command_route, palette_toggle_route,
-        pane_button_motion_action, status_bar_click_action, PaletteCommandRoute,
-        PaletteToggleRoute, StatusBarClickState,
+        pane_button_motion_action, status_bar_click_action,
     };
     use crate::tui::components::branch_context_bar::BranchContextBarHit;
     use crate::tui::components::dialog::{ConfirmKind, PaletteCommand};
+    use crate::tui::components::dialog::{PickerIntent, SplitDirection};
     use crate::tui::input::InputEvent;
     use crate::tui::input::PrefixCommand;
-    use crate::tui::components::dialog::{PickerIntent, SplitDirection};
-    use super::prefix_command_action;
 
     #[test]
     fn mouse_press_updates_chrome_before_main_action() {
@@ -470,14 +472,8 @@ mod tests {
 
     #[test]
     fn palette_toggle_route_closes_existing_dialog_before_opening_palette() {
-        assert_eq!(
-            palette_toggle_route(true),
-            PaletteToggleRoute::CloseDialog
-        );
-        assert_eq!(
-            palette_toggle_route(false),
-            PaletteToggleRoute::OpenPalette
-        );
+        assert_eq!(palette_toggle_route(true), PaletteToggleRoute::CloseDialog);
+        assert_eq!(palette_toggle_route(false), PaletteToggleRoute::OpenPalette);
     }
 
     #[test]

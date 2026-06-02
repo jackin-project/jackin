@@ -229,10 +229,7 @@ pub fn workspace_delete_confirm_plan(name: String) -> WorkspaceDeleteConfirmPlan
 }
 
 #[must_use]
-pub fn instance_purge_confirm_plan(
-    container: String,
-    label: String,
-) -> InstancePurgeConfirmPlan {
+pub fn instance_purge_confirm_plan(container: String, label: String) -> InstancePurgeConfirmPlan {
     InstancePurgeConfirmPlan {
         state: instance_purge_confirm_state(&label),
         container,
@@ -323,7 +320,9 @@ pub fn preview_pane_cursor_plan(
         return None;
     }
     let cursor = current_cursor.unwrap_or(0).min(pane_count - 1);
-    Some(crate::tui::focus::moved_selection(cursor, pane_count, delta))
+    Some(crate::tui::focus::moved_selection(
+        cursor, pane_count, delta,
+    ))
 }
 
 #[must_use]
@@ -496,8 +495,14 @@ mod tests {
 
     #[test]
     fn preview_focus_plans_set_focus_state() {
-        assert_eq!(enter_preview_focus_plan(), PreviewFocusPlan { focused: true });
-        assert_eq!(exit_preview_focus_plan(), PreviewFocusPlan { focused: false });
+        assert_eq!(
+            enter_preview_focus_plan(),
+            PreviewFocusPlan { focused: true }
+        );
+        assert_eq!(
+            exit_preview_focus_plan(),
+            PreviewFocusPlan { focused: false }
+        );
     }
 
     #[test]
@@ -517,7 +522,10 @@ mod tests {
 
     #[test]
     fn preview_pane_key_plan_routes_navigation() {
-        assert_eq!(preview_pane_key_plan(KeyCode::Esc, 2), PreviewPaneKeyPlan::ExitPreview);
+        assert_eq!(
+            preview_pane_key_plan(KeyCode::Esc, 2),
+            PreviewPaneKeyPlan::ExitPreview
+        );
         assert_eq!(
             preview_pane_key_plan(KeyCode::Char('K'), 2),
             PreviewPaneKeyPlan::Move { delta: -1 }
@@ -530,8 +538,14 @@ mod tests {
             preview_pane_key_plan(KeyCode::Enter, 2),
             PreviewPaneKeyPlan::ReconnectSelected
         );
-        assert_eq!(preview_pane_key_plan(KeyCode::Tab, 2), PreviewPaneKeyPlan::Continue);
-        assert_eq!(preview_pane_key_plan(KeyCode::Enter, 0), PreviewPaneKeyPlan::ExitPreview);
+        assert_eq!(
+            preview_pane_key_plan(KeyCode::Tab, 2),
+            PreviewPaneKeyPlan::Continue
+        );
+        assert_eq!(
+            preview_pane_key_plan(KeyCode::Enter, 0),
+            PreviewPaneKeyPlan::ExitPreview
+        );
     }
 
     #[test]

@@ -27,7 +27,9 @@ pub struct WorkspaceSavePreview {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceSaveMode {
-    Create { name: String },
+    Create {
+        name: String,
+    },
     Edit {
         original_name: String,
         display_name: String,
@@ -187,7 +189,10 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                     heading,
                 )));
                 for mount in mounts {
-                    out.push(Line::from(Span::styled(format!("  \u{2022} {mount}"), value)));
+                    out.push(Line::from(Span::styled(
+                        format!("  \u{2022} {mount}"),
+                        value,
+                    )));
                 }
             }
 
@@ -244,7 +249,10 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
             {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Rename:", heading)));
-                out.push(Line::from(Span::styled(format!("  - {original_name}"), dim)));
+                out.push(Line::from(Span::styled(
+                    format!("  - {original_name}"),
+                    dim,
+                )));
                 out.push(Line::from(Span::styled(format!("  + {new_name}"), value)));
             }
 
@@ -253,7 +261,10 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
             {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Working directory:", heading)));
-                out.push(Line::from(Span::styled(format!("  - {original_workdir}"), dim)));
+                out.push(Line::from(Span::styled(
+                    format!("  - {original_workdir}"),
+                    dim,
+                )));
                 out.push(Line::from(Span::styled(
                     format!("  + {}", preview.pending_workdir),
                     value,
@@ -520,9 +531,10 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
         out.push(Line::raw(""));
     }
 
-    while out.last().is_some_and(|l| {
-        l.spans.is_empty() || l.spans.iter().all(|s| s.content.trim().is_empty())
-    }) {
+    while out
+        .last()
+        .is_some_and(|l| l.spans.is_empty() || l.spans.iter().all(|s| s.content.trim().is_empty()))
+    {
         out.pop();
     }
 
@@ -735,7 +747,14 @@ fn settings_env_diff_lines(
     remove_style: Style,
 ) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
-    append_env_map_diff_lines(&mut out, None, &original.env, &pending.env, add_style, remove_style);
+    append_env_map_diff_lines(
+        &mut out,
+        None,
+        &original.env,
+        &pending.env,
+        add_style,
+        remove_style,
+    );
     let all_roles: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
     let empty = BTreeMap::default();
     for role in all_roles {

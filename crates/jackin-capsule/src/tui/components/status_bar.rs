@@ -166,7 +166,7 @@ impl StatusBar {
 
     /// Render the status bar at rows 0–1 of the host terminal.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn render(
+    pub fn render(
         &mut self,
         buf: &mut Vec<u8>,
         cols: u16,
@@ -632,7 +632,12 @@ mod tests {
             prefix_mode_for_mux_mode(MuxMode::PrefixAwait),
             PrefixMode::Awaiting
         );
-        for mode in [MuxMode::Normal, MuxMode::Dialog, MuxMode::Drag, MuxMode::Select] {
+        for mode in [
+            MuxMode::Normal,
+            MuxMode::Dialog,
+            MuxMode::Drag,
+            MuxMode::Select,
+        ] {
             assert_eq!(prefix_mode_for_mux_mode(mode), PrefixMode::Idle);
         }
     }

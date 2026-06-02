@@ -2,8 +2,7 @@
 
 use crate::console::{ConsoleStage, ConsoleState};
 use jackin_console::tui::debug::{
-    modal_debug_name, settings_mount_modal_debug_name, ModalDebugKind,
-    SettingsMountModalDebugKind,
+    ModalDebugKind, SettingsMountModalDebugKind, modal_debug_name, settings_mount_modal_debug_name,
 };
 
 const fn modal_debug_kind(modal: &crate::console::tui::state::Modal<'_>) -> ModalDebugKind {
@@ -86,13 +85,9 @@ pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
             "confirm-instance-purge".to_string()
         }
         crate::console::tui::state::ManagerStage::Settings(settings) => {
-            let modal = settings
-                .mounts
-                .modal
-                .as_ref()
-                .map_or("none", |modal| {
-                    settings_mount_modal_debug_name(settings_mount_modal_debug_kind(modal))
-                });
+            let modal = settings.mounts.modal.as_ref().map_or("none", |modal| {
+                settings_mount_modal_debug_name(settings_mount_modal_debug_kind(modal))
+            });
             format!(
                 "settings tab={:?} selected={} modal={modal}",
                 settings.active_tab, settings.mounts.selected
@@ -104,9 +99,6 @@ pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
 
 /// Render a key event for the `--debug` log. Redacts the literal
 /// character when the focused widget is consuming text input.
-pub(crate) fn key_debug_name(
-    state: &ConsoleState,
-    key: crossterm::event::KeyEvent,
-) -> String {
+pub(crate) fn key_debug_name(state: &ConsoleState, key: crossterm::event::KeyEvent) -> String {
     jackin_console::tui::debug::key_debug_name_for_input(key, super::consumes_letter_input(state))
 }

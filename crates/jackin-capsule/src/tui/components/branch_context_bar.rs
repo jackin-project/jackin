@@ -143,7 +143,10 @@ pub(crate) struct BranchContextBarLayout {
     pub(crate) container_region: Option<ColRange>,
 }
 
-pub(crate) fn visible_branch<'a>(branch: Option<&'a str>, is_default_branch: bool) -> Option<&'a str> {
+pub(crate) fn visible_branch<'a>(
+    branch: Option<&'a str>,
+    is_default_branch: bool,
+) -> Option<&'a str> {
     branch.filter(|_| !is_default_branch)
 }
 
@@ -487,7 +490,10 @@ mod tests {
     #[test]
     fn visible_branch_suppresses_default_branch_only() {
         assert_eq!(visible_branch(Some("main"), true), None);
-        assert_eq!(visible_branch(Some("feature/tui"), false), Some("feature/tui"));
+        assert_eq!(
+            visible_branch(Some("feature/tui"), false),
+            Some("feature/tui")
+        );
         assert_eq!(visible_branch(None, false), None);
     }
 }
