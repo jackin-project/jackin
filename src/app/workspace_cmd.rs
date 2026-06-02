@@ -512,7 +512,7 @@ pub(super) async fn handle(
                          before setting role-scoped env vars"
                     );
                 }
-                let env_value = super::resolve_env_value_for_cli(&value)?;
+                let env_value = super::config_cmd::resolve_env_value_for_cli(&value)?;
                 let scope = super::workspace_env_scope(workspace, role);
                 let mut editor = crate::config::ConfigEditor::open(paths)?;
                 editor.set_env_var(&scope, &key, env_value)?;
@@ -576,7 +576,7 @@ pub(super) async fn handle(
                         })
                     },
                 );
-                super::print_env_table(&vars);
+                super::config_cmd::print_env_table(&vars);
                 Ok(())
             }
         },
