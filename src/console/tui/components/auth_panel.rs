@@ -1,6 +1,13 @@
 //! Root bindings for the console-local auth panel component.
 
+use crate::config::AppConfig;
+use crate::console::domain::resolve_panel_mode;
+use crate::console::tui::state::AuthRow;
 use crate::operator_env::{EnvValue, OpRef};
+use jackin_console::tui::components::editor_rows::{
+    AuthSourceDisplay, AuthSourceValue, auth_source_display_for_required_env,
+};
+use jackin_console::tui::screens::editor::view::EditorAuthLineRow;
 
 pub type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvValue>;
 
@@ -35,4 +42,188 @@ impl jackin_console::tui::components::auth_panel::AuthCredential for EnvValue {
     fn from_op_ref(value: Self::Ref) -> Self {
         Self::OpRef(value)
     }
+}
+
+pub(crate) fn editor_auth_display_row(
+    row: &AuthRow,
+    synthesized: &AppConfig,
+    workspace_name: &str,
+) -> EditorAuthLineRow {
+    match row {
+        AuthRow::AuthKindRow { kind } => EditorAuthLineRow::AuthKind {
+            label: kind.label().to_string(),
+        },
+        AuthRow::WorkspaceMode { kind } => {
+            let ws = synthesized.workspaces.get(workspace_name);
+            let explicit = ws.and_then(|ws| explicit_workspace_mode(ws, *kind));
+            let mode = explicit
+                .unwrap_or_else(|| resolve_panel_mode(synthesized, *kind, workspace_name, ""));
+            EditorAuthLineRow::WorkspaceMode {
+                mode_label: mode_str(mode).to_string(),
+                inherited: explicit.is_none(),
+            }
+        }
+        AuthRow::WorkspaceSource { kind } => EditorAuthLineRow::WorkspaceSource {
+            display: editor_auth_source_display(synthesized, workspace_name, "", *kind),
+        },
+        AuthRow::RoleHeader { role, expanded } => EditorAuthLineRow::RoleHeader {
+            role: role.clone(),
+            expanded: *expanded,
+        },
+        AuthRow::RoleMode { role, kind } => {
+            let mode = resolve_panel_mode(synthesized, *kind, workspace_name, role);
+            EditorAuthLineRow::RoleMode {
+                mode_label: mode_str(mode).to_string(),
+            }
+        }
+        AuthRow::RoleSource { role, kind } => EditorAuthLineRow::RoleSource {
+            display: editor_auth_source_display(synthesized, workspace_name, role, *kind),
+        },
+        AuthRow::AddSentinel { eligible } => EditorAuthLineRow::AddSentinel {
+            eligible: *eligible,
+        },
+        AuthRow::Spacer => EditorAuthLineRow::Spacer,
+    }
+}
+
+fn editor_auth_source_display(
+    synthesized: &AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: jackin_console::tui::auth::AuthKind,
+) -> AuthSourceDisplay {
+    let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
+    let env_name = kind.required_env_var(mode);
+
+    let value = env_name
+        .and_then(|env_name| auth_source_value(synthesized, workspace_name, role, env_name, kind))
+        .map(|value| match value {
+            EnvValue::OpRef(r) => AuthSourceValue::OpRefPath(r.path.clone()),
+            EnvValue::Plain(s) => AuthSourceValue::Plain(s.clone()),
+        });
+
+    auth_source_display_for_required_env(env_name, value, mode_str(mode))
+}
+
+fn explicit_workspace_mode(
+    ws: &crate::workspace::WorkspaceConfig,
+    kind: jackin_console::tui::auth::AuthKind,
+) -> Option<jackin_console::tui::auth::AuthMode> {
+    use crate::console::domain::{auth_mode_from_auth_forward, auth_mode_from_github};
+    use jackin_console::tui::auth::{AuthKind, AuthMode};
+    match kind {
+        AuthKind::Claude => ws
+            .claude
+            .as_ref()
+            .map(|c| auth_mode_from_auth_forward(c.auth_forward)),
+        AuthKind::Codex => ws
+            .codex
+            .as_ref()
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
+        AuthKind::Amp => ws
+            .amp
+            .as_ref()
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
+        AuthKind::Kimi => ws
+            .kimi
+            .as_ref()
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
+        AuthKind::Opencode => ws
+            .opencode
+            .as_ref()
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
+        AuthKind::Github => ws
+            .github
+            .as_ref()
+            .map(|g| auth_mode_from_github(g.auth_forward)),
+        AuthKind::Zai => {
+            if ws.env.contains_key("ZAI_API_KEY") {
+                Some(AuthMode::ApiKey)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn auth_source_value<'a>(
+    synthesized: &'a AppConfig,
+    workspace_name: &str,
+    role: &str,
+    env_name: &str,
+    kind: jackin_console::tui::auth::AuthKind,
+) -> Option<&'a EnvValue> {
+    use jackin_console::tui::auth::AuthKind;
+    match kind {
+        AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode
+        | AuthKind::Zai => agent_env_source_value(synthesized, workspace_name, role, env_name),
+    }
+}
+
+fn agent_env_source_value<'a>(
+    synthesized: &'a AppConfig,
+    workspace_name: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = synthesized
+            .workspaces
+            .get(workspace_name)
+            .and_then(|ws| ws.roles.get(role))
+            .and_then(|ro| ro.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = synthesized
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| ws.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if !role.is_empty()
+        && let Some(value) = synthesized
+            .roles
+            .get(role)
+            .and_then(|r| r.env.get(env_name))
+    {
+        return Some(value);
+    }
+    synthesized.env.get(env_name)
+}
+
+fn github_source_value<'a>(
+    synthesized: &'a AppConfig,
+    workspace_name: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = synthesized
+            .workspaces
+            .get(workspace_name)
+            .and_then(|ws| ws.roles.get(role))
+            .and_then(|ro| ro.github.as_ref())
+            .and_then(|g| g.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = synthesized
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| ws.github.as_ref())
+        .and_then(|g| g.env.get(env_name))
+    {
+        return Some(value);
+    }
+    synthesized
+        .github
+        .as_ref()
+        .and_then(|g| g.env.get(env_name))
 }

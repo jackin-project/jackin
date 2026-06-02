@@ -356,6 +356,8 @@ Shared editor/settings auth-source display vocabulary and display derivation fro
 
 Shared auth source-picker state and credential text-input state helpers now live with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />. Root editor/settings auth input keeps carrying root modal parent chains and token-generation markers, but no longer duplicates the shared `generated token`, environment-variable, and `Credential` input construction.
 
+Root editor auth-row display mapping now lives in the root auth-panel adapter at <RepoFile path="src/console/tui/components/auth_panel.rs" />. The editor view passes synthesized config facts and auth rows to that adapter instead of owning auth-mode inheritance and credential-source display derivation inline.
+
 Workspace-list mount row rendering for workspace mounts and global mounts now lives with console-local mount row components in <RepoFile path="crates/jackin-console/src/tui/components/mount_rows.rs" />. Root list rendering still gathers root workspace/global mount data and mount-info labels, then passes crate-owned display rows into the component helpers.
 
 Workspace and settings save-confirm preview line composition now lives with the console-local save-preview component in <RepoFile path="crates/jackin-console/src/tui/components/save_preview.rs" />. Root save-preview code maps root workspace/settings state, mount-info labels, and `EnvValue` breadcrumbs into display-only snapshot structs before calling the component renderer. Save input handlers still decide when to open the preview modal and which save effect to request, but no longer own save-preview Ratatui line construction.

@@ -5,7 +5,7 @@
 //! composition that varies with the active tab + cursor.
 
 use crate::config::AppConfig;
-use crate::console::domain::resolve_panel_mode;
+use crate::console::tui::components::auth_panel::editor_auth_display_row;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
@@ -21,10 +21,7 @@ pub(crate) use crate::console::tui::state::{
 pub(crate) use crate::console::tui::state::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
-use crate::operator_env::EnvValue;
-use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceValue, auth_source_display_for_required_env, render_tab_strip,
-};
+use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::screens::editor::view::{
     EditorAuthLineRow, EditorRoleRow, auth_lines as editor_auth_lines, editor_frame_areas,
     general_lines as editor_general_lines,
@@ -262,204 +259,9 @@ fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'stat
 
     let display_rows: Vec<EditorAuthLineRow> = rows
         .iter()
-        .map(|row| auth_display_row(row, &synthesized, &workspace_name))
+        .map(|row| editor_auth_display_row(row, &synthesized, &workspace_name))
         .collect();
     editor_auth_lines(&display_rows, cursor_clamped, show_cursor)
-}
-
-fn auth_display_row(
-    row: &AuthRow,
-    synthesized: &AppConfig,
-    workspace_name: &str,
-) -> EditorAuthLineRow {
-    use crate::console::tui::components::auth_panel::mode_str;
-
-    match row {
-        AuthRow::AuthKindRow { kind } => EditorAuthLineRow::AuthKind {
-            label: kind.label().to_string(),
-        },
-        AuthRow::WorkspaceMode { kind } => {
-            let ws = synthesized.workspaces.get(workspace_name);
-            let explicit = ws.and_then(|ws| explicit_workspace_mode(ws, *kind));
-            let mode = explicit
-                .unwrap_or_else(|| resolve_panel_mode(synthesized, *kind, workspace_name, ""));
-            EditorAuthLineRow::WorkspaceMode {
-                mode_label: mode_str(mode).to_string(),
-                inherited: explicit.is_none(),
-            }
-        }
-        AuthRow::WorkspaceSource { kind } => EditorAuthLineRow::WorkspaceSource {
-            display: editor_auth_source_display(synthesized, workspace_name, "", *kind),
-        },
-        AuthRow::RoleHeader { role, expanded } => EditorAuthLineRow::RoleHeader {
-            role: role.clone(),
-            expanded: *expanded,
-        },
-        AuthRow::RoleMode { role, kind } => {
-            let mode = resolve_panel_mode(synthesized, *kind, workspace_name, role);
-            EditorAuthLineRow::RoleMode {
-                mode_label: mode_str(mode).to_string(),
-            }
-        }
-        AuthRow::RoleSource { role, kind } => EditorAuthLineRow::RoleSource {
-            display: editor_auth_source_display(synthesized, workspace_name, role, *kind),
-        },
-        AuthRow::AddSentinel { eligible } => EditorAuthLineRow::AddSentinel {
-            eligible: *eligible,
-        },
-        AuthRow::Spacer => EditorAuthLineRow::Spacer,
-    }
-}
-
-fn editor_auth_source_display(
-    synthesized: &AppConfig,
-    workspace_name: &str,
-    role: &str,
-    kind: jackin_console::tui::auth::AuthKind,
-) -> AuthSourceDisplay {
-    use crate::console::tui::components::auth_panel::mode_str;
-
-    let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
-    let env_name = kind.required_env_var(mode);
-
-    let value = env_name
-        .and_then(|env_name| auth_source_value(synthesized, workspace_name, role, env_name, kind))
-        .map(|value| match value {
-            EnvValue::OpRef(r) => AuthSourceValue::OpRefPath(r.path.clone()),
-            EnvValue::Plain(s) => AuthSourceValue::Plain(s.clone()),
-        });
-
-    auth_source_display_for_required_env(env_name, value, mode_str(mode))
-}
-
-/// Explicit workspace-level mode for a kind, if any.
-fn explicit_workspace_mode(
-    ws: &crate::workspace::WorkspaceConfig,
-    kind: jackin_console::tui::auth::AuthKind,
-) -> Option<jackin_console::tui::auth::AuthMode> {
-    use crate::console::domain::{auth_mode_from_auth_forward, auth_mode_from_github};
-    use jackin_console::tui::auth::{AuthKind, AuthMode};
-    match kind {
-        AuthKind::Claude => ws
-            .claude
-            .as_ref()
-            .map(|c| auth_mode_from_auth_forward(c.auth_forward)),
-        AuthKind::Codex => ws
-            .codex
-            .as_ref()
-            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
-        AuthKind::Amp => ws
-            .amp
-            .as_ref()
-            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
-        AuthKind::Kimi => ws
-            .kimi
-            .as_ref()
-            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
-        AuthKind::Opencode => ws
-            .opencode
-            .as_ref()
-            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
-        AuthKind::Github => ws
-            .github
-            .as_ref()
-            .map(|g| auth_mode_from_github(g.auth_forward)),
-        AuthKind::Zai => {
-            if ws.env.contains_key("ZAI_API_KEY") {
-                Some(AuthMode::ApiKey)
-            } else {
-                None
-            }
-        }
-    }
-}
-
-/// Walk env layers for a credential lookup. Github's env map lives
-/// under `[…github.env]` (parallel to global `[github.env]`); the
-/// agent kinds use `[…env]` directly.
-fn auth_source_value<'a>(
-    synthesized: &'a AppConfig,
-    workspace_name: &str,
-    role: &str,
-    env_name: &str,
-    kind: jackin_console::tui::auth::AuthKind,
-) -> Option<&'a EnvValue> {
-    use jackin_console::tui::auth::AuthKind;
-    match kind {
-        AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
-        AuthKind::Claude
-        | AuthKind::Codex
-        | AuthKind::Amp
-        | AuthKind::Kimi
-        | AuthKind::Opencode
-        | AuthKind::Zai => agent_env_source_value(synthesized, workspace_name, role, env_name),
-    }
-}
-
-fn agent_env_source_value<'a>(
-    synthesized: &'a AppConfig,
-    workspace_name: &str,
-    role: &str,
-    env_name: &str,
-) -> Option<&'a EnvValue> {
-    if !role.is_empty()
-        && let Some(value) = synthesized
-            .workspaces
-            .get(workspace_name)
-            .and_then(|ws| ws.roles.get(role))
-            .and_then(|ro| ro.env.get(env_name))
-    {
-        return Some(value);
-    }
-    if let Some(value) = synthesized
-        .workspaces
-        .get(workspace_name)
-        .and_then(|ws| ws.env.get(env_name))
-    {
-        return Some(value);
-    }
-    if !role.is_empty()
-        && let Some(value) = synthesized
-            .roles
-            .get(role)
-            .and_then(|r| r.env.get(env_name))
-    {
-        return Some(value);
-    }
-    synthesized.env.get(env_name)
-}
-
-/// Lookup an env value for the GitHub kind, layered most-specific first
-/// across the `[github.env]` blocks. Mirrors
-/// [`crate::config::build_github_env_layers`] precedence.
-fn github_source_value<'a>(
-    synthesized: &'a AppConfig,
-    workspace_name: &str,
-    role: &str,
-    env_name: &str,
-) -> Option<&'a EnvValue> {
-    if !role.is_empty()
-        && let Some(value) = synthesized
-            .workspaces
-            .get(workspace_name)
-            .and_then(|ws| ws.roles.get(role))
-            .and_then(|ro| ro.github.as_ref())
-            .and_then(|g| g.env.get(env_name))
-    {
-        return Some(value);
-    }
-    if let Some(value) = synthesized
-        .workspaces
-        .get(workspace_name)
-        .and_then(|ws| ws.github.as_ref())
-        .and_then(|g| g.env.get(env_name))
-    {
-        return Some(value);
-    }
-    synthesized
-        .github
-        .as_ref()
-        .and_then(|g| g.env.get(env_name))
 }
 
 #[cfg(test)]
@@ -1890,8 +1692,9 @@ mod eligible_agents_for_override_tests {
 
 #[cfg(test)]
 mod auth_flat_rows_tests {
-    use super::{AuthRow, auth_flat_rows, resolve_panel_mode};
+    use super::{AuthRow, auth_flat_rows};
     use crate::config::AppConfig;
+    use crate::console::domain::resolve_panel_mode;
     use crate::console::tui::state::EditorState;
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
     use jackin_console::tui::auth::{AuthKind, AuthMode};
