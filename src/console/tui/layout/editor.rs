@@ -10,8 +10,9 @@ use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, SecretsScopeTag, auth_flat_rows, secrets_flat_rows,
 };
 use jackin_console::tui::screens::editor::view::{
-    editor_auth_line_width, editor_body_area, editor_role_load_row_width, editor_role_row_width,
-    editor_roles_status_width, editor_row_width, editor_secret_line_width, text_width,
+    editor_auth_line_width, editor_body_area, editor_mount_add_row_width,
+    editor_role_load_row_width, editor_role_row_width, editor_roles_status_width,
+    editor_row_width, editor_secret_line_width,
 };
 
 pub(crate) fn prepare_editor_for_render(
@@ -106,7 +107,7 @@ fn mounts_tab_geometry(state: &EditorState<'_>) -> EditorTabGeometry {
             &state.pending.mounts,
             &state.mount_info_cache,
         )
-        .max(text_width("  + Add mount")),
+        .max(editor_mount_add_row_width()),
         content_height,
     }
 }

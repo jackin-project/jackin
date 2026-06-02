@@ -229,6 +229,11 @@ pub fn editor_row_width(label: &str, value: &str) -> usize {
 }
 
 #[must_use]
+pub fn editor_mount_add_row_width() -> usize {
+    text_width("  + Add mount")
+}
+
+#[must_use]
 pub fn editor_roles_status_width(is_all: bool, allowed_count: usize, total_count: usize) -> usize {
     if is_all {
         text_width("  Allowed roles:    all  ")
@@ -1067,6 +1072,7 @@ mod tests {
         assert_eq!(lines[1].spans[0].content.as_ref(), "  /workspace       ");
         assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
         assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
+        assert_eq!(editor_mount_add_row_width(), text_width("  + Add mount"));
     }
 
     #[test]
