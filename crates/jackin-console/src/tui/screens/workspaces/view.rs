@@ -82,7 +82,7 @@ pub fn current_directory_display_row(
 #[must_use]
 pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceListDisplayRow {
     WorkspaceListDisplayRow {
-        label: "+ New workspace".to_string(),
+        label: new_workspace_list_label().to_string(),
         tone: WorkspaceListRowTone::White,
         expanded: false,
         has_instances: false,
@@ -104,6 +104,11 @@ pub fn workspace_instance_pane_agent_label(agent: Option<&str>) -> String {
 #[must_use]
 pub const fn current_directory_workspace_title() -> &'static str {
     "Current directory"
+}
+
+#[must_use]
+pub const fn new_workspace_list_label() -> &'static str {
+    "+ New workspace"
 }
 
 #[must_use]
@@ -996,7 +1001,7 @@ mod tests {
         assert!(current.selected);
 
         let new_workspace = new_workspace_display_row(false, true);
-        assert_eq!(new_workspace.label, "+ New workspace");
+        assert_eq!(new_workspace.label, new_workspace_list_label());
         assert!(new_workspace.hovered);
         assert!(!new_workspace.expanded);
         assert_eq!(

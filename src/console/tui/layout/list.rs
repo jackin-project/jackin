@@ -10,6 +10,9 @@ use crate::console::tui::components::mount_display::{
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
+use jackin_console::tui::screens::workspaces::view::{
+    current_directory_workspace_title, new_workspace_list_label,
+};
 pub(crate) use jackin_console::tui::sidebar_layout::{
     SidebarLayout, SidebarScrollArea, SidebarScrollAreas, SidebarScrollFocus,
 };
@@ -157,7 +160,7 @@ fn list_row_width(
 ) -> Option<usize> {
     match row {
         ManagerListRow::CurrentDirectory => Some(workspace_row_width(
-            "Current directory",
+            current_directory_workspace_title(),
             state.has_current_dir_active_instances(),
             selected_with_cursor,
         )),
@@ -177,7 +180,7 @@ fn list_row_width(
             .get(*inst_idx)
             .map(|entry| instance_row_width(entry, selected_with_cursor)),
         ManagerListRow::NewWorkspace => Some(workspace_row_width(
-            "+ New workspace",
+            new_workspace_list_label(),
             false,
             selected_with_cursor,
         )),
