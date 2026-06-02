@@ -3,6 +3,13 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use jackin_console::tui::components::error_popup::{
+    instance_unavailable_error_message, instance_unavailable_error_title,
+    no_instance_error_title, no_instance_state_for_workspace_message,
+    no_purgeable_instance_for_workspace_message, no_recoverable_instance_for_workspace_message,
+    no_recoverable_instance_selected_message, no_running_instance_for_workspace_message,
+    no_running_instance_to_stop_message,
+};
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceAction, WorkspaceInstanceStatus,
@@ -108,7 +115,7 @@ pub(super) fn handle_list_key(
             | ManagerListRow::CurrentDirectoryInstance(_) => Ok(instance_action_outcome(
                 state,
                 ConsoleInstanceAction::Reconnect,
-                "No recoverable instance selected.",
+                no_recoverable_instance_selected_message(),
             )),
         },
         KeyCode::Char('e' | 'E') => {
@@ -151,9 +158,8 @@ pub(super) fn handle_list_key(
                     dispatch_manager(
                         state,
                         ManagerMessage::OpenListErrorPopup {
-                            title: "Instance unavailable".into(),
-                            message: "Instance no longer active; list refreshes automatically."
-                                .into(),
+                            title: instance_unavailable_error_title().into(),
+                            message: instance_unavailable_error_message().into(),
                         },
                     );
                 }
@@ -181,28 +187,28 @@ pub(super) fn handle_list_key(
         KeyCode::Char('r' | 'R') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Reconnect,
-            "No recoverable instance for this workspace.",
+            no_recoverable_instance_for_workspace_message(),
         )),
         KeyCode::Char('a' | 'A') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::NewSession,
-            "No running instance for this workspace.",
+            no_running_instance_for_workspace_message(),
         )),
         KeyCode::Char('x' | 'X') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Shell,
-            "No running instance for this workspace.",
+            no_running_instance_for_workspace_message(),
         )),
         KeyCode::Char('i' | 'I') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Inspect,
-            "No instance state for this workspace.",
+            no_instance_state_for_workspace_message(),
         )),
         KeyCode::Char('p' | 'P') => Ok(confirm_purge_outcome(state)),
         KeyCode::Char('t' | 'T') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Stop,
-            "No running instance to stop.",
+            no_running_instance_to_stop_message(),
         )),
         KeyCode::Char('s' | 'S') => {
             if !matches!(
@@ -244,7 +250,7 @@ fn instance_action_outcome(
         dispatch_manager(
             state,
             ManagerMessage::OpenListErrorPopup {
-                title: "No instance".into(),
+                title: no_instance_error_title().into(),
                 message: empty_message.into(),
             },
         );
@@ -264,8 +270,8 @@ fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
         dispatch_manager(
             state,
             ManagerMessage::OpenListErrorPopup {
-                title: "No instance".into(),
-                message: "No purgeable instance for this workspace.".into(),
+                title: no_instance_error_title().into(),
+                message: no_purgeable_instance_for_workspace_message().into(),
             },
         );
         return InputOutcome::Continue;

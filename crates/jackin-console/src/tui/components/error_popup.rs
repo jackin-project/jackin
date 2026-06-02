@@ -62,6 +62,42 @@ pub fn no_eligible_roles_error_message(workspace_name: impl std::fmt::Display) -
     )
 }
 
+pub fn instance_unavailable_error_title() -> &'static str {
+    "Instance unavailable"
+}
+
+pub fn instance_unavailable_error_message() -> &'static str {
+    "Instance no longer active; list refreshes automatically."
+}
+
+pub fn no_instance_error_title() -> &'static str {
+    "No instance"
+}
+
+pub fn no_recoverable_instance_selected_message() -> &'static str {
+    "No recoverable instance selected."
+}
+
+pub fn no_recoverable_instance_for_workspace_message() -> &'static str {
+    "No recoverable instance for this workspace."
+}
+
+pub fn no_running_instance_for_workspace_message() -> &'static str {
+    "No running instance for this workspace."
+}
+
+pub fn no_instance_state_for_workspace_message() -> &'static str {
+    "No instance state for this workspace."
+}
+
+pub fn no_running_instance_to_stop_message() -> &'static str {
+    "No running instance to stop."
+}
+
+pub fn no_purgeable_instance_for_workspace_message() -> &'static str {
+    "No purgeable instance for this workspace."
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +157,40 @@ mod tests {
         assert_eq!(
             no_eligible_roles_error_message("demo"),
             "Workspace \"demo\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
+        );
+    }
+
+    #[test]
+    fn list_instance_error_helpers_use_standard_wording() {
+        assert_eq!(instance_unavailable_error_title(), "Instance unavailable");
+        assert_eq!(
+            instance_unavailable_error_message(),
+            "Instance no longer active; list refreshes automatically."
+        );
+        assert_eq!(no_instance_error_title(), "No instance");
+        assert_eq!(
+            no_recoverable_instance_selected_message(),
+            "No recoverable instance selected."
+        );
+        assert_eq!(
+            no_recoverable_instance_for_workspace_message(),
+            "No recoverable instance for this workspace."
+        );
+        assert_eq!(
+            no_running_instance_for_workspace_message(),
+            "No running instance for this workspace."
+        );
+        assert_eq!(
+            no_instance_state_for_workspace_message(),
+            "No instance state for this workspace."
+        );
+        assert_eq!(
+            no_running_instance_to_stop_message(),
+            "No running instance to stop."
+        );
+        assert_eq!(
+            no_purgeable_instance_for_workspace_message(),
+            "No purgeable instance for this workspace."
         );
     }
 }
