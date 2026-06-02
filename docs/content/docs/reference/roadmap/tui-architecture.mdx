@@ -346,6 +346,8 @@ Workspace editor auth/secret and settings environment flat-row adapters now live
 
 Workspace-list, create-prelude, destructive-confirm, editor/settings row, workspace/settings mount-row, and modal footer hint composition now live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer code derives row facts such as picker mode, instance snapshot availability, saved-workspace state, scroll focus, GitHub URL availability, and active modal mode, then delegates shared hint ordering and labels to component helpers.
 
+Workspace-list footer mode derivation now lives in the root footer adapter at <RepoFile path="src/console/tui/components/footer.rs" /> instead of the root frame view; the frame renderer asks for ready footer items and no longer resolves GitHub mount availability while composing the frame.
+
 Workspace-secret and settings-environment footer hint fragments now also live in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer code decides whether the focused row is plain, `op://`, add sentinel, or role header, then delegates the shared hint labels and ordering to crate-owned helpers.
 
 Root modal footer rendering now maps root modal variants to the crate-owned `ModalFooterMode` vocabulary in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root code keeps only root-state inspection such as file-browser state, auth token-generation availability, and modal payload facts.
