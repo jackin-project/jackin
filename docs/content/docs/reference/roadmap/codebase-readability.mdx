@@ -98,6 +98,37 @@ Cargo forbids cycles *between* crates, so no crate boundary can be drawn until t
 
 The standard Rust fix for a mutual-type cycle is a foundation crate: move the shared *type definitions* down into `jackin-core`, leaving the *behavior* above. The moment the shared vocabulary lives below everything that names it, every one of these cycles dissolves at once. The residual `config`-logic ↔ `workspace`-logic coupling (config calls `validate_mounts`/`plan_collapse`; workspace calls `migrations`/`ConfigEditor`) is genuine logic coupling — which is exactly why config and workspace become **one** `jackin-config` crate rather than two.
 
+## Conventions every refactor follows
+
+This program is a long sequence of moves that look mechanical — extract a constant, split a file, draw a crate boundary. Each one is a chance to raise or lower the bar, so every PR under this program holds to the same Rust standard. The checks below are what a reviewer verifies against the diff; they compose with the existing repo rules in <RepoFile path="AGENTS.md" /> ("Reuse before writing — DRY", "Prefer libraries over hand-rolled parsers", "Code comments — explain only what is not obvious").
+
+**Crate boundaries (Stages 1 and 4).**
+- Public API is deliberate: `pub(crate)` by default, `pub` only what the next crate up imports. A crate's public surface is designed, not leaked.
+- `jackin-core` is types + traits only — no `tokio`, no subprocess, no filesystem. The I/O seam is the `DockerApi` / `CommandRunner` traits (dependency inversion); the concrete implementations live in `jackin-runtime`.
+- Encode invariants in types: newtypes and enums over `bool` / `String` / bare primitives, so every higher crate inherits the constraint instead of re-checking it.
+- Treat `derive(Serialize, Deserialize)`, public re-exports, and public dependencies as intentional compatibility commitments, not defaults — they belong only where the serialized shape or the re-export is part of the contract.
+- Use a sealed trait where a downstream `impl` would block future evolution (the agent-runtime trait is the candidate).
+
+**Shared extractions (Stage 2).**
+- Extract in a shape future callers reuse — a parameter or small enum on the existing function beats a second near-copy.
+- Borrowed parameters when ownership is not required: `&str` over `String`, `&[T]` over `Vec<T>`, `&Path` over `PathBuf`, `Option<&T>` over `&Option<T>`.
+- `.clone()` is a design decision, never a borrow-checker appeasement. Skip intermediate `Vec` / `String` allocations when an iterator or slice does the job.
+
+**File splits and functions (Stage 3).**
+- Optimize for the first-time reader: entry-point items first, important types before helpers, implementation near its use.
+- Keep control flow local and visible; express preconditions in types or adjacent checks, not in a distant helper.
+- Boring, searchable names over abbreviations — short names only for established conventions (`ctx`, `idx`, `res`, `db`).
+- Every newly split module gets a `//!` contract that states the non-obvious why — invariants, ordering, race windows — not a restatement of the code.
+
+**Errors.**
+- Typed errors (`enum` + `thiserror`-style) at crate boundaries; `anyhow`-style context only at the binary / CLI / app edge. The new `jackin-core` / `-config` / `-runtime` crates are libraries — they return typed errors, and the root binary adds the operator-facing context.
+- `?` for propagation, with context added at the I/O, parse, network, and user-facing boundaries.
+- Reserve `unwrap` / `expect` for tests, unreachable invariants, and programmer errors with precise messages. Convert any production `unwrap` you touch to `expect("why")` or a typed error; do not add new ones.
+
+**Lints and validation.**
+- Fix a Clippy warning before suppressing it. A justified suppression uses `#[expect(clippy::lint_name, reason = "…")]` so it fails loudly when it goes stale — and a new `#[allow(clippy::too_many_lines)]` is a request to extract, not annotate.
+- Each PR runs `cargo fmt --check`, `cargo clippy --all-targets --all-features --locked -- -D warnings`, and the test suite before it is ready.
+
 ## The plan — staged, bottom-up
 
 ### Stage 0 — Safety net and an honest map
