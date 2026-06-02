@@ -140,6 +140,13 @@ impl<RoleSource: std::fmt::Debug> std::fmt::Debug for PendingRoleLoad<RoleSource
     }
 }
 
+/// Request to mint/write an auth token while the TUI is suspended.
+#[derive(Debug, Clone)]
+pub struct PendingTokenGenerate<Scope, Args> {
+    pub scope: Scope,
+    pub args: Args,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

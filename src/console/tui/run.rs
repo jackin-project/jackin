@@ -234,7 +234,12 @@ pub async fn run_console<H: InstanceActionHandler>(
         if let Some(req) = pending {
             let mut out = std::io::stdout();
             suspend_console_terminal(&mut out);
-            println!("{}", token_generate_status_message(req.scope_label()));
+            println!(
+                "{}",
+                token_generate_status_message(crate::console::tui::state::token_generate_scope_label(
+                    &req
+                ))
+            );
             let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
             let _ = resume_console_terminal(&mut out);
             // Force a full repaint next frame so leftover child output is

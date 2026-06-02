@@ -654,34 +654,27 @@ pub enum GlobalMountModal<'a> {
     },
 }
 
-/// A request to mint a Claude OAuth token and write it to the chosen
-/// 1Password location.
-///
-/// Bubbled from the auth-form generate action up to the run loop, which
-/// temporarily suspends the terminal while the non-TUI effect executor mints
-/// the token and stages the result back into the visible form.
-#[derive(Debug, Clone)]
-pub struct PendingTokenGenerate {
-    pub scope: crate::workspace::token_setup::TokenSetupScope,
-    pub args: crate::workspace::token_setup::TokenSetupArgs,
-}
+pub type PendingTokenGenerate = jackin_console::tui::subscriptions::PendingTokenGenerate<
+    crate::workspace::token_setup::TokenSetupScope,
+    crate::workspace::token_setup::TokenSetupArgs,
+>;
 
-impl PendingTokenGenerate {
-    pub(crate) fn scope_label(&self) -> jackin_console::tui::run::TokenGenerateScopeLabel<'_> {
-        use crate::workspace::token_setup::TokenSetupScope;
+pub(crate) fn token_generate_scope_label(
+    req: &PendingTokenGenerate,
+) -> jackin_console::tui::run::TokenGenerateScopeLabel<'_> {
+    use crate::workspace::token_setup::TokenSetupScope;
 
-        match &self.scope {
-            TokenSetupScope::Workspace(name) => {
-                jackin_console::tui::run::TokenGenerateScopeLabel::Workspace(name)
-            }
-            TokenSetupScope::WorkspaceRole { workspace, role } => {
-                jackin_console::tui::run::TokenGenerateScopeLabel::WorkspaceRole {
-                    workspace,
-                    role,
-                }
-            }
-            TokenSetupScope::Global => jackin_console::tui::run::TokenGenerateScopeLabel::Global,
+    match &req.scope {
+        TokenSetupScope::Workspace(name) => {
+            jackin_console::tui::run::TokenGenerateScopeLabel::Workspace(name)
         }
+        TokenSetupScope::WorkspaceRole { workspace, role } => {
+            jackin_console::tui::run::TokenGenerateScopeLabel::WorkspaceRole {
+                workspace,
+                role,
+            }
+        }
+        TokenSetupScope::Global => jackin_console::tui::run::TokenGenerateScopeLabel::Global,
     }
 }
 
