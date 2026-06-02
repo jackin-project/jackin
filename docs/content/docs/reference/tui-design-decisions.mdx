@@ -169,6 +169,8 @@ Console workspace-screen frame geometry, modal-overlay visibility facts, modal b
 
 Root-console list pre-render preparation also uses the crate-owned workspace frame geometry before clamping list scroll, so render and pre-render state preparation share the same body rectangle.
 
+Workspace-list root rendering and pre-render scroll preparation both use the crate-owned split-column helper in <RepoFile path="crates/jackin-console/src/tui/list_geometry.rs" />. Root adapters supply selection and pane content facts; the reusable list/preview column allocation lives with console TUI geometry.
+
 Settings global-mount scroll clamping uses the same crate-owned settings frame geometry helper as settings rendering, so scroll preparation and frame rendering share the same body rectangle.
 
 Settings tab content-height rules for Mounts, Environment, and Trust tabs live with the settings screen view helpers; root layout code supplies row counts and error-state facts.

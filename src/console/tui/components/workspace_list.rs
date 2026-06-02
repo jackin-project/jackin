@@ -2,7 +2,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     text::Line,
 };
 
@@ -45,27 +45,22 @@ pub(crate) fn render_list_body(
     //   CurrentDirectory  → current-dir details
     //   SavedWorkspace(i) → saved-workspace details
     //   NewWorkspace      → description-of-what-a-workspace-is pane
-    let left_pct = state.list_split_pct;
-    let right_pct = 100u16.saturating_sub(left_pct);
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(left_pct),
-            Constraint::Percentage(right_pct),
-        ])
-        .split(area);
-    let list_area = columns[0];
+    let columns = jackin_console::tui::list_geometry::split_list_columns(
+        area,
+        state.list_split_pct,
+    );
+    let list_area = columns.names;
 
     match state.selected_row() {
         ManagerListRow::CurrentDirectory => {
-            render_current_dir_details_pane(frame, columns[1], cwd, config, state);
+            render_current_dir_details_pane(frame, columns.preview, cwd, config, state);
         }
         ManagerListRow::NewWorkspace => {
-            render_sentinel_description_pane(frame, columns[1]);
+            render_sentinel_description_pane(frame, columns.preview);
         }
         ManagerListRow::SavedWorkspace(i) => {
             if let Some(ws) = state.workspaces.get(i).cloned() {
-                render_details_pane(frame, columns[1], &ws, config, state);
+                render_details_pane(frame, columns.preview, &ws, config, state);
             }
         }
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
@@ -83,7 +78,7 @@ pub(crate) fn render_list_body(
                 };
                 render_instance_details_pane(
                     frame,
-                    columns[1],
+                    columns.preview,
                     entry,
                     sessions,
                     session_load_error,
@@ -108,7 +103,7 @@ pub(crate) fn render_list_body(
                 };
                 render_instance_details_pane(
                     frame,
-                    columns[1],
+                    columns.preview,
                     entry,
                     sessions,
                     session_load_error,
