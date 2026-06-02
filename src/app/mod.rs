@@ -197,10 +197,12 @@ pub async fn run(cli: Cli) -> Result<()> {
                 None
             };
 
+            let op_available = console::effects::op_cli_available();
             let Some(outcome) = console::run_console(
                 config,
                 &paths,
                 &cwd,
+                op_available,
                 &mut in_place,
                 &mut runner,
                 Some(&screen),

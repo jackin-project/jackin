@@ -155,6 +155,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
+    op_available: bool,
     action_handler: &mut H,
     runner: &mut impl crate::docker::CommandRunner,
     // Outer session guard — draws into the inherited screen when `Some`,
@@ -166,7 +167,6 @@ pub async fn run_console<H: InstanceActionHandler>(
     use crossterm::event::{Event, KeyCode, KeyEventKind};
     use futures_util::{FutureExt as _, StreamExt as _};
 
-    let op_available = crate::console::effects::op_cli_available();
     let mut state =
         crate::console::tui::new_console_state_with_op_available(&config, cwd, op_available)?;
     // When the launch flow in `app` already owns the host screen, draw into it
