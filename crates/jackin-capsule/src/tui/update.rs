@@ -7,6 +7,7 @@
 use crate::tui::components::dialog::DialogAction;
 use crate::tui::input::PrefixCommand;
 use crate::tui::layout::{Rect, SplitOrient};
+use crate::tui::message::PaletteCommandRoute;
 
 /// Duration for transient "copied" feedback in TUI dialogs.
 pub(crate) const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration =
@@ -177,17 +178,28 @@ pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<F
     selection_started.then_some(FullRedrawReason::SelectionRepaint)
 }
 
+pub(crate) fn palette_route_redraw_reason(
+    route: PaletteCommandRoute,
+) -> Option<FullRedrawReason> {
+    match route {
+        PaletteCommandRoute::ClearPane => Some(FullRedrawReason::PaneClear),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         DialogActionFramePlan, HoverFramePlan, PartialFramePlan, PartialFrameState,
         dialog_action_frame_plan, drag_resize_ratio, drag_resize_redraw_reason,
         focus_change_redraw_reason, hover_frame_plan, pane_data_redraw_reason, partial_frame_plan,
-        prefix_full_redraw_reason, selection_change_redraw_reason, selection_start_redraw_reason,
+        palette_route_redraw_reason, prefix_full_redraw_reason, selection_change_redraw_reason,
+        selection_start_redraw_reason,
     };
     use crate::tui::components::dialog::{DialogAction, PickerIntent};
     use crate::tui::input::{ArrowDir, PrefixCommand};
     use crate::tui::layout::{Rect, SplitOrient};
+    use crate::tui::message::PaletteCommandRoute;
     use crate::tui::update::FullRedrawReason;
 
     #[test]
@@ -336,6 +348,18 @@ mod tests {
         assert_eq!(
             selection_change_redraw_reason(),
             FullRedrawReason::SelectionRepaint
+        );
+    }
+
+    #[test]
+    fn palette_route_redraw_reason_only_repaints_terminal_actions() {
+        assert_eq!(
+            palette_route_redraw_reason(PaletteCommandRoute::ClearPane),
+            Some(FullRedrawReason::PaneClear)
+        );
+        assert_eq!(
+            palette_route_redraw_reason(PaletteCommandRoute::NextTab),
+            None
         );
     }
 }

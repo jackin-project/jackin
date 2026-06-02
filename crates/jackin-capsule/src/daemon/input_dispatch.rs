@@ -586,7 +586,8 @@ impl Multiplexer {
         // actions clear the stack and run the action. No blanket
         // clear at the top because that would prevent the sub-dialog
         // back-navigation chain from working.
-        match palette_command_route(cmd, self.active_tab_pane_count()) {
+        let route = palette_command_route(cmd, self.active_tab_pane_count());
+        match route {
             PaletteCommandRoute::OpenSplitDirectionPicker => {
                 // Open the SplitDirectionPicker sub-dialog. The
                 // operator picks the direction; that resolves to a
@@ -630,7 +631,9 @@ impl Multiplexer {
             PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();
                 self.clear_focused_pane();
-                return Some(self.compose_full_frame(FullRedrawReason::PaneClear));
+                if let Some(reason) = palette_route_redraw_reason(route) {
+                    return Some(self.compose_full_frame(reason));
+                }
             }
         }
         None
