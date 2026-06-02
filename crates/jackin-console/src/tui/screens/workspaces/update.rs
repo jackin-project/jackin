@@ -44,6 +44,15 @@ pub enum DestructiveConfirmPlan {
     Commit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceTreeDisclosurePlan {
+    None,
+    CollapseWorkspace(usize),
+    CollapseCurrentDir,
+    ExpandWorkspace(usize),
+    ExpandCurrentDir,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct WorkspaceRowLayout<'a> {
     pub current_dir_expanded: bool,
@@ -138,6 +147,30 @@ pub fn workspace_list_select_row_plan(
         clear_inline_new_session_picker: changed,
         clear_inline_provider_picker: changed,
         clear_launch_provider_picker: changed,
+    }
+}
+
+#[must_use]
+pub const fn collapse_selected_tree_plan(row: ManagerListRow) -> WorkspaceTreeDisclosurePlan {
+    match row {
+        ManagerListRow::SavedWorkspace(i) | ManagerListRow::WorkspaceInstance(i, _) => {
+            WorkspaceTreeDisclosurePlan::CollapseWorkspace(i)
+        }
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            WorkspaceTreeDisclosurePlan::CollapseCurrentDir
+        }
+        ManagerListRow::NewWorkspace => WorkspaceTreeDisclosurePlan::None,
+    }
+}
+
+#[must_use]
+pub const fn expand_selected_tree_plan(row: ManagerListRow) -> WorkspaceTreeDisclosurePlan {
+    match row {
+        ManagerListRow::SavedWorkspace(i) => WorkspaceTreeDisclosurePlan::ExpandWorkspace(i),
+        ManagerListRow::CurrentDirectory => WorkspaceTreeDisclosurePlan::ExpandCurrentDir,
+        ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => WorkspaceTreeDisclosurePlan::None,
     }
 }
 
@@ -291,6 +324,26 @@ mod tests {
                 clear_inline_provider_picker: true,
                 clear_launch_provider_picker: true,
             }
+        );
+    }
+
+    #[test]
+    fn tree_disclosure_plans_map_rows_to_actions() {
+        assert_eq!(
+            collapse_selected_tree_plan(ManagerListRow::WorkspaceInstance(2, 0)),
+            WorkspaceTreeDisclosurePlan::CollapseWorkspace(2)
+        );
+        assert_eq!(
+            collapse_selected_tree_plan(ManagerListRow::CurrentDirectoryInstance(0)),
+            WorkspaceTreeDisclosurePlan::CollapseCurrentDir
+        );
+        assert_eq!(
+            expand_selected_tree_plan(ManagerListRow::SavedWorkspace(1)),
+            WorkspaceTreeDisclosurePlan::ExpandWorkspace(1)
+        );
+        assert_eq!(
+            expand_selected_tree_plan(ManagerListRow::NewWorkspace),
+            WorkspaceTreeDisclosurePlan::None
         );
     }
 

@@ -7,10 +7,9 @@
 use jackin_console::tui::auth::AuthKind;
 use super::effect::ManagerEffect;
 use crate::console::tui::state::{
-    CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerListRow,
-    ManagerStage, ManagerState, MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup,
-    PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
-    settings_env_flat_rows,
+    CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState,
+    MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh,
+    PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab, settings_env_flat_rows,
 };
 use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
@@ -36,8 +35,9 @@ use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    preview_pane_cursor_plan, workspace_list_move_selection_plan,
-    workspace_list_select_row_plan, workspace_unclamped_scroll_plan,
+    WorkspaceTreeDisclosurePlan, collapse_selected_tree_plan, expand_selected_tree_plan,
+    preview_pane_cursor_plan, workspace_list_move_selection_plan, workspace_list_select_row_plan,
+    workspace_unclamped_scroll_plan,
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -847,28 +847,24 @@ fn move_settings_trust_selection(
 
 fn collapse_selected_tree(state: &mut ManagerState<'_>) {
     state.inline_new_session_picker = None;
-    match state.selected_row() {
-        ManagerListRow::SavedWorkspace(i) => {
-            state.collapse_workspace(i);
-        }
-        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
-            state.collapse_workspace(ws_idx);
-        }
-        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
-            state.collapse_current_dir();
-        }
-        ManagerListRow::NewWorkspace => {}
-    }
+    apply_workspace_tree_disclosure_plan(state, collapse_selected_tree_plan(state.selected_row()));
 }
 
 fn expand_selected_tree(state: &mut ManagerState<'_>) {
     state.inline_new_session_picker = None;
-    match state.selected_row() {
-        ManagerListRow::SavedWorkspace(i) => state.expand_workspace(i),
-        ManagerListRow::CurrentDirectory => state.expand_current_dir(),
-        ManagerListRow::CurrentDirectoryInstance(_)
-        | ManagerListRow::WorkspaceInstance(_, _)
-        | ManagerListRow::NewWorkspace => {}
+    apply_workspace_tree_disclosure_plan(state, expand_selected_tree_plan(state.selected_row()));
+}
+
+fn apply_workspace_tree_disclosure_plan(
+    state: &mut ManagerState<'_>,
+    plan: WorkspaceTreeDisclosurePlan,
+) {
+    match plan {
+        WorkspaceTreeDisclosurePlan::None => {}
+        WorkspaceTreeDisclosurePlan::CollapseWorkspace(i) => state.collapse_workspace(i),
+        WorkspaceTreeDisclosurePlan::CollapseCurrentDir => state.collapse_current_dir(),
+        WorkspaceTreeDisclosurePlan::ExpandWorkspace(i) => state.expand_workspace(i),
+        WorkspaceTreeDisclosurePlan::ExpandCurrentDir => state.expand_current_dir(),
     }
 }
 
