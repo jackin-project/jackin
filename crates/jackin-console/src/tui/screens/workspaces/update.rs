@@ -93,6 +93,54 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::focus::selected_index(selected, row_count)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListSelectionPlan {
+    pub selected: usize,
+    pub changed: bool,
+    pub clear_inline_role_picker: bool,
+    pub clear_inline_agent_picker: bool,
+    pub clear_inline_new_session_picker: bool,
+    pub clear_inline_provider_picker: bool,
+    pub clear_launch_provider_picker: bool,
+}
+
+#[must_use]
+pub fn workspace_list_move_selection_plan(
+    selected: usize,
+    row_count: usize,
+    delta: isize,
+) -> WorkspaceListSelectionPlan {
+    let next = crate::focus::moved_selection(selected, row_count, delta);
+    WorkspaceListSelectionPlan {
+        selected: next,
+        changed: next != selected,
+        clear_inline_role_picker: true,
+        clear_inline_agent_picker: true,
+        clear_inline_new_session_picker: true,
+        clear_inline_provider_picker: false,
+        clear_launch_provider_picker: false,
+    }
+}
+
+#[must_use]
+pub fn workspace_list_select_row_plan(
+    current_selected: usize,
+    selected: usize,
+    row_count: usize,
+) -> WorkspaceListSelectionPlan {
+    let next = crate::focus::selected_index(selected, row_count);
+    let changed = next != current_selected;
+    WorkspaceListSelectionPlan {
+        selected: next,
+        changed,
+        clear_inline_role_picker: true,
+        clear_inline_agent_picker: changed,
+        clear_inline_new_session_picker: changed,
+        clear_inline_provider_picker: changed,
+        clear_launch_provider_picker: changed,
+    }
+}
+
 #[must_use]
 pub const fn workspace_unclamped_scroll_plan(current_scroll: u16, delta: i16) -> u16 {
     crate::tui::update::unclamped_scroll_plan(current_scroll, delta)
@@ -216,6 +264,34 @@ mod tests {
     fn workspace_unclamped_scroll_plan_updates_offset() {
         assert_eq!(workspace_unclamped_scroll_plan(4, 3), 7);
         assert_eq!(workspace_unclamped_scroll_plan(4, -99), 0);
+    }
+
+    #[test]
+    fn workspace_list_selection_plans_clear_expected_pickers() {
+        assert_eq!(
+            workspace_list_move_selection_plan(0, 3, 1),
+            WorkspaceListSelectionPlan {
+                selected: 1,
+                changed: true,
+                clear_inline_role_picker: true,
+                clear_inline_agent_picker: true,
+                clear_inline_new_session_picker: true,
+                clear_inline_provider_picker: false,
+                clear_launch_provider_picker: false,
+            }
+        );
+        assert_eq!(
+            workspace_list_select_row_plan(0, 2, 3),
+            WorkspaceListSelectionPlan {
+                selected: 2,
+                changed: true,
+                clear_inline_role_picker: true,
+                clear_inline_agent_picker: true,
+                clear_inline_new_session_picker: true,
+                clear_inline_provider_picker: true,
+                clear_launch_provider_picker: true,
+            }
+        );
     }
 
     #[test]

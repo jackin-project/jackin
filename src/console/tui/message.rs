@@ -36,10 +36,8 @@ use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    preview_pane_cursor_plan, workspace_unclamped_scroll_plan,
-};
-use jackin_console::tui::update::{
-    selected_index_plan, selection_move_plan,
+    preview_pane_cursor_plan, workspace_list_move_selection_plan,
+    workspace_list_select_row_plan, workspace_unclamped_scroll_plan,
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -875,27 +873,38 @@ fn expand_selected_tree(state: &mut ManagerState<'_>) {
 }
 
 fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
-    state.inline_role_picker = None;
-    state.inline_agent_picker = None;
-    state.inline_new_session_picker = None;
-    let selected = selection_move_plan(state.selected, state.row_count(), delta);
-    if selected != state.selected {
+    let plan = workspace_list_move_selection_plan(state.selected, state.row_count(), delta);
+    apply_workspace_list_selection_plan(state, plan);
+}
+
+fn apply_workspace_list_selection_plan(
+    state: &mut ManagerState<'_>,
+    plan: jackin_console::tui::screens::workspaces::update::WorkspaceListSelectionPlan,
+) {
+    if plan.clear_inline_role_picker {
+        state.inline_role_picker = None;
+    }
+    if plan.clear_inline_agent_picker {
+        state.inline_agent_picker = None;
+    }
+    if plan.clear_inline_new_session_picker {
+        state.inline_new_session_picker = None;
+    }
+    if plan.clear_inline_provider_picker {
+        state.inline_provider_picker = None;
+    }
+    if plan.clear_launch_provider_picker {
+        state.launch_provider_picker = None;
+    }
+    if plan.changed {
         state.reset_list_scroll();
-        state.selected = selected;
+        state.selected = plan.selected;
     }
 }
 
 fn select_list_row(state: &mut ManagerState<'_>, selected: usize) {
-    state.inline_role_picker = None;
-    let selected = selected_index_plan(selected, state.row_count());
-    if selected != state.selected {
-        state.reset_list_scroll();
-        state.selected = selected;
-        state.inline_agent_picker = None;
-        state.inline_new_session_picker = None;
-        state.inline_provider_picker = None;
-        state.launch_provider_picker = None;
-    }
+    let plan = workspace_list_select_row_plan(state.selected, selected, state.row_count());
+    apply_workspace_list_selection_plan(state, plan);
 }
 
 fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
