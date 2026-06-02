@@ -1,4 +1,13 @@
-//! Manager state machine. See docs/superpowers/specs/2026-04-23-workspace-manager-tui-design.md § 3.
+//! Manager state machine for the jackin' console TUI.
+//!
+//! Central `ManagerState` struct and the `ManagerStage` enum that drives
+//! which screen (workspaces list, editor, settings) is active. Also owns the
+//! modal stack, subscription handles, and all transient UI state (selection,
+//! draft edits, pending async work).
+//!
+//! Not responsible for: rendering (`jackin-console` and `jackin-tui` crates),
+//! or side-effecting operations (those are `ManagerEffect` values returned by
+//! input handlers in `console/tui/input/`).
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};

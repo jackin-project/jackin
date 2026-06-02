@@ -1,3 +1,11 @@
+//! Container and class teardown: purge role-state directories, remove Docker
+//! resources (containers, images, networks, volumes), and update the instance
+//! index to reflect the deletion.
+//!
+//! Drives each filesystem teardown to completion before batching index
+//! updates — if an early deletion fails, already-deleted entries are still
+//! recorded so the index stays consistent with disk state.
+
 use crate::docker::CommandRunner;
 use crate::docker_client::{DockerApi, RemoveImageOutcome};
 use crate::instance::{InstanceIndex, InstanceStatus};

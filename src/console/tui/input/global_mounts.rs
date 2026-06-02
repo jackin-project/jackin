@@ -1,3 +1,13 @@
+//! Key handler for the Settings → Global Mounts tab and its modals.
+//!
+//! Dispatches keyboard events to the add/edit/delete flow for global mount
+//! entries and for the auth/env panels that share the Settings screen.
+//! Produces `ManagerEffect` values the event loop applies; does not write
+//! config directly.
+//!
+//! Not responsible for: rendering (`jackin-console` settings view) or the
+//! save commit path (`console/tui/input/save.rs`).
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::console::domain::{apply_settings_auth_env_commit, clear_settings_auth_env_values};

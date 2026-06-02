@@ -1,3 +1,14 @@
+//! Derived-image Dockerfile generation: renders the hook-copy section,
+//! UID/GID remapping, and other build-time additions layered on top of a
+//! role's base image.
+//!
+//! The caller (`runtime/image.rs`) provides a validated `RoleRepo` and an
+//! optional `HooksConfig`. This module writes a temporary build context
+//! (`DerivedBuildContext`) and returns the paths for `docker build`.
+//!
+//! Not responsible for: running `docker build` (`runtime/image.rs`), or the
+//! base-image Dockerfile authored by the role (lives in the role repo).
+
 use crate::manifest::HooksConfig;
 use crate::repo::ValidatedRoleRepo;
 use std::path::{Path, PathBuf};

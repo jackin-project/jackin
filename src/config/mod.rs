@@ -1,3 +1,14 @@
+//! jackin' configuration schema and public re-exports for the `config`
+//! subsystem.
+//!
+//! Re-exports the types callers depend on — `AppConfig`, `AuthForwardMode`,
+//! `ConfigEditor`, migration helpers, and mount helpers — so that
+//! `use crate::config::Foo` works without navigating sub-modules.
+//!
+//! Schema versioning lives in `config/migrations.rs`. Editor behavior (TOML
+//! reads and writes) lives in `config/editor.rs`. Workspace types and
+//! resolution logic live in `workspace/`.
+
 use crate::workspace::WorkspaceConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

@@ -1,3 +1,13 @@
+//! Target classification and context-aware resolution helpers for CLI commands.
+//!
+//! Resolves a raw target string (workspace name, directory path, or
+//! `<src>:<dst>` mount spec) into a `TargetKind`, then maps it to a running
+//! container, workspace config, or agent choice. Used by `app/mod.rs` to
+//! drive `jackin load`, `jackin console`, and related subcommands.
+//!
+//! Not responsible for: launch or attach mechanics (`runtime/`), or config
+//! persistence (`config/`).
+
 use anyhow::Result;
 use std::path::Path;
 

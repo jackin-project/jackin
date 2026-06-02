@@ -1,3 +1,21 @@
+//! `jackin load` pipeline: resolve source and trust, claim instance, build
+//! image, prepare auth and mounts, launch runtime, attach, finalize.
+//!
+//! `load_agent` is the public entry point; `load_agent_with` is the pipeline
+//! implementation. Key invariants:
+//!
+//! * Trust confirmation runs before the image build — an untrusted agent may
+//!   be cloned and resolved but not built until confirmed.
+//! * Token-mode verification fails fast before auth state preparation or DinD
+//!   launch, so a missing token never reaches container startup.
+//! * Container slot claim runs before the launch summary is printed, so the
+//!   name the operator sees is the final locked name that flows to the
+//!   running container.
+//! * Foreground-attach finalization runs before teardown classification —
+//!   isolated worktrees are finalized before the preserve-vs-clean decision.
+//! * `render_exit` is called on both success and error exits from
+//!   `load_agent_with`.
+
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::{

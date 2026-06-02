@@ -1,3 +1,15 @@
+//! Agent credential provisioning: copies or wipes per-agent auth files in the
+//! role-state directory before container launch.
+//!
+//! Implements `RoleState` methods for each supported agent (Claude, Codex,
+//! Amp, Kimi, OpenCode). Each provisioner applies the `AuthForwardMode`
+//! policy (`Sync`, `ApiKey`, `OAuthToken`, `Ignore`) to decide whether to
+//! copy the host credential file, leave it, or wipe it.
+//!
+//! Invariant: any symlink at an auth-file path is rejected before branching
+//! on mode — a compromised role cannot redirect a provisioning write through
+//! a symlink placed between launches.
+
 use super::{
     AuthProvisionOutcome, GithubAuthContext, GithubProvisionOutcome, GithubTokenSource,
     HostMissingReason, RoleState,

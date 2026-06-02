@@ -1,3 +1,13 @@
+//! Role manifest validation: checks consistency rules that serde alone cannot
+//! express.
+//!
+//! `validate_role_manifest` returns hard errors for invalid manifests and
+//! non-fatal `ManifestWarning` values for config that parses but is likely
+//! wrong (e.g. agent tables present but not listed in `agents`).
+//!
+//! Not responsible for: parsing the manifest file (`manifest/mod.rs`), or
+//! validating the role-repo filesystem (`repo.rs`).
+
 use super::{EnvVarDecl, ManifestWarning, RoleManifest};
 use crate::env_model::extract_interpolation_refs;
 

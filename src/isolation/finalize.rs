@@ -1,3 +1,13 @@
+//! Post-attach foreground-session finalizer: classifies worktree state and
+//! decides whether to auto-clean or preserve an isolated mount.
+//!
+//! All git invocations are local-only — no network access. Safe to call after
+//! a hardline-locked (offline) attach.
+//!
+//! Invariant: a worktree with uncommitted changes (`Dirty`) or unpushed
+//! commits (`Unpushed`) is always preserved; auto-clean only runs on a clean,
+//! fully-pushed tree with a confirmed exit.
+
 // All git invocations from this module are local-only:
 //   git status --porcelain
 //   git for-each-ref --format=... refs/heads/

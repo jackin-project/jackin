@@ -1,3 +1,13 @@
+//! Workspace configuration types and resolution.
+//!
+//! Defines `WorkspaceConfig` and `MountConfig` — the on-disk TOML shapes for
+//! saved workspaces — and re-exports path helpers, planner types, mount
+//! validation, and the `ResolvedWorkspace` the launch pipeline consumes.
+//!
+//! Not responsible for: reading or writing workspace files (`config/editor.rs`
+//! via `ConfigEditor`), or container mount materialization
+//! (`isolation/materialize.rs`).
+
 pub mod mounts;
 pub mod paths;
 pub(crate) mod planner;

@@ -1,3 +1,12 @@
+//! CLI dispatch: maps parsed `Cli` commands to runtime, console, workspace,
+//! and instance calls.
+//!
+//! `pub async fn run` is the binary entry point after argument parsing. Not a
+//! stable library boundary — callers are `main.rs` and tests only.
+//!
+//! Not responsible for: argument parsing (`cli/`), runtime mechanics
+//! (`runtime/`), or TUI rendering (`console/tui/`). This module is glue.
+
 pub mod context;
 
 use anyhow::{Context, Result};

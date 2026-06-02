@@ -1,3 +1,15 @@
+//! Mount materialization: converts `WorkspaceConfig` mounts into concrete
+//! Docker bind-mount specs, cloning worktrees for isolated mounts and writing
+//! the `IsolationRecord` consumed by the finalizer.
+//!
+//! Produces a `MaterializedWorkspace` whose `mounts` list is ready for
+//! `docker run --mount`. Isolated mounts additionally carry `worktree_aux`
+//! bind entries so git resolves the gitdir relationship correctly inside the
+//! container (see `WorktreeAuxMounts` for the bind topology).
+//!
+//! Not responsible for: finalization or cleanup of existing worktrees
+//! (`isolation/finalize.rs` and `isolation/cleanup.rs`).
+
 use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::MountIsolation;
