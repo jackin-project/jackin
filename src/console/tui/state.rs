@@ -13,7 +13,7 @@ use crate::console::domain::{
     panel_mode_requires_credential, role_override_present,
 };
 use crate::console::tui::effect::ManagerEffect;
-use jackin_console::tui::auth::{AuthKind, auth_mode_requires_credential};
+use jackin_console::tui::auth::AuthKind;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 
@@ -1219,11 +1219,9 @@ impl SettingsAuthState {
         let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
             return 0;
         };
-        if auth_mode_requires_credential(kind, row.mode) {
-            2
-        } else {
-            1
-        }
+        jackin_console::tui::screens::settings::update::settings_auth_detail_row_count(
+            kind, row.mode,
+        )
     }
 
     pub fn discard(&mut self) {

@@ -4,6 +4,7 @@ use super::model::{
     GlobalMountConfirm, SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow,
     SettingsEnvScope, SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
+use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use jackin_tui::ModalOutcome;
 
 #[must_use]
@@ -55,6 +56,15 @@ pub const fn settings_tab_select_plan(selected_tab: SettingsTab) -> SettingsTabM
     SettingsTabMovePlan {
         active_tab: selected_tab,
         tab_bar_focused: true,
+    }
+}
+
+#[must_use]
+pub const fn settings_auth_detail_row_count(kind: AuthKind, mode: AuthMode) -> usize {
+    if auth_mode_requires_credential(kind, mode) {
+        2
+    } else {
+        1
     }
 }
 
@@ -557,6 +567,18 @@ mod tests {
                 active_tab: SettingsTab::Trust,
                 tab_bar_focused: true,
             }
+        );
+    }
+
+    #[test]
+    fn settings_auth_detail_row_count_adds_source_row_only_when_needed() {
+        assert_eq!(
+            settings_auth_detail_row_count(AuthKind::Github, AuthMode::Token),
+            2
+        );
+        assert_eq!(
+            settings_auth_detail_row_count(AuthKind::Github, AuthMode::Sync),
+            1
         );
     }
 
