@@ -982,6 +982,8 @@ Console role-load error text is assembled through <RepoFile path="crates/jackin-
 
 Console effect executors use the same error-popup helper boundary for side-effect failure titles such as token generation, URL opening, workspace deletion, and file-browser startup. The executor owns the work and the concrete error value; <RepoFile path="crates/jackin-console/src/tui/components/error_popup.rs" /> owns the visible popup title/state construction.
 
+Background-work status popups follow the same split: <RepoFile path="src/console/effects.rs" /> starts role registration, workspace drift checks, and isolated-state cleanup, while <RepoFile path="crates/jackin-console/src/tui/components/status_popup.rs" /> owns the visible status title/message construction.
+
 Editor save prompts and save-blocking error text that depend only on visible editor facts live with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />. Root save input and the effect executor still own drift detection, preserved-state cleanup, and workspace writes; they pass render-safe facts such as affected container names into the screen helpers.
 
 #### Lookbook focus behavior

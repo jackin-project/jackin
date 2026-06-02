@@ -18,6 +18,7 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::error_popup;
+use jackin_console::tui::components::status_popup;
 
 pub(crate) fn op_cli_available() -> bool {
     crate::console::services::op::cli_available()
@@ -737,10 +738,7 @@ fn execute_role_registration_start(
             rx,
         });
         editor.modal = Some(Modal::StatusPopup {
-            state: jackin_tui::components::StatusPopupState::new(
-                "Loading role",
-                format!("Loading role {key}"),
-            ),
+            state: status_popup::role_loading_status_popup_state(&key),
         });
     }
 }
@@ -808,10 +806,7 @@ pub(crate) fn execute_workspace_save_effect(
                 exit_on_success,
             ));
             editor.modal = Some(Modal::StatusPopup {
-                state: jackin_tui::components::StatusPopupState::new(
-                    "Saving",
-                    "Checking isolation records...",
-                ),
+                state: status_popup::workspace_save_drift_check_status_popup_state(),
             });
         }
         WorkspaceSaveEffect::StartIsolationCleanup {
@@ -829,10 +824,7 @@ pub(crate) fn execute_workspace_save_effect(
             editor.pending_isolation_cleanup =
                 Some(PendingIsolationCleanup::new(rx, plan, exit_on_success));
             editor.modal = Some(Modal::StatusPopup {
-                state: jackin_tui::components::StatusPopupState::new(
-                    "Saving",
-                    "Deleting isolated state...",
-                ),
+                state: status_popup::workspace_save_isolation_cleanup_status_popup_state(),
             });
         }
         WorkspaceSaveEffect::WriteWorkspace {
