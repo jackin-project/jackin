@@ -5,10 +5,11 @@ use ratatui::{Frame, layout::Rect, text::Line};
 use crate::config::AppConfig;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_console::tui::screens::workspaces::view::{
-    WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent,
-    WorkspaceInstanceSessionRow, WorkspaceInstanceTab, WorkspaceInstanceTabPane,
+    WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
+    WorkspaceInstanceTab, WorkspaceInstanceTabPane,
     WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
-    list_name_lines as workspace_list_name_lines, render_roles_subpanel,
+    list_name_lines as workspace_list_name_lines, provider_picker_title, render_picker_sidebar,
+    render_roles_subpanel,
 };
 
 pub(crate) fn list_name_lines(
@@ -186,6 +187,56 @@ fn instance_details_content(
             })
             .collect(),
     }
+}
+
+pub(crate) fn render_provider_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    container_id: Option<&str>,
+    providers: &[jackin_protocol::Provider],
+    selected: usize,
+) {
+    let title = provider_picker_title(container_id);
+    let labels = providers
+        .iter()
+        .map(|provider| provider.label().to_string())
+        .collect();
+    render_picker_sidebar(frame, area, &title, labels, Some(selected), false);
+}
+
+pub(crate) fn render_role_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    workspace_name: &str,
+    picker: &crate::selector::RolePickerState,
+    focused: bool,
+) {
+    let title = format!(" {workspace_name} ");
+    let labels = picker.filtered.iter().map(|role| role.key()).collect();
+    render_picker_sidebar(frame, area, &title, labels, picker.list_state.selected, focused);
+}
+
+pub(crate) fn render_agent_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    role_name: &str,
+    picker: &crate::agent::AgentChoiceState,
+    focused: bool,
+) {
+    let title = format!(" {role_name} ");
+    let labels = picker
+        .choices
+        .iter()
+        .map(|agent| {
+            jackin_console::tui::components::agent_choice::agent_picker_label(*agent).to_string()
+        })
+        .collect();
+    let selected =
+        picker
+            .choices
+            .iter()
+            .position(|agent| *agent == picker.focused);
+    render_picker_sidebar(frame, area, &title, labels, selected, focused);
 }
 
 #[cfg(test)]
