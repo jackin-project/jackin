@@ -80,6 +80,11 @@ pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
     state.selected = crate::focus::moved_selection(state.selected, 2, delta);
 }
 
+#[must_use]
+pub fn settings_auth_selection_plan(selected: usize, row_count: usize, delta: isize) -> usize {
+    crate::focus::moved_selection(selected, row_count, delta)
+}
+
 pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
     match state.selected {
         0 => {
@@ -459,6 +464,12 @@ mod tests {
                 selected: 0,
             }
         );
+    }
+
+    #[test]
+    fn settings_auth_selection_plan_clamps_to_rows() {
+        assert_eq!(settings_auth_selection_plan(0, 3, 99), 2);
+        assert_eq!(settings_auth_selection_plan(2, 3, -99), 0);
     }
 
     fn env_config() -> SettingsEnvConfig<&'static str> {

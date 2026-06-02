@@ -26,7 +26,7 @@ use jackin_console::tui::screens::settings::model::SettingsEnvRow;
 use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
     move_trust_selection, set_role_expanded as set_settings_role_expanded, settings_tab_move_plan,
-    step_cursor_down_by, step_cursor_up_by, toggle_general_selected,
+    settings_auth_selection_plan, step_cursor_down_by, step_cursor_up_by, toggle_general_selected,
     toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
@@ -702,7 +702,7 @@ fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {
         return;
     };
     settings.auth.selected =
-        moved_selection(settings.auth.selected, settings.auth.row_count(), delta);
+        settings_auth_selection_plan(settings.auth.selected, settings.auth.row_count(), delta);
 }
 
 fn scroll_editor_tab_horizontal(
