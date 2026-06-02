@@ -49,6 +49,19 @@ pub enum DestructiveConfirmPlan {
     Commit,
 }
 
+#[derive(Debug, Clone)]
+pub struct WorkspaceDeleteConfirmPlan {
+    pub name: String,
+    pub state: jackin_tui::components::ConfirmState,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstancePurgeConfirmPlan {
+    pub container: String,
+    pub label: String,
+    pub state: jackin_tui::components::ConfirmState,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceTreeDisclosurePlan {
     None,
@@ -192,6 +205,38 @@ pub fn workspace_list_select_row_plan(
         clear_inline_new_session_picker: changed,
         clear_inline_provider_picker: changed,
         clear_launch_provider_picker: changed,
+    }
+}
+
+#[must_use]
+pub fn workspace_delete_confirm_state(name: &str) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::new(format!("Delete \"{name}\"?"))
+}
+
+#[must_use]
+pub fn instance_purge_confirm_state(label: &str) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::new(format!(
+        "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
+    ))
+}
+
+#[must_use]
+pub fn workspace_delete_confirm_plan(name: String) -> WorkspaceDeleteConfirmPlan {
+    WorkspaceDeleteConfirmPlan {
+        state: workspace_delete_confirm_state(&name),
+        name,
+    }
+}
+
+#[must_use]
+pub fn instance_purge_confirm_plan(
+    container: String,
+    label: String,
+) -> InstancePurgeConfirmPlan {
+    InstancePurgeConfirmPlan {
+        state: instance_purge_confirm_state(&label),
+        container,
+        label,
     }
 }
 
@@ -410,6 +455,23 @@ mod tests {
             workspace_list_scroll_focus_plan(false, true, false, false, false, true).scroll_focus,
             Some(crate::focus::MountScrollFocus::Roles)
         );
+    }
+
+    #[test]
+    fn destructive_confirm_states_name_targets() {
+        let delete = workspace_delete_confirm_plan("alpha".to_string());
+        let delete_debug = format!("{:?}", delete.state);
+        assert_eq!(delete.name, "alpha");
+        assert!(delete_debug.contains("Delete"));
+        assert!(delete_debug.contains("alpha"));
+
+        let purge = instance_purge_confirm_plan("abc123".to_string(), "role/dev".to_string());
+        let purge_debug = format!("{:?}", purge.state);
+        assert_eq!(purge.container, "abc123");
+        assert_eq!(purge.label, "role/dev");
+        assert!(purge_debug.contains("Purge"));
+        assert!(purge_debug.contains("role/dev"));
+        assert!(purge_debug.contains("Cannot be undone"));
     }
 
     #[test]

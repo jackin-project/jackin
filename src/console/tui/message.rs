@@ -31,13 +31,11 @@ use jackin_console::tui::screens::settings::update::{
     settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
     toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
-use jackin_console::tui::screens::workspaces::view::{
-    instance_purge_confirm_state, workspace_delete_confirm_state,
-};
 use jackin_console::tui::screens::workspaces::update::{
     PreviewFocusPlan, WorkspaceTreeDisclosurePlan, collapse_selected_tree_plan,
     enter_preview_focus_plan, exit_preview_focus_plan, expand_selected_tree_plan,
-    preview_pane_cursor_plan, workspace_list_move_selection_plan, workspace_list_select_row_plan,
+    instance_purge_confirm_plan, preview_pane_cursor_plan, workspace_delete_confirm_plan,
+    workspace_list_move_selection_plan, workspace_list_select_row_plan,
     workspace_unclamped_scroll_plan,
 };
 use jackin_console::tui::update::{
@@ -508,17 +506,19 @@ fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
 }
 
 fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {
+    let plan = workspace_delete_confirm_plan(name);
     state.stage = ManagerStage::ConfirmDelete {
-        state: workspace_delete_confirm_state(&name),
-        name,
+        state: plan.state,
+        name: plan.name,
     };
 }
 
 fn enter_confirm_instance_purge(state: &mut ManagerState<'_>, container: String, label: String) {
+    let plan = instance_purge_confirm_plan(container, label);
     state.stage = ManagerStage::ConfirmInstancePurge {
-        container,
-        state: instance_purge_confirm_state(&label),
-        label,
+        container: plan.container,
+        state: plan.state,
+        label: plan.label,
     };
 }
 
