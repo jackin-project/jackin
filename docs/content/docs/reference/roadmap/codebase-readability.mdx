@@ -25,7 +25,13 @@ These are done. Listed so the remaining work is not confused with completed work
 - **Stage 1 complete** — `jackin-core` leaf crate created with `Agent`, `MountIsolation`, `AuthForwardMode`, and shared constants (`MANIFEST_FILENAME`, `DOCKERFILE_NAME`, `CLAUDE_OAUTH_TOKEN_ENV`). The `agent → config` cycle is broken. Original modules re-export from `jackin-core`. `jackin-console` depends on `jackin-core` and provides the `AgentChoice` impl, satisfying the orphan rule. All 16 agent behavioral tests ported to `jackin-core`.
 - **Stage 2 DRY pass ongoing** — string constants in `jackin-core`; named `Style` constants (`BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `GREEN`, `BORDER`, `DANGER`) in `jackin-tui/theme.rs`; `provision_single_file_credential` extracted from `Amp`/`OpenCode` auth provisioners; `DockerResources::from_container_name` constructor eliminates inline `format!("{name}-dind")` chains; `resolve_mode_with_trace` extracted to `config/roles.rs` (eliminates duplication with `launch.rs`); `MANIFEST_FILENAME` literal replaced in <RepoFile path="src/manifest/mod.rs" />, <RepoFile path="src/repo.rs" />, and <RepoFile path="src/role_authoring.rs" />.
 - **Stage 2 test infrastructure** — `seed_valid_role_repo`, `first_temp_role_repo`, `TEST_DOCKERFILE_FROM`, and `TEST_MANIFEST_TOML` consolidated from two duplicate test modules into <RepoFile path="src/runtime/test_support.rs" />. This addresses the `BASE_DOCKERFILE_FROM` (~29×) item from the roadmap.
-- **Stage 3 started** — `crates/jackin-capsule/src/daemon/mod.rs` (3910 L) split into `daemon/mod.rs` (983 L production) + `daemon/tests.rs` (2927 L tests). Workspace-wide `cargo clippy --workspace -- -D warnings` now clean (4 pre-existing errors fixed in capsule + console). `#[allow(clippy::too_many_lines)]` suppressions reduced from 53 to 48 through DRY work.
+- **Stage 3 ongoing** — Four monolith splits completed:
+  - `crates/jackin-capsule/src/daemon.rs` (3910 L) → `daemon/mod.rs` (983 L) + `daemon/tests.rs` (2927 L)
+  - <RepoFile path="src/operator_env/mod.rs" /> (4209 L) → production (2018 L) + <RepoFile path="src/operator_env/tests.rs" /> (2188 L tests)
+  - <RepoFile path="src/app/mod.rs" /> workspace handlers extracted to <RepoFile path="src/app/workspace_cmd.rs" /> (559 L)
+  - <RepoFile path="src/app/mod.rs" /> config handlers extracted to <RepoFile path="src/app/config_cmd.rs" /> (290 L)
+  - Workspace-wide `cargo clippy --workspace -- -D warnings` now clean. `too_many_lines` suppressions 53 → 48.
+  - **Remaining Stage 3**: `launch.rs` (9,482 L), `console/tui/input/editor.rs` (4,212 L), and remaining `app/mod.rs` production split (Load/Console/Hardline handlers).
 
 ## The target: a tiered core-crate workspace
 
@@ -91,7 +97,7 @@ The split is the headline: the extracted crates are documented, small-filed, and
 | `tui/` | 4 | 1,087 | 0% | `animation.rs` | folds into the TUI crates |
 | `agent/` | 1 | 462 | 0% | — | `jackin-core` |
 
-Plus the two single largest cross-cutting root files: <RepoFile path="src/operator_env.rs" /> (4,209 L → `jackin-env`) and <RepoFile path="src/derived_image.rs" /> (1,381 L → `jackin-runtime`).
+Plus the two single largest cross-cutting root files: <RepoFile path="src/operator_env/mod.rs" /> (4,209 L → `jackin-env`) and <RepoFile path="src/derived_image.rs" /> (1,381 L → `jackin-runtime`).
 
 ## The real blocker: a cyclic dependency graph
 

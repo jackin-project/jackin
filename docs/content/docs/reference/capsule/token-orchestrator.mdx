@@ -20,7 +20,7 @@ What lives here: the load-bearing details and deliberate hacks that keep the ope
 
 2. **Capture** — drive `claude setup-token` interactively under a PTY. The operator completes the OAuth flow in their browser; the long-lived token is captured into `secrecy::SecretString`. Every line written to the operator's stderr passes through a redactor that swaps the token span for `<redacted>` so the URL and prompts still display, but the token never echoes. See `host_claude::capture_setup_token` in <RepoFile path="src/host_claude.rs" />.
 
-3. **Write** — push the token into a new 1Password item via `op item create -`. The JSON template (item title, category, tags, `notesPlain` provenance stamp, **and the field value**) lands on the child's stdin; the secret never crosses argv. See `OpWriteRunner::item_create` in <RepoFile path="src/operator_env.rs" />.
+3. **Write** — push the token into a new 1Password item via `op item create -`. The JSON template (item title, category, tags, `notesPlain` provenance stamp, **and the field value**) lands on the child's stdin; the secret never crosses argv. See `OpWriteRunner::item_create` in <RepoFile path="src/operator_env/mod.rs" />.
 
 4. **Validate** — re-read the just-written value through the same `op://` reference and compare its SHA-256 prefix against what was captured. A vault-routing surprise would otherwise leave a wired-but-broken slot pointing at an item the operator never minted. On mismatch the orphan is best-effort deleted and the run aborts with no on-disk config changed.
 
@@ -36,7 +36,7 @@ This file documents each step's load-bearing details, the failure modes, and the
 |---|---|
 | PTY capture, ANSI redactor, version probe                       | <RepoFile path="src/host_claude.rs" /> |
 | Orchestrator state machines (`run_setup` / `run_revoke` / `run_doctor`) | <RepoFile path="src/workspace/token_setup.rs" /> |
-| `OpWriteRunner` trait + `OpCli` impl (1P CLI driver)            | <RepoFile path="src/operator_env.rs" /> |
+| `OpWriteRunner` trait + `OpCli` impl (1P CLI driver)            | <RepoFile path="src/operator_env/mod.rs" /> |
 | CLI dispatch (`handle_claude_token`, rotate cleanup)            | <RepoFile path="src/app/mod.rs" /> |
 | `clap` subcommand surface                                       | <RepoFile path="src/cli/workspace.rs" /> |
 | Container provisioning of the OAuth-token onboarding skeleton   | <RepoFile path="src/instance/auth.rs" /> |
