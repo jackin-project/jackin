@@ -619,7 +619,7 @@ pub fn clamp_mounts_scroll_x_for_frame(area: Rect, content_width: usize, scroll_
 pub fn auth_content_height<K, M>(
     selected_kind: Option<K>,
     rows: &[SettingsAuthRow<K, M>],
-    mode_needs_credential: impl Fn(K, &M) -> bool,
+    detail_row_count: impl Fn(K, &M) -> usize,
     has_error: bool,
 ) -> usize
 where
@@ -628,11 +628,7 @@ where
     let height = match selected_kind {
         None => rows.len(),
         Some(kind) => rows.iter().find(|row| row.kind == kind).map_or(0, |row| {
-            if mode_needs_credential(kind, &row.mode) {
-                3
-            } else {
-                2
-            }
+            1 + detail_row_count(kind, &row.mode)
         }),
     };
     content_height_with_error_rows(height, has_error)
@@ -1005,7 +1001,10 @@ mod tests {
             },
         ];
 
-        assert_eq!(auth_content_height(None, &rows, |_, mode| *mode, false), 2);
+        assert_eq!(
+            auth_content_height(None, &rows, |_, mode| usize::from(*mode) + 1, false),
+            2
+        );
     }
 
     #[test]
@@ -1016,7 +1015,12 @@ mod tests {
         }];
 
         assert_eq!(
-            auth_content_height(Some(Kind::Credential), &rows, |_, mode| *mode, true),
+            auth_content_height(
+                Some(Kind::Credential),
+                &rows,
+                |_, mode| usize::from(*mode) + 1,
+                true
+            ),
             5
         );
     }

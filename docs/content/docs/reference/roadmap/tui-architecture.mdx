@@ -366,7 +366,7 @@ Settings header title wording now lives with settings screen view helpers in <Re
 
 Settings global-mount scroll clamping now uses the same crate-owned settings frame geometry helper that settings rendering uses, so scroll preparation and frame rendering cannot drift on header/tab/body/footer row allocation.
 
-Settings tab content-height rules for Mounts, Environment, and Trust tabs now live with the settings screen view helpers. Root layout code supplies row counts and error-state facts instead of owning the tab-specific height math.
+Settings tab content-height rules for Mounts, Auth, Environment, and Trust tabs now live with the settings screen view helpers. Root layout code supplies row counts and error-state facts instead of owning the tab-specific height math; Auth height uses the same detail-row-count helper that settings input uses for focus.
 
 Console modal letter-consumption policy for the global quit intercept now lives in <RepoFile path="crates/jackin-console/src/tui/run.rs" />. The root run loop maps concrete root modal variants into generic `LetterInputState` facts instead of owning which modal shapes consume typed letters.
 

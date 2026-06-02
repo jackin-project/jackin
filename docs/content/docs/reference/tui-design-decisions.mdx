@@ -209,7 +209,7 @@ Workspace-list root rendering and pre-render scroll preparation both use the cra
 
 Settings global-mount scroll clamping uses the same crate-owned settings frame geometry helper as settings rendering, so scroll preparation and frame rendering share the same body rectangle.
 
-Settings tab content-height rules for Mounts, Environment, and Trust tabs live with the settings screen view helpers; root layout code supplies row counts and error-state facts.
+Settings tab content-height rules for Mounts, Auth, Environment, and Trust tabs live with the settings screen view helpers; root layout code supplies row counts and error-state facts, and Auth height consumes the same detail-row-count helper as settings input focus.
 
 Settings environment add-cancel wording lives with settings screen view helpers. Root input supplies the cancellation state transition and uses the crate-owned message when the modal chain closes.
 

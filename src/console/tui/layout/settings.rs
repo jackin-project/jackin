@@ -6,6 +6,7 @@ use crate::console::tui::components::mount_display::{
     settings_global_mounts_content_height, settings_global_mounts_content_width_with_cache,
 };
 use crate::console::tui::state::{GlobalMountsState, SettingsState, settings_env_flat_rows};
+use jackin_console::tui::screens::settings::update::settings_auth_detail_row_count;
 
 pub(crate) fn clamp_global_mounts_scroll_for_frame(area: Rect, global: &mut GlobalMountsState<'_>) {
     jackin_console::tui::screens::settings::view::clamp_mounts_scroll_x_for_frame(
@@ -33,7 +34,7 @@ pub(crate) fn auth_content_height(state: &SettingsState<'_>) -> usize {
     jackin_console::tui::screens::settings::view::auth_content_height(
         state.auth.selected_kind,
         &state.auth.pending,
-        |kind, mode| kind.required_env_var(*mode).is_some(),
+        |kind, mode| settings_auth_detail_row_count(kind, *mode),
         state.auth.error.is_some(),
     )
 }
