@@ -6,7 +6,7 @@ use crate::console::tui::state::{
     GlobalMountModal, Modal, SettingsAuthModal, SettingsAuthState, SettingsEnvModal,
 };
 use jackin_console::tui::components::footer_hints::{
-    ModalFooterMode, modal_footer_items as shared_modal_footer_items,
+    ModalFooterMode, modal_footer_items as shared_modal_footer_items, op_picker_modal_footer_mode,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -40,17 +40,11 @@ pub(crate) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
         Modal::ErrorPopup { .. } => shared_modal_footer_items(ModalFooterMode::ErrorPopup),
         Modal::ContainerInfo { .. } => shared_modal_footer_items(ModalFooterMode::ContainerInfo),
         Modal::StatusPopup { .. } => shared_modal_footer_items(ModalFooterMode::StatusPopup),
-        Modal::OpPicker { state } if state.naming_stage_input().is_some() => {
-            shared_modal_footer_items(ModalFooterMode::OpNamingTextInput)
-        }
-        Modal::OpPicker { state }
-            if state.stage == crate::console::tui::components::op_picker::OpPickerStage::Section =>
-        {
-            shared_modal_footer_items(ModalFooterMode::OpSection)
-        }
-        Modal::OpPicker { .. } => shared_modal_footer_items(ModalFooterMode::FilteredPicker {
-            include_refresh: true,
-        }),
+        Modal::OpPicker { state } => shared_modal_footer_items(op_picker_modal_footer_mode(
+            state.stage,
+            state.naming_stage_input().is_some(),
+            true,
+        )),
         Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
         | Modal::AuthRolePicker { .. } => {
@@ -130,18 +124,12 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
         SettingsAuthModal::SourcePicker { .. } => {
             shared_modal_footer_items(ModalFooterMode::SegmentedChoice)
         }
-        SettingsAuthModal::OpPicker { state } if state.naming_stage_input().is_some() => {
-            shared_modal_footer_items(ModalFooterMode::OpNamingTextInput)
-        }
-        SettingsAuthModal::OpPicker { state }
-            if state.stage == crate::console::tui::components::op_picker::OpPickerStage::Section =>
-        {
-            shared_modal_footer_items(ModalFooterMode::OpSection)
-        }
-        SettingsAuthModal::OpPicker { .. } => {
-            shared_modal_footer_items(ModalFooterMode::FilteredPicker {
-                include_refresh: false,
-            })
+        SettingsAuthModal::OpPicker { state } => {
+            shared_modal_footer_items(op_picker_modal_footer_mode(
+                state.stage,
+                state.naming_stage_input().is_some(),
+                false,
+            ))
         }
     }
 }

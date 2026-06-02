@@ -2,6 +2,7 @@
 
 use jackin_tui::HintSpan;
 
+use crate::tui::components::op_picker::OpPickerStage;
 use crate::tui::screens::settings::model::AuthFormFocus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -405,6 +406,21 @@ pub enum ModalFooterMode {
         include_refresh: bool,
     },
     YesNo,
+}
+
+#[must_use]
+pub const fn op_picker_modal_footer_mode(
+    stage: OpPickerStage,
+    has_naming_stage_input: bool,
+    include_refresh: bool,
+) -> ModalFooterMode {
+    if has_naming_stage_input {
+        return ModalFooterMode::OpNamingTextInput;
+    }
+    match stage {
+        OpPickerStage::Section => ModalFooterMode::OpSection,
+        _ => ModalFooterMode::FilteredPicker { include_refresh },
+    }
 }
 
 #[must_use]
@@ -847,6 +863,24 @@ mod tests {
                 "Q",
                 "quit",
             ]
+        );
+    }
+
+    #[test]
+    fn op_picker_modal_footer_mode_routes_naming_section_and_filtered_stages() {
+        assert_eq!(
+            op_picker_modal_footer_mode(OpPickerStage::NewItemName, true, true),
+            ModalFooterMode::OpNamingTextInput
+        );
+        assert_eq!(
+            op_picker_modal_footer_mode(OpPickerStage::Section, false, true),
+            ModalFooterMode::OpSection
+        );
+        assert_eq!(
+            op_picker_modal_footer_mode(OpPickerStage::Item, false, true),
+            ModalFooterMode::FilteredPicker {
+                include_refresh: true
+            }
         );
     }
 
