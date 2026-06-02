@@ -35,7 +35,9 @@ These are done. Listed so the remaining work is not confused with completed work
   - <RepoFile path="src/runtime/launch/mod.rs" /> (9,465 L) → `launch/mod.rs` (3,759 L prod) + `launch/tests.rs` (5,703 L tests)
   - <RepoFile path="src/app/load_cmd.rs" /> — Load/Console/Hardline/Eject/Exile handlers extracted (491 L)
   - <RepoFile path="src/app/prune_cmd.rs" /> — Purge/Prune handlers extracted (80 L)
-  - **Remaining Stage 3**: The 4 files above have their production code split but still contain large handlers. `launch/mod.rs` (3,759 L), `editor/mod.rs` (1,699 L), and `app/mod.rs` (2,573 L) would benefit from per-function splits, but the per-file test extraction is the highest-impact reduction done.
+  - Per-tab split of input/editor.rs → 4 sub-modules (agents.rs, secrets.rs, mounts.rs, general.rs).
+  - Paired view/editor.rs split → mod.rs (75L dispatcher) + 7 per-tab render test files.
+  - **Remaining Stage 3**: launch/mod.rs (3,759L prod + 5,703L tests) per-function pipeline split (pipeline.rs, trust.rs, slot.rs) needs deep dependency analysis before extraction.
 
 ## The target: a tiered core-crate workspace
 
