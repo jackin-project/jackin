@@ -256,6 +256,22 @@ pub(crate) enum VisibleTabPaneKind {
     Shell,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VisibleTabPaneFacts<'a> {
+    pub(crate) agent_slug: Option<&'a str>,
+    pub(crate) provider_label: Option<&'a str>,
+}
+
+pub(crate) fn visible_tab_pane_kind(facts: VisibleTabPaneFacts<'_>) -> VisibleTabPaneKind {
+    match facts.agent_slug {
+        Some(agent) => VisibleTabPaneKind::Agent(visible_agent_label(
+            Some(agent),
+            facts.provider_label,
+        )),
+        None => VisibleTabPaneKind::Shell,
+    }
+}
+
 /// Derive the auto-label shown in the tab strip from visible pane makeup.
 ///
 /// Operator-owned custom labels still shadow this in [`Tab::label`]; this helper
@@ -311,9 +327,10 @@ mod tests {
 
     use super::{
         ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
-        PointerShape, PointerShapeState, VisibleTabPaneKind, chrome_hover_target_for_state,
-        cursor_visible_for_state, hover_target_for_state, mux_mode_for_state,
-        pointer_shape_for_state, tab_auto_label, visible_agent_label, visible_panes_for_layout,
+        PointerShape, PointerShapeState, VisibleTabPaneFacts, VisibleTabPaneKind,
+        chrome_hover_target_for_state, cursor_visible_for_state, hover_target_for_state,
+        mux_mode_for_state, pointer_shape_for_state, tab_auto_label, visible_agent_label,
+        visible_panes_for_layout, visible_tab_pane_kind,
     };
 
     #[test]
@@ -595,6 +612,24 @@ mod tests {
         assert_eq!(
             visible_agent_label(Some("claude"), Some("Z.AI")),
             "Claude (Z.AI)"
+        );
+    }
+
+    #[test]
+    fn visible_tab_pane_kind_uses_tui_agent_labeling() {
+        assert_eq!(
+            visible_tab_pane_kind(VisibleTabPaneFacts {
+                agent_slug: Some("claude"),
+                provider_label: Some("Z.AI"),
+            }),
+            VisibleTabPaneKind::Agent("Claude (Z.AI)".into())
+        );
+        assert_eq!(
+            visible_tab_pane_kind(VisibleTabPaneFacts {
+                agent_slug: None,
+                provider_label: Some("ignored"),
+            }),
+            VisibleTabPaneKind::Shell
         );
     }
 }

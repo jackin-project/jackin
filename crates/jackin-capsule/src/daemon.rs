@@ -90,7 +90,7 @@ use crate::socket;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::tui::title::{
-    append_osc_window_title, compose_outer_terminal_title, pane_agent_label, pane_display_title,
+    append_osc_window_title, compose_outer_terminal_title, pane_display_title,
 };
 use crate::tui::app::{
     ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
@@ -117,13 +117,6 @@ mod session_lifecycle;
 
 fn session_display_title(session: &Session) -> String {
     pane_display_title(session.title(), session.cwd(), &session.label)
-}
-
-fn session_agent_label(session: &Session) -> String {
-    pane_agent_label(
-        session.agent.as_deref(),
-        session.provider.as_ref().map(|provider| provider.label.as_str()),
-    )
 }
 
 struct SessionLaunch {

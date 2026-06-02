@@ -247,11 +247,14 @@ impl Multiplexer {
         let pane_count = ids.len();
         let panes = ids.into_iter().filter_map(|id| {
             self.sessions.get(&id).map(|session| {
-                if session.agent.is_some() {
-                    crate::tui::app::VisibleTabPaneKind::Agent(session_agent_label(session))
-                } else {
-                    crate::tui::app::VisibleTabPaneKind::Shell
-                }
+                let provider_label = session
+                    .provider
+                    .as_ref()
+                    .map(|provider| provider.label.as_str());
+                crate::tui::app::visible_tab_pane_kind(crate::tui::app::VisibleTabPaneFacts {
+                    agent_slug: session.agent.as_deref(),
+                    provider_label,
+                })
             })
         });
         crate::tui::app::tab_auto_label(pane_count, panes)

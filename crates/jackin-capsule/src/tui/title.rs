@@ -12,14 +12,6 @@ use crate::pull_request::PullRequestInfo;
 
 const OUTER_TERMINAL_TITLE_MAX_CHARS: usize = 180;
 
-/// Human-readable label for a pane's visible agent facts.
-///
-/// Returns "Shell" when no agent is present, `"Slug (provider)"` when a
-/// provider label is known, or `"Slug"` otherwise.
-pub(crate) fn pane_agent_label(agent: Option<&str>, provider_label: Option<&str>) -> String {
-    crate::tui::app::visible_agent_label(agent, provider_label)
-}
-
 /// Human-readable title for the pane box drawn above a session.
 ///
 /// Priority: OSC 2 title > shortened cwd > session label.
