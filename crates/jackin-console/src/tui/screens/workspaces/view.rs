@@ -97,6 +97,14 @@ pub fn workspace_instance_list_label(instance_id: &str, role_key: &str) -> Strin
 }
 
 #[must_use]
+pub fn instance_purge_confirm_label(container_base: &str, role_key: Option<&str>) -> String {
+    role_key.map_or_else(
+        || container_base.to_string(),
+        |role_key| format!("{container_base} ({role_key})"),
+    )
+}
+
+#[must_use]
 pub fn workspace_instance_pane_agent_label(agent: Option<&str>) -> String {
     agent.unwrap_or("shell").to_string()
 }
@@ -960,6 +968,15 @@ mod tests {
         };
         assert!(prompt.starts_with("Purge \"role/dev\"?"));
         assert!(prompt.contains("local recovery state"));
+    }
+
+    #[test]
+    fn instance_purge_confirm_label_names_container_and_role_when_known() {
+        assert_eq!(
+            instance_purge_confirm_label("alpha-123", Some("the-architect")),
+            "alpha-123 (the-architect)"
+        );
+        assert_eq!(instance_purge_confirm_label("alpha-123", None), "alpha-123");
     }
 
     #[test]

@@ -15,6 +15,7 @@ use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceStatus, instance_action_accepts_status,
     is_preview_pane_entry_target, preview_pane_key_plan, should_enter_preview_pane,
 };
+use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::instance_action::workspace_instance_action_fact;
@@ -281,8 +282,8 @@ fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
         .iter()
         .find(|entry| entry.container_base == container)
         .map_or_else(
-            || container.clone(),
-            |entry| format!("{} ({})", entry.container_base, entry.role_key),
+            || instance_purge_confirm_label(&container, None),
+            |entry| instance_purge_confirm_label(&entry.container_base, Some(&entry.role_key)),
         );
     dispatch_manager(
         state,
