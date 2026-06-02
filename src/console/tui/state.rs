@@ -225,7 +225,7 @@ pub struct ManagerState<'a> {
     pub preview_pane_cursor: HashMap<String, usize>,
 }
 
-pub use jackin_console::focus::MountScrollFocus;
+pub use jackin_console::tui::focus::MountScrollFocus;
 pub use jackin_console::tui::split::{
     DEFAULT_SPLIT_PCT, DragState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, clamp_split,
 };

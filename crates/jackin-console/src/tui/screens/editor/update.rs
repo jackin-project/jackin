@@ -223,7 +223,7 @@ pub fn editor_field_selection_plan(
     term_height: u16,
     footer_h: u16,
 ) -> EditorFieldSelectionPlan {
-    let candidate = crate::focus::moved_selection(active_row, max_row.saturating_add(1), delta);
+    let candidate = crate::tui::focus::moved_selection(active_row, max_row.saturating_add(1), delta);
     let next = if delta.is_negative() {
         step_cursor_up(skipped_rows, candidate)
     } else {
@@ -231,7 +231,7 @@ pub fn editor_field_selection_plan(
     };
     EditorFieldSelectionPlan {
         active_row: next,
-        tab_scroll_y: crate::focus::cursor_scroll_for_panel(
+        tab_scroll_y: crate::tui::focus::cursor_scroll_for_panel(
             next,
             current_scroll_y,
             term_height,

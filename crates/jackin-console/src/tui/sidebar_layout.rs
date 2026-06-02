@@ -53,20 +53,20 @@ pub enum SidebarScrollFocus {
     Roles,
 }
 
-impl From<crate::focus::MountScrollFocus> for SidebarScrollFocus {
-    fn from(focus: crate::focus::MountScrollFocus) -> Self {
+impl From<crate::tui::focus::MountScrollFocus> for SidebarScrollFocus {
+    fn from(focus: crate::tui::focus::MountScrollFocus) -> Self {
         match focus {
-            crate::focus::MountScrollFocus::Workspace => Self::Workspace,
-            crate::focus::MountScrollFocus::Global => Self::Global,
-            crate::focus::MountScrollFocus::RoleGlobal => Self::RoleGlobal,
-            crate::focus::MountScrollFocus::Roles => Self::Roles,
+            crate::tui::focus::MountScrollFocus::Workspace => Self::Workspace,
+            crate::tui::focus::MountScrollFocus::Global => Self::Global,
+            crate::tui::focus::MountScrollFocus::RoleGlobal => Self::RoleGlobal,
+            crate::tui::focus::MountScrollFocus::Roles => Self::Roles,
         }
     }
 }
 
 #[must_use]
 pub fn focused_mount_scroll_area_still_scrollable(
-    focus: crate::focus::MountScrollFocus,
+    focus: crate::tui::focus::MountScrollFocus,
     areas: Option<&SidebarScrollAreas>,
 ) -> bool {
     focused_scroll_area_still_scrollable(focus.into(), areas)
@@ -341,11 +341,11 @@ mod tests {
             None
         ));
         assert!(focused_mount_scroll_area_still_scrollable(
-            crate::focus::MountScrollFocus::Workspace,
+            crate::tui::focus::MountScrollFocus::Workspace,
             Some(&areas)
         ));
         assert!(!focused_mount_scroll_area_still_scrollable(
-            crate::focus::MountScrollFocus::Global,
+            crate::tui::focus::MountScrollFocus::Global,
             Some(&areas)
         ));
     }

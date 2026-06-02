@@ -122,12 +122,12 @@ pub fn enter_settings_auth_kind_plan<K>(
 }
 
 pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
-    state.selected = crate::focus::moved_selection(state.selected, 2, delta);
+    state.selected = crate::tui::focus::moved_selection(state.selected, 2, delta);
 }
 
 #[must_use]
 pub fn settings_auth_selection_plan(selected: usize, row_count: usize, delta: isize) -> usize {
-    crate::focus::moved_selection(selected, row_count, delta)
+    crate::tui::focus::moved_selection(selected, row_count, delta)
 }
 
 pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
@@ -143,7 +143,7 @@ pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
 }
 
 pub fn move_trust_selection(state: &mut SettingsTrustState, delta: isize) {
-    state.selected = crate::focus::moved_selection(state.selected, state.pending.len(), delta);
+    state.selected = crate::tui::focus::moved_selection(state.selected, state.pending.len(), delta);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,10 +222,10 @@ pub fn settings_trust_selection_plan(
     term_height: u16,
     footer_h: u16,
 ) -> SettingsSelectionScrollPlan {
-    let selected = crate::focus::moved_selection(selected, row_count, delta);
+    let selected = crate::tui::focus::moved_selection(selected, row_count, delta);
     SettingsSelectionScrollPlan {
         selected,
-        scroll_y: crate::focus::cursor_scroll_for_panel(
+        scroll_y: crate::tui::focus::cursor_scroll_for_panel(
             selected,
             current_scroll_y,
             term_height,
@@ -260,7 +260,7 @@ pub fn settings_env_selection_plan(
     };
     SettingsSelectionScrollPlan {
         selected,
-        scroll_y: crate::focus::cursor_scroll_for_panel(
+        scroll_y: crate::tui::focus::cursor_scroll_for_panel(
             selected,
             current_scroll_y,
             term_height,
@@ -285,7 +285,7 @@ pub fn settings_global_mounts_selection_plan(
     };
     SettingsSelectionScrollPlan {
         selected,
-        scroll_y: crate::focus::cursor_scroll_for_panel(
+        scroll_y: crate::tui::focus::cursor_scroll_for_panel(
             selected,
             current_scroll_y,
             term_height,

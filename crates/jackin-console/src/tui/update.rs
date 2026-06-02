@@ -29,7 +29,7 @@ pub enum InlinePickerDismissal {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderFocusPlan {
-    pub list_scroll_focus: Option<crate::focus::MountScrollFocus>,
+    pub list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
     pub list_names_focused: bool,
 }
 
@@ -52,8 +52,8 @@ pub enum InlineProviderFollowupPlan<C, A, P> {
 
 #[must_use]
 pub const fn list_scroll_focus_plan(
-    focus: Option<crate::focus::MountScrollFocus>,
-) -> Option<crate::focus::MountScrollFocus> {
+    focus: Option<crate::tui::focus::MountScrollFocus>,
+) -> Option<crate::tui::focus::MountScrollFocus> {
     focus
 }
 
@@ -64,7 +64,7 @@ pub const fn list_names_focus_plan(focused: bool) -> bool {
 
 #[must_use]
 pub const fn list_pre_render_focus_plan(
-    list_scroll_focus: Option<crate::focus::MountScrollFocus>,
+    list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
     list_names_focused: bool,
     preview_focused: bool,
     sidebar_available: bool,
@@ -147,12 +147,12 @@ pub const fn list_split_pct_plan(pct: u16) -> u16 {
 
 #[must_use]
 pub fn selection_move_plan(selected: usize, row_count: usize, delta: isize) -> usize {
-    crate::focus::moved_selection(selected, row_count, delta)
+    crate::tui::focus::moved_selection(selected, row_count, delta)
 }
 
 #[must_use]
 pub fn selected_index_plan(selected: usize, row_count: usize) -> usize {
-    crate::focus::selected_index(selected, row_count)
+    crate::tui::focus::selected_index(selected, row_count)
 }
 
 #[must_use]
@@ -271,8 +271,8 @@ mod tests {
     #[test]
     fn shell_state_plans_return_normalized_values() {
         assert_eq!(
-            list_scroll_focus_plan(Some(crate::focus::MountScrollFocus::Workspace)),
-            Some(crate::focus::MountScrollFocus::Workspace)
+            list_scroll_focus_plan(Some(crate::tui::focus::MountScrollFocus::Workspace)),
+            Some(crate::tui::focus::MountScrollFocus::Workspace)
         );
         assert!(list_names_focus_plan(true));
         let drag = crate::tui::split::DragState {
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn list_pre_render_focus_plan_handles_sidebar_liveness() {
         let missing_sidebar = list_pre_render_focus_plan(
-            Some(crate::focus::MountScrollFocus::Workspace),
+            Some(crate::tui::focus::MountScrollFocus::Workspace),
             false,
             false,
             false,
@@ -297,7 +297,7 @@ mod tests {
         assert!(missing_sidebar.list_names_focused);
 
         let preview_missing_sidebar = list_pre_render_focus_plan(
-            Some(crate::focus::MountScrollFocus::Workspace),
+            Some(crate::tui::focus::MountScrollFocus::Workspace),
             false,
             true,
             false,
@@ -307,7 +307,7 @@ mod tests {
         assert!(!preview_missing_sidebar.list_names_focused);
 
         let stale_focus = list_pre_render_focus_plan(
-            Some(crate::focus::MountScrollFocus::Workspace),
+            Some(crate::tui::focus::MountScrollFocus::Workspace),
             false,
             true,
             true,
@@ -317,7 +317,7 @@ mod tests {
         assert!(stale_focus.list_names_focused);
 
         let live_focus = list_pre_render_focus_plan(
-            Some(crate::focus::MountScrollFocus::Workspace),
+            Some(crate::tui::focus::MountScrollFocus::Workspace),
             false,
             false,
             true,
@@ -325,7 +325,7 @@ mod tests {
         );
         assert_eq!(
             live_focus.list_scroll_focus,
-            Some(crate::focus::MountScrollFocus::Workspace)
+            Some(crate::tui::focus::MountScrollFocus::Workspace)
         );
         assert!(!live_focus.list_names_focused);
     }

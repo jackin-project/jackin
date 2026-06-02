@@ -112,12 +112,12 @@ pub fn visual_rows(layout: WorkspaceRowLayout<'_>) -> Vec<Option<ManagerListRow>
 
 #[must_use]
 pub fn moved_selection(selected: usize, row_count: usize, delta: isize) -> usize {
-    crate::focus::moved_selection(selected, row_count, delta)
+    crate::tui::focus::moved_selection(selected, row_count, delta)
 }
 
 #[must_use]
 pub fn selected_index(selected: usize, row_count: usize) -> usize {
-    crate::focus::selected_index(selected, row_count)
+    crate::tui::focus::selected_index(selected, row_count)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,7 +134,7 @@ pub struct WorkspaceListSelectionPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListScrollFocusPlan {
     pub list_names_focused: bool,
-    pub scroll_focus: Option<crate::focus::MountScrollFocus>,
+    pub scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
 }
 
 #[must_use]
@@ -155,13 +155,13 @@ pub const fn workspace_list_scroll_focus_plan(
     let scroll_focus = if !has_scroll_areas {
         None
     } else if in_workspace_mounts {
-        Some(crate::focus::MountScrollFocus::Workspace)
+        Some(crate::tui::focus::MountScrollFocus::Workspace)
     } else if in_global_mounts {
-        Some(crate::focus::MountScrollFocus::Global)
+        Some(crate::tui::focus::MountScrollFocus::Global)
     } else if in_role_global_mounts {
-        Some(crate::focus::MountScrollFocus::RoleGlobal)
+        Some(crate::tui::focus::MountScrollFocus::RoleGlobal)
     } else if in_roles {
-        Some(crate::focus::MountScrollFocus::Roles)
+        Some(crate::tui::focus::MountScrollFocus::Roles)
     } else {
         None
     };
@@ -177,7 +177,7 @@ pub fn workspace_list_move_selection_plan(
     row_count: usize,
     delta: isize,
 ) -> WorkspaceListSelectionPlan {
-    let next = crate::focus::moved_selection(selected, row_count, delta);
+    let next = crate::tui::focus::moved_selection(selected, row_count, delta);
     WorkspaceListSelectionPlan {
         selected: next,
         changed: next != selected,
@@ -195,7 +195,7 @@ pub fn workspace_list_select_row_plan(
     selected: usize,
     row_count: usize,
 ) -> WorkspaceListSelectionPlan {
-    let next = crate::focus::selected_index(selected, row_count);
+    let next = crate::tui::focus::selected_index(selected, row_count);
     let changed = next != current_selected;
     WorkspaceListSelectionPlan {
         selected: next,
@@ -323,7 +323,7 @@ pub fn preview_pane_cursor_plan(
         return None;
     }
     let cursor = current_cursor.unwrap_or(0).min(pane_count - 1);
-    Some(crate::focus::moved_selection(cursor, pane_count, delta))
+    Some(crate::tui::focus::moved_selection(cursor, pane_count, delta))
 }
 
 #[must_use]
@@ -445,15 +445,15 @@ mod tests {
         );
         assert_eq!(
             workspace_list_scroll_focus_plan(false, true, false, true, false, false).scroll_focus,
-            Some(crate::focus::MountScrollFocus::Global)
+            Some(crate::tui::focus::MountScrollFocus::Global)
         );
         assert_eq!(
             workspace_list_scroll_focus_plan(false, true, false, false, true, false).scroll_focus,
-            Some(crate::focus::MountScrollFocus::RoleGlobal)
+            Some(crate::tui::focus::MountScrollFocus::RoleGlobal)
         );
         assert_eq!(
             workspace_list_scroll_focus_plan(false, true, false, false, false, true).scroll_focus,
-            Some(crate::focus::MountScrollFocus::Roles)
+            Some(crate::tui::focus::MountScrollFocus::Roles)
         );
     }
 
