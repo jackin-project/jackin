@@ -33,7 +33,7 @@ use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
 use jackin_console::tui::update::{
-    selection_move_plan, term_width_scroll_plan, unclamped_scroll_plan,
+    selected_index_plan, selection_move_plan, term_width_scroll_plan, unclamped_scroll_plan,
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -857,11 +857,7 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
     state.inline_role_picker = None;
     state.inline_agent_picker = None;
     state.inline_new_session_picker = None;
-    let selected = jackin_console::tui::screens::workspaces::update::moved_selection(
-        state.selected,
-        state.row_count(),
-        delta,
-    );
+    let selected = selection_move_plan(state.selected, state.row_count(), delta);
     if selected != state.selected {
         state.reset_list_scroll();
         state.selected = selected;
@@ -870,10 +866,7 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
 
 fn select_list_row(state: &mut ManagerState<'_>, selected: usize) {
     state.inline_role_picker = None;
-    let selected = jackin_console::tui::screens::workspaces::update::selected_index(
-        selected,
-        state.row_count(),
-    );
+    let selected = selected_index_plan(selected, state.row_count());
     if selected != state.selected {
         state.reset_list_scroll();
         state.selected = selected;

@@ -10,6 +10,11 @@ pub fn selection_move_plan(selected: usize, row_count: usize, delta: isize) -> u
 }
 
 #[must_use]
+pub fn selected_index_plan(selected: usize, row_count: usize) -> usize {
+    crate::focus::selected_index(selected, row_count)
+}
+
+#[must_use]
 pub const fn unclamped_scroll_plan(current_scroll: u16, delta: i16) -> u16 {
     let mut scroll = current_scroll;
     jackin_tui::components::apply_scroll_delta_unclamped(&mut scroll, delta);
@@ -47,6 +52,12 @@ mod tests {
     fn selection_move_plan_clamps_to_rows() {
         assert_eq!(selection_move_plan(0, 3, 99), 2);
         assert_eq!(selection_move_plan(2, 3, -99), 0);
+    }
+
+    #[test]
+    fn selected_index_plan_clamps_to_rows() {
+        assert_eq!(selected_index_plan(99, 3), 2);
+        assert_eq!(selected_index_plan(0, 0), 0);
     }
 
     #[test]
