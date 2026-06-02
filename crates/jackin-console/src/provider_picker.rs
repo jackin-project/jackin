@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderPickerState<C, A, P> {
     pub context: C,
     pub agent: A,

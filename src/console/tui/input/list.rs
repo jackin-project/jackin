@@ -16,12 +16,15 @@ use jackin_console::tui::screens::workspaces::update::{
     is_preview_pane_entry_target, preview_pane_key_plan, should_enter_preview_pane,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
+use jackin_console::tui::update::{
+    InlineProviderFollowupPlan, inline_provider_followup_plan,
+};
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::instance_action::workspace_instance_action_fact;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    EditorState, ManagerListRow, ManagerState, Modal, ProviderPickerState, SettingsState,
+    EditorState, ManagerListRow, ManagerState, Modal, SettingsState,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -577,18 +580,24 @@ pub(super) fn handle_new_session_picker(
     match picker.handle_key(key) {
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
-            if providers.is_empty() || agent != crate::agent::Agent::Claude {
-                dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
-                InputOutcome::InstanceAction {
-                    container,
-                    action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+            let plan = inline_provider_followup_plan(
+                container,
+                agent,
+                providers.clone(),
+                agent == crate::agent::Agent::Claude,
+            );
+            dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
+            match plan {
+                InlineProviderFollowupPlan::StartSession { context, agent } => {
+                    InputOutcome::InstanceAction {
+                        container: context,
+                        action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+                    }
                 }
-            } else {
-                let providers = providers.clone();
-                dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
-                state.inline_provider_picker =
-                    Some(ProviderPickerState::new(container, agent, providers));
-                InputOutcome::Continue
+                InlineProviderFollowupPlan::OpenProviderPicker(picker) => {
+                    state.inline_provider_picker = Some(picker);
+                    InputOutcome::Continue
+                }
             }
         }
         ModalOutcome::Cancel => {

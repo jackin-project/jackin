@@ -40,6 +40,15 @@ pub struct ListPreRenderScrollResetPlan {
     pub reset_roles: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InlineProviderFollowupPlan<C, A, P> {
+    StartSession {
+        context: C,
+        agent: A,
+    },
+    OpenProviderPicker(crate::provider_picker::ProviderPickerState<C, A, P>),
+}
+
 #[must_use]
 pub const fn list_scroll_focus_plan(
     focus: Option<crate::focus::MountScrollFocus>,
@@ -104,6 +113,22 @@ pub const fn list_pre_render_scroll_reset_plan(
         reset_global: false,
         reset_role_global: !role_global_available,
         reset_roles: !roles_available,
+    }
+}
+
+#[must_use]
+pub fn inline_provider_followup_plan<C, A, P>(
+    context: C,
+    agent: A,
+    providers: Vec<P>,
+    agent_supports_providers: bool,
+) -> InlineProviderFollowupPlan<C, A, P> {
+    if agent_supports_providers && !providers.is_empty() {
+        InlineProviderFollowupPlan::OpenProviderPicker(crate::provider_picker::ProviderPickerState::new(
+            context, agent, providers,
+        ))
+    } else {
+        InlineProviderFollowupPlan::StartSession { context, agent }
     }
 }
 
@@ -331,6 +356,30 @@ mod tests {
                 reset_global: false,
                 reset_role_global: false,
                 reset_roles: true,
+            }
+        );
+    }
+
+    #[test]
+    fn inline_provider_followup_plan_opens_picker_only_when_supported() {
+        assert_eq!(
+            inline_provider_followup_plan("container", "claude", vec!["zai"], true),
+            InlineProviderFollowupPlan::OpenProviderPicker(
+                crate::provider_picker::ProviderPickerState::new("container", "claude", vec!["zai"])
+            )
+        );
+        assert_eq!(
+            inline_provider_followup_plan("container", "codex", vec!["zai"], false),
+            InlineProviderFollowupPlan::StartSession {
+                context: "container",
+                agent: "codex",
+            }
+        );
+        assert_eq!(
+            inline_provider_followup_plan::<_, _, &str>("container", "claude", Vec::new(), true),
+            InlineProviderFollowupPlan::StartSession {
+                context: "container",
+                agent: "claude",
             }
         );
     }
