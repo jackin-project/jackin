@@ -9,6 +9,7 @@
     "(agent-runtimes-authentication)",
     "(isolation-security)",
     "(infrastructure)",
+    "(operator-surface)",
     "(documentation-tooling)",
     "(configuration-ergonomics)"
   ]
