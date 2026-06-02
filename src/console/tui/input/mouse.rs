@@ -611,7 +611,10 @@ fn try_drag_horizontal_scrollbar(
                 areas.workspace.area,
                 areas.workspace.content_width,
             ) {
-                state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+                state.list_scroll_focus = workspace_list_scroll_focus_plan(
+                    false, true, true, false, false, false,
+                )
+                .scroll_focus;
                 return true;
             }
             if drag_scrollbar(
@@ -620,7 +623,10 @@ fn try_drag_horizontal_scrollbar(
                 areas.global.area,
                 areas.global.content_width,
             ) {
-                state.list_scroll_focus = Some(MountScrollFocus::Global);
+                state.list_scroll_focus = workspace_list_scroll_focus_plan(
+                    false, true, false, true, false, false,
+                )
+                .scroll_focus;
                 return true;
             }
             if let Some(role) = areas.role_global
@@ -631,7 +637,10 @@ fn try_drag_horizontal_scrollbar(
                     role.content_width,
                 )
             {
-                state.list_scroll_focus = Some(MountScrollFocus::RoleGlobal);
+                state.list_scroll_focus = workspace_list_scroll_focus_plan(
+                    false, true, false, false, true, false,
+                )
+                .scroll_focus;
                 return true;
             }
             false
@@ -980,7 +989,9 @@ fn scroll_active_panel(
                 return;
             }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
-                state.list_scroll_focus = None;
+                state.list_scroll_focus =
+                    workspace_list_scroll_focus_plan(false, false, false, false, false, false)
+                        .scroll_focus;
                 return;
             };
             let Some(focus) = state.list_scroll_focus else {
