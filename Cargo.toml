@@ -105,6 +105,10 @@ unsafe_code = "forbid"
 # DockerApi and CommandRunner are internal traits; auto-trait bounds (Send/Sync)
 # are not a concern with the current_thread tokio runtime.
 async_fn_in_trait = "allow"
+# Flags pub items that are unreachable from the crate root — they can be
+# narrowed to pub(crate) or pub(super). Advisory only; drive a visibility
+# tightening pass before crate extraction.
+unreachable_pub = "warn"
 
 [lints.clippy]
 # Lint groups — bugs are errors, style is advisory

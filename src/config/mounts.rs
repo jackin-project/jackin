@@ -38,7 +38,7 @@ impl From<GlobalMountConfig> for MountConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum MountEntry {
+pub(crate) enum MountEntry {
     Mount(GlobalMountConfig),
     Scoped(BTreeMap<String, GlobalMountConfig>),
 }

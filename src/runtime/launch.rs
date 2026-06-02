@@ -1249,7 +1249,7 @@ async fn diagnose_with_state(
 /// running. `still_running()` instead skips the auto-cleanup path entirely
 /// and preserves records for `jackin hardline` to recover.
 #[allow(clippy::unnecessary_wraps)] // Result preserved so callers' `?` keeps working without a churn-y signature change
-pub async fn inspect_attach_outcome(
+pub(super) async fn inspect_attach_outcome(
     docker: &impl DockerApi,
     container: &str,
 ) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
@@ -3245,7 +3245,7 @@ fn try_acquire_name_lock(
 /// when a layer is silent; `ResolvedLiteral` / `ResolvedOpRef` by
 /// `build_env_layer_states` when a layer declares the var.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EnvLayerState {
+pub(super) enum EnvLayerState {
     /// Layer does not declare the var at all.
     Unset,
     /// Layer declares the var with a literal (or `$VAR`) value that
@@ -3279,7 +3279,7 @@ impl std::fmt::Display for EnvLayerState {
 // Constructed by Task 13's `verify_credential_env_present` and bubbled
 // through Task 14's `load_role_with` integration.
 #[derive(Debug, thiserror::Error)]
-pub enum LaunchError {
+pub(super) enum LaunchError {
     /// `auth_forward` mode requires a credential env var to resolve to
     /// a non-empty value, but the resolved operator env doesn't carry
     /// it. Carries enough structure for both CLI rendering (multi-line
@@ -3529,7 +3529,7 @@ fn resolve_github_env_map(
 /// panel. The caller (`load_role_with`, see `build_mode_resolution` /
 /// `build_env_layer_states`) owns trace derivation; this helper only
 /// looks up the env var and constructs the error.
-pub fn verify_credential_env_present(
+pub(super) fn verify_credential_env_present(
     agent: crate::agent::Agent,
     mode: crate::config::AuthForwardMode,
     merged_env: &std::collections::BTreeMap<String, String>,

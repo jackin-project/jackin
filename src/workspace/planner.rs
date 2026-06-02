@@ -15,7 +15,7 @@ use crate::workspace::WorkspaceConfig;
 use crate::workspace::mounts::covers;
 
 /// Plan for `jackin workspace create`.
-pub struct WorkspaceCreatePlan {
+pub(crate) struct WorkspaceCreatePlan {
     /// The final mount list the caller should persist.
     pub final_mounts: Vec<MountConfig>,
     /// Mounts subsumed during the collapse — i.e. each `Removal`'s child
@@ -24,7 +24,7 @@ pub struct WorkspaceCreatePlan {
 }
 
 /// Plan for `jackin workspace edit`.
-pub struct WorkspaceEditPlan {
+pub(crate) struct WorkspaceEditPlan {
     /// Destinations to remove in the persisted edit. Stacks the user-supplied
     /// `remove_destinations` with every collapsed child, so
     /// `edit_workspace`'s existing remove-then-upsert logic produces the
@@ -45,7 +45,7 @@ pub struct WorkspaceEditPlan {
 /// Collapses redundancies among the supplied mount list. Callers must
 /// pass every mount explicitly — the planner does not auto-mount the
 /// workdir.
-pub fn plan_create(mounts: &[MountConfig]) -> Result<WorkspaceCreatePlan, CollapseError> {
+pub(crate) fn plan_create(mounts: &[MountConfig]) -> Result<WorkspaceCreatePlan, CollapseError> {
     let all_indexes: Vec<usize> = (0..mounts.len()).collect();
     let plan = plan_collapse(mounts, &all_indexes)?;
     Ok(WorkspaceCreatePlan {
@@ -63,7 +63,7 @@ pub fn plan_create(mounts: &[MountConfig]) -> Result<WorkspaceCreatePlan, Collap
 /// `plan_collapse`'s removals can be classified as `edit_driven_collapses`
 /// (touching a new/updated mount) or `pre_existing_collapses` (entirely
 /// between pre-existing mounts).
-pub fn plan_edit(
+pub(crate) fn plan_edit(
     current: &WorkspaceConfig,
     upserts: &[MountConfig],
     remove_destinations: &[String],
@@ -127,7 +127,7 @@ pub fn plan_edit(
 /// the typo instead of silently picking up the default. The plan must be the
 /// final, post-collapse mount list because the destinations the operator
 /// supplied on the CLI must match what gets persisted.
-pub fn apply_isolation_overrides(
+pub(crate) fn apply_isolation_overrides(
     mounts: &mut [crate::workspace::MountConfig],
     overrides: &[(String, crate::isolation::MountIsolation)],
 ) -> anyhow::Result<()> {

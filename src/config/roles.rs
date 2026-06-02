@@ -127,7 +127,7 @@ pub fn build_github_env_layers(
     merged
 }
 
-pub const BUILTIN_ROLES: &[(&str, &str)] = &[
+pub(super) const BUILTIN_ROLES: &[(&str, &str)] = &[
     (
         "agent-smith",
         "https://github.com/jackin-project/jackin-agent-smith.git",

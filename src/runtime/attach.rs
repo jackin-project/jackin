@@ -28,7 +28,7 @@ use anyhow::Context as _;
 /// propagates loudly because `||` short-circuits at the first failure
 /// only — there is no `|| true` suppression of the second command's
 /// errors.
-pub const JACKIN_STATUS_CMD: &str =
+pub(crate) const JACKIN_STATUS_CMD: &str =
     "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
 
 pub(super) async fn wait_for_capsule_daemon(
@@ -104,7 +104,7 @@ pub async fn inspect_agent_sessions(
 /// between `inspect_agent_sessions` here and
 /// `isolation::finalize::has_jackin_sessions` so a future change to
 /// the header shape touches one place, not two.
-pub fn parse_session_count(output: &str) -> Option<usize> {
+pub(crate) fn parse_session_count(output: &str) -> Option<usize> {
     output.lines().find_map(|line| {
         line.trim()
             .strip_prefix("Sessions:")
@@ -173,7 +173,7 @@ fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
 /// is the verb + target phrase (e.g. ``"inspect container `foo`"``,
 /// ``"claim container name `foo`"``); the tail is the shared
 /// reason-suffix every call site needs.
-pub fn docker_unavailable_msg(clause: &str, reason: &str) -> String {
+pub(crate) fn docker_unavailable_msg(clause: &str, reason: &str) -> String {
     format!(
         "cannot {clause} because Docker is unavailable or returned an unexpected response: {reason}"
     )
