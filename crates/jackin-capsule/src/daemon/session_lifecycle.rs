@@ -240,7 +240,7 @@ impl Multiplexer {
                 }
             }
             None => SessionLaunch {
-                label: "Shell".to_string(),
+                label: crate::tui::app::visible_agent_label(None, None),
                 cmd: build_shell_command(env_passthrough, cwd),
             },
         }
