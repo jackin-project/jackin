@@ -119,7 +119,7 @@ Status writes should update both `instance.json` and `instances.json` through th
 
 Matching role/agent restore candidates can be rebuilt through the load prompt. Related role/agent candidates in the same workspace or directory can be recovered or rebuilt in place from the saved manifest source/ref. Running related instances are not blockers; they are active parallel work.
 
-Implementation lives in <RepoFile path="src/runtime/launch.rs" /> (`resolve_restore_candidate`, related restore helpers, name claiming, and launch orchestration).
+Implementation lives in <RepoFile path="src/runtime/launch/mod.rs" /> (`resolve_restore_candidate`, related restore helpers, name claiming, and launch orchestration).
 
 ## Hardline Decision Model
 
@@ -187,7 +187,7 @@ Implementation lives in <RepoFile path="src/runtime/cleanup.rs" />.
 | DNS-safe names and instance IDs | <RepoFile path="src/instance/naming.rs" /> |
 | Docker labels and derived resource names | <RepoFile path="src/runtime/naming.rs" /> |
 | Instance manifest and rebuildable index | <RepoFile path="src/instance/manifest.rs" /> |
-| Launch, restore discovery, name claiming | <RepoFile path="src/runtime/launch.rs" /> |
+| Launch, restore discovery, name claiming | <RepoFile path="src/runtime/launch/mod.rs" /> |
 | Attach, inspect, session inventory | <RepoFile path="src/runtime/attach.rs" /> |
 | Eject, purge, orphan cleanup | <RepoFile path="src/runtime/cleanup.rs" /> |
 | Workspace/materialized mount state | <RepoFile path="src/isolation/materialize.rs" /> and <RepoFile path="src/isolation/state.rs" /> |

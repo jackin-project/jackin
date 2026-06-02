@@ -65,7 +65,7 @@ Code:
 - <RepoFile path="src/config/migrations.rs" /> — version bump and registry step.
 - <RepoFile path="src/config/roles.rs" /> — `sync_builtin_agents` must update fields in place rather than overwriting the whole `RoleSource`, so a re-pinned built-in survives a binary upgrade.
 - <RepoFile path="src/runtime/repo_cache.rs" /> — capture-pin helper, fetch+checkout-detached path for pinned commits, `--update` path, persist callback into config.
-- <RepoFile path="src/runtime/launch.rs" /> — wire the `--update` flag, include resolved version/SHA in the launch summary.
+- <RepoFile path="src/runtime/launch/mod.rs" /> — wire the `--update` flag, include resolved version/SHA in the launch summary.
 
 Docs:
 

@@ -388,7 +388,7 @@ observing real footprint.
   crate-internal `storage/`) — DB pool, migrations, query helpers
 - New module (e.g. `src/memory/mod.rs`) — memory resolution, proposals,
   policy checks, and runtime-neutral `MemoryBrief` construction
-- <RepoFile path="src/runtime/launch.rs" /> — DB creation on first load
+- <RepoFile path="src/runtime/launch/mod.rs" /> — DB creation on first load
 - <RepoFile path="src/runtime/cleanup.rs" /> — DB teardown on `purge`
 - Future control/MCP surface — agents query/propose memory through jackin,
   never by opening host-side storage directly

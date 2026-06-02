@@ -278,7 +278,7 @@ jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
   the dispatch loop
 - `src/queue/task_source.rs` (from previous leaf) —
   source polling
-- <RepoFile path="src/runtime/launch.rs" /> — invoked by the
+- <RepoFile path="src/runtime/launch/mod.rs" /> — invoked by the
   dispatcher per task; small refactor to accept programmatic
   invocation instead of CLI args only
 - <RepoFile path="src/instance/naming.rs" /> — per-task instance name

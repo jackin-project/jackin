@@ -10,7 +10,7 @@ title: "Agent runtime trait — replace the closed Agent enum with per-runtime m
 
 | File | `Agent::Variant` references | Role in the dispatch fan-out |
 |---|---|---|
-| <RepoFile path="src/runtime/launch.rs" /> | **70** | Container launch, capsule config, mode-resolution trace, install-block emission |
+| <RepoFile path="src/runtime/launch/mod.rs" /> | **70** | Container launch, capsule config, mode-resolution trace, install-block emission |
 | <RepoFile path="src/derived_image.rs" /> | **42** | Dockerfile generation, entrypoint dispatch, per-agent COPY/CHMOD scaffolding |
 | <RepoFile path="src/agent/mod.rs" /> | **37** | The enum itself, plus its install-block / required-env / supported-modes tables |
 | <RepoFile path="src/instance/auth.rs" /> | **27** | Credential provisioning (5 near-identical `provision_*` functions) |
@@ -23,7 +23,7 @@ title: "Agent runtime trait — replace the closed Agent enum with per-runtime m
 | 21 more files | **117** | Manifest validation, attach, image build, cleanup, save flow, workspace resolve, … |
 | **Total** | **414** | spread across **31 production files** |
 
-The same shape leaks into the data model. `AppConfig`, `WorkspaceConfig`, and `RoleConfig` each carry five parallel optional fields (`claude`, `codex`, `amp`, `kimi`, `opencode`) of *the same type* (`AgentAuthConfig`), and the TOML parser uses five separate newtypes (`CodexAuthConfig`, `AmpAuthConfig`, `KimiAuthConfig`, `OpencodeAuthConfig`) just to reject `oauth_token` on the four runtimes that don't support it. A single function in <RepoFile path="src/runtime/launch.rs" /> — `build_mode_resolution` — contains *three* byte-for-byte-symmetric 5-arm matches in 30 lines, one per layer of the global / workspace / role resolution stack:
+The same shape leaks into the data model. `AppConfig`, `WorkspaceConfig`, and `RoleConfig` each carry five parallel optional fields (`claude`, `codex`, `amp`, `kimi`, `opencode`) of *the same type* (`AgentAuthConfig`), and the TOML parser uses five separate newtypes (`CodexAuthConfig`, `AmpAuthConfig`, `KimiAuthConfig`, `OpencodeAuthConfig`) just to reject `oauth_token` on the four runtimes that don't support it. A single function in <RepoFile path="src/runtime/launch/mod.rs" /> — `build_mode_resolution` — contains *three* byte-for-byte-symmetric 5-arm matches in 30 lines, one per layer of the global / workspace / role resolution stack:
 
 ```rust
 let agent_at_global = match agent {
@@ -143,7 +143,7 @@ Each PR has a clear stop point. The work is parallelisable with the [Split `runt
 ## Related files
 
 - <RepoFile path="src/agent/mod.rs" /> — current `enum Agent` (446L; will shrink to ~120L identity + delegators)
-- <RepoFile path="src/runtime/launch.rs" /> — heaviest consumer (70 references, 18 dispatch arms across 5 sites)
+- <RepoFile path="src/runtime/launch/mod.rs" /> — heaviest consumer (70 references, 18 dispatch arms across 5 sites)
 - <RepoFile path="src/derived_image.rs" /> — Dockerfile generation (42 references)
 - <RepoFile path="src/instance/auth.rs" /> — 5 near-identical provision functions (27 references)
 - <RepoFile path="src/config/roles.rs" /> — per-layer auth-config resolution (26 references)

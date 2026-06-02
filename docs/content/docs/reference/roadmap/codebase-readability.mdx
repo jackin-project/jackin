@@ -31,7 +31,11 @@ These are done. Listed so the remaining work is not confused with completed work
   - <RepoFile path="src/app/mod.rs" /> workspace handlers extracted to <RepoFile path="src/app/workspace_cmd.rs" /> (559 L)
   - <RepoFile path="src/app/mod.rs" /> config handlers extracted to <RepoFile path="src/app/config_cmd.rs" /> (290 L)
   - Workspace-wide `cargo clippy --workspace -- -D warnings` now clean. `too_many_lines` suppressions 53 → 48.
-  - **Remaining Stage 3**: `launch.rs` (9,482 L), `console/tui/input/editor.rs` (4,212 L), and remaining `app/mod.rs` production split (Load/Console/Hardline handlers).
+  - <RepoFile path="src/console/tui/input/editor/mod.rs" /> (4,178 L) → `editor/mod.rs` (1,699 L prod) + `editor/tests.rs` (2,392 L tests)
+  - <RepoFile path="src/runtime/launch/mod.rs" /> (9,465 L) → `launch/mod.rs` (3,759 L prod) + `launch/tests.rs` (5,703 L tests)
+  - <RepoFile path="src/app/load_cmd.rs" /> — Load/Console/Hardline/Eject/Exile handlers extracted (491 L)
+  - <RepoFile path="src/app/prune_cmd.rs" /> — Purge/Prune handlers extracted (80 L)
+  - **Remaining Stage 3**: The 4 files above have their production code split but still contain large handlers. `launch/mod.rs` (3,759 L), `editor/mod.rs` (1,699 L), and `app/mod.rs` (2,573 L) would benefit from per-function splits, but the per-file test extraction is the highest-impact reduction done.
 
 ## The target: a tiered core-crate workspace
 
@@ -170,7 +174,7 @@ Reduce duplication before it is frozen into crate APIs. Every extraction has 3+ 
 - **Shared string constants** — none extracted yet: `MANIFEST_FILENAME` (`"jackin.role.toml"`, 160×), `DOCKERFILE_NAME` (`"Dockerfile"`, 235×), `BASE_DOCKERFILE_FROM` (~100×). These belong in `jackin-core`.
 - **Named style constants** — collapse the 235+ `Style::default().fg(…).add_modifier(BOLD)` chains in the TUI crates into `BOLD_WHITE` / `DIM` / `GREEN` / `BORDER` / `DANGER` in `jackin-tui`.
 - **Auth provisioning** — <RepoFile path="src/instance/auth.rs" /> (3,302 L) has six near-identical `provision_*_auth` functions; extract `provision_file_credential(target, host_path, mode)`.
-- **Agent dispatch** — adding an agent currently edits eight files with `Agent::Claude => …` arms (<RepoFile path="src/config/roles.rs" />, <RepoFile path="src/instance/mod.rs" />, <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/runtime/image.rs" />, <RepoFile path="src/derived_image.rs" />, <RepoFile path="src/agent_binary.rs" />, <RepoFile path="src/version_check.rs" />, <RepoFile path="src/manifest/validate.rs" />). Replace with trait dispatch — tracked as the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) item.
+- **Agent dispatch** — adding an agent currently edits eight files with `Agent::Claude => …` arms (<RepoFile path="src/config/roles.rs" />, <RepoFile path="src/instance/mod.rs" />, <RepoFile path="src/runtime/launch/mod.rs" />, <RepoFile path="src/runtime/image.rs" />, <RepoFile path="src/derived_image.rs" />, <RepoFile path="src/agent_binary.rs" />, <RepoFile path="src/version_check.rs" />, <RepoFile path="src/manifest/validate.rs" />). Replace with trait dispatch — tracked as the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) item.
 - **Docker resource derivation** and **test infrastructure** — extract a resource-name struct + `run_dind_sidecar` helper, and consolidate the repeated `FakeRunner` / `seed_minimal_role_repo` / `test_workspace` / `simple_mount` helpers into a shared support module.
 
 ### Stage 3 — Split and document the monoliths

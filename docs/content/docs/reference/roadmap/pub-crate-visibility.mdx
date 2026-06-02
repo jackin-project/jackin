@@ -15,7 +15,7 @@ title: "pub(crate) visibility pass"
   - <RepoFile path="src/workspace/planner.rs" /> — `WorkspaceCreatePlan`, `WorkspaceEditPlan`, `plan_create`, `plan_edit`, `apply_isolation_overrides` → `pub(crate)`
   - <RepoFile path="src/config/mounts.rs" /> — `MountEntry` → `pub(crate)`
   - <RepoFile path="src/config/roles.rs" /> — `BUILTIN_ROLES` (name changed from `BUILTIN_AGENTS`) → `pub(super)`
-  - <RepoFile path="src/runtime/launch.rs" /> — `inspect_attach_outcome`, `EnvLayerState`, `LaunchError`, `verify_credential_env_present` → `pub(super)`
+  - <RepoFile path="src/runtime/launch/mod.rs" /> — `inspect_attach_outcome`, `EnvLayerState`, `LaunchError`, `verify_credential_env_present` → `pub(super)`
   - <RepoFile path="src/runtime/attach.rs" /> — `JACKIN_STATUS_CMD`, `parse_session_count`, `docker_unavailable_msg` → `pub(crate)` (isolation/finalize.rs and app/mod.rs access these from outside runtime; pub(super) would break those paths)
 
 ## Remaining work

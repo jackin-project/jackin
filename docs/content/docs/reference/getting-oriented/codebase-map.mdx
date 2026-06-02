@@ -60,7 +60,7 @@ etc.). When you add a flag, also update the matching docs page under
 
 The container lifecycle lives in `src/runtime/`:
 
-- <RepoFile path="src/runtime/launch.rs" /> — the load path: clone/update
+- <RepoFile path="src/runtime/launch/mod.rs" /> — the load path: clone/update
   role repo, validate the contract, generate a derived Dockerfile, build
   the image on the host Docker engine, start the DinD sidecar and the
   agent container, attach. It emits structured launch progress stages

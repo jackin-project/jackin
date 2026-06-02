@@ -8,14 +8,14 @@ title: "Session Keep and Resume"
 
 When an operator leaves a jackin' session, the exit path silently discards more than the operator expects, and the next launch cannot bring them back. This is the concrete cause of the "sometimes I lose important context" instability operators report.
 
-Trace a normal clean exit (`Stopped/0`) today: <RepoFile path="src/isolation/finalize.rs" /> assesses each isolated mount, **auto-deletes** any worktree it judges safe (`force_cleanup_isolated`, no prompt), returns `FinalizeDecision::Cleaned`, the launcher tears the container down, and <RepoFile path="src/runtime/launch.rs" /> stamps the instance `InstanceStatus::CleanExited`. The per-instance agent home (`~/.jackin/data/<container>/home/.claude`, `.claude.json`, installed plugins, conversation history, every other runtime's home) is preserved on disk — but `CleanExited` is **not** a restore candidate (`is_restore_candidate()` in <RepoFile path="src/instance/manifest.rs" /> matches `Active | Running | Crashed | PreservedDirty | PreservedUnpushed | RestoreAvailable | FailedSetup`, never `CleanExited`). So the next `jackin load` / `jackin console` mints a fresh `instance_id`, a fresh container name, a fresh data directory, and an empty home. Yesterday's conversation is stranded on disk with no path back to it.
+Trace a normal clean exit (`Stopped/0`) today: <RepoFile path="src/isolation/finalize.rs" /> assesses each isolated mount, **auto-deletes** any worktree it judges safe (`force_cleanup_isolated`, no prompt), returns `FinalizeDecision::Cleaned`, the launcher tears the container down, and <RepoFile path="src/runtime/launch/mod.rs" /> stamps the instance `InstanceStatus::CleanExited`. The per-instance agent home (`~/.jackin/data/<container>/home/.claude`, `.claude.json`, installed plugins, conversation history, every other runtime's home) is preserved on disk — but `CleanExited` is **not** a restore candidate (`is_restore_candidate()` in <RepoFile path="src/instance/manifest.rs" /> matches `Active | Running | Crashed | PreservedDirty | PreservedUnpushed | RestoreAvailable | FailedSetup`, never `CleanExited`). So the next `jackin load` / `jackin console` mints a fresh `instance_id`, a fresh container name, a fresh data directory, and an empty home. Yesterday's conversation is stranded on disk with no path back to it.
 
 Two narrower problems compound it:
 
 - **There is no "keep to resume" outcome for a clean session.** Preservation only triggers when an isolated mount has uncommitted or unpushed Git state. A clean session you simply want to continue tomorrow has no button.
 - **The exit prompt that does exist is hard to read on degraded terminals.** The rich worktree-cleanup dialog now renders unconditionally (the plain-text fallback was removed), so a too-small or `TERM=dumb` terminal shows an unreadable surface for both the choice and its error popup.
 
-The mirror-image failure is just as damaging: a clean exit **leaves the per-instance data directory and its index entry behind forever.** `LoadCleanup::run` in <RepoFile path="src/runtime/launch.rs" /> removes the container, DinD sidecar, certs volume, and network, but never touches `~/.jackin/data/<container>/`, and it deliberately calls `keep_socket_dir()` so even the socket directory lingers. The instance is stamped `clean_exited` in `~/.jackin/data/instances.json` but the row is never removed. The result, observed live, is a data directory holding a dozen `jk-…-jackin-thearchitect/` folders and an `instances.json` still listing seven `clean_exited` instances whose containers are long gone, plus orphaned `.lock` siblings and stray `*.repo.lock` files. Every launch leaks; nothing reaps unless the operator remembers to run `jackin prune instances` by hand. A terminal outcome must clean up after itself — change the status, delete the filesystem state, and drop the index row — in the same exit path, not in a command the operator has to know exists.
+The mirror-image failure is just as damaging: a clean exit **leaves the per-instance data directory and its index entry behind forever.** `LoadCleanup::run` in <RepoFile path="src/runtime/launch/mod.rs" /> removes the container, DinD sidecar, certs volume, and network, but never touches `~/.jackin/data/<container>/`, and it deliberately calls `keep_socket_dir()` so even the socket directory lingers. The instance is stamped `clean_exited` in `~/.jackin/data/instances.json` but the row is never removed. The result, observed live, is a data directory holding a dozen `jk-…-jackin-thearchitect/` folders and an `instances.json` still listing seven `clean_exited` instances whose containers are long gone, plus orphaned `.lock` siblings and stray `*.repo.lock` files. Every launch leaks; nothing reaps unless the operator remembers to run `jackin prune instances` by hand. A terminal outcome must clean up after itself — change the status, delete the filesystem state, and drop the index row — in the same exit path, not in a command the operator has to know exists.
 
 The fix is the flow the operator described: a clear, rich exit decision — keep this to resume, or clean it up — governed by a per-workspace policy, and a rich resume-or-new choice at the next launch that rebinds the same persisted instance so the conversation, plugins, and isolated worktree come back as they were.
 
@@ -34,7 +34,7 @@ The fix is the flow the operator described: a clear, rich exit decision — keep
 This item is roughly 70% assembly of shipped infrastructure, not greenfield. What already exists:
 
 - **Durable per-instance host state.** `~/.jackin/data/<container>/` survives `docker rm`: `.jackin/instance.json` (the manifest), `.jackin/isolation.json` (mount records), `home/` (every agent runtime's home, including Claude plugins and `.claude.json`), the per-agent auth slots, and the materialised `git/worktree/` and `git/clone/` trees. See [Runtime Instance Model](/reference/runtime/runtime-instance-model/).
-- **A container-level restore flow.** `resolve_restore_candidate()` in <RepoFile path="src/runtime/launch.rs" /> already presents an **"Unfinished jackin instances"** picker (start-fresh vs restore a prior instance, plus related-role recovery), and `InstanceStatus::RestoreAvailable` + `mark_restore_available()` already model "container gone, host state survives." This shipped as **Unique container identity and restore**.
+- **A container-level restore flow.** `resolve_restore_candidate()` in <RepoFile path="src/runtime/launch/mod.rs" /> already presents an **"Unfinished jackin instances"** picker (start-fresh vs restore a prior instance, plus related-role recovery), and `InstanceStatus::RestoreAvailable` + `mark_restore_available()` already model "container gone, host state survives." This shipped as **Unique container identity and restore**.
 - **Per-mount exit assessment.** `assess_cleanup()` runs `git status --porcelain`, `for-each-ref`, and `rev-list` against every isolation record and fails closed (preserve) on any ambiguity. The `PreservedDirty` / `PreservedUnpushed` distinction already drives per-reason wording.
 - **A rich dialog vocabulary.** <RepoFile path="src/runtime/progress.rs" /> already exposes `standalone_select_with_context`, `standalone_error_popup`, text prompts, confirms, and the launch cockpit surface the exit and resume dialogs should reuse rather than reinvent.
 
@@ -127,7 +127,7 @@ session ends (foreground attach returned)
 
    worktree  /workspace/jackin
      uncommitted   3 files
-       M  src/runtime/launch.rs
+       M  src/runtime/launch/mod.rs
        M  src/isolation/finalize.rs
        ?? notes.md
      unpushed      1 branch
@@ -199,7 +199,7 @@ Footer hint: `↑/↓ navigate · type to filter · Enter select · Ctrl-C abort
  Restoring the-architect (claude) · workspace jackin
  Reusing the preserved worktree at /workspace/jackin:
 
-   uncommitted   3 files   (M src/runtime/launch.rs · ?? notes.md · …)
+   uncommitted   3 files   (M src/runtime/launch/mod.rs · ?? notes.md · …)
    unpushed      feature/cleanup-flow   2 commits ahead
 
  Host repo unchanged since this worktree was preserved — safe to reuse.

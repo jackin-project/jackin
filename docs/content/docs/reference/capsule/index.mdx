@@ -394,7 +394,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | <RepoFile path="src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
 | <RepoFile path="src/derived_image.rs" /> | Copies binary into derived image build context |
 | <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
-| <RepoFile path="src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
+| <RepoFile path="src/runtime/launch/mod.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
 | <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
 | <RepoFile path="src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |

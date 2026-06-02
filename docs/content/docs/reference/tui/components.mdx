@@ -69,7 +69,7 @@ Background-work status popups follow the same split: <RepoFile path="src/console
 
 Root-console tests should seed modals through the same crate-owned helpers as runtime whenever the helper exists. This keeps the final-structure audit honest: direct constructors in root tests are treated as drift unless the test is explicitly exercising the shared primitive itself.
 
-Test-only helpers that need command runners, service calls, or config persistence belong with effect/service adapters, not input handlers. Role-input tests may use fake runners through <RepoFile path="src/console/effects.rs" />, but <RepoFile path="src/console/tui/input/editor.rs" /> must stay limited to input-to-outcome routing and modal state transitions.
+Test-only helpers that need command runners, service calls, or config persistence belong with effect/service adapters, not input handlers. Role-input tests may use fake runners through <RepoFile path="src/console/effects.rs" />, but <RepoFile path="src/console/tui/input/editor/mod.rs" /> must stay limited to input-to-outcome routing and modal state transitions.
 
 The transitional root op-picker adapter may own `operator_env` types, runner wiring, cache binding, subscriptions, and crossterm-to-outcome mapping, but user-visible picker copy, load-error state shaping, and blocked-load key policy belong in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" /> with the rest of the component. Root adapters pass concrete process errors, subscription-closed facts, or `Esc`/not-`Esc` key facts into component helpers; they do not construct recoverable/fatal picker error states inline or duplicate the loading/fatal key-consumption rule.
 

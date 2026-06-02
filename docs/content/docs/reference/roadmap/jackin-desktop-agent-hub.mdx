@@ -31,7 +31,7 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 - PR 283 implements the first daemon shape: per-user Unix socket, singleton
   lock, lifecycle commands, launchd / systemd install, keep-awake
   reconciliation, cache warmup, and macOS notification dispatch.
-- <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
+- <RepoFile path="src/runtime/launch/mod.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
 - The daemon draft also proves the minimal container-to-host notification path
@@ -376,7 +376,7 @@ The daemon should maintain an in-memory state cache and append a small event log
 ```
 
 Session discovery can start from Docker labels already present in
-<RepoFile path="src/runtime/launch.rs" />:
+<RepoFile path="src/runtime/launch/mod.rs" />:
 
 - `jackin.managed=true`
 - `jackin.kind=role`

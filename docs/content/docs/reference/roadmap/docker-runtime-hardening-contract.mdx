@@ -104,9 +104,9 @@ A read of the launch path on the docs/docker-hardening-orbstack-backend branch (
 
 | Concern | Location | Current value |
 |---|---|---|
-| Role container `docker run` flag assembly | <RepoFile path="src/runtime/launch.rs" /> | No `--cap-add` / `--cap-drop`, no `--security-opt seccomp=`, no `--security-opt apparmor=`, no `--security-opt no-new-privileges`, no `--read-only`, no `--tmpfs`, no `--pids-limit`, no `--memory*`. Docker defaults apply implicitly. |
-| DinD sidecar start | <RepoFile path="src/runtime/launch.rs" /> | `--privileged`. TLS cert dir at `DOCKER_TLS_CERTDIR=/certs` with `DOCKER_TLS_SAN=DNS:<dind-name>`. Cert volume bound per launch. No rotation. |
-| Workspace mount string builder | <RepoFile path="src/runtime/launch.rs" /> | Translates `MaterializedWorkspace` to `-v src:dst[:ro]`. `:ro` already enforced at the kernel layer. |
+| Role container `docker run` flag assembly | <RepoFile path="src/runtime/launch/mod.rs" /> | No `--cap-add` / `--cap-drop`, no `--security-opt seccomp=`, no `--security-opt apparmor=`, no `--security-opt no-new-privileges`, no `--read-only`, no `--tmpfs`, no `--pids-limit`, no `--memory*`. Docker defaults apply implicitly. |
+| DinD sidecar start | <RepoFile path="src/runtime/launch/mod.rs" /> | `--privileged`. TLS cert dir at `DOCKER_TLS_CERTDIR=/certs` with `DOCKER_TLS_SAN=DNS:<dind-name>`. Cert volume bound per launch. No rotation. |
+| Workspace mount string builder | <RepoFile path="src/runtime/launch/mod.rs" /> | Translates `MaterializedWorkspace` to `-v src:dst[:ro]`. `:ro` already enforced at the kernel layer. |
 | Per-instance metadata struct | <RepoFile path="src/instance/manifest.rs" /> | `InstanceManifest` (schema v1) carries `DockerResources { role_container, dind_container, network, certs_volume }` plus session history. Docker-shaped today; the [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) umbrella tracks the move to a backend-neutral shape. |
 | Operator env / `op://` resolution | <RepoFile path="src/operator_env/mod.rs" /> | `resolve_operator_env` runs at launch only; resolved values become `-e` flags. No re-resolution on `hardline` or agent restart. |
 | Telemetry hook | <RepoFile path="src/tui/mod.rs" /> | `debug_log!(category, …)` macro, gated on `JACKIN_DEBUG=1`. There is no separate `clog!` macro yet; the hard-rule two-tier model in <RepoFile path="AGENTS.md" /> is met today through `debug_log!` alone. Any "profile chosen", "capability dropped", "AppArmor unavailable", etc. lines should emit through `debug_log!("launch", …)` until/unless a `clog!` tier is added. |
@@ -660,7 +660,7 @@ These need answers before Phase 1 code work begins:
 
 ## Related Files
 
-- <RepoFile path="src/runtime/launch.rs" /> - role container, DinD, network, and launch orchestration.
+- <RepoFile path="src/runtime/launch/mod.rs" /> - role container, DinD, network, and launch orchestration.
 - <RepoFile path="src/docker_client.rs" /> - typed Docker API boundary and container create host config.
 - <RepoFile path="src/docker.rs" /> - Docker CLI boundary for build/TTY cases.
 - <RepoFile path="src/manifest/mod.rs" /> - role manifest schema if runtime requirements move into roles.
