@@ -2,7 +2,7 @@
 title: "Module contracts (//! docs)"
 ---
 
-**Status**: Partially implemented — all original priority files documented (2026-06-02); remaining pass covers smaller undocumented modules across `runtime/`, `isolation/`, `console/`, and `crates/`.
+**Status**: Partially implemented — `//!` module-level docs now cover all production source files in `src/` and `crates/` (2026-06-02); remaining scope is `///` item-level API docs on public crate boundary functions, deferred until Stage 4 crate extraction stabilises the public surfaces.
 
 ## Problem
 
@@ -30,11 +30,13 @@ All priority files from both tables below received `//!` blocks following the `e
 
 <RepoFile path="src/console/tui/input/save.rs" /> already had a `//!` block (purpose + scope); expanding to full 3-element format is a follow-up.
 
-## Remaining undocumented modules
+## Current coverage (2026-06-02)
 
-`src/` coverage is complete as of 2026-06-02 — only `main.rs`, `bin/role.rs`, and two `_tests.rs` files lack `//!` blocks (all intentional: binary entry points and test modules do not need orientation headers).
+All production source files in both `src/` and `crates/` are documented. Excluded intentionally: `main.rs`, `bin/role.rs`, `build.rs`, and `*_tests.rs` / `tests/*.rs` files (binary entry points and test modules do not need orientation headers).
 
-The next pass is `crates/`: `grep -rL '^//!' crates/ --include='*.rs'` to get the current list. The `jackin-tui` and `jackin-console` crates have higher `//!` coverage already; the `jackin-capsule` crate's large files are the most urgent.
+Re-verify with: `grep -rL '^//!' src/ crates/ --include='*.rs' | grep -v 'build.rs\|tests/'` — should return zero results for production code.
+
+The next orientation-doc work is `///` item-level docs on public API entry points at crate boundaries, and rustdoc examples on the stable-surface functions — but that pass waits until the crate extraction (Stage 4) stabilises the public surfaces.
 
 ## Steps
 
