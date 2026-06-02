@@ -4,6 +4,7 @@
 //! being extracted. Redraw reasons live here because they describe visible
 //! invalidation causes, not PTY/session authority.
 
+use crate::tui::components::dialog::DialogAction;
 use crate::tui::input::PrefixCommand;
 use crate::tui::layout::{Rect, SplitOrient};
 
@@ -87,6 +88,20 @@ pub(crate) fn hover_frame_plan(dialog_open: bool) -> HoverFramePlan {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DialogActionFramePlan {
+    Full(FullRedrawReason),
+    Overlay(FullRedrawReason),
+}
+
+pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFramePlan {
+    if matches!(action, DialogAction::CopyToClipboard(_)) {
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+    } else {
+        DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+    }
+}
+
 pub(crate) fn drag_resize_ratio(orient: SplitOrient, rect: Rect, row: u16, col: u16) -> f32 {
     match orient {
         SplitOrient::Horizontal => {
@@ -149,9 +164,11 @@ pub(crate) fn pane_data_redraw_reason(
 #[cfg(test)]
 mod tests {
     use super::{
-        HoverFramePlan, PartialFramePlan, PartialFrameState, drag_resize_ratio, hover_frame_plan,
-        pane_data_redraw_reason, partial_frame_plan, prefix_full_redraw_reason,
+        DialogActionFramePlan, HoverFramePlan, PartialFramePlan, PartialFrameState,
+        dialog_action_frame_plan, drag_resize_ratio, hover_frame_plan, pane_data_redraw_reason,
+        partial_frame_plan, prefix_full_redraw_reason,
     };
+    use crate::tui::components::dialog::{DialogAction, PickerIntent};
     use crate::tui::input::{ArrowDir, PrefixCommand};
     use crate::tui::layout::{Rect, SplitOrient};
     use crate::tui::update::FullRedrawReason;
@@ -179,6 +196,21 @@ mod tests {
             HoverFramePlan::DialogOverlay(FullRedrawReason::DialogChange)
         );
         assert_eq!(hover_frame_plan(false), HoverFramePlan::ChromeHover);
+    }
+
+    #[test]
+    fn dialog_action_frame_plan_keeps_copy_feedback_overlay_scoped() {
+        assert_eq!(
+            dialog_action_frame_plan(&DialogAction::CopyToClipboard("id".into())),
+            DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+        );
+        assert_eq!(
+            dialog_action_frame_plan(&DialogAction::SpawnAgent {
+                agent: None,
+                intent: PickerIntent::NewTab,
+            }),
+            DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+        );
     }
 
     #[test]

@@ -27,6 +27,7 @@ impl Multiplexer {
             }
             _ => crate::clog!("action: dialog={action:?}"),
         }
+        let frame_plan = dialog_action_frame_plan(&action);
         match action {
             DialogAction::Dismiss => {
                 // Back-navigation: pop one dialog so a sub-dialog
@@ -117,7 +118,6 @@ impl Multiplexer {
                 self.send_output(encode_osc52_clipboard_write(&payload));
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
-                return self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -148,7 +148,10 @@ impl Multiplexer {
                 }
             }
         }
-        self.compose_full_frame(FullRedrawReason::DialogChange)
+        match frame_plan {
+            DialogActionFramePlan::Full(reason) => self.compose_full_frame(reason),
+            DialogActionFramePlan::Overlay(reason) => self.compose_dialog_overlay_frame(reason),
+        }
     }
 
     pub(super) fn apply_action(&mut self, action: Action) -> Option<Vec<u8>> {

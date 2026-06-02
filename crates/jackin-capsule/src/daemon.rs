@@ -104,8 +104,9 @@ use crate::tui::app::{
     visible_panes_for_layout,
 };
 use crate::tui::update::{
-    FullRedrawReason, HoverFramePlan, PartialFramePlan, PartialFrameState, drag_resize_ratio,
-    hover_frame_plan, pane_data_redraw_reason, partial_frame_plan,
+    DialogActionFramePlan, FullRedrawReason, HoverFramePlan, PartialFramePlan, PartialFrameState,
+    dialog_action_frame_plan, drag_resize_ratio, hover_frame_plan, pane_data_redraw_reason,
+    partial_frame_plan,
 };
 use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
 #[cfg(test)]
