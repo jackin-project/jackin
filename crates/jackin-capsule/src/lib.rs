@@ -9,7 +9,6 @@ pub mod container_context;
 pub mod daemon;
 pub mod git_context;
 pub mod logging;
-pub mod mouse_protocol;
 pub mod pid1;
 pub mod pr_context;
 pub mod protocol;

@@ -309,8 +309,15 @@ impl Multiplexer {
                 } else {
                     (session.scrollback_filled(), 0, 0)
                 };
-                if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
-                    && let Some(buf) = encode_wheel_cursor_fallback(session, button)
+                if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(
+                    session.mouse_enabled(),
+                    session.screen().alternate_screen(),
+                )
+                    && let Some(buf) = encode_wheel_cursor_fallback(
+                        session.mouse_enabled(),
+                        session.screen().application_cursor(),
+                        button,
+                    )
                 {
                     crate::cdebug!(
                         "wheel dispatch: cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} reason={} bytes={:02x?}",

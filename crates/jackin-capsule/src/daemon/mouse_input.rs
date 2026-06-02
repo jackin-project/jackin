@@ -115,7 +115,12 @@ impl Multiplexer {
         let Some(session) = self.sessions.get(&focused) else {
             return false;
         };
-        let Some(encoding) = mouse_event_encoding_for_session(session, button, press) else {
+        let Some(encoding) = mouse_event_encoding_for_mode(
+            session.mouse_protocol_mode(),
+            session.mouse_protocol_encoding(),
+            button,
+            press,
+        ) else {
             return false;
         };
         let Some(inner) = self.active_focused_inner_rect() else {

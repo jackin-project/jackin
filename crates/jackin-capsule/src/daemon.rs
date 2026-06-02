@@ -56,7 +56,8 @@ use crate::git_context::{
 use crate::tui::effect::InitialFrameKind;
 use crate::tui::input::{
     DEFAULT_ESCAPE_TIME, ENV_ESCAPE_TIME, ArrowDir, InputEvent, InputParser, PrefixCommand,
-    SGR_NO_BUTTON_MOTION,
+    SGR_NO_BUTTON_MOTION, encode_mouse_for_protocol, encode_wheel_cursor_fallback,
+    mouse_event_encoding_for_mode, pane_wheel_cursor_fallback_reason,
 };
 use crate::tui::layout::{
     Direction, Rect, SplitDirectionGeometry, SplitPosition, Tab, available_content_rows,
@@ -65,11 +66,7 @@ use crate::tui::layout::{
 #[cfg(test)]
 use crate::tui::layout::SplitOrient;
 #[cfg(test)]
-use crate::mouse_protocol::mouse_event_allowed_for_mode;
-use crate::mouse_protocol::{
-    encode_mouse_for_protocol, encode_wheel_cursor_fallback, mouse_event_encoding_for_session,
-    pane_wheel_cursor_fallback_reason,
-};
+use crate::tui::input::mouse_event_allowed_for_mode;
 use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
