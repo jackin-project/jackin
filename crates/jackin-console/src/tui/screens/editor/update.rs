@@ -24,6 +24,39 @@ pub const fn next_editor_tab(tab: EditorTab) -> EditorTab {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorTabMovePlan {
+    pub active_tab: EditorTab,
+    pub tab_bar_focused: bool,
+    pub active_row: usize,
+    pub tab_scroll_x: u16,
+    pub tab_scroll_y: u16,
+    pub clear_auth_kind: bool,
+    pub clear_secret_view_state: bool,
+}
+
+#[must_use]
+pub const fn editor_tab_move_plan(
+    active_tab: EditorTab,
+    delta: isize,
+    focus_tab_bar: bool,
+) -> EditorTabMovePlan {
+    let next = if delta.is_negative() {
+        previous_editor_tab(active_tab)
+    } else {
+        next_editor_tab(active_tab)
+    };
+    EditorTabMovePlan {
+        active_tab: next,
+        tab_bar_focused: focus_tab_bar,
+        active_row: 0,
+        tab_scroll_x: 0,
+        tab_scroll_y: 0,
+        clear_auth_kind: !matches!(next, EditorTab::Auth),
+        clear_secret_view_state: matches!(active_tab, EditorTab::Secrets),
+    }
+}
+
 #[must_use]
 pub fn step_cursor_down(skipped_rows: &[usize], candidate: usize, max_row: usize) -> usize {
     let mut idx = candidate;
@@ -374,6 +407,38 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_tab_move_plan_resets_local_view_state() {
+        assert_eq!(
+            editor_tab_move_plan(EditorTab::Secrets, 1, true),
+            EditorTabMovePlan {
+                active_tab: EditorTab::Auth,
+                tab_bar_focused: true,
+                active_row: 0,
+                tab_scroll_x: 0,
+                tab_scroll_y: 0,
+                clear_auth_kind: false,
+                clear_secret_view_state: true,
+            }
+        );
+    }
+
+    #[test]
+    fn editor_tab_move_plan_clears_auth_kind_when_leaving_auth() {
+        assert_eq!(
+            editor_tab_move_plan(EditorTab::Auth, 1, false),
+            EditorTabMovePlan {
+                active_tab: EditorTab::General,
+                tab_bar_focused: false,
+                active_row: 0,
+                tab_scroll_x: 0,
+                tab_scroll_y: 0,
+                clear_auth_kind: true,
+                clear_secret_view_state: false,
+            }
+        );
+    }
 
     #[derive(Default)]
     struct RoleEnv {

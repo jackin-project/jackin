@@ -16,8 +16,8 @@ use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use jackin_console::focus::moved_selection;
 use jackin_console::tui::screens::editor::update::{
-    next_editor_tab, previous_editor_tab, set_role_expanded as set_editor_role_expanded,
-    step_cursor_down, step_cursor_up, toggle_general_selected as toggle_editor_general_row,
+    editor_tab_move_plan, set_role_expanded as set_editor_role_expanded, step_cursor_down,
+    step_cursor_up, toggle_general_selected as toggle_editor_general_row,
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
@@ -558,20 +558,16 @@ fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bo
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    let was_secrets = editor.active_tab == EditorTab::Secrets;
-    editor.active_tab = if delta.is_negative() {
-        previous_editor_tab(editor.active_tab)
-    } else {
-        next_editor_tab(editor.active_tab)
-    };
-    editor.tab_bar_focused = focus_tab_bar;
-    editor.active_field = FieldFocus::Row(0);
-    editor.tab_scroll_x = 0;
-    editor.tab_scroll_y = 0;
-    if editor.active_tab != EditorTab::Auth {
+    let plan = editor_tab_move_plan(editor.active_tab, delta, focus_tab_bar);
+    editor.active_tab = plan.active_tab;
+    editor.tab_bar_focused = plan.tab_bar_focused;
+    editor.active_field = FieldFocus::Row(plan.active_row);
+    editor.tab_scroll_x = plan.tab_scroll_x;
+    editor.tab_scroll_y = plan.tab_scroll_y;
+    if plan.clear_auth_kind {
         editor.auth_selected_kind = None;
     }
-    if was_secrets {
+    if plan.clear_secret_view_state {
         editor.unmasked_rows.clear();
         editor.secrets_expanded.clear();
     }
