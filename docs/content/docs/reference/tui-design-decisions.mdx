@@ -998,6 +998,8 @@ Settings header title wording lives with settings screen view helpers in <RepoFi
 
 Workspace-list header title wording lives with top-level console view helpers in <RepoFile path="crates/jackin-console/src/tui/view.rs" />. Root frame rendering should ask that helper for the workspace screen title rather than carrying workspace-screen copy.
 
+Editor and settings save-footer base labels live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer adapters may pass dirty/change facts and row modes, but they should not carry the `save workspace` or `save settings` copy.
+
 #### Lookbook focus behavior
 
 `jackin-tui-lookbook` (`cargo run -p jackin-tui-lookbook -- --terminal`) follows the same focus model as every other jackin' surface:

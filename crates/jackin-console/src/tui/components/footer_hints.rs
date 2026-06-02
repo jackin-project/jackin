@@ -196,6 +196,16 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
 }
 
 #[must_use]
+pub const fn editor_save_footer_label() -> &'static str {
+    "save workspace"
+}
+
+#[must_use]
+pub const fn settings_save_footer_label() -> &'static str {
+    "save settings"
+}
+
+#[must_use]
 pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         HintSpan::Dyn("Create workspace — follow the prompts".to_string()),
@@ -963,6 +973,12 @@ mod tests {
                 HintSpan::Sep | HintSpan::GroupSep => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn save_footer_labels_are_component_owned() {
+        assert_eq!(editor_save_footer_label(), "save workspace");
+        assert_eq!(settings_save_footer_label(), "save settings");
     }
 
     #[test]

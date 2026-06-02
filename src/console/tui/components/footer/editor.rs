@@ -13,7 +13,7 @@ use crate::console::tui::state::{
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
     EditorContextFooterMode, content_footer_items, editor_contextual_row_footer_items,
-    tab_bar_footer_items,
+    editor_save_footer_label, tab_bar_footer_items,
 };
 
 pub(crate) fn editor_footer_items(
@@ -30,14 +30,14 @@ pub(crate) fn editor_footer_items(
     }
     if state.tab_bar_focused {
         return tab_bar_footer_items(
-            "save workspace",
+            editor_save_footer_label(),
             state.active_tab != EditorTab::General,
             state.is_dirty().then(|| state.change_count()),
         );
     }
     let row_items = contextual_row_items(state, config, op_available);
     content_footer_items(
-        "save workspace",
+        editor_save_footer_label(),
         row_items,
         state.is_dirty().then(|| state.change_count()),
     )

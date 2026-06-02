@@ -12,7 +12,7 @@ use crate::console::tui::state::{
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
     SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
-    tab_bar_footer_items,
+    settings_save_footer_label, tab_bar_footer_items,
 };
 
 pub(crate) fn settings_footer_items(
@@ -33,7 +33,7 @@ pub(crate) fn settings_footer_items(
 fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     if state.tab_bar_focused {
         return tab_bar_footer_items(
-            "save settings",
+            settings_save_footer_label(),
             true,
             state.is_dirty().then(|| state.change_count()),
         );
@@ -41,7 +41,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
 
     let row_items = contextual_row_items(state, op_available);
     content_footer_items(
-        "save settings",
+        settings_save_footer_label(),
         row_items,
         state.is_dirty().then(|| state.change_count()),
     )
