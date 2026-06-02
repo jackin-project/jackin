@@ -216,7 +216,7 @@ impl LaunchProgress {
         if let Renderer::Rich(driver) = &mut self.renderer {
             driver.with_renderer(f)
         } else {
-            anyhow::bail!("{what} requires the rich launch dialog")
+            anyhow::bail!(crate::tui::run::rich_launch_dialog_required_message(what))
         }
     }
 

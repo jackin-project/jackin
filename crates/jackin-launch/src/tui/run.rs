@@ -22,6 +22,10 @@ use crate::tui::update::update_launch_view;
 use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
 use crate::{LaunchHostTerminal, LaunchView, PromptContextLine, PromptResult};
 
+pub fn rich_launch_dialog_required_message(what: &str) -> String {
+    format!("{what} requires the rich launch dialog")
+}
+
 pub struct RichRenderer {
     terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     no_motion: bool,
@@ -766,5 +770,13 @@ mod tests {
         );
 
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn rich_dialog_requirement_message_is_tui_owned() {
+        assert_eq!(
+            rich_launch_dialog_required_message("launch choice"),
+            "launch choice requires the rich launch dialog"
+        );
     }
 }
