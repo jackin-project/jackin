@@ -10,7 +10,7 @@ title: "pub(crate) visibility pass"
 
 ## What shipped (2026-06-02)
 
-- **Lint enabled**: `unreachable_pub = "warn"` added to `[lints.rust]` in <RepoFile path="Cargo.toml" />. The warning fires on every `cargo check`, making the advisory guidance visible without blocking builds.
+- **Lint available**: `unreachable_pub` is intentionally *not* in `[lints.rust]` in <RepoFile path="Cargo.toml" /> — it has ~100 remaining violations and `cargo clippy -- -D warnings` would promote them all to errors. Run `RUSTFLAGS='-W unreachable-pub' cargo check` for the advisory pass. When the remaining items are fixed, the lint can be added to `[lints.rust]`.
 - **Low-hanging-fruit items fixed** (all 8 roadmap-specified items, with corrected names):
   - <RepoFile path="src/workspace/planner.rs" /> — `WorkspaceCreatePlan`, `WorkspaceEditPlan`, `plan_create`, `plan_edit`, `apply_isolation_overrides` → `pub(crate)`
   - <RepoFile path="src/config/mounts.rs" /> — `MountEntry` → `pub(crate)`
