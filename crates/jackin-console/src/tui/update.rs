@@ -32,6 +32,14 @@ pub struct ListPreRenderFocusPlan {
     pub list_names_focused: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListPreRenderScrollResetPlan {
+    pub reset_workspace: bool,
+    pub reset_global: bool,
+    pub reset_role_global: bool,
+    pub reset_roles: bool,
+}
+
 #[must_use]
 pub const fn list_scroll_focus_plan(
     focus: Option<crate::focus::MountScrollFocus>,
@@ -73,6 +81,29 @@ pub const fn list_pre_render_focus_plan(
     ListPreRenderFocusPlan {
         list_scroll_focus,
         list_names_focused,
+    }
+}
+
+#[must_use]
+pub const fn list_pre_render_scroll_reset_plan(
+    sidebar_available: bool,
+    role_global_available: bool,
+    roles_available: bool,
+) -> ListPreRenderScrollResetPlan {
+    if !sidebar_available {
+        return ListPreRenderScrollResetPlan {
+            reset_workspace: true,
+            reset_global: true,
+            reset_role_global: true,
+            reset_roles: true,
+        };
+    }
+
+    ListPreRenderScrollResetPlan {
+        reset_workspace: false,
+        reset_global: false,
+        reset_role_global: !role_global_available,
+        reset_roles: !roles_available,
     }
 }
 
@@ -271,5 +302,36 @@ mod tests {
             Some(crate::focus::MountScrollFocus::Workspace)
         );
         assert!(!live_focus.list_names_focused);
+    }
+
+    #[test]
+    fn list_pre_render_scroll_reset_plan_resets_missing_scroll_slots() {
+        assert_eq!(
+            list_pre_render_scroll_reset_plan(false, false, false),
+            ListPreRenderScrollResetPlan {
+                reset_workspace: true,
+                reset_global: true,
+                reset_role_global: true,
+                reset_roles: true,
+            }
+        );
+        assert_eq!(
+            list_pre_render_scroll_reset_plan(true, false, true),
+            ListPreRenderScrollResetPlan {
+                reset_workspace: false,
+                reset_global: false,
+                reset_role_global: true,
+                reset_roles: false,
+            }
+        );
+        assert_eq!(
+            list_pre_render_scroll_reset_plan(true, true, false),
+            ListPreRenderScrollResetPlan {
+                reset_workspace: false,
+                reset_global: false,
+                reset_role_global: false,
+                reset_roles: true,
+            }
+        );
     }
 }

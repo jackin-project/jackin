@@ -13,7 +13,9 @@ use crate::console::tui::state::{
 use jackin_console::tui::screens::workspaces::view::{
     current_directory_workspace_title, new_workspace_list_label,
 };
-use jackin_console::tui::update::list_pre_render_focus_plan;
+use jackin_console::tui::update::{
+    list_pre_render_focus_plan, list_pre_render_scroll_reset_plan,
+};
 pub(crate) use jackin_console::tui::sidebar_layout::{
     SidebarLayout, SidebarScrollArea, SidebarScrollAreas,
 };
@@ -54,6 +56,14 @@ pub(crate) fn clamp_list_scroll_for_area(
         .list_scroll_focus
         .map(|focus| focused_block_still_scrollable(focus, sidebar_areas.as_ref()))
         .unwrap_or(true);
+    let role_global_available = sidebar_areas
+        .as_ref()
+        .and_then(|areas| areas.role_global)
+        .is_some();
+    let roles_available = sidebar_areas
+        .as_ref()
+        .and_then(|areas| areas.roles)
+        .is_some();
 
     if let Some(areas) = sidebar_areas.as_ref() {
         clamp_scroll_area(areas.workspace, &mut state.list_mounts_scroll_x);
@@ -64,25 +74,32 @@ pub(crate) fn clamp_list_scroll_for_area(
         if let Some(role_global) = areas.role_global {
             clamp_scroll_area(role_global, &mut state.list_role_global_mounts_scroll_x);
             clamp_scroll_area_y(role_global, &mut state.list_role_global_mounts_scroll_y);
-        } else {
-            state.list_role_global_mounts_scroll_x = 0;
-            state.list_role_global_mounts_scroll_y = 0;
         }
 
         if let Some(roles) = areas.roles {
             clamp_scroll_area(roles, &mut state.list_roles_scroll_x);
             clamp_scroll_area_y(roles, &mut state.list_roles_scroll_y);
-        } else {
-            state.list_roles_scroll_x = 0;
-            state.list_roles_scroll_y = 0;
         }
-    } else {
+    }
+
+    let reset_plan = list_pre_render_scroll_reset_plan(
+        sidebar_available,
+        role_global_available,
+        roles_available,
+    );
+    if reset_plan.reset_workspace {
         state.list_mounts_scroll_x = 0;
         state.list_mounts_scroll_y = 0;
+    }
+    if reset_plan.reset_global {
         state.list_global_mounts_scroll_x = 0;
         state.list_global_mounts_scroll_y = 0;
+    }
+    if reset_plan.reset_role_global {
         state.list_role_global_mounts_scroll_x = 0;
         state.list_role_global_mounts_scroll_y = 0;
+    }
+    if reset_plan.reset_roles {
         state.list_roles_scroll_x = 0;
         state.list_roles_scroll_y = 0;
     }
