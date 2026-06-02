@@ -27,6 +27,28 @@ pub const fn next_settings_tab(tab: SettingsTab) -> SettingsTab {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsTabMovePlan {
+    pub active_tab: SettingsTab,
+    pub tab_bar_focused: bool,
+}
+
+#[must_use]
+pub const fn settings_tab_move_plan(
+    active_tab: SettingsTab,
+    delta: isize,
+    focus_tab_bar: bool,
+) -> SettingsTabMovePlan {
+    SettingsTabMovePlan {
+        active_tab: if delta.is_negative() {
+            previous_settings_tab(active_tab)
+        } else {
+            next_settings_tab(active_tab)
+        },
+        tab_bar_focused: focus_tab_bar,
+    }
+}
+
 pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
     state.selected = crate::focus::moved_selection(state.selected, 2, delta);
 }
@@ -365,6 +387,24 @@ pub fn settings_map_change_count<V: PartialEq>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_tab_move_plan_cycles_and_sets_focus() {
+        assert_eq!(
+            settings_tab_move_plan(SettingsTab::Trust, 1, true),
+            SettingsTabMovePlan {
+                active_tab: SettingsTab::General,
+                tab_bar_focused: true,
+            }
+        );
+        assert_eq!(
+            settings_tab_move_plan(SettingsTab::General, -1, false),
+            SettingsTabMovePlan {
+                active_tab: SettingsTab::Trust,
+                tab_bar_focused: false,
+            }
+        );
+    }
 
     fn env_config() -> SettingsEnvConfig<&'static str> {
         SettingsEnvConfig {

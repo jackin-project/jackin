@@ -23,9 +23,9 @@ use jackin_console::tui::screens::editor::update::{
 };
 use jackin_console::tui::screens::settings::model::SettingsEnvRow;
 use jackin_console::tui::screens::settings::update::{
-    move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
-    set_role_expanded as set_settings_role_expanded, step_cursor_down_by, step_cursor_up_by,
-    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    move_general_selection, move_trust_selection, set_role_expanded as set_settings_role_expanded,
+    settings_tab_move_plan, step_cursor_down_by, step_cursor_up_by, toggle_general_selected,
+    toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
@@ -604,12 +604,9 @@ const fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.active_tab = if delta.is_negative() {
-        previous_settings_tab(settings.active_tab)
-    } else {
-        next_settings_tab(settings.active_tab)
-    };
-    settings.tab_bar_focused = focus_tab_bar;
+    let plan = settings_tab_move_plan(settings.active_tab, delta, focus_tab_bar);
+    settings.active_tab = plan.active_tab;
+    settings.tab_bar_focused = plan.tab_bar_focused;
 }
 
 fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
