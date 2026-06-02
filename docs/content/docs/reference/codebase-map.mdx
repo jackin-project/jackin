@@ -70,7 +70,8 @@ The container lifecycle lives in `src/runtime/`:
   The rich launch cockpit model, update, subscriptions, terminal checks, and
   Ratatui model/message/update/effect/run/view live under <RepoFile path="crates/jackin-launch/src/tui.rs" />,
   <RepoFile path="crates/jackin-launch/src/tui/run.rs" />, and <RepoFile path="crates/jackin-launch/src/tui/view.rs" />, with launch-local
-  visual components under <RepoFile path="crates/jackin-launch/src/tui/components.rs" />.
+  visual components under <RepoFile path="crates/jackin-launch/src/tui/components.rs" />. The view derives
+  hyperlink-overlay bytes from model state; `tui/run.rs` emits those bytes at the terminal edge after drawing.
 - <RepoFile path="src/runtime/attach.rs" /> — the attach + reconnect path
   (`hardline`).
 - <RepoFile path="src/runtime/cleanup.rs" /> — `eject`, `exile`, `purge`,

@@ -18,7 +18,7 @@ use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
 use crate::tui::message::LaunchMessage;
 use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
 use crate::tui::update::update_launch_view;
-use crate::tui::view::{emit_launch_hyperlink_overlays, render_launch_frame};
+use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
 use crate::{LaunchHostTerminal, LaunchView, PromptResult};
 
 pub struct RichRenderer {
@@ -339,7 +339,7 @@ impl RichRenderer {
             .map(|_| ())
             .context("rendering launch progress TUI")?;
         if let Some(size) = size {
-            emit_launch_hyperlink_overlays(
+            let overlays = launch_hyperlink_overlays(
                 Rect::new(0, 0, size.width, size.height),
                 view,
                 run_id,
@@ -347,6 +347,11 @@ impl RichRenderer {
                 self.host.is_debug_mode(),
                 self.jackin_version,
             );
+            if !overlays.is_empty() {
+                let mut stdout = std::io::stdout();
+                let _ = stdout.write_all(&overlays);
+                let _ = stdout.flush();
+            }
         }
         Ok(())
     }
