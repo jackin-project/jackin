@@ -14,8 +14,6 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 #[cfg(test)]
 use ratatui::style::Color;
-use ratatui::text::Line;
-
 pub use jackin_launch::progress::LaunchProgress;
 #[cfg(test)]
 use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
@@ -44,8 +42,8 @@ use jackin_launch::tui::components::prompts::{draw_confirm, draw_error_popup, dr
 use jackin_launch::tui::view::render_launch_frame as render_launch_frame_view;
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
-    LaunchView, StageLabelTransition, StageStatus, StageView, active_stage_index, initial_view,
-    update_launch_view, update_stage,
+    LaunchView, PromptContextLine, StageLabelTransition, StageStatus, StageView,
+    active_stage_index, initial_view, update_launch_view, update_stage,
 };
 use jackin_launch::{LaunchDiagnostics, LaunchHostTerminal};
 
@@ -136,7 +134,7 @@ pub fn prelaunch_select_choice(
 /// draws into the host guard's screen when one is active).
 pub fn standalone_select_with_context(
     title: &str,
-    context: &[Line<'_>],
+    context: &[PromptContextLine],
     items: Vec<String>,
 ) -> anyhow::Result<usize> {
     jackin_launch::progress::standalone_select_with_context(

@@ -1,13 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ratatui::text::Line;
-
 use crate::tui::run::{RichDriver, RichRenderer};
 use crate::tui::subscriptions::SharedView;
 use crate::{
     LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage, LaunchStage,
-    PromptResult, StageStatus, initial_view, update_launch_view,
+    PromptContextLine, PromptResult, StageStatus, initial_view, update_launch_view,
 };
 
 const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
@@ -310,7 +308,7 @@ pub fn prelaunch_select_choice(
 /// draws into the host guard's screen when one is active).
 pub fn standalone_select_with_context(
     title: &str,
-    context: &[Line<'_>],
+    context: &[PromptContextLine],
     items: Vec<String>,
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,

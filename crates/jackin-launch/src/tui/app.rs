@@ -4,6 +4,15 @@ use std::path::PathBuf;
 
 use jackin_tui::components::StatusFooterHover;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptContextLine {
+    Emphasis(String),
+    Muted(String),
+    Path(String),
+    Plain(String),
+    Blank,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum LaunchStage {
     Identity,

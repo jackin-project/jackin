@@ -14,8 +14,7 @@ use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use crate::runtime::attach::JACKIN_STATUS_CMD;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use crate::runtime::progress::PromptContextLine;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,27 +92,16 @@ impl FinalizerPrompt for RichCleanupPrompt {
 /// dialog. Returns the option index: 0 = return to role, 1 = preserve,
 /// 2 = force-delete.
 fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedReason) -> usize {
-    use jackin_tui::theme::{LINK_BLUE, PHOSPHOR_DIM, WHITE};
-
     let reason_line = match reason {
         PreservedReason::Dirty => "has uncommitted changes",
         PreservedReason::Unpushed => "has unpushed commits on a local branch",
     };
     let context = vec![
-        Line::from(Span::styled(
-            format!("Container {container} {reason_line}."),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            worktree_path.to_string(),
-            Style::default().fg(LINK_BLUE),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Choose how jackin' should handle this worktree.",
-            Style::default().fg(PHOSPHOR_DIM),
-        )),
+        PromptContextLine::Emphasis(format!("Container {container} {reason_line}.")),
+        PromptContextLine::Blank,
+        PromptContextLine::Path(worktree_path.to_string()),
+        PromptContextLine::Blank,
+        PromptContextLine::Muted("Choose how jackin' should handle this worktree.".to_string()),
     ];
     let options = vec![
         "Return to role to address it".to_string(),

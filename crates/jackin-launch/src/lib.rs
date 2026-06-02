@@ -12,7 +12,7 @@ pub mod tui;
 
 pub use tui::app::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind, LaunchView,
-    PromptResult, StageLabelTransition, StageStatus, StageView,
+    PromptContextLine, PromptResult, StageLabelTransition, StageStatus, StageView,
 };
 pub use tui::message::LaunchMessage;
 pub use tui::update::{active_stage_index, initial_view, update_launch_view, update_stage};

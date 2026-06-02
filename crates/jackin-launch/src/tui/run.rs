@@ -9,7 +9,8 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
@@ -19,7 +20,7 @@ use crate::tui::message::LaunchMessage;
 use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
 use crate::tui::update::update_launch_view;
 use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
-use crate::{LaunchHostTerminal, LaunchView, PromptResult};
+use crate::{LaunchHostTerminal, LaunchView, PromptContextLine, PromptResult};
 
 pub struct RichRenderer {
     terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
@@ -388,11 +389,12 @@ impl RichRenderer {
     pub fn select_with_context(
         &mut self,
         title: &str,
-        context: &[Line<'_>],
+        context: &[PromptContextLine],
         items: Vec<String>,
     ) -> anyhow::Result<usize> {
+        let context = prompt_context_lines(context);
         self.with_raw_mode("entering raw mode for cleanup picker", |renderer| {
-            renderer.select_loop(title, context, items)
+            renderer.select_loop(title, &context, items)
         })
     }
 
@@ -564,6 +566,30 @@ fn role_trust_confirm_state(role: String, repository: String) -> ConfirmState {
     )
 }
 
+fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
+    context
+        .iter()
+        .map(|line| match line {
+            PromptContextLine::Emphasis(text) => Line::from(Span::styled(
+                text.clone(),
+                Style::default()
+                    .fg(jackin_tui::theme::WHITE)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            PromptContextLine::Muted(text) => Line::from(Span::styled(
+                text.clone(),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            )),
+            PromptContextLine::Path(text) => Line::from(Span::styled(
+                text.clone(),
+                Style::default().fg(jackin_tui::theme::LINK_BLUE),
+            )),
+            PromptContextLine::Plain(text) => Line::from(text.clone()),
+            PromptContextLine::Blank => Line::from(String::new()),
+        })
+        .collect()
+}
+
 impl Drop for RichRenderer {
     fn drop(&mut self) {
         self.host.set_rich_surface_active(false);
@@ -703,6 +729,23 @@ mod tests {
         );
 
         assert_eq!(result, Some(false));
+    }
+
+    #[test]
+    fn prompt_context_lines_maps_semantic_styles() {
+        let lines = prompt_context_lines(&[
+            PromptContextLine::Emphasis("important".into()),
+            PromptContextLine::Blank,
+            PromptContextLine::Path("/tmp/worktree".into()),
+            PromptContextLine::Muted("choose".into()),
+            PromptContextLine::Plain("plain".into()),
+        ]);
+
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines[0].spans[0].content, "important");
+        assert_eq!(lines[2].spans[0].content, "/tmp/worktree");
+        assert_eq!(lines[3].spans[0].content, "choose");
+        assert_eq!(lines[4].spans[0].content, "plain");
     }
 
     #[test]
