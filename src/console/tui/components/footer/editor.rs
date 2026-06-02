@@ -12,11 +12,8 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    AuthRowFooterMode, add_row_footer_items, auth_row_footer_items, content_footer_items,
-    editor_general_row_footer_items,
-    editor_role_row_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
-    secret_plain_row_footer_items, secret_role_header_footer_items, tab_bar_footer_items,
-    workspace_mount_row_footer_items,
+    EditorContextFooterMode, content_footer_items, editor_contextual_row_footer_items,
+    tab_bar_footer_items,
 };
 
 pub(crate) fn editor_footer_items(
@@ -52,29 +49,37 @@ pub(crate) fn contextual_row_items(
     config: &AppConfig,
     op_available: bool,
 ) -> Vec<HintSpan<'static>> {
+    editor_contextual_row_footer_items(editor_context_footer_mode(state, config), op_available)
+}
+
+fn editor_context_footer_mode(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+) -> EditorContextFooterMode {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
-        EditorTab::General => {
-            editor_general_row_footer_items(cursor, !state.pending.mounts.is_empty())
-        }
+        EditorTab::General => EditorContextFooterMode::General {
+            row: cursor,
+            has_mounts: !state.pending.mounts.is_empty(),
+        },
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
             match cursor.cmp(&mount_count) {
-                Ordering::Less => workspace_mount_row_footer_items(
-                    state
+                Ordering::Less => EditorContextFooterMode::MountRow {
+                    has_github_url: state
                         .pending
                         .mounts
                         .get(cursor)
                         .and_then(|m| state.mount_info_cache.github_web_url(&m.src))
                         .is_some(),
-                ),
-                Ordering::Equal => add_row_footer_items("add"),
-                Ordering::Greater => Vec::new(),
+                },
+                Ordering::Equal => EditorContextFooterMode::MountAddRow,
+                Ordering::Greater => EditorContextFooterMode::Empty,
             }
         }
-        EditorTab::Roles => {
-            editor_role_row_footer_items(cursor < config.roles.len())
-        }
+        EditorTab::Roles => EditorContextFooterMode::RoleRow {
+            is_existing_role: cursor < config.roles.len(),
+        },
         EditorTab::Secrets => {
             let rows = secrets_flat_rows(state);
             let focused_value_is_op_ref = match rows.get(cursor) {
@@ -95,35 +100,35 @@ pub(crate) fn contextual_row_items(
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. })
                     if focused_value_is_op_ref =>
                 {
-                    secret_op_ref_row_footer_items(op_available)
+                    EditorContextFooterMode::SecretOpRefRow
                 }
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
-                    secret_plain_row_footer_items(op_available)
+                    EditorContextFooterMode::SecretPlainRow
                 }
-                Some(SecretsRow::RoleHeader { .. }) => secret_role_header_footer_items(),
+                Some(SecretsRow::RoleHeader { .. }) => EditorContextFooterMode::SecretRoleHeader,
                 Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::RoleAddSentinel(_)) => {
-                    secret_add_row_footer_items(op_available)
+                    EditorContextFooterMode::SecretAddRow
                 }
-                Some(SecretsRow::SectionSpacer) | None => vec![],
+                Some(SecretsRow::SectionSpacer) | None => EditorContextFooterMode::Empty,
             }
         }
         EditorTab::Auth => {
             let flat = auth_flat_rows(state, config);
             match flat.get(cursor) {
                 Some(AuthRow::AuthKindRow { .. }) => {
-                    auth_row_footer_items(AuthRowFooterMode::ManageAuth)
+                    EditorContextFooterMode::AuthManage
                 }
                 Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
-                    auth_row_footer_items(AuthRowFooterMode::EditMode)
+                    EditorContextFooterMode::AuthEditMode
                 }
                 Some(AuthRow::RoleHeader { .. }) => {
-                    auth_row_footer_items(AuthRowFooterMode::RoleHeader)
+                    EditorContextFooterMode::AuthRoleHeader
                 }
-                Some(AuthRow::AddSentinel { .. }) => add_row_footer_items("add override"),
+                Some(AuthRow::AddSentinel { .. }) => EditorContextFooterMode::AuthAddOverride,
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
-                    auth_row_footer_items(AuthRowFooterMode::EditSource)
+                    EditorContextFooterMode::AuthEditSource
                 }
-                Some(AuthRow::Spacer) | None => auth_row_footer_items(AuthRowFooterMode::Empty),
+                Some(AuthRow::Spacer) | None => EditorContextFooterMode::Empty,
             }
         }
     }
