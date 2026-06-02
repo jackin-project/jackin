@@ -5,10 +5,8 @@
 //! composition that varies with the active tab + cursor.
 
 use crate::config::AppConfig;
-use crate::console::tui::components::auth_panel::editor_auth_lines_for_state;
 use crate::console::tui::components::editor::{
-    editor_general_lines_for_state, editor_mount_lines_for_state, editor_role_lines_for_state,
-    editor_secret_lines_for_state,
+    render_auth_tab, render_general_tab, render_mounts_tab, render_roles_tab, render_secrets_tab,
 };
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
@@ -73,87 +71,6 @@ fn render_editor_tab_strip(
     hovered: Option<usize>,
 ) {
     render_tab_strip(frame, area, &tab_labels(active), tab_bar_focused, hovered);
-}
-
-fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let rows = editor_general_lines_for_state(state);
-    let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        rows,
-        state.tab_scroll_x,
-        state.tab_scroll_y,
-        focused,
-        None,
-    );
-}
-
-fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let lines = editor_mount_lines_for_state(state);
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.workspace_mounts_scroll_x,
-        state.tab_scroll_y,
-        state.workspace_mounts_scroll_focused && state.modal.is_none(),
-        None,
-    );
-}
-
-fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let lines = editor_role_lines_for_state(state, config);
-    let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.tab_scroll_x,
-        state.tab_scroll_y,
-        focused,
-        None,
-    );
-}
-
-// Linear match per row kind reads better than scattered helpers.
-#[allow(clippy::too_many_lines)]
-fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let lines = editor_secret_lines_for_state(area, state, config);
-    let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.tab_scroll_x,
-        state.tab_scroll_y,
-        focused,
-        None,
-    );
-}
-
-/// Render the Auth tab directly from [`auth_flat_rows`].
-///
-/// Materializes a synthetic [`AppConfig`] from the editor's pending workspace
-/// merged with the (mostly read-only) global layer of the live config so
-/// in-flight edits are reflected immediately.
-fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let lines = editor_auth_lines_for_state(state, config);
-    let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
-    let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.tab_scroll_x,
-        state.tab_scroll_y,
-        focused,
-        title.as_deref(),
-    );
 }
 
 #[cfg(test)]

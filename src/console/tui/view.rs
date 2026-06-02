@@ -19,4 +19,3 @@ pub(super) use jackin_console::tui::layout::centered_rect_fixed;
 pub(crate) use jackin_tui::components::scrollable_panel::{
     viewport_width as scroll_viewport_width,
 };
-pub(super) use jackin_tui::components::scrollable_panel::render_scrollable_block_at;
