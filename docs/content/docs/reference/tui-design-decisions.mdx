@@ -189,6 +189,8 @@ Console startup `op` CLI availability probing now happens before <RepoFile path=
 
 Console launch prompt agent-choice lookup calls the non-TUI agent service boundary in <RepoFile path="src/console/services/agents.rs" /> from the root run loop. Prompt helpers keep terminal drawing and state transitions only; Docker-backed role/agent resolution stays outside `src/console/tui/`.
 
+Console GitHub auth mode changes preserve existing `[github.env]` maps through <RepoFile path="src/console/domain.rs" />. Root auth-tab input applies the selected mode to concrete workspace or role config, but the product rule that mode changes must not clobber staged `GH_TOKEN` values stays outside TUI input handlers.
+
 Launch rich-terminal capability checks, terminal-size-to-frame-area fallback, and the canonical rich-terminal requirement error now live with launch terminal helpers in <RepoFile path="crates/jackin-launch/src/tui/terminal.rs" />. Progress orchestration, rich renderer entry points, render ticks, and cockpit input subscriptions call those helpers so terminal-gating behavior, build-log scroll geometry, and operator-facing copy cannot drift.
 
 Console workspace-screen frame geometry, modal-overlay visibility facts, modal backdrop rendering, destructive-confirm modal placement, settings-error modal placement, and status-overlay placement now live in <RepoFile path="crates/jackin-console/src/tui/view.rs" />. Root rendering supplies root state and concrete widgets while the crate-owned helper owns generic frame layout rules.

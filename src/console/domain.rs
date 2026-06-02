@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use crate::app::context::eligible_roles_for_workspace;
 use crate::agent::Agent;
 use crate::config::{
-    AppConfig, AuthForwardMode, GithubAuthMode, MountEntry, RoleSource, WorkspaceRoleOverride,
+    AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode, MountEntry, RoleSource,
+    WorkspaceRoleOverride,
 };
 use crate::isolation::MountIsolation;
 use crate::selector::RoleSelector;
@@ -65,6 +66,17 @@ pub const fn auth_mode_to_github(mode: AuthMode) -> Option<GithubAuthMode> {
         AuthMode::Ignore => Some(GithubAuthMode::Ignore),
         AuthMode::ApiKey | AuthMode::OAuthToken => None,
     }
+}
+
+#[must_use]
+pub fn github_auth_config_with_preserved_env(
+    mode: Option<AuthMode>,
+    existing: Option<&GithubAuthConfig>,
+) -> Option<GithubAuthConfig> {
+    mode.and_then(auth_mode_to_github).map(|auth_forward| GithubAuthConfig {
+        auth_forward,
+        env: existing.map(|github| github.env.clone()).unwrap_or_default(),
+    })
 }
 
 #[must_use]
@@ -685,7 +697,7 @@ pub(crate) fn unique_global_mount_name(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AuthForwardMode, GithubAuthMode, WorkspaceRoleOverride};
+    use crate::config::{AuthForwardMode, GithubAuthConfig, GithubAuthMode, WorkspaceRoleOverride};
     use jackin_console::tui::auth::AuthKind;
 
     #[test]
@@ -725,6 +737,23 @@ mod tests {
                 Some(mode)
             );
         }
+    }
+
+    #[test]
+    fn github_auth_config_preserves_env_on_mode_change() {
+        let mut existing = GithubAuthConfig::default();
+        existing.env.insert(
+            "GH_TOKEN".to_string(),
+            crate::operator_env::EnvValue::Plain("token".into()),
+        );
+
+        let next = github_auth_config_with_preserved_env(Some(AuthMode::Ignore), Some(&existing))
+            .expect("github mode should build config");
+
+        assert_eq!(next.auth_forward, GithubAuthMode::Ignore);
+        assert_eq!(next.env, existing.env);
+        assert!(github_auth_config_with_preserved_env(Some(AuthMode::ApiKey), Some(&existing)).is_none());
+        assert!(github_auth_config_with_preserved_env(None, Some(&existing)).is_none());
     }
 
     #[test]

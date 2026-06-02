@@ -14,7 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::console::domain::{
     auth_mode_from_auth_forward, auth_mode_from_github, auth_mode_to_auth_forward,
-    auth_mode_to_github, role_override_present,
+    github_auth_config_with_preserved_env, role_override_present,
 };
 use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
@@ -28,10 +28,7 @@ use crate::console::tui::state::{
 };
 use crate::console::tui::op_picker::OpPickerState;
 use crate::config::AppConfig;
-use crate::config::{
-    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
-    OpencodeAuthConfig,
-};
+use crate::config::{AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, KimiAuthConfig, OpencodeAuthConfig};
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
 use crate::selector::RolePickerState;
@@ -923,17 +920,7 @@ fn set_workspace_mode(
                 .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Github => {
-            ws.github = mode.and_then(auth_mode_to_github).map(|auth_forward| {
-                // Preserve any existing env block on the workspace's
-                // [github] entry — the operator may have already set
-                // `GH_TOKEN` and we're only flipping the mode.
-                let env = ws
-                    .github
-                    .as_ref()
-                    .map(|g| g.env.clone())
-                    .unwrap_or_default();
-                GithubAuthConfig { auth_forward, env }
-            });
+            ws.github = github_auth_config_with_preserved_env(mode, ws.github.as_ref());
         }
         AuthKind::Zai => {
             // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
@@ -969,17 +956,7 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
                 .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Github => {
-            entry.github = mode.and_then(auth_mode_to_github).map(|auth_forward| {
-                // Same env-preservation invariant as the workspace
-                // setter above: flipping the mode must not clobber a
-                // role-scoped GH_TOKEN the operator already provided.
-                let env = entry
-                    .github
-                    .as_ref()
-                    .map(|g| g.env.clone())
-                    .unwrap_or_default();
-                GithubAuthConfig { auth_forward, env }
-            });
+            entry.github = github_auth_config_with_preserved_env(mode, entry.github.as_ref());
         }
         AuthKind::Zai => {
             // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
@@ -990,7 +967,7 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AppConfig, AuthForwardMode, GithubAuthMode};
+    use crate::config::{AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode};
     use jackin_console::tui::auth::AuthKind;
     use crate::console::tui::state::AuthRow;
     use crate::console::tui::state::auth_flat_rows;
