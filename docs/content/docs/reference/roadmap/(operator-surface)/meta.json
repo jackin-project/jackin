@@ -2,6 +2,7 @@
   "title": "Operator surface",
   "defaultOpen": false,
   "pages": [
-    "../operator-cli-hygiene"
+    "../operator-cli-hygiene",
+    "../jackin-join-and-debug-bundle"
   ]
 }
