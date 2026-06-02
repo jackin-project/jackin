@@ -6,7 +6,7 @@
 #![allow(irrefutable_let_patterns)]
 
 mod domain;
-pub(crate) mod effects;
+pub mod effects;
 pub mod manager;
 mod outcome;
 mod preview;

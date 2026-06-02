@@ -2,6 +2,7 @@
 //!
 //! The public console TUI surface lives under `crate::console::tui`.
 //! This module keeps the old `console::manager` import paths working.
+pub use super::effects::execute_pending_workspace_save_commit;
 pub use super::tui::app::new_console_state;
 pub use super::tui::launch::dispatch_launch_for_workspace;
 pub use super::tui::{ManagerStage, ManagerState, prepare_for_render, render};

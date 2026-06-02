@@ -141,7 +141,7 @@ fn execute_container_info_copy(state: &mut ManagerState<'_>, row: usize, payload
     true
 }
 
-pub(crate) fn execute_pending_workspace_save_commit(
+pub fn execute_pending_workspace_save_commit(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,

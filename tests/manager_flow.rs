@@ -11,7 +11,8 @@ use jackin::{
         manager::{
             InputOutcome, ManagerStage, ManagerState,
             auth_kind::AuthKind,
-            dispatch_launch_for_workspace, handle_key, new_console_state,
+            dispatch_launch_for_workspace, execute_pending_workspace_save_commit, handle_key,
+            new_console_state,
             state::{
                 AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal,
                 TextInputTarget, auth_flat_rows,
@@ -2850,6 +2851,8 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // Enter moves state to PendingCommit; flush the queued write to disk.
+    execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
 
     // Reload AppConfig from disk and assert both halves of the auth
     // change survived the round-trip.
@@ -3553,6 +3556,8 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // Enter moves state to PendingCommit; flush the queued write to disk.
+    execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
 
     // Reload AppConfig from disk and assert the round-trip.
     let reloaded = AppConfig::load_or_init(&paths)?;
