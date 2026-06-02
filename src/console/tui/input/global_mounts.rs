@@ -1605,7 +1605,7 @@ fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsE
         return;
     }
     env.open_sub_modal(SettingsEnvModal::RolePicker {
-        state: RolePickerState::with_confirm_label(roles, "select"),
+        state: RolePickerState::new(roles),
     });
 }
 
@@ -1911,7 +1911,7 @@ fn open_global_mount_role_picker(settings: &mut crate::console::tui::state::Sett
     settings
         .mounts
         .open_sub_modal(GlobalMountModal::RolePicker {
-            state: RolePickerState::with_confirm_label(roles, "select"),
+            state: RolePickerState::new(roles),
         });
 }
 

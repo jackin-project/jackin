@@ -625,7 +625,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
         return;
     }
     editor.open_sub_modal(Modal::RoleOverridePicker {
-        state: RolePickerState::with_confirm_label(eligible, "select"),
+        state: RolePickerState::new(eligible),
     });
 }
 
