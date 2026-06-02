@@ -230,29 +230,11 @@ pub use jackin_console::tui::split::{
     DEFAULT_SPLIT_PCT, DragState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, clamp_split,
 };
 
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum ManagerStage<'a> {
-    List,
-    Editor(EditorState<'a>),
-    Settings(SettingsState<'a>),
-    CreatePrelude(CreatePreludeState<'a>),
-    ConfirmDelete {
-        name: String,
-        state: ConfirmState,
-    },
-    /// Y/N gate on a destructive instance action. Currently used only
-    /// by Purge (which now ejects + deletes preserved state in a single
-    /// keystroke, so a confirm step keeps a mis-keyed `P` from
-    /// destroying running work). Holds the resolved container plus
-    /// human-readable label so the modal can name what is about to be
-    /// destroyed.
-    ConfirmInstancePurge {
-        container: String,
-        label: String,
-        state: ConfirmState,
-    },
-}
+pub type ManagerStage<'a> = jackin_console::tui::app::ConsoleManagerStage<
+    CreatePreludeState<'a>,
+    EditorState<'a>,
+    SettingsState<'a>,
+>;
 
 #[derive(Debug)]
 pub struct GlobalMountsState<'a> {

@@ -9,6 +9,24 @@ pub enum ConsoleAppStage<Manager> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
+    List,
+    Editor(Editor),
+    Settings(Settings),
+    CreatePrelude(CreatePrelude),
+    ConfirmDelete {
+        name: String,
+        state: jackin_tui::components::ConfirmState,
+    },
+    ConfirmInstancePurge {
+        container: String,
+        label: String,
+        state: jackin_tui::components::ConfirmState,
+    },
+}
+
+#[derive(Debug)]
 pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
     pub stage: ConsoleAppStage<Manager>,
     /// Launch input is stored as a value, not as a selected row index, so each
