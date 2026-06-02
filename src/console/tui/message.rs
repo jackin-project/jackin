@@ -35,9 +35,11 @@ use jackin_console::tui::screens::settings::update::{
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
-use jackin_console::tui::screens::workspaces::update::preview_pane_cursor_plan;
+use jackin_console::tui::screens::workspaces::update::{
+    preview_pane_cursor_plan, workspace_unclamped_scroll_plan,
+};
 use jackin_console::tui::update::{
-    selected_index_plan, selection_move_plan, unclamped_scroll_plan,
+    selected_index_plan, selection_move_plan,
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -959,7 +961,8 @@ fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
     if state.list_names_focused {
-        state.list_names_scroll_x = unclamped_scroll_plan(state.list_names_scroll_x, delta);
+        state.list_names_scroll_x =
+            workspace_unclamped_scroll_plan(state.list_names_scroll_x, delta);
     } else {
         scroll_focused_mount_block(state, delta);
     }
@@ -970,7 +973,7 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
         return;
     };
     let value = state.list_scroll_x_mut(focus);
-    *value = unclamped_scroll_plan(*value, delta);
+    *value = workspace_unclamped_scroll_plan(*value, delta);
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
@@ -978,5 +981,5 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
         return;
     };
     let value = state.list_scroll_y_mut(focus);
-    *value = unclamped_scroll_plan(*value, delta);
+    *value = workspace_unclamped_scroll_plan(*value, delta);
 }

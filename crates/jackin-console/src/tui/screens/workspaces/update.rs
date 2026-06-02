@@ -94,6 +94,11 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
 }
 
 #[must_use]
+pub const fn workspace_unclamped_scroll_plan(current_scroll: u16, delta: i16) -> u16 {
+    crate::tui::update::unclamped_scroll_plan(current_scroll, delta)
+}
+
+#[must_use]
 pub const fn is_preview_pane_entry_target(key: KeyCode, row: ManagerListRow) -> bool {
     matches!(key, KeyCode::Tab | KeyCode::Right)
         && matches!(
@@ -206,6 +211,12 @@ pub const fn instance_action_accepts_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_unclamped_scroll_plan_updates_offset() {
+        assert_eq!(workspace_unclamped_scroll_plan(4, 3), 7);
+        assert_eq!(workspace_unclamped_scroll_plan(4, -99), 0);
+    }
 
     #[test]
     fn instance_action_accepts_status_grid_smoke() {
