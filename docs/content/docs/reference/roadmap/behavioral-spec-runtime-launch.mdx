@@ -2,7 +2,7 @@
 title: "Behavioral spec: runtime/launch.rs"
 ---
 
-**Status**: Open — Phase 1, no confirmation needed
+**Status**: Partially implemented — spec published (2026-06-02); next step is adding the `//!` link from <RepoFile path="src/runtime/launch.rs" /> to the spec URL, then using the spec as the oracle for the [split-runtime-launch](/reference/roadmap/split-runtime-launch/) refactor
 
 ## Problem
 
@@ -31,12 +31,9 @@ The file has grown significantly due to: instance identity support, Kimi agent r
 4. **Build + prepare state** — build the image, prepare auth state, isolated mounts, cache/state dirs
 5. **Launch + finalize** — start runtime, attach, finalize worktrees, classify teardown/preservation
 
-## Steps
+## Status
 
-1. Create `docs/content/docs/internal/specs/runtime-launch.mdx` (once Developer Reference setup exists).
-2. Frontmatter: `title: "runtime/launch.rs — Behavioral Spec"`, `spec_type: behavioral`, `subsystem: runtime`.
-3. Sections: Purpose, pipeline overview, behavioral invariants (INV-1 through INV-6), testing notes.
-4. Note the current test seams: `LoadOptions.op_runner`, `LoadOptions.host_env`, and the injected `confirm_trust` closure passed into `load_agent_with`.
+**Spec published** — see [runtime/launch.rs Behavioral Spec](/internal/specs/runtime-launch/).
 
 ## Why this must come before the split
 

@@ -16,6 +16,8 @@
 //! through one-shot subscriptions; the spinner ticks until the receiver
 //! yields. Probe / vault-list failures fork into four fatal panels
 //! (not installed, not signed in, no vaults, generic).
+//!
+//! Behavioral invariants documented in the Developer Reference → Behavioral Specs section of the docs site.
 
 mod input;
 mod load;

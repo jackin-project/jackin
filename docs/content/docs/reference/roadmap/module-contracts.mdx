@@ -32,9 +32,9 @@ All priority files from both tables below received `//!` blocks following the `e
 
 ## Current coverage (2026-06-02)
 
-All production source files in both `src/` and `crates/` are documented. Excluded intentionally: `main.rs`, `bin/role.rs`, `build.rs`, and `*_tests.rs` / `tests/*.rs` files (binary entry points and test modules do not need orientation headers).
+All production source files in both `src/` and `crates/` are documented. Excluded intentionally: binary entry points (`main.rs`, `bin/role.rs`), Cargo build scripts, and test modules (`*_tests.rs` / `tests/*.rs`) — these do not need orientation headers.
 
-Re-verify with: `grep -rL '^//!' src/ crates/ --include='*.rs' | grep -v 'build.rs\|tests/'` — should return zero results for production code.
+Re-verify with: `grep -rL '^//!' src/ crates/ --include='*.rs' | grep -v 'tests/'` — should return only build scripts and binary entry points.
 
 The next orientation-doc work is `///` item-level docs on public API entry points at crate boundaries, and rustdoc examples on the stable-surface functions — but that pass waits until the crate extraction (Stage 4) stabilises the public surfaces.
 
