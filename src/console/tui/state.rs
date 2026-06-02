@@ -373,26 +373,28 @@ pub(crate) fn open_role_input_error(editor: &mut EditorState<'_>, message: &str)
 /// errors raised before the clone) hit the fallback branch — generic
 /// rather than mis-classified.
 fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
+    use jackin_console::tui::components::error_popup::{
+        generic_role_repository_error_message, invalid_role_repository_message,
+        role_repository_remote_mismatch_message, role_repository_unavailable_message,
+    };
+
     if let Some(repo_err) = err
         .chain()
         .find_map(|cause| cause.downcast_ref::<crate::runtime::RepoError>())
     {
         return match repo_err {
             crate::runtime::RepoError::CloneFailed(_) => {
-                "Repository is not available, or you do not have access.".into()
+                role_repository_unavailable_message().into()
             }
             crate::runtime::RepoError::RemoteMismatch => {
-                "A cached copy already exists for this role, but it points at a different \
-                 repository."
-                    .into()
+                role_repository_remote_mismatch_message().into()
             }
-            crate::runtime::RepoError::InvalidRoleRepo(detail) => format!(
-                "Repository is not a valid Jackin role: {}.",
-                humanize_invalid_role_repo(detail)
-            ),
+            crate::runtime::RepoError::InvalidRoleRepo(detail) => {
+                invalid_role_repository_message(humanize_invalid_role_repo(detail))
+            }
         };
     }
-    "Repository could not be used as a Jackin role.".into()
+    generic_role_repository_error_message().into()
 }
 
 /// Render a `RoleRepoValidationError` for the role-input popup.
@@ -409,7 +411,7 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
                 .file_name()
                 .and_then(|name| name.to_str())
                 .map_or_else(|| path.display().to_string(), str::to_string);
-            format!("missing {file}")
+            jackin_console::tui::components::error_popup::missing_role_repository_file_message(file)
         }
         _ => err.to_string().trim_end_matches('.').to_string(),
     }

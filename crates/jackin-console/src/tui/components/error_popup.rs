@@ -30,6 +30,26 @@ pub fn repository_role_load_error_message(
     format!("Could not load role {raw:?}.\n\nLooked for repository:\n{source_url}\n\n{detail}")
 }
 
+pub fn role_repository_unavailable_message() -> &'static str {
+    "Repository is not available, or you do not have access."
+}
+
+pub fn role_repository_remote_mismatch_message() -> &'static str {
+    "A cached copy already exists for this role, but it points at a different repository."
+}
+
+pub fn invalid_role_repository_message(detail: impl std::fmt::Display) -> String {
+    format!("Repository is not a valid jackin' role: {detail}.")
+}
+
+pub fn generic_role_repository_error_message() -> &'static str {
+    "Repository could not be used as a jackin' role."
+}
+
+pub fn missing_role_repository_file_message(file: impl std::fmt::Display) -> String {
+    format!("missing {file}")
+}
+
 pub fn internal_role_load_error_message(
     raw: impl std::fmt::Debug,
     detail: impl std::fmt::Display,
@@ -174,6 +194,26 @@ mod tests {
         assert_eq!(
             internal_role_load_error_message("bad-role", "panic payload"),
             "Could not load role \"bad-role\".\n\nThe role loader hit an internal error while registering the repository.\n\npanic payload"
+        );
+        assert_eq!(
+            role_repository_unavailable_message(),
+            "Repository is not available, or you do not have access.",
+        );
+        assert_eq!(
+            role_repository_remote_mismatch_message(),
+            "A cached copy already exists for this role, but it points at a different repository.",
+        );
+        assert_eq!(
+            invalid_role_repository_message("missing jackin.role.toml"),
+            "Repository is not a valid jackin' role: missing jackin.role.toml.",
+        );
+        assert_eq!(
+            generic_role_repository_error_message(),
+            "Repository could not be used as a jackin' role.",
+        );
+        assert_eq!(
+            missing_role_repository_file_message("jackin.role.toml"),
+            "missing jackin.role.toml",
         );
         assert_eq!(
             role_input_misroute_error_message(),

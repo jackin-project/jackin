@@ -2909,7 +2909,7 @@ plugins = []
                 assert_eq!(state.title, "Load role failed");
                 assert!(
                     state.message.contains(
-                        "Repository is not a valid Jackin role: missing jackin.role.toml."
+                        "Repository is not a valid jackin' role: missing jackin.role.toml."
                     ),
                     "message should explain the failed role validation:\n{}",
                     state.message
