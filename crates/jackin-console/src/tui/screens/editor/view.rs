@@ -124,6 +124,24 @@ pub fn secret_scope_picker_state() -> crate::tui::components::scope_picker::Scop
 }
 
 #[must_use]
+pub fn secret_new_key_label(scope: &SecretsScopeTag) -> String {
+    match scope {
+        SecretsScopeTag::Workspace => "New workspace environment key".to_string(),
+        SecretsScopeTag::Role(role) => format!("New {role} environment key"),
+    }
+}
+
+#[must_use]
+pub fn secret_new_key_after_picker_label(scope: &SecretsScopeTag) -> String {
+    format!("New environment key for {}", secrets_scope_label(scope))
+}
+
+#[must_use]
+pub fn secret_empty_key_label() -> &'static str {
+    "Key cannot be empty"
+}
+
+#[must_use]
 pub fn role_load_input_state<'a>(
     trusted_roles: Vec<String>,
 ) -> jackin_tui::components::TextInputState<'a> {
@@ -730,6 +748,27 @@ mod tests {
 
         assert_eq!(state.key, "TOKEN");
         assert!(state.op_available);
+    }
+
+    #[test]
+    fn secret_new_key_labels_follow_scope() {
+        assert_eq!(
+            secret_new_key_label(&SecretsScopeTag::Workspace),
+            "New workspace environment key"
+        );
+        assert_eq!(
+            secret_new_key_label(&SecretsScopeTag::Role("alpha".to_string())),
+            "New alpha environment key"
+        );
+        assert_eq!(
+            secret_new_key_after_picker_label(&SecretsScopeTag::Workspace),
+            "New environment key for workspace"
+        );
+        assert_eq!(
+            secret_new_key_after_picker_label(&SecretsScopeTag::Role("alpha".to_string())),
+            "New environment key for alpha"
+        );
+        assert_eq!(secret_empty_key_label(), "Key cannot be empty");
     }
 
     #[test]

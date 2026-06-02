@@ -26,9 +26,9 @@ use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     editor_name_input_state, editor_workdir_pick_state, mount_destination_input_state,
     mount_dst_choice_state, role_load_input_state,
-    secret_delete_confirm_state, secret_key_input_state, secret_new_value_input_state,
+    secret_delete_confirm_state, secret_empty_key_label, secret_key_input_state,
+    secret_new_key_after_picker_label, secret_new_key_label, secret_new_value_input_state,
     secret_scope_picker_state, secret_source_picker_state, secret_value_input_state,
-    secrets_scope_label,
 };
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -948,7 +948,7 @@ pub(super) fn handle_editor_modal(
                     // no empty placeholder.
                     let role_name = role.key();
                     let scope = SecretsScopeTag::Role(role_name.clone());
-                    let label = format!("New {role_name} environment key");
+                    let label = secret_new_key_label(&scope);
                     let state = env_key_input_state(editor, &scope, label, "");
                     editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvKey { scope },
@@ -1020,12 +1020,8 @@ pub(super) fn handle_editor_modal(
             match scope_state.handle_key(key) {
                 ModalOutcome::Commit(ScopeChoice::AllAgents) => {
                     let scope = SecretsScopeTag::Workspace;
-                    let state = env_key_input_state(
-                        editor,
-                        &scope,
-                        "New workspace environment key",
-                        String::new(),
-                    );
+                    let state =
+                        env_key_input_state(editor, &scope, secret_new_key_label(&scope), "");
                     editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvKey { scope },
                         state,
@@ -1197,8 +1193,7 @@ pub(super) fn handle_editor_modal(
                         Some((scope, None)) => {
                             editor.pending_picker_value =
                                 Some(crate::operator_env::EnvValue::OpRef(op_ref));
-                            let label =
-                                format!("New environment key for {}", secrets_scope_label(&scope));
+                            let label = secret_new_key_after_picker_label(&scope);
                             let state = env_key_input_state(editor, &scope, label, "");
                             editor.open_sub_modal(Modal::TextInput {
                                 target: TextInputTarget::EnvKey { scope },
@@ -1509,7 +1504,7 @@ pub(super) fn apply_text_input_to_pending(
             if trimmed.is_empty() {
                 // env_key context now in Modal::SourcePicker
                 let state =
-                    env_key_input_state(editor, scope, "Key cannot be empty", String::new());
+                    env_key_input_state(editor, scope, secret_empty_key_label(), String::new());
                 editor.modal = Some(Modal::TextInput {
                     target: TextInputTarget::EnvKey {
                         scope: scope.clone(),
@@ -1827,7 +1822,7 @@ mod tests {
     use super::{
         apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
         add_role_to_workspace_editor, env_key_input_state, handle_editor_modal, poll_role_load,
-        role_load_input_state, secrets_flat_rows, EditorModalOutcome,
+        role_load_input_state, secret_new_key_label, secrets_flat_rows, EditorModalOutcome,
     };
     use crate::config::AppConfig;
     use crate::console::tui::input::handle_key;
@@ -2337,7 +2332,7 @@ plugins = []
         };
         editor.modal = Some(Modal::TextInput {
             target: target.clone(),
-            state: env_key_input_state(&editor, &scope, "New workspace environment key", "API_KEY"),
+            state: env_key_input_state(&editor, &scope, secret_new_key_label(&scope), "API_KEY"),
         });
 
         apply_text_input_to_pending(&target, &mut editor, "API_KEY", false);
