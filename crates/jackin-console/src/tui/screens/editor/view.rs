@@ -191,6 +191,15 @@ pub fn isolated_state_save_confirm_state(
     ))
 }
 
+#[must_use]
+pub fn running_isolated_state_save_block_message(affected_containers: &[String]) -> String {
+    format!(
+        "Cannot save: {} container(s) are running with isolated state for an affected mount: {}; eject them first.",
+        affected_containers.len(),
+        affected_containers.join(", "),
+    )
+}
+
 pub fn clamp_editor_scroll_for_frame(
     body: Rect,
     geometry: EditorScrollGeometry,
@@ -1011,6 +1020,19 @@ mod tests {
         assert!(prompt.contains("2 stopped container(s)"));
         assert!(prompt.contains("one"));
         assert!(prompt.contains("two"));
+    }
+
+    #[test]
+    fn running_isolated_state_save_block_message_lists_containers() {
+        let message = running_isolated_state_save_block_message(&[
+            "alpha".to_string(),
+            "beta".to_string(),
+        ]);
+
+        assert_eq!(
+            message,
+            "Cannot save: 2 container(s) are running with isolated state for an affected mount: alpha, beta; eject them first.",
+        );
     }
 
     #[test]

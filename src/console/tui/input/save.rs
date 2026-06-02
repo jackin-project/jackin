@@ -16,7 +16,9 @@ use crate::config::AppConfig;
 use crate::console::tui::components::save_preview::{
     build_confirm_save_lines, collapse_section_lines,
 };
-use jackin_console::tui::screens::editor::view::isolated_state_save_confirm_state;
+use jackin_console::tui::screens::editor::view::{
+    isolated_state_save_confirm_state, running_isolated_state_save_block_message,
+};
 #[cfg(test)]
 pub(super) use crate::console::tui::components::save_preview::append_env_map_diff_lines;
 pub(super) use crate::console::tui::components::save_preview::build_settings_save_lines;
@@ -50,11 +52,8 @@ pub fn continue_save_after_drift_check(
         }
         Ok(detection) => {
             if !detection.running_containers.is_empty() {
-                let msg = format!(
-                    "Cannot save: {} container(s) are running with isolated state for an affected mount: {}; eject them first.",
-                    detection.running_containers.len(),
-                    detection.running_containers.join(", "),
-                );
+                let msg =
+                    running_isolated_state_save_block_message(&detection.running_containers);
                 open_save_error_popup(editor, &msg);
                 return Ok(None);
             }
