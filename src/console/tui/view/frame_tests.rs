@@ -8,7 +8,7 @@ use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_tui::components::scrollable_panel::{
     max_offset as max_scroll_offset, viewport_height as scroll_viewport_height,
 };
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 fn split_mount(idx: usize) -> MountConfig {
     MountConfig {
@@ -35,14 +35,11 @@ fn list_vertical_clamp_uses_rendered_sidebar_height() {
     state.selected = 1;
 
     let body = Rect::new(0, 0, 100, 10);
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(state.list_split_pct),
-            Constraint::Percentage(100u16.saturating_sub(state.list_split_pct)),
-        ])
-        .split(body);
-    let areas = selected_sidebar_scroll_areas(columns[1], &state, &config, tmp.path()).unwrap();
+    let columns = jackin_console::tui::list_geometry::split_list_columns(
+        body,
+        state.list_split_pct,
+    );
+    let areas = selected_sidebar_scroll_areas(columns.preview, &state, &config, tmp.path()).unwrap();
     let rendered_viewport = scroll_viewport_height(areas.workspace.area);
     let desired_viewport = scroll_viewport_height(Rect::new(0, 0, 0, 12));
     assert!(rendered_viewport < desired_viewport);
