@@ -11,8 +11,24 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::screens::editor::view::{
     EditorRoleRow, general_lines as editor_general_lines, mount_lines as editor_mount_lines,
-    role_lines as editor_role_lines, secret_lines as editor_secret_lines,
+    role_lines as editor_role_lines, secret_lines as editor_secret_lines, tab_labels,
 };
+
+pub(crate) fn render_editor_tab_strip(
+    frame: &mut Frame,
+    area: Rect,
+    active: crate::console::tui::state::EditorTab,
+    tab_bar_focused: bool,
+    hovered: Option<usize>,
+) {
+    jackin_console::tui::components::editor_rows::render_tab_strip(
+        frame,
+        area,
+        &tab_labels(active),
+        tab_bar_focused,
+        hovered,
+    );
+}
 
 pub(crate) fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     let rows = editor_general_lines_for_state(state);
