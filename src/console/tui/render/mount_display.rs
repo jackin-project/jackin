@@ -3,7 +3,9 @@
 use crate::console::tui::state::MountInfoCache;
 
 use jackin_console::mount_display::MountDisplayInput;
-pub(crate) use jackin_console::mount_display::{MountDisplayRow, mount_path_width};
+pub(crate) use jackin_console::mount_display::MountDisplayRow;
+#[cfg(test)]
+pub(crate) use jackin_console::mount_display::mount_path_width;
 
 #[cfg(test)]
 pub(crate) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {

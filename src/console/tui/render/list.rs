@@ -41,15 +41,14 @@ pub(super) use crate::console::tui::render::list_geometry::{
 };
 #[cfg(test)]
 pub(super) use crate::console::tui::render::mount_display::format_mount_rows;
-pub(super) use crate::console::tui::render::mount_display::{
-    format_mount_rows_with_cache, mount_path_width,
-};
+pub(super) use crate::console::tui::render::mount_display::format_mount_rows_with_cache;
+#[cfg(test)]
+pub(super) use crate::console::tui::render::mount_display::mount_path_width;
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
-pub(super) use jackin_console::tui::components::mount_rows::{
-    render_global_mount_header, render_global_mount_lines, render_mount_header, render_mount_lines,
-};
+#[cfg(test)]
+pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
 #[cfg(test)]
 pub(super) use jackin_console::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
@@ -58,7 +57,8 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
     Disclosure, provider_picker_title, render_compact_instances_summary, render_picker_sidebar,
-    render_environments_subpanel, render_general_subpanel, render_sentinel_description_pane,
+    render_environments_subpanel, render_general_subpanel, render_global_mounts_subpanel,
+    render_mounts_subpanel as render_workspace_mounts_panel, render_sentinel_description_pane,
     WorkspaceEnvRow,
 };
 
@@ -778,28 +778,8 @@ fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    let mut lines: Vec<Line> = Vec::new();
-    if mounts.is_empty() {
-        lines.push(render_mount_header(mount_path_width(&[])));
-        lines.push(Line::from(Span::styled(
-            "  (none)",
-            Style::default().fg(PHOSPHOR_DIM),
-        )));
-    } else {
-        let rows = format_mount_rows_with_cache(mounts, cache);
-        let path_w = mount_path_width(&rows);
-        lines.push(render_mount_header(path_w));
-        lines.extend(render_mount_lines(&rows, path_w));
-    }
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        scroll_x,
-        scroll_y,
-        focused,
-        Some(" Mounts "),
-    );
+    let rows = format_mount_rows_with_cache(mounts, cache);
+    render_workspace_mounts_panel(frame, area, &rows, scroll_x, scroll_y, focused);
 }
 
 fn render_global_mount_rows_section(
@@ -812,21 +792,10 @@ fn render_global_mount_rows_section(
     scroll_y: u16,
     focused: bool,
 ) {
-    let mut lines = Vec::new();
-    if rows.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  (none)",
-            Style::default().fg(PHOSPHOR_DIM),
-        )));
-    } else {
-        let mounts: Vec<crate::workspace::MountConfig> =
-            rows.iter().map(|row| row.mount.clone()).collect();
-        let display_rows = format_mount_rows_with_cache(&mounts, &cache);
-        let path_w = mount_path_width(&display_rows);
-        lines.push(render_global_mount_header(path_w));
-        lines.extend(render_global_mount_lines(&display_rows, path_w));
-    }
-    super::render_scrollable_block_at(frame, area, lines, scroll_x, scroll_y, focused, Some(title));
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    let display_rows = format_mount_rows_with_cache(&mounts, cache);
+    render_global_mounts_subpanel(frame, area, title, &display_rows, scroll_x, scroll_y, focused);
 }
 
 fn workspace_env_rows(
