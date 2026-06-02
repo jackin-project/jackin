@@ -233,7 +233,9 @@ pub(super) fn handle_prelude_modal(
                     // took — TextInputDst if they edited the destination,
                     // otherwise MountDstChoice (fast-path mount at same path).
                     if prelude.used_edit_dst {
-                        let current_dst = prelude.pending_mount_dst.clone().unwrap_or_default();
+                        let current_dst = create_prelude_mount_destination_default(
+                            prelude.pending_mount_dst.as_deref(),
+                        );
                         prelude.modal = Some(Modal::TextInput {
                             target: TextInputTarget::MountDst,
                             state: create_prelude_mount_destination_input_state(current_dst),
