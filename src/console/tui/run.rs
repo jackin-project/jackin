@@ -14,7 +14,7 @@ use crate::console::{
 use jackin_console::tui::run::{
     LetterInputModalKind, LetterInputState, QuitInterceptState, quit_confirm_area,
     quit_confirm_state, render_debug_bar, should_debug_log_mouse, should_open_quit_confirm,
-    split_debug_area,
+    split_debug_area, token_generate_status_message,
 };
 
 use crate::config::AppConfig;
@@ -228,11 +228,7 @@ pub async fn run_console<H: InstanceActionHandler>(
         if let Some(req) = pending {
             let mut out = std::io::stdout();
             suspend_console_terminal(&mut out);
-            let label = req.label();
-            println!(
-                "\nGenerating Claude OAuth token for {label} — complete the browser \
-                 sign-in, then paste the code below.\n",
-            );
+            println!("{}", token_generate_status_message(req.scope_label()));
             let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
             let _ = resume_console_terminal(&mut out);
             // Force a full repaint next frame so leftover child output is

@@ -723,15 +723,20 @@ pub struct PendingTokenGenerate {
 }
 
 impl PendingTokenGenerate {
-    pub(crate) fn label(&self) -> String {
+    pub(crate) fn scope_label(&self) -> jackin_console::tui::run::TokenGenerateScopeLabel<'_> {
         use crate::workspace::token_setup::TokenSetupScope;
 
         match &self.scope {
-            TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
-            TokenSetupScope::WorkspaceRole { workspace, role } => {
-                format!("workspace {workspace:?} role {role:?}")
+            TokenSetupScope::Workspace(name) => {
+                jackin_console::tui::run::TokenGenerateScopeLabel::Workspace(name)
             }
-            TokenSetupScope::Global => "global config".to_string(),
+            TokenSetupScope::WorkspaceRole { workspace, role } => {
+                jackin_console::tui::run::TokenGenerateScopeLabel::WorkspaceRole {
+                    workspace,
+                    role,
+                }
+            }
+            TokenSetupScope::Global => jackin_console::tui::run::TokenGenerateScopeLabel::Global,
         }
     }
 }

@@ -15,6 +15,36 @@ pub struct QuitInterceptState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenGenerateScopeLabel<'a> {
+    Workspace(&'a str),
+    WorkspaceRole {
+        workspace: &'a str,
+        role: &'a str,
+    },
+    Global,
+}
+
+#[must_use]
+pub fn token_generate_scope_label(scope: TokenGenerateScopeLabel<'_>) -> String {
+    match scope {
+        TokenGenerateScopeLabel::Workspace(name) => format!("workspace {name:?}"),
+        TokenGenerateScopeLabel::WorkspaceRole { workspace, role } => {
+            format!("workspace {workspace:?} role {role:?}")
+        }
+        TokenGenerateScopeLabel::Global => "global config".to_string(),
+    }
+}
+
+#[must_use]
+pub fn token_generate_status_message(scope: TokenGenerateScopeLabel<'_>) -> String {
+    let label = token_generate_scope_label(scope);
+    format!(
+        "\nGenerating Claude OAuth token for {label} -- complete the browser \
+         sign-in, then paste the code below.\n"
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LetterInputModalKind {
     TextInput,
     FilterPicker,
@@ -162,6 +192,25 @@ mod tests {
             ..LetterInputState::default()
         }));
         assert!(!consumes_letter_input(LetterInputState::default()));
+    }
+
+    #[test]
+    fn token_generate_status_message_names_target_scope() {
+        assert_eq!(
+            token_generate_scope_label(TokenGenerateScopeLabel::Workspace("proj")),
+            "workspace \"proj\""
+        );
+        assert_eq!(
+            token_generate_scope_label(TokenGenerateScopeLabel::WorkspaceRole {
+                workspace: "proj",
+                role: "ops",
+            }),
+            "workspace \"proj\" role \"ops\""
+        );
+        assert_eq!(
+            token_generate_status_message(TokenGenerateScopeLabel::Global),
+            "\nGenerating Claude OAuth token for global config -- complete the browser sign-in, then paste the code below.\n"
+        );
     }
 }
 
