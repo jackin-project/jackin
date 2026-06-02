@@ -162,7 +162,7 @@ PRs 1–4 add only `tracing` + `tracing-subscriber` + `tracing-appender` (small,
 - **Requiring a network collector.** Local-first JSONL is the default forever. OTLP is opt-in behind a feature flag and an env var; a default `jackin` build has no `opentelemetry` dependency.
 - **Replacing the two-tier telemetry *contract*.** The compact-vs-verbose rule in <RepoFile path="AGENTS.md" /> stays. This item changes the *implementation* (levels + filters instead of two macros) while preserving the operator-visible behaviour: quiet by default, firehose under `--debug`.
 - **Distributed tracing across host ↔ container as a hard requirement.** Propagating a trace context from the host launch into the capsule is attractive (one trace spanning both processes) but is a stretch goal noted under Open Questions, not a PR-1 requirement.
-- **A `tracing`-based replacement for the launch-progress TUI view model.** The TUI reads launch state from its own view struct; this item feeds the same stage transitions but does not rewrite the renderer (that is [launch progress TUI](/reference/roadmap/launch-progress-tui/) / [TUI architecture](/reference/roadmap/tui-architecture/) work).
+- **A `tracing`-based replacement for the launch-progress TUI view model.** The TUI reads launch state from its own view struct; this item feeds the same stage transitions but does not rewrite the renderer (that is [launch progress TUI](/reference/roadmap/launch-progress-tui/) work).
 
 ## Open questions
 
@@ -186,6 +186,6 @@ PRs 1–4 add only `tracing` + `tracing-subscriber` + `tracing-appender` (small,
 - <RepoFile path="AGENTS.md" /> — the two-tier `clog!` / `cdebug!` telemetry contract this item re-implements without changing operator-visible behaviour
 - [Launch progress TUI](/reference/roadmap/launch-progress-tui/) — consumes per-stage timing; real span ids make the timeline demultiplexable
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — wants structured per-stage / per-session state this instrumentation produces
-- [TUI architecture](/reference/roadmap/tui-architecture/) — the background-I/O-off-the-draw-thread principle aligns with the non-blocking writer requirement
+- [TUI Design Decisions](/reference/tui-design-decisions/) — the background-I/O-off-the-draw-thread principle aligns with the non-blocking writer requirement
 - [Token cost telemetry](/reference/roadmap/token-cost-telemetry/) — a future metrics consumer that benefits from a real counter/histogram surface
 - [Cargo workspace split](/reference/roadmap/cargo-workspace-split/) — a shared `observability` module is a natural early crate boundary when the split triggers
