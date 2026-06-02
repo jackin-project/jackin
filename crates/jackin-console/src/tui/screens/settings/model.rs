@@ -160,6 +160,105 @@ pub struct SettingsEnvConfig<V> {
     pub roles: BTreeMap<String, BTreeMap<String, V>>,
 }
 
+#[derive(Debug)]
+pub struct SettingsEnvState<EnvValue, Modal> {
+    pub selected: usize,
+    pub pending: SettingsEnvConfig<EnvValue>,
+    pub original: SettingsEnvConfig<EnvValue>,
+    pub modal: Option<Modal>,
+    pub modal_parents: Vec<Modal>,
+    pub pending_env_key: Option<(SettingsEnvScope, String)>,
+    pub pending_picker_target: Option<(SettingsEnvScope, Option<String>)>,
+    pub pending_picker_value: Option<EnvValue>,
+    pub unmasked_rows: std::collections::BTreeSet<(SettingsEnvScope, String)>,
+    pub expanded: std::collections::BTreeSet<String>,
+    pub error: Option<String>,
+    pub scroll_y: u16,
+    pub scroll_focused: bool,
+}
+
+impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
+    #[must_use]
+    pub fn is_dirty(&self) -> bool
+    where
+        EnvValue: PartialEq,
+    {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self)
+    where
+        EnvValue: Clone,
+    {
+        self.pending = self.original.clone();
+        self.selected = self
+            .selected
+            .min(
+                crate::tui::screens::settings::update::settings_env_flat_row_count(
+                    &self.pending,
+                    &self.expanded,
+                )
+                .saturating_sub(1),
+            );
+        self.modal = None;
+        self.modal_parents.clear();
+
+        self.pending_picker_target = None;
+        self.pending_picker_value = None;
+        self.unmasked_rows.clear();
+        self.expanded.clear();
+        self.error = None;
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize
+    where
+        EnvValue: PartialEq,
+    {
+        crate::tui::screens::settings::update::settings_map_change_count(
+            &self.original.env,
+            &self.pending.env,
+        ) + self
+            .original
+            .roles
+            .keys()
+            .chain(self.pending.roles.keys())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|role| {
+                let empty = BTreeMap::new();
+                let original = self.original.roles.get(role).unwrap_or(&empty);
+                let pending = self.pending.roles.get(role).unwrap_or(&empty);
+                crate::tui::screens::settings::update::settings_map_change_count(original, pending)
+            })
+            .sum::<usize>()
+    }
+
+    pub fn open_sub_modal(&mut self, child: Modal) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+        if self.modal.is_none() {
+            self.drop_modal_scratch();
+        }
+    }
+
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
+        self.drop_modal_scratch();
+    }
+
+    fn drop_modal_scratch(&mut self) {
+        self.pending_picker_value = None;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalMountConfirm {
     Remove,

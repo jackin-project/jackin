@@ -1,7 +1,7 @@
 //! Manager state machine. See docs/superpowers/specs/2026-04-23-workspace-manager-tui-design.md § 3.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -533,22 +533,10 @@ pub(crate) fn resolve_auth_row_target(
     }
 }
 
-#[derive(Debug)]
-pub struct SettingsEnvState<'a> {
-    pub selected: usize,
-    pub pending: SettingsEnvConfig,
-    pub original: SettingsEnvConfig,
-    pub modal: Option<SettingsEnvModal<'a>>,
-    pub modal_parents: Vec<SettingsEnvModal<'a>>,
-    pub pending_env_key: Option<(SettingsEnvScope, String)>,
-    pub pending_picker_target: Option<(SettingsEnvScope, Option<String>)>,
-    pub pending_picker_value: Option<crate::operator_env::EnvValue>,
-    pub unmasked_rows: BTreeSet<(SettingsEnvScope, String)>,
-    pub expanded: BTreeSet<String>,
-    pub error: Option<String>,
-    pub scroll_y: u16,
-    pub scroll_focused: bool,
-}
+pub type SettingsEnvState<'a> = jackin_console::tui::screens::settings::model::SettingsEnvState<
+    crate::operator_env::EnvValue,
+    SettingsEnvModal<'a>,
+>;
 
 pub type SettingsEnvModal<'a> = jackin_console::tui::screens::settings::model::SettingsEnvModal<
     TextInputState<'a>,
@@ -814,7 +802,7 @@ impl SettingsState<'_> {
             hovered_tab: None,
             general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
             mounts: GlobalMountsState::from_config(config),
-            env: SettingsEnvState::from_config(config),
+            env: settings_env_from_config(config),
             auth: settings_auth_from_config(config),
             trust: settings_trust_from_config(config),
             error_popup: None,
@@ -879,103 +867,29 @@ impl SettingsState<'_> {
     }
 }
 
-impl SettingsEnvState<'_> {
-    pub fn from_config(config: &AppConfig) -> Self {
-        let pending = SettingsEnvConfig {
-            env: config.env.clone(),
-            roles: config
-                .roles
-                .iter()
-                .map(|(role, source)| (role.clone(), source.env.clone()))
-                .collect(),
-        };
-        Self {
-            selected: 0,
-            original: pending.clone(),
-            pending,
-            modal: None,
-            modal_parents: Vec::new(),
-            pending_env_key: None,
-            pending_picker_target: None,
-            pending_picker_value: None,
-            unmasked_rows: BTreeSet::default(),
-            expanded: BTreeSet::default(),
-            error: None,
-            scroll_y: 0,
-            scroll_focused: false,
-        }
-    }
-
-    #[must_use]
-    pub fn is_dirty(&self) -> bool {
-        self.pending != self.original
-    }
-
-    pub fn discard(&mut self) {
-        self.pending = self.original.clone();
-        self.selected = self.selected.min(
-            jackin_console::tui::screens::settings::update::settings_env_flat_row_count(
-                &self.pending,
-                &self.expanded,
-            )
-            .saturating_sub(1),
-        );
-        self.modal = None;
-        self.modal_parents.clear();
-
-        self.pending_picker_target = None;
-        self.pending_picker_value = None;
-        self.unmasked_rows.clear();
-        self.expanded.clear();
-        self.error = None;
-    }
-
-    #[must_use]
-    pub fn change_count(&self) -> usize {
-        settings_map_change_count(&self.original.env, &self.pending.env)
-            + self
-                .original
-                .roles
-                .keys()
-                .chain(self.pending.roles.keys())
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .map(|role| {
-                    let empty = BTreeMap::new();
-                    let original = self.original.roles.get(role).unwrap_or(&empty);
-                    let pending = self.pending.roles.get(role).unwrap_or(&empty);
-                    settings_map_change_count(original, pending)
-                })
-                .sum::<usize>()
-    }
-}
-
-impl<'a> SettingsEnvState<'a> {
-    pub fn open_sub_modal(&mut self, child: SettingsEnvModal<'a>) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
-    }
-
-    pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
-        if self.modal.is_none() {
-            self.drop_modal_scratch();
-        }
-    }
-
-    pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
-        self.drop_modal_scratch();
-    }
-
-    /// See [`EditorState::drop_modal_scratch`]: when the modal chain
-    /// fully unwinds, clear the env-key + picker-value scratch slots
-    /// so a later commit cannot accidentally target a stale (scope, key).
-    fn drop_modal_scratch(&mut self) {
-        self.pending_picker_value = None;
+fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
+    let pending = SettingsEnvConfig {
+        env: config.env.clone(),
+        roles: config
+            .roles
+            .iter()
+            .map(|(role, source)| (role.clone(), source.env.clone()))
+            .collect(),
+    };
+    SettingsEnvState {
+        selected: 0,
+        original: pending.clone(),
+        pending,
+        modal: None,
+        modal_parents: Vec::new(),
+        pending_env_key: None,
+        pending_picker_target: None,
+        pending_picker_value: None,
+        unmasked_rows: BTreeSet::default(),
+        expanded: BTreeSet::default(),
+        error: None,
+        scroll_y: 0,
+        scroll_focused: false,
     }
 }
 
