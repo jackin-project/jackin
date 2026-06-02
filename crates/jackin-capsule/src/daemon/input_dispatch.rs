@@ -1,8 +1,6 @@
 //! Input dispatch methods for the Multiplexer.
 
-use crate::tui::components::branch_context_bar::{
-    BranchContextBarHit, branch_context_bar_hit,
-};
+use crate::tui::components::branch_context_bar::branch_context_bar_hit;
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::prefix_full_redraw_reason;
@@ -426,7 +424,7 @@ impl Multiplexer {
                 self.apply_action(action)
             }
             Action::BranchContextBarClick { row, col } => {
-                let action = match branch_context_bar_hit(
+                let hit = branch_context_bar_hit(
                     row + 1,
                     col + 1,
                     self.term_rows,
@@ -435,11 +433,8 @@ impl Multiplexer {
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
                     self.status_bar.instance_id_label(),
-                ) {
-                    Some(BranchContextBarHit::Context) => Action::OpenGithubContext,
-                    Some(BranchContextBarHit::Container) => Action::OpenContainerInfo,
-                    None => return None,
-                };
+                );
+                let action = branch_context_bar_click_action(hit)?;
                 self.apply_action(action)
             }
             Action::ForwardMouse {

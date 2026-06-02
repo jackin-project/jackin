@@ -7,6 +7,7 @@
 use crate::tui::components::dialog::{
     DialogAction, PaletteCommand, PickerIntent, SplitDirection,
 };
+use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,6 +257,14 @@ pub fn status_bar_click_action(state: StatusBarClickState) -> Option<Action> {
     state.menu_hit.then_some(Action::OpenPalette)
 }
 
+pub(crate) fn branch_context_bar_click_action(hit: Option<BranchContextBarHit>) -> Option<Action> {
+    match hit {
+        Some(BranchContextBarHit::Context) => Some(Action::OpenGithubContext),
+        Some(BranchContextBarHit::Container) => Some(Action::OpenContainerInfo),
+        None => None,
+    }
+}
+
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
@@ -263,10 +272,11 @@ fn is_wheel_button(button: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Action, InputDispatchContext, input_event_action, mouse_chrome_update_action,
-        mouse_release_action, pane_button_motion_action, status_bar_click_action,
-        StatusBarClickState,
+        Action, InputDispatchContext, branch_context_bar_click_action, input_event_action,
+        mouse_chrome_update_action, mouse_release_action, pane_button_motion_action,
+        status_bar_click_action, StatusBarClickState,
     };
+    use crate::tui::components::branch_context_bar::BranchContextBarHit;
     use crate::tui::input::InputEvent;
     use crate::tui::input::PrefixCommand;
     use crate::tui::components::dialog::{PickerIntent, SplitDirection};
@@ -430,5 +440,18 @@ mod tests {
             status_bar_click_action(StatusBarClickState::default()),
             None
         );
+    }
+
+    #[test]
+    fn branch_context_bar_click_action_routes_context_and_container() {
+        assert_eq!(
+            branch_context_bar_click_action(Some(BranchContextBarHit::Context)),
+            Some(Action::OpenGithubContext)
+        );
+        assert_eq!(
+            branch_context_bar_click_action(Some(BranchContextBarHit::Container)),
+            Some(Action::OpenContainerInfo)
+        );
+        assert_eq!(branch_context_bar_click_action(None), None);
     }
 }

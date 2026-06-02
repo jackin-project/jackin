@@ -30,7 +30,8 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::tui::message::{
-    Action, InputDispatchContext, input_event_action, mouse_chrome_update_action,
+    Action, InputDispatchContext, branch_context_bar_click_action, input_event_action,
+    mouse_chrome_update_action,
     mouse_release_action, pane_button_motion_action, prefix_command_action,
     status_bar_click_action, StatusBarClickState,
 };

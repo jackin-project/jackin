@@ -320,6 +320,8 @@ Capsule pane-data redraw planning now lives with visible update vocabulary in <R
 
 Capsule status-bar click routing now lives with semantic TUI action vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/message.rs" />. The daemon still computes concrete hit facts such as tab index, double-click timing, and menu-hit state in <RepoFile path="crates/jackin-capsule/src/daemon/input_dispatch.rs" />, then the TUI message boundary decides whether the click is a tab switch, rename request, palette open, or no-op.
 
+Capsule branch-context bar click routing now also lives with semantic TUI action vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/message.rs" />. The daemon still asks the branch-context bar component for concrete hit facts, but the TUI message boundary maps those facts to GitHub-context, container-info, or no-op actions.
+
 Settings screen view geometry now owns the reusable global-mount scroll-frame calculation in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root settings geometry supplies only root mount rows and cache-derived content width.
 
 Settings header title wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering asks the screen helper for the title instead of carrying settings-screen copy.
