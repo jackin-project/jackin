@@ -27,6 +27,57 @@ pub enum WorkspaceListFooterMode {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListFooterFacts {
+    pub scroll_focused: bool,
+    pub inline_agent_picker: bool,
+    pub inline_role_picker: bool,
+    pub selected_instance: bool,
+    pub preview_focused: bool,
+    pub selected_instance_has_snapshot: bool,
+    pub selected_saved_workspace: bool,
+    pub selected_new_workspace: bool,
+    pub show_expand: bool,
+    pub show_collapse: bool,
+    pub show_open_in_github: bool,
+}
+
+#[must_use]
+pub fn workspace_list_footer_mode_for_facts(
+    facts: WorkspaceListFooterFacts,
+) -> WorkspaceListFooterMode {
+    if facts.inline_agent_picker {
+        return WorkspaceListFooterMode::AgentPicker {
+            scroll_focused: facts.scroll_focused,
+        };
+    }
+    if facts.inline_role_picker {
+        return WorkspaceListFooterMode::RolePicker {
+            scroll_focused: facts.scroll_focused,
+        };
+    }
+    if facts.selected_instance {
+        if facts.preview_focused {
+            return WorkspaceListFooterMode::PreviewPane;
+        }
+        return WorkspaceListFooterMode::InstanceRow {
+            has_snapshot: facts.selected_instance_has_snapshot,
+        };
+    }
+    WorkspaceListFooterMode::WorkspaceRow {
+        scroll_focused: facts.scroll_focused,
+        enter_label: if facts.selected_new_workspace {
+            "setup"
+        } else {
+            "launch"
+        },
+        is_saved: facts.selected_saved_workspace,
+        show_expand: facts.show_expand,
+        show_collapse: facts.show_collapse,
+        show_open_in_github: facts.show_open_in_github,
+    }
+}
+
 #[must_use]
 pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
@@ -829,6 +880,72 @@ mod tests {
             WorkspaceListFooterMode::InstanceRow { has_snapshot: true },
         ));
         assert!(labels.windows(2).any(|pair| pair == ["⇥", "into preview"]));
+    }
+
+    #[test]
+    fn workspace_list_footer_facts_prioritize_inline_pickers() {
+        assert_eq!(
+            workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {
+                scroll_focused: true,
+                inline_agent_picker: true,
+                inline_role_picker: false,
+                selected_instance: true,
+                preview_focused: true,
+                selected_instance_has_snapshot: true,
+                selected_saved_workspace: true,
+                selected_new_workspace: false,
+                show_expand: true,
+                show_collapse: false,
+                show_open_in_github: true,
+            }),
+            WorkspaceListFooterMode::AgentPicker {
+                scroll_focused: true,
+            }
+        );
+    }
+
+    #[test]
+    fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
+        assert_eq!(
+            workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {
+                scroll_focused: false,
+                inline_agent_picker: false,
+                inline_role_picker: false,
+                selected_instance: true,
+                preview_focused: true,
+                selected_instance_has_snapshot: true,
+                selected_saved_workspace: false,
+                selected_new_workspace: false,
+                show_expand: false,
+                show_collapse: false,
+                show_open_in_github: false,
+            }),
+            WorkspaceListFooterMode::PreviewPane
+        );
+
+        assert_eq!(
+            workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {
+                scroll_focused: false,
+                inline_agent_picker: false,
+                inline_role_picker: false,
+                selected_instance: false,
+                preview_focused: false,
+                selected_instance_has_snapshot: false,
+                selected_saved_workspace: false,
+                selected_new_workspace: true,
+                show_expand: false,
+                show_collapse: false,
+                show_open_in_github: false,
+            }),
+            WorkspaceListFooterMode::WorkspaceRow {
+                scroll_focused: false,
+                enter_label: "setup",
+                is_saved: false,
+                show_expand: false,
+                show_collapse: false,
+                show_open_in_github: false,
+            }
+        );
     }
 
     #[test]

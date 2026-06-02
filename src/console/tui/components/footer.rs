@@ -3,7 +3,7 @@
 use crate::config::AppConfig;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_console::tui::components::footer_hints::{
-    WorkspaceListFooterMode, workspace_list_footer_items,
+    WorkspaceListFooterFacts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
 };
 use jackin_tui::HintSpan;
 
@@ -15,34 +15,21 @@ pub(crate) fn workspace_list_footer_items_for_state(
     state: &ManagerState<'_>,
     config: &AppConfig,
 ) -> Vec<HintSpan<'static>> {
-    workspace_list_footer_items(workspace_list_footer_mode(state, config))
+    workspace_list_footer_items(workspace_list_footer_mode_for_facts(
+        workspace_list_footer_facts(state, config),
+    ))
 }
 
-fn workspace_list_footer_mode(
+fn workspace_list_footer_facts(
     state: &ManagerState<'_>,
     config: &AppConfig,
-) -> WorkspaceListFooterMode {
+) -> WorkspaceListFooterFacts {
     let scroll_focused = state.list_scroll_focus.is_some();
-    if state.inline_agent_picker.is_some() {
-        return WorkspaceListFooterMode::AgentPicker { scroll_focused };
-    }
-    if state.inline_role_picker.is_some() {
-        return WorkspaceListFooterMode::RolePicker { scroll_focused };
-    }
-
     let selected = state.selected_row();
-    if matches!(
+    let selected_instance = matches!(
         selected,
         ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
-    ) {
-        if state.preview_focused {
-            return WorkspaceListFooterMode::PreviewPane;
-        }
-        return WorkspaceListFooterMode::InstanceRow {
-            has_snapshot: selected_instance_has_snapshot(state, selected),
-        };
-    }
-
+    );
     let is_saved = matches!(selected, ManagerListRow::SavedWorkspace(_));
     let show_open_in_github = is_saved
         && state
@@ -64,16 +51,16 @@ fn workspace_list_footer_mode(
         selected,
         ManagerListRow::SavedWorkspace(i) if state.is_workspace_expanded(i)
     );
-    let enter_label = if matches!(selected, ManagerListRow::NewWorkspace) {
-        "setup"
-    } else {
-        "launch"
-    };
 
-    WorkspaceListFooterMode::WorkspaceRow {
+    WorkspaceListFooterFacts {
         scroll_focused,
-        enter_label,
-        is_saved,
+        inline_agent_picker: state.inline_agent_picker.is_some(),
+        inline_role_picker: state.inline_role_picker.is_some(),
+        selected_instance,
+        preview_focused: state.preview_focused,
+        selected_instance_has_snapshot: selected_instance_has_snapshot(state, selected),
+        selected_saved_workspace: is_saved,
+        selected_new_workspace: matches!(selected, ManagerListRow::NewWorkspace),
         show_expand,
         show_collapse,
         show_open_in_github,
