@@ -2,6 +2,7 @@
 
 pub mod app;
 pub(crate) mod auth_panel;
+pub(crate) mod components;
 pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;
@@ -9,7 +10,6 @@ mod launch;
 pub mod message;
 #[cfg(test)]
 mod message_tests;
-pub mod op_picker;
 pub(crate) mod prompts;
 pub mod render;
 pub mod run;

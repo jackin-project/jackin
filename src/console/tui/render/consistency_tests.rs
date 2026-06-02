@@ -153,7 +153,7 @@ fn render_github_picker() -> (Buffer, Rect) {
 }
 
 fn render_op_picker() -> (Buffer, Rect) {
-    use crate::console::tui::op_picker::OpPickerState;
+    use crate::console::tui::components::op_picker::OpPickerState;
     use jackin_console::tui::components::op_picker::render_picker;
     let area = Rect::new(0, 0, 70, 20);
     let state = OpPickerState::new();

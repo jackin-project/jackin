@@ -266,7 +266,7 @@ Summary:
 All keyboard hint text belongs in the footer bar at the bottom of the screen. Dialogs, modals, and overlays **must not** render their own internal hint line. When a modal is open, the main footer must show the modal's available keys instead of the keys for the content behind it.
 
 Enforcement:
-- Every root-console modal widget such as `src/console/tui/op_picker/` must expose a `footer_items` function (or equivalent) and remove its internal hint row.
+- Every root-console modal widget such as `src/console/tui/components/op_picker/` must expose a `footer_items` function (or equivalent) and remove its internal hint row.
 - `render_editor` checks `state.modal` first; if a modal is open it calls `modal_footer_items(modal)` and skips the normal contextual items.
 - `render_settings` checks the three settings modal chains (`auth.modal`, `env.modal`, `mounts.modal`) in priority order; if any is `Some`, calls the corresponding `*_modal_footer_items` function.
 - No `Constraint::Length` row for a hint line may remain inside any widget layout.
@@ -868,7 +868,7 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 1. **Every visual pattern that appears in more than one place must use one shared implementation.** A single widget, render function, or helper — not two near-copies. When the existing implementation cannot serve a new call site without modification, extend it (add a parameter, generalize a branch, add an enum variant) rather than forking it.
 
-2. **Components have two canonical homes.** Cross-surface components live in `crates/jackin-tui/src/components/`. Surface-local components live in `crates/<surface-crate>/src/tui/components/`. The remaining root-console op-picker adapter in `src/console/tui/op_picker/` is transitional until migrated; use it when extending current op-picker behavior, but do not add new canonical component patterns there.
+2. **Components have two canonical homes.** Cross-surface components live in `crates/jackin-tui/src/components/`. Surface-local components live in `crates/<surface-crate>/src/tui/components/`. The remaining root-console op-picker adapter in `src/console/tui/components/op_picker/` is transitional until migrated; use it when extending current op-picker behavior, but do not add new canonical component patterns there.
 
 3. **A genuinely new component is only ever written once.** The first time a new UX pattern appears, it is acceptable to implement it in the most focused way that serves the immediate need. The second time the same pattern is needed somewhere else, the two implementations must be consolidated into one shared widget before the second PR lands — not "as a follow-up."
 
@@ -893,17 +893,17 @@ Before adding any new TUI widget or state type:
 
 ### Why this rule exists — canonical lesson
 
-A `token_store_picker` widget once duplicated the Account → Vault → Item navigation state machine from <RepoFile path="src/console/tui/op_picker/mod.rs" /> — a 1067-line copy of closely parallel code where every `op_picker` bug fix to navigation, filtering, R-key refresh, or section display had to be manually reproduced or the two implementations drifted. That copy has since been deleted and `op_picker` was extended instead: an opt-in `OpPickerMode::Create` turns on the `+ New item`, `+ New field`, and `+ New section` creation sentinels and the naming sub-stages, and the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`). One widget now serves both the browse and create call sites. This is the positive reference for the rule: when a new call site needs more, **extend the shared widget with a mode**, never fork it into a second drill-down. The remaining Claude-token work is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
+A `token_store_picker` widget once duplicated the Account → Vault → Item navigation state machine from <RepoFile path="src/console/tui/components/op_picker/mod.rs" /> — a 1067-line copy of closely parallel code where every `op_picker` bug fix to navigation, filtering, R-key refresh, or section display had to be manually reproduced or the two implementations drifted. That copy has since been deleted and `op_picker` was extended instead: an opt-in `OpPickerMode::Create` turns on the `+ New item`, `+ New field`, and `+ New section` creation sentinels and the naming sub-stages, and the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`). One widget now serves both the browse and create call sites. This is the positive reference for the rule: when a new call site needs more, **extend the shared widget with a mode**, never fork it into a second drill-down. The remaining Claude-token work is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
 
 ---
 
 ## Reusable Component Catalog
 
-Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-local widgets should live under the owning surface's `src/tui/components/`. The root console still has the transitional op-picker adapter in `src/console/tui/op_picker/`; it remains the valid current owner until migrated, but that path is not the target structure for new canonical component work. Use this table to identify the right component before writing new code or moving an existing widget.
+Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-local widgets should live under the owning surface's `src/tui/components/`. The root console still has the transitional op-picker adapter in `src/console/tui/components/op_picker/`; it remains the valid current owner until migrated, but that path is not the target structure for new canonical component work. Use this table to identify the right component before writing new code or moving an existing widget.
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
-| Op picker (1Password drill-down) | <RepoFile path="src/console/tui/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
+| Op picker (1Password drill-down) | <RepoFile path="src/console/tui/components/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
 | Role picker | <RepoFile path="crates/jackin-console/src/tui/components/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
 | Text input box | <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
 | Scope picker | <RepoFile path="crates/jackin-console/src/tui/components/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
@@ -994,7 +994,7 @@ The root console run loop that drives the wizard lives under <RepoFile path="src
 
 Every "create" affordance in this branch is the same `+ ` sentinel row, and every "name it" prompt is the same text input box. Nothing new is drawn.
 
-**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="src/console/tui/op_picker/mod.rs" /> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
+**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="src/console/tui/components/op_picker/mod.rs" /> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
 
 ### Rich TUI lives in the console; the CLI stays plain CLI
 

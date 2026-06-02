@@ -634,7 +634,7 @@ pub(super) fn handle_settings_auth_modal(
                         // `handle_settings_token_generate_pick`.
                         auth.modal = Some(SettingsAuthModal::OpPicker {
                             state: Box::new(
-                                crate::console::tui::op_picker::OpPickerState::new_create_with_cache(
+                                crate::console::tui::components::op_picker::OpPickerState::new_create_with_cache(
                                     op_cache,
                                     crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE
                                         .replace("{ws}", "global"),
@@ -674,7 +674,7 @@ pub(super) fn handle_settings_auth_modal(
                 ModalOutcome::Commit(SourceChoice::Op) => {
                     auth.modal = Some(SettingsAuthModal::OpPicker {
                         state: Box::new(
-                            crate::console::tui::op_picker::OpPickerState::new_with_cache(
+                            crate::console::tui::components::op_picker::OpPickerState::new_with_cache(
                                 op_cache,
                             ),
                         ),
@@ -702,11 +702,11 @@ pub(super) fn handle_settings_auth_modal(
             match outcome {
                 // Browse-mode caller: only `Existing` is reachable.
                 ModalOutcome::Commit(
-                    crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
-                    | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
+                    crate::console::tui::components::op_picker::OpPickerSelection::NewItem { .. }
+                    | crate::console::tui::components::op_picker::OpPickerSelection::EditItemField { .. },
                 ) => unreachable!("settings-auth browse OpPicker runs in Browse mode"),
                 ModalOutcome::Commit(
-                    crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
+                    crate::console::tui::components::op_picker::OpPickerSelection::Existing(op_ref),
                 ) => {
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.
@@ -730,10 +730,10 @@ pub(super) fn handle_settings_auth_modal(
 fn handle_settings_token_generate_pick(
     auth: &mut crate::console::tui::state::SettingsAuthState,
     pending_token_generate: &mut Option<crate::console::tui::state::PendingTokenGenerate>,
-    outcome: ModalOutcome<crate::console::tui::op_picker::OpPickerSelection>,
+    outcome: ModalOutcome<crate::console::tui::components::op_picker::OpPickerSelection>,
     modal: SettingsAuthModal<'static>,
 ) {
-    use crate::console::tui::op_picker::OpPickerSelection;
+    use crate::console::tui::components::op_picker::OpPickerSelection;
     use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
 
     let args = match outcome {
@@ -1354,7 +1354,7 @@ pub(super) fn handle_settings_env_modal(
                     env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
                     env.open_sub_modal(SettingsEnvModal::OpPicker {
                         state: Box::new(
-                            crate::console::tui::op_picker::OpPickerState::new_with_cache(
+                            crate::console::tui::components::op_picker::OpPickerState::new_with_cache(
                                 op_cache,
                             ),
                         ),
@@ -1373,11 +1373,11 @@ pub(super) fn handle_settings_env_modal(
         SettingsEnvModal::OpPicker { state: mut picker } => match picker.handle_key(key) {
             // Browse-mode caller: only `Existing` is reachable.
             ModalOutcome::Commit(
-                crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
-                | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
+                crate::console::tui::components::op_picker::OpPickerSelection::NewItem { .. }
+                | crate::console::tui::components::op_picker::OpPickerSelection::EditItemField { .. },
             ) => unreachable!("settings-env OpPicker runs in Browse mode"),
             ModalOutcome::Commit(
-                crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
+                crate::console::tui::components::op_picker::OpPickerSelection::Existing(op_ref),
             ) => {
                 let target = env.pending_picker_target.take();
                 match target {
@@ -1845,7 +1845,7 @@ fn open_settings_env_picker_modal(
     settings.env.pending_picker_target = Some(target);
     settings.env.modal = Some(SettingsEnvModal::OpPicker {
         state: Box::new(
-            crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
+            crate::console::tui::components::op_picker::OpPickerState::new_with_cache(op_cache),
         ),
     });
 }

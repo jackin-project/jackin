@@ -25,7 +25,7 @@ use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
     auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
 };
-use crate::console::tui::op_picker::OpPickerState;
+use crate::console::tui::components::op_picker::OpPickerState;
 use crate::config::AppConfig;
 use crate::config::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,

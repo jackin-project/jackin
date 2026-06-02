@@ -1,7 +1,7 @@
 //! Workspace-manager effect executors and background polling.
 
 use crate::config::AppConfig;
-use crate::console::tui::op_picker::OpPickerState;
+use crate::console::tui::components::op_picker::OpPickerState;
 use crate::console::tui::effect::{
     FileBrowserEffectContext, ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput,
     WorkspaceSaveWriteMode,

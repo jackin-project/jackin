@@ -44,7 +44,7 @@ pub(crate) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             shared_modal_footer_items(ModalFooterMode::OpNamingTextInput)
         }
         Modal::OpPicker { state }
-            if state.stage == crate::console::tui::op_picker::OpPickerStage::Section =>
+            if state.stage == crate::console::tui::components::op_picker::OpPickerStage::Section =>
         {
             shared_modal_footer_items(ModalFooterMode::OpSection)
         }
@@ -134,7 +134,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
             shared_modal_footer_items(ModalFooterMode::OpNamingTextInput)
         }
         SettingsAuthModal::OpPicker { state }
-            if state.stage == crate::console::tui::op_picker::OpPickerStage::Section =>
+            if state.stage == crate::console::tui::components::op_picker::OpPickerStage::Section =>
         {
             shared_modal_footer_items(ModalFooterMode::OpSection)
         }
