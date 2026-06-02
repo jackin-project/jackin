@@ -128,6 +128,19 @@ pub const fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPa
 }
 
 #[must_use]
+pub fn preview_pane_cursor_plan(
+    pane_count: usize,
+    current_cursor: Option<usize>,
+    delta: isize,
+) -> Option<usize> {
+    if pane_count == 0 {
+        return None;
+    }
+    let cursor = current_cursor.unwrap_or(0).min(pane_count - 1);
+    Some(crate::focus::moved_selection(cursor, pane_count, delta))
+}
+
+#[must_use]
 pub const fn destructive_confirm_plan(outcome: ModalOutcome<bool>) -> DestructiveConfirmPlan {
     match outcome {
         ModalOutcome::Commit(true) => DestructiveConfirmPlan::Commit,
@@ -226,6 +239,14 @@ mod tests {
         );
         assert_eq!(preview_pane_key_plan(KeyCode::Tab, 2), PreviewPaneKeyPlan::Continue);
         assert_eq!(preview_pane_key_plan(KeyCode::Enter, 0), PreviewPaneKeyPlan::ExitPreview);
+    }
+
+    #[test]
+    fn preview_pane_cursor_plan_clamps_current_and_delta() {
+        assert_eq!(preview_pane_cursor_plan(0, Some(4), 1), None);
+        assert_eq!(preview_pane_cursor_plan(3, None, 1), Some(1));
+        assert_eq!(preview_pane_cursor_plan(3, Some(9), 1), Some(2));
+        assert_eq!(preview_pane_cursor_plan(3, Some(0), -9), Some(0));
     }
 
     #[test]

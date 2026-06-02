@@ -32,6 +32,7 @@ use jackin_console::tui::screens::settings::update::{
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
+use jackin_console::tui::screens::workspaces::update::preview_pane_cursor_plan;
 use jackin_console::tui::update::{
     selected_index_plan, selection_move_plan, term_width_scroll_plan, unclamped_scroll_plan,
 };
@@ -923,17 +924,15 @@ const fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
 
 fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {
     let len = state.flattened_preview_panes(container).len();
-    if len == 0 {
+    let next = preview_pane_cursor_plan(
+        len,
+        state.preview_pane_cursor.get(container).copied(),
+        delta,
+    );
+    let Some(next) = next else {
         state.preview_focused = false;
         return;
-    }
-    let cursor = state
-        .preview_pane_cursor
-        .get(container)
-        .copied()
-        .unwrap_or(0)
-        .min(len - 1);
-    let next = selection_move_plan(cursor, len, delta);
+    };
     state.preview_pane_cursor.insert(container.to_owned(), next);
 }
 
