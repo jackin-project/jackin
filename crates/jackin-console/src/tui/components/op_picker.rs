@@ -251,6 +251,20 @@ pub fn sort_fields_by_concealed_first<Field>(
     fields.sort_by_key(|field| !concealed(field));
 }
 
+pub fn selected_account_id<Account>(
+    selected_account: Option<&Account>,
+    account_id: impl FnOnce(&Account) -> &str,
+) -> Option<String> {
+    selected_account.map(|account| account_id(account).to_string())
+}
+
+pub fn selected_account_id_ref<'a, Account>(
+    selected_account: Option<&'a Account>,
+    account_id: impl FnOnce(&'a Account) -> &'a str,
+) -> Option<&'a str> {
+    selected_account.map(account_id)
+}
+
 /// Background load completion routed back into the picker.
 #[derive(Debug)]
 pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
@@ -2792,5 +2806,28 @@ mod tests {
 
         assert_eq!(fields[0].label, "secret");
         assert_eq!(fields[1].label, "plain");
+    }
+
+    #[test]
+    fn selected_account_helpers_derive_cache_key_from_selected_account() {
+        struct Account {
+            id: &'static str,
+        }
+
+        let account = Account { id: "acct_1" };
+
+        assert_eq!(
+            selected_account_id(Some(&account), |account| account.id),
+            Some("acct_1".to_string())
+        );
+        assert_eq!(
+            selected_account_id_ref(Some(&account), |account| account.id),
+            Some("acct_1")
+        );
+        assert_eq!(selected_account_id::<Account>(None, |account| account.id), None);
+        assert_eq!(
+            selected_account_id_ref::<Account>(None, |account| account.id),
+            None
+        );
     }
 }

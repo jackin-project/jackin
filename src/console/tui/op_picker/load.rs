@@ -273,13 +273,13 @@ impl OpPickerState {
     }
 
     pub(super) fn selected_account_id(&self) -> Option<String> {
-        self.selected_account.as_ref().map(|account| account.id.clone())
+        super::selected_account_id(self.selected_account.as_ref(), |account| account.id.as_str())
     }
 
     fn selected_account_id_ref(&self) -> Option<&str> {
-        self.selected_account
-            .as_ref()
-            .map(|account| account.id.as_str())
+        super::selected_account_id_ref(self.selected_account.as_ref(), |account| {
+            account.id.as_str()
+        })
     }
 
     #[cfg(test)]

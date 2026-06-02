@@ -41,6 +41,7 @@ pub(crate) use jackin_console::tui::components::op_picker::{
     new_item_name_commit_plan, new_section_name_commit_plan, probe_load_error_state,
     recoverable_load_error_state, disconnected_worker_error_state,
     section_header_collapse_target, section_stage_back_plan, section_stage_commit_plan,
+    selected_account_id, selected_account_id_ref,
     sort_fields_by_concealed_first, vault_stage_back_plan, vault_stage_commit_plan,
     vault_stage_refresh_plan, vaults_loaded_plan,
 };
