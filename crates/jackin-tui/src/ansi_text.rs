@@ -1,3 +1,9 @@
+//! ANSI escape stripping and styled-span parsing for strings rendered in
+//! terminal UI components.
+//!
+//! Not responsible for: layout geometry, widget rendering, or color palette
+//! definitions.
+
 use anstyle_parse::{DefaultCharAccumulator, Params, Parser, Perform};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;

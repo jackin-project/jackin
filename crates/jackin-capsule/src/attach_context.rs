@@ -1,3 +1,9 @@
+//! Attach-session context: state for a single host connection to the daemon,
+//! including PTY ownership, focus, and environment passthrough.
+//!
+//! Not responsible for: persistent container identity (see
+//! `container_context`) or socket framing (see `socket`).
+
 use crate::session::SESSION_ENV_PASSTHROUGH;
 
 pub fn collect_session_env(include: bool) -> Vec<(String, String)> {

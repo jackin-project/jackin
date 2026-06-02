@@ -1,3 +1,12 @@
+//! In-container multiplexer daemon: accepts attach connections, manages PTY
+//! sessions, dispatches input, and renders the status bar.
+//!
+//! Not responsible for: PTY I/O (see `session`), socket binding (see
+//! `socket`), or terminal rendering (see `tui`).
+//!
+//! Key invariant: at most one attach client is active at a time; a new
+//! `Hello` frame displaces the previous client.
+
 /// The multiplexer daemon — runs as PID 1, manages sessions and clients.
 ///
 /// Architecture:

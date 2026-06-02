@@ -1,3 +1,13 @@
+//! Branch context bar component: renders the current git branch and
+//! ahead/behind counts in the capsule status bar.
+//!
+//! Not responsible for: fetching git state (caller provides `branch` and
+//! `PullRequestInfo`) or mouse-event dispatch.
+//!
+//! Key invariant: `BRANCH_CONTEXT_BAR_ROWS` is the exact row budget callers
+//! must reserve; rendering writes ANSI escape sequences directly into the
+//! caller-supplied `buf` using absolute cursor positions.
+
 use jackin_tui::ansi::RESET;
 use jackin_tui::{display_cols, take_display_cols};
 

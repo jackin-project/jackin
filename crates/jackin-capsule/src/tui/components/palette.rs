@@ -1,3 +1,13 @@
+//! Named color palette for the capsule TUI: phosphor-green brand colors and
+//! semantic aliases used across capsule components.
+//!
+//! Not responsible for: terminal capability detection or color downgrading —
+//! all values are unconditional 24-bit RGB ANSI sequences.
+//!
+//! Key invariant: capsule components must source colors from `jackin_tui`
+//! palette constants (shared with the host console TUI) so the two surfaces
+//! cannot drift; no ad-hoc inline RGB literals in component render code.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCloseLabel {
     ChooseTarget,

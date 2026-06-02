@@ -1,3 +1,9 @@
+//! Launch progress display: stage tracking and rich terminal progress bar
+//! for the `jackin load` cockpit.
+//!
+//! Not responsible for: executing launch stages (see `runtime`) or
+//! capsule attach after handoff.
+
 use std::sync::Arc;
 use std::time::Duration;
 

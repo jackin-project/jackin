@@ -1,3 +1,9 @@
+//! Settings screen update logic: handle keyboard events and produce effects
+//! for the General, Mounts, Environments, Auth, and Trust tab group.
+//!
+//! Not responsible for: rendering (see `view`) or state definitions (see
+//! `model`).
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{

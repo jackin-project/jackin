@@ -1,3 +1,9 @@
+//! Sidebar/main-area split layout: percentage-based split state, drag
+//! clamping, and seam hit-testing for the two-panel console layout.
+//!
+//! Not responsible for: computing final pixel rects (see `layout`) or
+//! rendering either panel.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DragState {
     pub anchor_pct: u16,

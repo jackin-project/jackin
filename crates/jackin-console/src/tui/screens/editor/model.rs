@@ -1,3 +1,9 @@
+//! Editor screen state: draft workspace config being edited and per-tab/
+//! per-field edit state for General, Mounts, Roles, Secrets, and Auth panels.
+//!
+//! Not responsible for: event handling (see `update`) or rendering (see
+//! `view`).
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorTab {
     General,

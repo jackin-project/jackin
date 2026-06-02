@@ -1,3 +1,8 @@
+//! Focus management helpers: track which TUI component owns input focus and
+//! compute cursor movement within a scrollable list.
+//!
+//! Not responsible for: rendering focus indicators or routing key events.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MountScrollFocus {
     Workspace,

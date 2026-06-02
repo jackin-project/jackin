@@ -1,3 +1,9 @@
+//! Cache mount metadata (path existence and kind) so repeated TUI renders
+//! do not stat the filesystem on every frame.
+//!
+//! Not responsible for: filesystem inspection logic (see `mount_info`) or
+//! rendering mount rows.
+
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;

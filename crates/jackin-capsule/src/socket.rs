@@ -1,3 +1,9 @@
+//! Unix socket helpers: create, bind, and accept connections on
+//! `/jackin/run/jackin.sock`.
+//!
+//! Not responsible for: protocol decoding, session management, or daemon
+//! business logic.
+
 /// Unix domain socket server.
 ///
 /// Listens on `/jackin/run/jackin.sock`. Two protocols share the socket:

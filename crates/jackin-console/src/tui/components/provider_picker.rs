@@ -1,3 +1,9 @@
+//! Provider picker component: keyboard-driven list for selecting a Claude API
+//! provider (e.g. direct Anthropic or Z.AI redirect).
+//!
+//! Not responsible for: rendering the list widget (see caller view modules)
+//! or persisting the selection to config.
+
 use crossterm::event::{KeyCode, KeyEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

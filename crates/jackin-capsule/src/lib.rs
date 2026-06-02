@@ -1,3 +1,9 @@
+//! Capsule crate root: module declarations re-exported for the in-container
+//! daemon and host client binaries.
+//!
+//! Not responsible for: protocol encoding (see `jackin-protocol`), host-side
+//! launch orchestration, or config schema migration.
+
 pub mod attach_context;
 /// Library target so integration tests under `tests/` can exercise
 /// the protocol, prefix-key parser, VT round-trips, and status bar

@@ -1,3 +1,13 @@
+//! Capsule TUI event loop: drives the ratatui render loop, processes input
+//! bytes from the attach protocol, and dispatches effects to the daemon.
+//!
+//! Not responsible for: daemon-side session management or PTY I/O — those
+//! live in `daemon` and `pty`; this module is the client-side attach loop.
+//!
+//! Key invariant: `run_client` owns the raw terminal for its entire lifetime;
+//! `enter_attach_terminal` installs cleanup via drop guard so the host
+//! terminal is always restored even on panic or early return.
+
 use std::io::Write;
 
 use anyhow::{Context, Result};

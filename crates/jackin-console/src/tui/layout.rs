@@ -1,3 +1,9 @@
+//! Layout utilities shared across console screens: header/content/footer
+//! heights, seam geometry, and scrollbar axis constants.
+//!
+//! Not responsible for: split percentage state (see `split`) or rendering
+//! any widget.
+
 pub const LIST_HEADER_HEIGHT: u16 = 2;
 pub const LIST_FOOTER_HEIGHT: u16 = 2;
 /// Minimum terminal width where the list/details seam is draggable.

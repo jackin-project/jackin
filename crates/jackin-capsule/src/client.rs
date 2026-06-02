@@ -1,3 +1,9 @@
+//! Host-side capsule client: connects to the daemon socket, forwards
+//! stdin/stdout, and handles terminal window resize events.
+//!
+//! Not responsible for: daemon session management, PTY allocation, or
+//! in-container rendering.
+
 use anyhow::{Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;

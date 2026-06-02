@@ -1,3 +1,9 @@
+//! Capsule TUI input parsing: classify raw terminal bytes into palette/prefix
+//! key events, mouse events, and PTY pass-through sequences.
+//!
+//! Not responsible for: acting on classified events (see `daemon` dispatch) or
+//! rendering (see `tui` render modules).
+
 /// Input from the attached client terminal.
 ///
 /// Two parallel models are supported:

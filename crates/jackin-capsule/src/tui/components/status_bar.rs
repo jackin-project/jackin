@@ -1,3 +1,12 @@
+//! Status bar component: renders the per-pane tab strip and global capsule
+//! status line at the top of the host terminal (rows 0–1).
+//!
+//! Not responsible for: tab lifecycle or focus state mutation — caller passes
+//! snapshot state and receives a rendered byte buffer.
+//!
+//! Key invariant: tab cell sizing uses `jackin_tui::lay_out_tabs` so the
+//! capsule and host console TUI cannot drift on cell widths or click regions.
+
 /// Status bar rendered at rows 0–1 of the host terminal.
 ///
 /// Mirrors the jackin console TUI's tab strip (`render_tab_strip` in

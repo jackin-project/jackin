@@ -1,3 +1,9 @@
+//! Capsule TUI layout helpers: compute panel rects from terminal dimensions
+//! for the status bar, branch context bar, and session pane tree.
+//!
+//! Not responsible for: painting any widget (see `tui` render modules) or
+//! tracking focus (see `daemon`).
+
 /// Binary tree pane layout — same recursive split model as tmux.
 ///
 /// Each node is either a Leaf (holds one session) or an HSplit/VSplit

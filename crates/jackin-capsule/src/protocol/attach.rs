@@ -1,3 +1,14 @@
+//! Attach protocol handshake: initial capability negotiation and session-ID
+//! assignment when a client connects.
+//!
+//! Not responsible for: PTY lifecycle, input dispatch after attach completes,
+//! or control-channel framing (see `protocol::control`).
+//!
+//! Key invariant: every client → server tag is in `0x01..=0x7F`; every
+//! server → client tag has the top bit set (`0x80..=0xFF`). The first byte
+//! of a new connection lands in the daemon's protocol-disambiguator before
+//! this module sees it.
+
 /// Attach channel: tag-plus-length binary framing.
 ///
 /// Used by interactive clients: one persistent connection per attached

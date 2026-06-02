@@ -1,3 +1,9 @@
+//! Workspace list screen state: `ManagerListRow` enum, row data, selection
+//! index, and summary structs for the sidebar.
+//!
+//! Not responsible for: event handling (see `update`) or rendering (see
+//! `view`).
+
 /// Logical row in the manager list. Prefer over the raw `selected:
 /// usize` when reasoning about what the operator is pointing at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

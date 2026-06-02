@@ -1,3 +1,9 @@
+//! Container context: identity metadata (container name, instance ID,
+//! diagnostics) about the running container, available to the daemon.
+//!
+//! Not responsible for: role/workspace config (see `config`) or attach-session
+//! state (see `attach_context`).
+
 use jackin_protocol::instance_id_from_container_base as instance_id_from_container_name;
 
 pub const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";

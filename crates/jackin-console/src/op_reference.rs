@@ -1,3 +1,9 @@
+//! Parse and format `op://vault/item/field` references used by the 1Password
+//! picker in the console Auth tab.
+//!
+//! Not responsible for: calling the `op` CLI (see auth modules) or rendering
+//! the picker widget.
+
 /// Structured parts of an `op://...` reference.
 ///
 /// Syntax: `op://<vault>/<item>/[<section>/]<field>`. Account scope is

@@ -1,3 +1,12 @@
+//! Dialog components: modal overlays for the capsule TUI (tab rename,
+//! confirm, error, help, and the Ctrl+J command palette).
+//!
+//! Not responsible for: input dispatch to focused dialogs (handled in
+//! `tui::run`) or dialog stack ordering.
+//!
+//! Key invariant: dialogs render as centered floating overlays composed on top
+//! of the fully-rendered frame; they do not own PTY or tab state.
+
 /// Ctrl+J command palette and agent picker modal.
 ///
 /// The dialog renders as a centred floating overlay on top of the

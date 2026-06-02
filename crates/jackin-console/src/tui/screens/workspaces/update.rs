@@ -1,3 +1,9 @@
+//! Workspace list screen update logic: handle keyboard events and produce
+//! effects for launch, reconnect, stop, purge, and navigation actions.
+//!
+//! Not responsible for: rendering (see `view`) or state definitions (see
+//! `model`).
+
 use std::collections::BTreeSet;
 
 use crossterm::event::KeyCode;

@@ -1,3 +1,12 @@
+//! Per-agent PTY session: spawn, resize, write input, read output, and track
+//! session state for the daemon.
+//!
+//! Not responsible for: attach-client I/O, socket framing, or daemon
+//! multiplexing logic.
+//!
+//! Key invariant: the `vt100::Parser` screen is the single source of truth
+//! for re-rendering on tab/pane switch and client reattach.
+
 /// PTY session: one PTY + one `vt100::Parser` + state-inference timer.
 ///
 /// Each session owns a PTY pair, a child process (agent or shell), and

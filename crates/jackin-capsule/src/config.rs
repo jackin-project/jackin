@@ -1,3 +1,9 @@
+//! Capsule runtime configuration: load and validate `CapsuleConfig` from the
+//! TOML file written by the host at container launch.
+//!
+//! Not responsible for: config schema definition (see `jackin-protocol`) or
+//! host-side config serialization.
+
 use anyhow::{Context, Result};
 use jackin_protocol::CapsuleConfig;
 

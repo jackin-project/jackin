@@ -1,3 +1,8 @@
+//! Classify mount list diffs: detect adds, removes, and modifications between
+//! two mount configs for change-count summaries and confirm-save views.
+//!
+//! Not responsible for: applying diffs to config or rendering diff rows.
+
 pub trait MountDiffItem: Eq {
     fn dst(&self) -> &str;
 }

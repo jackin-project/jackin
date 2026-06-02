@@ -1,3 +1,9 @@
+//! Settings screen state: per-tab state structs for the General, Mounts,
+//! Environments, Auth, and Trust panels.
+//!
+//! Not responsible for: event handling (see `update`) or rendering (see
+//! `view`).
+
 use std::collections::BTreeMap;
 
 use crate::tui::auth::{AuthKind, AuthMode};

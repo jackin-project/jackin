@@ -1,3 +1,13 @@
+//! Keyboard binding resolution: map raw key sequences to capsule actions
+//! (focus switch, new tab, close, palette open, etc.).
+//!
+//! Not responsible for: dispatching resolved actions or reading PTY input
+//! bytes at runtime — that is `tui::input`.
+//!
+//! Key invariant: bindings are resolved once at startup from environment
+//! variables (`JACKIN_PREFIX`, `JACKIN_PALETTE_KEY`); the resolved
+//! `InputBindings` is immutable for the lifetime of the session.
+
 use crate::tui::input::{InputBindings, parse_key_binding};
 
 pub fn resolve_input_bindings() -> InputBindings {

@@ -1,3 +1,12 @@
+//! PID 1 responsibilities inside the container: reap orphaned child processes
+//! and forward signals to managed children.
+//!
+//! Not responsible for: spawning agent processes (see `session`) or daemon
+//! lifecycle (see `daemon`).
+//!
+//! Key invariant: every child registered via `register_managed_child` must
+//! be reaped; unregistered orphans are reaped without SIGCHLD delivery.
+
 /// PID 1 zombie reaping and signal forwarding.
 ///
 /// Linux: when a process whose parent has exited becomes an orphan, it is

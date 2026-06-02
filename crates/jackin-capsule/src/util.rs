@@ -1,3 +1,8 @@
+//! Shared utilities for the capsule: bounded file reads, child-process
+//! helpers, and small formatting utilities used across modules.
+//!
+//! Not responsible for: protocol encoding, session management, or rendering.
+
 use std::io::Read;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};

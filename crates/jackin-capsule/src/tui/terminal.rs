@@ -1,3 +1,8 @@
+//! Terminal setup and teardown for the capsule TUI: raw mode, alternate
+//! screen, size normalization, and escape-sequence cleanup on detach.
+//!
+//! Not responsible for: widget rendering, input parsing, or session I/O.
+
 use std::io::Write;
 
 use anyhow::{Context, Result};
