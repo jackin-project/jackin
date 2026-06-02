@@ -186,6 +186,11 @@ pub fn settings_env_edit_cancelled_message() -> &'static str {
 }
 
 #[must_use]
+pub fn settings_env_add_cancelled_message() -> &'static str {
+    "Add env cancelled."
+}
+
+#[must_use]
 pub fn global_mount_add_cancelled_message() -> &'static str {
     "Add mount cancelled."
 }
@@ -802,6 +807,7 @@ mod tests {
             "Env key cannot be empty."
         );
         assert_eq!(settings_env_edit_cancelled_message(), "Env edit cancelled.");
+        assert_eq!(settings_env_add_cancelled_message(), "Add env cancelled.");
         assert_eq!(
             global_mount_add_cancelled_message(),
             "Add mount cancelled."

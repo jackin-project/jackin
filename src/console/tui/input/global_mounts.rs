@@ -23,7 +23,8 @@ use jackin_console::tui::screens::settings::view::{
     global_mount_add_cancelled_message, global_mount_confirm_state,
     global_mount_scope_picker_state, global_mount_text_input_state, global_mount_text_target_label,
     settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
-    settings_env_edit_cancelled_message, settings_env_empty_key_error_message,
+    settings_env_add_cancelled_message, settings_env_edit_cancelled_message,
+    settings_env_empty_key_error_message,
     settings_env_empty_key_label, settings_env_key_input_state,
     settings_env_new_key_after_picker_label, settings_env_new_key_label,
     settings_error_popup_title, settings_sensitive_paths_not_confirmed_message,
@@ -1390,7 +1391,7 @@ pub(super) fn handle_settings_env_modal(
             ModalOutcome::Cancel => {
                 env.pop_modal_chain();
                 if env.modal.is_none() {
-                    env.error = Some("Add env cancelled.".to_string());
+                    env.error = Some(settings_env_add_cancelled_message().to_string());
                 }
             }
             ModalOutcome::Continue => {
@@ -1423,7 +1424,7 @@ pub(super) fn handle_settings_env_modal(
             ModalOutcome::Cancel => {
                 env.pop_modal_chain();
                 if env.modal.is_none() {
-                    env.error = Some("Add env cancelled.".to_string());
+                    env.error = Some(settings_env_add_cancelled_message().to_string());
                 }
             }
             ModalOutcome::Continue => {

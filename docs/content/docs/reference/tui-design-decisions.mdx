@@ -177,6 +177,8 @@ Settings global-mount scroll clamping uses the same crate-owned settings frame g
 
 Settings tab content-height rules for Mounts, Environment, and Trust tabs live with the settings screen view helpers; root layout code supplies row counts and error-state facts.
 
+Settings environment add-cancel wording lives with settings screen view helpers. Root input supplies the cancellation state transition and uses the crate-owned message when the modal chain closes.
+
 Console global quit/Q-intercept policy, modal letter-consumption policy, and confirm-state construction now live in <RepoFile path="crates/jackin-console/src/tui/run.rs" />; the root run loop supplies `QuitInterceptState` and `LetterInputState` facts from root stage/modal state.
 
 Console debug key-name formatting and modal debug-name vocabulary now live in <RepoFile path="crates/jackin-console/src/tui/debug.rs" />. The root debug adapter keeps only root-state location labels plus concrete root modal/focus mapping into those crate-owned debug facts.
