@@ -6,22 +6,18 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    text::Line,
 };
 use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
-use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::components::settings::{
-    settings_env_lines_for_state, settings_trust_lines_for_state,
+    global_mount_lines_for_rows, settings_env_lines_for_state, settings_trust_lines_for_state,
 };
 use crate::console::tui::state::{
-    GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsState,
-    SettingsTab,
+    GlobalMountModal, SettingsAuthModal, SettingsEnvModal, SettingsState, SettingsTab,
 };
 use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
 use jackin_console::tui::screens::settings::view::{
-    general_lines as settings_general_lines,
-    global_mount_lines as settings_global_mount_lines, settings_frame_areas, tab_labels,
+    general_lines as settings_general_lines, settings_frame_areas, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
@@ -76,7 +72,7 @@ fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui
     } else {
         None
     };
-    let lines = global_mount_lines(
+    let lines = global_mount_lines_for_rows(
         &state.mounts.pending,
         selected,
         true,
@@ -130,17 +126,6 @@ fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui:
         focused,
         None,
     );
-}
-
-fn global_mount_lines(
-    rows: &[crate::config::GlobalMountRow],
-    selected: Option<usize>,
-    include_sentinel: bool,
-    cache: &MountInfoCache,
-) -> Vec<Line<'static>> {
-    let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
-    let display_rows = format_mount_rows_with_cache(&mounts, cache);
-    settings_global_mount_lines(&display_rows, selected, include_sentinel)
 }
 
 pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountModal<'_>) {

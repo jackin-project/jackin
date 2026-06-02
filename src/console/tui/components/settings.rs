@@ -3,11 +3,13 @@
 use ratatui::text::Line;
 
 use crate::console::tui::components::env_value_secret_display;
+use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
-    SettingsEnvScope, SettingsState, settings_env_flat_rows,
+    MountInfoCache, SettingsEnvScope, SettingsState, settings_env_flat_rows,
 };
 use jackin_console::tui::screens::settings::view::{
-    env_lines as settings_env_lines, trust_lines as settings_trust_lines,
+    env_lines as settings_env_lines, global_mount_lines as settings_global_mount_lines,
+    trust_lines as settings_trust_lines,
 };
 
 pub(crate) fn settings_env_lines_for_state(
@@ -42,6 +44,17 @@ pub(crate) fn settings_trust_lines_for_state(
         state.trust.hovered,
         show_cursor,
     )
+}
+
+pub(crate) fn global_mount_lines_for_rows(
+    rows: &[crate::config::GlobalMountRow],
+    selected: Option<usize>,
+    include_sentinel: bool,
+    cache: &MountInfoCache,
+) -> Vec<Line<'static>> {
+    let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
+    let display_rows = format_mount_rows_with_cache(&mounts, cache);
+    settings_global_mount_lines(&display_rows, selected, include_sentinel)
 }
 
 fn settings_env_value<'a>(
