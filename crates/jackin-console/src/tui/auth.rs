@@ -84,6 +84,11 @@ impl AuthMode {
 }
 
 #[must_use]
+pub const fn auth_mode_requires_credential(kind: AuthKind, mode: AuthMode) -> bool {
+    kind.required_env_var(mode).is_some()
+}
+
+#[must_use]
 pub const fn can_generate_claude_oauth_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     matches!((kind, mode), (AuthKind::Claude, Some(AuthMode::OAuthToken)))
 }
@@ -165,5 +170,25 @@ mod tests {
             Some(AuthMode::Token),
         ));
         assert!(!can_generate_claude_oauth_token(AuthKind::Claude, None));
+    }
+
+    #[test]
+    fn credential_requirement_tracks_required_env_var() {
+        assert!(auth_mode_requires_credential(
+            AuthKind::Claude,
+            AuthMode::ApiKey,
+        ));
+        assert!(auth_mode_requires_credential(
+            AuthKind::Github,
+            AuthMode::Token,
+        ));
+        assert!(!auth_mode_requires_credential(
+            AuthKind::Claude,
+            AuthMode::Sync,
+        ));
+        assert!(!auth_mode_requires_credential(
+            AuthKind::Github,
+            AuthMode::Ignore,
+        ));
     }
 }

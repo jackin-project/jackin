@@ -10,7 +10,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::tui::auth::{AuthKind, AuthMode};
+use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
@@ -167,7 +167,7 @@ impl<V: AuthCredential> AuthForm<V> {
 }
 
 const fn mode_requires_credential(kind: AuthKind, mode: AuthMode) -> bool {
-    kind.required_env_var(mode).is_some()
+    auth_mode_requires_credential(kind, mode)
 }
 
 /// Operator-facing slug for an [`AuthMode`].

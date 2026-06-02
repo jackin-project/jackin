@@ -10,7 +10,7 @@ use ratatui::layout::Rect;
 use crate::config::AppConfig;
 use crate::console::domain::{InstanceRefreshSnapshot, role_override_present};
 use crate::console::tui::effect::ManagerEffect;
-use jackin_console::tui::auth::AuthKind;
+use jackin_console::tui::auth::{AuthKind, auth_mode_requires_credential};
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 
@@ -1271,7 +1271,7 @@ impl SettingsAuthState {
         let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
             return 0;
         };
-        if kind.required_env_var(row.mode).is_some() {
+        if auth_mode_requires_credential(kind, row.mode) {
             2
         } else {
             1
