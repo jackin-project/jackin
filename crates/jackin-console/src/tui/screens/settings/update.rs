@@ -162,6 +162,16 @@ pub struct SettingsScrollFocusPlan {
 }
 
 #[must_use]
+pub fn settings_horizontal_scroll_plan(
+    current_scroll_x: u16,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) -> u16 {
+    crate::tui::update::term_width_scroll_plan(current_scroll_x, delta, term_width, content_width)
+}
+
+#[must_use]
 pub const fn settings_scroll_focus_plan(
     active_tab: SettingsTab,
     modal_open: bool,
@@ -721,6 +731,12 @@ mod tests {
                 trust: false,
             }
         );
+    }
+
+    #[test]
+    fn settings_horizontal_scroll_plan_updates_and_clamps_offset() {
+        assert_eq!(settings_horizontal_scroll_plan(0, 8, 10, 40), 8);
+        assert_eq!(settings_horizontal_scroll_plan(8, -99, 10, 40), 0);
     }
 
     #[test]

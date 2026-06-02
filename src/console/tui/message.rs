@@ -27,16 +27,17 @@ use jackin_console::tui::screens::editor::update::{
 use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
     set_role_expanded as set_settings_role_expanded, settings_auth_selection_plan,
-    settings_env_selection_plan, settings_global_mounts_selection_plan, settings_tab_move_plan,
-    settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
-    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    settings_env_selection_plan, settings_global_mounts_selection_plan,
+    settings_horizontal_scroll_plan, settings_tab_move_plan, settings_tab_select_plan,
+    settings_trust_row_select_plan, settings_trust_selection_plan, toggle_general_selected,
+    toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
 use jackin_console::tui::screens::workspaces::update::preview_pane_cursor_plan;
 use jackin_console::tui::update::{
-    selected_index_plan, selection_move_plan, term_width_scroll_plan, unclamped_scroll_plan,
+    selected_index_plan, selection_move_plan, unclamped_scroll_plan,
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -755,8 +756,12 @@ fn scroll_settings_global_mounts_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.mounts.scroll_x =
-        term_width_scroll_plan(settings.mounts.scroll_x, delta, term_width, content_width);
+    settings.mounts.scroll_x = settings_horizontal_scroll_plan(
+        settings.mounts.scroll_x,
+        delta,
+        term_width,
+        content_width,
+    );
 }
 
 fn scroll_settings_trust_horizontal(
@@ -768,8 +773,12 @@ fn scroll_settings_trust_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.trust.scroll_x =
-        term_width_scroll_plan(settings.trust.scroll_x, delta, term_width, content_width);
+    settings.trust.scroll_x = settings_horizontal_scroll_plan(
+        settings.trust.scroll_x,
+        delta,
+        term_width,
+        content_width,
+    );
 }
 
 fn move_settings_global_mounts_selection(
