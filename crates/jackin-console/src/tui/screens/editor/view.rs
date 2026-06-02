@@ -518,6 +518,39 @@ pub fn auth_lines(
         .collect()
 }
 
+#[must_use]
+pub fn editor_auth_line_width(row: &EditorAuthLineRow) -> usize {
+    match row {
+        EditorAuthLineRow::AuthKind { label } => padded_width(&format!("  {label}")),
+        EditorAuthLineRow::WorkspaceMode {
+            mode_label,
+            inherited,
+        } => {
+            let suffix = if *inherited { " (inherited)" } else { "" };
+            padded_width(&format!("  {:<12}{mode_label}{suffix}", "Mode"))
+        }
+        EditorAuthLineRow::WorkspaceSource { display } => {
+            auth_source_line_width("Source", display, 0)
+        }
+        EditorAuthLineRow::RoleHeader { role, .. } => {
+            padded_width(&format!("\u{25bc} Role: {role}"))
+        }
+        EditorAuthLineRow::RoleMode { mode_label } => {
+            padded_width(&format!("      {:<12}{mode_label}", "Mode"))
+        }
+        EditorAuthLineRow::RoleSource { display } => auth_source_line_width("Source", display, 6),
+        EditorAuthLineRow::AddSentinel { eligible } => {
+            let suffix = if *eligible == 0 {
+                "   (all roles overridden)"
+            } else {
+                ""
+            };
+            padded_width(&format!("  + Override for a role{suffix}"))
+        }
+        EditorAuthLineRow::Spacer => 0,
+    }
+}
+
 fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
     let bold_white = Style::default()
         .fg(jackin_tui::theme::WHITE)
@@ -582,6 +615,28 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
         }
         EditorAuthLineRow::Spacer => Line::from(""),
     }
+}
+
+fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usize) -> usize {
+    let label_width = if indent == 0 { 14 } else { 12 };
+    let prefix_width = indent + text_width(&format!("{label:<label_width$}"));
+    let value_width = match display {
+        AuthSourceDisplay::NotRequired => text_width("not required"),
+        AuthSourceDisplay::OpRefPath(path) => {
+            text_width("[op] ")
+                + crate::op_breadcrumb::parse_path_breadcrumb(path)
+                    .map(|parts| crate::op_breadcrumb::breadcrumb_display_width(&parts))
+                    .unwrap_or_else(|| text_width("<unparseable path - re-pick>"))
+        }
+        AuthSourceDisplay::MaskedPlain { chars } => {
+            text_width(&"\u{25cf}".repeat((*chars).clamp(1, 12)))
+        }
+        AuthSourceDisplay::Unset {
+            env_name,
+            mode_label,
+        } => text_width(&format!("unset  ({env_name} for {mode_label})")),
+    };
+    padded_width_cols(prefix_width + value_width, indent)
 }
 
 fn render_auth_source_line(
@@ -1025,5 +1080,18 @@ mod tests {
         assert_eq!(lines[2].spans[2].content.as_ref(), "unset  (CLAUDE_API_KEY for api-key)");
         assert_eq!(lines[3].spans[1].content.as_ref(), " Role: alpha");
         assert_eq!(lines[4].spans[2].content.as_ref(), "   (all roles overridden)");
+        assert_eq!(editor_auth_line_width(&rows[0]), padded_width("  Claude"));
+        assert_eq!(
+            editor_auth_line_width(&rows[1]),
+            padded_width("  Mode        api-key (inherited)")
+        );
+        assert_eq!(
+            editor_auth_line_width(&rows[2]),
+            padded_width("Source        unset  (CLAUDE_API_KEY for api-key)")
+        );
+        assert_eq!(
+            editor_auth_line_width(&rows[4]),
+            padded_width("  + Override for a role   (all roles overridden)")
+        );
     }
 }

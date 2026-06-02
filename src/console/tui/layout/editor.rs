@@ -7,13 +7,13 @@ use crate::console::tui::components::mount_display::{
     workspace_mounts_content_height, workspace_mounts_content_width_with_cache,
 };
 use crate::console::tui::state::{
-    AuthRow, EditorMode, EditorState, EditorTab, SecretsRow, SecretsScopeTag,
-    auth_flat_rows, secrets_flat_rows,
+    EditorMode, EditorState, EditorTab, SecretsRow, SecretsScopeTag, auth_flat_rows,
+    secrets_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::screens::editor::view::{
-    editor_body_area, editor_role_load_row_width, editor_role_row_width, editor_roles_status_width,
-    editor_row_width, padded_width, padded_width_cols, text_width,
+    editor_auth_line_width, editor_body_area, editor_role_load_row_width, editor_role_row_width,
+    editor_roles_status_width, editor_row_width, padded_width, padded_width_cols, text_width,
 };
 
 pub(crate) fn prepare_editor_for_render(
@@ -149,9 +149,17 @@ fn secrets_tab_geometry(
 
 fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGeometry {
     let rows = auth_flat_rows(state, config);
+    let synthesized = crate::console::tui::state::synthesize_appconfig_for_auth(state, config);
+    let workspace_name = crate::console::tui::state::workspace_name_for_panel(state);
     let content_width = rows
         .iter()
-        .map(|row| auth_row_width(row, state, config))
+        .map(|row| {
+            editor_auth_line_width(&crate::console::tui::components::auth_panel::editor_auth_display_row(
+                row,
+                &synthesized,
+                &workspace_name,
+            ))
+        })
         .max()
         .unwrap_or(0);
     EditorTabGeometry {
@@ -227,49 +235,6 @@ fn secrets_key_width(
         }
     };
     padded_width_cols(prefix_width + value_width, 2)
-}
-
-fn auth_row_width(row: &AuthRow, state: &EditorState<'_>, config: &AppConfig) -> usize {
-    match row {
-        AuthRow::AuthKindRow { kind } => padded_width(&format!("  {}", kind.label())),
-        AuthRow::WorkspaceMode { .. } => padded_width("  Mode        inherited"),
-        AuthRow::WorkspaceSource { kind } => auth_source_width("Source", 0, *kind, state, config),
-        AuthRow::RoleHeader { role, .. } => padded_width(&format!("▼ Role: {role}")),
-        AuthRow::RoleMode { .. } => padded_width("      Mode        inherited"),
-        AuthRow::RoleSource { role, kind } => {
-            let _ = role;
-            auth_source_width("Source", 6, *kind, state, config)
-        }
-        AuthRow::AddSentinel { eligible } => {
-            let suffix = if *eligible == 0 {
-                "   (all roles overridden)"
-            } else {
-                ""
-            };
-            padded_width(&format!("  + Override for a role{suffix}"))
-        }
-        AuthRow::Spacer => 0,
-    }
-}
-
-fn auth_source_width(
-    label: &str,
-    indent: usize,
-    kind: jackin_console::tui::auth::AuthKind,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) -> usize {
-    let synthesized = crate::console::tui::state::synthesize_appconfig_for_auth(state, config);
-    let workspace_name = crate::console::tui::state::workspace_name_for_panel(state);
-    let mode =
-        crate::console::domain::resolve_panel_mode(&synthesized, kind, &workspace_name, "");
-    let label_width = if indent == 0 { 14 } else { 12 };
-    let prefix = indent + text_width(&format!("{label:<label_width$}"));
-    let value_width = match kind.required_env_var(mode) {
-        None => text_width("not required"),
-        Some(env_name) => text_width(&format!("unset  ({env_name} for {})", mode.as_str())),
-    };
-    padded_width_cols(prefix + value_width, indent)
 }
 
 fn op_reference_width(path: &str) -> Option<usize> {
