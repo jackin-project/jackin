@@ -454,7 +454,7 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 } else {
                     editor.modal = Some(Modal::ErrorPopup {
-                        state: jackin_tui::components::ErrorPopupState::new(
+                        state: jackin_console::tui::components::error_popup::error_popup_state(
                             "No GitHub URL",
                             "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
                         ),

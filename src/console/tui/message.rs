@@ -504,10 +504,9 @@ fn open_settings_error_popup(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
-        title.into(),
-        message.into(),
-    ));
+    settings.error_popup = Some(
+        jackin_console::tui::components::error_popup::error_popup_state(title, message),
+    );
 }
 
 fn apply_op_commit_result(

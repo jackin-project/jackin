@@ -347,7 +347,10 @@ pub(super) fn commit_editor_save_with_runner(
 
 pub(crate) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
     editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_tui::components::ErrorPopupState::new("Save failed", message.to_string()),
+        state: jackin_console::tui::components::error_popup::error_popup_state(
+            "Save failed",
+            message.to_string(),
+        ),
     });
     editor.save_flow = EditorSaveFlow::Error {
         message: message.to_string(),
