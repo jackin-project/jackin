@@ -118,6 +118,46 @@ pub struct WorkspaceListSelectionPlan {
     pub clear_launch_provider_picker: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListScrollFocusPlan {
+    pub list_names_focused: bool,
+    pub scroll_focus: Option<crate::focus::MountScrollFocus>,
+}
+
+#[must_use]
+pub const fn workspace_list_scroll_focus_plan(
+    in_left_pane: bool,
+    has_scroll_areas: bool,
+    in_workspace_mounts: bool,
+    in_global_mounts: bool,
+    in_role_global_mounts: bool,
+    in_roles: bool,
+) -> WorkspaceListScrollFocusPlan {
+    if in_left_pane {
+        return WorkspaceListScrollFocusPlan {
+            list_names_focused: true,
+            scroll_focus: None,
+        };
+    }
+    let scroll_focus = if !has_scroll_areas {
+        None
+    } else if in_workspace_mounts {
+        Some(crate::focus::MountScrollFocus::Workspace)
+    } else if in_global_mounts {
+        Some(crate::focus::MountScrollFocus::Global)
+    } else if in_role_global_mounts {
+        Some(crate::focus::MountScrollFocus::RoleGlobal)
+    } else if in_roles {
+        Some(crate::focus::MountScrollFocus::Roles)
+    } else {
+        None
+    };
+    WorkspaceListScrollFocusPlan {
+        list_names_focused: false,
+        scroll_focus,
+    }
+}
+
 #[must_use]
 pub fn workspace_list_move_selection_plan(
     selected: usize,
@@ -339,6 +379,36 @@ mod tests {
                 clear_inline_provider_picker: true,
                 clear_launch_provider_picker: true,
             }
+        );
+    }
+
+    #[test]
+    fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
+        assert_eq!(
+            workspace_list_scroll_focus_plan(true, true, true, true, true, true),
+            WorkspaceListScrollFocusPlan {
+                list_names_focused: true,
+                scroll_focus: None,
+            }
+        );
+        assert_eq!(
+            workspace_list_scroll_focus_plan(false, false, true, false, false, false),
+            WorkspaceListScrollFocusPlan {
+                list_names_focused: false,
+                scroll_focus: None,
+            }
+        );
+        assert_eq!(
+            workspace_list_scroll_focus_plan(false, true, false, true, false, false).scroll_focus,
+            Some(crate::focus::MountScrollFocus::Global)
+        );
+        assert_eq!(
+            workspace_list_scroll_focus_plan(false, true, false, false, true, false).scroll_focus,
+            Some(crate::focus::MountScrollFocus::RoleGlobal)
+        );
+        assert_eq!(
+            workspace_list_scroll_focus_plan(false, true, false, false, false, true).scroll_focus,
+            Some(crate::focus::MountScrollFocus::Roles)
         );
     }
 

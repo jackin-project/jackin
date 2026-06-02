@@ -26,6 +26,7 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
 use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
+use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
@@ -716,30 +717,25 @@ fn update_scroll_focus(
                     .height
                     .saturating_sub(LIST_HEADER_HEIGHT + LIST_FOOTER_HEIGHT),
             };
-            if point_in(mouse, left_pane_area) {
-                // Click in left pane: activate left pane, clear right focus.
-                dispatch_manager(state, ManagerMessage::SetListNamesFocused(true));
-                dispatch_manager(state, ManagerMessage::SetListScrollFocus(None));
-                return;
-            }
-            dispatch_manager(state, ManagerMessage::SetListNamesFocused(false));
-
-            let Some(areas) = list_scroll_areas(state, term_size, config) else {
-                dispatch_manager(state, ManagerMessage::SetListScrollFocus(None));
-                return;
-            };
-            let focus = if point_in(mouse, areas.workspace.area) {
-                Some(MountScrollFocus::Workspace)
-            } else if point_in(mouse, areas.global.area) && areas.global.area.height > 0 {
-                Some(MountScrollFocus::Global)
-            } else if areas.role_global.is_some_and(|r| point_in(mouse, r.area)) {
-                Some(MountScrollFocus::RoleGlobal)
-            } else if areas.roles.is_some_and(|r| point_in(mouse, r.area)) {
-                Some(MountScrollFocus::Roles)
+            let in_left_pane = point_in(mouse, left_pane_area);
+            let areas = list_scroll_areas(state, term_size, config);
+            let plan = if let Some(areas) = areas {
+                workspace_list_scroll_focus_plan(
+                    in_left_pane,
+                    true,
+                    point_in(mouse, areas.workspace.area),
+                    point_in(mouse, areas.global.area) && areas.global.area.height > 0,
+                    areas.role_global.is_some_and(|r| point_in(mouse, r.area)),
+                    areas.roles.is_some_and(|r| point_in(mouse, r.area)),
+                )
             } else {
-                None
+                workspace_list_scroll_focus_plan(in_left_pane, false, false, false, false, false)
             };
-            dispatch_manager(state, ManagerMessage::SetListScrollFocus(focus));
+            dispatch_manager(
+                state,
+                ManagerMessage::SetListNamesFocused(plan.list_names_focused),
+            );
+            dispatch_manager(state, ManagerMessage::SetListScrollFocus(plan.scroll_focus));
         }
         ManagerStage::Editor(editor) => {
             let plan = if editor.active_tab == EditorTab::Mounts {
