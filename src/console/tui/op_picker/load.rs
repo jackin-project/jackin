@@ -134,7 +134,7 @@ impl OpPickerState {
             mode,
             item_name_input: item_name_input_state(item_default),
             field_label_input: field_label_input_state(field_default),
-            section_name_input: section_name_input_state(),
+            section_name_input: section_name_input_state(""),
             pending_section: None,
             field_label_origin: FieldLabelOrigin::NewItem,
             field_refresh_in_place: false,

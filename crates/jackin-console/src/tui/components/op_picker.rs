@@ -29,8 +29,10 @@ pub fn field_label_input_state<'a>(
     TextInputState::new("Field label", field_default)
 }
 
-pub fn section_name_input_state<'a>() -> TextInputState<'a> {
-    TextInputState::new("Section name", "")
+pub fn section_name_input_state<'a>(
+    initial: impl Into<String>,
+) -> TextInputState<'a> {
+    TextInputState::new("Section name", initial)
 }
 
 /// Browse-only vs. creation-enabled picker mode.
@@ -1742,7 +1744,7 @@ mod tests {
     fn naming_stage_input_routes_by_naming_stage() {
         let item = item_name_input_state("");
         let field = field_label_input_state("");
-        let section = section_name_input_state();
+        let section = section_name_input_state("");
 
         assert_eq!(
             naming_stage_input_for_stage(OpPickerStage::NewItemName, &item, &field, &section)

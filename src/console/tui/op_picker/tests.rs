@@ -6,7 +6,9 @@
 use super::*;
 use crate::operator_env::{OpAccount, OpCache, OpField, OpItem, OpStructRunner, OpVault};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-use jackin_tui::components::TextInputState;
+use jackin_console::tui::components::op_picker::{
+    field_label_input_state, section_name_input_state,
+};
 use jackin_tui::ModalOutcome;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -733,7 +735,7 @@ fn field_label_commit_trims_whitespace() {
     // Drill `(root)` → Field stage, then `+ New field`.
     let _ = s.handle_key(key(KeyCode::Enter));
     assert_eq!(s.stage, OpPickerStage::Field);
-    s.field_label_input = TextInputState::new("Field", "  oauth-token  ");
+    s.field_label_input = field_label_input_state("  oauth-token  ");
     s.field_label_origin = FieldLabelOrigin::NewField;
     s.stage = OpPickerStage::FieldLabel;
     match s.handle_key(key(KeyCode::Enter)) {
@@ -749,7 +751,7 @@ fn new_section_name_commit_trims_whitespace() {
     let mut s = create_at_section(vec![]);
     s.section_list_state.select(Some(1));
     let _ = s.handle_key(key(KeyCode::Enter));
-    s.section_name_input = TextInputState::new("Section name", "  creds  ");
+    s.section_name_input = section_name_input_state("  creds  ");
     let _ = s.handle_key(key(KeyCode::Enter));
     assert_eq!(s.pending_section.as_deref(), Some("creds"));
 }

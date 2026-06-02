@@ -321,7 +321,7 @@ impl OpPickerState {
             KeyCode::Enter => {
                 match section_stage_commit_plan(self.section_list_state.selected, &choices) {
                     SectionStageCommitPlan::NewSectionName => {
-                        self.section_name_input = section_name_input_state();
+                        self.section_name_input = section_name_input_state("");
                         self.stage = OpPickerStage::NewSectionName;
                     }
                     SectionStageCommitPlan::ExistingSection { selected_section } => {
