@@ -14,7 +14,7 @@ use jackin_console::tui::components::footer_hints::{
 use jackin_console::tui::view::{
     ModalOverlayState, delete_confirm_area, modal_overlay_visible, purge_confirm_area,
     render_footer, render_header, render_modal_backdrop, settings_error_area, status_overlay_area,
-    workspace_frame_areas,
+    workspace_frame_areas, workspace_header_title,
 };
 use jackin_tui::HintSpan;
 
@@ -35,7 +35,7 @@ pub fn render(
     } else {
         let areas = workspace_frame_areas(area);
 
-        render_header(frame, areas.header, "workspaces");
+        render_header(frame, areas.header, workspace_header_title());
 
         if matches!(&state.stage, ManagerStage::List) {
             render_list_body(frame, areas.body, state, config, cwd);

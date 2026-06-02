@@ -55,6 +55,11 @@ pub fn workspace_frame_areas(area: Rect) -> WorkspaceFrameAreas {
     }
 }
 
+#[must_use]
+pub const fn workspace_header_title() -> &'static str {
+    "workspaces"
+}
+
 /// How many rows the footer needs to display all `items` within `width`
 /// columns. Minimum 1.
 #[must_use]
@@ -105,6 +110,11 @@ mod tests {
         assert_eq!(areas.header, Rect::new(0, 0, 80, 2));
         assert_eq!(areas.body, Rect::new(0, 2, 80, 20));
         assert_eq!(areas.footer, Rect::new(0, 22, 80, 2));
+    }
+
+    #[test]
+    fn workspace_header_title_is_view_owned() {
+        assert_eq!(workspace_header_title(), "workspaces");
     }
 
     #[test]
