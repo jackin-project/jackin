@@ -1,6 +1,14 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
+pub(super) mod agents;
+pub(super) mod general;
+pub(super) mod mounts;
+pub(super) mod secrets;
+
+#[cfg(test)]
+pub(super) use jackin_console::tui::screens::editor::view::role_load_input_state;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::InputOutcome;
@@ -13,9 +21,9 @@ use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorStateExt, EditorTab, ExitIntent,
-    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan, SecretsRow,
-    SecretsScopeTag, TextInputTarget, auth_flat_rows, open_editor_action_error,
-    open_role_input_error, open_role_resolution_error, secrets_flat_rows,
+    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
+    TextInputTarget, auth_flat_rows, open_editor_action_error, open_role_input_error,
+    open_role_resolution_error, secrets_flat_rows,
 };
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
@@ -24,12 +32,9 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
-    editor_name_input_state, editor_name_value, editor_workdir_pick_state,
-    mount_destination_input_state, mount_dst_choice_state, role_load_input_state,
-    secret_delete_confirm_state, secret_empty_key_label, secret_key_input_state_from_pending,
-    secret_new_key_after_picker_label, secret_new_key_label, secret_new_value_input_state,
-    secret_scope_picker_state, secret_source_picker_state, secret_value_current_text,
-    secret_value_input_state,
+    mount_destination_input_state, mount_dst_choice_state, secret_empty_key_label,
+    secret_key_input_state_from_pending, secret_new_key_after_picker_label, secret_new_key_label,
+    secret_new_value_input_state, secret_source_picker_state,
 };
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
@@ -309,7 +314,7 @@ pub(super) fn handle_editor_key(
                 if editor.active_tab == EditorTab::Secrets
                     && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
             {
-                if let Some((scope, key)) = focused_unmask_key(editor) {
+                if let Some((scope, key)) = secrets::focused_unmask_key(editor) {
                     dispatch_manager(state, ManagerMessage::ToggleEditorSecretMask { scope, key });
                 }
                 return Ok(InputOutcome::Continue);
@@ -324,7 +329,7 @@ pub(super) fn handle_editor_key(
 
     match key.code {
         KeyCode::Enter => match editor.active_tab {
-            EditorTab::General => open_editor_field_modal(editor),
+            EditorTab::General => general::open_editor_field_modal(editor),
             EditorTab::Mounts => {
                 let FieldFocus::Row(n) = editor.active_field;
                 if n == editor.pending.mounts.len() {
@@ -353,13 +358,13 @@ pub(super) fn handle_editor_key(
                 if is_op_ref && op_available {
                     open_secrets_picker_modal(editor, op_cache);
                 } else {
-                    open_secrets_enter_modal(editor);
+                    secrets::open_secrets_enter_modal(editor);
                 }
             }
             EditorTab::Roles => {
                 let FieldFocus::Row(n) = editor.active_field;
                 if n == config.roles.len() {
-                    open_role_input(editor, config);
+                    agents::open_role_input(editor, config);
                 }
             }
             EditorTab::Auth => {
@@ -385,7 +390,7 @@ pub(super) fn handle_editor_key(
             }
         },
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
-            open_role_input(editor, config);
+            agents::open_role_input(editor, config);
         }
         KeyCode::Char('a' | 'A')
             if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() =>
@@ -393,17 +398,17 @@ pub(super) fn handle_editor_key(
             super::auth::open_auth_role_picker(editor, config);
         }
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Roles => {
-            toggle_agent_allowed_at_cursor(editor, config);
+            agents::toggle_agent_allowed_at_cursor(editor, config);
         }
         KeyCode::Char('*') if editor.active_tab == EditorTab::Roles => {
-            toggle_default_agent_at_cursor(editor, config);
+            agents::toggle_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
             state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
             return Ok(InputOutcome::Continue);
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
-            remove_mount_at_cursor(editor);
+            mounts::remove_mount_at_cursor(editor);
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
             super::auth::handle_d_on_auth_row(editor, config);
@@ -431,13 +436,13 @@ pub(super) fn handle_editor_key(
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            open_secrets_delete_confirm(editor);
+            secrets::open_secrets_delete_confirm(editor);
         }
         KeyCode::Char('a' | 'A')
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            open_secrets_add_modal(editor);
+            secrets::open_secrets_add_modal(editor);
         }
         KeyCode::Char('i' | 'I')
             if editor.active_tab == crate::console::tui::state::EditorTab::Mounts =>
@@ -509,226 +514,6 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let _dirty = update_manager(state, message);
-}
-
-fn secret_value<'a>(
-    editor: &'a EditorState<'_>,
-    scope: &SecretsScopeTag,
-    key: &str,
-) -> Option<&'a crate::operator_env::EnvValue> {
-    match scope {
-        SecretsScopeTag::Workspace => editor.pending.env.get(key),
-        SecretsScopeTag::Role(role) => editor
-            .pending
-            .roles
-            .get(role)
-            .and_then(|role_override| role_override.env.get(key)),
-    }
-}
-
-fn secret_is_text_editable(editor: &EditorState<'_>, scope: &SecretsScopeTag, key: &str) -> bool {
-    !secret_value(editor, scope, key)
-        .is_some_and(|value| matches!(value, crate::operator_env::EnvValue::OpRef(_)))
-}
-
-/// No-op on header/sentinel/op:// rows.
-fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, String)> {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
-    editor_update::secret_unmask_target_for_row(rows.get(n), |scope, key| {
-        // OpRef rows render as breadcrumbs and ignore mask state.
-        secret_is_text_editable(editor, scope, key)
-    })
-}
-
-fn open_editor_field_modal(editor: &mut EditorState<'_>) {
-    if editor.active_tab == EditorTab::General {
-        let FieldFocus::Row(n) = editor.active_field;
-        match n {
-            0 => {
-                let current = editor_name_value(&editor.mode, editor.pending_name.as_deref(), "");
-                editor.modal = Some(Modal::TextInput {
-                    target: TextInputTarget::Name,
-                    state: editor_name_input_state(current),
-                });
-            }
-            1 if !editor.pending.mounts.is_empty() => {
-                editor.modal = Some(Modal::WorkdirPick {
-                    state: editor_workdir_pick_state(&editor.pending.mounts),
-                });
-            }
-            _ => {}
-        }
-    }
-}
-
-fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
-    let plan = editor_update::secret_enter_plan_for_row(rows.get(n), |scope, key| {
-        secret_is_text_editable(editor, scope, key)
-    });
-    match plan {
-        SecretsEnterPlan::EditValue { scope, key } => {
-            let value = secret_value(editor, &scope, &key);
-            let current = secret_value_current_text(
-                value.map(crate::operator_env::EnvValue::as_persisted_str),
-            );
-            editor.modal = Some(Modal::TextInput {
-                target: TextInputTarget::EnvValue {
-                    scope,
-                    key: key.clone(),
-                },
-                state: secret_value_input_state(&key, current),
-            });
-        }
-        SecretsEnterPlan::OpenScopePicker => {
-            // Workspace sentinel asks the scope question first; the
-            // per-role sentinel fast-path stays direct.
-            editor.modal = Some(Modal::ScopePicker {
-                state: secret_scope_picker_state(),
-            });
-        }
-        SecretsEnterPlan::ExpandRole(role) => {
-            editor.secrets_expanded.insert(role);
-        }
-        SecretsEnterPlan::AddRoleKey { scope } => {
-            // In-section fast-path — already viewing the role, don't
-            // re-ask the scope question.
-            let label = secret_new_key_label(&scope);
-            let state = env_key_input_state(editor, &scope, label, String::new());
-            editor.modal = Some(Modal::TextInput {
-                target: TextInputTarget::EnvKey { scope },
-                state,
-            });
-        }
-        SecretsEnterPlan::Noop => {}
-    }
-}
-
-/// Listing rules: workspace-allowed list when non-empty, otherwise
-/// every role in `config.roles`. Roles already carrying an
-/// override are NOT filtered out — operator may want to add more
-/// keys.
-fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    use crate::selector::RolePickerState;
-    use crate::selector::RoleSelector;
-    let eligible: Vec<RoleSelector> =
-        crate::console::tui::state::eligible_agents_for_override(editor, config)
-            .into_iter()
-            .filter_map(|name| RoleSelector::parse(&name).ok())
-            .collect();
-    if eligible.is_empty() {
-        return;
-    }
-    editor.open_sub_modal(Modal::RoleOverridePicker {
-        state: RolePickerState::new(eligible),
-    });
-}
-
-fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let trusted_roles: Vec<String> = config
-        .roles
-        .iter()
-        .filter(|(_, source)| source.trusted)
-        .map(|(key, _)| key.clone())
-        .collect();
-    crate::debug_log!(
-        "role",
-        "opening role loader input; {trusted_roles_count} trusted role(s) are blocked by the duplicate guard",
-        trusted_roles_count = trusted_roles.len()
-    );
-    editor.modal = Some(Modal::TextInput {
-        target: TextInputTarget::Role,
-        state: role_load_input_state(trusted_roles),
-    });
-}
-
-fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
-    let Some((scope, key)) = editor_update::secret_delete_target_for_row(rows.get(n)) else {
-        return;
-    };
-    let state = secret_delete_confirm_state(&key);
-    editor.modal = Some(Modal::Confirm {
-        target: ConfirmTarget::DeleteEnvVar { scope, key },
-        state,
-    });
-}
-
-/// `A` commits to the row's contextual scope without asking — unlike
-/// the workspace-sentinel `Enter` path, which routes through
-/// `ScopePicker`. Operator already chose a row with unambiguous
-/// scope; an extra prompt would be a regression.
-fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
-    let Some(scope) = editor_update::secret_add_target_for_row(rows.get(n)) else {
-        return;
-    };
-    let label = secret_new_key_label(&scope);
-    let state = env_key_input_state(editor, &scope, label, String::new());
-    editor.modal = Some(Modal::TextInput {
-        target: TextInputTarget::EnvKey { scope },
-        state,
-    });
-}
-
-/// Space on an role row toggles its **effective** allow-state.
-///
-/// The underlying data model uses an "empty list = all allowed" shorthand,
-/// so the checkbox on each row must reflect
-/// `list.is_empty() || list.contains(name)`. The toggle preserves that
-/// invariant in both directions:
-///
-/// - **Effective-allowed + empty list** (in "all" mode): populate the list
-///   with every role *except* this one. Status flips to
-///   `custom (total-1 of total)`; the row flips to `[ ]`.
-/// - **Effective-allowed + non-empty list** (row is in the list): remove it.
-///   An empty remainder is left empty (semantically = "all"); otherwise
-///   stays `custom`. The row flips to `[ ]`.
-/// - **Effective-blocked** (row not in list): add the name. If the list now
-///   contains every role in `config.roles`, clear it back to empty
-///   (= "all"). Otherwise stays `custom`. The row flips to `[x]`.
-fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let FieldFocus::Row(n) = editor.active_field;
-    // n is 0-based into config.roles (no header offset).
-    let agent_names: Vec<String> = config.roles.keys().cloned().collect();
-    if n >= agent_names.len() {
-        return;
-    }
-
-    editor_update::toggle_allowed_role_at(
-        &mut editor.pending.allowed_roles,
-        &mut editor.pending.default_role,
-        &agent_names,
-        n,
-    );
-}
-
-/// On the current default → clear; on allowed → set; on disallowed
-/// → no-op (operator must `Space` to allow first).
-fn toggle_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let agent_names: Vec<String> = config.roles.keys().cloned().collect();
-    if n >= agent_names.len() {
-        return;
-    }
-
-    editor_update::toggle_default_role_at(
-        &editor.pending.allowed_roles,
-        &mut editor.pending.default_role,
-        &agent_names,
-        n,
-    );
-}
-
-fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
-    let FieldFocus::Row(n) = editor.active_field;
-    if n < editor.pending.mounts.len() {
-        editor.pending.mounts.remove(n);
-    }
 }
 
 #[cfg(test)]
@@ -1004,7 +789,7 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Commit(ScopeChoice::SpecificAgent) => {
                     // Empty eligible set → `open_agent_override_picker`
                     // is a no-op; we close the modal then.
-                    open_agent_override_picker(editor, config);
+                    agents::open_agent_override_picker(editor, config);
                     if !matches!(editor.modal, Some(Modal::RoleOverridePicker { .. })) {
                         editor.clear_modal_chain();
                     }
