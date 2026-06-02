@@ -1,0 +1,344 @@
+---
+title: "Terminal Emulation Crate (jackin-term)"
+---
+
+**Status**: open — research and design proposal. This item is a **verification plan**, not a build commitment. Its job is to gather the real numbers and facts that decide one binary question: *do we implement a jackin'-owned terminal-model crate, or do we drop the idea and stay on `vt100`?* Nothing here is built until the verification below returns "yes".
+
+## TL;DR
+
+We depend on a **single-author git fork of `vt100` pinned at a SHA** for the most load-bearing piece of `jackin-capsule`. Two independent pressures make us ask whether to own this layer instead: (1) **upstream `vt100` has effectively stalled** — last code push July 2025, ten open PRs, and the exact patch our fork carries is sitting unmerged as PR #31 — so the fork is not temporary, it is forever; and (2) **the fast off-the-shelf engines are built for GPU rendering, not for the re-emit-to-a-host-terminal hot path the capsule actually runs**, so "just switch to Alacritty" does not apply. This page lays out where the idea came from, the concept we want to test, and the **specific, data-driven experiments** that will prove the idea makes sense or kill it. Building our own crate is not a problem for this project; the *only* open question is whether it brings a real benefit. The experiments below are how we answer that with numbers instead of opinion.
+
+## Hard constraint: pure Rust, no foreign bindings
+
+This decision has exactly **two** possible outcomes: **adopt a maintained, public Rust crate**, or **build our own Rust crate**. There is no third option. jackin' will not take an FFI dependency on a C or Zig terminal library — not libvterm, not `libghostty-vt`, not any `-sys` wrapper. The entire toolchain stays in Rust with no non-Rust build dependency in the container.
+
+Non-Rust emulators (libvterm, Ghostty) appear in this document **only as idea sources**. If Ghostty's memory model is the best in the field, the move is to **re-implement that design in Rust inside `jackin-term`**, with attribution to the MIT-licensed original — never to link the Zig library. Wherever this page says "bind," read it as "ruled out by this constraint; kept only to show the option was considered and rejected on principle, not overlooked."
+
+## Where this idea came from
+
+### Why we use `vt100` in the first place
+
+`jackin-capsule` is an in-container PTY multiplexer. It runs as PID 1 inside a role container, spawns one PTY per agent session, and presents the focused session to whatever host terminal the operator attached. To do that it needs a **terminal model**: something that consumes the raw bytes an agent program writes to its PTY (escape sequences, UTF-8, cursor moves, colors, scroll regions) and maintains an in-memory picture of what the screen *should* look like — so the multiplexer can redraw that picture on demand, swap between panes, restore state on focus changes, and forward OSC sequences.
+
+`vt100` (by Jesse Luehrs, `doy`) was the natural pick, for reasons that are still valid:
+
+- It is the **canonical small "terminal parser as a library"** crate on crates.io — exactly "the parser component of a terminal emulator pulled out into a separate crate."
+- Its model is shaped for **re-emission**, not pixels. The signature API is `Screen::contents_diff(prev)` / `contents_formatted()`: given two screen states it emits the **minimal escape byte sequence** that turns one into the other. That is precisely what a tmux/Zellij-style multiplexer needs, and it is unusual — most terminal libraries model a grid for a GPU to draw, not a grid to *re-serialize back into escape sequences*.
+- It ships a `Callbacks` trait (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`, …) that lets us intercept OSC and unhandled-CSI traffic for passthrough.
+
+So the capsule's entire render path — <RepoFile path="crates/jackin-capsule/src/render.rs" /> and the `OscCapture` callback impl in <RepoFile path="crates/jackin-capsule/src/session.rs" /> — is built directly on `vt100`'s `Screen` + `Callbacks` shape. It works, and it is a good fit for the job.
+
+### The problem with `vt100` and our current implementation
+
+Two distinct problems, which matter for different reasons.
+
+**Problem 1 — we are not on canonical `vt100`; we are on a forked SHA, and upstream has stalled.**
+
+Our dependency is:
+
+```toml
+# crates/jackin-capsule/Cargo.toml
+vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715..." }
+```
+
+<RepoFile path="TODO.md" /> historically framed this fork as *"temporary — waiting for OSC/CSI callbacks to land upstream."* **That framing was wrong, and the truth is worse.** The June 2026 research established:
+
+- The four callbacks the TODO named **already shipped** in canonical [`vt100` 0.16.2](https://docs.rs/vt100/latest/vt100/trait.Callbacks.html) (January 2025). They are not what the fork adds.
+- The fork's **real** delta over upstream is a single additive method, `Screen::clear_scrollback()`, used by `clear_scrollback_and_request_screen_clear` in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and the focused-pane handler in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />.
+- **That exact patch is already submitted upstream as `doy/vt100-rust` PR #31 ("Support clearing scrollback", May 22 2026) — and it is not merged.**
+
+And the upstream is not moving:
+
+| Upstream `doy/vt100-rust` signal | Value (June 2026) |
+| --- | --- |
+| Last code push (`pushed_at`) | **July 12, 2025** (~11 months ago) |
+| **Last merged PR** | **#20 "Check MSRV in CI", July 11, 2025** — a CI-only change |
+| **Previous merge before that** | **#10, April 2023** — a **2-year-plus gap** with no substantive PR merged |
+| Open pull requests | **10** |
+| Oldest open PR | **#3, January 2021** (`all_contents_formatted`) — open ~5 years |
+| PRs opened Dec 2025 – May 2026 | **8 (#21, #23, #25, #27, #29, #30, #31, #32) — all unmerged** |
+| Open issues | 15 |
+| Our patch upstream | **PR #31 ("Support clearing scrollback", May 22 2026) — open, unmerged** |
+| Other relevant open PRs | #27 `scrollback_len`, #30 wide-char panic fix, #29 1×1 scroll fix, #32 emoji width, #21 DECSCUSR, #25 `no_std` |
+
+This is the realization that reframed the whole question: **the fork is not a temporary bridge to an upstream that will catch up.** Look at the merge history, not just the commit date — it is the sharper signal. The maintainer's last merge of any kind was a CI-only change in July 2025, and the last *substantive* merge before that was in **April 2023**. Meanwhile a wave of **eight community pull requests landed between December 2025 and May 2026 — and not one was merged**, including our own `clear_scrollback` as PR #31 and outright bug fixes (#29 1×1 scroll, #30 a panic on truncated wide characters). The oldest open PR has waited since January 2021. The pattern is unambiguous: **the author has been effectively absent for years**, the crate is in maintenance limbo, and any feature or fix the capsule needs that upstream lacks means **we carry the patch ourselves, indefinitely.** We are *already* maintaining a fork. The only question the fork raises is whether to keep it as an ad-hoc patch on someone else's abandoned-in-practice crate, or to own the layer deliberately.
+
+**Problem 2 — `vt100`'s model is correct in shape but not optimized for our hot path.**
+
+Independent of maintenance, `vt100`'s implementation has structural costs in the stage the capsule lives in:
+
+- Its `present` stage diffs **two full `Screen`s every frame** — an O(rows × cols) compare — even when an agent changed three lines of a tall pane.
+- `contents_formatted` / `contents_diff` **allocate `String`s per frame**.
+- Its grid is `Vec<Row>` of fat cells; scroll rotates rows; scrollback is a separate concern. Fine, but not the cache-friendly ring buffer the fast engines use.
+
+Whether any of this *matters* for the capsule's actual workload is **unknown and unmeasured** — which is the central thing the verification plan exists to settle.
+
+## The concept we want to test
+
+The concept has three nested claims, each of which must be checked:
+
+1. **The capsule is a re-emitting multiplexer, not a GPU terminal — so the "fast" libraries do not fit.** A GPU terminal (Alacritty, Rio, WezTerm, Ghostty) presents by uploading the grid to the GPU; it has **no escape-sequence emission stage at all**. The capsule presents by *serializing the focused grid back into escape bytes* over a wire that may be SSH. The expensive, correct stage for us is **diff-to-escape**, the very thing `vt100` provides and the GPU engines lack.
+
+2. **The performance-optimal design for our hot path is a hybrid that no single crate ships:** the canonical fast **parser** (`vte`, which Alacritty and Rio's `copa` both build on) + a **ring-buffer, damage-tracked grid** (Alacritty's `Storage` idea) + a **wire-minimal diff-to-escape emit** (vt100's idea, but driven by source-recorded damage instead of full-screen compare) + a **typed passthrough event stream** that makes the capsule's OSC/kitty/focus/cwd/scrollback needs first-class instead of bolted on through callbacks.
+
+3. **Because we already maintain a fork and owning crates is not a problem here, the marginal cost of turning that fork into a purpose-built crate (`jackin-term`) is small relative to the architectural and maintenance benefit — *if* the benefit is real.** A refactor of the fork into a multiplexer-shaped library would: stop tracking someone else's stalled SHA, make every capsule-specific need a first-class API rather than a patch, and potentially become a reusable building block for the broader jackin' ecosystem.
+
+The concept is therefore: **fork-and-refactor `vt100` into a hybrid, multiplexer-native terminal crate that takes the best of `vt100` (re-emit model) and Alacritty (parser + ring-buffer grid + damage), owned by jackin'.** The verification plan decides whether that is worth doing.
+
+## Our potential guess, and verifying it against Alacritty
+
+The guess: *"Alacritty's terminal core is famously the fastest; maybe we should just adopt `alacritty_terminal` and inherit its speed."*
+
+Verification against the actual crate landscape says **no, not directly** — and explains why the hybrid idea exists at all:
+
+| Library | Parser | Model | Diff-to-escape present? | Published / stable | Maintainer shape | Verdict for capsule |
+| --- | --- | --- | --- | --- | --- | --- |
+| **[`vt100`](https://crates.io/crates/vt100)** (doy) | own state machine | `Screen` of fat cells, `Vec<Row>` | **Yes** — `contents_diff` / `contents_formatted` | crates.io 0.16.x; **upstream stalled (last push Jul 2025, 10 open PRs)** | single author, low activity | Native fit, but forced-fork forever and unoptimized emit |
+| **[`alacritty_terminal`](https://crates.io/crates/alacritty_terminal)** | [`vte`](https://github.com/alacritty/vte) | `Term<T>` + ring-buffer `Grid`/`Storage`, line-level damage | **No** — built to feed a GPU; no escape emit | crates.io, but documents **no public-API stability guarantee** | multi-maintainer, active | Fastest parse/model, but **we'd build the entire emit stage ourselves**, and the API can break on `cargo update` — a *different* unstable-upstream problem, not a fix for ours |
+| **[`wezterm-term`](https://github.com/wezterm/wezterm)** / **[`termwiz`](https://docs.rs/termwiz)** | own (termwiz) | full `Surface` model, scrollback, OSC 8, images | **Yes** — `Surface`/`Change` diff | `termwiz` published; **`wezterm-term` not published** ([#6663](https://github.com/wezterm/wezterm/issues/6663)) | multi-maintainer, active | The strongest "buy": has both a model and a diff-emit. Heavy dep tree; `wezterm-term` would itself be a git dep. **Must be evaluated before any build.** |
+| **[Rio](https://github.com/raphamorim/rio)** (`rio-backend` + [`copa`](https://crates.io/crates/copa)) | `copa` (Alacritty `vte` fork) | `Crosswords` grid, GPU/WebGPU, SIMD UTF-8 | **No** — GPU present | on crates.io but **app-internal infra**; `copa` stale (0.12.0, 2023) | single primary author | GPU app backend, no emit stage, less stable than Alacritty for our purpose |
+| **[`avt`](https://github.com/asciinema/avt)** (asciinema) | own | primary/alt grid | **Partial** — full-screen `dump()`, no incremental diff, no live OSC callbacks | crates.io | asciinema org | Record/replay shape, not interactive multiplexing |
+| **[libvterm](https://www.leonerd.org.uk/code/libvterm/)** (LeoNerd, C) | own (C) | abstract VT220/xterm state, **damage callbacks** | **No** — gives damage regions; the host renders/re-emits itself | C library, maintained; **[neovim fork](https://github.com/neovim/libvterm)** | active (C); Rust bindings dead | **Ruled out — non-Rust.** Idea source only: a battle-tested damage-callback model. We do not link C. |
+| **[`tui-term`](https://github.com/a-kenji/tui-term)** (a-kenji) | wraps `vt100` | `vt100::Screen` | **No** — renders a **ratatui `Buffer`**, not escape bytes | crates.io, 0.3.x (Apr 2026), active | single author | A ratatui *widget*, not a model — wraps `vt100` and paints into a ratatui buffer. Wrong direction (no re-emit). Useful only as ecosystem confirmation that `vt100` is the default model, and as a reference if the capsule ever moves to ratatui (see TUI architecture item). |
+| **[Ghostty](https://github.com/ghostty-org/ghostty)** / **[libghostty-vt](https://biggo.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation)** (Zig, MIT) | own SIMD parser | **`PageList`** — pooled arena pages, offset-addressed cells, `RefCountedSet` style interning, grapheme side-map | **No** — GPU renderer; `libghostty-vt` exposes state, not re-emit | 2025 Zig embeddable API, very active | Mitchell Hashimoto + community | **Ruled out as a dependency — non-Rust (Zig).** But it has the **best memory model surveyed**, MIT-licensed, so we **re-implement its patterns in Rust** inside `jackin-term`. Idea theft only, detailed below. |
+| **[Zellij](https://github.com/zellij-org/zellij)** (Rust) | **`vte`** (its `Grid` impls `vte::Perform`) | own `Grid` — viewport + scrollback + cursor + styles | **Yes** — `OutputBuffer` damage-tracks and emits ANSI only for changed cells/attrs | **not published** — lives app-internal in `zellij-server/src/panes/` | multi-maintainer, active | **The closest prior art and the strongest validation.** A pure-Rust re-emit multiplexer that solves *our exact problem* with *our exact architecture* (`vte` + own grid + damage-tracked ANSI emit). It hand-rolled the grid because no crate fit, and never extracted it — so we cannot depend on it, but it proves the design works and is the best reference target. |
+| **[`vte`](https://crates.io/crates/vte)** (alacritty) | the canonical parser (`Perform`) | none | n/a | crates.io, stable, canonical | multi-maintainer | **The reusable foundation — depend on it, never rebuild the parser** |
+
+What the comparison proves:
+
+- **The GPU-fast engines (Alacritty, Rio) are structurally missing our stage.** Adopting them means hand-writing the diff-to-escape emit — exactly what `vt100` gives free. So "just use Alacritty" trades our problem for a bigger one.
+- **The reusable, fast, canonical piece everyone shares is `vte`.** That is the part to depend on; rebuilding a VT parser would violate <RepoFile path="AGENTS.md" /> "Prefer libraries over hand-rolled parsers" for no gain.
+- **`termwiz` is the only off-the-shelf crate with both a model and a diff-emit** — making it the mandatory "buy" candidate to rule out before any "build."
+- **Even libvterm — the mature C model neovim and emacs-vterm embed — does not ship the wire-emit stage.** It gives damage callbacks and abstract state; the host still renders or re-emits itself. That is strong evidence that the diff-to-escape present stage is a genuinely rare, multiplexer-specific piece that *nobody hands you*, in any language. (libvterm is also non-Rust and therefore ruled out as a dependency per the pure-Rust constraint — it informs the design, it does not become one.)
+- The hybrid we'd build = **`vte` (theirs) + ring-buffer damage grid (Alacritty's / libvterm's idea, our code) + wire-minimal emit (vt100's idea, our code, but damage-driven) + typed passthrough (ours).** Best of each world, none of them shippable as-is for our exact job.
+
+## Why our own crate could make sense
+
+Two **independent** justifications. Either alone could be sufficient; together they are the case.
+
+### Justification A — the maintenance reality (already proven, no numbers needed)
+
+We are not choosing between "clean upstream" and "our fork." We are choosing between "**our ad-hoc patch on a stalled crate**" and "**our deliberately-owned crate**." Upstream `vt100` has not pushed code since July 2025, sits on 10 open PRs (one open since 2021), and has left our own `clear_scrollback` patch unmerged as PR #31. Every future capsule need that upstream lacks is a new patch we carry. Given that **owning crates is explicitly not a problem for this project**, a forced-fork-forever situation tips strongly toward owning the layer on purpose — *provided* the owned crate gives us something the patched fork does not. That "something" is Justifications B (performance) and the architecture wins below.
+
+### Justification B — the architecture/performance fit (must be proven with numbers)
+
+If a jackin'-owned crate is built around source-recorded damage + wire-minimal emit + typed passthrough, the potential wins are:
+
+1. **Per-frame focused-pane present drops from O(rows × cols) to O(Δ).** Walk only changed cell spans instead of diffing two full screens every frame.
+2. **Zero per-frame allocation.** Emit straight from packed cells into a reused byte buffer; no per-frame `String`.
+3. **Fewest bytes on the wire** — diff tuned for escape-byte count (tight cursor-move + run-length), the metric that limits an SSH-reached host terminal; no GPU engine targets this.
+4. **Passthrough becomes first-class and the fork disappears** — kitty-keyboard stack, `modifyOtherKeys`, focus-event mode, OSC 7 cwd, unhandled-CSI forwarding, and scrollback-clear become a typed event stream designed *for*, not patched *around*; `clear_scrollback()` is just a method on our grid.
+5. **Scales to many panes** — arena/slab storage and one shared scrollback ring across the daemon's N sessions instead of N independent heap grids.
+6. **The API's nouns are the capsule's nouns** — `Session`, `FocusedEmit`, `PassthroughEvent` — the "more intuitive" half of the motivation.
+
+Win 4 is a maintenance/architecture win that holds **regardless of performance**. Wins 1–3, 5 are performance claims that are **unproven until measured**. The verification plan exists to measure them.
+
+## Proposed architecture (only if verification says "build")
+
+```text
+vte (dependency — canonical parser, do not rebuild)
+   │  byte slices in, Perform events out (zero-copy borrow of the input buffer)
+   ▼
+DamageGrid          ← pooled arena pages (Ghostty PageList idea) or a ring
+   │                  buffer (Alacritty Storage idea): O(1) scroll, packed
+   │                  cache-friendly Cell with interned style ids, scrollback
+   │                  in the same store, dirty-span tracking recorded AS bytes
+   │                  arrive (not recomputed by full-screen compare)
+   ▼
+PassthroughEvents   ← typed stream: TitleChanged, IconName, ClipboardWrite,
+   │                  KittyPush(n)/KittyPop, FocusMode(bool), ModifyOtherKeys,
+   │                  CwdChanged (OSC 7), PassthroughCsi, ScrollbackCleared.
+   ▼
+WireDiff            ← present stage: minimal escape byte sequence for the dirty
+                      spans only, into a reused output buffer (no per-frame
+                      String), optionally wrapped in DEC ?2026 synchronized-
+                      output markers and frame-coalesced per refresh.
+```
+
+Cross-cutting: a multi-session arena so N sessions share slab row storage and one scrollback ring.
+
+### Zero-copy / zero-alloc specifics
+
+- **Parse:** `vte` consumes borrowed input slices; no copy into the parser.
+- **Model:** cells store style as packed bitflags + indexed color; grapheme content references interned storage rather than a per-cell heap `String`.
+- **Present:** `WireDiff` writes into a daemon-owned reusable `Vec<u8>` that is cleared, not reallocated, each frame.
+
+### Ideas worth borrowing from Ghostty (MIT-licensed)
+
+Ghostty is **not a candidate dependency** — it is Zig, and the pure-Rust constraint above forbids linking it (and, like every engine surveyed, it ships no diff-to-escape stage anyway). But its terminal core has the **best memory model of any emulator surveyed**, and Ghostty is MIT-licensed, so the *patterns* (re-implemented in Rust, with attribution) are fair game for `DamageGrid`. The ideas worth porting into Rust:
+
+1. **`PageList` — pooled arena pages instead of a flat ring buffer.** The screen + scrollback is a doubly-linked list of fixed-size pages drawn from a pre-heated `MemoryPool`; each page is one contiguous arena holding its rows, cells, styles, graphemes, and hyperlinks. Scroll and scrollback-trim become page-pointer operations with near-zero per-cell allocation, and on hitting the scrollback limit Ghostty *reuses the oldest page as the newest* — a free ring without a fixed-size ring's wide-terminal waste. This is a strictly better `DamageGrid` backing store than the naive ring buffer the design first sketched.
+2. **`RefCountedSet` style interning.** Cells store a small style **id**; the actual style lives once in a per-page refcounted set, released on cell overwrite with lazy id reuse. Exactly the "packed cell + interned style" goal, with a proven shape. Hyperlinks use the same set.
+3. **Grapheme side-map.** A `grapheme_map` from cell offset to a codepoint slice keeps the common single-codepoint case in the cell and spills only complex clusters to a grapheme allocator — our grapheme-interning idea, concretely.
+4. **Offset-addressed memory (`OffsetBuf`).** Everything inside a page is stored as an offset into the page arena, not a pointer, so pages are relocatable and copyable. This is what makes the multi-session arena and cheap session teardown realistic.
+5. **Serial numbers + pins for invalidation.** Monotonic page serials detect stale references without requiring pointer stability, and a `PinSet` keeps cursor/scrollback anchors correct across mutations. This is the principled replacement for the capsule's current ad-hoc `scrollback_offset` + `inline_scrollback` bookkeeping in <RepoFile path="crates/jackin-capsule/src/session.rs" />.
+
+What Ghostty does **not** give us is the one thing that matters most — the wire-emit stage — which reconfirms the survey's central finding: the memory model is borrowable from the best in the field, but the diff-to-escape present stage is ours to write no matter which engine we study.
+
+## The synthesis — one library, best of all worlds
+
+This is the heart of the proposal. `jackin-term` is not "yet another terminal emulator." It is a deliberate **assembly of the single best idea from each project**, each chosen because it serves the one job the capsule actually does: re-emit a focused PTY's screen to a host terminal with the fewest bytes, the least allocation, and the cleanest passthrough. Every borrowed idea is either a Rust crate we depend on, a pattern we re-implement in Rust (with attribution), or a correctness reference — never a foreign binding.
+
+### The borrow ledger — what each project contributes
+
+| Source | The one idea worth taking | What it buys jackin' | How we take it |
+| --- | --- | --- | --- |
+| **`vte`** (Alacritty) | The canonical Williams-state-machine parser with the `Perform` trait. | A fast, correct, UTF-8-aware byte→event front end we never have to write or maintain. | **Depend** (the one external Rust crate at the core). |
+| **`vt100`** (doy) | The **re-emit model**: `contents_diff` / `contents_formatted` serialize a screen back to the *minimal* escape sequence; plus the `Callbacks` interception shape. | The only off-the-shelf implementation of our actual hot stage — proof the diff-to-escape approach is right, and a baseline to beat. | **Re-implement and evolve** into `WireDiff` (damage-driven, not full-screen compare) + typed events. |
+| **Zellij** | The **`OutputBuffer`**: damage-track the grid and emit ANSI only for cells/attributes that changed since the last character. | Independent validation that a pure-Rust `vte` + own-grid + damage-emit multiplexer works and is fast — our exact architecture, shipping in production. | **Reference** (not published; we re-implement the pattern and benchmark against it). |
+| **Alacritty (`alacritty_terminal`)** | The **ring-buffer `Storage` grid**: O(1) scroll, packed cache-friendly `Cell`, line-level damage. | Cheap scroll and mutation without per-row copying. | **Re-implement the idea** (superseded by Ghostty's pages where they go further). |
+| **Ghostty** | The **`PageList` memory model**: pooled arena pages, `RefCountedSet` style interning, grapheme side-map, offset addressing, serial+pin invalidation. | Best-in-field memory economy: near-zero per-cell allocation, cheap huge scrollback, a relocatable store that makes the multi-session arena real. | **Re-implement in Rust** (MIT, with attribution). |
+| **libvterm** | The **damage-callback discipline** and an exhaustive VT-coverage checklist (DEC modes, mouse encodings, query responses). | A correctness reference for what passthrough/state must be first-class so nothing silently drops. | **Reference only** (non-Rust; never linked). |
+| **`termwiz`** | The **`Surface`/`Change` diff API** ergonomics and emit completeness. | Either the "buy" that ends the project, or a target for how a Rust diff-emit API should feel. | **Depend if the buy-gate passes; else reference.** |
+| **`avt`** (asciinema) | Full-screen `dump()` **serialization** of a screen to text/escapes. | A snapshot/record primitive that feeds the [terminal observation](/reference/roadmap/terminal-observation-automation/) item. | **Re-implement the small piece** when that surface needs it. |
+| **Rio (`copa`)** | **SIMD UTF-8 validation** with runtime CPU-feature detection (`simdutf8`). | Parse-throughput headroom *if* profiling ever shows a parse wall. | **Optional borrow** (likely unnecessary; `vte` already handles UTF-8). |
+
+### Prior art for the use case — and why the niche is still open
+
+We are explicitly not the first to need this. The *use case* — a terminal multiplexer that re-emits a pane to a host terminal — has three notable solvers:
+
+- **Zellij (Rust)** — the closest. It built precisely `vte` + own `Grid` + `OutputBuffer` damage-emit, and **had to hand-roll the grid because no crate fit**. It never extracted that work into a reusable library; it lives inside `zellij-server`. Aram Drevekenin's [performance write-up](https://poor.dev/blog/performance/) is essentially a field report on optimizing the exact stage `jackin-term` targets.
+- **tmux (C)** — the canonical multiplexer; its grid + redraw logic is hand-rolled C, not reusable from Rust.
+- **WezTerm mux (Rust)** — uses `termwiz`'s `Surface`/`Change` model for its multiplexer, the one published Rust path that already has a diff-emit.
+
+The pattern across all three: **the re-emit-multiplexer terminal model is always either hand-rolled and locked inside an application (Zellij, tmux) or available only as part of a heavier surface (`termwiz`).** No one has published a small, focused, pure-Rust crate whose single job is "model a PTY screen and re-emit it to a host terminal with minimal bytes." That gap is exactly the shape of `jackin-term`. If we build it, it is plausibly the first reusable crate of its kind — which is why an open question below asks whether it should ship publicly and feed the broader ecosystem, not stay capsule-private.
+
+### The final shape
+
+Putting the ledger together, `jackin-term` is:
+
+```text
+vte (depend)                         ← parse: bytes → events, zero-copy
+   ▼
+PageList-style arena grid            ← model: Ghostty memory + Alacritty packing,
+   │  + RefCountedSet style interning   re-implemented in Rust, damage recorded
+   │  + source-recorded dirty spans     as bytes arrive (Zellij OutputBuffer +
+   │                                     libvterm damage discipline)
+   ▼
+Typed PassthroughEvents              ← supersede vt100 Callbacks + the capsule's
+   │                                     OscCapture: title/icon/clipboard/kitty/
+   │                                     focus/cwd/csi/scrollback as first-class
+   ▼
+WireDiff                             ← present: vt100's minimal-escape idea, but
+   │                                     damage-driven and wire-byte-tuned, into a
+   │                                     reused buffer (zero per-frame alloc),
+   │                                     DEC ?2026 synchronized, frame-coalesced
+   ▼
++ avt-style dump()                   ← snapshot/record for the observation item
++ multi-session arena                ← Ghostty offset addressing → cheap N panes
+```
+
+Each layer names its source. Nothing here is invented for novelty; every piece is the best existing answer to a sub-problem, re-assembled in Rust around the one sub-problem nobody else packages: **minimal-byte re-emission to a host terminal.** Whether that assembly is worth building rather than borrowing `termwiz` or staying on `vt100` is what the experiments below decide.
+
+## How we verify the concept — the experiments
+
+This is the core of the item. **We do not build `jackin-term` on belief. We build instrumentation, capture real numbers under real load, and apply numeric decision gates.** All measurements run inside a role container against the real `jackin-capsule` daemon, with `--debug` so the numbers land in the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`).
+
+### Step 0 — retire the fork the cheap way first (do regardless)
+
+Independent of this whole question: rebase the fork onto a tag, get `clear_scrollback` resolved (land PR #31 upstream **or** accept we own it), and update <RepoFile path="TODO.md" /> `vt100-rust-fork` to state the real situation (callbacks already upstream; upstream stalled). This removes the SHA-pin urgency and lets the verification proceed on a clean baseline. It is also the fallback if verification says "drop the idea."
+
+### Experiment 1 — profile the present path (the load-bearing measurement)
+
+**Goal:** find out whether the capsule has *any* per-frame wall, and if so, in which stage.
+
+**Instrumentation:** add `cdebug!`-gated timers around the three stages, in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and <RepoFile path="crates/jackin-capsule/src/render.rs" />:
+
+- `t_parse` — `Parser::process(bytes)` per PTY read.
+- `t_diff` — `Screen` diff / `contents_formatted` per rendered frame.
+- `t_write` — host-PTY write per frame.
+
+Per frame, also record: bytes-in, bytes-out, grid size (rows × cols), and number of changed cells (compute it even though vt100 doesn't expose damage — diff the prev/next contents once for the measurement).
+
+**Workload datasets** (each run captured to its own diagnostics run id):
+
+1. `seq 1 100000` dumped fast (dense scroll).
+2. A real long `claude` / `codex` response rendered in a tall pane.
+3. A full-screen TUI redraw storm — `htop`, `vim` scrolling a large file.
+4. `yes` for 5 seconds (pathological throughput).
+5. Multi-pane: 4, 8, and 16 sessions active, all producing output, focus held on one.
+
+**Metrics + decision gate:**
+
+- If **p99 `t_parse` + `t_diff` + `t_write` per frame < 8 ms** and **daemon CPU stays modest** across datasets 1–4, the single-pane path has **no wall** → Justification B wins 1–3 are worthless → the performance case collapses to multi-pane scaling (Experiment 4) and maintenance (Justification A).
+- If **`t_diff` dominates** (full-screen compare cost) on dataset 2/3 where few cells changed, that is direct evidence for **O(grid) → O(Δ)** being a real win → Justification B win 1 is live.
+- If **`t_write` dominates** and bytes-out ≫ changed cells, the emit is wasteful → win 3 is live.
+
+### Experiment 2 — bytes-on-the-wire efficiency
+
+**Goal:** test win 3 (wire-minimal emit) directly.
+
+For a sample of representative frames from Experiment 1, compute the **theoretical minimal escape byte count** for the actual cell delta (cursor-move + styled run-length) and compare to what `vt100` actually emitted.
+
+**Decision gate:** if vt100's emitted bytes are within **~15%** of theoretical minimum, the emit stage is already near-optimal → win 3 is dead. If overhead is large (e.g. it re-emits whole lines for single-cell changes), win 3 is live and quantified.
+
+### Experiment 3 — allocation profiling
+
+**Goal:** test win 2 (zero per-frame alloc).
+
+Run the daemon under `dhat` (or `heaptrack`) across datasets 1–3. Count **allocations attributable to the focused-pane render path per frame.**
+
+**Decision gate:** if allocations per frame are already negligible, the zero-alloc rewrite buys nothing → win 2 is dead. If each frame allocates `String`s proportional to screen size, win 2 is live and quantified (allocs/frame × frame rate = the saving).
+
+### Experiment 4 — multi-pane scaling
+
+**Goal:** test win 5 (arena across N sessions).
+
+Spawn 1, 4, 8, 16, 32 sessions all producing steady output. Measure daemon **RSS** and **CPU** vs session count, and per-session spawn/teardown latency.
+
+**Decision gate:** if memory and CPU scale **linearly and cheaply** to 32 panes, the arena win is marginal → win 5 is low priority. If per-session heap grids cause superlinear RSS or cache-thrash CPU, the arena is justified and quantified.
+
+### Experiment 5 — the prototype spike (only if 1–4 show a wall)
+
+If and only if Experiments 1–4 surface at least one quantified wall, build a **throwaway feature-flagged branch** implementing the relevant slice (most likely: source-damage tracking + damage-driven emit, reusing vt100's grid as the model) and **A/B it against stock vt100 on the identical datasets.** Measure the delta in the exact metric the wall appeared in.
+
+**Decision gate:** the spike must show a **≥ 2× improvement in the walled metric** (or an unambiguous qualitative fix, e.g. eliminating visible jitter on dataset 3) to justify a full `jackin-term`. A 10% improvement does not justify owning a terminal crate; a 5× drop in p99 present-frame time or wire bytes does.
+
+### Experiment 6 — the "buy" gate (`termwiz`, the only adoptable Rust option)
+
+Per the pure-Rust constraint, the **only** adopt-instead-of-build candidate with both a cell model and a diff-emit is **`termwiz`** (the rest are non-Rust and ruled out, or Rust but missing the emit stage). Before committing to build, prototype driving `termwiz`'s `Surface`/`Change` diff as the capsule's present stage on dataset 2/3. If `termwiz` matches the prototype's numbers **and** its published API is stable enough to depend on, **buy beats build** and we adopt `termwiz`.
+
+If `termwiz` does not clear the gate, the choice is build vs. drop, decided by the matrix below — and "build" means a pure-Rust `jackin-term` that re-implements the best borrowed ideas (Ghostty's memory model, libvterm's damage discipline, vt100's emit) natively, with no foreign binding.
+
+## The decision matrix
+
+After the experiments, the action is determined — not argued:
+
+Every action is pure-Rust: adopt a Rust crate, keep the Rust fork, or build a Rust crate. No row links a foreign library.
+
+| Perf wall proven (Exp 1–5)? | `termwiz` (Rust) covers it (Exp 6)? | Maintenance: forced-fork acceptable? | Action |
+| --- | --- | --- | --- |
+| No | — | Yes (patched fork is fine) | **Drop the idea.** Stay on `vt100`, retire the SHA-pin (Step 0). Keep win 4 as a possible *small* refactor, not a crate. |
+| No | — | No (forced-fork unacceptable long-term) | **Fork-and-own minimally.** Refactor the Rust fork into `jackin-term` for *maintenance + passthrough (win 4)* only, no perf rewrite. |
+| Yes | Yes | — | **Buy `termwiz`.** Adopt the Rust crate as the present stage; do not build. |
+| Yes | No | — | **Build `jackin-term`.** Pure-Rust hybrid: `vte` + damage grid (Ghostty patterns re-implemented in Rust) + wire-minimal emit + typed passthrough. The architecture above is the blueprint. |
+
+The verification is complete when every cell of the row that applies to us is backed by a diagnostics run id or a prototype branch, not a guess.
+
+## Host-side effects
+
+None. This item is entirely in-container / in-binary terminal modeling and emits only to the host terminal's own PTY that the operator already attached. It introduces no host-side writes and is unaffected by the never-mutate-host-silently rule in <RepoFile path="AGENTS.md" />.
+
+## Relationship to other roadmap work
+
+- **[jackin' Capsule control plane](/reference/roadmap/jackin-capsule/)** — owns the multiplexer this crate would sit under; the `vt100`-based renderer is its current substrate.
+- **[TUI architecture — Ratatui application patterns](/reference/roadmap/tui-architecture/)** — the present-layer restructuring this item describes should land inside that Model/Update/View boundary, not beside it.
+- **[Terminal observation and automation](/reference/roadmap/terminal-observation-automation/)** — a typed grid + frame model makes the snapshot/record surface that item wants cheaper to expose.
+- **`vt100-rust-fork`** in <RepoFile path="TODO.md" /> — Step 0 above; the cheap fork retirement that must happen regardless of this verdict.
+
+## Related files
+
+- <RepoFile path="crates/jackin-capsule/Cargo.toml" /> — the pinned `vt100` git fork line.
+- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `OscCapture` (the `vt100::Callbacks` impl), the scrollback model, and `clear_scrollback_and_request_screen_clear`; **the home of the Experiment 1 `t_parse`/`t_diff` instrumentation.**
+- <RepoFile path="crates/jackin-capsule/src/render.rs" /> — the `vt100::Screen` → host-terminal present path; **the home of the Experiment 1 `t_write` instrumentation.**
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
+
+## Open questions the verification must answer
+
+1. Does a profiled capsule under worst real load show **any** parser/grid wall, or is the present/host-write stage always cheap? (Experiment 1)
+2. How far is `vt100`'s emit from wire-minimal on realistic frames? (Experiment 2)
+3. How many allocations per frame does the current render path make? (Experiment 3)
+4. Does per-session heap-grid memory/CPU scale acceptably to 16–32 panes? (Experiment 4)
+5. Can `termwiz` — the only adoptable Rust crate with a diff-emit — be the present stage and beat building `jackin-term`? (Experiment 6)
+6. Is win 4 (typed passthrough, fork retirement) valuable enough to justify a crate **independent** of any performance result?
+7. If built, does `jackin-term` stay capsule-private, or ship as a publishable crate — the only Rust terminal model purpose-built for re-emitting multiplexers — feeding the broader jackin' ecosystem?
