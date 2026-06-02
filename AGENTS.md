@@ -25,6 +25,8 @@ jackin' has exactly one human contributor — the operator. There is no second r
 - Multi-agent review (running `code-reviewer` / `comment-analyzer` / `silent-failure-hunter` / etc. in parallel before requesting merge) is the substitute for the missing second human. Treat those review passes as load-bearing rather than optional polish.
 - For irreversible or high-blast-radius changes, prefer asking the operator to confirm one more time over assuming the green CI run is sufficient. The cost of pausing 30 seconds is much lower than the cost of a bad merge that an absent second reviewer would have caught.
 
+Practices designed for multi-developer teams (CODEOWNERS, mandatory second-human review, pair programming conventions, team-oriented workflow tooling) should not be proposed without a concrete plan for how a second human will participate. Until the project gains additional human contributors, the solo-maintainer constraint means team-oriented tooling adds maintenance burden without corresponding benefit.
+
 This rule retires when the project gains additional human reviewers.
 
 ## Project status: pre-release (agent-only)
