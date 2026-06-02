@@ -6,6 +6,7 @@
 
 use crate::config::AppConfig;
 use crate::console::tui::components::auth_panel::editor_auth_display_row;
+use crate::console::tui::components::env_value_secret_display;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
@@ -13,7 +14,6 @@ pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
-use crate::console::tui::view::env_value_secret_display;
 pub(crate) use crate::console::tui::state::{
     auth_flat_rows, secrets_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
