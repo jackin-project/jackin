@@ -42,7 +42,7 @@ pub(crate) use jackin_console::tui::components::op_picker::{
     recoverable_load_error_state, disconnected_worker_error_state,
     section_header_collapse_target, section_stage_back_plan, section_stage_commit_plan,
     selected_account_id, selected_account_id_ref,
-    selected_entity_id_or_default,
+    selected_entity_id_or_default, selected_entity_label_or_empty,
     sort_fields_by_concealed_first, vault_stage_back_plan, vault_stage_commit_plan,
     vault_stage_refresh_plan, vaults_loaded_plan,
 };

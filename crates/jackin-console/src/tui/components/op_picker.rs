@@ -274,6 +274,13 @@ pub fn selected_entity_id_or_default<Entity>(
         .unwrap_or_default()
 }
 
+pub fn selected_entity_label_or_empty<'a, Entity>(
+    selected_entity: Option<&'a Entity>,
+    label: impl FnOnce(&'a Entity) -> &'a str,
+) -> &'a str {
+    selected_entity.map_or("", label)
+}
+
 /// Background load completion routed back into the picker.
 #[derive(Debug)]
 pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
@@ -2854,6 +2861,24 @@ mod tests {
         );
         assert_eq!(
             selected_entity_id_or_default::<Vault>(None, |vault| vault.id),
+            ""
+        );
+    }
+
+    #[test]
+    fn selected_entity_label_or_empty_derives_or_falls_back_empty() {
+        struct Item {
+            name: &'static str,
+        }
+
+        let item = Item { name: "login" };
+
+        assert_eq!(
+            selected_entity_label_or_empty(Some(&item), |item| item.name),
+            "login"
+        );
+        assert_eq!(
+            selected_entity_label_or_empty::<Item>(None, |item| item.name),
             ""
         );
     }

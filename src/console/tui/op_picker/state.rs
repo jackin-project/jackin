@@ -255,27 +255,27 @@ impl OpPickerRenderState for OpPickerState {
     }
 
     fn selected_account_email(&self) -> &str {
-        self.selected_account
-            .as_ref()
-            .map_or("", |account| account.email.as_str())
+        super::selected_entity_label_or_empty(self.selected_account.as_ref(), |account| {
+            account.email.as_str()
+        })
     }
 
     fn selected_vault_name(&self) -> &str {
-        self.selected_vault
-            .as_ref()
-            .map_or("", |vault| vault.name.as_str())
+        super::selected_entity_label_or_empty(self.selected_vault.as_ref(), |vault| {
+            vault.name.as_str()
+        })
     }
 
     fn selected_item_name(&self) -> &str {
-        self.selected_item
-            .as_ref()
-            .map_or("", |item| item.name.as_str())
+        super::selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
+            item.name.as_str()
+        })
     }
 
     fn selected_item_subtitle(&self) -> &str {
-        self.selected_item
-            .as_ref()
-            .map_or("", |item| item.subtitle.as_str())
+        super::selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
+            item.subtitle.as_str()
+        })
     }
 
     fn naming_stage_input(&self) -> Option<&TextInputState<'static>> {
