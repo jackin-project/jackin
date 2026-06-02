@@ -2,7 +2,7 @@
 title: "Codebase readability & restructuring"
 ---
 
-**Status**: Open — active program. The TUI surfaces are extracted into clean crates; the remaining work is restructuring the root `src/` binary crate into a tiered core-crate workspace, fixing duplication, mega-functions, and missing docs as the forcing function of each crate boundary. Re-baked 2026-06-02.
+**Status**: Open — active program. Stage 0 complete (2026-06-02): all production modules documented, unreachable_pub lint active, behavioral specs published, Developer Reference section live. Stage 2 DRY pass underway: shared string constants, named style constants, and auth provisioning helper extracted. Stage 1 (jackin-core extraction) is next.
 
 ## Goal
 
@@ -17,8 +17,12 @@ These are done. Listed so the remaining work is not confused with completed work
 - **TUI architecture & surface extraction.** All terminal UI moved into a 7-crate workspace (`jackin-tui`, `jackin-console`, `jackin-launch`, `jackin-capsule`, `jackin-protocol`, `jackin-tui-lookbook`, `jackin-build-meta`) under one Elm Architecture boundary. This eliminated the largest duplication cluster the original audit flagged (the `console/tui/view/` render layer) and proved the extraction model this program now applies to the core.
 - **Architecture Decision Records** at [/reference/adrs/](/reference/adrs/) — single-crate vs workspace, toolchain, ratatui, capsule pane rendering.
 - **Snapshot-test net started** — four `insta` snapshot tests over the largest composite panes in <RepoFile path="src/console/tui/view/snapshot_tests.rs" />. See [Snapshot tests for TUI](/reference/roadmap/snapshot-tests-tui/).
-- **`pub(crate)` visibility pass progressing** — root-crate `pub(crate) fn` share rose from ~11% to ~31% as the surface crates drew explicit public boundaries. Tracked in [pub(crate) visibility](/reference/roadmap/pub-crate-visibility/).
+- **`pub(crate)` visibility pass progressing** — root-crate `pub(crate) fn` share rose from ~11% to ~31% as the surface crates drew explicit public boundaries. `unreachable_pub = "warn"` lint now active in `[lints.rust]`; 8 low-hanging-fruit items narrowed. Tracked in [pub(crate) visibility](/reference/roadmap/pub-crate-visibility/).
 - **MSRV & toolchain pin** (ADR-002), the shared `jackin_tui::scroll` primitive, and the `PROJECT_STRUCTURE.md` refresh that delegates to the [Codebase Map](/reference/getting-oriented/codebase-map/).
+- **Module contracts (`//!` docs)** — all production source files in `src/` and `crates/` now have `//!` orientation blocks (purpose + scope + key invariants). Tracked in [Module contracts](/reference/roadmap/module-contracts/).
+- **Behavioral specs** — `runtime/launch.rs` (INV-1 through INV-6) and `op_picker` (INV-1 through INV-4) specs published in the new [Developer Reference → Behavioral Specs](/internal/specs/) section.
+- **Developer Reference section** — `/internal/` section live with Architecture, Code Tour, and Behavioral Specs pages.
+- **Stage 2 DRY pass started** — `MANIFEST_FILENAME` / `DOCKERFILE_NAME` constants extracted to <RepoFile path="src/repo_contract.rs" />; named `Style` constants (`BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `GREEN`, `DANGER`) added to `jackin-tui/theme.rs`; `provision_single_file_credential` extracted from the near-identical Amp and OpenCode auth provisioners in <RepoFile path="src/instance/auth.rs" />.
 
 ## The target: a tiered core-crate workspace
 
