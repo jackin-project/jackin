@@ -52,6 +52,16 @@ pub fn role_resolution_error_message(
     format!("Could not resolve {role_key}.\n\n{error:#}")
 }
 
+pub fn no_eligible_roles_error_title() -> &'static str {
+    "No eligible roles"
+}
+
+pub fn no_eligible_roles_error_message(workspace_name: impl std::fmt::Display) -> String {
+    format!(
+        "Workspace \"{workspace_name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,6 +112,15 @@ mod tests {
         assert_eq!(
             role_resolution_error_message("agent-smith", "not found"),
             "Could not resolve agent-smith.\n\nnot found"
+        );
+    }
+
+    #[test]
+    fn no_eligible_roles_error_names_workspace() {
+        assert_eq!(no_eligible_roles_error_title(), "No eligible roles");
+        assert_eq!(
+            no_eligible_roles_error_message("demo"),
+            "Workspace \"demo\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
         );
     }
 }

@@ -2,6 +2,9 @@ use crate::config::AppConfig;
 use crate::console::domain::LaunchDispatchResolution;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
+use jackin_console::tui::components::error_popup::{
+    no_eligible_roles_error_message, no_eligible_roles_error_title,
+};
 
 use super::{ConsoleStage, ConsoleState};
 
@@ -28,10 +31,8 @@ pub(crate) fn dispatch_launch_for_workspace(
                 let _ = crate::console::tui::update_manager(
                     ms,
                     crate::console::tui::ManagerMessage::OpenListErrorPopup {
-                        title: "No eligible roles".into(),
-                        message: format!(
-                            "Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
-                        ),
+                        title: no_eligible_roles_error_title().into(),
+                        message: no_eligible_roles_error_message(name),
                     },
                 );
             }
