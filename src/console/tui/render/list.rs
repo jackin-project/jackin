@@ -22,14 +22,14 @@ use jackin_tui::components::{Panel, PanelFocus};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 
-use super::{
-    CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
-};
+use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+#[cfg(test)]
+use jackin_tui::theme::TAB_BG_INACTIVE_HOVER;
 use crate::config::AppConfig;
 use crate::console::tui::render::list_geometry::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
@@ -56,10 +56,12 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
-    Disclosure, provider_picker_title, render_compact_instances_summary, render_picker_sidebar,
-    render_environments_subpanel, render_general_subpanel, render_global_mounts_subpanel,
+    list_name_lines as workspace_list_name_lines, provider_picker_title,
+    render_compact_instances_summary, render_picker_sidebar, render_environments_subpanel,
+    render_general_subpanel, render_global_mounts_subpanel,
     render_mounts_subpanel as render_workspace_mounts_panel, render_roles_subpanel,
-    render_sentinel_description_pane, WorkspaceEnvRow, WorkspaceRoleRow,
+    render_sentinel_description_pane, WorkspaceEnvRow, WorkspaceListDisplayRow,
+    WorkspaceListRowTone, WorkspaceRoleRow,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -197,133 +199,78 @@ pub(super) fn render_list_body(
 fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'static>>, usize) {
     let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
-    let mut max_w = viewport;
-    let mut lines: Vec<Line<'static>> = Vec::with_capacity(visual_rows.len());
+    let hovered_row = state.hovered_list_row;
+    let display_rows: Vec<Option<WorkspaceListDisplayRow>> = visual_rows
+        .iter()
+        .enumerate()
+        .map(|(idx, visual_row)| {
+            visual_row
+                .as_ref()
+                .and_then(|row| workspace_list_display_row(state, row, idx == visual_selected, hovered_row == Some(*row)))
+        })
+        .collect();
+    workspace_list_name_lines(&display_rows, viewport, state.list_names_focused)
+}
 
-    for visual_row in &visual_rows {
-        let Some(row) = visual_row else {
-            // Non-selectable spacer before "+ New workspace".
-            lines.push(Line::from(""));
-            continue;
-        };
-        let is_selected = lines.len() == visual_selected;
-
-        match row {
-            ManagerListRow::CurrentDirectory => {
-                push_tree_workspace_line(
-                    &mut lines,
-                    "Current directory",
-                    is_selected,
-                    state.list_names_focused,
-                    WHITE,
-                    state.current_dir_expanded,
-                    state.has_current_dir_active_instances(),
-                    &mut max_w,
-                );
-            }
-            ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
-                let instances = state.current_dir_active_instances();
-                if let Some(entry) = instances.get(*inst_idx) {
-                    push_tree_instance_line(
-                        &mut lines,
-                        entry,
-                        is_selected,
-                        state.list_names_focused,
-                        &mut max_w,
-                    );
-                }
-            }
-            ManagerListRow::SavedWorkspace(i) => {
-                let ws = &state.workspaces[*i];
-                let expanded = state.is_workspace_expanded(*i);
-                let has_instances = state.has_active_instances(*i);
-                push_tree_workspace_line(
-                    &mut lines,
-                    &ws.name,
-                    is_selected,
-                    state.list_names_focused,
-                    PHOSPHOR_GREEN,
-                    expanded,
-                    has_instances,
-                    &mut max_w,
-                );
-            }
-            ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
-                let instances = state.workspace_active_instances(*ws_idx);
-                if let Some(entry) = instances.get(*inst_idx) {
-                    push_tree_instance_line(
-                        &mut lines,
-                        entry,
-                        is_selected,
-                        state.list_names_focused,
-                        &mut max_w,
-                    );
-                }
-            }
-            ManagerListRow::NewWorkspace => {
-                push_tree_workspace_line(
-                    &mut lines,
-                    "+ New workspace",
-                    is_selected,
-                    state.list_names_focused,
-                    WHITE,
-                    false,
-                    false,
-                    &mut max_w,
-                );
-            }
+fn workspace_list_display_row(
+    state: &ManagerState<'_>,
+    row: &ManagerListRow,
+    selected: bool,
+    hovered: bool,
+) -> Option<WorkspaceListDisplayRow> {
+    match row {
+        ManagerListRow::CurrentDirectory => Some(WorkspaceListDisplayRow {
+            label: "Current directory".to_string(),
+            tone: WorkspaceListRowTone::White,
+            expanded: state.current_dir_expanded,
+            has_instances: state.has_current_dir_active_instances(),
+            selected,
+            hovered,
+        }),
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
+            .current_dir_active_instances()
+            .get(*inst_idx)
+            .map(|entry| instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)),
+        ManagerListRow::SavedWorkspace(i) => {
+            let ws = state.workspaces.get(*i)?;
+            Some(WorkspaceListDisplayRow {
+                label: ws.name.clone(),
+                tone: WorkspaceListRowTone::Workspace,
+                expanded: state.is_workspace_expanded(*i),
+                has_instances: state.has_active_instances(*i),
+                selected,
+                hovered,
+            })
         }
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
+            .workspace_active_instances(*ws_idx)
+            .get(*inst_idx)
+            .map(|entry| instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)),
+        ManagerListRow::NewWorkspace => Some(WorkspaceListDisplayRow {
+            label: "+ New workspace".to_string(),
+            tone: WorkspaceListRowTone::White,
+            expanded: false,
+            has_instances: false,
+            selected,
+            hovered,
+        }),
     }
+}
 
-    // Compute scroll range before selected/hover background fill pads rows to
-    // the viewport. Highlight padding is visual only; it must not make a
-    // content-fitting list become horizontally scrollable.
-    let content_w = super::max_line_width(&lines).max(max_w);
-
-    // Extend the selected row's highlight to fill the content width.
-    if let Some(line) = lines.get_mut(visual_selected) {
-        let current_w = super::line_width(line);
-        if current_w < content_w {
-            let bg = if matches!(
-                visual_rows.get(visual_selected),
-                Some(Some(
-                    ManagerListRow::WorkspaceInstance(_, _)
-                        | ManagerListRow::CurrentDirectoryInstance(_)
-                ))
-            ) {
-                CYAN
-            } else {
-                PHOSPHOR_GREEN
-            };
-            line.spans.push(Span::styled(
-                " ".repeat(content_w - current_w),
-                Style::default().bg(bg).fg(Color::Black),
-            ));
-        }
+fn instance_display_row(
+    instance_id: &str,
+    role_key: &str,
+    selected: bool,
+    hovered: bool,
+) -> WorkspaceListDisplayRow {
+    WorkspaceListDisplayRow {
+        label: format!("{instance_id}  {role_key}"),
+        tone: WorkspaceListRowTone::Instance,
+        expanded: false,
+        has_instances: false,
+        selected,
+        hovered,
     }
-
-    // Hover lift: the row under the pointer (when not the selected row) gets a
-    // subtle graphite background — the same "this is clickable" cue the tab
-    // strip uses. Selected wins, so a hovered-and-selected row keeps its strong
-    // highlight.
-    if let Some(hovered) = state.hovered_list_row
-        && let Some(h) = visual_rows.iter().position(|r| *r == Some(hovered))
-        && h != visual_selected
-        && let Some(line) = lines.get_mut(h)
-    {
-        for span in &mut line.spans {
-            span.style = span.style.bg(TAB_BG_INACTIVE_HOVER);
-        }
-        let current_w = super::line_width(line);
-        if current_w < content_w {
-            line.spans.push(Span::styled(
-                " ".repeat(content_w - current_w),
-                Style::default().bg(TAB_BG_INACTIVE_HOVER),
-            ));
-        }
-    }
-
-    (lines, content_w)
 }
 
 fn render_list_names_block(
@@ -376,90 +323,6 @@ fn render_list_name_line(
 ) {
     const PREFIX_COLS: usize = 3;
     super::render_line_with_fixed_prefix_scroll(frame, area, row, line, PREFIX_COLS, scroll_x);
-}
-
-/// Workspace / sentinel row. Shows `▶`/`▼` disclosure arrow only when the
-/// workspace has active instances; rows without instances show no indicator.
-fn push_tree_workspace_line(
-    lines: &mut Vec<Line<'static>>,
-    name: &str,
-    selected: bool,
-    show_cursor: bool,
-    color: Color,
-    expanded: bool,
-    has_instances: bool,
-    max_w: &mut usize,
-) {
-    let cursor = if selected && show_cursor { "▸" } else { " " };
-    // Build line as separate spans so line_width measures display columns
-    // correctly for the ▶/▼ glyphs (same approach as the editor render).
-    let disclosure = Disclosure::for_instances(has_instances, expanded);
-    let line = if let Some(arrow) = disclosure.glyph() {
-        let text_w = 1 + 1 + 1 + jackin_tui::display_cols(name);
-        *max_w = (*max_w).max(text_w);
-        if selected {
-            Line::from(vec![
-                Span::styled(cursor, Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)),
-                Span::styled(arrow, Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)),
-                Span::styled(
-                    format!(" {name}"),
-                    Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
-                ),
-            ])
-        } else {
-            Line::from(vec![
-                Span::styled(cursor, Style::default().fg(color)),
-                Span::styled(arrow, Style::default().fg(color)),
-                Span::styled(format!(" {name}"), Style::default().fg(color)),
-            ])
-        }
-    } else {
-        // Two-space placeholder aligns name column with arrow-rows (cursor+arrow+space = 3).
-        let text_w = 3 + jackin_tui::display_cols(name);
-        *max_w = (*max_w).max(text_w);
-        if selected {
-            Line::from(Span::styled(
-                format!("{cursor}  {name}"),
-                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
-            ))
-        } else {
-            Line::from(Span::styled(
-                format!("{cursor}  {name}"),
-                Style::default().fg(color),
-            ))
-        }
-    };
-    lines.push(line);
-}
-
-/// Indented instance row — shows `instance_id` and `role` only; agent and
-/// status are visible in the right-panel detail pane when the row is selected.
-fn push_tree_instance_line(
-    lines: &mut Vec<Line<'static>>,
-    entry: &crate::instance::InstanceIndexEntry,
-    selected: bool,
-    show_cursor: bool,
-    max_w: &mut usize,
-) {
-    let cursor = if selected && show_cursor { "▸" } else { " " };
-    let label = format!("{}  {}", entry.instance_id, entry.role_key);
-    let text_w = 1 + 4 + jackin_tui::display_cols(&label);
-    *max_w = (*max_w).max(text_w);
-
-    let line = if selected {
-        Line::from(Span::styled(
-            format!("{cursor}    {label}"),
-            Style::default().bg(CYAN).fg(Color::Black),
-        ))
-    } else {
-        Line::from(vec![
-            Span::styled(format!("{cursor}    "), Style::default().fg(CYAN_DIM)),
-            Span::styled(entry.instance_id.clone(), Style::default().fg(CYAN_DIM)),
-            Span::styled("  ", Style::default()),
-            Span::styled(entry.role_key.clone(), Style::default().fg(CYAN)),
-        ])
-    };
-    lines.push(line);
 }
 
 fn render_provider_picker_sidebar(

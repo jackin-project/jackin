@@ -45,6 +45,189 @@ impl Disclosure {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListRowTone {
+    White,
+    Workspace,
+    Instance,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceListDisplayRow {
+    pub label: String,
+    pub tone: WorkspaceListRowTone,
+    pub expanded: bool,
+    pub has_instances: bool,
+    pub selected: bool,
+    pub hovered: bool,
+}
+
+pub fn list_name_lines(
+    visual_rows: &[Option<WorkspaceListDisplayRow>],
+    viewport: usize,
+    show_cursor: bool,
+) -> (Vec<Line<'static>>, usize) {
+    let mut max_w = viewport;
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(visual_rows.len());
+
+    for visual_row in visual_rows {
+        let Some(row) = visual_row else {
+            lines.push(Line::from(""));
+            continue;
+        };
+        match row.tone {
+            WorkspaceListRowTone::Instance => push_tree_instance_line(&mut lines, row, show_cursor, &mut max_w),
+            WorkspaceListRowTone::White | WorkspaceListRowTone::Workspace => {
+                push_tree_workspace_line(&mut lines, row, show_cursor, &mut max_w);
+            }
+        }
+    }
+
+    let content_w = jackin_tui::components::scrollable_panel::max_line_width(&lines).max(max_w);
+
+    if let Some(selected_idx) = visual_rows
+        .iter()
+        .position(|row| row.as_ref().is_some_and(|row| row.selected))
+        && let Some(line) = lines.get_mut(selected_idx)
+    {
+        let current_w = jackin_tui::components::scrollable_panel::line_width(line);
+        if current_w < content_w {
+            let bg = match visual_rows[selected_idx].as_ref().map(|row| row.tone) {
+                Some(WorkspaceListRowTone::Instance) => jackin_tui::theme::CYAN,
+                _ => jackin_tui::theme::PHOSPHOR_GREEN,
+            };
+            line.spans.push(Span::styled(
+                " ".repeat(content_w - current_w),
+                Style::default().bg(bg).fg(Color::Black),
+            ));
+        }
+    }
+
+    if let Some(hovered_idx) = visual_rows
+        .iter()
+        .position(|row| row.as_ref().is_some_and(|row| row.hovered && !row.selected))
+        && let Some(line) = lines.get_mut(hovered_idx)
+    {
+        for span in &mut line.spans {
+            span.style = span.style.bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER);
+        }
+        let current_w = jackin_tui::components::scrollable_panel::line_width(line);
+        if current_w < content_w {
+            line.spans.push(Span::styled(
+                " ".repeat(content_w - current_w),
+                Style::default().bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER),
+            ));
+        }
+    }
+
+    (lines, content_w)
+}
+
+fn row_fg(row: &WorkspaceListDisplayRow) -> Color {
+    match row.tone {
+        WorkspaceListRowTone::White => jackin_tui::theme::WHITE,
+        WorkspaceListRowTone::Workspace => jackin_tui::theme::PHOSPHOR_GREEN,
+        WorkspaceListRowTone::Instance => jackin_tui::theme::CYAN,
+    }
+}
+
+fn push_tree_workspace_line(
+    lines: &mut Vec<Line<'static>>,
+    row: &WorkspaceListDisplayRow,
+    show_cursor: bool,
+    max_w: &mut usize,
+) {
+    let cursor = if row.selected && show_cursor { "▸" } else { " " };
+    let disclosure = Disclosure::for_instances(row.has_instances, row.expanded);
+    let color = row_fg(row);
+    let line = if let Some(arrow) = disclosure.glyph() {
+        let text_w = 1 + 1 + 1 + jackin_tui::display_cols(&row.label);
+        *max_w = (*max_w).max(text_w);
+        if row.selected {
+            Line::from(vec![
+                Span::styled(
+                    cursor,
+                    Style::default()
+                        .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                        .fg(Color::Black),
+                ),
+                Span::styled(
+                    arrow,
+                    Style::default()
+                        .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                        .fg(Color::Black),
+                ),
+                Span::styled(
+                    format!(" {}", row.label),
+                    Style::default()
+                        .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                        .fg(Color::Black),
+                ),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled(cursor, Style::default().fg(color)),
+                Span::styled(arrow, Style::default().fg(color)),
+                Span::styled(format!(" {}", row.label), Style::default().fg(color)),
+            ])
+        }
+    } else {
+        let text_w = 3 + jackin_tui::display_cols(&row.label);
+        *max_w = (*max_w).max(text_w);
+        if row.selected {
+            Line::from(Span::styled(
+                format!("{cursor}  {}", row.label),
+                Style::default()
+                    .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                    .fg(Color::Black),
+            ))
+        } else {
+            Line::from(Span::styled(
+                format!("{cursor}  {}", row.label),
+                Style::default().fg(color),
+            ))
+        }
+    };
+    lines.push(line);
+}
+
+fn push_tree_instance_line(
+    lines: &mut Vec<Line<'static>>,
+    row: &WorkspaceListDisplayRow,
+    show_cursor: bool,
+    max_w: &mut usize,
+) {
+    let cursor = if row.selected && show_cursor { "▸" } else { " " };
+    let text_w = 1 + 4 + jackin_tui::display_cols(&row.label);
+    *max_w = (*max_w).max(text_w);
+
+    let line = if row.selected {
+        Line::from(Span::styled(
+            format!("{cursor}    {}", row.label),
+            Style::default()
+                .bg(jackin_tui::theme::CYAN)
+                .fg(Color::Black),
+        ))
+    } else {
+        let mut parts = row.label.splitn(2, "  ");
+        let instance_id = parts.next().unwrap_or_default();
+        let role_key = parts.next().unwrap_or_default();
+        Line::from(vec![
+            Span::styled(
+                format!("{cursor}    "),
+                Style::default().fg(jackin_tui::theme::CYAN_DIM),
+            ),
+            Span::styled(
+                instance_id.to_string(),
+                Style::default().fg(jackin_tui::theme::CYAN_DIM),
+            ),
+            Span::styled("  ", Style::default()),
+            Span::styled(role_key.to_string(), Style::default().fg(jackin_tui::theme::CYAN)),
+        ])
+    };
+    lines.push(line);
+}
+
 #[must_use]
 pub fn workspace_delete_confirm_state(name: &str) -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::new(format!("Delete \"{name}\"?"))

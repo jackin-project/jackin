@@ -30,10 +30,9 @@ pub(crate) use jackin_tui::components::scrollable_panel::{
     viewport_width as scroll_viewport_width,
 };
 pub(super) use jackin_tui::components::scrollable_panel::{
-    line_width, max_line_width, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
-    render_scrollable_block_at, render_vertical_scrollbar,
+    render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll, render_scrollable_block_at,
+    render_vertical_scrollbar,
 };
-pub(super) use jackin_tui::theme::{CYAN, CYAN_DIM};
 pub(super) use jackin_tui::theme::{
-    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
+    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
 };
