@@ -15,8 +15,10 @@ use crate::console::tui::state::{
 use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use jackin_console::tui::screens::editor::update::{
-    clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
-    editor_tab_move_plan, editor_tab_select_plan, enter_editor_auth_kind_plan,
+    clear_editor_auth_kind_plan, editor_field_selection_plan,
+    editor_mount_row_select_plan, editor_tab_horizontal_scroll_plan, editor_tab_move_plan,
+    editor_tab_select_plan, editor_workspace_mounts_horizontal_scroll_plan,
+    enter_editor_auth_kind_plan,
     set_role_expanded as set_editor_role_expanded,
     toggle_general_selected as toggle_editor_general_row,
     toggle_mount_readonly as toggle_editor_mount_readonly,
@@ -717,9 +719,11 @@ fn scroll_editor_tab_horizontal(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    editor.tab_content_scroll_focused = true;
-    editor.tab_scroll_x =
-        term_width_scroll_plan(editor.tab_scroll_x, delta, term_width, content_width);
+    let plan =
+        editor_tab_horizontal_scroll_plan(editor.tab_scroll_x, delta, term_width, content_width);
+    editor.tab_scroll_x = plan.scroll_x;
+    editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+    editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
 }
 
 fn scroll_editor_workspace_mounts_horizontal(
@@ -731,9 +735,15 @@ fn scroll_editor_workspace_mounts_horizontal(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    editor.workspace_mounts_scroll_focused = true;
-    editor.workspace_mounts_scroll_x =
-        term_width_scroll_plan(editor.workspace_mounts_scroll_x, delta, term_width, content_width);
+    let plan = editor_workspace_mounts_horizontal_scroll_plan(
+        editor.workspace_mounts_scroll_x,
+        delta,
+        term_width,
+        content_width,
+    );
+    editor.workspace_mounts_scroll_x = plan.scroll_x;
+    editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+    editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
 }
 
 fn scroll_settings_global_mounts_horizontal(

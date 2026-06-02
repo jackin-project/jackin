@@ -129,6 +129,51 @@ pub struct EditorScrollFocusPlan {
     pub tab_content_scroll_focused: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorHorizontalScrollPlan {
+    pub scroll_x: u16,
+    pub workspace_mounts_scroll_focused: bool,
+    pub tab_content_scroll_focused: bool,
+}
+
+#[must_use]
+pub fn editor_tab_horizontal_scroll_plan(
+    current_scroll_x: u16,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) -> EditorHorizontalScrollPlan {
+    EditorHorizontalScrollPlan {
+        scroll_x: crate::tui::update::term_width_scroll_plan(
+            current_scroll_x,
+            delta,
+            term_width,
+            content_width,
+        ),
+        workspace_mounts_scroll_focused: false,
+        tab_content_scroll_focused: true,
+    }
+}
+
+#[must_use]
+pub fn editor_workspace_mounts_horizontal_scroll_plan(
+    current_scroll_x: u16,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) -> EditorHorizontalScrollPlan {
+    EditorHorizontalScrollPlan {
+        scroll_x: crate::tui::update::term_width_scroll_plan(
+            current_scroll_x,
+            delta,
+            term_width,
+            content_width,
+        ),
+        workspace_mounts_scroll_focused: true,
+        tab_content_scroll_focused: false,
+    }
+}
+
 #[must_use]
 pub const fn editor_scroll_focus_plan(
     active_tab: EditorTab,
@@ -668,6 +713,26 @@ mod tests {
             editor_scroll_focus_plan(EditorTab::Mounts, true, true, true),
             EditorScrollFocusPlan {
                 workspace_mounts_scroll_focused: false,
+                tab_content_scroll_focused: false,
+            }
+        );
+    }
+
+    #[test]
+    fn editor_horizontal_scroll_plans_update_offset_and_focus() {
+        assert_eq!(
+            editor_tab_horizontal_scroll_plan(0, 5, 10, 30),
+            EditorHorizontalScrollPlan {
+                scroll_x: 5,
+                workspace_mounts_scroll_focused: false,
+                tab_content_scroll_focused: true,
+            }
+        );
+        assert_eq!(
+            editor_workspace_mounts_horizontal_scroll_plan(0, 5, 10, 30),
+            EditorHorizontalScrollPlan {
+                scroll_x: 5,
+                workspace_mounts_scroll_focused: true,
                 tab_content_scroll_focused: false,
             }
         );
