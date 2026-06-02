@@ -351,10 +351,7 @@ pub(crate) fn open_role_resolution_error(
         },
     );
     editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::error_popup_state(
-            "Load role failed",
-            message,
-        ),
+        state: jackin_console::tui::components::error_popup::role_load_error_popup_state(message),
     });
 }
 
@@ -364,20 +361,14 @@ pub(crate) fn open_editor_action_error(
 ) {
     crate::debug_log!("editor", "failed to apply confirmed editor action: {err}");
     editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::error_popup_state(
-            "Could not apply change",
-            format!("The change could not be saved.\n\n{err}"),
-        ),
+        state: jackin_console::tui::components::error_popup::editor_action_error_popup_state(err),
     });
 }
 
 pub(crate) fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
     crate::debug_log!("role", "showing direct role-load error popup: {message}");
     editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::error_popup_state(
-            "Load role failed",
-            message,
-        ),
+        state: jackin_console::tui::components::error_popup::role_load_error_popup_state(message),
     });
 }
 
