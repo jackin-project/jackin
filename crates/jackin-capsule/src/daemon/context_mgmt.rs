@@ -382,18 +382,13 @@ impl Multiplexer {
         mode == PullRequestLookupMode::RespectCache && self.pull_request_cache_is_fresh(branch, now)
     }
 
-    /// Current branch for the chrome bar, filtered to `None` when the
-    /// operator is on the repo's default branch (resolved at startup
-    /// from `origin/HEAD`). Centralising the filter at the render
-    /// callsite means the renderer / layout / hit-test helpers can
-    /// stay default-branch-agnostic and remain straightforward to
-    /// unit-test with literal branch names.
+    /// Current branch for the chrome bar. Daemon supplies Git/default-branch
+    /// facts; the TUI component owns the visible filtering rule.
     pub(super) fn context_bar_branch(&self) -> Option<&str> {
         let branch = self.pull_request_context_branch.as_deref()?;
-        if self.workdir_context.is_default_branch(branch) {
-            None
-        } else {
-            Some(branch)
-        }
+        crate::tui::components::branch_context_bar::visible_branch(
+            Some(branch),
+            self.workdir_context.is_default_branch(branch),
+        )
     }
 }

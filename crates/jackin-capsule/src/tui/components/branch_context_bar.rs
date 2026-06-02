@@ -143,6 +143,10 @@ pub(crate) struct BranchContextBarLayout {
     pub(crate) container_region: Option<ColRange>,
 }
 
+pub(crate) fn visible_branch<'a>(branch: Option<&'a str>, is_default_branch: bool) -> Option<&'a str> {
+    branch.filter(|_| !is_default_branch)
+}
+
 pub(crate) fn branch_context_bar_layout(
     term_rows: u16,
     term_cols: u16,
@@ -154,9 +158,8 @@ pub(crate) fn branch_context_bar_layout(
     if term_rows == 0 || term_cols == 0 {
         return None;
     }
-    // `branch` is the post-filter result from `Multiplexer::context_bar_branch`
-    // (default-branch suppression already applied with the smart
-    // `WorkdirContext::is_default_branch` check). Trust the input here.
+    // `branch` is the post-filter visible branch. Trust the input here so
+    // renderer / layout / hit-test helpers stay default-branch-agnostic.
     let (left, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
@@ -479,5 +482,12 @@ mod tests {
             branch_context_bar_hit(24, 2, 24, 80, None, None, false, "jk-test-container"),
             None
         );
+    }
+
+    #[test]
+    fn visible_branch_suppresses_default_branch_only() {
+        assert_eq!(visible_branch(Some("main"), true), None);
+        assert_eq!(visible_branch(Some("feature/tui"), false), Some("feature/tui"));
+        assert_eq!(visible_branch(None, false), None);
     }
 }
