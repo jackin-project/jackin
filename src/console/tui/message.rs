@@ -15,8 +15,8 @@ use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use jackin_console::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan,
-    editor_mount_row_select_plan, editor_tab_horizontal_scroll_plan, editor_tab_move_plan,
-    editor_tab_select_plan, editor_workspace_mounts_horizontal_scroll_plan,
+    editor_mount_row_select_plan, editor_tab_bar_focus_plan, editor_tab_horizontal_scroll_plan,
+    editor_tab_move_plan, editor_tab_select_plan, editor_workspace_mounts_horizontal_scroll_plan,
     enter_editor_auth_kind_plan,
     set_role_expanded as set_editor_role_expanded,
     toggle_general_selected as toggle_editor_general_row,
@@ -27,9 +27,9 @@ use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
     set_role_expanded as set_settings_role_expanded, settings_auth_selection_plan,
     settings_env_selection_plan, settings_global_mounts_selection_plan,
-    settings_horizontal_scroll_plan, settings_tab_move_plan, settings_tab_select_plan,
-    settings_trust_row_select_plan, settings_trust_selection_plan, toggle_general_selected,
-    toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    settings_horizontal_scroll_plan, settings_tab_bar_focus_plan, settings_tab_move_plan,
+    settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
+    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
@@ -424,14 +424,14 @@ const fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    editor.tab_bar_focused = focused;
+    editor.tab_bar_focused = editor_tab_bar_focus_plan(focused);
 }
 
 const fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.tab_bar_focused = focused;
+    settings.tab_bar_focused = settings_tab_bar_focus_plan(focused);
 }
 
 const fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {

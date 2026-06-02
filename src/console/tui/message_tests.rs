@@ -64,6 +64,42 @@ fn preview_focus_messages_toggle_preview_focus() {
 }
 
 #[test]
+fn tab_bar_focus_messages_update_editor_and_settings_focus() {
+    let mut state = state_with_saved_count(0);
+    state.stage = ManagerStage::Editor(EditorState::new_edit(
+        "workspace".into(),
+        crate::workspace::WorkspaceConfig::default(),
+    ));
+
+    assert!(update_manager(&mut state, ManagerMessage::FocusEditorTabBar).is_dirty());
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("expected editor");
+    };
+    assert!(editor.tab_bar_focused);
+
+    assert!(update_manager(&mut state, ManagerMessage::FocusEditorContent).is_dirty());
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("expected editor");
+    };
+    assert!(!editor.tab_bar_focused);
+
+    state.stage = ManagerStage::Settings(SettingsState::from_config(
+        &crate::config::AppConfig::default(),
+    ));
+    assert!(update_manager(&mut state, ManagerMessage::FocusSettingsTabBar).is_dirty());
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("expected settings");
+    };
+    assert!(settings.tab_bar_focused);
+
+    assert!(update_manager(&mut state, ManagerMessage::FocusSettingsContent).is_dirty());
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("expected settings");
+    };
+    assert!(!settings.tab_bar_focused);
+}
+
+#[test]
 fn mouse_selection_messages_update_tabs_and_rows() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(

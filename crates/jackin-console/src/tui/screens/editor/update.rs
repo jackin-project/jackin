@@ -36,6 +36,11 @@ pub struct EditorTabMovePlan {
 }
 
 #[must_use]
+pub const fn editor_tab_bar_focus_plan(focused: bool) -> bool {
+    focused
+}
+
+#[must_use]
 pub const fn editor_tab_move_plan(
     active_tab: EditorTab,
     delta: isize,
@@ -647,6 +652,12 @@ mod tests {
                 clear_secret_view_state: true,
             }
         );
+    }
+
+    #[test]
+    fn editor_tab_bar_focus_plan_returns_requested_focus() {
+        assert!(editor_tab_bar_focus_plan(true));
+        assert!(!editor_tab_bar_focus_plan(false));
     }
 
     #[test]

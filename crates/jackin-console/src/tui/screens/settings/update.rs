@@ -60,6 +60,11 @@ pub const fn settings_tab_select_plan(selected_tab: SettingsTab) -> SettingsTabM
 }
 
 #[must_use]
+pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
+    focused
+}
+
+#[must_use]
 pub const fn settings_auth_detail_row_count(kind: AuthKind, mode: AuthMode) -> usize {
     if auth_mode_requires_credential(kind, mode) {
         2
@@ -629,6 +634,12 @@ mod tests {
                 tab_bar_focused: true,
             }
         );
+    }
+
+    #[test]
+    fn settings_tab_bar_focus_plan_returns_requested_focus() {
+        assert!(settings_tab_bar_focus_plan(true));
+        assert!(!settings_tab_bar_focus_plan(false));
     }
 
     #[test]
