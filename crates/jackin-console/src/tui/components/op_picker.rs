@@ -128,6 +128,30 @@ pub fn disconnected_worker_error_state() -> OpLoadState {
     recoverable_load_error_state(background_worker_disconnected_error_message())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpPickerBlockedLoadKeyPlan {
+    Cancel,
+    Continue,
+}
+
+pub fn blocked_load_key_plan(
+    load_state: &OpLoadState,
+    is_escape: bool,
+) -> Option<OpPickerBlockedLoadKeyPlan> {
+    match load_state {
+        OpLoadState::Loading { .. } | OpLoadState::Error(OpPickerError::Fatal(_)) => {
+            Some(if is_escape {
+                OpPickerBlockedLoadKeyPlan::Cancel
+            } else {
+                OpPickerBlockedLoadKeyPlan::Continue
+            })
+        }
+        OpLoadState::Idle | OpLoadState::Ready | OpLoadState::Error(OpPickerError::Recoverable { .. }) => {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum OpPickerFatalState {
     NotInstalled,
@@ -1690,6 +1714,45 @@ mod tests {
             OpLoadState::Error(OpPickerError::Recoverable { message })
                 if message == background_worker_disconnected_error_message()
         ));
+    }
+
+    #[test]
+    fn blocked_load_key_plan_cancels_loading_or_fatal_on_escape() {
+        assert_eq!(
+            blocked_load_key_plan(&OpLoadState::Loading { spinner_tick: 0 }, true),
+            Some(OpPickerBlockedLoadKeyPlan::Cancel)
+        );
+        assert_eq!(
+            blocked_load_key_plan(
+                &OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NoVaults)),
+                true,
+            ),
+            Some(OpPickerBlockedLoadKeyPlan::Cancel)
+        );
+    }
+
+    #[test]
+    fn blocked_load_key_plan_continues_loading_or_fatal_on_other_keys() {
+        assert_eq!(
+            blocked_load_key_plan(&OpLoadState::Loading { spinner_tick: 0 }, false),
+            Some(OpPickerBlockedLoadKeyPlan::Continue)
+        );
+        assert_eq!(
+            blocked_load_key_plan(
+                &OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NoVaults)),
+                false,
+            ),
+            Some(OpPickerBlockedLoadKeyPlan::Continue)
+        );
+    }
+
+    #[test]
+    fn blocked_load_key_plan_ignores_ready_and_recoverable_states() {
+        assert_eq!(blocked_load_key_plan(&OpLoadState::Ready, true), None);
+        assert_eq!(
+            blocked_load_key_plan(&recoverable_load_error_state("temporary failure"), true),
+            None
+        );
     }
 
     #[test]

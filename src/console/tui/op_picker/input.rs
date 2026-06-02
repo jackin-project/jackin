@@ -9,17 +9,16 @@ use jackin_tui::ModalOutcome;
 
 use super::{
     AccountStageCommitPlan, FieldStageCommitPlan,
-    ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError, OpPickerSelection,
-    OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan,
-    VaultStageBackPlan, VaultStageCommitPlan, account_stage_commit_plan,
-    account_stage_refresh_plan, existing_field_commit_plan, existing_field_commit_selection,
+    ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerBlockedLoadKeyPlan, OpPickerSelection,
+    OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan,
+    VaultStageCommitPlan, account_stage_commit_plan, account_stage_refresh_plan,
+    blocked_load_key_plan, existing_field_commit_plan, existing_field_commit_selection,
     ExistingFieldCommitSelectionInput, field_label_cancel_plan, field_label_commit_plan,
     field_label_commit_selection, field_stage_back_plan, field_stage_commit_plan,
     field_stage_refresh_plan, filter_reset_selection_for_stage, item_stage_back_plan,
     item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
     new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
-    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
-    vault_stage_refresh_plan,
+    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan, vault_stage_refresh_plan,
 };
 
 impl OpPickerState {
@@ -33,19 +32,10 @@ impl OpPickerState {
             _ => {}
         }
 
-        if matches!(self.load_state, OpLoadState::Error(OpPickerError::Fatal(_))) {
-            return if matches!(key.code, KeyCode::Esc) {
-                ModalOutcome::Cancel
-            } else {
-                ModalOutcome::Continue
-            };
-        }
-
-        if matches!(self.load_state, OpLoadState::Loading { .. }) {
-            return if matches!(key.code, KeyCode::Esc) {
-                ModalOutcome::Cancel
-            } else {
-                ModalOutcome::Continue
+        if let Some(plan) = blocked_load_key_plan(&self.load_state, matches!(key.code, KeyCode::Esc)) {
+            return match plan {
+                OpPickerBlockedLoadKeyPlan::Cancel => ModalOutcome::Cancel,
+                OpPickerBlockedLoadKeyPlan::Continue => ModalOutcome::Continue,
             };
         }
 
