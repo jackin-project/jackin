@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "../codebase-readability",
+    "../agent-runtime-trait",
     "../pr-verification",
     "../tui-architecture",
     "(phase-1-docs-setup)",
