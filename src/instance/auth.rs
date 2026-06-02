@@ -511,89 +511,13 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
-        use anyhow::Context;
-
-        // `reject_symlink` no-ops on ENOENT, so no pre-stat needed.
-        reject_symlink(secrets_json)?;
-
-        let host_secrets = host_home.join(".local/share/amp/secrets.json");
-        let outcome = match mode {
-            // Parser-rejected for Amp. Defensive arm: wipe + log loudly
-            // so a parser bypass cannot leak prior Sync residue.
-            AuthForwardMode::OAuthToken => {
-                eprintln!(
-                    "[jackin] internal: provision_amp_auth received unsupported \
-                     OAuthToken mode for Amp — parser invariant bypassed; \
-                     wiping role state and falling back to token-mode."
-                );
-                wipe_agent_file_state(secrets_json, "Amp secrets.json")?;
-                AuthProvisionOutcome::TokenMode
-            }
-            AuthForwardMode::ApiKey => {
-                wipe_agent_file_state(secrets_json, "Amp secrets.json")?;
-                AuthProvisionOutcome::TokenMode
-            }
-            AuthForwardMode::Ignore => {
-                wipe_agent_file_state(secrets_json, "Amp secrets.json")?;
-                AuthProvisionOutcome::Skipped
-            }
-            AuthForwardMode::Sync => match std::fs::read_to_string(&host_secrets) {
-                Ok(content) if content.trim().is_empty() => {
-                    // Empty/whitespace host file would otherwise silently
-                    // copy as Synced and the agent would re-prompt login
-                    // inside the container with no breadcrumb.
-                    eprintln!(
-                        "[jackin] host {} is empty/whitespace — treating as host-missing",
-                        host_secrets.display()
-                    );
-                    if secrets_json.exists() {
-                        repair_permissions(secrets_json);
-                    }
-                    AuthProvisionOutcome::HostMissing
-                }
-                Ok(content) => {
-                    write_private_file(secrets_json, &content).with_context(|| {
-                        format!(
-                            "failed to write Amp role-state secrets.json at {}",
-                            secrets_json.display()
-                        )
-                    })?;
-                    AuthProvisionOutcome::Synced
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    if secrets_json.exists() {
-                        repair_permissions(secrets_json);
-                    }
-                    AuthProvisionOutcome::HostMissing
-                }
-                Err(e) => {
-                    // Preserve `io::Error` source chain so `{e:#}` /
-                    // `--debug` exposes the kind (PermissionDenied,
-                    // NotADirectory) instead of misdiagnosing as
-                    // host-missing.
-                    let hint = match e.kind() {
-                        std::io::ErrorKind::PermissionDenied => {
-                            " (check host file permissions on the parent dir)"
-                        }
-                        _ => "",
-                    };
-                    return Err(anyhow::Error::new(e).context(format!(
-                        "failed to read host {}{}",
-                        host_secrets.display(),
-                        hint
-                    )));
-                }
-            },
-        };
-
-        let mounted_secrets_json = match outcome {
-            AuthProvisionOutcome::Synced => Some(secrets_json.to_path_buf()),
-            AuthProvisionOutcome::Skipped => None,
-            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
-                secrets_json.exists().then(|| secrets_json.to_path_buf())
-            }
-        };
-        Ok((outcome, mounted_secrets_json))
+        provision_single_file_credential(
+            secrets_json,
+            &host_home.join(".local/share/amp/secrets.json"),
+            mode,
+            "Amp secrets.json",
+            "Amp",
+        )
     }
 }
 
@@ -748,80 +672,105 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
-        use anyhow::Context;
-
-        reject_symlink(auth_json)?;
-
-        let host_auth = host_home.join(".local/share/opencode/auth.json");
-        let outcome = match mode {
-            AuthForwardMode::OAuthToken => {
-                eprintln!(
-                    "[jackin] internal: provision_opencode_auth received unsupported \
-                     OAuthToken mode for OpenCode — parser invariant bypassed; \
-                     wiping role state and falling back to token-mode."
-                );
-                wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
-                AuthProvisionOutcome::TokenMode
-            }
-            AuthForwardMode::ApiKey => {
-                wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
-                AuthProvisionOutcome::TokenMode
-            }
-            AuthForwardMode::Ignore => {
-                wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
-                AuthProvisionOutcome::Skipped
-            }
-            AuthForwardMode::Sync => match std::fs::read_to_string(&host_auth) {
-                Ok(content) if content.trim().is_empty() => {
-                    eprintln!(
-                        "[jackin] host {} is empty/whitespace — treating as host-missing",
-                        host_auth.display()
-                    );
-                    if auth_json.exists() {
-                        repair_permissions(auth_json);
-                    }
-                    AuthProvisionOutcome::HostMissing
-                }
-                Ok(content) => {
-                    write_private_file(auth_json, &content).with_context(|| {
-                        format!(
-                            "failed to write OpenCode role-state auth.json at {}",
-                            auth_json.display()
-                        )
-                    })?;
-                    AuthProvisionOutcome::Synced
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    if auth_json.exists() {
-                        repair_permissions(auth_json);
-                    }
-                    AuthProvisionOutcome::HostMissing
-                }
-                Err(e) => {
-                    let hint = match e.kind() {
-                        std::io::ErrorKind::PermissionDenied => {
-                            " (check host file permissions on the parent dir)"
-                        }
-                        _ => "",
-                    };
-                    return Err(anyhow::Error::new(e).context(format!(
-                        "failed to read host {}{}",
-                        host_auth.display(),
-                        hint
-                    )));
-                }
-            },
-        };
-
-        let mounted_auth_json = match outcome {
-            AuthProvisionOutcome::Synced => Some(auth_json.to_path_buf()),
-            AuthProvisionOutcome::Skipped => None,
-            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
-                auth_json.exists().then(|| auth_json.to_path_buf())
-            }
-        };
-        Ok((outcome, mounted_auth_json))
+        provision_single_file_credential(
+            auth_json,
+            &host_home.join(".local/share/opencode/auth.json"),
+            mode,
+            "OpenCode auth.json",
+            "OpenCode",
+        )
     }
+}
+
+/// Shared file-credential provisioner for agents that use a single JSON
+/// credential file with standard `AuthForwardMode` semantics.
+///
+/// Used by `provision_amp_auth` and `provision_opencode_auth`. Claude has
+/// two credential files and a token-mode skeleton, so it does not use this
+/// path. Codex does not have the empty-content check, so it also stays
+/// separate for now.
+///
+/// `label` is the human-readable file name ("Amp secrets.json") for error
+/// messages. `agent_name` identifies the agent in the parser-bypass log.
+fn provision_single_file_credential(
+    target: &Path,
+    host_path: &std::path::PathBuf,
+    mode: AuthForwardMode,
+    label: &str,
+    agent_name: &str,
+) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    use anyhow::Context;
+
+    reject_symlink(target)?;
+
+    let outcome = match mode {
+        AuthForwardMode::OAuthToken => {
+            eprintln!(
+                "[jackin] internal: provision_{agent_name}_auth received unsupported \
+                 OAuthToken mode — parser invariant bypassed; \
+                 wiping role state and falling back to token-mode."
+            );
+            wipe_agent_file_state(target, label)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::ApiKey => {
+            wipe_agent_file_state(target, label)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::Ignore => {
+            wipe_agent_file_state(target, label)?;
+            AuthProvisionOutcome::Skipped
+        }
+        AuthForwardMode::Sync => match std::fs::read_to_string(host_path) {
+            Ok(content) if content.trim().is_empty() => {
+                eprintln!(
+                    "[jackin] host {} is empty/whitespace — treating as host-missing",
+                    host_path.display()
+                );
+                if target.exists() {
+                    repair_permissions(target);
+                }
+                AuthProvisionOutcome::HostMissing
+            }
+            Ok(content) => {
+                write_private_file(target, &content).with_context(|| {
+                    format!(
+                        "failed to write {agent_name} role-state {label} at {}",
+                        target.display()
+                    )
+                })?;
+                AuthProvisionOutcome::Synced
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                if target.exists() {
+                    repair_permissions(target);
+                }
+                AuthProvisionOutcome::HostMissing
+            }
+            Err(e) => {
+                let hint = match e.kind() {
+                    std::io::ErrorKind::PermissionDenied => {
+                        " (check host file permissions on the parent dir)"
+                    }
+                    _ => "",
+                };
+                return Err(anyhow::Error::new(e).context(format!(
+                    "failed to read host {}{}",
+                    host_path.display(),
+                    hint
+                )));
+            }
+        },
+    };
+
+    let mounted = match outcome {
+        AuthProvisionOutcome::Synced => Some(target.to_path_buf()),
+        AuthProvisionOutcome::Skipped => None,
+        AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+            target.exists().then(|| target.to_path_buf())
+        }
+    };
+    Ok((outcome, mounted))
 }
 
 /// Wipe a single credential file from role state.
