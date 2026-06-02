@@ -8,7 +8,10 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::domain::{InstanceRefreshSnapshot, app_github_env, role_override_present};
+use crate::console::domain::{
+    InstanceRefreshSnapshot, app_github_env, eligible_role_keys_for_override,
+    panel_mode_requires_credential, role_override_present,
+};
 use crate::console::tui::effect::ManagerEffect;
 use jackin_console::tui::auth::{AuthKind, auth_mode_requires_credential};
 use crate::operator_env::OpCache;
@@ -458,7 +461,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
         editor.pending.allowed_roles.len(),
         &editor.auth_expanded,
         |kind, role| role_override_present(*kind, role),
-        |kind, role| effective_mode_needs_credential(&synthesized, &ws_name, role, *kind),
+        |kind, role| panel_mode_requires_credential(&synthesized, &ws_name, role, *kind),
     )
 }
 
@@ -482,29 +485,11 @@ pub fn settings_env_state_flat_rows(state: &SettingsEnvState<'_>) -> Vec<Setting
     )
 }
 
-fn effective_mode_needs_credential(
-    synthesized: &AppConfig,
-    ws_name: &str,
-    role: &str,
-    kind: AuthKind,
-) -> bool {
-    let mode = crate::console::domain::resolve_panel_mode(synthesized, kind, ws_name, role);
-    kind.required_env_var(mode).is_some()
-}
-
-/// Mirrors launch-time semantics from
-/// [`crate::app::context::eligible_roles_for_workspace`]. Roles
-/// already carrying an override are NOT filtered — operators may add
-/// more keys to an existing override.
 pub(crate) fn eligible_agents_for_override(
     editor: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<String> {
-    if editor.pending.allowed_roles.is_empty() {
-        config.roles.keys().cloned().collect()
-    } else {
-        editor.pending.allowed_roles.clone()
-    }
+    eligible_role_keys_for_override(config, &editor.pending)
 }
 
 /// Merge live global blocks with `editor.pending` for the active

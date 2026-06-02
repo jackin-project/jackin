@@ -88,6 +88,28 @@ pub fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, crate::operator_env::
 }
 
 #[must_use]
+pub fn panel_mode_requires_credential(
+    cfg: &AppConfig,
+    workspace: &str,
+    role: &str,
+    kind: AuthKind,
+) -> bool {
+    let mode = resolve_panel_mode(cfg, kind, workspace, role);
+    kind.required_env_var(mode).is_some()
+}
+
+/// Roles already carrying an override stay eligible: operators may add
+/// more keys to an existing override.
+#[must_use]
+pub fn eligible_role_keys_for_override(cfg: &AppConfig, workspace: &WorkspaceConfig) -> Vec<String> {
+    if workspace.allowed_roles.is_empty() {
+        cfg.roles.keys().cloned().collect()
+    } else {
+        workspace.allowed_roles.clone()
+    }
+}
+
+#[must_use]
 pub const fn auth_mode_from_auth_forward(mode: AuthForwardMode) -> AuthMode {
     match mode {
         AuthForwardMode::Sync => AuthMode::Sync,
@@ -777,6 +799,48 @@ mod tests {
         cfg.github = Some(github.clone());
 
         assert_eq!(app_github_env(&cfg), github.env);
+    }
+
+    #[test]
+    fn panel_mode_requires_credential_reads_effective_mode() {
+        let cfg = AppConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Token,
+                ..Default::default()
+            }),
+            ..AppConfig::default()
+        };
+
+        assert!(panel_mode_requires_credential(
+            &cfg,
+            "workspace",
+            "",
+            AuthKind::Github
+        ));
+        assert!(!panel_mode_requires_credential(
+            &cfg,
+            "workspace",
+            "",
+            AuthKind::Claude
+        ));
+    }
+
+    #[test]
+    fn eligible_role_keys_for_override_uses_allowed_or_all_roles() {
+        let mut cfg = AppConfig::default();
+        cfg.roles.insert("alpha".into(), RoleSource::default());
+        cfg.roles.insert("beta".into(), RoleSource::default());
+
+        let mut workspace = WorkspaceConfig::default();
+        let mut eligible = eligible_role_keys_for_override(&cfg, &workspace);
+        eligible.sort();
+        assert_eq!(eligible, vec!["alpha".to_string(), "beta".to_string()]);
+
+        workspace.allowed_roles = vec!["ghost".into()];
+        assert_eq!(
+            eligible_role_keys_for_override(&cfg, &workspace),
+            vec!["ghost".to_string()]
+        );
     }
 
     #[test]
