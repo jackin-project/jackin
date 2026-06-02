@@ -89,7 +89,7 @@ pub(crate) fn clamp_list_scroll_for_area(
         state.list_names_focused = true;
     }
 
-    let left_viewport_w = scroll_viewport_width(columns.names);
+    let left_viewport_w = jackin_console::tui::layout::scroll_viewport_width(columns.names);
     let name_content_w = list_names_content_width(state, left_viewport_w);
     jackin_console::tui::list_geometry::clamp_list_names_scroll(
         columns.names,
@@ -148,10 +148,6 @@ fn focused_block_still_scrollable(
         sidebar_scroll_focus(focus),
         areas,
     )
-}
-
-fn scroll_viewport_width(area: Rect) -> usize {
-    jackin_tui::components::scrollable_panel::viewport_width(area)
 }
 
 fn list_row_width(
