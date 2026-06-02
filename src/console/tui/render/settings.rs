@@ -22,9 +22,9 @@ use jackin_console::tui::components::editor_rows::{
 };
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
 use jackin_console::tui::screens::settings::view::{
-    SettingsAuthLineRow, auth_lines as settings_auth_lines, env_lines as settings_env_lines,
-    general_lines as settings_general_lines, global_mount_lines as settings_global_mount_lines,
-    settings_frame_areas, tab_labels,
+    SettingsAuthLineRow, SettingsAuthSourceValue, auth_lines as settings_auth_lines,
+    auth_source_display, env_lines as settings_env_lines, general_lines as settings_general_lines,
+    global_mount_lines as settings_global_mount_lines, settings_frame_areas, tab_labels,
     trust_lines as settings_trust_lines,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
@@ -224,16 +224,14 @@ fn settings_auth_source_display(
 ) -> AuthSourceDisplay {
     use crate::console::tui::auth_panel::mode_str;
 
-    match settings_auth_source_value(state, kind, env_name) {
-        Some(EnvValue::Plain(value)) if !value.is_empty() => AuthSourceDisplay::MaskedPlain {
-            chars: value.chars().count(),
-        },
-        Some(EnvValue::OpRef(op_ref)) => AuthSourceDisplay::OpRefPath(op_ref.path.clone()),
-        _ => AuthSourceDisplay::Unset {
-            env_name: env_name.to_string(),
-            mode_label: mode_str(mode).to_string(),
-        },
-    }
+    auth_source_display(
+        settings_auth_source_value(state, kind, env_name).map(|value| match value {
+            EnvValue::Plain(value) => SettingsAuthSourceValue::Plain(value.clone()),
+            EnvValue::OpRef(op_ref) => SettingsAuthSourceValue::OpRefPath(op_ref.path.clone()),
+        }),
+        env_name,
+        mode_str(mode),
+    )
 }
 
 fn settings_auth_source_value<'a>(
