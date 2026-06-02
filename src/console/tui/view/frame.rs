@@ -7,8 +7,9 @@ use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
 use jackin_console::tui::view::{
-    delete_confirm_area, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
-    settings_error_area, status_overlay_area, workspace_frame_areas,
+    ModalOverlayState, delete_confirm_area, modal_overlay_visible, purge_confirm_area,
+    render_footer, render_header, render_modal_backdrop, settings_error_area, status_overlay_area,
+    workspace_frame_areas,
 };
 use jackin_tui::HintSpan;
 
@@ -121,19 +122,25 @@ pub fn render(
 }
 
 fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
-    if state.status_overlay.is_some() {
-        return true;
-    }
+    let mut overlay = ModalOverlayState {
+        status_overlay: state.status_overlay.is_some(),
+        ..ModalOverlayState::default()
+    };
     match &state.stage {
-        ManagerStage::List => state.list_modal.is_some(),
-        ManagerStage::Editor(editor) => editor.modal.is_some(),
+        ManagerStage::List => overlay.list_modal = state.list_modal.is_some(),
+        ManagerStage::Editor(editor) => overlay.editor_modal = editor.modal.is_some(),
         ManagerStage::Settings(settings) => {
-            settings.error_popup.is_some()
-                || settings.mounts.modal.is_some()
-                || settings.env.modal.is_some()
-                || settings.auth.modal.is_some()
+            overlay.settings_error = settings.error_popup.is_some();
+            overlay.settings_mounts_modal = settings.mounts.modal.is_some();
+            overlay.settings_env_modal = settings.env.modal.is_some();
+            overlay.settings_auth_modal = settings.auth.modal.is_some();
         }
-        ManagerStage::CreatePrelude(prelude) => prelude.modal.is_some(),
-        ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => true,
+        ManagerStage::CreatePrelude(prelude) => {
+            overlay.create_prelude_modal = prelude.modal.is_some();
+        }
+        ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
+            overlay.destructive_confirm = true;
+        }
     }
+    modal_overlay_visible(overlay)
 }

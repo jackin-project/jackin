@@ -12,6 +12,32 @@ pub struct WorkspaceFrameAreas {
     pub footer: Rect,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ModalOverlayState {
+    pub status_overlay: bool,
+    pub list_modal: bool,
+    pub editor_modal: bool,
+    pub settings_error: bool,
+    pub settings_mounts_modal: bool,
+    pub settings_env_modal: bool,
+    pub settings_auth_modal: bool,
+    pub create_prelude_modal: bool,
+    pub destructive_confirm: bool,
+}
+
+#[must_use]
+pub const fn modal_overlay_visible(state: ModalOverlayState) -> bool {
+    state.status_overlay
+        || state.list_modal
+        || state.editor_modal
+        || state.settings_error
+        || state.settings_mounts_modal
+        || state.settings_env_modal
+        || state.settings_auth_modal
+        || state.create_prelude_modal
+        || state.destructive_confirm
+}
+
 #[must_use]
 pub fn workspace_frame_areas(area: Rect) -> WorkspaceFrameAreas {
     let chunks = Layout::default()
@@ -91,5 +117,22 @@ mod tests {
         assert_eq!(purge_confirm_area(area).height, 9);
         assert_eq!(status_overlay_area(area).width, 50);
         assert_eq!(status_overlay_area(area).height, 7);
+    }
+
+    #[test]
+    fn modal_overlay_visible_tracks_any_modal_fact() {
+        assert!(!modal_overlay_visible(ModalOverlayState::default()));
+        assert!(modal_overlay_visible(ModalOverlayState {
+            status_overlay: true,
+            ..ModalOverlayState::default()
+        }));
+        assert!(modal_overlay_visible(ModalOverlayState {
+            settings_auth_modal: true,
+            ..ModalOverlayState::default()
+        }));
+        assert!(modal_overlay_visible(ModalOverlayState {
+            destructive_confirm: true,
+            ..ModalOverlayState::default()
+        }));
     }
 }
