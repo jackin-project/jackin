@@ -2546,10 +2546,14 @@ impl CreatePreludeState<'_> {
 
     /// Default mount dst = same absolute path as host src. Operator can
     /// overwrite in the dst modal.
-    pub fn default_mount_dst(&self) -> Option<String> {
-        self.pending_mount_src
+    pub fn default_mount_dst(&self) -> String {
+        let src_display = self
+            .pending_mount_src
             .as_ref()
-            .map(|p| p.display().to_string())
+            .map(|path| path.display().to_string());
+        jackin_console::tui::screens::workspaces::view::create_prelude_mount_destination_default(
+            src_display.as_deref(),
+        )
     }
 
     pub fn accept_mount_dst(&mut self, dst: String, readonly: bool) {
@@ -2564,12 +2568,10 @@ impl CreatePreludeState<'_> {
     }
 
     /// Default name = mount dst basename.
-    pub fn default_name(&self) -> Option<String> {
-        self.pending_mount_dst.as_ref().and_then(|dst| {
-            std::path::Path::new(dst)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-        })
+    pub fn default_name(&self) -> String {
+        jackin_console::tui::screens::workspaces::view::create_prelude_workspace_name_default(
+            self.pending_mount_dst.as_deref(),
+        )
     }
 
     pub fn accept_name(&mut self, name: String) {

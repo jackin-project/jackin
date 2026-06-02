@@ -12,7 +12,8 @@ use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::workspaces::view::{
-    create_prelude_mount_destination_input_state, create_prelude_mount_dst_choice_state,
+    create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,
+    create_prelude_mount_dst_choice_state,
     create_prelude_workdir_pick_state, create_prelude_workspace_name_input_state,
 };
 
@@ -163,7 +164,7 @@ pub(super) fn handle_prelude_modal(
                 ModalOutcome::Commit(MountDstChoice::SamePath) => {
                     // Fast path: dst = src, skip TextInput, chain straight
                     // to WorkdirPick (mirrors the post-TextInputDst tail).
-                    let default_dst = prelude.default_mount_dst().unwrap_or_default();
+                    let default_dst = prelude.default_mount_dst();
                     prelude.modal = None;
                     prelude.used_edit_dst = false;
                     prelude.accept_mount_dst(default_dst, false);
@@ -173,7 +174,7 @@ pub(super) fn handle_prelude_modal(
                     // Re-enter today's flow: open TextInput pre-filled with
                     // the host path. The TextInputDst branch below handles
                     // the advance to WorkdirPick once the operator commits.
-                    let default_dst = prelude.default_mount_dst().unwrap_or_default();
+                    let default_dst = prelude.default_mount_dst();
                     prelude.used_edit_dst = true;
                     prelude.modal = Some(Modal::TextInput {
                         target: TextInputTarget::MountDst,
@@ -221,7 +222,7 @@ pub(super) fn handle_prelude_modal(
                 ModalOutcome::Commit(workdir) => {
                     prelude.modal = None;
                     prelude.accept_workdir(workdir);
-                    let default_name = prelude.default_name().unwrap_or_default();
+                    let default_name = prelude.default_name();
                     prelude.modal = Some(Modal::TextInput {
                         target: TextInputTarget::Name,
                         state: create_prelude_workspace_name_input_state(default_name),
@@ -274,11 +275,11 @@ pub(super) fn handle_prelude_modal(
 /// Used by step-back navigation from `TextInputDst` / `WorkdirPick`.
 fn reopen_mount_dst_choice(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
     use crate::console::tui::state::FileBrowserTarget;
-    let src = prelude
+    let src_display = prelude
         .pending_mount_src
         .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
+        .map(|p| p.display().to_string());
+    let src = create_prelude_mount_destination_default(src_display.as_deref());
     prelude.modal = Some(Modal::MountDstChoice {
         target: FileBrowserTarget::CreateFirstMountSrc,
         state: create_prelude_mount_dst_choice_state(src),

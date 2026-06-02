@@ -394,10 +394,25 @@ pub fn create_prelude_mount_destination_input_state<'a>(
 }
 
 #[must_use]
+pub fn create_prelude_mount_destination_default(src_display: Option<&str>) -> String {
+    src_display.unwrap_or_default().to_string()
+}
+
+#[must_use]
 pub fn create_prelude_workspace_name_input_state<'a>(
     current: impl Into<String>,
 ) -> jackin_tui::components::TextInputState<'a> {
     jackin_tui::components::TextInputState::new("Name this workspace", current)
+}
+
+#[must_use]
+pub fn create_prelude_workspace_name_default(dst: Option<&str>) -> String {
+    dst.and_then(|dst| {
+        std::path::Path::new(dst)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+    })
+    .unwrap_or_default()
 }
 
 #[must_use]
@@ -988,6 +1003,20 @@ mod tests {
         assert_eq!(dst.value(), "/workspace");
         assert_eq!(name.label, "Name this workspace");
         assert_eq!(name.value(), "project");
+    }
+
+    #[test]
+    fn create_prelude_default_helpers_supply_visible_fallbacks() {
+        assert_eq!(
+            create_prelude_mount_destination_default(Some("/host/project")),
+            "/host/project"
+        );
+        assert_eq!(create_prelude_mount_destination_default(None), "");
+        assert_eq!(
+            create_prelude_workspace_name_default(Some("/host/project")),
+            "project"
+        );
+        assert_eq!(create_prelude_workspace_name_default(None), "");
     }
 
     #[test]
