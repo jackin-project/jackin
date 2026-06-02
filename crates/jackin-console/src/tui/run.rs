@@ -241,6 +241,12 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn debug_run_id_label_uses_empty_fallback() {
+        assert_eq!(debug_run_id_label(Some("run-1")), "run-1");
+        assert_eq!(debug_run_id_label(None), "");
+    }
 }
 
 /// Render the 1-row debug status bar.
@@ -291,6 +297,11 @@ fn debug_bar_chip_width(run_id: &str, instance_id: Option<&str>) -> u16 {
     let content_width = run_id.chars().count()
         + instance_id.map_or(0, |instance_id| instance_id.chars().count() + 1);
     (content_width + 2) as u16
+}
+
+#[must_use]
+pub fn debug_run_id_label(run_id: Option<&str>) -> String {
+    run_id.unwrap_or_default().to_string()
 }
 
 #[must_use]

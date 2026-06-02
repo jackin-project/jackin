@@ -17,9 +17,10 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_bar_chip_area, quit_confirm_area,
-    quit_confirm_state, render_debug_bar, should_debug_log_mouse, should_open_quit_confirm,
-    split_debug_area, token_generate_status_message,
+    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_bar_chip_area,
+    debug_run_id_label, quit_confirm_area, quit_confirm_state, render_debug_bar,
+    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    token_generate_status_message,
 };
 
 use crate::config::AppConfig;
@@ -282,9 +283,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
                 }
                 if let Some(bar_area) = debug_bar_area {
-                    let run_id = crate::diagnostics::active_run()
-                        .map(|r| r.run_id().to_string())
-                        .unwrap_or_default();
+                    let active_run = crate::diagnostics::active_run();
+                    let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()));
                     last_debug_chip_area = Some(debug_bar_chip_area(bar_area, &run_id, None));
                     render_debug_bar(frame, bar_area, &run_id, None);
                 }
