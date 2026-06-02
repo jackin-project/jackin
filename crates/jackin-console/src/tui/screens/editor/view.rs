@@ -229,6 +229,27 @@ pub fn editor_row_width(label: &str, value: &str) -> usize {
 }
 
 #[must_use]
+pub fn editor_roles_status_width(is_all: bool, allowed_count: usize, total_count: usize) -> usize {
+    if is_all {
+        text_width("  Allowed roles:    all  ")
+    } else {
+        text_width(&format!(
+            "  Allowed roles:    custom     ({allowed_count} of {total_count} allowed)"
+        ))
+    }
+}
+
+#[must_use]
+pub fn editor_role_row_width(role_name: &str) -> usize {
+    text_width(&format!("  [x] * {role_name}"))
+}
+
+#[must_use]
+pub fn editor_role_load_row_width() -> usize {
+    text_width("  + Load role")
+}
+
+#[must_use]
 pub fn general_lines(
     cursor: usize,
     show_cursor: bool,
@@ -921,6 +942,15 @@ mod tests {
         assert_eq!(lines[2].spans[0].content.as_ref(), "  [x]   alpha");
         assert_eq!(lines[3].spans[0].content.as_ref(), "  [ ] \u{2605} beta");
         assert_eq!(lines[5].spans[0].content.as_ref(), "\u{25b8} + Load role");
+        assert_eq!(
+            editor_roles_status_width(false, 1, 2),
+            text_width("  Allowed roles:    custom     (1 of 2 allowed)")
+        );
+        assert_eq!(
+            editor_role_row_width("alpha"),
+            text_width("  [x] * alpha")
+        );
+        assert_eq!(editor_role_load_row_width(), text_width("  + Load role"));
     }
 
     #[test]

@@ -12,7 +12,8 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::screens::editor::view::{
-    editor_body_area, editor_row_width, padded_width, padded_width_cols, text_width,
+    editor_body_area, editor_role_load_row_width, editor_role_row_width, editor_roles_status_width,
+    editor_row_width, padded_width, padded_width_cols, text_width,
 };
 
 pub(crate) fn prepare_editor_for_render(
@@ -116,23 +117,15 @@ fn roles_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabG
     let is_all = jackin_console::workspace::allows_all_agents(&state.pending);
     let allowed_count = state.pending.allowed_roles.len();
     let total = config.roles.len();
-    let status_width = if is_all {
-        text_width("  Allowed roles:    all  ")
-    } else {
-        text_width(&format!(
-            "  Allowed roles:    custom     ({allowed_count} of {total} allowed)"
-        ))
-    };
+    let status_width = editor_roles_status_width(is_all, allowed_count, total);
     let role_width = config
         .roles
         .keys()
-        .map(|role_name| text_width(&format!("  [x] * {role_name}")))
+        .map(|role_name| editor_role_row_width(role_name))
         .max()
         .unwrap_or(0);
     EditorTabGeometry {
-        content_width: status_width
-            .max(role_width)
-            .max(text_width("  + Load role")),
+        content_width: status_width.max(role_width).max(editor_role_load_row_width()),
         content_height: 2 + config.roles.len() + usize::from(!config.roles.is_empty()) + 1,
     }
 }
