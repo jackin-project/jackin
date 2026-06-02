@@ -23,8 +23,9 @@ use jackin_console::tui::screens::editor::update::{
 };
 use jackin_console::tui::screens::settings::model::SettingsEnvRow;
 use jackin_console::tui::screens::settings::update::{
-    move_general_selection, move_trust_selection, set_role_expanded as set_settings_role_expanded,
-    settings_tab_move_plan, step_cursor_down_by, step_cursor_up_by, toggle_general_selected,
+    clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
+    move_trust_selection, set_role_expanded as set_settings_role_expanded, settings_tab_move_plan,
+    step_cursor_down_by, step_cursor_up_by, toggle_general_selected,
     toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
@@ -476,8 +477,9 @@ const fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.auth.selected_kind = None;
-    settings.auth.selected = 0;
+    let plan = clear_settings_auth_kind_plan();
+    settings.auth.selected_kind = plan.selected_kind;
+    settings.auth.selected = plan.selected;
 }
 
 fn dismiss_settings_error_popup(state: &mut ManagerState<'_>) {
@@ -548,9 +550,14 @@ fn enter_settings_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    if let Some(row) = settings.auth.pending.get(settings.auth.selected) {
-        settings.auth.selected_kind = Some(row.kind);
-        settings.auth.selected = 0;
+    let selected_kind = settings
+        .auth
+        .pending
+        .get(settings.auth.selected)
+        .map(|row| row.kind);
+    if let Some(plan) = enter_settings_auth_kind_plan(selected_kind) {
+        settings.auth.selected_kind = plan.selected_kind;
+        settings.auth.selected = plan.selected;
     }
 }
 

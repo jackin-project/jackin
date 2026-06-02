@@ -49,6 +49,33 @@ pub const fn settings_tab_move_plan(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsAuthKindPlan<K> {
+    pub selected_kind: Option<K>,
+    pub selected: usize,
+}
+
+#[must_use]
+pub const fn clear_settings_auth_kind_plan<K>() -> SettingsAuthKindPlan<K> {
+    SettingsAuthKindPlan {
+        selected_kind: None,
+        selected: 0,
+    }
+}
+
+#[must_use]
+pub fn enter_settings_auth_kind_plan<K>(
+    selected_kind: Option<K>,
+) -> Option<SettingsAuthKindPlan<K>> {
+    match selected_kind {
+        Some(kind) => Some(SettingsAuthKindPlan {
+            selected_kind: Some(kind),
+            selected: 0,
+        }),
+        None => None,
+    }
+}
+
 pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
     state.selected = crate::focus::moved_selection(state.selected, 2, delta);
 }
@@ -402,6 +429,34 @@ mod tests {
             SettingsTabMovePlan {
                 active_tab: SettingsTab::Trust,
                 tab_bar_focused: false,
+            }
+        );
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TestAuthKind {
+        Claude,
+    }
+
+    #[test]
+    fn settings_auth_kind_entry_plan_selects_kind_and_resets_row() {
+        assert_eq!(
+            enter_settings_auth_kind_plan(Some(TestAuthKind::Claude)),
+            Some(SettingsAuthKindPlan {
+                selected_kind: Some(TestAuthKind::Claude),
+                selected: 0,
+            })
+        );
+        assert_eq!(enter_settings_auth_kind_plan::<TestAuthKind>(None), None);
+    }
+
+    #[test]
+    fn settings_auth_kind_clear_plan_clears_kind_and_resets_row() {
+        assert_eq!(
+            clear_settings_auth_kind_plan::<TestAuthKind>(),
+            SettingsAuthKindPlan {
+                selected_kind: None,
+                selected: 0,
             }
         );
     }
