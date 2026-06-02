@@ -9,7 +9,6 @@ pub mod mount_info_cache;
 pub mod op_breadcrumb;
 pub mod op_cache;
 pub mod op_reference;
-pub mod provider_picker;
 pub mod services;
 pub mod split;
 pub mod tui;

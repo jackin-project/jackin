@@ -15,6 +15,7 @@ pub mod mount_dst_choice;
 pub mod mount_rows;
 pub mod op_breadcrumb;
 pub mod op_picker;
+pub mod provider_picker;
 pub mod role_picker;
 pub mod save_discard;
 pub mod save_preview;

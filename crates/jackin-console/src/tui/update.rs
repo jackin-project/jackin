@@ -1,5 +1,6 @@
 //! Top-level console TUI update helpers.
 
+use crate::tui::components::provider_picker::ProviderPickerState;
 use jackin_tui::runtime::UpdateResult;
 
 pub type ConsoleUpdate<E> = UpdateResult<E>;
@@ -46,7 +47,7 @@ pub enum InlineProviderFollowupPlan<C, A, P> {
         context: C,
         agent: A,
     },
-    OpenProviderPicker(crate::provider_picker::ProviderPickerState<C, A, P>),
+    OpenProviderPicker(ProviderPickerState<C, A, P>),
 }
 
 #[must_use]
@@ -124,7 +125,7 @@ pub fn inline_provider_followup_plan<C, A, P>(
     agent_supports_providers: bool,
 ) -> InlineProviderFollowupPlan<C, A, P> {
     if agent_supports_providers && !providers.is_empty() {
-        InlineProviderFollowupPlan::OpenProviderPicker(crate::provider_picker::ProviderPickerState::new(
+        InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
             context, agent, providers,
         ))
     } else {
@@ -365,7 +366,7 @@ mod tests {
         assert_eq!(
             inline_provider_followup_plan("container", "claude", vec!["zai"], true),
             InlineProviderFollowupPlan::OpenProviderPicker(
-                crate::provider_picker::ProviderPickerState::new("container", "claude", vec!["zai"])
+                ProviderPickerState::new("container", "claude", vec!["zai"])
             )
         );
         assert_eq!(

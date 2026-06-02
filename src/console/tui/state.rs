@@ -24,6 +24,9 @@ use jackin_console::tui::components::confirm_save::ConfirmSaveState;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::github_picker::GithubPickerState;
 use jackin_console::tui::components::mount_dst_choice::MountDstChoiceState;
+use jackin_console::tui::components::provider_picker::{
+    ProviderPickerState as GenericProviderPickerState,
+};
 use jackin_console::tui::components::scope_picker::ScopePickerState;
 use jackin_console::tui::components::source_picker::SourcePickerState;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
@@ -98,11 +101,8 @@ impl jackin_console::mount_info_cache::MountSource for crate::config::GlobalMoun
 /// cannot reference a provider/env pair that drifted from its label; the
 /// index is clamped by `move_up` / `move_down` and read back through
 /// `selected_provider`.
-pub type ProviderPickerState<C> = jackin_console::provider_picker::ProviderPickerState<
-    C,
-    crate::agent::Agent,
-    jackin_protocol::Provider,
->;
+pub type ProviderPickerState<C> =
+    GenericProviderPickerState<C, crate::agent::Agent, jackin_protocol::Provider>;
 
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
