@@ -9,14 +9,14 @@
 
 mod config_cmd;
 pub mod context;
+mod load_cmd;
+mod prune_cmd;
 mod workspace_cmd;
 
 use anyhow::{Context, Result};
-use owo_colors::OwoColorize;
 
-use crate::cli::cleanup::{EjectArgs, PurgeArgs};
-use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
-use crate::cli::{self, Cli, Command, PruneCommand};
+use crate::cli::role::ConsoleArgs;
+use crate::cli::{self, Cli, Command};
 use crate::config::{self, AppConfig};
 use crate::console;
 use crate::docker::ShellRunner;
@@ -24,17 +24,11 @@ use crate::docker_client::{BollardDockerClient, DockerApi};
 use crate::instance;
 use crate::paths::JackinPaths;
 use crate::runtime;
-use crate::selector::{RoleSelector, Selector};
+use crate::selector::RoleSelector;
 use crate::tui;
-use crate::workspace::{
-    self, LoadWorkspaceInput, WorkspaceConfig, parse_mount_spec_resolved, resolve_path,
-};
+use crate::workspace::{self, LoadWorkspaceInput, WorkspaceConfig, resolve_path};
 
-use self::context::{
-    TargetKind, classify_target, prompt_agent_choice_if_needed, remember_last_agent,
-    resolve_agent_from_context_with_choice, resolve_running_container_from_context,
-    resolve_target_name_with_choice,
-};
+use self::context::prompt_agent_choice_if_needed;
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
 fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<config::AuthForwardMode> {
@@ -102,512 +96,34 @@ pub async fn run(cli: Cli) -> Result<()> {
     let connect_docker = || BollardDockerClient::connect();
 
     match command {
-        Command::Load(LoadArgs {
-            selector,
-            target,
-            mounts,
-            rebuild,
-            force,
-            agent,
-            role_branch,
-        }) => {
-            let docker = connect_docker()?;
-            let cwd = std::env::current_dir()?;
-
-            let (class, workspace_input) = if let Some(sel) = selector {
-                let class = RoleSelector::parse(&sel)?;
-                let input = match target {
-                    None => LoadWorkspaceInput::CurrentDir,
-                    Some(t) => match classify_target(&t) {
-                        TargetKind::Path { src, dst } => LoadWorkspaceInput::Path { src, dst },
-                        TargetKind::Name(name) => resolve_target_name_with_choice(
-                            &name,
-                            &config,
-                            &cwd,
-                            rich_prelaunch_choice,
-                        )?,
-                    },
-                };
-                (class, input)
-            } else {
-                // No selector — resolve role from workspace context
-                resolve_agent_from_context_with_choice(&config, &cwd, rich_prelaunch_choice)?
-            };
-
-            let saved_workspace_name = if let LoadWorkspaceInput::Saved(ref name) = workspace_input
-            {
-                Some(name.clone())
-            } else {
-                None
-            };
-
-            let ad_hoc_mounts = mounts
-                .iter()
-                .map(|value| parse_mount_spec_resolved(value))
-                .collect::<Result<Vec<_>>>()?;
-
-            let resolved_workspace = crate::workspace::resolve_load_workspace(
-                &config,
-                &class,
-                &cwd,
-                workspace_input,
-                &ad_hoc_mounts,
-            )?;
-
-            let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
-            opts.force = force;
-            opts.agent = agent;
-            opts.role_branch = role_branch;
-            // Pre-launch reconcile: if a previous role in a keep_awake
-            // workspace already runs, ensure caffeinate is up before we
-            // build/launch (so a long Docker build doesn't see the host
-            // sleep). Post-launch reconcile below catches the new role.
-            let entry_claim = play_construct_intro_if_needed(&paths, &docker).await;
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            let result = runtime::load_role(
-                &paths,
+        Command::Load(args) => {
+            load_cmd::handle_load(
+                args,
                 &mut config,
-                &class,
-                &resolved_workspace,
-                &docker,
-                &mut runner,
-                &opts,
-            )
-            .await;
-            remember_last_agent(
                 &paths,
-                &mut config,
-                saved_workspace_name.as_deref(),
-                &class,
-                &result,
-            );
-            if result.is_err() {
-                runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
-            }
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            result
-        }
-        Command::Console(ConsoleArgs {}) => {
-            let cwd = std::env::current_dir()?;
-            let mut in_place = ConsoleInPlaceHandler {
-                paths: paths.clone(),
                 debug,
-            };
-
-            // One alternate screen owns the entire console → loading → capsule
-            // → exit flow so transitions never flash back to the cooked
-            // terminal. Sub-surfaces detect this and skip their own
-            // enter/leave; the guard tears the terminal down once, on drop.
-            let screen =
-                console::TerminalSession::enter(console::terminal::host_console_terminal())?;
-
-            let mut console_entry = if let Ok(docker) = connect_docker() {
-                let claim = play_construct_intro_if_needed(&paths, &docker).await;
-                Some((docker, claim))
-            } else {
-                None
-            };
-
-            let op_available = console::effects::op_cli_available();
-            let Some(outcome) = console::run_console(
-                config,
-                &paths,
-                &cwd,
-                op_available,
-                &mut in_place,
                 &mut runner,
-                Some(&screen),
+                connect_docker,
             )
-            .await?
-            else {
-                if let Some((docker, claim)) = &console_entry {
-                    runtime::release_entry_if_idle(&paths, docker, claim).await;
-                }
-                return Ok(());
-            };
-
-            // config was consumed by run_console (the manager may have written to
-            // disk). Reload so the post-console path sees the latest state.
-            let mut config = AppConfig::load_or_init(&paths)?;
-            let docker = connect_docker()?;
-            let (class, workspace, selected_agent) = match outcome {
-                console::ConsoleOutcome::Launch(class, workspace, selected_agent) => {
-                    (class, workspace, selected_agent)
-                }
-                outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
-                    // The action owns the terminal with its own foreground
-                    // process; hand it back the cooked screen.
-                    if let Some((docker, claim)) = &console_entry {
-                        runtime::release_entry_if_idle(&paths, docker, claim).await;
-                    }
-                    drop(screen);
-                    return handle_console_instance_action(
-                        &paths,
-                        &mut config,
-                        outcome,
-                        &docker,
-                        &mut runner,
-                    )
-                    .await;
-                }
-                console::ConsoleOutcome::NewSessionWithProvider {
-                    container,
-                    agent,
-                    provider,
-                } => {
-                    let manifest =
-                        instance::InstanceManifest::read(&paths.data_dir.join(&container))
-                            .with_context(|| {
-                                format!(
-                                    "cannot start a new agent session in `{container}` because its instance manifest is missing"
-                                )
-                            })?;
-                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-                    // The token is backfilled inside the container by the
-                    // daemon from `ZAI_API_KEY`, so pass overrides without it.
-                    let result = runtime::spawn_agent_session(
-                        &paths,
-                        &container,
-                        Some(&manifest),
-                        agent,
-                        Some(provider.label()),
-                        &provider.env_overrides(None),
-                        config.git.coauthor_trailer,
-                        config.git.dco,
-                        &docker,
-                        &mut runner,
-                    )
-                    .await;
-                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-                    if let Some((docker, claim)) = &console_entry {
-                        runtime::release_entry_if_idle(&paths, docker, claim).await;
-                    }
-                    return result;
-                }
-                console::ConsoleOutcome::LaunchWithProvider {
-                    selector,
-                    workspace,
-                    agent,
-                    provider,
-                } => {
-                    let mut opts = runtime::LoadOptions::for_launch(debug);
-                    opts.agent = Some(agent);
-                    opts.provider = Some(provider);
-                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-                    let result = runtime::load_role(
-                        &paths,
-                        &mut config,
-                        &selector,
-                        &workspace,
-                        &docker,
-                        &mut runner,
-                        &opts,
-                    )
-                    .await;
-                    remember_last_agent(
-                        &paths,
-                        &mut config,
-                        Some(&workspace.label),
-                        &selector,
-                        &result,
-                    );
-                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-                    if let Some((docker, claim)) = &console_entry {
-                        runtime::release_entry_if_idle(&paths, docker, claim).await;
-                    }
-                    return result;
-                }
-            };
-
-            let mut opts = runtime::LoadOptions::for_launch(debug);
-            opts.agent = selected_agent;
-            let entry_claim = if let Some((_entry_docker, claim)) = console_entry.take() {
-                claim
-            } else {
-                play_construct_intro_if_needed(&paths, &docker).await
-            };
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            let result = runtime::load_role(
-                &paths,
-                &mut config,
-                &class,
-                &workspace,
-                &docker,
-                &mut runner,
-                &opts,
-            )
-            .await;
-            remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
-            if result.is_err() {
-                runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
-            }
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            // `screen` drops here, after any exit outro, restoring the
-            // terminal exactly once.
-            result
+            .await
         }
-        Command::Hardline(HardlineArgs {
-            selector,
-            inspect,
-            new,
-            agent,
-            shell,
-        }) => {
-            let docker = connect_docker()?;
-            // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
-            // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
-            let explicit_selector = selector.is_some();
-            let container = if let Some(sel) = selector {
-                if let Some(container) = resolve_instance_reference(&paths, &sel)? {
-                    container
-                } else {
-                    match Selector::parse(&sel)? {
-                        Selector::Container(name) => name,
-                        Selector::Role(class) => resolve_role_to_container(&class, &docker).await?,
-                    }
-                }
-            } else {
-                let cwd = std::env::current_dir()?;
-                resolve_running_container_from_context(&paths, &config, &cwd, &docker).await?
-            };
-            if shell {
-                return runtime::spawn_shell_session(&paths, &container, &docker, &mut runner)
-                    .await;
-            }
-            let action = if inspect {
-                HardlineAction::Inspect
-            } else if new {
-                HardlineAction::NewSession
-            } else if explicit_selector {
-                prompt_explicit_hardline_action_if_multiple_sessions(&container, &docker).await?
-            } else {
-                prompt_hardline_action(&container)?
-            };
-            if action == HardlineAction::Inspect {
-                println!(
-                    "{}",
-                    runtime::inspect_hardline_instance(&paths, &container, &docker).await?
-                );
-                return Ok(());
-            }
-            if action == HardlineAction::Cancel {
-                return Ok(());
-            }
-            if action == HardlineAction::NewSession {
-                let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
-                    .with_context(|| {
-                        format!(
-                            "cannot start a new agent session in `{container}` because its instance manifest is missing"
-                        )
-                    })?;
-                let selected_agent = if let Some(agent) = agent {
-                    agent
-                } else {
-                    resolve_new_session_agent(&paths, &config, &manifest)?
-                };
-                runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-                let result = runtime::spawn_agent_session(
-                    &paths,
-                    &container,
-                    Some(&manifest),
-                    selected_agent,
-                    None,
-                    &[],
-                    config.git.coauthor_trailer,
-                    config.git.dco,
-                    &docker,
-                    &mut runner,
-                )
-                .await;
-                runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-                return result;
-            }
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            let result = if let Some(manifest) =
-                restore_candidate_for_hardline(&paths, &container, &docker).await?
-            {
-                restore_hardline_instance(&paths, &mut config, &manifest, &docker, &mut runner)
-                    .await
-            } else {
-                runtime::hardline_agent(&paths, &container, &docker, &mut runner).await
-            };
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            result
+        Command::Console(ConsoleArgs {}) => load_cmd::handle_console(config, paths, debug).await,
+        Command::Hardline(args) => {
+            load_cmd::handle_hardline(args, config, paths, debug, connect_docker).await
         }
-        Command::Eject(EjectArgs {
-            selector,
-            all,
-            purge,
-        }) => {
-            let docker = connect_docker()?;
-            let containers = if let Some(container) = resolve_instance_reference(&paths, &selector)?
-            {
-                if all {
-                    anyhow::bail!("--all applies only to role selectors, not instance IDs");
-                }
-                vec![container]
-            } else {
-                match Selector::parse(&selector)? {
-                    Selector::Container(container) => vec![container],
-                    Selector::Role(class) => {
-                        if all {
-                            runtime::matching_family(
-                                &class,
-                                &runtime::list_managed_role_names(&docker).await?,
-                            )
-                        } else {
-                            vec![resolve_role_to_container(&class, &docker).await?]
-                        }
-                    }
-                }
-            };
-            // Wrap the loop so a partial failure still hits the trailing
-            // reconcile — otherwise a `--all` eject that errors on
-            // container N+1 would leave caffeinate running even though
-            // earlier containers were already removed.
-            let result: anyhow::Result<()> = async {
-                if containers.is_empty() {
-                    println!("No matching roles found.");
-                } else {
-                    for container in &containers {
-                        runtime::eject_role(&paths, container, &docker)
-                            .await
-                            .with_context(|| format!("ejecting {container}"))?;
-                        if purge {
-                            runtime::purge_container_state(&paths, container, &docker, &mut runner)
-                                .await
-                                .with_context(|| format!("purging local state for {container}"))?;
-                            println!("Ejected and purged {container}.");
-                        } else {
-                            println!("Ejected {container}.");
-                        }
-                    }
-                }
-                Ok(())
-            }
-            .await;
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            result
-        }
-        Command::Exile => {
-            let docker = connect_docker()?;
-            let names = runtime::list_managed_role_names(&docker).await?;
-            let result: anyhow::Result<()> = async {
-                if names.is_empty() {
-                    println!("No roles running.");
-                } else {
-                    for name in &names {
-                        runtime::eject_role(&paths, name, &docker)
-                            .await
-                            .with_context(|| format!("ejecting {name}"))?;
-                        println!("Ejected {name}.");
-                    }
-                }
-                Ok(())
-            }
-            .await;
-            runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            result
-        }
+        Command::Eject(args) => load_cmd::handle_eject(args, &paths, debug, connect_docker).await,
+        Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
         Command::Logs(args) => runtime::logs::run(&paths, args),
         Command::Config(config_cmd) => config_cmd::handle(config_cmd, &mut config, &paths, debug),
         Command::Workspace(command) => {
             workspace_cmd::handle(command, &mut config, &paths, debug).await
         }
-        Command::Purge(PurgeArgs { selector, all }) => {
-            let docker = connect_docker()?;
-            if let Some(container) = resolve_instance_reference(&paths, &selector)? {
-                if all {
-                    anyhow::bail!("--all applies only to role selectors, not instance IDs");
-                }
-                runtime::purge_container_state(&paths, &container, &docker, &mut runner).await?;
-                println!("Purged state for {container}.");
-                return Ok(());
-            }
-
-            match Selector::parse(&selector)? {
-                Selector::Container(container) => {
-                    runtime::purge_container_state(&paths, &container, &docker, &mut runner)
-                        .await?;
-                    println!("Purged state for {container}.");
-                    Ok(())
-                }
-                Selector::Role(class) => {
-                    if all {
-                        runtime::purge_class_data(&paths, &class, &docker, &mut runner).await?;
-                        println!("Purged all state for {}.", class.key());
-                    } else {
-                        let container = resolve_role_to_container(&class, &docker).await?;
-                        runtime::purge_container_state(&paths, &container, &docker, &mut runner)
-                            .await?;
-                        println!("Purged state for {container}.");
-                    }
-                    Ok(())
-                }
-            }
+        Command::Purge(args) => {
+            prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
         }
-        Command::Prune(cmd) => match cmd {
-            PruneCommand::Roles => runtime::prune_roles(&paths),
-            PruneCommand::Cache => runtime::prune_cache(&paths),
-            PruneCommand::Images => {
-                let docker = connect_docker()?;
-                runtime::prune_images(&docker).await
-            }
-            PruneCommand::Instances(args) => {
-                let docker = connect_docker()?;
-                if args.all {
-                    runtime::prune_all_instances(&paths, &docker, &mut runner).await
-                } else {
-                    runtime::prune_instances(&paths, &docker, &mut runner).await
-                }
-            }
-            PruneCommand::System(args) => {
-                let docker = connect_docker()?;
-                if !args.yes {
-                    let confirmed = dialoguer::Confirm::new()
-                        .with_prompt(
-                            "Remove all prunable data? (instances, images, role cache, shared cache)",
-                        )
-                        .default(false)
-                        .interact()?;
-                    if !confirmed {
-                        anyhow::bail!("aborted by operator");
-                    }
-                }
-                // Run every step regardless of individual failures so a single
-                // Docker error doesn't leave the role cache and shared cache
-                // untouched.
-                let prune_instances_result = if args.all {
-                    runtime::prune_all_instances(&paths, &docker, &mut runner)
-                        .await
-                        .context("prune instances")
-                } else {
-                    runtime::prune_instances(&paths, &docker, &mut runner)
-                        .await
-                        .context("prune instances")
-                };
-                let results = [
-                    prune_instances_result,
-                    runtime::prune_images(&docker).await.context("prune images"),
-                    runtime::prune_roles(&paths).context("prune roles"),
-                    runtime::prune_diagnostics(&paths).context("prune diagnostics"),
-                    runtime::prune_cache(&paths).context("prune cache"),
-                ];
-                let errors: Vec<anyhow::Error> =
-                    results.into_iter().filter_map(Result::err).collect();
-                if errors.is_empty() {
-                    if args.all {
-                        runtime::prune_jackin_home(&paths);
-                    }
-                    Ok(())
-                } else {
-                    for err in &errors {
-                        eprintln!("{} {err:#}", "error:".red().bold());
-                    }
-                    anyhow::bail!("{} prune step(s) failed", errors.len())
-                }
-            }
-        },
+        Command::Prune(cmd) => {
+            prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
+        }
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
