@@ -3,9 +3,10 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use crate::config::AppConfig;
+use crate::console::tui::components::footer;
+use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::layout::editor::prepare_editor_for_render;
 use crate::console::tui::layout::list::clamp_list_scroll_for_area;
-use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::layout::settings::clamp_global_mounts_scroll_for_frame;
 use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
 use jackin_console::tui::view::footer_height;
@@ -19,19 +20,12 @@ pub fn prepare_for_render(
     state.cached_term_size = area;
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
-            let footer = crate::console::tui::components::footer::editor::editor_footer_items(
-                editor,
-                config,
-                state.op_available,
-            );
+            let footer = footer::editor::editor_footer_items(editor, config, state.op_available);
             editor.cached_footer_h = footer_height(&footer, area.width).max(1);
             prepare_editor_for_render(area, editor, config);
         }
         ManagerStage::Settings(settings) => {
-            let footer = crate::console::tui::components::footer::settings::settings_footer_items(
-                settings,
-                state.op_available,
-            );
+            let footer = footer::settings::settings_footer_items(settings, state.op_available);
             settings.cached_footer_h = footer_height(&footer, area.width).max(1);
             clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
         }
@@ -84,10 +78,7 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 
 fn prepare_modal(outer: Rect, modal: &mut Modal<'_>) {
     let modal_area = modal_outer_rect(modal, outer);
-    match modal {
-        Modal::ConfirmSave { state } => {
-            jackin_console::tui::components::confirm_save::prepare_for_render(modal_area, state);
-        }
-        _ => {}
+    if let Modal::ConfirmSave { state } = modal {
+        jackin_console::tui::components::confirm_save::prepare_for_render(modal_area, state);
     }
 }

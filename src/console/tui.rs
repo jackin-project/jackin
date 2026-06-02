@@ -19,8 +19,9 @@ pub use app::{
     ConsoleStage, ConsoleState, new_console_state, new_console_state_with_op_available,
 };
 pub(crate) use input::{InputOutcome, handle_key};
+pub use layout::prepare_for_render;
 pub(crate) use message::{ManagerMessage, update_manager};
-pub use render::{prepare_for_render, render};
+pub use render::render;
 pub(crate) use run::consumes_letter_input;
 pub use run::run_console;
 #[cfg(test)]

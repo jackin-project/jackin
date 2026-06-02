@@ -8,13 +8,11 @@ mod consistency_tests;
 mod frame_tests;
 pub(crate) mod list;
 pub(crate) mod modal;
-mod pre_render;
 pub(crate) mod settings;
 #[cfg(test)]
 mod snapshot_tests;
 
 pub use frame::render;
-pub use pre_render::prepare_for_render;
 
 pub(super) use jackin_console::tui::layout::centered_rect_fixed;
 
