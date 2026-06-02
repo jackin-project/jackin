@@ -4,8 +4,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jackin_console::tui::components::list_helpers::{
     clamp_selection, cycle_select, first_selection, list_state_for_count, selected_choice,
 };
+use jackin_console::tui::components::op_picker::section_name_input_state;
 use jackin_tui::ModalOutcome;
-use jackin_tui::components::TextInputState;
 
 use super::{
     AccountStageCommitPlan, ExistingFieldCommitPlan, FieldLabelCommitPlan, FieldStageCommitPlan,
@@ -321,7 +321,7 @@ impl OpPickerState {
             KeyCode::Enter => {
                 match section_stage_commit_plan(self.section_list_state.selected, &choices) {
                     SectionStageCommitPlan::NewSectionName => {
-                        self.section_name_input = TextInputState::new("Section name", "");
+                        self.section_name_input = section_name_input_state();
                         self.stage = OpPickerStage::NewSectionName;
                     }
                     SectionStageCommitPlan::ExistingSection { selected_section } => {

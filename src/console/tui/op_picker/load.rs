@@ -7,8 +7,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use jackin_console::tui::components::list_helpers::list_state_for_count;
-use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
+use jackin_console::tui::components::op_picker::{
+    field_label_input_state, item_name_input_state, section_name_input_state,
+};
 
 use super::{
     AccountsLoadedPlan, FieldLabelOrigin, LoadRequest, LoadResult, OpCache, OpLoadState,
@@ -130,9 +132,9 @@ impl OpPickerState {
             collapsed_sections: HashSet::new(),
             load_state: OpLoadState::Loading { spinner_tick: 0 },
             mode,
-            item_name_input: TextInputState::new("Item name", item_default),
-            field_label_input: TextInputState::new("Field label", field_default),
-            section_name_input: TextInputState::new("Section name", ""),
+            item_name_input: item_name_input_state(item_default),
+            field_label_input: field_label_input_state(field_default),
+            section_name_input: section_name_input_state(),
             pending_section: None,
             field_label_origin: FieldLabelOrigin::NewItem,
             field_refresh_in_place: false,

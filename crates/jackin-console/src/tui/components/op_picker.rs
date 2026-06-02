@@ -17,6 +17,22 @@ use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus, TextInputState};
 use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
+pub fn item_name_input_state<'a>(
+    item_default: impl Into<String>,
+) -> TextInputState<'a> {
+    TextInputState::new("Item name", item_default)
+}
+
+pub fn field_label_input_state<'a>(
+    field_default: impl Into<String>,
+) -> TextInputState<'a> {
+    TextInputState::new("Field label", field_default)
+}
+
+pub fn section_name_input_state<'a>() -> TextInputState<'a> {
+    TextInputState::new("Section name", "")
+}
+
 /// Browse-only vs. creation-enabled picker mode.
 #[derive(Debug, Clone)]
 pub enum OpPickerMode {
@@ -1724,24 +1740,24 @@ mod tests {
 
     #[test]
     fn naming_stage_input_routes_by_naming_stage() {
-        let item = TextInputState::new("item", "");
-        let field = TextInputState::new("field", "");
-        let section = TextInputState::new("section", "");
+        let item = item_name_input_state("");
+        let field = field_label_input_state("");
+        let section = section_name_input_state();
 
         assert_eq!(
             naming_stage_input_for_stage(OpPickerStage::NewItemName, &item, &field, &section)
                 .map(|input| input.label.as_str()),
-            Some("item")
+            Some("Item name")
         );
         assert_eq!(
             naming_stage_input_for_stage(OpPickerStage::FieldLabel, &item, &field, &section)
                 .map(|input| input.label.as_str()),
-            Some("field")
+            Some("Field label")
         );
         assert_eq!(
             naming_stage_input_for_stage(OpPickerStage::NewSectionName, &item, &field, &section)
                 .map(|input| input.label.as_str()),
-            Some("section")
+            Some("Section name")
         );
         assert!(
             naming_stage_input_for_stage(OpPickerStage::Field, &item, &field, &section).is_none()
