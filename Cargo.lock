@@ -1688,6 +1688,7 @@ dependencies = [
  "insta",
  "jackin-build-meta",
  "jackin-console",
+ "jackin-core",
  "jackin-launch",
  "jackin-protocol",
  "jackin-tui",
@@ -1750,12 +1751,22 @@ dependencies = [
  "anyhow",
  "crossterm",
  "directories",
+ "jackin-core",
  "jackin-tui",
  "nix 0.31.3",
  "open",
  "ratatui",
  "tempfile",
  "tui-widget-list",
+]
+
+[[package]]
+name = "jackin-core"
+version = "0.6.0-dev"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

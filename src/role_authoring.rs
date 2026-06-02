@@ -10,6 +10,7 @@ use anyhow::Context;
 use crate::cli::role::{RoleCommand, RoleCreateArgs, RoleRepoPathArgs};
 use crate::manifest::migrations::CURRENT_MANIFEST_VERSION;
 use crate::repo::validate_role_repo;
+use crate::repo_contract::{DOCKERFILE_NAME, MANIFEST_FILENAME};
 use crate::selector::RoleSelector;
 
 pub fn run(command: RoleCommand) -> anyhow::Result<()> {
@@ -49,7 +50,7 @@ fn published_image(args: RoleRepoPathArgs) -> anyhow::Result<()> {
 
 fn migrate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
     let repo_dir = resolve_repo_path(args.path)?;
-    let manifest_path = repo_dir.join("jackin.role.toml");
+    let manifest_path = repo_dir.join(MANIFEST_FILENAME);
     match crate::manifest::migrations::migrate_manifest_file(&manifest_path)? {
         Some((old, new)) => println!("Migrated manifest {old} -> {new}"),
         None => println!("Manifest already at current version"),
@@ -123,10 +124,10 @@ fn scaffold_path(projects_dir: &Path, selector: &RoleSelector) -> PathBuf {
 
 fn write_scaffold(repo_dir: &Path, selector: &RoleSelector) -> anyhow::Result<()> {
     write_new_file(
-        &repo_dir.join("jackin.role.toml"),
+        &repo_dir.join(MANIFEST_FILENAME),
         &manifest_contents(&selector.name),
     )?;
-    write_new_file(&repo_dir.join("Dockerfile"), dockerfile_contents())?;
+    write_new_file(&repo_dir.join(DOCKERFILE_NAME), dockerfile_contents())?;
     write_new_file(&repo_dir.join("README.md"), &readme_contents(selector))?;
     write_new_file(&repo_dir.join(".gitignore"), gitignore_contents())?;
     write_new_file(&repo_dir.join(".dockerignore"), dockerignore_contents())?;

@@ -10,64 +10,19 @@
 //! removal), `state` (`IsolationRecord` persistence), `branch` (worktree
 //! branch naming).
 
-use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::str::FromStr;
-
 pub mod branch;
 pub mod cleanup;
 pub mod finalize;
 pub mod materialize;
 pub mod state;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MountIsolation {
-    #[default]
-    Shared,
-    Worktree,
-    Clone,
-}
-
-impl MountIsolation {
-    pub const fn is_shared(&self) -> bool {
-        matches!(self, Self::Shared)
-    }
-
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Shared => "shared",
-            Self::Worktree => "worktree",
-            Self::Clone => "clone",
-        }
-    }
-}
-
-impl fmt::Display for MountIsolation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for MountIsolation {
-    type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "shared" => Ok(Self::Shared),
-            "worktree" => Ok(Self::Worktree),
-            "clone" => Ok(Self::Clone),
-            other => {
-                anyhow::bail!(
-                    "invalid isolation `{other}`; expected one of: shared, worktree, clone"
-                )
-            }
-        }
-    }
-}
+pub use jackin_core::MountIsolation;
+pub use jackin_core::ParseMountIsolationError;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn parses_canonical_lowercase_variants() {

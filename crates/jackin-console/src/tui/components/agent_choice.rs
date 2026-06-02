@@ -19,6 +19,14 @@ pub trait AgentChoice: Copy + Eq + 'static {
     fn label(self) -> &'static str;
 }
 
+impl AgentChoice for jackin_core::Agent {
+    const ALL: &'static [Self] = jackin_core::Agent::ALL;
+
+    fn label(self) -> &'static str {
+        self.label()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentChoiceState<A: AgentChoice> {
     pub choices: Vec<A>,

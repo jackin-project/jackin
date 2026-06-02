@@ -3,6 +3,7 @@ members = [
     "crates/jackin-build-meta",
     "crates/jackin-capsule",
     "crates/jackin-console",
+    "crates/jackin-core",
     "crates/jackin-protocol",
     "crates/jackin-launch",
     "crates/jackin-tui",
@@ -38,6 +39,7 @@ path = "src/bin/build_jackin_capsule.rs"
 [dependencies]
 anyhow = "1.0"
 anstyle-parse = "1.0"
+jackin-core = { path = "crates/jackin-core" }
 jackin-tui = { path = "crates/jackin-tui" }
 jackin-launch = { path = "crates/jackin-launch" }
 jackin-console = { path = "crates/jackin-console" }

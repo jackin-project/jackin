@@ -10,6 +10,7 @@
 //! (`operator_env.rs`).
 
 pub use crate::env_model::{JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE};
+use crate::repo_contract::MANIFEST_FILENAME;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -208,7 +209,7 @@ impl RoleManifest {
     /// `validate()` still need explicit calls — they emit warnings the load
     /// path cannot surface.
     pub fn load(repo_dir: &Path) -> anyhow::Result<Self> {
-        let manifest_path = repo_dir.join("jackin.role.toml");
+        let manifest_path = repo_dir.join(MANIFEST_FILENAME);
         let contents = std::fs::read_to_string(&manifest_path)
             .with_context(|| format!("reading {}", manifest_path.display()))?;
         let doc: toml_edit::DocumentMut = contents

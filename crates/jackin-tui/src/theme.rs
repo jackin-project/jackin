@@ -51,6 +51,7 @@ pub const BOLD_WHITE: Style = Style::new().fg(WHITE).add_modifier(Modifier::BOLD
 pub const BOLD_GREEN: Style = Style::new().fg(PHOSPHOR_GREEN).add_modifier(Modifier::BOLD);
 pub const DIM: Style = Style::new().fg(PHOSPHOR_DIM);
 pub const GREEN: Style = Style::new().fg(PHOSPHOR_GREEN);
+pub const BORDER: Style = Style::new().fg(BORDER_GRAY);
 pub const DANGER: Style = Style::new().fg(DANGER_RED).add_modifier(Modifier::BOLD);
 
 #[must_use]

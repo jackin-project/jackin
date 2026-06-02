@@ -7,7 +7,7 @@
 
 use crate::manifest::RoleManifest;
 use crate::paths::JackinPaths;
-use crate::repo_contract::{ValidatedDockerfile, validate_agent_dockerfile};
+use crate::repo_contract::{MANIFEST_FILENAME, ValidatedDockerfile, validate_agent_dockerfile};
 use crate::selector::RoleSelector;
 use std::path::{Component, Path, PathBuf};
 
@@ -107,7 +107,7 @@ impl From<std::io::Error> for RoleRepoValidationError {
 }
 
 pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepoValidationError> {
-    let manifest_path = repo_dir.join("jackin.role.toml");
+    let manifest_path = repo_dir.join(MANIFEST_FILENAME);
 
     if !manifest_path.is_file() {
         return Err(RoleRepoValidationError::Missing(manifest_path));
