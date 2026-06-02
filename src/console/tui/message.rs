@@ -22,11 +22,10 @@ use jackin_console::tui::screens::editor::update::{
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
-use jackin_console::tui::screens::settings::model::SettingsEnvRow;
 use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
     set_role_expanded as set_settings_role_expanded, settings_auth_selection_plan,
-    settings_tab_move_plan, settings_trust_selection_plan, step_cursor_down_by, step_cursor_up_by,
+    settings_env_selection_plan, settings_tab_move_plan, settings_trust_selection_plan,
     toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
@@ -815,31 +814,16 @@ fn move_settings_env_selection(
         return;
     };
     let rows = settings_env_flat_rows(settings);
-    let max = rows.len().saturating_sub(1);
-    let candidate = if delta.is_negative() {
-        settings.env.selected.saturating_sub(delta.unsigned_abs())
-    } else {
-        settings
-            .env
-            .selected
-            .saturating_add(delta as usize)
-            .min(max)
-    };
-    settings.env.selected = if delta.is_negative() {
-        step_cursor_up_by(candidate, |idx| {
-            matches!(rows.get(idx), Some(SettingsEnvRow::SectionSpacer))
-        })
-    } else {
-        step_cursor_down_by(candidate, max, |idx| {
-            matches!(rows.get(idx), Some(SettingsEnvRow::SectionSpacer))
-        })
-    };
-    settings.env.scroll_y = jackin_console::focus::cursor_scroll_for_panel(
+    let plan = settings_env_selection_plan(
         settings.env.selected,
+        &rows,
+        delta,
         settings.env.scroll_y,
         term.height,
         footer_h,
     );
+    settings.env.selected = plan.selected;
+    settings.env.scroll_y = plan.scroll_y;
 }
 
 fn move_settings_trust_selection(

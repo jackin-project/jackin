@@ -128,6 +128,41 @@ pub fn settings_trust_selection_plan(
     }
 }
 
+#[must_use]
+pub fn settings_env_selection_plan(
+    selected: usize,
+    rows: &[SettingsEnvRow],
+    delta: isize,
+    current_scroll_y: u16,
+    term_height: u16,
+    footer_h: u16,
+) -> SettingsSelectionScrollPlan {
+    let max = rows.len().saturating_sub(1);
+    let candidate = if delta.is_negative() {
+        selected.saturating_sub(delta.unsigned_abs())
+    } else {
+        selected.saturating_add(delta as usize).min(max)
+    };
+    let selected = if delta.is_negative() {
+        step_cursor_up_by(candidate, |idx| {
+            matches!(rows.get(idx), Some(SettingsEnvRow::SectionSpacer))
+        })
+    } else {
+        step_cursor_down_by(candidate, max, |idx| {
+            matches!(rows.get(idx), Some(SettingsEnvRow::SectionSpacer))
+        })
+    };
+    SettingsSelectionScrollPlan {
+        selected,
+        scroll_y: crate::focus::cursor_scroll_for_panel(
+            selected,
+            current_scroll_y,
+            term_height,
+            footer_h,
+        ),
+    }
+}
+
 pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
     if let Some(row) = state.pending.get_mut(state.selected) {
         row.trusted = !row.trusted;
@@ -503,6 +538,21 @@ mod tests {
     fn settings_trust_selection_plan_clamps_and_updates_scroll() {
         let plan = settings_trust_selection_plan(0, 4, 99, 0, 8, 0);
         assert_eq!(plan.selected, 3);
+        assert!(plan.scroll_y > 0);
+    }
+
+    #[test]
+    fn settings_env_selection_plan_skips_spacers_and_updates_scroll() {
+        let rows = [
+            SettingsEnvRow::Key {
+                scope: SettingsEnvScope::Global,
+                key: "ALPHA".to_string(),
+            },
+            SettingsEnvRow::SectionSpacer,
+            SettingsEnvRow::GlobalAddSentinel,
+        ];
+        let plan = settings_env_selection_plan(0, &rows, 1, 0, 8, 0);
+        assert_eq!(plan.selected, 2);
         assert!(plan.scroll_y > 0);
     }
 
