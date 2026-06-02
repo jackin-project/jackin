@@ -21,7 +21,6 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    text::Line,
 };
 
 use crate::config::AppConfig;
@@ -39,7 +38,7 @@ pub(super) use crate::console::tui::components::mount_display::format_mount_rows
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 use crate::console::tui::components::workspace_list::{
-    render_agents_subpanel_scrollable, workspace_env_rows,
+    list_name_lines, render_agents_subpanel_scrollable, workspace_env_rows,
 };
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
@@ -53,14 +52,14 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
-    list_name_lines as workspace_list_name_lines, provider_picker_title,
-    render_compact_instances_summary, render_list_names_block, render_picker_sidebar,
+    provider_picker_title, render_compact_instances_summary, render_list_names_block,
+    render_picker_sidebar,
     render_environments_subpanel, render_general_subpanel, render_global_mounts_subpanel,
     render_mounts_subpanel as render_workspace_mounts_panel,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_sentinel_description_pane, WorkspaceInstancePane,
     WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow, WorkspaceInstanceTab,
-    WorkspaceInstanceTabPane, WorkspaceListDisplayRow, WorkspaceListRowTone,
+    WorkspaceInstanceTabPane,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -199,83 +198,6 @@ pub(super) fn render_list_body(
             state.list_names_focused,
             state.list_names_scroll_x,
         );
-    }
-}
-
-fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'static>>, usize) {
-    let visual_rows = state.visual_rows_vec();
-    let visual_selected = state.visual_selected();
-    let hovered_row = state.hovered_list_row;
-    let display_rows: Vec<Option<WorkspaceListDisplayRow>> = visual_rows
-        .iter()
-        .enumerate()
-        .map(|(idx, visual_row)| {
-            visual_row
-                .as_ref()
-                .and_then(|row| workspace_list_display_row(state, row, idx == visual_selected, hovered_row == Some(*row)))
-        })
-        .collect();
-    workspace_list_name_lines(&display_rows, viewport, state.list_names_focused)
-}
-
-fn workspace_list_display_row(
-    state: &ManagerState<'_>,
-    row: &ManagerListRow,
-    selected: bool,
-    hovered: bool,
-) -> Option<WorkspaceListDisplayRow> {
-    match row {
-        ManagerListRow::CurrentDirectory => Some(WorkspaceListDisplayRow {
-            label: "Current directory".to_string(),
-            tone: WorkspaceListRowTone::White,
-            expanded: state.current_dir_expanded,
-            has_instances: state.has_current_dir_active_instances(),
-            selected,
-            hovered,
-        }),
-        ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
-            .current_dir_active_instances()
-            .get(*inst_idx)
-            .map(|entry| instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)),
-        ManagerListRow::SavedWorkspace(i) => {
-            let ws = state.workspaces.get(*i)?;
-            Some(WorkspaceListDisplayRow {
-                label: ws.name.clone(),
-                tone: WorkspaceListRowTone::Workspace,
-                expanded: state.is_workspace_expanded(*i),
-                has_instances: state.has_active_instances(*i),
-                selected,
-                hovered,
-            })
-        }
-        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
-            .workspace_active_instances(*ws_idx)
-            .get(*inst_idx)
-            .map(|entry| instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)),
-        ManagerListRow::NewWorkspace => Some(WorkspaceListDisplayRow {
-            label: "+ New workspace".to_string(),
-            tone: WorkspaceListRowTone::White,
-            expanded: false,
-            has_instances: false,
-            selected,
-            hovered,
-        }),
-    }
-}
-
-fn instance_display_row(
-    instance_id: &str,
-    role_key: &str,
-    selected: bool,
-    hovered: bool,
-) -> WorkspaceListDisplayRow {
-    WorkspaceListDisplayRow {
-        label: format!("{instance_id}  {role_key}"),
-        tone: WorkspaceListRowTone::Instance,
-        expanded: false,
-        has_instances: false,
-        selected,
-        hovered,
     }
 }
 
