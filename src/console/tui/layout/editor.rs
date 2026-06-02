@@ -10,9 +10,9 @@ use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, SecretsScopeTag, auth_flat_rows, secrets_flat_rows,
 };
 use jackin_console::tui::screens::editor::view::{
-    editor_auth_line_width, editor_body_area, editor_mount_add_row_width,
-    editor_role_load_row_width, editor_role_row_width, editor_roles_status_width,
-    editor_row_width, editor_secret_line_width,
+    editor_auth_line_width, editor_body_area, editor_general_content_width,
+    editor_mount_add_row_width, editor_role_load_row_width, editor_role_row_width,
+    editor_roles_status_width, editor_secret_line_width,
 };
 
 pub(crate) fn prepare_editor_for_render(
@@ -74,25 +74,14 @@ fn general_tab_geometry(state: &EditorState<'_>) -> EditorTabGeometry {
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
     let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-    let keep_awake_display = if state.pending.keep_awake.enabled {
-        "enabled (macOS only)"
-    } else {
-        "disabled"
-    };
-    let git_pull_display = if state.pending.git_pull_on_entry {
-        "enabled"
-    } else {
-        "disabled"
-    };
-    let rows = [
-        editor_row_width("Name", name_value),
-        editor_row_width("Working dir", &workdir_display),
-        editor_row_width("Keep awake", keep_awake_display),
-        editor_row_width("Git pull", git_pull_display),
-    ];
     EditorTabGeometry {
-        content_width: *rows.iter().max().unwrap_or(&0),
-        content_height: rows.len(),
+        content_width: editor_general_content_width(
+            name_value,
+            &workdir_display,
+            state.pending.keep_awake.enabled,
+            state.pending.git_pull_on_entry,
+        ),
+        content_height: 4,
     }
 }
 

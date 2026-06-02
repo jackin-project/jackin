@@ -238,6 +238,24 @@ pub fn editor_row_width(label: &str, value: &str) -> usize {
 }
 
 #[must_use]
+pub fn editor_general_content_width(
+    name_value: &str,
+    workdir_display: &str,
+    keep_awake_enabled: bool,
+    git_pull_on_entry: bool,
+) -> usize {
+    general_row_widths(
+        name_value,
+        workdir_display,
+        keep_awake_enabled,
+        git_pull_on_entry,
+    )
+    .into_iter()
+    .max()
+    .unwrap_or(0)
+}
+
+#[must_use]
 pub fn editor_mount_add_row_width() -> usize {
     text_width("  + Add mount")
 }
@@ -287,6 +305,30 @@ pub fn general_lines(
         render_editor_row(1, cursor, "Working dir", workdir_display, show_cursor),
         render_editor_row(2, cursor, "Keep awake", keep_awake_display, show_cursor),
         render_editor_row(3, cursor, "Git pull", git_pull_display, show_cursor),
+    ]
+}
+
+fn general_row_widths(
+    name_value: &str,
+    workdir_display: &str,
+    keep_awake_enabled: bool,
+    git_pull_on_entry: bool,
+) -> [usize; 4] {
+    let keep_awake_display = if keep_awake_enabled {
+        "enabled (macOS only)"
+    } else {
+        "disabled"
+    };
+    let git_pull_display = if git_pull_on_entry {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    [
+        editor_row_width("Name", name_value),
+        editor_row_width("Working dir", workdir_display),
+        editor_row_width("Keep awake", keep_awake_display),
+        editor_row_width("Git pull", git_pull_display),
     ]
 }
 
@@ -1095,6 +1137,21 @@ mod tests {
         assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
         assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
         assert_eq!(editor_mount_add_row_width(), text_width("  + Add mount"));
+    }
+
+    #[test]
+    fn general_content_width_uses_rendered_row_vocabulary() {
+        let width = editor_general_content_width("demo", "~/project", true, false);
+        let expected = [
+            editor_row_width("Name", "demo"),
+            editor_row_width("Working dir", "~/project"),
+            editor_row_width("Keep awake", "enabled (macOS only)"),
+            editor_row_width("Git pull", "disabled"),
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0);
+        assert_eq!(width, expected);
     }
 
     #[test]
