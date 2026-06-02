@@ -32,6 +32,7 @@ use jackin_console::tui::screens::settings::update::{
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
+use jackin_console::tui::update::term_width_scroll_plan;
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -715,12 +716,8 @@ fn scroll_editor_tab_horizontal(
         return;
     };
     editor.tab_content_scroll_focused = true;
-    jackin_tui::components::apply_term_width_scroll_delta(
-        &mut editor.tab_scroll_x,
-        delta,
-        term_width,
-        content_width,
-    );
+    editor.tab_scroll_x =
+        term_width_scroll_plan(editor.tab_scroll_x, delta, term_width, content_width);
 }
 
 fn scroll_editor_workspace_mounts_horizontal(
@@ -733,12 +730,8 @@ fn scroll_editor_workspace_mounts_horizontal(
         return;
     };
     editor.workspace_mounts_scroll_focused = true;
-    jackin_tui::components::apply_term_width_scroll_delta(
-        &mut editor.workspace_mounts_scroll_x,
-        delta,
-        term_width,
-        content_width,
-    );
+    editor.workspace_mounts_scroll_x =
+        term_width_scroll_plan(editor.workspace_mounts_scroll_x, delta, term_width, content_width);
 }
 
 fn scroll_settings_global_mounts_horizontal(
@@ -750,12 +743,8 @@ fn scroll_settings_global_mounts_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    jackin_tui::components::apply_term_width_scroll_delta(
-        &mut settings.mounts.scroll_x,
-        delta,
-        term_width,
-        content_width,
-    );
+    settings.mounts.scroll_x =
+        term_width_scroll_plan(settings.mounts.scroll_x, delta, term_width, content_width);
 }
 
 fn scroll_settings_trust_horizontal(
@@ -767,12 +756,8 @@ fn scroll_settings_trust_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    jackin_tui::components::apply_term_width_scroll_delta(
-        &mut settings.trust.scroll_x,
-        delta,
-        term_width,
-        content_width,
-    );
+    settings.trust.scroll_x =
+        term_width_scroll_plan(settings.trust.scroll_x, delta, term_width, content_width);
 }
 
 fn move_settings_global_mounts_selection(
