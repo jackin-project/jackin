@@ -91,7 +91,7 @@ The detached-start + exec split decouples the container's lifetime from the fore
 - **stopped with exit 0** → the user exited cleanly; tear down container, DinD, network, and certs volume
 - **stopped with non-zero exit or OOM** → crash; preserve the container and DinD so `jackin hardline` can restart in place
 
-Every fresh launch gets a unique DNS-safe instance identity. Existing running or stopped instances are not fresh-launch blockers; they remain discoverable through `hardline` and the console. Missing recoverable state is the case that can prompt or block before a fresh load. The detailed contributor contract lives in [Runtime Instance Model](/reference/runtime-instance-model/).
+Every fresh launch gets a unique DNS-safe instance identity. Existing running or stopped instances are not fresh-launch blockers; they remain discoverable through `hardline` and the console. Missing recoverable state is the case that can prompt or block before a fresh load. The detailed contributor contract lives in [Runtime Instance Model](/reference/runtime/runtime-instance-model/).
 
 ### Reconnecting
 
@@ -99,7 +99,7 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 ### Capsule supervisor and session model
 
-Every role container runs the jackin' Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs" />) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin' Capsule](/reference/jackin-capsule/).
+Every role container runs the jackin' Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs" />) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin' Capsule](/reference/capsule//).
 
 Sessions are daemon-owned PTYs inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
 

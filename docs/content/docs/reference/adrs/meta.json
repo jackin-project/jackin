@@ -1,0 +1,4 @@
+{
+  "title": "Architecture Decision Records",
+  "pages": ["index", "adr-004-pane-body-rendering"]
+}

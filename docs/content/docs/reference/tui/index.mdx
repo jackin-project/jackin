@@ -1,0 +1,20 @@
+---
+title: "TUI Design"
+description: "Canonical design rules for the jackin' terminal UI. Read before implementing any TUI change."
+---
+
+This section is the **canonical record of every binding TUI design decision** — architecture, navigation, chrome rules, dialogs, component reuse, and visual design. When a new decision is made, add it to the relevant page immediately.
+
+If a proposed implementation conflicts with a rule here, fix the implementation, not the rule (or open a discussion to amend the rule first). Violations are bugs and must be fixed before a PR lands.
+
+Every PR review that touches a TUI surface must verify the diff against these pages before producing review output.
+
+## Pages
+
+- **[Architecture](/reference/tui/architecture)** — Elm Architecture layers, source code locations, boundary rules, single/multi-screen layouts, and the typed effects flow between TUI and non-TUI code.
+- **[Navigation & Input](/reference/tui/navigation)** — Key binding roles, W3C Tabs pattern, navigation hints, focusability rules, hover-scroll, scrollable blocks, and debug output constraints.
+- **[Chrome & Surfaces](/reference/tui/chrome)** — Bottom chrome layout, status bar rules, brand chrome, focus-visible borders, launch progress surface, and alternate screen continuity.
+- **[Dialogs & Modals](/reference/tui/dialogs)** — Modal sizing, confirmation layout, sub-dialog stacking, wizard flows, error surface rules, hints/footer bar, and settings/editor parity.
+- **[Component Reuse & Catalog](/reference/tui/components)** — Hard reuse rule, the full reusable component catalog, and shared interaction patterns.
+- **[Visual Design](/reference/tui/visual-design)** — PHOSPHOR color palette, border colors, left sidebar, and tab bar specifications.
+- **[Lookbook](/reference/tui/lookbook)** — Live SVG previews of every shared component in `jackin-tui`.

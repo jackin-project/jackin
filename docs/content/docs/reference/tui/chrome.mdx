@@ -1,0 +1,243 @@
+---
+title: "Chrome & Surfaces"
+description: "Bottom chrome layout, status bar rules, brand chrome, focus-visible borders, launch progress surface, alternate screen continuity, and modal backdrop."
+---
+
+### Bottom chrome layout — mandatory row order
+
+Every full-screen TUI surface must follow this bottom-chrome order (bottom of terminal, counting upward):
+
+1. **Row: debug status bar** — only present when `--debug` is active. Background `DANGER_RED`, shows `[debug]  run: <run-id>`. This is the last (lowest) row.
+2. **Row: branch / instance context bar** — the white/dark bar showing the current branch, PR info, or container ID. Present on every surface where it applies.
+3. **Row: empty separator** — one blank row between the context bar and the hint bar. This visual gap makes the hint area feel separate from the system chrome below it.
+4. **Row: hint bar** — keyboard shortcuts for the current focus context. This is the first visible row above the chrome group.
+
+The host console matches this order. The capsule must also follow it: `MAIN_VIEW_HINT` renders above an empty separator row above the branch context bar. Any surface that collapses the separator or places hints directly adjacent to the system bar is a violation.
+
+**Implementation:** The separator row is a blank `PHOSPHOR_DARK` row, not an empty string — it must use the same background as the surrounding chrome so it reads as intentional spacing, not a rendering gap.
+
+### Container info dialog — one shared dialog across all surfaces
+
+There is exactly **one** container info dialog across the entire jackin' experience. The same component, the same layout, the same behavior — regardless of whether the operator is on the jackin' console, the launch progress screen, or inside the capsule multiplexer.
+
+**What changes between surfaces is only the fields shown inside the dialog.** Each surface adds the information it knows at that point in the launch/session lifecycle:
+
+| Surface | Fields always shown | Fields added in debug mode |
+|---|---|---|
+| Launch screen | Container ID (or "loading…"), jackin version | run ID, diagnostics log path |
+| Capsule multiplexer | Container ID, role, agent, workdir, jackin version, capsule version | run ID, diagnostics log path, docker build log path |
+| Host console (debug bar chip) | run ID (debug mode only surface) | diagnostics log path |
+
+**Non-debug vs debug mode:**
+- Non-debug: container ID, role, agent, workdir, version rows only.
+- Debug mode: all non-debug rows plus run ID and every relevant diagnostics path. Debug mode does NOT produce a separate dialog — it enriches the same dialog with more rows. There is no "debug info dialog" and "container info dialog" — only one dialog with a variable field set.
+
+**Implementation rule:** The dialog must be a single shared component instantiated by every surface. The host console version lives in `jackin-tui` as a proper Ratatui widget (`ContainerInfoState` + `render_container_info`). The capsule version mirrors the identical layout in its own raw-ANSI renderer (same as the confirm dialog pattern — different binary, same visual contract). Any deviation in layout, padding, or border color between surfaces is a design violation.
+
+**Trigger:** A clickable chip in the status bar or status footer opens this dialog. The chip is always clickable — in non-debug mode it shows the instance/container ID chip; in debug mode it shows the combined `run_id:instance_id` chip. One click → one dialog.
+
+### Status bar chips — instance ID and run ID
+
+The right side of every jackin' status bar carries up to two clickable chips:
+
+**Instance ID chip** (always shown when a container exists):
+- Displays the short container instance ID (e.g. `wsvjk4ak`).
+- Resting style: blue link chip (distinct from surrounding white bar) with an OSC 22 hand pointer on hover.
+- Click → opens the **ContainerInfo dialog** showing container ID, role, agent, workdir, and version. In debug mode, also shows the run ID and a clickable path to the run log file.
+
+**Debug run ID chip** (shown only when `--debug` is active):
+- Displays the diagnostics run ID (e.g. `jk-run-2a6515`) on a `DANGER_RED` background.
+- Resting style: bold white text on DANGER_RED, OSC 22 hand pointer on hover.
+- Click → opens the same **ContainerInfo dialog**, enriched with the run ID, the full path to the JSONL diagnostics log, the Docker build log path (if applicable), and links to copy each path. These debug rows provide the information the operator needs to share with an agent for triage.
+
+**Both chips open the same dialog:** The instance ID chip is always available and gives operational context (what is running). The run ID chip is debug-mode-only and gives diagnostics context (where to find the evidence). They are triggers for the same `ContainerInfo` surface, not separate dialog types.
+
+**Implementation applies to all status bar surfaces:** the capsule bottom bar, the host console bottom bar, and the launch cockpit status bar. Any status bar that shows an instance ID or run ID must wire the click handlers to the appropriate dialog.
+
+### Version display — two rows, consistent format
+
+Wherever the jackin' version and the capsule version appear together (ContainerInfo dialog, any info panel), they must appear on **separate rows** using the canonical names:
+
+```
+jackin:          0.6.0-dev+a7ada81
+jackin-capsule:  0.6.0-dev+d4998f5
+```
+
+This matches `jackin --version` output (which prints `jackin <version>`) and `jackin-capsule --version` output. Never combine them on one line with a separator (e.g. `host x · capsule y`) — the two-line format is cleaner and matches what the operator sees on the CLI.
+
+### Status bar is always white; debug run ID is a red chip
+
+**The bottom status bar must always render on a white background.** This is invariant regardless of debug mode, surface, or content. The white band is the visual anchor that separates TUI chrome from terminal content — a non-white status bar is a design violation.
+
+**The debug run ID is a compact red chip right-aligned on the status bar.** When `--debug` is active, the run ID appears as a `DANGER_RED` background chip on the right side of the status bar. Only the chip itself gets the red background. The rest of the bar stays white. The chip contains only the run ID string (e.g. `jk-run-740709`), nothing else.
+
+**Debug badge chip layout:**
+```
+  [white status bar content]          jk-run-740709
+^─────────────────── white ──────────^─── red chip ──^
+```
+
+This applies to the host console debug bar and any other surface that surfaces a run ID in debug mode.
+
+### Brand chrome is shared across every top-level screen
+
+Every full-screen jackin' surface — the workspace list, settings, the workspace editor, and the launch progress screen — renders the same brand header through one shared helper (`render_brand_header` / `brand_header_line` in <RepoFile path="crates/jackin-tui/src/components/brand_header.rs" />): the ` jackin' ` phosphor-green pill (black foreground, bold) pinned to the top-left, a `·` separator, then the screen label. The pill matches the in-container multiplexer status-bar brand pill (<RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" />) so the logo never shifts position, colour, or weight as the operator transitions between screens. The header occupies two rows (brand row + one spacer); the screen body starts on the third row. New top-level screens must call the shared helper rather than hand-rolling a brand line — a divergent logo is a chrome-consistency bug.
+
+### Focus-visible border: one active container owns bright green
+
+Every interactive TUI state must make the current focus owner visually obvious. This follows the standard accessibility idea of a visible focus indicator: the operator should always be able to answer "where will my next key, scroll, or click action apply?" without reading the footer or remembering the previous action.
+
+#### Focus rules — quick reference
+
+**Hard rule: exactly one focus owner at any time.** There must never be two containers with a PHOSPHOR_GREEN border visible simultaneously on the same screen. One container owns focus; everything else is dark. This is non-negotiable.
+
+**How focus transfers — three and only three mechanisms:**
+
+1. **Keyboard.** A designated navigation key moves focus to an adjacent area: `⇥ Tab` moves forward to the next interactive area; `⇧Tab`/`Esc` moves back; `↓`/`↑` navigate within the current focused area (not between areas). Tab click via keyboard (`←`/`→` on the tab strip, then `⇥`/`↓` to enter content) follows W3C ARIA Tabs pattern.
+
+2. **Mouse click.** Clicking any focusable container immediately and visibly transfers focus to it — the clicked container gets the PHOSPHOR_GREEN border and the previously focused container loses it in the same frame. Clicking a tab in the tab strip transfers focus to the tab bar (underline turns PHOSPHOR_GREEN). Clicking a content block transfers focus to that block (block border turns PHOSPHOR_GREEN).
+
+3. **Scroll hover.** Moving the mouse pointer over a scrollable block and scrolling (mouse wheel) transfers focus to that block automatically — the operator has implicitly stated "I want to interact with this block." This mirrors how browsers and native apps treat scroll: hovering and scrolling is an unambiguous targeting gesture.
+
+No other mechanism may transfer or clear focus. In particular: navigation keys (`↑`/`↓`/`←`/`→`) within a focused container must NOT clear or move focus to another container — they navigate within the current owner. Resize events, content fitting within viewport, and workspace selection changes must NOT clear focus.
+
+**Hard rule: every screen must have at least one visible focus owner.** A screen with no PHOSPHOR_GREEN indicator anywhere is a design violation. The launch cockpit and other non-interactive progress surfaces are the only acceptable exception — they show work in progress and have no interactive element to focus. Every screen that the operator navigates through must make the current focus owner visible at all times via the green border, green tab underline, or equivalent.
+
+**Hard rule: `▸` and green border are inseparable.** A content block must show both signals together or neither. The expressions that control them must be identical: `focused = !tab_bar_focused && scroll_focused && modal.is_none()` and `show_cursor = !tab_bar_focused && scroll_focused && modal.is_none()`. Any mismatch — border green but no cursor, or cursor visible but border dark — is a bug. This applies to every list, form, and scroll block in the application.
+
+- **Exactly one** `PHOSPHOR_GREEN` border visible per surface layer at any time.
+- **Click-to-focus**: clicking a focusable container immediately transfers focus to it and updates the hint bar.
+- **Non-focusable containers never steal focus**: if a block has no scroll capability and no interactive elements (no buttons, no picker, no text input), clicking it does nothing — focus stays on the previously focused container.
+- **Scroll = focusable** for passive detail blocks: a block is only focusable if its content overflows its viewport in at least one axis (the scrollbar appears). A block whose content fits entirely is not focusable and must not show the green border.
+- **Hint bar is focus-scoped**: the bottom hint bar recalculates on every focus change and shows only the actions relevant to the currently focused container. Switching focus is never silent — the hint bar visually confirms which container owns the keyboard.
+- Pressing `Esc` or committing a modal returns focus to the container that was focused before the modal opened.
+- Dialogs and modals always have `PHOSPHOR_GREEN` borders — they are always the active container when visible.
+
+#### Focus principle
+
+jackin's focus indicator is the border of the **active interaction container** rendered in `PHOSPHOR_GREEN`. All sibling and background containers render their borders in `PHOSPHOR_DARK` while they do not own focus. There is exactly one active focus-border owner per surface layer:
+
+- **Top-level list focus.** When the workspace list/sidebar owns navigation focus, the sidebar block has the bright border and right-pane detail blocks use dark borders.
+- **Scrollable detail focus.** When the operator clicks or scroll-focuses a right-pane block such as **Global mounts**, the sidebar returns to a dark border and that scrollable block gets the bright border.
+- **Tab content focus.** In the workspace editor or settings, the focused tab-panel block gets the bright border while other visible panels stay dark. The tab bar uses its own underline focus cue when it owns focus.
+- **Modal/dialog focus.** When a modal opens, the modal is the active container and its border must be bright green. The underlying surface loses its bright border. If the modal opens a child modal, the child receives the bright border and the parent is hidden or inactive per the modal-backdrop rule.
+- **Button-row or field focus inside a dialog.** The dialog border remains bright because the dialog still owns the interaction layer; inner focused rows/buttons use their local focus styling in addition to the outer border.
+
+Do not show two bright container borders in the same visible layer. If a dialog is open, the background's previous focus border must not remain visible. If focus moves from the sidebar to a scrollable details block, the sidebar border must return to the dark border. If focus returns after `Esc` or commit, the receiving container immediately regains the bright border.
+
+This rule is broader than scroll focus. Scrollable blocks still use the overflow checks in the [Focusability](#focusability) section so a passive block whose content fits cannot pretend to be scrollable. But forms, dialogs, pickers, tab panels, and other interactive containers are focusable because they accept keys, not because they overflow; they still get the bright border when they own interaction focus.
+
+**Enforcement — use the canonical helpers, never inline border colors:** The correct border style is encoded in two reusable primitives in <RepoFile path="crates/jackin-tui/src/components/panel.rs" />:
+
+- `Panel::new().title("…").focus(PanelFocus::Focused).block()` — titled active container (modal, picker, form, tab panel).
+- `modal_block()` — untitled active container (dialog without a title bar).
+- `Panel::new().focus(PanelFocus::Unfocused).block()` / `unfocused_block()` — background container.
+- `render_scrollable_block(…, focused, …)` — passive scroll block; the helper applies the correct focus state automatically.
+
+Never construct `Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK))` for a modal — that silently produces a wrong (invisible) focus indicator. The focus-visible tests in `panel.rs` catch color regressions: `modal_block_uses_phosphor_green`, `panel_focused_uses_phosphor_green`, `unfocused_block_uses_phosphor_dark`.
+
+#### Screen-by-screen focus behavior
+
+##### Workspace list screen
+
+Layout: workspace list sidebar (left) + detail panels on the right (General, Mounts, Global mounts, Roles).
+
+**Initial state (on launch):** the workspace list sidebar owns focus. `PHOSPHOR_GREEN` border on the sidebar block. All right-hand detail panels show `PHOSPHOR_DARK` borders. Hint bar shows workspace-list actions: `↑↓ · ↵ launch   E edit · N new · D delete · S settings · O open in GitHub   Q quit`.
+
+**Focusable containers:**
+
+| Container | Focusable? | Condition |
+|---|---|---|
+| Workspace list sidebar | **Yes** | Always — it is the primary navigation container. |
+| Mounts block | **Yes, when scrollable** | Content overflows viewport → scrollbar appears → click focuses it. |
+| Global mounts block | **Yes, when scrollable** | Same rule. Content is typically long enough to overflow. |
+| General block | **No** | Contains only read-only summary fields. No scroll, no buttons. Clicking it does nothing. |
+| Roles block | **No** | Same — short read-only list. Clicking it does nothing. |
+
+**Mouse interactions:**
+
+- Click on workspace list sidebar → focus stays or returns to sidebar; border stays green.
+- Click on Mounts block (when scrollable) → focus moves to Mounts; its border turns green; sidebar border turns dark; hint bar updates to scroll hints for Mounts.
+- Click on Global mounts block (when scrollable) → same pattern; focus moves to Global mounts; hint bar updates to scroll hints for Global mounts.
+- Click on General block → no focus change; no visual response; General never shows a green border.
+- Click on Roles block → no focus change; Roles never shows a green border.
+
+**Keyboard when workspace list is focused:** `↑`/`↓` navigate workspace entries; `↵` launch selected workspace; `E` open workspace editor; `N` new workspace modal; `D` delete confirmation modal; `S` settings modal; `Q` quit.
+
+**Keyboard when Mounts or Global mounts is focused:** `↑`/`↓`/`H`/`L`/scroll wheel scroll the focused detail block; `Esc` returns focus to workspace list sidebar and the sidebar border turns green and the hint bar returns to workspace-list actions.
+
+**Focus during inline pickers (agent / role selection):** when the operator selects a workspace and the agent picker or role picker appears inline in the right pane, **focus stays on the workspace list sidebar**. The sidebar is still the active container because the operator is still navigating within the launch flow — they selected a workspace, must choose an agent, then optionally a provider. The inline picker receives keyboard input because the sidebar routes selection keys to it, but the green border stays on the sidebar block. This is intentional: the sidebar IS the focus owner; the picker is an inline extension of the current list action, not a separate container that steals focus.
+
+**Focus during full-screen modals (new workspace, delete confirm, settings):** when a modal overlay opens (new workspace, delete confirm, settings form, op-picker), focus immediately transfers to the modal. The modal shows a `PHOSPHOR_GREEN` border. The sidebar loses its green border. Closing the modal returns focus to the sidebar.
+
+**Dialog/modal hints:** every time focus changes — including when a modal opens or closes — the hint bar recalculates immediately. The hint bar always reflects only the actions available to the currently focused container. There is never a stale hint row that belongs to a previously focused container.
+
+##### Workspace editor screen
+
+The editor has a tab strip (General, Mounts, Roles, Secrets, …) above the active tab's content panels.
+
+**Tab strip focus:** the tab strip has no border, so it has no `PHOSPHOR_GREEN` border ring. Instead, the active tab is indicated by its underline — this is the tab strip's own focus cue, consistent with the W3C ARIA Tabs pattern (the selected tab has a visually distinct state via underline rather than a border).
+
+**Clicking any tab always steals focus immediately from whatever block currently owns it.** There is no exception — even if a scrollable panel inside the tab content is focused, clicking a tab transfers focus to the tab strip layer and the previously focused panel loses its green border. The underline on the clicked tab is the visible confirmation. This is an intentional design decision: tab strips own the keyboard when active, and the content below them does not get to keep focus while the operator is navigating tabs.
+
+While the tab strip owns focus: `←`/`→` navigate between tabs; the hint bar shows tab-navigation hints; no panel inside the current tab has a green border.
+
+After selecting a tab, focus automatically moves from the tab strip into the tab's primary interactive container (the first scrollable or interactive panel in the tab). If the tab's content has no scrollable or interactive panel, the tab strip retains focus. Clicking a scrollable panel inside the active tab transfers focus from the tab strip to that panel. The panel shows the green border; the tab strip underline remains (it still shows which tab is selected) but the tab strip no longer owns keyboard input.
+
+Focus always has exactly one visible owner: **either** the tab strip underline (tab strip focused) **or** the content panel green border (content focused). Both are never active simultaneously.
+
+**Tab key flow within the editor:**
+
+| Current focus | Key | Result |
+|---|---|---|
+| Tab strip | `⇥ Tab` or `↓` | Focus moves to the tab's content panel; content panel shows green border. |
+| Tab strip | `←` / `→` | Navigate tabs; content panel has no green border while tab strip owns focus. |
+| Content panel | `⇧Tab` or any tab-strip click | Focus returns to tab strip; content panel loses green border; underline confirms active tab. |
+
+**Which content panels are focusable in the editor:**
+
+| Tab | Content panel | Focusable? | Condition |
+|---|---|---|---|
+| General | Summary fields | **No** | Read-only display. `⇥` from tab strip does nothing. |
+| Mounts | Mount list | **Yes** | List with selectable rows, `A`/`D`/`R`/`I` actions. Always focusable when the Mounts tab is active. |
+| Roles | Role list | **Yes, when scrollable** | Focusable only if the list overflows its panel height. |
+| Environments | Env list | **Yes** | Interactive rows. |
+| Auth | Auth form | **Yes** | Interactive form. |
+
+When `⇥ Tab` is pressed and the active tab's content panel is not focusable (e.g. General), focus stays on the tab strip.
+
+**Cursor indicator `▸` is focus-gated:** The row-selection prefix `▸` must appear only when the content block actually owns focus — never while the tab bar owns focus, and never in non-focusable tabs (e.g. General). When the tab bar is focused, every content row displays the blank `  ` prefix regardless of which row the cursor is on. The cursor position persists in state so the correct row is highlighted the moment focus transfers into the content; it just must not be visible before that transfer. Implementations use a `show_cursor: bool` flag (computed as `!tab_bar_focused && content_block_focused`) threaded through all row-line builders. A `▸` visible while the tab bar owns focus is a design-decision violation.
+
+### Launch Progress Surface
+
+`jackin load` and console-triggered launches share one launch progress surface. The launch renderer is event-driven: runtime code emits public stages (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) and the rich cockpit renders them. `jackin load` no longer has a compact/plain launch renderer; if stdin/stdout/stderr are not TTYs, `TERM=dumb`, CI is set, or the terminal is smaller than 80x24, launch fails before it can corrupt the screen with partial output. The launch surface is communication between jackin' and the operator, not just a stopwatch. Every visible stage must be acknowledged in sequence so the operator can tell what happened, where the launch is now, and whether the system finished or is still moving. Fast cache-hit commands are still real work from the product perspective; the UI must not skip them simply because the implementation completed before the next render tick. The rich renderer therefore intentionally gives each stage transition a short minimum-visible dwell, including the final `hardline` handoff, so fast paths still show a progress rail that starts at the beginning, reaches the final label, and matches the operator's mental model of the launch sequence.
+
+The rich launch surface is built from the same chrome as every other top-level screen (see *Brand chrome is shared across every top-level screen*): the shared ` jackin' ` pill header (labelled `loading`) on top, a single phosphor-bordered body box whose title colours what is loading — `Loading` (dim), the agent role in phosphor green, the preposition (dim), the target workspace/path in link blue, with the role and target pulsing brighter (to white) as the launch advances so the eye reads "this is loading" — and a white bottom **status bar**. Inside the box, **digital rain** fills the upper space (the "entering the construct" moment). It is the **same rain engine the intro/outro use** (`RainState` from <RepoFile path="src/tui/animation.rs" />), ticked per frame and painted into the box's ratatui buffer cell-by-cell (the engine's `eprint!` renderer can't compose with a ratatui frame, so only the simulation + its age-based green fade are reused, not its raw-ANSI output). Below the rain sits the **stage progress**: one block per stage, filling gray (`░`, queued) → green (`█`, done) with the active stage as a pulsing `▓` (white ↔ phosphor-green), so a glance reads as percent-complete and all-green means loaded. A `just-completed · active · next` stage-word row (`network · sidecar · capsule`) sits beneath the blocks, and the row fades at both ends as it scrolls so clipped words taper in and out instead of hard-cutting. The box carries **no identity table and no live step detail** — the build/step detail belongs only on the status bar. The status bar is rendered through the shared `StatusFooter` component (<RepoFile path="crates/jackin-tui/src/components/status_footer.rs" />) — the same white band the in-container multiplexer paints: the current activity on the left (upper-cased first word, trailing ellipsis, black bold), and on the right the container's short instance id as a blue link chip plus, **only under `--debug`**, the diagnostics run id in burnt amber so the operator can never be unsure they are in a debug run. The white band, the blue link, and the debug amber all live in `jackin-tui` so the host bar and the multiplexer bar cannot drift. The surface must never stream raw Docker logs, build output, per-repo pull output, stack traces, or debug traces into the failure popup; those belong in diagnostics artifacts — but because the derived-image docker build is the slowest step, the **activity text is clickable** while a build log exists: it hovers (lifting to the link colour + the hand pointer, per *Clickable targets must look clickable*) and opens a full-screen opaque overlay that streams the live build output through the shared scrollable block (`render_scrollable_block` — green vertical scrollbar when the wrapped content overflows, dark otherwise). The overlay uses a black terminal-style background, neutral default text, and interprets ANSI SGR colours from Docker output when present so coloured CLI output remains coloured on screen. Long Docker lines wrap within the overlay instead of creating horizontal scroll; continuation rows begin with `↳ ` so wrapped output is visibly distinct from a new log line. The overlay is dismissed with `Esc`/`q` or a click. A fatal failure reuses the shared red-border error-popup chrome for its visuals, but the cockpit's own render-task input handler owns the dismiss keys (`Enter`/`Esc`); animated accents freeze while the popup owns the screen so no live cue moves behind the modal. The failure popup is intentionally terse and left-aligned: it names the failed stage, keeps the run ID visible, links the JSONL run timeline, and, when the derived-image Docker build failed, links a plain colour-free `.log` sidecar containing the exact Docker command, working directory, exit status, stdout, and stderr. The run ID, diagnostics path, and Docker output path are exact-value copy targets: each has a distinct resting style, hover lift, OSC 22 hand pointer, click-to-copy via OSC 52, and visible copied feedback. After the rich surface exits, the plain fatal error prints the same run ID, diagnostics path, and Docker output path in a two-column table. It must not paste the full command line or raw Docker output into the product surface. The loading screen now has mouse handling (the build-log activity button), so the previously-deferred idea of making the instance-id chip clickable to open the multiplexer's `ContainerInfo` dialog is now feasible to add — it is simply not wired yet.
+
+When a launch finds unfinished jackin instances for the target workspace, the operator must resolve the conflict before it proceeds. The rich surface dims the whole launch frame and renders a **forced-choice filter picker** — the shared `select_list` widget (<RepoFile path="crates/jackin-tui/src/components/select_list.rs" />), the same `Filter:`-row-over-`▸`-list layout as the role picker and the in-container Menu dialog. **Start fresh** is always the default first row; each recoverable instance is listed below it. The picker is deliberately not closable: there is no `Esc`/cancel, so the operator cannot dismiss the decision — only `Enter` commits a choice (and `Ctrl-C` aborts the entire launch). Navigation hints (`↑/↓ navigate · type to filter · Enter select`) render in the screen footer, never inside the dialog. The same launch-dialog rule applies to role selection, target ambiguity, sensitive mount confirmation, role trust, branch trust, cached-repo recovery, agent selection, and manifest env prompts.
+
+jackin' shows digital rain in three places. Two are **session-boundary** rituals tied to the global instance lifecycle. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and plays only before a launch when no jackin-managed role containers are active and no launch has already claimed the empty construct. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and plays only after the foreground session when no role containers remain. Starting or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. There is no manual rain-off or rich-TUI-off switch: non-interactive shells, CI, `TERM=dumb`, and terminals below the supported viewport simply do not enter the rich boundary or launch surfaces. The third rain surface is the **in-box loading rain** inside the loading cockpit's body box — deliberate per-launch ambiance while the operator waits, not a boundary ritual. `JACKIN_NO_MOTION=1` keeps the same layout while freezing every animated accent — the in-box rain, the active-block pulse, and the stage-word pulse all go static.
+
+Boundary ritual verification is env-gated instead of CLI-flagged so the operator-facing command surface stays lifecycle-driven. These variables are for local development and visual QA only; they affect only the current process invocation and are not config:
+
+```bash
+JACKIN_FORCE_BOUNDARY_INTRO=1 jackin console
+JACKIN_FORCE_BOUNDARY_OUTRO=1 jackin load
+JACKIN_FORCE_BOUNDARY_RITUALS=1 jackin console
+```
+
+`JACKIN_FORCE_BOUNDARY_INTRO=1` plays the two-screen intro even when other jackin-managed role containers are already running; `jackin console` plays it immediately on console entry, while `jackin load` plays it before the launch flow. `JACKIN_FORCE_BOUNDARY_OUTRO=1` plays the two-screen outro after the foreground session returns even when other role containers remain. When forced while other containers remain, the outro is a visual verification path only and does not consume the final-exit marker; the real last-exit outro is still owned by the process that observes zero running role containers and successfully consumes that marker. `JACKIN_FORCE_BOUNDARY_RITUALS=1` enables both force paths. Empty, `0`, `false`, `no`, and `off` values are treated as disabled.
+
+### One continuous alternate screen across the launch flow
+
+A console-triggered launch moves through several full-screen surfaces in sequence — the console manager, the loading cockpit, the in-container capsule multiplexer, and, when the last role container exits, the exit outro. The terminal must stay on **one** alternate screen for the whole sequence; it must never drop back to the cooked primary screen between surfaces. A flash of the operator's shell mid-launch is a chrome-consistency bug.
+
+The mechanism is a single host-side guard, `HostScreen` (<RepoFile path="src/console/mod.rs" />), entered once by the launch flow in <RepoFile path="src/app/mod.rs" /> and dropped once after any exit outro. It owns raw mode, the alternate screen, and mouse capture, and sets the `host_screen_owned` flag in <RepoFile path="src/tui/mod.rs" />. Each sub-surface — the console run loop, the launch cockpit's `RichRenderer` (<RepoFile path="crates/jackin-launch/src/tui/run.rs" />), and the intro/outro animations (<RepoFile path="src/tui/animation.rs" />) — checks that flag and skips its own enter/leave and raw-mode toggling, drawing into the shared screen instead. The rare interim prompts that need a line-buffered terminal (sensitive-mount confirm, agent choice) run inside `HostScreen::suspend`, which drops to the cooked screen for the closure and restores the full-screen session afterward; the common path (agent pre-picked, no sensitive mounts) never suspends.
+
+The in-container capsule client terminal adapter (<RepoFile path="crates/jackin-capsule/src/tui/terminal.rs" />) would otherwise toggle its **own** alternate screen (`?1049h`/`?1049l`) over the `docker exec` channel, so detaching it would pop the operator back to the cooked terminal even though the host still holds a screen. The launch flow passes `JACKIN_HOST_ALT_SCREEN=1` on the capsule `docker exec` (the `host_alt_screen_exec_flag` helper in <RepoFile path="src/runtime/attach.rs" />) whenever it owns the screen; the client then skips its `?1049h` enter (keeping the `clear + home` so it draws fresh over the loading frame) and drops the `?1049l` from its detach reset, leaving the host guard to leave the screen once at the very end. Standalone capsule invocations (`jackin hardline`) do not set the env, so the client manages its own screen exactly as before.
+
+### Modals hide the full surface behind them
+
+Every modal or dialog is global to the TUI surface, not scoped to one pane, tab, list row, or content block. Opening a modal must paint an opaque backdrop over the whole terminal before drawing the modal, so the surface behind it is fully hidden rather than dimmed: top chrome, bottom chrome, pane/list/card borders, focused-state accents, scrollbars, and content all disappear behind the fill. Do not leave active green borders, selected scrollbars, bright clickable chrome, or dimmed-but-readable content visible behind a modal. (An earlier dimmed-backdrop treatment read as unstable; an opaque fill is cleaner and unambiguous.) The hidden chrome reappears only after the modal closes. The in-container multiplexer fills with solid black (`render::fill_screen`); other rich surfaces use their own background colour.
+
+---

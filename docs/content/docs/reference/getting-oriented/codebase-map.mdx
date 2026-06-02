@@ -91,7 +91,7 @@ Instance-local state helpers live in `src/instance/`:
 - <RepoFile path="src/instance/manifest.rs" /> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
 
 The end-to-end shape of "what happens when you run `jackin load`" is
-described in [Architecture → Container lifecycle](/reference/architecture/#container-lifecycle). The detailed contract for instance names, manifests, lookup indexes, restore decisions, cleanup guards, and parallel sessions lives in [Runtime Instance Model](/reference/runtime-instance-model/).
+described in [Architecture → Container lifecycle](/reference/getting-oriented/architecture/#container-lifecycle). The detailed contract for instance names, manifests, lookup indexes, restore decisions, cleanup guards, and parallel sessions lives in [Runtime Instance Model](/reference/runtime/runtime-instance-model/).
 
 ### "I want to change workspace or mount behaviour"
 
@@ -132,7 +132,7 @@ The TOML config model lives in `src/config/`:
   area (global mounts; builtin sync, trust, and auth-forward).
 
 Whenever a config field changes, also update
-[Configuration File](/reference/configuration/) so the schema reference
+[Configuration File](/reference/runtime/configuration/) so the schema reference
 stays accurate.
 
 ### "I want to change role-manifest behaviour"
@@ -175,7 +175,7 @@ and extracted surface code in `crates/jackin-console/`:
 - <RepoFile path="crates/jackin-tui/src/runtime.rs" /> — small shared runtime contracts such as `Dirty` and `UpdateResult`, used by host and launch update functions.
 - <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> — renderable
   component stories used by the `tui-lookbook` generator to produce the
-  [TUI Lookbook](/reference/tui-lookbook/) SVG previews.
+  [TUI Lookbook](/reference/tui/lookbook/) SVG previews.
 - <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> —
   shared Ratatui tab chrome used by the console editor/settings screens
   and the in-container multiplexer status bar.
@@ -218,10 +218,10 @@ page must change in the same PR. The full table lives at the bottom of
 |---|---|
 | `src/cli/**` | [Commands](/commands/load/) |
 | `src/workspace/**` (mount logic) | [Workspaces](/guides/workspaces/), [Mounts](/guides/mounts/) |
-| `src/config/**` | [Configuration File](/reference/configuration/) |
-| `src/runtime/**` | [Architecture](/reference/architecture/), [Runtime Instance Model](/reference/runtime-instance-model/) |
-| `src/instance/**` | [Runtime Instance Model](/reference/runtime-instance-model/) |
-| `src/isolation/**` | Workspaces (per-mount isolation), Architecture (materialization + finalizer), [Configuration File](/reference/configuration/) |
+| `src/config/**` | [Configuration File](/reference/runtime/configuration/) |
+| `src/runtime/**` | [Architecture](/reference/getting-oriented/architecture/), [Runtime Instance Model](/reference/runtime/runtime-instance-model/) |
+| `src/instance/**` | [Runtime Instance Model](/reference/runtime/runtime-instance-model/) |
+| `src/isolation/**` | Workspaces (per-mount isolation), Architecture (materialization + finalizer), [Configuration File](/reference/runtime/configuration/) |
 | `src/manifest/**` | [Role Manifest](/developing/role-manifest/) |
 | <RepoFile path="src/instance/auth.rs" /> | [Authentication](/guides/authentication/), [Security Model](/guides/security-model/) |
 | <RepoFile path="src/derived_image.rs" /> | [Construct Image](/developing/construct-image/) |

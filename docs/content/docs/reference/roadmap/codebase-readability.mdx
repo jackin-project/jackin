@@ -74,7 +74,7 @@ These items require no structural code changes and can be done in any order with
 | [Behavioral spec: op_picker](/reference/roadmap/behavioral-spec-op-picker/) | Invariants for the 1Password picker state machine (2331L) | — |
 | [Per-directory README](/reference/roadmap/per-directory-readme/) | AI-native orientation files + per-crate AGENTS.md | — |
 | [Developer Reference setup](/reference/roadmap/developer-reference-setup/) | `jackin.tailrocks.com/internal/` Fumadocs section | — |
-| <RepoFile path="PROJECT_STRUCTURE.md" /> refresh | Completed; root map now delegates detailed source navigation to [Codebase Map](/reference/codebase-map/) | — |
+| <RepoFile path="PROJECT_STRUCTURE.md" /> refresh | Completed; root map now delegates detailed source navigation to [Codebase Map](/reference/getting-oriented/codebase-map/) | — |
 | [CI gate: PROJECT_STRUCTURE.md](/reference/roadmap/ci-project-structure-gate/) | Fail PRs that add modules without updating the map | Project structure update first |
 | [pub(crate) visibility pass](/reference/roadmap/pub-crate-visibility/) | Tighten over-wide visibilities after clarifying the library surface | — |
 | [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) | ADRs for single-crate, toolchain, ratatui decisions | Developer Reference setup |
@@ -90,7 +90,7 @@ Every extraction below has 3+ real call sites that benefit. No speculative abstr
 
 Before splitting files in Phase 2, reduce the duplication within them. This phase directly addresses the copy-paste patterns that make PR review hard.
 
-The unified TUI scrollbar extraction has shipped: shared metrics, clamping, drag/click mapping, tail-relative launch-progress scrolling, and capsule scrollback now live in `jackin_tui::scroll`; the durable contract is documented in [TUI Design Decisions](/reference/tui-design-decisions/#scrollable-blocks--shared-component).
+The unified TUI scrollbar extraction has shipped: shared metrics, clamping, drag/click mapping, tail-relative launch-progress scrolling, and capsule scrollback now live in `jackin_tui::scroll`; the durable contract is documented in [TUI Design Decisions](/reference/tui//#scrollable-blocks--shared-component).
 
 ### 1. Shared string constants (highest ROI — touches entire codebase)
 

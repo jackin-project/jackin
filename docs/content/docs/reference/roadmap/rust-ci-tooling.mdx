@@ -114,7 +114,7 @@ For jackin' specifically, coverage is the instrument that surfaces the untested 
 
 `cargo-insta` (the `insta` crate plus its `cargo insta` review CLI) asserts values against stored reference snapshots instead of hand-written expectations — the right tool when the asserted value is large or changes often. Rendered TUI / CLI output is the textbook case. It is heavily adopted (65M+ downloads) and actively maintained (v1.47.2, March 2026) by `mitsuhiko`.
 
-jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The TUI architecture work (see [TUI Design Decisions](/reference/tui-design-decisions/)) and codebase-readability items both already call for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
+jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The TUI architecture work (see [TUI Design Decisions](/reference/tui//)) and codebase-readability items both already call for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
 
 ### Spell-check: `typos`
 

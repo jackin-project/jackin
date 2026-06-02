@@ -1,0 +1,4 @@
+{
+  "title": "jackin-capsule",
+  "pages": ["index", "session-lifecycle", "multiplexer-design-rules", "token-orchestrator"]
+}

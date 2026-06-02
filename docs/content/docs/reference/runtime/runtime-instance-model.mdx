@@ -55,7 +55,7 @@ cert volume:     <base>-dind-certs
 
 DNS-sensitive values such as `DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOCKER_TLS_SAN`, `NO_PROXY`, `no_proxy`, and `TESTCONTAINERS_HOST_OVERRIDE` use the DNS-safe DinD name. The role-container base must fit the DinD label budget because `<base>-dind` is used as a network hostname.
 
-Implementation lives in <RepoFile path="src/instance/naming.rs" /> and <RepoFile path="src/runtime/naming.rs" />. The full naming reference — including image names, derived resource names, lock files, roles cache layout, CLI selector formats, and worked examples — is in [Instance and Resource Naming](/reference/instance-resource-naming/).
+Implementation lives in <RepoFile path="src/instance/naming.rs" /> and <RepoFile path="src/runtime/naming.rs" />. The full naming reference — including image names, derived resource names, lock files, roles cache layout, CLI selector formats, and worked examples — is in [Instance and Resource Naming](/reference/runtime/instance-resource-naming/).
 
 ## State Layout
 

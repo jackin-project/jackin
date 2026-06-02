@@ -33,7 +33,7 @@ The fix is the flow the operator described: a clear, rich exit decision — keep
 
 This item is roughly 70% assembly of shipped infrastructure, not greenfield. What already exists:
 
-- **Durable per-instance host state.** `~/.jackin/data/<container>/` survives `docker rm`: `.jackin/instance.json` (the manifest), `.jackin/isolation.json` (mount records), `home/` (every agent runtime's home, including Claude plugins and `.claude.json`), the per-agent auth slots, and the materialised `git/worktree/` and `git/clone/` trees. See [Runtime Instance Model](/reference/runtime-instance-model/).
+- **Durable per-instance host state.** `~/.jackin/data/<container>/` survives `docker rm`: `.jackin/instance.json` (the manifest), `.jackin/isolation.json` (mount records), `home/` (every agent runtime's home, including Claude plugins and `.claude.json`), the per-agent auth slots, and the materialised `git/worktree/` and `git/clone/` trees. See [Runtime Instance Model](/reference/runtime/runtime-instance-model/).
 - **A container-level restore flow.** `resolve_restore_candidate()` in <RepoFile path="src/runtime/launch.rs" /> already presents an **"Unfinished jackin instances"** picker (start-fresh vs restore a prior instance, plus related-role recovery), and `InstanceStatus::RestoreAvailable` + `mark_restore_available()` already model "container gone, host state survives." This shipped as **Unique container identity and restore**.
 - **Per-mount exit assessment.** `assess_cleanup()` runs `git status --porcelain`, `for-each-ref`, and `rev-list` against every isolation record and fails closed (preserve) on any ambiguity. The `PreservedDirty` / `PreservedUnpushed` distinction already drives per-reason wording.
 - **A rich dialog vocabulary.** <RepoFile path="src/runtime/progress.rs" /> already exposes `standalone_select_with_context`, `standalone_error_popup`, text prompts, confirms, and the launch cockpit surface the exit and resume dialogs should reuse rather than reinvent.
@@ -95,7 +95,7 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 
 ## TUI design — screens, flow, and storage
 
-Every screen below renders on the existing rich surface and obeys the canonical [TUI Design Decisions](/reference/tui-design-decisions/): the shared ` jackin' ` brand pill + `·` + screen label on top, the forced-choice `select_list` (`Filter:` row over a `▸`-marked list, `Start …` as the default first row), footer-only hints, and an opaque modal backdrop. Mockups use the same light, terminal-native vocabulary as the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — no heavy borders, compact labels, bright state words.
+Every screen below renders on the existing rich surface and obeys the canonical [TUI Design Decisions](/reference/tui//): the shared ` jackin' ` brand pill + `·` + screen label on top, the forced-choice `select_list` (`Filter:` row over a `▸`-marked list, `Start …` as the default first row), footer-only hints, and an opaque modal backdrop. Mockups use the same light, terminal-native vocabulary as the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — no heavy borders, compact labels, bright state words.
 
 ### Exit flow
 
@@ -273,7 +273,7 @@ A new per-workspace setting selects the exit behaviour:
 | `clean` | Always force-clean on exit, no prompt. |
 
 <Aside type="caution">
-This setting lives in the per-workspace file (`~/.config/jackin/workspaces/<name>.toml`), which is a **versioned schema** (`CURRENT_WORKSPACE_VERSION`). The implementing PR must ship the full migration set per the project's pre-release schema rule: a version bump, a `WORKSPACE_MIGRATIONS` step in <RepoFile path="src/config/migrations.rs" />, a new `tests/fixtures/migrations/workspace/from-<predecessor>/` fixture, a re-bake of existing `after.toml` fixtures, and a Timeline entry in [Schema Versions](/reference/schema-versions/). One version bump for the whole PR.
+This setting lives in the per-workspace file (`~/.config/jackin/workspaces/<name>.toml`), which is a **versioned schema** (`CURRENT_WORKSPACE_VERSION`). The implementing PR must ship the full migration set per the project's pre-release schema rule: a version bump, a `WORKSPACE_MIGRATIONS` step in <RepoFile path="src/config/migrations.rs" />, a new `tests/fixtures/migrations/workspace/from-<predecessor>/` fixture, a re-bake of existing `after.toml` fixtures, and a Timeline entry in [Schema Versions](/reference/runtime/schema-versions/). One version bump for the whole PR.
 </Aside>
 
 One-shot CLI overrides (`--keep` / `--clean`) should mirror the existing `--git-pull` / `--no-git-pull` precedent so a single launch can deviate without editing the workspace file.
@@ -368,7 +368,7 @@ Two supporting sweeps close the long tail:
 - **Phase 2 — Rich exit cockpit.** Move the exit decision onto the launch-progress surface; show dirty/unpushed detail with acknowledge (F3, F5, F6).
 - **Phase 3 — Per-workspace policy.** Add the `ask` / `keep` / `clean` setting with its full workspace-schema migration set and the `--keep` / `--clean` overrides.
 - **Phase 4 — Resume-or-new and the restore ladder.** Surface restorable sessions when selecting an agent; rebind the same instance; implement the tier ladder — Tier 0 `hardline`, Tier 1 `docker start` (F13), Tier 2 `docker run` reusing the stored `image_tag`, Tier 3 pinned rebuild — driven by `inspect_container_state`; persist the launch recipe on the manifest (pinned role commit SHA, base image reference, mount plan, env-var names + source refs) and replay it instead of re-resolving against current config (F14), re-resolving only secret *values*; wire verify-and-acknowledge into re-materialisation. The manifest is not a versioned schema, so the new fields need no migration.
-- **Phase 5 — Clone parity, GC sweeps, tests, docs.** Specify and test clone assessment (F4); add the launch-time lock/detritus reaping and index reconciliation sweeps (F11, F12); update [Parallel Agents](/guides/parallel-agents/) (operator), [Runtime Instance Model](/reference/runtime-instance-model/) (contributor), and [TUI Design Decisions](/reference/tui-design-decisions/); fix the stale doc reference (F8).
+- **Phase 5 — Clone parity, GC sweeps, tests, docs.** Specify and test clone assessment (F4); add the launch-time lock/detritus reaping and index reconciliation sweeps (F11, F12); update [Parallel Agents](/guides/parallel-agents/) (operator), [Runtime Instance Model](/reference/runtime/runtime-instance-model/) (contributor), and [TUI Design Decisions](/reference/tui//); fix the stale doc reference (F8).
 
 ## Open questions
 
@@ -381,4 +381,4 @@ Two supporting sweeps close the long tail:
 - [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — the rich surface the exit cockpit and resume picker render into.
 - [Console agent session control](/reference/roadmap/console-agent-session-control/) — instance discovery and the selection surface; Phase 4 session reconciliation is the in-container continuity counterpart.
 - [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) — the deferred immutable-snapshot recovery model.
-- [Runtime Instance Model](/reference/runtime-instance-model/) — the per-instance host layout this item rebinds on resume.
+- [Runtime Instance Model](/reference/runtime/runtime-instance-model/) — the per-instance host layout this item rebinds on resume.

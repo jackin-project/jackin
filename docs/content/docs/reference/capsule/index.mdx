@@ -291,7 +291,7 @@ The palette key (and, when enabled, the prefix-key state machine) are the only k
 Dialog dispatch receives normalized keys, not raw terminal protocol details. When a focused agent enables kitty / CSI-u keyboard reporting, the input parser converts unmodified arrow keys and Escape back to the legacy byte forms the dialog handlers match, and it suppresses release events. That keeps `Esc` as "pop one dialog frame" even after an embedded TUI has enabled progressive keyboard reporting.
 
 <Aside type="caution">
-The agent's terminal experience is the highest-priority constraint. No multiplexer feature may intercept, transform, or drop input that the agent should receive. See the [Multiplexer Design Rules](/reference/multiplexer-design-rules/) for the full passthrough contract.
+The agent's terminal experience is the highest-priority constraint. No multiplexer feature may intercept, transform, or drop input that the agent should receive. See the [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) for the full passthrough contract.
 </Aside>
 
 ### Agent discovery
@@ -399,10 +399,10 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | <RepoFile path="src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |
 | [jackin' daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
-| [Multiplexer Design Rules](/reference/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |
+| [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |
 
 ## See also
 
-- [Multiplexer Design Rules](/reference/multiplexer-design-rules/) — the non-negotiable passthrough contract and per-feature verification checklist
+- [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) — the non-negotiable passthrough contract and per-feature verification checklist
 - [jackin-capsule roadmap item](/reference/roadmap/jackin-capsule/) — original problem statement, Herdr evaluation, phased implementation plan
 - [Agent Orchestrator Research](/reference/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design

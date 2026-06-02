@@ -77,7 +77,7 @@ This requires a `WorkspaceConfig` schema change: a new `ContainerRegistryConfig`
 2. A migration step in `WORKSPACE_MIGRATIONS` (trivially additive — new table with serde default `enabled = false`)
 3. A new fixture set under `tests/fixtures/migrations/workspace-config/from-{predecessor}/`
 4. Re-bake of all existing fixtures
-5. A new entry in <RepoFile path="docs/content/docs/reference/schema-versions.mdx" />
+5. A new entry in <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx" />
 
 ## Lifecycle
 
@@ -181,10 +181,10 @@ After stopping a role instance, query how many role containers for that workspac
 - <RepoFile path="src/runtime/cleanup.rs" /> — teardown hook, stop registry when last workspace instance exits
 - <RepoFile path="src/workspace/mod.rs" /> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension, new `WorkspaceResources` struct for workspace-level resource tracking
 - <RepoFile path="src/config/migrations.rs" /> — `CURRENT_WORKSPACE_VERSION` bump, migration step
-- <RepoFile path="docs/content/docs/reference/schema-versions.mdx" /> — new timeline entry
+- <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx" /> — new timeline entry
 
 ## See Also
 
-- [Architecture](/reference/architecture/) — DinD isolation model, per-role network topology
-- [Schema Versions](/reference/schema-versions/) — workspace config versioning
-- [Codebase Map](/reference/codebase-map/) — `DockerApi` trait and `BollardDockerClient` are the typed Docker API layer used for image and registry operations
+- [Architecture](/reference/getting-oriented/architecture/) — DinD isolation model, per-role network topology
+- [Schema Versions](/reference/runtime/schema-versions/) — workspace config versioning
+- [Codebase Map](/reference/getting-oriented/codebase-map/) — `DockerApi` trait and `BollardDockerClient` are the typed Docker API layer used for image and registry operations
