@@ -445,6 +445,13 @@ pub(crate) fn screen_scroll_affordance_metrics(
 /// → bold red text → clear to end of line → restore cursor. The
 /// save/restore wrap prevents the banner from scrolling whichever
 /// pane the composed frame left the cursor in.
+pub(crate) fn spawn_failure_message(
+    agent_label: &str,
+    error: impl std::fmt::Display,
+) -> String {
+    format!("{agent_label}: {error:#}")
+}
+
 pub(crate) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
     format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
 }
@@ -456,4 +463,25 @@ pub(crate) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
 /// one place stops the two copies from drifting.
 pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     jackin_tui::ansi::encode_osc52_clipboard_write(payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{spawn_failure_banner, spawn_failure_message};
+
+    #[test]
+    fn spawn_failure_message_prefixes_visible_agent_label() {
+        assert_eq!(
+            spawn_failure_message("claude", "missing binary"),
+            "claude: missing binary"
+        );
+    }
+
+    #[test]
+    fn spawn_failure_banner_writes_top_row_and_restores_cursor() {
+        let banner = String::from_utf8(spawn_failure_banner("shell: cap hit")).unwrap();
+        assert!(banner.starts_with("\x1b7\x1b[1;1H"));
+        assert!(banner.contains("jackin: shell: cap hit"));
+        assert!(banner.ends_with("\x1b8"));
+    }
 }

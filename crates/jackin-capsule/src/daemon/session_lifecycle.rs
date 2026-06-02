@@ -1,6 +1,6 @@
 //! Session, tab, and pane lifecycle methods for the Multiplexer.
 
-use crate::tui::view::spawn_failure_banner;
+use crate::tui::view::{spawn_failure_banner, spawn_failure_message};
 
 use super::*;
 
@@ -264,7 +264,7 @@ impl Multiplexer {
             // Surface to the attach client too — otherwise the dialog
             // closes successfully and the operator sees no new pane and
             // no explanation.
-            let banner = spawn_failure_banner(&format!("{agent_label}: {err:#}"));
+            let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
             self.send_output(banner);
         }
     }
@@ -287,7 +287,7 @@ impl Multiplexer {
         if let Err(err) = result {
             let agent_label = agent.as_deref().unwrap_or("shell");
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            let banner = spawn_failure_banner(&format!("{agent_label}: {err:#}"));
+            let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
             self.send_output(banner);
         }
     }
