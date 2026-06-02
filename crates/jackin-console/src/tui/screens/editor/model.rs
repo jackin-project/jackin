@@ -71,10 +71,7 @@ pub enum SecretsEnterPlan {
     },
     OpenScopePicker,
     ExpandRole(String),
-    AddRoleKey {
-        scope: SecretsScopeTag,
-        label: String,
-    },
+    AddRoleKey { scope: SecretsScopeTag },
     Noop,
 }
 

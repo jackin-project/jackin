@@ -595,9 +595,10 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
         SecretsEnterPlan::ExpandRole(role) => {
             editor.secrets_expanded.insert(role);
         }
-        SecretsEnterPlan::AddRoleKey { scope, label } => {
+        SecretsEnterPlan::AddRoleKey { scope } => {
             // In-section fast-path — already viewing the role, don't
             // re-ask the scope question.
+            let label = secret_new_key_label(&scope);
             let state = env_key_input_state(editor, &scope, label, String::new());
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvKey { scope },
@@ -666,9 +667,10 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
 fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
-    let Some((scope, label)) = editor_update::secret_add_target_for_row(rows.get(n)) else {
+    let Some(scope) = editor_update::secret_add_target_for_row(rows.get(n)) else {
         return;
     };
+    let label = secret_new_key_label(&scope);
     let state = env_key_input_state(editor, &scope, label, String::new());
     editor.modal = Some(Modal::TextInput {
         target: TextInputTarget::EnvKey { scope },

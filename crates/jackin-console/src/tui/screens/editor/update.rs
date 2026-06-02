@@ -302,18 +302,14 @@ pub fn secret_unmask_target_for_row(
 }
 
 #[must_use]
-pub fn secret_add_target_for_row(row: Option<&SecretsRow>) -> Option<(SecretsScopeTag, String)> {
+pub fn secret_add_target_for_row(row: Option<&SecretsRow>) -> Option<SecretsScopeTag> {
     match row? {
-        SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => Some((
-            SecretsScopeTag::Workspace,
-            "New workspace environment key".to_string(),
-        )),
+        SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => {
+            Some(SecretsScopeTag::Workspace)
+        }
         SecretsRow::RoleHeader { role, .. }
         | SecretsRow::RoleKeyRow { role, .. }
-        | SecretsRow::RoleAddSentinel(role) => Some((
-            SecretsScopeTag::Role(role.clone()),
-            format!("New {role} environment key"),
-        )),
+        | SecretsRow::RoleAddSentinel(role) => Some(SecretsScopeTag::Role(role.clone())),
         SecretsRow::SectionSpacer => None,
     }
 }
@@ -368,7 +364,6 @@ pub fn secret_enter_plan_for_row(
         }
         Some(SecretsRow::RoleAddSentinel(role)) => SecretsEnterPlan::AddRoleKey {
             scope: SecretsScopeTag::Role(role.clone()),
-            label: format!("New {role} environment key"),
         },
         Some(SecretsRow::RoleHeader { .. } | SecretsRow::SectionSpacer) | None => {
             SecretsEnterPlan::Noop
@@ -712,10 +707,7 @@ mod tests {
         );
         assert_eq!(
             secret_add_target_for_row(Some(&role)),
-            Some((
-                SecretsScopeTag::Role("alpha".to_string()),
-                "New alpha environment key".to_string()
-            ))
+            Some(SecretsScopeTag::Role("alpha".to_string()))
         );
         assert_eq!(
             secret_picker_target_for_row(Some(&role)),
