@@ -18,7 +18,6 @@
     reason = "existing row-builder shape is preserved during the directory migration"
 )]
 
-use jackin_tui::components::{Panel, PanelFocus};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -52,8 +51,8 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
     list_name_lines as workspace_list_name_lines, provider_picker_title,
-    render_compact_instances_summary, render_picker_sidebar, render_environments_subpanel,
-    render_general_subpanel, render_global_mounts_subpanel,
+    render_compact_instances_summary, render_list_names_block, render_picker_sidebar,
+    render_environments_subpanel, render_general_subpanel, render_global_mounts_subpanel,
     render_mounts_subpanel as render_workspace_mounts_panel, render_roles_subpanel,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_sentinel_description_pane, WorkspaceEnvRow, WorkspaceInstancePane,
@@ -189,7 +188,14 @@ pub(super) fn render_list_body(
     } else {
         let (list_lines, content_width) =
             list_name_lines(state, super::scroll_viewport_width(list_area));
-        render_list_names_block(frame, list_area, list_lines, content_width, state);
+        render_list_names_block(
+            frame,
+            list_area,
+            list_lines,
+            content_width,
+            state.list_names_focused,
+            state.list_names_scroll_x,
+        );
     }
 }
 
@@ -268,58 +274,6 @@ fn instance_display_row(
         selected,
         hovered,
     }
-}
-
-fn render_list_names_block(
-    frame: &mut Frame,
-    area: Rect,
-    lines: Vec<Line<'static>>,
-    content_width: usize,
-    state: &ManagerState<'_>,
-) {
-    let content_height = lines.len();
-    let viewport_w = super::scroll_viewport_width(area);
-    let viewport_h = super::scroll_viewport_height(area);
-    let h_scrollable = super::is_scrollable(content_width, viewport_w);
-    let v_scrollable = super::is_scrollable(content_height, viewport_h);
-    // Focused → PHOSPHOR_GREEN regardless of scrollability (RULE 1: focus-visible border).
-    let block = Panel::new()
-        .focus(if state.list_names_focused {
-            PanelFocus::Focused
-        } else {
-            PanelFocus::Unfocused
-        })
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let visible_rows = usize::from(inner.height).min(content_height);
-    for (row_idx, line) in lines.into_iter().take(visible_rows).enumerate() {
-        render_list_name_line(
-            frame,
-            inner,
-            row_idx as u16,
-            line,
-            usize::from(state.list_names_scroll_x),
-        );
-    }
-    if h_scrollable {
-        super::render_horizontal_scrollbar(frame, area, content_width, state.list_names_scroll_x);
-    }
-    if v_scrollable {
-        super::render_vertical_scrollbar(frame, area, content_height, 0);
-    }
-}
-
-fn render_list_name_line(
-    frame: &mut Frame,
-    area: Rect,
-    row: u16,
-    line: Line<'static>,
-    scroll_x: usize,
-) {
-    const PREFIX_COLS: usize = 3;
-    super::render_line_with_fixed_prefix_scroll(frame, area, row, line, PREFIX_COLS, scroll_x);
 }
 
 fn render_provider_picker_sidebar(

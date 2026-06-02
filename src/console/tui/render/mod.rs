@@ -26,10 +26,6 @@ pub use pre_render::prepare_for_render;
 pub(super) use jackin_console::tui::layout::centered_rect_fixed;
 
 pub(crate) use jackin_tui::components::scrollable_panel::{
-    is_scrollable, viewport_height as scroll_viewport_height,
     viewport_width as scroll_viewport_width,
 };
-pub(super) use jackin_tui::components::scrollable_panel::{
-    render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll, render_scrollable_block_at,
-    render_vertical_scrollbar,
-};
+pub(super) use jackin_tui::components::scrollable_panel::render_scrollable_block_at;

@@ -123,6 +123,71 @@ pub fn list_name_lines(
     (lines, content_w)
 }
 
+pub fn render_list_names_block(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    content_width: usize,
+    focused: bool,
+    scroll_x: u16,
+) {
+    let content_height = lines.len();
+    let viewport_w = jackin_tui::components::scrollable_panel::viewport_width(area);
+    let viewport_h = jackin_tui::components::scrollable_panel::viewport_height(area);
+    let h_scrollable =
+        jackin_tui::components::scrollable_panel::is_scrollable(content_width, viewport_w);
+    let v_scrollable =
+        jackin_tui::components::scrollable_panel::is_scrollable(content_height, viewport_h);
+    let block = jackin_tui::components::Panel::new()
+        .focus(if focused {
+            jackin_tui::components::PanelFocus::Focused
+        } else {
+            jackin_tui::components::PanelFocus::Unfocused
+        })
+        .block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let visible_rows = usize::from(inner.height).min(content_height);
+    for (row_idx, line) in lines.into_iter().take(visible_rows).enumerate() {
+        render_list_name_line(frame, inner, row_idx as u16, line, usize::from(scroll_x));
+    }
+    if h_scrollable {
+        jackin_tui::components::scrollable_panel::render_horizontal_scrollbar(
+            frame,
+            area,
+            content_width,
+            scroll_x,
+        );
+    }
+    if v_scrollable {
+        jackin_tui::components::scrollable_panel::render_vertical_scrollbar(
+            frame,
+            area,
+            content_height,
+            0,
+        );
+    }
+}
+
+fn render_list_name_line(
+    frame: &mut Frame,
+    area: Rect,
+    row: u16,
+    line: Line<'static>,
+    scroll_x: usize,
+) {
+    const PREFIX_COLS: usize = 3;
+    jackin_tui::components::scrollable_panel::render_line_with_fixed_prefix_scroll(
+        frame,
+        area,
+        row,
+        line,
+        PREFIX_COLS,
+        scroll_x,
+    );
+}
+
 fn row_fg(row: &WorkspaceListDisplayRow) -> Color {
     match row.tone {
         WorkspaceListRowTone::White => jackin_tui::theme::WHITE,
