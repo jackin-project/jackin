@@ -1,0 +1,7 @@
+{
+  "title": "Operator surface",
+  "defaultOpen": false,
+  "pages": [
+    "../operator-cli-hygiene"
+  ]
+}

@@ -1,0 +1,229 @@
+---
+title: "Operator CLI Hygiene"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+The single largest user-visible gap in jackin' today is the absence of operator CLI hygiene: no first-run experience, no doctor command, no machine-readable output, no dry-run, no friendly error layer, no fleet overview outside the TUI. The four open codebase-health roadmap items (agent runtime trait, structured tracing, terminal emulation, CI tooling) all address internal quality. This item addresses the operator-facing surface.
+
+Concrete symptoms today:
+
+- The #1 failure mode for a new user is "I ran `jackin load`, Docker wasn't running, and I got a 200-line backtrace." There is no pre-flight gate and no `jackin doctor` command.
+- No subcommand emits machine-readable output. Every list-style command uses `tabled` (human tables) or plain `eprintln!`. Scripting jackin' is impossible without scraping text.
+- There is no `jackin status` / `jackin ps` command to answer "what's running right now?" outside the TUI.
+- Every failure renders as `anyhow::Error` with `{error:#}` — fine for developers, hostile for end users. No friendly error layer, no stable error codes, no "what to try" remediation hints.
+- `jackin load` is a black box — the operator has no way to inspect the plan (mounts, env vars, Dockerfile, auth decisions) before committing to it.
+- Bare `jackin` drops straight into the TUI with no onboarding. Config is created silently with defaults.
+
+Evidence from the codebase:
+
+- <RepoFile path="src/main.rs" /> shows three sites where anyhow chains are rendered via `tui::fatal(&format!("{error:#}"))`. No structured failure-to-friendly-message mapping exists.
+- <RepoFile path="src/runtime/launch.rs" /> — Docker reachability is implicit in the first `bollard` call, not a separate up-front check. The launch pipeline does resolution + execution in one pass (~750 LOC starting at line 1479). `LoadOptions` has `debug`, `rebuild`, `force` — no `dry_run`.
+- No `Cli::Doctor`, `Cli::Status`, `Cli::Init`, or `Cli::Ps` variant in <RepoFile path="src/cli/mod.rs" />.
+- Searched `src/cli/` and `src/app/`; no `status`, `ps`, or top-level `list` subcommand. Instance discovery code exists in <RepoFile path="src/runtime/discovery.rs" /> and <RepoFile path="src/instance/mod.rs" />, fully consumable.
+- `thiserror::Error` derive count is 6 files total. Almost every public-facing function returns `anyhow::Result<_>`.
+- Only the diagnostics JSONL writer uses JSON externally. No `serde_json::to_string` / `println!.*json` patterns outside test code.
+
+## Proposal
+
+This item tracks six related improvements that form one coherent operator UX story. Each can ship incrementally, but they reinforce each other.
+
+### 1. `jackin doctor` + pre-flight checks
+
+Add `jackin doctor` that runs a fixed checklist and prints a one-line status per check (`ok` / `warn` / `fail` / `skip`) with remediation hints.
+
+Checklist derived from the actual surfaces the codebase touches:
+
+| Check | What to verify | Hint on failure |
+|---|---|---|
+| Docker daemon | `bollard::Docker::connect_with_defaults().version().await` succeeds | "Start Docker Desktop / OrbStack / `colima start` / set `DOCKER_HOST`" |
+| Docker version | meets minimum required | "Upgrade Docker" |
+| Disk space | `~/.jackin/` and Docker root have free space | "Run `jackin prune` or `docker system prune`" |
+| `~/.config/jackin/` | exists, writable, perms `0700` | "Run `chmod 700 ~/.config/jackin`" |
+| `~/.jackin/` | exists, writable | "Run `mkdir -p ~/.jackin && chmod 700 ~/.jackin`" |
+| Capsule binary cache | latest cached version matches the published manifest | "Run `rm -rf ~/.jackin/cache/jackin-capsule/` to force refresh" |
+| `gh auth status` | OK if any role uses GitHub auth-forward | "Run `gh auth login`" |
+| `op` CLI | present + signed in, only if any workspace references `op://` | "Install 1Password CLI" |
+| `mise` | present, only when invoked from a source checkout | "Run `mise install`" |
+| Host clock skew | within tolerance of UTC | "Sync host clock via NTP" |
+| Orphaned containers | none with `LABEL_MANAGED` and no matching manifest | "Run `jackin prune orphaned`" |
+| Stale `isolation.json` | none pointing at vanished worktrees | "Run `jackin prune isolation`" |
+
+GitHub auth failures should be `warn` (not `fail`) — GitHub authentication is optional. Agent auth verification per-runtime is a nice-to-have.
+
+Wire a lightweight subset of the same checks as a pre-flight on every command that needs Docker (`load`, `hardline`, `exile`, `purge`, `eject`, console "spawn agent" action). The pre-flight should be cheap (milliseconds).
+
+`jackin doctor --format json` for machine consumption (see item 3 below).
+
+### 2. `jackin status` / `jackin ps` — fleet overview from CLI
+
+Add `jackin status` (and `jackin ps` as an alias) that prints a table of all running jackin' instances outside the TUI.
+
+```
+INSTANCE                 WORKSPACE  ROLE               AGENT(S)          STATE    UPTIME   CPU%  MEM
+proj-the-architect-...   myproj     the-architect      claude            running  2h 14m   12%   420M
+proj-agent-smith-...     myproj     agent-smith        claude, codex     running    47m    3%   180M
+```
+
+One workspace can run multiple agents, so the agent column may list several. When available, show PR info per instance (the branch/PR the agent is working on).
+
+Supports `--format json` (see item 3 below), `--filter workspace=myproj`, `--filter agent=claude`, `--state running`.
+
+Reuses the instance discovery logic the console already uses (<RepoFile path="src/runtime/discovery.rs" />). CPU/MEM via `docker stats --no-stream --format json`.
+
+### 3. `--format json` for every list-style subcommand + stable JSON schema
+
+Add a `--format <human|json>` flag (defaulting to `human`) to every list-style and read-only subcommand. Output a stable JSON shape with a `schema_version` field versioned independently of `config.toml`.
+
+Affected subcommands: `workspace list`, `workspace show`, `prune`, `logs`, `config`, `status`, `doctor`, `load --dry-run`.
+
+Define `pub struct OutputEnvelope<T> { schema_version: &'static str, data: T }` so every JSON output carries a version stamp.
+
+Also validate workspace-specific settings in the JSON output when relevant.
+
+Several pending roadmap items implicitly assume programmatic access: Desktop Agent Hub, PR verification, Deja Vu, agent attention prompts — all need structured data. Without `--format json`, each will re-invent the access pattern.
+
+### 4. `jackin load --dry-run` (explain plan)
+
+Add `--dry-run` to `jackin load`. Run all the resolution stages (workspace materialization, role repo cache, auth-forward decisions, derived Dockerfile composition, mount list, env list, capsule config), print the plan as CLI text output, and exit 0 without spawning containers.
+
+```
+$ jackin load the-architect . --dry-run
+Workspace:    myproj (~/Projects/myproj)
+Role:         jackin-the-architect@main (trusted, cache hit)
+Agent:        claude (built-in runtime)
+
+Mounts (3):
+  /home/agent/work         <- ~/Projects/myproj   (rw, isolation=worktree)
+  /home/agent/.gitconfig   <- ~/.gitconfig         (ro)
+
+Auth forward:
+  claude         sync     (host credentials present)
+  github         sync     (host gh auth ok)
+
+Derived image: projectjackin/the-architect-myproj:trixie-abc12345
+  Cache hit:   yes (no rebuild needed)
+
+No changes made. Use `jackin load the-architect .` to execute.
+```
+
+`--dry-run --format json` makes this fully scriptable.
+
+### 5. `JackinError` (thiserror) layer + user-error catalogue
+
+Add a `JackinError` enum using `thiserror` at the binary-entry layer that catalogues the top ~15 user-visible failure modes. Each variant has:
+
+- A primary one-line message ("Docker daemon not reachable").
+- A "what to try" block ("Start Docker Desktop, or run `colima start`, or check `DOCKER_HOST`").
+- A "more detail" pointer ("Run with `--debug` and share run-id `xyz`").
+- A stable error code (`E001`, `E002`, ...) for docs anchors.
+
+Top failure modes derived from sampling `anyhow::bail!` / `anyhow::Context` sites:
+
+1. Docker daemon not reachable
+2. Docker version too old
+3. Out of disk space for image build
+4. Role manifest invalid (with line/column from `toml`)
+5. Role manifest version unsupported
+6. Role source not trusted
+7. Workspace not found
+8. Workspace config version unsupported
+9. Container name conflict
+10. DinD sidecar failed health check
+11. Port conflict on DinD TLS port
+12. `gh auth status` failed when role requires GitHub auth
+13. `op` not signed in when workspace references `op://`
+14. Capsule binary download failed
+15. Worktree materialization conflict
+
+Convert known `anyhow::bail!` sites at module boundaries to return `JackinError` variants. In `main.rs`, catch the top-level `Result`, downcast to `JackinError`, render the friendly block. Fall back to existing `{error:#}` for unrecognized errors.
+
+Open `docs/content/docs/reference/errors/` with one page per error code. Snapshot test the friendly output.
+
+### 6. First-run onboarding wizard (console-native)
+
+Not a separate `jackin init` CLI command. Instead, detect first-run inside the console (no config + a TTY) and offer a rich TUI wizard that:
+
+- Runs doctor checks and refuses to proceed if Docker is missing.
+- Asks a few questions: workspace directory, preferred role, GitHub auth preferences.
+- Writes a starter `~/.config/jackin/config.toml`.
+- Points to a sample role so `jackin load` works immediately.
+
+This needs brainstorming on UX. Key questions to research:
+
+- How should teams share workspace configurations? (See the `jackin join` research item for the project-level onboarding vision.)
+- How to explain what jackin' is for and how to use it during onboarding.
+- Should the wizard support creating multiple workspaces for a monorepo?
+- How to handle credential setup (plain text vs 1Password vs agent-specific) through the wizard.
+
+## Non-goals
+
+- Do not replace the console TUI with a web UI or Electron app.
+- Do not add a `--verbose` flag that duplicates `--debug`. The two-tier telemetry model in AGENTS.md covers verbosity.
+- Do not version the `--format json` schema using the config/workspace/manifest versioning system — it is a separate surface with its own version constant.
+- Do not block the first four items (doctor, status, json, dry-run) on the wizard design. The wizard depends on doctor, but the others can ship independently.
+
+## Implementation Phases
+
+### Phase 1 — `jackin doctor`
+
+- Add `Command::Doctor(DoctorArgs)` to <RepoFile path="src/cli/mod.rs" />.
+- Create `src/cli/doctor.rs` with `pub async fn run(args: DoctorArgs) -> Result<()>`.
+- Create `src/diagnostics/checks.rs` with one async function per check, returning `CheckResult { name, status, hint }`.
+- The pre-flight wrapper is a function `preflight(required_checks: &[CheckName]) -> Result<()>` used by `load`, `hardline`, etc.
+- Snapshot test the human output.
+
+### Phase 2 — `jackin status` + `--format json`
+
+- Add `Command::Status(StatusArgs)` and `Command::Ps` alias to <RepoFile path="src/cli/mod.rs" />.
+- Create `src/cli/format.rs` with `enum OutputFormat { Human, Json }` and `OutputEnvelope<T>`.
+- Reuse instance discovery from <RepoFile path="src/runtime/discovery.rs" />. CPU/MEM via Docker stats.
+- Sweep subcommands for `--format json` support, starting with `workspace list`.
+
+### Phase 3 — `jackin load --dry-run`
+
+- Add `dry_run: bool` to `LoadOptions` and the `LoadArgs` clap struct.
+- Thread a `DryRun` mode through `load_role_with` — short-circuit before each external side effect.
+- Collect the resolved plan into a `LoadPlan` struct; render via `OutputFormat`.
+
+### Phase 4 — `JackinError`
+
+- Create `src/error.rs` with `enum JackinError` and `impl JackinError::user_message(&self) -> UserMessage`.
+- Convert known `anyhow::bail!` sites at module boundaries.
+- In `main.rs`, downcast and render friendly block with fallback.
+- Open `docs/content/docs/reference/errors/` with one page per code.
+- Snapshot test friendly output.
+
+### Phase 5 — First-run wizard
+
+- Detect first-run inside the console entry point.
+- Design the rich TUI wizard flow (brainstorming + research).
+- Implement using `dialoguer` or ratatui-based prompts.
+
+## Open Questions
+
+1. Should `jackin doctor` check for the availability of each agent runtime CLI inside containers, or only host-side prerequisites?
+2. What is the minimum Docker version jackin' requires? The construct image may pin this.
+3. Should `--format json` use a streaming JSON format (NDJSON) for `jackin status --follow` or always a single envelope?
+4. Error code numbering: sequential (`E001`, `E002`, ...) or grouped by subsystem (`E1xxx` for Docker, `E2xxx` for manifests)?
+5. How should the first-run wizard handle monorepo setups with multiple workspaces?
+
+## Related Files
+
+- <RepoFile path="src/main.rs" /> — top-level error rendering
+- <RepoFile path="src/cli/mod.rs" /> — CLI command definitions
+- <RepoFile path="src/runtime/launch.rs" /> — launch pipeline, dry-run insertion point
+- <RepoFile path="src/runtime/discovery.rs" /> — instance discovery for `status`
+- <RepoFile path="src/instance/auth.rs" /> — auth checks that doctor should surface
+- <RepoFile path="src/capsule_binary.rs" /> — capsule download verification
+
+## Cross-references
+
+- [Structured tracing & metrics](/reference/roadmap/structured-tracing-metrics/) — error events from `JackinError` should be the first migration target
+- [Rust CI tooling & dependency hygiene](/reference/roadmap/rust-ci-tooling/) — `cargo insta` for snapshot tests
+- [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — will consume `--format json` and `jackin status`
+- [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — will consume `jackin status` for attention routing
+- [Déjà Vu](/reference/roadmap/deja-vu/) — will consume `--format json` for session enumeration
+- [PR verification](/reference/roadmap/pr-verification/) — will consume `--format json` for PR state
