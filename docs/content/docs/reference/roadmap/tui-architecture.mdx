@@ -310,6 +310,8 @@ The root-dependent console op-picker adapter now lives under <RepoFile path="src
 
 The op-picker background-worker disconnect message now lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. The root adapter still owns the `operator_env` runner, subscriptions, and cache binding, but visible recoverable-error wording stays with the component boundary.
 
+Console op-picker load-error state shaping now also lives with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. The root adapter still receives concrete `op` runner failures and subscription closure facts, but it asks the component boundary to classify probe failures, preserve recoverable messages, and construct the standard worker-disconnect state.
+
 Console op-picker commit selection shaping now lives with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. The root adapter still supplies concrete `operator_env` reference and field-target types, but the picker-owned `Existing`, `NewItem`, and `EditItemField` selection variants are assembled through crate-owned helpers instead of inline root input matches.
 
 Console subscription-worker disconnect fallback messages now live with the console TUI subscription vocabulary in <RepoFile path="crates/jackin-console/src/tui/subscriptions.rs" />. Root polling in <RepoFile path="src/console/tui/state.rs" /> and root test helpers still own concrete worker receivers, but they no longer hard-code the operator-facing disconnected-worker text.

@@ -114,6 +114,20 @@ pub fn background_worker_disconnected_error_message() -> &'static str {
     "background worker disconnected"
 }
 
+pub fn probe_load_error_state(message: impl Into<String>) -> OpLoadState {
+    OpLoadState::Error(classify_probe_error_message(message))
+}
+
+pub fn recoverable_load_error_state(message: impl Into<String>) -> OpLoadState {
+    OpLoadState::Error(OpPickerError::Recoverable {
+        message: message.into(),
+    })
+}
+
+pub fn disconnected_worker_error_state() -> OpLoadState {
+    recoverable_load_error_state(background_worker_disconnected_error_message())
+}
+
 #[derive(Debug, Clone)]
 pub enum OpPickerFatalState {
     NotInstalled,
@@ -1647,6 +1661,35 @@ mod tests {
             background_worker_disconnected_error_message(),
             "background worker disconnected",
         );
+    }
+
+    #[test]
+    fn probe_load_error_state_classifies_operator_states() {
+        assert!(matches!(
+            probe_load_error_state("failed to spawn op"),
+            OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotInstalled))
+        ));
+        assert!(matches!(
+            probe_load_error_state("not currently signed in"),
+            OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn))
+        ));
+    }
+
+    #[test]
+    fn recoverable_load_error_state_preserves_message() {
+        assert!(matches!(
+            recoverable_load_error_state("field read failed"),
+            OpLoadState::Error(OpPickerError::Recoverable { message }) if message == "field read failed"
+        ));
+    }
+
+    #[test]
+    fn disconnected_worker_error_state_uses_standard_message() {
+        assert!(matches!(
+            disconnected_worker_error_state(),
+            OpLoadState::Error(OpPickerError::Recoverable { message })
+                if message == background_worker_disconnected_error_message()
+        ));
     }
 
     #[test]

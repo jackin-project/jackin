@@ -7,16 +7,16 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use jackin_console::tui::components::list_helpers::list_state_for_count;
-use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 use jackin_console::tui::components::op_picker::{
-    background_worker_disconnected_error_message, field_label_input_state, item_name_input_state,
-    section_name_input_state,
+    field_label_input_state, item_name_input_state, section_name_input_state,
 };
+use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 use super::{
     AccountsLoadedPlan, FieldLabelOrigin, LoadRequest, LoadResult, OpCache, OpLoadState,
-    OpPickerAccount, OpPickerError, OpPickerFatalState, OpPickerMode, OpPickerStage, OpPickerState,
-    OpPickerPendingLoad,
+    OpPickerAccount, OpPickerError, OpPickerFatalState, OpPickerMode, OpPickerPendingLoad,
+    OpPickerStage, OpPickerState, disconnected_worker_error_state, probe_load_error_state,
+    recoverable_load_error_state,
 };
 #[cfg(test)]
 use crate::operator_env::OpStructRunner;
@@ -319,11 +319,7 @@ impl OpPickerState {
             }
             SubscriptionPoll::Ready(LoadResult::Accounts(Err(err)) | LoadResult::Vaults(Err(err))) => {
                 self.rx = None;
-                self.load_state = OpLoadState::Error(
-                    jackin_console::tui::components::op_picker::classify_probe_error_message(
-                        err.to_string(),
-                    ),
-                );
+                self.load_state = probe_load_error_state(err.to_string());
                 true
             }
             SubscriptionPoll::Ready(LoadResult::Items(Ok(items))) => {
@@ -346,9 +342,7 @@ impl OpPickerState {
             }
             SubscriptionPoll::Ready(LoadResult::Items(Err(err)) | LoadResult::Fields(Err(err))) => {
                 self.rx = None;
-                self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
-                    message: err.to_string(),
-                });
+                self.load_state = recoverable_load_error_state(err.to_string());
                 true
             }
             SubscriptionPoll::Ready(LoadResult::Fields(Ok(mut fields))) => {
@@ -416,9 +410,7 @@ impl OpPickerState {
             SubscriptionPoll::Pending => false,
             SubscriptionPoll::Closed => {
                 self.rx = None;
-                self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
-                    message: background_worker_disconnected_error_message().into(),
-                });
+                self.load_state = disconnected_worker_error_state();
                 true
             }
         }
