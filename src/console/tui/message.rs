@@ -14,7 +14,6 @@ use crate::console::tui::state::{
 };
 use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
-use jackin_console::focus::moved_selection;
 use jackin_console::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan, editor_tab_move_plan,
     enter_editor_auth_kind_plan, set_role_expanded as set_editor_role_expanded,
@@ -32,7 +31,9 @@ use jackin_console::tui::screens::settings::update::{
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
-use jackin_console::tui::update::term_width_scroll_plan;
+use jackin_console::tui::update::{
+    selection_move_plan, term_width_scroll_plan, unclamped_scroll_plan,
+};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -938,13 +939,13 @@ fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize
         .copied()
         .unwrap_or(0)
         .min(len - 1);
-    let next = moved_selection(cursor, len, delta);
+    let next = selection_move_plan(cursor, len, delta);
     state.preview_pane_cursor.insert(container.to_owned(), next);
 }
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
     if state.list_names_focused {
-        jackin_tui::components::apply_scroll_delta_unclamped(&mut state.list_names_scroll_x, delta);
+        state.list_names_scroll_x = unclamped_scroll_plan(state.list_names_scroll_x, delta);
     } else {
         scroll_focused_mount_block(state, delta);
     }
@@ -955,7 +956,7 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
         return;
     };
     let value = state.list_scroll_x_mut(focus);
-    jackin_tui::components::apply_scroll_delta_unclamped(value, delta);
+    *value = unclamped_scroll_plan(*value, delta);
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
@@ -963,5 +964,5 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
         return;
     };
     let value = state.list_scroll_y_mut(focus);
-    jackin_tui::components::apply_scroll_delta_unclamped(value, delta);
+    *value = unclamped_scroll_plan(*value, delta);
 }
