@@ -34,7 +34,8 @@ use jackin_console::tui::screens::settings::view::{
     settings_env_new_key_after_picker_label, settings_env_new_key_label,
     settings_error_popup_title, settings_sensitive_paths_not_confirmed_message,
     settings_env_scope_picker_state, settings_env_source_picker_state, settings_env_text_input_state,
-    settings_env_value_text_label, settings_no_registered_roles_error_message,
+    settings_env_value_current_text, settings_env_value_text_label,
+    settings_no_registered_roles_error_message,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1730,9 +1731,8 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
     );
     match plan {
         SettingsEnvEnterPlan::EditValue { scope, key } => {
-            let current = settings_update::settings_env_value(&settings.env.pending, &scope, &key)
-                .map(|v| v.as_persisted_str().to_string())
-                .unwrap_or_default();
+            let value = settings_update::settings_env_value(&settings.env.pending, &scope, &key);
+            let current = settings_env_value_current_text(value.map(|v| v.as_persisted_str()));
             let target = SettingsEnvTextTarget::EnvValue {
                 scope,
                 key: key.clone(),

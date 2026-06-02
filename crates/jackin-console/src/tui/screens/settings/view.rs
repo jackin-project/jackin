@@ -138,6 +138,11 @@ pub fn settings_env_value_text_label(key: &str) -> String {
 }
 
 #[must_use]
+pub fn settings_env_value_current_text(value: Option<&str>) -> String {
+    value.unwrap_or_default().to_string()
+}
+
+#[must_use]
 pub fn settings_env_source_picker_state(
     key: impl Into<String>,
 ) -> crate::tui::components::source_picker::SourcePickerState {
@@ -737,6 +742,8 @@ mod tests {
     #[test]
     fn settings_env_value_text_label_names_key() {
         assert_eq!(settings_env_value_text_label("TOKEN"), "Edit TOKEN");
+        assert_eq!(settings_env_value_current_text(Some("value")), "value");
+        assert_eq!(settings_env_value_current_text(None), "");
     }
 
     #[test]

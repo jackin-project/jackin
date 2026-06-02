@@ -165,6 +165,8 @@ Console editor Auth-tab row width planning now lives with editor screen view hel
 
 Console editor Secrets-tab row width planning now lives with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />; root editor geometry supplies secret values, unmask state, role registry membership, and role counts through the same closures used by rendering.
 
+Console editor secret value-edit current-value fallback now lives with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />. Root editor input supplies optional persisted values only.
+
 Console status-popup, error-popup, role-load/editor-action/GitHub-preview/save/1Password-read/workspace-list instance/instance-refresh index/in-place instance-action error-popup, in-place instance-action failure message formatting, debug run-info container popup, and editor exit save/discard prompt state construction now live under <RepoFile path="crates/jackin-console/src/tui/components/status_popup.rs" />, <RepoFile path="crates/jackin-console/src/tui/components/error_popup.rs" />, <RepoFile path="crates/jackin-console/src/tui/components/container_info.rs" />, and <RepoFile path="crates/jackin-console/src/tui/components/save_discard.rs" />; root prompt/message/input/run adapters pass only title, message, run ID, log-path facts, and concrete errors.
 
 Workspace save-preview mount summaries are now formatted from crate-owned preview rows in <RepoFile path="crates/jackin-console/src/tui/components/save_preview.rs" />. Root save-preview mapping supplies shortened source/destination paths, mode, isolation, and mount-info label facts instead of preformatted summary strings.
@@ -229,7 +231,7 @@ Console settings global-mount confirm outcome planning now lives with settings s
 
 Console global-mount text-target labels now live with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root settings input supplies target/current value and keeps add/edit flow mutations, while crate-owned helpers provide prompt text.
 
-Console settings-environment value-edit and new-key labels now live with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root settings input supplies selected scope/key/current value and keeps environment mutation side effects.
+Console settings-environment value-edit/current-value fallback and new-key labels now live with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root settings input supplies selected scope/key/optional persisted value and keeps environment mutation side effects.
 
 Console workspace instance action/status acceptance planning, preview-pane focused key routing, and destructive-confirm outcome planning now live with workspaces screen update helpers in <RepoFile path="crates/jackin-console/src/tui/screens/workspaces/update.rs" />. Root list input maps concrete root action/status values into crate-owned facts before selecting a container and supplies preview pane counts before dispatching root messages or focused reconnect actions; root confirm handlers keep only root effects/actions after consuming the crate-owned commit/return/continue plan.
 

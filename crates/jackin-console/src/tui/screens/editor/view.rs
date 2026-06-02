@@ -122,6 +122,11 @@ pub fn secret_value_input_state<'a>(
 }
 
 #[must_use]
+pub fn secret_value_current_text(value: Option<&str>) -> String {
+    value.unwrap_or_default().to_string()
+}
+
+#[must_use]
 pub fn secret_new_value_input_state<'a>(
     key: &str,
 ) -> jackin_tui::components::TextInputState<'a> {
@@ -1001,6 +1006,8 @@ mod tests {
         assert_eq!(editor_name_input_state("demo").value(), "demo");
         assert_eq!(secret_value_input_state("TOKEN", "value").label, "Edit TOKEN");
         assert!(secret_value_input_state("TOKEN", "").is_valid());
+        assert_eq!(secret_value_current_text(Some("value")), "value");
+        assert_eq!(secret_value_current_text(None), "");
         assert_eq!(secret_new_value_input_state("TOKEN").label, "Value for TOKEN");
         assert!(secret_new_value_input_state("TOKEN").is_valid());
         assert_eq!(mount_destination_input_state("/workspace").label, "Destination");

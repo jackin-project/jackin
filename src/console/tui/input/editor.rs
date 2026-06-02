@@ -30,7 +30,8 @@ use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, role_load_input_state,
     secret_delete_confirm_state, secret_empty_key_label, secret_key_input_state_from_pending,
     secret_new_key_after_picker_label, secret_new_key_label, secret_new_value_input_state,
-    secret_scope_picker_state, secret_source_picker_state, secret_value_input_state,
+    secret_scope_picker_state, secret_source_picker_state, secret_value_current_text,
+    secret_value_input_state,
 };
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -568,9 +569,8 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     });
     match plan {
         SecretsEnterPlan::EditValue { scope, key } => {
-            let current = secret_value(editor, &scope, &key)
-                .map(|v| v.as_persisted_str().to_string())
-                .unwrap_or_default();
+            let value = secret_value(editor, &scope, &key);
+            let current = secret_value_current_text(value.map(|v| v.as_persisted_str()));
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
                     scope,
