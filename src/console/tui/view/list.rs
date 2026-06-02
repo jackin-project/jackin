@@ -36,8 +36,7 @@ pub(super) use crate::console::tui::components::mount_display::format_mount_rows
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 use crate::console::tui::components::workspace_list::{
-    instance_details_pane, list_name_lines, render_agent_picker_sidebar,
-    render_provider_picker_sidebar, render_role_picker_sidebar, render_sidebar_body,
+    instance_details_pane, render_list_sidebar, render_sidebar_body,
 };
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, WorkspaceSummary,
@@ -51,7 +50,6 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
-    render_list_names_block,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_sentinel_description_pane,
 };
@@ -146,53 +144,7 @@ pub(super) fn render_list_body(
         }
     }
 
-    if let Some(picker) = state.inline_provider_picker.as_ref() {
-        let short_id = crate::instance::naming::instance_id_from_container_base(&picker.context)
-            .unwrap_or(picker.context.as_str());
-        render_provider_picker_sidebar(
-            frame,
-            list_area,
-            Some(short_id),
-            picker.providers(),
-            picker.selected(),
-        );
-    } else if let Some(picker) = state.launch_provider_picker.as_ref() {
-        render_provider_picker_sidebar(
-            frame,
-            list_area,
-            None,
-            picker.providers(),
-            picker.selected(),
-        );
-    } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
-        let short_id = crate::instance::naming::instance_id_from_container_base(container)
-            .unwrap_or(container);
-        render_agent_picker_sidebar(frame, list_area, short_id, picker, state.list_names_focused);
-    } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
-        render_agent_picker_sidebar(
-            frame,
-            list_area,
-            &role.key(),
-            picker,
-            state.list_names_focused,
-        );
-    } else if let Some(picker) = state.inline_role_picker.as_ref() {
-        let title = state
-            .selected_workspace_summary()
-            .map_or("Current directory", |summary| summary.name.as_str());
-        render_role_picker_sidebar(frame, list_area, title, picker, state.list_names_focused);
-    } else {
-        let (list_lines, content_width) =
-            list_name_lines(state, super::scroll_viewport_width(list_area));
-        render_list_names_block(
-            frame,
-            list_area,
-            list_lines,
-            content_width,
-            state.list_names_focused,
-            state.list_names_scroll_x,
-        );
-    }
+    render_list_sidebar(frame, list_area, state);
 }
 
 fn render_details_pane(

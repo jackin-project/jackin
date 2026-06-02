@@ -15,7 +15,7 @@ use jackin_console::tui::screens::workspaces::view::{
     list_name_lines as workspace_list_name_lines, provider_picker_title,
     render_compact_instances_summary, render_environments_subpanel, render_general_subpanel,
     render_global_mounts_subpanel, render_mounts_subpanel as render_workspace_mounts_panel,
-    render_picker_sidebar, render_roles_subpanel,
+    render_list_names_block, render_picker_sidebar, render_roles_subpanel,
 };
 
 pub(crate) fn list_name_lines(
@@ -192,6 +192,46 @@ fn instance_details_content(
                 agent_runtime: session.agent_runtime.clone(),
             })
             .collect(),
+    }
+}
+
+pub(crate) fn render_list_sidebar(frame: &mut Frame, area: Rect, state: &ManagerState<'_>) {
+    if let Some(picker) = state.inline_provider_picker.as_ref() {
+        let short_id = crate::instance::naming::instance_id_from_container_base(&picker.context)
+            .unwrap_or(picker.context.as_str());
+        render_provider_picker_sidebar(
+            frame,
+            area,
+            Some(short_id),
+            picker.providers(),
+            picker.selected(),
+        );
+    } else if let Some(picker) = state.launch_provider_picker.as_ref() {
+        render_provider_picker_sidebar(frame, area, None, picker.providers(), picker.selected());
+    } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
+        let short_id = crate::instance::naming::instance_id_from_container_base(container)
+            .unwrap_or(container);
+        render_agent_picker_sidebar(frame, area, short_id, picker, state.list_names_focused);
+    } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
+        render_agent_picker_sidebar(frame, area, &role.key(), picker, state.list_names_focused);
+    } else if let Some(picker) = state.inline_role_picker.as_ref() {
+        let title = state
+            .selected_workspace_summary()
+            .map_or("Current directory", |summary| summary.name.as_str());
+        render_role_picker_sidebar(frame, area, title, picker, state.list_names_focused);
+    } else {
+        let (list_lines, content_width) = list_name_lines(
+            state,
+            jackin_tui::components::scrollable_panel::viewport_width(area),
+        );
+        render_list_names_block(
+            frame,
+            area,
+            list_lines,
+            content_width,
+            state.list_names_focused,
+            state.list_names_scroll_x,
+        );
     }
 }
 
