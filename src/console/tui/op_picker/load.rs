@@ -6,7 +6,7 @@ use std::rc::Rc;
 #[cfg(test)]
 use std::sync::Arc;
 
-use jackin_console::tui::components::list_helpers::{first_selection, list_state_for_count};
+use jackin_console::tui::components::list_helpers::list_state_for_count;
 use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
@@ -298,7 +298,8 @@ impl OpPickerState {
             }
             SubscriptionPoll::Ready(LoadResult::Vaults(Ok(vaults))) => {
                 self.rx = None;
-                if vaults.is_empty() {
+                let plan = super::vaults_loaded_plan(vaults.len());
+                if matches!(plan, super::VaultsLoadedPlan::NoVaults) {
                     self.load_state =
                         OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NoVaults));
                     return true;
@@ -307,7 +308,9 @@ impl OpPickerState {
                     .borrow_mut()
                     .put_vaults(self.selected_account_id_ref(), vaults.clone());
                 self.vaults = vaults;
-                self.vault_list_state = list_state_for_count(self.vaults.len());
+                if let super::VaultsLoadedPlan::ShowVaultPane { selected } = plan {
+                    self.vault_list_state.select(selected);
+                }
                 self.load_state = OpLoadState::Ready;
                 true
             }
@@ -332,9 +335,9 @@ impl OpPickerState {
                     &vault_id,
                     items.clone(),
                 );
+                let plan = super::items_loaded_plan(items.len());
                 self.items = items;
-                self.item_list_state
-                    .select(first_selection(self.items.len()));
+                self.item_list_state.select(plan.selected);
                 self.load_state = OpLoadState::Ready;
                 true
             }
@@ -347,9 +350,7 @@ impl OpPickerState {
             }
             SubscriptionPoll::Ready(LoadResult::Fields(Ok(mut fields))) => {
                 self.rx = None;
-                // Concealed first; cache the sorted vec so cache hits
-                // are already presentation-ordered.
-                fields.sort_by_key(|field| !field.concealed);
+                super::sort_fields_by_concealed_first(&mut fields, |field| field.concealed);
                 let vault_id = self
                     .selected_vault
                     .as_ref()
@@ -368,25 +369,43 @@ impl OpPickerState {
                 );
                 self.fields = fields;
                 self.collapsed_sections.clear();
-                if self.field_refresh_in_place {
-                    // Field-stage `R` (Create mode): the operator already
-                    // chose a section. Keep `selected_section`, rebuild the
-                    // section-scoped field rows, and stay on Field.
-                    self.field_refresh_in_place = false;
-                    let display_count = self.build_field_display_rows().len();
-                    self.field_list_state.select(first_selection(display_count));
-                } else if self.mode.is_create() {
-                    // Initial item-selection load (Create mode) inserts a
-                    // Section stage between Item and Field; sections derive
-                    // from the just-loaded fields.
-                    self.selected_section = None;
-                    self.stage = OpPickerStage::Section;
-                    self.section_list_state =
-                        list_state_for_count(self.section_choices().len() + 1);
-                } else {
-                    self.selected_section = None;
-                    let display_count = self.build_field_display_rows().len();
-                    self.field_list_state.select(first_selection(display_count));
+                let section_choice_count = self.section_choices().len();
+                let field_display_count = self.build_field_display_rows().len();
+                match super::fields_loaded_plan(
+                    &self.mode,
+                    self.field_refresh_in_place,
+                    section_choice_count,
+                    field_display_count,
+                ) {
+                    super::FieldsLoadedPlan::RefreshFieldPane {
+                        field_selected,
+                        clear_refresh_in_place,
+                    } => {
+                        if clear_refresh_in_place {
+                            self.field_refresh_in_place = false;
+                        }
+                        self.field_list_state.select(field_selected);
+                    }
+                    super::FieldsLoadedPlan::ShowSectionPane {
+                        stage,
+                        section_selected,
+                        clear_selected_section,
+                    } => {
+                        if clear_selected_section {
+                            self.selected_section = None;
+                        }
+                        self.stage = stage;
+                        self.section_list_state.select(section_selected);
+                    }
+                    super::FieldsLoadedPlan::ShowFieldPane {
+                        field_selected,
+                        clear_selected_section,
+                    } => {
+                        if clear_selected_section {
+                            self.selected_section = None;
+                        }
+                        self.field_list_state.select(field_selected);
+                    }
                 }
                 self.load_state = OpLoadState::Ready;
                 true

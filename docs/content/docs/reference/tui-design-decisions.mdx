@@ -159,7 +159,7 @@ Root-modal widget dispatch now lives in <RepoFile path="src/console/tui/componen
 
 Console container-info click-copy now queues `ManagerEffect::CopyContainerInfoValue`; <RepoFile path="src/console/effects.rs" /> writes the OSC52 clipboard sequence and marks copied feedback outside mouse input.
 
-Console op-picker account-load completion planning and pending-load requests now use crate-owned helpers/carriers in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />; the root adapter still supplies root `operator_env` result types and executes `op` metadata loads outside the TUI boundary.
+Console op-picker account/vault/item/field load-completion planning, concealed-first field-load sorting policy, and pending-load requests now use crate-owned helpers/carriers in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />; the root adapter still supplies root `operator_env` result types and executes `op` metadata loads outside the TUI boundary.
 
 Console startup `op` CLI availability probing now happens before <RepoFile path="src/console/tui/run.rs" /> enters the TUI loop. The run loop receives the already-probed availability fact and initializes visible state from it instead of probing 1Password from inside the TUI boundary.
 

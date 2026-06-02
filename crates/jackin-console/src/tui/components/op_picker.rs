@@ -115,6 +115,82 @@ pub const fn accounts_loaded_plan(account_count: usize) -> AccountsLoadedPlan {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VaultsLoadedPlan {
+    NoVaults,
+    ShowVaultPane { selected: Option<usize> },
+}
+
+pub const fn vaults_loaded_plan(vault_count: usize) -> VaultsLoadedPlan {
+    if vault_count == 0 {
+        VaultsLoadedPlan::NoVaults
+    } else {
+        VaultsLoadedPlan::ShowVaultPane {
+            selected: first_selection(vault_count),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemsLoadedPlan {
+    pub selected: Option<usize>,
+}
+
+pub const fn items_loaded_plan(item_count: usize) -> ItemsLoadedPlan {
+    ItemsLoadedPlan {
+        selected: first_selection(item_count),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldsLoadedPlan {
+    RefreshFieldPane {
+        field_selected: Option<usize>,
+        clear_refresh_in_place: bool,
+    },
+    ShowSectionPane {
+        stage: OpPickerStage,
+        section_selected: Option<usize>,
+        clear_selected_section: bool,
+    },
+    ShowFieldPane {
+        field_selected: Option<usize>,
+        clear_selected_section: bool,
+    },
+}
+
+pub const fn fields_loaded_plan(
+    mode: &OpPickerMode,
+    refresh_in_place: bool,
+    section_choice_count: usize,
+    field_display_count: usize,
+) -> FieldsLoadedPlan {
+    if refresh_in_place {
+        return FieldsLoadedPlan::RefreshFieldPane {
+            field_selected: first_selection(field_display_count),
+            clear_refresh_in_place: true,
+        };
+    }
+    if mode.is_create() {
+        return FieldsLoadedPlan::ShowSectionPane {
+            stage: OpPickerStage::Section,
+            section_selected: first_selection(section_choice_count + 1),
+            clear_selected_section: true,
+        };
+    }
+    FieldsLoadedPlan::ShowFieldPane {
+        field_selected: first_selection(field_display_count),
+        clear_selected_section: true,
+    }
+}
+
+pub fn sort_fields_by_concealed_first<Field>(
+    fields: &mut [Field],
+    mut concealed: impl FnMut(&Field) -> bool,
+) {
+    fields.sort_by_key(|field| !concealed(field));
+}
+
 /// Background load completion routed back into the picker.
 #[derive(Debug)]
 pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
@@ -2352,5 +2428,81 @@ mod tests {
             AccountsLoadedPlan::SelectSingleAccount
         );
         assert_eq!(accounts_loaded_plan(2), AccountsLoadedPlan::ShowAccountPane);
+    }
+
+    #[test]
+    fn vault_item_and_field_load_completion_plans_keep_root_adapter_out_of_transition_policy() {
+        assert_eq!(vaults_loaded_plan(0), VaultsLoadedPlan::NoVaults);
+        assert_eq!(
+            vaults_loaded_plan(2),
+            VaultsLoadedPlan::ShowVaultPane { selected: Some(0) }
+        );
+
+        assert_eq!(items_loaded_plan(0).selected, None);
+        assert_eq!(items_loaded_plan(3).selected, Some(0));
+
+        assert_eq!(
+            fields_loaded_plan(&OpPickerMode::Browse, false, 2, 4),
+            FieldsLoadedPlan::ShowFieldPane {
+                field_selected: Some(0),
+                clear_selected_section: true,
+            }
+        );
+        assert_eq!(
+            fields_loaded_plan(
+                &OpPickerMode::Create {
+                    item_name_default: String::new(),
+                    field_label_default: String::new(),
+                },
+                false,
+                2,
+                4,
+            ),
+            FieldsLoadedPlan::ShowSectionPane {
+                stage: OpPickerStage::Section,
+                section_selected: Some(0),
+                clear_selected_section: true,
+            }
+        );
+        assert_eq!(
+            fields_loaded_plan(
+                &OpPickerMode::Create {
+                    item_name_default: String::new(),
+                    field_label_default: String::new(),
+                },
+                true,
+                2,
+                4,
+            ),
+            FieldsLoadedPlan::RefreshFieldPane {
+                field_selected: Some(0),
+                clear_refresh_in_place: true,
+            }
+        );
+    }
+
+    #[test]
+    fn field_load_sort_policy_puts_concealed_fields_first() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct Field {
+            label: &'static str,
+            concealed: bool,
+        }
+
+        let mut fields = vec![
+            Field {
+                label: "plain",
+                concealed: false,
+            },
+            Field {
+                label: "secret",
+                concealed: true,
+            },
+        ];
+
+        sort_fields_by_concealed_first(&mut fields, |field| field.concealed);
+
+        assert_eq!(fields[0].label, "secret");
+        assert_eq!(fields[1].label, "plain");
     }
 }
