@@ -236,22 +236,10 @@ pub type ManagerStage<'a> = jackin_console::tui::app::ConsoleManagerStage<
     SettingsState<'a>,
 >;
 
-#[derive(Debug)]
-pub struct GlobalMountsState<'a> {
-    pub selected: usize,
-    pub pending: Vec<crate::config::GlobalMountRow>,
-    pub original: Vec<crate::config::GlobalMountRow>,
-    pub mount_info_cache: MountInfoCache,
-    pub modal: Option<GlobalMountModal<'a>>,
-    pub modal_parents: Vec<GlobalMountModal<'a>>,
-    pub add_draft: Option<GlobalMountDraft>,
-    pub error: Option<String>,
-    pub scroll_x: u16,
-    pub scroll_y: u16,
-    pub scroll_focused: bool,
-    /// Dispatcher pops back to the workspace list when set.
-    pub exit_requested: bool,
-}
+pub type GlobalMountsState<'a> = jackin_console::tui::screens::settings::model::GlobalMountsState<
+    crate::config::GlobalMountRow,
+    GlobalMountModal<'a>,
+>;
 
 #[derive(Debug)]
 pub struct SettingsState<'a> {
@@ -736,61 +724,21 @@ pub type PendingIsolationCleanup =
 pub type PendingRoleLoad =
     jackin_console::tui::subscriptions::PendingRoleLoad<crate::config::RoleSource>;
 
-impl GlobalMountsState<'_> {
-    pub fn from_config(config: &AppConfig) -> Self {
-        let rows = config.list_mount_rows();
-        Self {
-            selected: 0,
-            pending: rows.clone(),
-            original: rows,
-            mount_info_cache: MountInfoCache::default(),
-            modal: None,
-            modal_parents: Vec::new(),
-            add_draft: None,
-            error: None,
-            scroll_x: 0,
-            scroll_y: 0,
-            scroll_focused: false,
-            exit_requested: false,
-        }
-    }
-
-    #[must_use]
-    pub fn is_dirty(&self) -> bool {
-        self.pending != self.original
-    }
-
-    pub fn discard(&mut self) {
-        self.pending = self.original.clone();
-        self.mount_info_cache.clear();
-        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
-        self.add_draft = None;
-        self.modal = None;
-        self.modal_parents.clear();
-        self.error = None;
-    }
-
-    pub fn mark_saved(&mut self) {
-        self.original = self.pending.clone();
-        self.mount_info_cache.clear();
-    }
-}
-
-impl<'a> GlobalMountsState<'a> {
-    pub fn open_sub_modal(&mut self, child: GlobalMountModal<'a>) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
-    }
-
-    pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
-    }
-
-    pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
+fn settings_global_mounts_from_config(config: &AppConfig) -> GlobalMountsState<'static> {
+    let rows = config.list_mount_rows();
+    GlobalMountsState {
+        selected: 0,
+        pending: rows.clone(),
+        original: rows,
+        mount_info_cache: MountInfoCache::default(),
+        modal: None,
+        modal_parents: Vec::new(),
+        add_draft: None,
+        error: None,
+        scroll_x: 0,
+        scroll_y: 0,
+        scroll_focused: false,
+        exit_requested: false,
     }
 }
 
@@ -801,7 +749,7 @@ impl SettingsState<'_> {
             tab_bar_focused: true,
             hovered_tab: None,
             general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
-            mounts: GlobalMountsState::from_config(config),
+            mounts: settings_global_mounts_from_config(config),
             env: settings_env_from_config(config),
             auth: settings_auth_from_config(config),
             trust: settings_trust_from_config(config),
@@ -2820,7 +2768,7 @@ mod tests {
         std::fs::create_dir_all(&source_a).unwrap();
         std::fs::create_dir_all(&source_b).unwrap();
 
-        let mut state = GlobalMountsState::from_config(&AppConfig::default());
+        let mut state = settings_global_mounts_from_config(&AppConfig::default());
         state.pending.push(crate::config::GlobalMountRow {
             scope: None,
             name: "gradle".into(),

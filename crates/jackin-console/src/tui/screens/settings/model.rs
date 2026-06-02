@@ -314,6 +314,70 @@ pub enum GlobalMountModal<
     },
 }
 
+#[derive(Debug)]
+pub struct GlobalMountsState<Row, Modal> {
+    pub selected: usize,
+    pub pending: Vec<Row>,
+    pub original: Vec<Row>,
+    pub mount_info_cache: crate::mount_info_cache::MountInfoCache,
+    pub modal: Option<Modal>,
+    pub modal_parents: Vec<Modal>,
+    pub add_draft: Option<GlobalMountDraft>,
+    pub error: Option<String>,
+    pub scroll_x: u16,
+    pub scroll_y: u16,
+    pub scroll_focused: bool,
+    /// Dispatcher pops back to the workspace list when set.
+    pub exit_requested: bool,
+}
+
+impl<Row, Modal> GlobalMountsState<Row, Modal> {
+    #[must_use]
+    pub fn is_dirty(&self) -> bool
+    where
+        Row: PartialEq,
+    {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self)
+    where
+        Row: Clone,
+    {
+        self.pending = self.original.clone();
+        self.mount_info_cache.clear();
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.add_draft = None;
+        self.modal = None;
+        self.modal_parents.clear();
+        self.error = None;
+    }
+
+    pub fn mark_saved(&mut self)
+    where
+        Row: Clone,
+    {
+        self.original = self.pending.clone();
+        self.mount_info_cache.clear();
+    }
+
+    pub fn open_sub_modal(&mut self, child: Modal) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+    }
+
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsTrustRow {
     pub role: String,
