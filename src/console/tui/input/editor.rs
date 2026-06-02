@@ -21,6 +21,7 @@ use crate::console::tui::state::PendingRoleLoad;
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
@@ -453,10 +454,7 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 } else {
                     editor.modal = Some(Modal::ErrorPopup {
-                        state: jackin_console::tui::components::error_popup::error_popup_state(
-                            "No GitHub URL",
-                            "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
-                        ),
+                        state: no_github_url_error_popup_state(),
                     });
                 }
             }

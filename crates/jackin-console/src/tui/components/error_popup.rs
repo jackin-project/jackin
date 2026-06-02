@@ -22,6 +22,25 @@ pub fn editor_action_error_popup_state(
     )
 }
 
+pub fn no_github_url_error_popup_state() -> jackin_tui::components::ErrorPopupState {
+    error_popup_state(
+        "No GitHub URL",
+        "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
+    )
+}
+
+pub fn save_failed_error_popup_state(
+    message: impl Into<String>,
+) -> jackin_tui::components::ErrorPopupState {
+    error_popup_state("Save failed", message)
+}
+
+pub fn op_read_failed_error_popup_state(
+    error: impl std::fmt::Display,
+) -> jackin_tui::components::ErrorPopupState {
+    error_popup_state("1Password read failed", error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,5 +59,29 @@ mod tests {
 
         assert_eq!(state.title, "Could not apply change");
         assert!(state.message.contains("disk full"));
+    }
+
+    #[test]
+    fn no_github_url_error_popup_explains_missing_remote() {
+        let state = no_github_url_error_popup_state();
+
+        assert_eq!(state.title, "No GitHub URL");
+        assert!(state.message.contains("GitHub origin"));
+    }
+
+    #[test]
+    fn save_failed_error_popup_uses_standard_title() {
+        let state = save_failed_error_popup_state("bad config");
+
+        assert_eq!(state.title, "Save failed");
+        assert_eq!(state.message, "bad config");
+    }
+
+    #[test]
+    fn op_read_failed_error_popup_uses_standard_title() {
+        let state = op_read_failed_error_popup_state("Touch ID rejected");
+
+        assert_eq!(state.title, "1Password read failed");
+        assert_eq!(state.message, "Touch ID rejected");
     }
 }

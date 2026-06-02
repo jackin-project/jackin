@@ -692,9 +692,8 @@ pub(in crate::console) fn apply_op_picker_commit_failed(
     error: &anyhow::Error,
 ) {
     editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::error_popup_state(
-            "1Password read failed",
-            error.to_string(),
+        state: jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(
+            error,
         ),
     });
 }
