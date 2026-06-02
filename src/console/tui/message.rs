@@ -45,172 +45,25 @@ use jackin_console::tui::update::{
     open_container_info_modal_plan, open_github_picker_modal_plan, open_status_overlay_plan,
 };
 use ratatui::layout::Rect;
-use std::path::PathBuf;
 
-#[derive(Debug)]
-pub(crate) enum ManagerMessage {
-    CollapseSelectedTree,
-    ClearEditorAuthKind,
-    EnterPreview,
-    EnterConfirmDelete {
-        name: String,
-    },
-    EnterConfirmInstancePurge {
-        container: String,
-        label: String,
-    },
-    EnterCreateEditor {
-        name: String,
-        workspace: crate::workspace::WorkspaceConfig,
-    },
-    EnterCreatePrelude(CreatePreludeState<'static>),
-    EnterEditor(EditorState<'static>),
-    EnterEditorAuthKind {
-        kind: AuthKind,
-    },
-    EnterSettings(SettingsState<'static>),
-    InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),
-    MountInfoRefreshed(PendingMountInfoRefresh),
-    OpCommitResolved {
-        op_ref: crate::operator_env::OpRef,
-        result: anyhow::Result<()>,
-        is_settings: bool,
-    },
-    PollFileBrowserGitUrls,
-    PollPickerLoads,
-    FocusEditorContent,
-    FocusEditorTabBar,
-    FocusSettingsContent,
-    FocusSettingsTabBar,
-    ExitPreview,
-    ExpandSelectedTree,
-    ClearSettingsAuthKind,
-    DismissSettingsErrorPopup,
-    OpenSettingsErrorPopup {
-        title: String,
-        message: String,
-    },
-    EnterSettingsAuthKind,
-    ScrollEditorTabHorizontal {
-        delta: i16,
-        term_width: u16,
-        content_width: usize,
-    },
-    SelectEditorMountRow(usize),
-    SelectEditorTab(EditorTab),
-    SelectListRow(usize),
-    SelectSettingsTab(SettingsTab),
-    SelectSettingsTrustRow(usize),
-    ScrollEditorWorkspaceMountsHorizontal {
-        delta: i16,
-        term_width: u16,
-        content_width: usize,
-    },
-    ScrollSettingsGlobalMountsHorizontal {
-        delta: i16,
-        term_width: u16,
-        content_width: usize,
-    },
-    ScrollSettingsTrustHorizontal {
-        delta: i16,
-        term_width: u16,
-        content_width: usize,
-    },
-    MoveSettingsGlobalMountsSelection {
-        delta: isize,
-        term: Rect,
-        footer_h: u16,
-    },
-    MoveSettingsEnvSelection {
-        delta: isize,
-        term: Rect,
-        footer_h: u16,
-    },
-    MoveSettingsTrustSelection {
-        delta: isize,
-        term: Rect,
-        footer_h: u16,
-    },
-    MoveEditorTab {
-        delta: isize,
-        focus_tab_bar: bool,
-    },
-    MoveEditorFieldSelection {
-        delta: isize,
-        max_row: usize,
-        skipped_rows: Vec<usize>,
-        term: Rect,
-        footer_h: u16,
-    },
-    MoveSettingsTab {
-        delta: isize,
-        focus_tab_bar: bool,
-    },
-    MoveSettingsGeneralSelection {
-        delta: isize,
-    },
-    MoveSettingsAuthSelection {
-        delta: isize,
-    },
-    SetSettingsEnvRoleExpanded {
-        role: String,
-        expanded: bool,
-    },
-    SetEditorAuthRoleExpanded {
-        role: String,
-        expanded: bool,
-    },
-    SetEditorSecretsRoleExpanded {
-        role: String,
-        expanded: bool,
-    },
-    ToggleSettingsGlobalMountReadonly,
-    ToggleEditorGeneralSelected,
-    ToggleEditorMountReadonlySelected,
-    ToggleEditorSecretMask {
-        scope: SecretsScopeTag,
-        key: String,
-    },
-    ToggleSettingsGeneralSelected,
-    ToggleSettingsTrustSelected,
-    MoveListSelection(isize),
-    MovePreviewPane {
-        container: String,
-        delta: isize,
-    },
-    ReloadFromConfig {
-        config: Box<AppConfig>,
-        cwd: PathBuf,
-    },
-    ReturnToList,
-    ScrollListHorizontal(i16),
-    ScrollFocusedListBlockVertical(i16),
-    SetListScrollFocus(Option<MountScrollFocus>),
-    SetListNamesFocused(bool),
-    SetDragState(Option<DragState>),
-    SetListSplitPct(u16),
-    OpenListErrorPopup {
-        title: String,
-        message: String,
-    },
-    OpenStatusPopup {
-        title: String,
-        message: String,
-    },
-    DismissStatusPopup,
-    OpenListContainerInfo {
-        state: jackin_tui::components::ContainerInfoState,
-    },
-    OpenListGithubPicker {
-        state: jackin_console::tui::components::github_picker::GithubPickerState,
-    },
-    DismissListModal,
-    DismissInlineSessionPicker,
-    DismissInlineRolePicker,
-    DismissInlineAgentPicker,
-    DismissInlineProviderPicker,
-    DismissLaunchProviderPicker,
-}
+pub(crate) type ManagerMessage = jackin_console::tui::message::ConsoleManagerMessage<
+    AuthKind,
+    CreatePreludeState<'static>,
+    EditorState<'static>,
+    SettingsState<'static>,
+    InstanceRefreshSnapshot,
+    PendingMountInfoRefresh,
+    crate::operator_env::OpRef,
+    AppConfig,
+    crate::workspace::WorkspaceConfig,
+    EditorTab,
+    SettingsTab,
+    SecretsScopeTag,
+    MountScrollFocus,
+    DragState,
+    jackin_tui::components::ContainerInfoState,
+    jackin_console::tui::components::github_picker::GithubPickerState,
+>;
 
 pub(crate) type ManagerBackgroundEvent = jackin_console::tui::message::BackgroundEvent<
     ManagerMessage,
