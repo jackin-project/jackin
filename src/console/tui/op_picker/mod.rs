@@ -24,16 +24,17 @@ mod state;
 pub(crate) use state::OpPickerState;
 
 pub(crate) use jackin_console::tui::components::op_picker::{
-    AccountStageCommitPlan, AccountsLoadedPlan, ExistingFieldCommitPlan, FieldDisplayRow,
-    FieldLabelCommitPlan, FieldLabelOrigin, FieldStageCommitPlan, FieldsLoadedPlan,
-    ItemStageCommitPlan, OpLoadState, OpPickerAccount, OpPickerCache, OpPickerError,
+    AccountStageCommitPlan, AccountsLoadedPlan, FieldDisplayRow, FieldLabelOrigin,
+    FieldStageCommitPlan, FieldsLoadedPlan, ItemStageCommitPlan, OpLoadState, OpPickerAccount,
+    OpPickerCache, OpPickerError,
     OpPickerFatalState, OpPickerField, OpPickerFieldRef, OpPickerItem, OpPickerLoadRequest,
     OpPickerLoadResult, OpPickerMode,
     OpPickerPendingLoad as GenericOpPickerPendingLoad, OpPickerStage, OpPickerVault,
     SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan,
-    VaultsLoadedPlan,
+    VaultsLoadedPlan, ExistingFieldCommitSelectionInput,
     account_stage_commit_plan, account_stage_refresh_plan, existing_field_commit_plan,
-    fields_loaded_plan, field_label_cancel_plan, field_label_commit_plan, field_stage_back_plan,
+    existing_field_commit_selection, fields_loaded_plan, field_label_cancel_plan,
+    field_label_commit_plan, field_label_commit_selection, field_stage_back_plan,
     field_stage_commit_plan, field_stage_refresh_plan, filter_reset_selection_for_stage,
     item_stage_back_plan, item_stage_commit_plan, item_stage_refresh_plan, items_loaded_plan,
     new_item_name_commit_plan, new_section_name_commit_plan, section_header_collapse_target,

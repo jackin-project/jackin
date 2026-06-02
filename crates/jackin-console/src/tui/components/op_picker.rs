@@ -250,7 +250,7 @@ pub struct OpPickerPendingLoad<LoadResult, LoadRequest, Runner> {
 }
 
 /// What the operator chose when the picker commits.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
     /// An existing field was chosen.
     Existing(Reference),
@@ -780,6 +780,40 @@ pub fn field_label_commit_plan<Account, Vault, Item>(
     }
 }
 
+pub fn field_label_commit_selection<Reference, Account, Vault, Item, FieldTarget>(
+    plan: FieldLabelCommitPlan<Account, Vault, Item>,
+    new_field_target: impl FnOnce(String) -> FieldTarget,
+) -> OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
+    match plan {
+        FieldLabelCommitPlan::EditItemField {
+            account,
+            vault,
+            item,
+            section,
+            field_label,
+        } => OpPickerSelection::EditItemField {
+            account,
+            vault,
+            item,
+            section,
+            field: new_field_target(field_label),
+        },
+        FieldLabelCommitPlan::NewItem {
+            account,
+            vault,
+            item_name,
+            section,
+            field_label,
+        } => OpPickerSelection::NewItem {
+            account,
+            vault,
+            item_name,
+            section,
+            field_label,
+        },
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExistingFieldCommitPlan {
     ExistingReference,
@@ -804,6 +838,36 @@ pub fn existing_field_commit_plan(
         };
     }
     ExistingFieldCommitPlan::ExistingReference
+}
+
+pub struct ExistingFieldCommitSelectionInput<Account, Vault, Item> {
+    pub account: Option<Account>,
+    pub vault: Vault,
+    pub item: Item,
+}
+
+pub fn existing_field_commit_selection<Reference, Account, Vault, Item, FieldTarget>(
+    plan: ExistingFieldCommitPlan,
+    input: ExistingFieldCommitSelectionInput<Account, Vault, Item>,
+    existing_reference: impl FnOnce() -> Reference,
+    existing_field_target: impl FnOnce(String, String) -> FieldTarget,
+) -> OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
+    match plan {
+        ExistingFieldCommitPlan::EditItemField {
+            section,
+            field_id,
+            field_label,
+        } => OpPickerSelection::EditItemField {
+            account: input.account,
+            vault: input.vault,
+            item: input.item,
+            section,
+            field: existing_field_target(field_id, field_label),
+        },
+        ExistingFieldCommitPlan::ExistingReference => {
+            OpPickerSelection::Existing(existing_reference())
+        }
+    }
 }
 
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
@@ -2415,6 +2479,51 @@ mod tests {
     }
 
     #[test]
+    fn field_label_commit_selection_builds_component_owned_selection_shape() {
+        let selection = field_label_commit_selection::<&str, &str, &str, &str, (&str, String)>(
+            FieldLabelCommitPlan::EditItemField {
+                account: Some("account"),
+                vault: "vault",
+                item: "item",
+                section: Some("api".to_string()),
+                field_label: "token".to_string(),
+            },
+            |label| ("new", label),
+        );
+        assert_eq!(
+            selection,
+            OpPickerSelection::EditItemField {
+                account: Some("account"),
+                vault: "vault",
+                item: "item",
+                section: Some("api".to_string()),
+                field: ("new", "token".to_string()),
+            }
+        );
+
+        let selection = field_label_commit_selection::<&str, &str, &str, &str, (&str, String)>(
+            FieldLabelCommitPlan::NewItem {
+                account: None,
+                vault: "vault",
+                item_name: "Login".to_string(),
+                section: None,
+                field_label: "password".to_string(),
+            },
+            |label| ("new", label),
+        );
+        assert_eq!(
+            selection,
+            OpPickerSelection::NewItem {
+                account: None,
+                vault: "vault",
+                item_name: "Login".to_string(),
+                section: None,
+                field_label: "password".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn existing_field_commit_plan_routes_create_mode_to_field_target_data() {
         assert_eq!(
             existing_field_commit_plan(
@@ -2435,6 +2544,49 @@ mod tests {
         assert_eq!(
             existing_field_commit_plan(&OpPickerMode::Browse, "field-id", "token", None),
             ExistingFieldCommitPlan::ExistingReference,
+        );
+    }
+
+    #[test]
+    fn existing_field_commit_selection_builds_component_owned_selection_shape() {
+        let selection = existing_field_commit_selection(
+            ExistingFieldCommitPlan::EditItemField {
+                section: Some("api".to_string()),
+                field_id: "field-id".to_string(),
+                field_label: "token".to_string(),
+            },
+            ExistingFieldCommitSelectionInput {
+                account: Some("account"),
+                vault: "vault",
+                item: "item",
+            },
+            || "op://unused",
+            |id, label| (id, label),
+        );
+        assert_eq!(
+            selection,
+            OpPickerSelection::EditItemField {
+                account: Some("account"),
+                vault: "vault",
+                item: "item",
+                section: Some("api".to_string()),
+                field: ("field-id".to_string(), "token".to_string()),
+            }
+        );
+
+        let selection = existing_field_commit_selection::<&str, &str, &str, &str, (String, String)>(
+            ExistingFieldCommitPlan::ExistingReference,
+            ExistingFieldCommitSelectionInput {
+                account: None,
+                vault: "vault",
+                item: "item",
+            },
+            || "op://vault/item/field",
+            |id, label| (id, label),
+        );
+        assert_eq!(
+            selection,
+            OpPickerSelection::Existing("op://vault/item/field")
         );
     }
 

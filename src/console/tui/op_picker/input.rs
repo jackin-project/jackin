@@ -8,14 +8,15 @@ use jackin_console::tui::components::op_picker::section_name_input_state;
 use jackin_tui::ModalOutcome;
 
 use super::{
-    AccountStageCommitPlan, ExistingFieldCommitPlan, FieldLabelCommitPlan, FieldStageCommitPlan,
+    AccountStageCommitPlan, FieldStageCommitPlan,
     ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError, OpPickerSelection,
     OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan,
     VaultStageBackPlan, VaultStageCommitPlan, account_stage_commit_plan,
-    account_stage_refresh_plan, existing_field_commit_plan,
-    field_label_cancel_plan, field_label_commit_plan, field_stage_back_plan,
-    field_stage_commit_plan, field_stage_refresh_plan, filter_reset_selection_for_stage,
-    item_stage_back_plan, item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
+    account_stage_refresh_plan, existing_field_commit_plan, existing_field_commit_selection,
+    ExistingFieldCommitSelectionInput, field_label_cancel_plan, field_label_commit_plan,
+    field_label_commit_selection, field_stage_back_plan, field_stage_commit_plan,
+    field_stage_refresh_plan, filter_reset_selection_for_stage, item_stage_back_plan,
+    item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
     new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
     section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
     vault_stage_refresh_plan,
@@ -531,41 +532,17 @@ impl OpPickerState {
                     .selected_vault
                     .clone()
                     .expect("vault set before field-label commit");
-                match field_label_commit_plan(
+                let plan = field_label_commit_plan(
                     self.selected_account.clone(),
                     vault,
                     self.selected_item.clone(),
                     self.pending_section.take(),
                     self.item_name_input.trimmed_value(),
                     &label,
-                ) {
-                    FieldLabelCommitPlan::EditItemField {
-                        account,
-                        item,
-                        vault,
-                        section,
-                        field_label,
-                    } => ModalOutcome::Commit(OpPickerSelection::EditItemField {
-                        account,
-                        vault,
-                        item,
-                        section,
-                        field: crate::operator_env::FieldTarget::New { label: field_label },
-                    }),
-                    FieldLabelCommitPlan::NewItem {
-                        account,
-                        vault,
-                        item_name,
-                        section,
-                        field_label,
-                    } => ModalOutcome::Commit(OpPickerSelection::NewItem {
-                        account,
-                        vault,
-                        item_name,
-                        section,
-                        field_label,
-                    }),
-                }
+                );
+                ModalOutcome::Commit(field_label_commit_selection(plan, |label| {
+                    crate::operator_env::FieldTarget::New { label }
+                }))
             }
             ModalOutcome::Continue => ModalOutcome::Continue,
         }
@@ -591,17 +568,15 @@ impl OpPickerState {
     /// the field's existing section, so `selected_section` rides along only
     /// for display, not placement.
     fn commit_existing_field(&self, field: &OpField) -> OpPickerSelection {
-        match existing_field_commit_plan(
+        let plan = existing_field_commit_plan(
             &self.mode,
             &field.id,
             &field.label,
             self.selected_section.clone(),
-        ) {
-            ExistingFieldCommitPlan::EditItemField {
-                section,
-                field_id,
-                field_label,
-            } => OpPickerSelection::EditItemField {
+        );
+        existing_field_commit_selection(
+            plan,
+            ExistingFieldCommitSelectionInput {
                 account: self.selected_account.clone(),
                 vault: self
                     .selected_vault
@@ -611,16 +586,10 @@ impl OpPickerState {
                     .selected_item
                     .clone()
                     .expect("item set before field commit"),
-                section,
-                field: crate::operator_env::FieldTarget::Existing {
-                    id: field_id,
-                    label: field_label,
-                },
             },
-            ExistingFieldCommitPlan::ExistingReference => {
-                OpPickerSelection::Existing(self.build_op_ref_on_commit(field))
-            }
-        }
+            || self.build_op_ref_on_commit(field),
+            |id, label| crate::operator_env::FieldTarget::Existing { id, label },
+        )
     }
 
     fn reset_selection_for_filter(&mut self, stage: OpPickerStage) {
