@@ -15,7 +15,7 @@ use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
-    generated_token_source_picker_state,
+    generated_token_op_item_name, generated_token_source_picker_state,
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::auth::can_generate_claude_oauth_token;
@@ -600,8 +600,10 @@ pub(super) fn handle_settings_auth_modal(
                             state: Box::new(
                                 crate::console::tui::op_picker::OpPickerState::new_create_with_cache(
                                     op_cache,
-                                    crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE
-                                        .replace("{ws}", "global"),
+                                    generated_token_op_item_name(
+                                        crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE,
+                                        "global",
+                                    ),
                                     crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
                                 ),
                             ),

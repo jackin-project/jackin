@@ -67,6 +67,11 @@ pub fn generated_token_source_picker_state(op_available: bool) -> SourcePickerSt
 }
 
 #[must_use]
+pub fn generated_token_op_item_name(item_template: &str, scope_label: &str) -> String {
+    item_template.replace("{ws}", scope_label)
+}
+
+#[must_use]
 pub fn auth_credential_input_state<'a>(
     literal: impl Into<String>,
 ) -> TextInputState<'a> {
@@ -563,6 +568,14 @@ mod tests {
         let state = generated_token_source_picker_state(true);
 
         assert_eq!(state.key, "generated token");
+    }
+
+    #[test]
+    fn generated_token_op_item_name_applies_scope_label() {
+        assert_eq!(
+            generated_token_op_item_name("Claude ({ws})", "global"),
+            "Claude (global)"
+        );
     }
 
     #[test]

@@ -23,6 +23,7 @@ use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     editor_name_input_state, editor_workdir_pick_state, mount_destination_input_state,
@@ -1300,7 +1301,10 @@ fn open_create_op_picker_for_generate(
     editor.modal = Some(Modal::OpPicker {
         state: Box::new(OpPickerState::new_create_with_cache(
             op_cache,
-            crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE.replace("{ws}", &workspace_name),
+            generated_token_op_item_name(
+                crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE,
+                &workspace_name,
+            ),
             crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
         )),
     });

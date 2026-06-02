@@ -1016,6 +1016,8 @@ Editor/settings save-footer base labels and pick-list modal commit labels live w
 
 Generated-token source-picker label construction lives with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />. Editor and settings input code decides when token generation starts, but visible source-picker state comes from the component helper.
 
+Generated-token 1Password item-name default construction also lives with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />. Editor and settings token-generation input code should pass the template and scope label into the helper rather than hard-coding `{ws}` replacement in root input handlers.
+
 #### Lookbook focus behavior
 
 `jackin-tui-lookbook` (`cargo run -p jackin-tui-lookbook -- --terminal`) follows the same focus model as every other jackin' surface:
