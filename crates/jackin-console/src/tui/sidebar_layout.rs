@@ -53,6 +53,22 @@ pub enum SidebarScrollFocus {
     Roles,
 }
 
+/// Shared facts for the right-pane sidebar body. Root adapters supply concrete
+/// workspace/config rows; crate-owned layout helpers consume the generic shape.
+pub struct SidebarInputs<'a, Mount, WorkspaceConfig, GlobalMountRow, MountInfoCache> {
+    pub workdir: &'a str,
+    pub mounts: &'a [Mount],
+    pub mount_info_cache: MountInfoCache,
+    pub ws_config: Option<&'a WorkspaceConfig>,
+    pub global_rows: Vec<GlobalMountRow>,
+    pub picker_role_label: String,
+    pub instance_count: usize,
+    pub instance_expanded: bool,
+    pub inline_picker_active: bool,
+    pub show_envs: bool,
+    pub agent_count: usize,
+}
+
 impl From<crate::tui::focus::MountScrollFocus> for SidebarScrollFocus {
     fn from(focus: crate::tui::focus::MountScrollFocus) -> Self {
         match focus {

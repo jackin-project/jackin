@@ -402,7 +402,7 @@ Workspace-list mouse split geometry, seam hit-region rules, mouse-wheel step pol
 
 Workspace-list body rectangle and visual-row mouse hit-testing now also live in <RepoFile path="crates/jackin-console/src/tui/layout.rs" />. Root key/mouse input maps the crate-owned geometry result back to root `ManagerListRow` values but no longer owns the generic list-content border math.
 
-Sidebar scroll-focus liveness now lives in <RepoFile path="crates/jackin-console/src/tui/sidebar_layout.rs" />. Root list geometry passes crate-owned `MountScrollFocus` facts and no longer owns the generic "is the focused sidebar area still scrollable?" rule.
+Sidebar input facts and scroll-focus liveness now live in <RepoFile path="crates/jackin-console/src/tui/sidebar_layout.rs" />. Root list geometry binds concrete workspace/config rows through a type alias, passes crate-owned `MountScrollFocus` facts, and no longer owns the generic right-pane sidebar input shape or "is the focused sidebar area still scrollable?" rule.
 
 Root-console pre-render preparation now lives in <RepoFile path="src/console/tui/layout/prepare.rs" /> instead of `src/console/tui/view/`; it caches terminal size, footer heights, scroll clamps, and modal geometry immediately before draw while render modules stay focused on frame composition.
 

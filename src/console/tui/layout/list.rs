@@ -216,23 +216,13 @@ fn instance_row_width(
     )
 }
 
-/// Shared inputs for the right-pane sidebar. Saved-workspace rows and the
-/// synthetic "Current directory" row both build one of these and feed it
-/// through `compute_sidebar_layout` -> `render_sidebar_body` so the panel
-/// order, heights, and mouse hit-boxes cannot drift.
-pub(crate) struct SidebarInputs<'a> {
-    pub workdir: &'a str,
-    pub mounts: &'a [crate::workspace::MountConfig],
-    pub mount_info_cache: MountInfoCache,
-    pub ws_config: Option<&'a crate::workspace::WorkspaceConfig>,
-    pub global_rows: Vec<crate::config::GlobalMountRow>,
-    pub picker_role_label: String,
-    pub instance_count: usize,
-    pub instance_expanded: bool,
-    pub inline_picker_active: bool,
-    pub show_envs: bool,
-    pub agent_count: usize,
-}
+pub(crate) type SidebarInputs<'a> = jackin_console::tui::sidebar_layout::SidebarInputs<
+    'a,
+    crate::workspace::MountConfig,
+    crate::workspace::WorkspaceConfig,
+    crate::config::GlobalMountRow,
+    MountInfoCache,
+>;
 
 pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {
     let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
