@@ -2,25 +2,58 @@
 title: "Codebase readability & restructuring"
 ---
 
-**Status**: Open — active program. The TUI surfaces are extracted and restructured; the remaining work is concentrated in the root `src/` binary crate. Re-baked 2026-06-02.
+**Status**: Open — active program. The TUI surfaces are extracted into clean crates; the remaining work is restructuring the root `src/` binary crate into a tiered core-crate workspace, fixing duplication, mega-functions, and missing docs as the forcing function of each crate boundary. Re-baked 2026-06-02.
 
 ## Goal
 
-Make AI-generated code verifiable and maintainable. The codebase is ~170K lines of production Rust across a 7-crate workspace plus a root binary crate, built with heavy AI assistance. The recurring failure mode is the same one this program exists to fix: files outgrow their module boundaries, the same pattern gets copy-pasted instead of shared, and single functions grow past the point where a reviewer can hold them in their head.
+Make AI-generated code verifiable and maintainable. The codebase is ~170K lines of production Rust. The TUI half is already restructured — every terminal surface lives in its own crate behind one Elm Architecture boundary (see [TUI Design](/reference/tui/)). The unsolved half is the **root `src/` binary crate**: ~108K lines of runtime, config, instance, isolation, app-dispatch, manifest, and CLI code that is monolithic, duplicated, undocumented, and — the part no previous audit admitted — **tangled into a cyclic dependency graph that cannot be split into crates as-is**.
 
-The TUI half of that problem is now largely solved — see [What shipped](#what-shipped). **The unsolved half lives in the root `src/` crate**: the runtime/launch pipeline, the app dispatch loop, instance auth provisioning, and operator-env resolution are still monolithic, duplicated, and undocumented. This page is the plan to bring `src/` up to the standard the extracted crates already meet.
+The end state is a tiered Cargo workspace where each crate has one clear responsibility and the dependency graph is a DAG. This single program covers both the readability work (deduplication, file splits, module docs) and the crate extraction, because **they are the same motion**: you cannot extract a clean crate from a 9,482-line file full of duplicated literals and circular dependencies. The crate boundary is what forces the cleanup, and the cleanup is what makes the boundary reviewable.
 
 ## What shipped
 
-These items are done. They are listed here so the remaining work is not confused with work already complete.
+These are done. Listed so the remaining work is not confused with completed work.
 
-- **TUI architecture & surface extraction.** All terminal UI moved into a 7-crate workspace (`jackin-tui`, `jackin-console`, `jackin-launch`, `jackin-capsule`, `jackin-protocol`, `jackin-tui-lookbook`, `jackin-build-meta`) following one Elm Architecture boundary. Design rules live in [TUI Design](/reference/tui/). This eliminated the single largest duplication cluster the original audit flagged (the `console/tui/view/` render layer).
-- **Architecture Decision Records.** Four ADRs written and published at [/reference/adrs/](/reference/adrs/) (single-crate vs workspace, toolchain, ratatui, capsule pane rendering).
-- **Snapshot-test net started.** Four `insta` snapshot tests cover the largest composite panes (list, settings, editor-general, editor-mounts) in <RepoFile path="src/console/tui/view/snapshot_tests.rs" />. See [Snapshot tests for TUI](/reference/roadmap/snapshot-tests-tui/) for the remaining coverage.
-- **`pub(crate)` visibility pass progressing.** Root-crate `pub(crate) fn` share rose from ~11% to ~31% as the surface crates drew explicit public boundaries. Tracked in [pub(crate) visibility](/reference/roadmap/pub-crate-visibility/).
-- **MSRV & toolchain pin.** `rust-toolchain.toml` enforced in CI, MSRV floor verified (ADR-002).
-- **Shared TUI scrollbar primitive.** Metrics, clamping, drag/click mapping, and capsule scrollback unified in `jackin_tui::scroll`; contract documented under [TUI Design → Navigation](/reference/tui/navigation/).
-- **`PROJECT_STRUCTURE.md` refresh.** Root map delegates detailed source navigation to the [Codebase Map](/reference/getting-oriented/codebase-map/).
+- **TUI architecture & surface extraction.** All terminal UI moved into a 7-crate workspace (`jackin-tui`, `jackin-console`, `jackin-launch`, `jackin-capsule`, `jackin-protocol`, `jackin-tui-lookbook`, `jackin-build-meta`) under one Elm Architecture boundary. This eliminated the largest duplication cluster the original audit flagged (the `console/tui/view/` render layer) and proved the extraction model this program now applies to the core.
+- **Architecture Decision Records** at [/reference/adrs/](/reference/adrs/) — single-crate vs workspace, toolchain, ratatui, capsule pane rendering.
+- **Snapshot-test net started** — four `insta` snapshot tests over the largest composite panes in <RepoFile path="src/console/tui/view/snapshot_tests.rs" />. See [Snapshot tests for TUI](/reference/roadmap/snapshot-tests-tui/).
+- **`pub(crate)` visibility pass progressing** — root-crate `pub(crate) fn` share rose from ~11% to ~31% as the surface crates drew explicit public boundaries. Tracked in [pub(crate) visibility](/reference/roadmap/pub-crate-visibility/).
+- **MSRV & toolchain pin** (ADR-002), the shared `jackin_tui::scroll` primitive, and the `PROJECT_STRUCTURE.md` refresh that delegates to the [Codebase Map](/reference/getting-oriented/codebase-map/).
+
+## The target: a tiered core-crate workspace
+
+The non-visual core splits into four crates plus a thin binary. The boundary rule is **data and contracts versus behavior**: the small, universal vocabulary every layer speaks lives at the bottom; the heavy machinery that reads, writes, and orchestrates it lives above.
+
+```
+jackin-core            ← leaf. no deps, no tokio, no docker, no filesystem
+  universal non-config vocabulary + contracts:
+  Agent, MountIsolation, AuthForwardMode, RoleSource,
+  RoleManifest + manifest types, paths, selector,
+  and the DockerApi / CommandRunner traits (the I/O seam)
+
+jackin-config          → core
+  config + workspace, types AND behavior together:
+  AppConfig, WorkspaceConfig, MountConfig, *AuthConfig,
+  KeepAwakeConfig, version constants, ConfigEditor, migrations,
+  validate_mounts, plan_collapse, planner, workspace resolution
+
+jackin-env             → core, config
+  operator_env / 1Password reference resolution (CLI + console both use it)
+
+jackin-runtime         → core, config, env
+  the container bootstrap pipeline: runtime, instance, isolation,
+  derived_image. Holds the concrete DockerApi / CommandRunner impls.
+
+jackin (binary)        → all of the above
+  cli argument structs + app dispatch, kept thin
+
++ existing surface crates: jackin-tui, jackin-console,
+  jackin-launch, jackin-capsule, jackin-protocol
+```
+
+**Why `jackin-core` is separate from `jackin-config` (and is not just "more config").** The `*Config` structs are config-file-shaped data with config behavior, so they stay in `jackin-config` — that crate owns everything named "config." But a handful of types are *universal vocabulary* that is not about config at all: `Agent` is named by nine modules (`instance` 49×, `runtime` 90×, `console` 33×, `cli`, `app`, `manifest`, `workspace`, `config`); `MountIsolation` is a four-variant enum `config` needs 49×; the `DockerApi` / `CommandRunner` traits are the seam every test and runtime path depends on. If those lived in `jackin-config`, then `instance` would have to depend on the entire config crate — TOML parsing, the migration engine, `ConfigEditor`, workspace planning — just to name `Agent::Claude`. `jackin-core` keeps that vocabulary cheap, stable, and fast to compile, separate from the heavy config machinery that churns. The split line in one sentence: **config-file-shaped struct or config behavior → `jackin-config`; universal enum, trait, or path that even foundation modules need regardless of config → `jackin-core`.**
+
+This was verified, not assumed: nothing destined for `jackin-core` reaches up for a `*Config` type (`selector` needs only `instance`; the `manifest` *types* need only `Agent`; the docker traits reference no config), so the `*Config` types cleanly stay up in `jackin-config`.
 
 ## Where the codebase stands (2026-06-02)
 
@@ -33,84 +66,87 @@ These items are done. They are listed here so the remaining work is not confused
 | `#[allow(clippy::too_many_lines)]` | 53 | 2 |
 | `Style::default()` constructions | 2 | 347 |
 
-Test code adds ~8,100 L across 19 files in `tests/`. The split is the headline: **the extracted crates are documented, small-filed, and component-driven; the root `src/` crate carries almost all of the remaining entropy.** The `Style::default()` figure shows why a relocation is not a fix — the TUI extraction moved 347 raw style constructions into `crates/` without collapsing them into named style constants (see [DRY extractions](#3-dry-extractions)).
+The split is the headline: the extracted crates are documented, small-filed, and component-driven; the root `src/` crate carries almost all of the remaining entropy. The `Style::default()` figure also shows that a relocation is not a fix — the TUI extraction moved 347 raw style constructions into `crates/` without collapsing them into named style constants.
 
 ### Root-crate (`src/`) module health
 
-| Module | Files | Lines | `//!` | Biggest file (LOC) |
-|---|---|---|---|---|
-| `console/` | 72 | 38,634 | 83% | `tui/input/editor.rs` (4,212) |
-| `runtime/` | 16 | 18,431 | 38% | `launch.rs` (9,482) |
-| `config/` | 7 | 8,051 | 14% | `editor.rs` (2,434) |
-| `workspace/` | 7 | 5,446 | 29% | `token_setup.rs` (2,388) |
-| `app/` | 2 | 5,474 | 0% | `mod.rs` (3,966) |
-| `isolation/` | 6 | 5,767 | 0% | `materialize.rs` (2,441) |
-| `instance/` | 4 | 5,293 | 0% | `auth.rs` (3,302) |
-| `cli/` | 9 | 2,927 | 11% | `workspace.rs` (884) |
-| `manifest/` | 3 | 2,456 | 0% | `validate.rs` (1,244) |
-| `tui/` | 4 | 1,087 | 0% | `animation.rs` |
-| `agent/` | 1 | 462 | 0% | — |
+| Module | Files | Lines | `//!` | Biggest file (LOC) | Target crate |
+|---|---|---|---|---|---|
+| `console/` | 72 | 38,634 | 83% | `tui/input/editor.rs` (4,212) | stays (root binding layer) |
+| `runtime/` | 16 | 18,431 | 38% | `launch.rs` (9,482) | `jackin-runtime` |
+| `config/` | 7 | 8,051 | 14% | `editor.rs` (2,434) | `jackin-config` (+ types to core) |
+| `workspace/` | 7 | 5,446 | 29% | `token_setup.rs` (2,388) | `jackin-config` |
+| `app/` | 2 | 5,474 | 0% | `mod.rs` (3,966) | binary |
+| `isolation/` | 6 | 5,767 | 0% | `materialize.rs` (2,441) | `jackin-runtime` (+ `MountIsolation` to core) |
+| `instance/` | 4 | 5,293 | 0% | `auth.rs` (3,302) | `jackin-runtime` |
+| `cli/` | 9 | 2,927 | 11% | `workspace.rs` (884) | binary |
+| `manifest/` | 3 | 2,456 | 0% | `validate.rs` (1,244) | core (types) + `jackin-config` (validation) |
+| `tui/` | 4 | 1,087 | 0% | `animation.rs` | folds into the TUI crates |
+| `agent/` | 1 | 462 | 0% | — | `jackin-core` |
 
-Root-level files outside any module add the two single largest cross-cutting offenders: <RepoFile path="src/operator_env.rs" /> (4,209 L) and <RepoFile path="src/derived_image.rs" /> (1,381 L).
+Plus the two single largest cross-cutting root files: <RepoFile path="src/operator_env.rs" /> (4,209 L → `jackin-env`) and <RepoFile path="src/derived_image.rs" /> (1,381 L → `jackin-runtime`).
 
-## What remains
+## The real blocker: a cyclic dependency graph
 
-The remaining work is four tracks. Do them in roughly this order — DRY extraction and the doc/spec net make the file splits smaller and safer, and the file splits must precede the deeper crate split.
+The previous plan claimed "verified tiers" with `workspace/` and `manifest/` as clean leaves. That was false. The actual graph has cycles:
 
-### 1. DRY extractions (do first — lowest risk, highest reach)
+- **`config ↔ workspace`** — `config → workspace` 47 refs, `workspace → config` 50 refs. A direct mutual cycle.
+- **`config → isolation → workspace → config`** — a three-node cycle (`config` needs `MountIsolation`; `isolation` needs `MountConfig`/`ResolvedWorkspace`; `workspace` needs `AppConfig`).
+- **`agent → config`** and **`manifest → agent` / `manifest → config`** — the `Agent` and `AuthForwardMode` enums pulled in both directions.
 
-Every extraction below has 3+ real call sites. No speculative abstractions.
+Cargo forbids cycles *between* crates, so no crate boundary can be drawn until these are broken. The decisive finding: **the cycles are ~95% shared data types, not shared logic.** `isolation → workspace` is `MountConfig` and `ResolvedWorkspace`; `agent → config` is `AuthForwardMode`; `manifest → agent` is `Agent`. All `#[derive(Serialize, Deserialize)]` structs and enums.
 
-**Shared string constants.** None of these are extracted yet; all remain inline literals.
+The standard Rust fix for a mutual-type cycle is a foundation crate: move the shared *type definitions* down into `jackin-core`, leaving the *behavior* above. The moment the shared vocabulary lives below everything that names it, every one of these cycles dissolves at once. The residual `config`-logic ↔ `workspace`-logic coupling (config calls `validate_mounts`/`plan_collapse`; workspace calls `migrations`/`ConfigEditor`) is genuine logic coupling — which is exactly why config and workspace become **one** `jackin-config` crate rather than two.
 
-| Constant | Literal | Occurrences |
-|---|---|---|
-| `MANIFEST_FILENAME` | `"jackin.role.toml"` | 160 |
-| `DOCKERFILE_NAME` | `"Dockerfile"` | 235 |
-| `BASE_DOCKERFILE_FROM` | `"FROM projectjackin/construct:trixie\n"` and variants | ~100 |
+## The plan — staged, bottom-up
 
-**Named style constants.** The color palette is centralized (`jackin_tui::theme`), but the `Style::default().fg(…).add_modifier(BOLD)` boilerplate is rebuilt 235+ times across the TUI crates. Extract `BOLD_WHITE`, `DIM`, `GREEN`, `BORDER`, `DANGER` into `jackin-tui` so callers reference a style, not a construction chain.
+### Stage 0 — Safety net and an honest map
 
-**Auth provisioning.** <RepoFile path="src/instance/auth.rs" /> (3,302 L) holds six near-identical `provision_*_auth` functions (Codex, GitHub, Claude, Amp, Kimi, OpenCode). The Sync arm (read host file → write to role-state → `HostMissing` on `NotFound`) and the wipe-then-return for `ApiKey`/`Ignore` are copy-pasted across them. Extract `provision_file_credential(target, host_path, mode)`.
+- Land the [behavioral spec for `runtime/launch.rs`](/reference/roadmap/behavioral-spec-runtime-launch/) and [op_picker](/reference/roadmap/behavioral-spec-op-picker/), and extend the [snapshot net](/reference/roadmap/snapshot-tests-tui/) — the regression guard for everything below.
+- Generate the real module dependency graph and mark every cycle. The "tiers" must be measured, not assumed.
 
-**Agent match-arm dispatch.** Adding a new agent currently requires editing eight files that each carry an `Agent::Claude => …, Agent::Codex => …` arm: <RepoFile path="src/config/roles.rs" />, <RepoFile path="src/instance/mod.rs" />, <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/runtime/image.rs" />, <RepoFile path="src/derived_image.rs" />, <RepoFile path="src/agent_binary.rs" />, <RepoFile path="src/version_check.rs" />, and <RepoFile path="src/manifest/validate.rs" />. Replace with trait dispatch or a single dispatch macro.
+### Stage 1 — Build `jackin-core`, break the cycles
 
-**Docker resource derivation.** 40+ inline `format!("{name}-dind")` / `format!("{name}-net")` derivations and a duplicated DinD-sidecar `docker run` arg list across <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/runtime/attach.rs" />, and <RepoFile path="src/runtime/cleanup.rs" />. Extract a resource-name struct and a `run_dind_sidecar` helper.
+Move the universal vocabulary into a new leaf crate: `Agent`, `MountIsolation`, `AuthForwardMode`, `RoleSource`, the `RoleManifest` + manifest types, `paths`, `selector`, and the `DockerApi` / `CommandRunner` traits. This is type-level surgery — a type definition moves to `jackin-core` while the behavior that uses it (e.g. `isolation::materialize`, `config::ConfigEditor`) stays put and references `jackin_core::…`. Cut the two trivial upward edges (`config → runtime::list_role_names`, `config → instance::naming`) by moving those functions down or inverting them through a trait. Result: the root crate's internal graph becomes a DAG, and `jackin-core` compiles standalone.
 
-**Test infrastructure.** Consolidate the repeated `FakeRunner` definitions, `seed_minimal_role_repo` blocks, `test_workspace` / `simple_mount` constructors, and `config_with_agents` helpers into a shared `test_support` module.
+### Stage 2 — DRY pass
 
-### 2. Reduce mega-functions
+Reduce duplication before it is frozen into crate APIs. Every extraction has 3+ real call sites.
 
-53 functions in `src/` carry `#[allow(clippy::too_many_lines)]` — up from 35 at the original audit, so this is regressing, not improving. The worst offenders by suppression count are <RepoFile path="src/console/tui/input/global_mounts.rs" />, <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/console/tui/input/save.rs" />, and <RepoFile path="src/console/tui/input/mouse.rs" />. The two largest single functions are `fn run` in <RepoFile path="src/app/mod.rs" /> (1,406 L, 51-arm match) and `load_role_with` in <RepoFile path="src/runtime/launch.rs" /> (1,003 L). Each `too_many_lines` suppression added in a new PR is a regression on this track; reviewers should treat a new suppression as a request to extract, not annotate.
+- **Shared string constants** — none extracted yet: `MANIFEST_FILENAME` (`"jackin.role.toml"`, 160×), `DOCKERFILE_NAME` (`"Dockerfile"`, 235×), `BASE_DOCKERFILE_FROM` (~100×). These belong in `jackin-core`.
+- **Named style constants** — collapse the 235+ `Style::default().fg(…).add_modifier(BOLD)` chains in the TUI crates into `BOLD_WHITE` / `DIM` / `GREEN` / `BORDER` / `DANGER` in `jackin-tui`.
+- **Auth provisioning** — <RepoFile path="src/instance/auth.rs" /> (3,302 L) has six near-identical `provision_*_auth` functions; extract `provision_file_credential(target, host_path, mode)`.
+- **Agent dispatch** — adding an agent currently edits eight files with `Agent::Claude => …` arms (<RepoFile path="src/config/roles.rs" />, <RepoFile path="src/instance/mod.rs" />, <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/runtime/image.rs" />, <RepoFile path="src/derived_image.rs" />, <RepoFile path="src/agent_binary.rs" />, <RepoFile path="src/version_check.rs" />, <RepoFile path="src/manifest/validate.rs" />). Replace with trait dispatch — tracked as the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) item.
+- **Docker resource derivation** and **test infrastructure** — extract a resource-name struct + `run_dind_sidecar` helper, and consolidate the repeated `FakeRunner` / `seed_minimal_role_repo` / `test_workspace` / `simple_mount` helpers into a shared support module.
 
-### 3. Split the root-crate monoliths
+### Stage 3 — Split and document the monoliths
 
-Snapshot/behavioral coverage and the DRY pass above must land on a file before it is split. The four files with dedicated design pages:
+Snapshot/behavioral coverage and the Stage 2 DRY pass must land on a file before it is split. Four files have dedicated design pages:
 
-- [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) — now **9,482 L** (was 7,966), the hardest file in the codebase; behavioral spec required first.
+- [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) — **9,482 L** (was 7,966), the hardest file; behavioral spec required first.
 - [Split `console/tui/input/editor.rs`](/reference/roadmap/split-input-editor/) — **4,212 L**, one module per editor tab.
-- [Split `operator_env.rs`](/reference/roadmap/split-operator-env/) — **4,209 L**, separate the shared API, CLI client, env resolution, diagnostics, and picker metadata.
-- [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) — **3,966 L**, separate dispatch from the workspace/config command handlers.
+- [Split `operator_env.rs`](/reference/roadmap/split-operator-env/) — **4,209 L**, the future `jackin-env`.
+- [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) — **3,966 L**; `fn run` alone is 1,406 L.
 
-Other root-crate files over 2,000 L that need splitting (no dedicated page yet): <RepoFile path="src/instance/auth.rs" /> (3,302, after the auth-provisioning DRY pass), <RepoFile path="src/console/tui/input/global_mounts.rs" /> (2,871), <RepoFile path="src/console/tui/state.rs" /> (2,707), <RepoFile path="src/console/tui/input/mouse.rs" /> (2,676), <RepoFile path="src/isolation/materialize.rs" /> (2,441), <RepoFile path="src/config/editor.rs" /> (2,434), <RepoFile path="src/workspace/token_setup.rs" /> (2,388), and <RepoFile path="src/isolation/finalize.rs" /> (2,134).
+Other root files over 2,000 L: <RepoFile path="src/instance/auth.rs" /> (3,302, after the auth DRY pass), <RepoFile path="src/console/tui/input/global_mounts.rs" /> (2,871), <RepoFile path="src/console/tui/state.rs" /> (2,707), <RepoFile path="src/console/tui/input/mouse.rs" /> (2,676), <RepoFile path="src/isolation/materialize.rs" /> (2,441), <RepoFile path="src/config/editor.rs" /> (2,434), <RepoFile path="src/workspace/token_setup.rs" /> (2,388), <RepoFile path="src/isolation/finalize.rs" /> (2,134). In parallel, write `//!` module contracts — six `src/` modules (`isolation`, `instance`, `app`, `manifest`, `agent`, `tui`) have **zero** coverage; see [Module contracts](/reference/roadmap/module-contracts/). Mega-functions regressed to **53** `too_many_lines` suppressions (was 35); a new suppression in a PR is a request to extract, not annotate.
 
-Three crate-side files also exceed 2,000 L and should be split, though they are lower priority than the root-crate work: <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (3,901 L, but ~2,900 of that is one `#[cfg(test)]` module — split the test suite into per-submodule files first), <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> (3,207), and <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" /> (2,877).
+Three crate-side files also exceed 2,000 L and should be split, lower priority than the root work: <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (3,901 L, but ~2,900 of that is one `#[cfg(test)]` module — split the tests into per-submodule files first), <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> (3,207), and <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" /> (2,877).
 
-### 4. Module contracts & behavioral specs
+### Stage 4 — Extract the crates bottom-up
 
-Six `src/` modules have **zero** `//!` orientation docs: `isolation/`, `instance/`, `app/`, `manifest/`, `agent/`, and `tui/`. These are also the modules with the largest undocumented files (`auth.rs`, `materialize.rs`, `app/mod.rs`). Prioritize them. Tracked across:
+With the cycles broken (Stage 1) and the monoliths split (Stage 3), draw the boundaries leaf-first:
 
-- [Module contracts](/reference/roadmap/module-contracts/) — `//!` docs for the 79 files still missing them.
-- [Behavioral spec: runtime/launch.rs](/reference/roadmap/behavioral-spec-runtime-launch/) — verified invariants for the `jackin load` critical path; gates the launch split.
-- [Behavioral spec: op_picker](/reference/roadmap/behavioral-spec-op-picker/) — invariants for the 1Password picker state machine.
-- [Per-directory README](/reference/roadmap/per-directory-readme/) and [Developer Reference setup](/reference/roadmap/developer-reference-setup/) — AI-native orientation files and the browsable internals section.
-- [CI gate: PROJECT_STRUCTURE.md](/reference/roadmap/ci-project-structure-gate/), [cc-sdd workflow](/reference/roadmap/agent-workflow-cc-sdd/), and [Publish CONTRIBUTING + TESTING](/reference/roadmap/move-contributing-testing/) — policy and workflow follow-through.
+1. **`jackin-core`** already stands from Stage 1.
+2. **`jackin-config`** — config + workspace logic over the core types. Confirm no residual upward edge into runtime/instance survives.
+3. **`jackin-env`** — `operator_env` after its split.
+4. **`jackin-runtime`** — runtime + instance + isolation + `derived_image`, holding the concrete `DockerApi` / `CommandRunner` impls (dependency inversion: the traits are in core, the subprocess implementation is here).
+5. The root `src/` collapses to a thin CLI-dispatch binary over the crates.
 
-## Deferred — deeper crate split
+Each extraction is gated on the visibility pass for that slice — `pub(crate)` by default, `pub` only what the next crate up imports — so every crate's public API is a deliberate surface, not an accidental one.
 
-The 2026 workspace extraction was **surface-oriented**: it carved out the TUI crates but left the entire non-visual core (runtime, config, instance, isolation, app, manifest, cli) inside the root `src/` binary crate. The [Cargo workspace split](/reference/roadmap/cargo-workspace-split/) item describes the tier-based split that would extract `jackin-core`, `jackin-runtime`, and `jackin-config`. Its original LOC trigger (150 K) is now met, but executing it depends on the file splits in track 3 first — the monoliths must become focused modules before they can become focused crates. The one cross-module dependency that previously blocked it (console → runtime) now lives correctly inside a service adapter at <RepoFile path="src/console/services/role_load.rs" />, so the boundary is cleaner than at the original audit.
+## Deferred
 
-The [rustdoc JSON → Fumadocs pipeline](/reference/roadmap/rustdoc-json-fumadocs/) remains deferred until `//!` coverage is high enough to be worth publishing.
+The [rustdoc JSON → Fumadocs pipeline](/reference/roadmap/rustdoc-json-fumadocs/) waits until `//!` coverage is high enough to be worth publishing.
 
 ## Research archive
 
