@@ -1,6 +1,7 @@
 //! Editor screen view helpers.
 
 use super::model::{EditorTab, SecretsScopeTag};
+use super::update::forbidden_secret_keys;
 use crate::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
     AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
@@ -696,6 +697,23 @@ pub fn secret_key_input_state<'a>(
     state
 }
 
+#[must_use]
+pub fn secret_key_input_state_from_pending<'a, R, V>(
+    workspace_env: &std::collections::BTreeMap<String, V>,
+    roles: &std::collections::BTreeMap<String, R>,
+    scope: &SecretsScopeTag,
+    label: impl Into<String>,
+    initial: impl Into<String>,
+    role_env: impl Fn(&R) -> &std::collections::BTreeMap<String, V>,
+) -> jackin_tui::components::TextInputState<'a> {
+    secret_key_input_state(
+        scope,
+        label,
+        initial,
+        forbidden_secret_keys(workspace_env, roles, scope, role_env),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -829,6 +847,35 @@ mod tests {
         );
 
         assert_eq!(state.label, "New alpha key");
+        assert_eq!(state.forbidden_label, "role alpha");
+        assert!(state.is_duplicate());
+    }
+
+    #[test]
+    fn secret_key_input_state_from_pending_marks_scope_duplicates() {
+        #[derive(Default)]
+        struct Role {
+            env: std::collections::BTreeMap<String, String>,
+        }
+
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert(
+            "alpha".to_string(),
+            Role {
+                env: std::collections::BTreeMap::from([("TOKEN".to_string(), "x".to_string())]),
+            },
+        );
+        let workspace = std::collections::BTreeMap::from([("WORKSPACE".to_string(), "x".to_string())]);
+
+        let state = secret_key_input_state_from_pending(
+            &workspace,
+            &roles,
+            &SecretsScopeTag::Role("alpha".to_string()),
+            "New alpha key",
+            "TOKEN",
+            |role| &role.env,
+        );
+
         assert_eq!(state.forbidden_label, "role alpha");
         assert!(state.is_duplicate());
     }

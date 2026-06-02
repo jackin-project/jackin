@@ -26,7 +26,7 @@ use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     editor_name_input_state, editor_workdir_pick_state, mount_destination_input_state,
     mount_dst_choice_state, role_load_input_state,
-    secret_delete_confirm_state, secret_empty_key_label, secret_key_input_state,
+    secret_delete_confirm_state, secret_empty_key_label, secret_key_input_state_from_pending,
     secret_new_key_after_picker_label, secret_new_key_label, secret_new_value_input_state,
     secret_scope_picker_state, secret_source_picker_state, secret_value_input_state,
 };
@@ -1396,14 +1396,6 @@ fn handle_token_generate_pick(
     editor.clear_modal_chain();
 }
 
-/// From `editor.pending` (not on-disk config) so a same-session
-/// add blocks a follow-up duplicate.
-fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -> Vec<String> {
-    editor_update::forbidden_secret_keys(&editor.pending.env, &editor.pending.roles, scope, |role| {
-        &role.env
-    })
-}
-
 /// Centralises `EnvKey` construction so every opener (Enter on
 /// sentinel, A on row, P-on-sentinel fast-path, empty-key re-open)
 /// stays consistent.
@@ -1413,7 +1405,14 @@ fn env_key_input_state<'a>(
     label: impl Into<String>,
     initial: impl Into<String>,
 ) -> jackin_tui::components::TextInputState<'a> {
-    secret_key_input_state(scope, label, initial, forbidden_keys_for_scope(editor, scope))
+    secret_key_input_state_from_pending(
+        &editor.pending.env,
+        &editor.pending.roles,
+        scope,
+        label,
+        initial,
+        |role| &role.env,
+    )
 }
 
 /// Single source of truth for setting one env entry on the pending
