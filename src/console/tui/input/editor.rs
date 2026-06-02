@@ -742,26 +742,12 @@ fn step_auth_cursor_up(rows: &[AuthRow], mut candidate: usize) -> usize {
     candidate
 }
 
-#[derive(Debug)]
-pub(super) enum EditorModalOutcome {
-    Continue,
-    StartRoleRegistration {
-        raw: String,
-        key: String,
-        selector: crate::selector::RoleSelector,
-        source: crate::config::RoleSource,
-    },
-    PersistTrustedRoleSource {
-        key: String,
-        source: crate::config::RoleSource,
-    },
-    ApplyFileBrowserOutcome(
-        jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
-    ),
-    ResolveFileBrowserGitUrl(std::path::PathBuf),
-    OpenUrl(String),
-    ValidateOpRef(crate::operator_env::OpRef),
-}
+pub(super) type EditorModalOutcome =
+    jackin_console::tui::message::ConsoleEditorModalOutcome<
+        crate::selector::RoleSelector,
+        crate::config::RoleSource,
+        crate::operator_env::OpRef,
+    >;
 
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub(super) fn handle_editor_modal(

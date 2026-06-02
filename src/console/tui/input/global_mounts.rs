@@ -42,23 +42,11 @@ use jackin_console::tui::screens::settings::view::{
     settings_no_registered_roles_error_message,
 };
 
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum SettingsModalOutcome {
-    Continue,
-    SaveSettings,
-    OpenGlobalMountFileBrowser,
-    OpenUrl(String),
-    ApplyFileBrowserOutcome(
-        jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
-    ),
-    ResolveFileBrowserGitUrl(std::path::PathBuf),
-}
+pub(super) type SettingsModalOutcome =
+    jackin_console::tui::message::ConsoleSettingsModalOutcome;
 
-#[derive(Debug)]
-pub(super) enum SettingsAuthOutcome {
-    Continue,
-    ValidateOpRef(crate::operator_env::OpRef),
-}
+pub(super) type SettingsAuthOutcome =
+    jackin_console::tui::message::ConsoleSettingsAuthOutcome<crate::operator_env::OpRef>;
 
 #[cfg(test)]
 pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {

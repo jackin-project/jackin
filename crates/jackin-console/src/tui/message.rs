@@ -45,3 +45,53 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
         provider: Provider,
     },
 }
+
+pub enum ConsolePreludeModalOutcome {
+    Continue,
+    OpenUrl(String),
+    ReopenFileBrowserAtLastCwd,
+    ApplyFileBrowserOutcome {
+        outcome: crate::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
+        browser_cwd: Option<std::path::PathBuf>,
+    },
+    ResolveFileBrowserGitUrl(std::path::PathBuf),
+}
+
+#[derive(Debug)]
+pub enum ConsoleEditorModalOutcome<RoleSelector, RoleSource, OpRef> {
+    Continue,
+    StartRoleRegistration {
+        raw: String,
+        key: String,
+        selector: RoleSelector,
+        source: RoleSource,
+    },
+    PersistTrustedRoleSource {
+        key: String,
+        source: RoleSource,
+    },
+    ApplyFileBrowserOutcome(
+        crate::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
+    ),
+    ResolveFileBrowserGitUrl(std::path::PathBuf),
+    OpenUrl(String),
+    ValidateOpRef(OpRef),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConsoleSettingsModalOutcome {
+    Continue,
+    SaveSettings,
+    OpenGlobalMountFileBrowser,
+    OpenUrl(String),
+    ApplyFileBrowserOutcome(
+        crate::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
+    ),
+    ResolveFileBrowserGitUrl(std::path::PathBuf),
+}
+
+#[derive(Debug)]
+pub enum ConsoleSettingsAuthOutcome<OpRef> {
+    Continue,
+    ValidateOpRef(OpRef),
+}

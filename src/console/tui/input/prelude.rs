@@ -17,17 +17,8 @@ use jackin_console::tui::screens::workspaces::view::{
     create_prelude_workdir_pick_state, create_prelude_workspace_name_input_state,
 };
 
-pub(super) enum PreludeModalOutcome {
-    Continue,
-    OpenUrl(String),
-    ReopenFileBrowserAtLastCwd,
-    ApplyFileBrowserOutcome {
-        outcome:
-            jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
-        browser_cwd: Option<std::path::PathBuf>,
-    },
-    ResolveFileBrowserGitUrl(std::path::PathBuf),
-}
+pub(super) type PreludeModalOutcome =
+    jackin_console::tui::message::ConsolePreludeModalOutcome;
 
 pub(super) fn handle_prelude_key(
     state: &mut ManagerState<'_>,
