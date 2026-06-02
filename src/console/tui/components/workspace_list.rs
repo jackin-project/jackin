@@ -19,7 +19,7 @@ use jackin_console::tui::screens::workspaces::view::{
     WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane,
     WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
-    list_name_lines as workspace_list_name_lines, provider_picker_title,
+    instance_sessions_empty_message, list_name_lines as workspace_list_name_lines, provider_picker_title,
     render_compact_instances_summary, render_environments_subpanel, render_general_subpanel,
     render_global_mounts_subpanel, render_mounts_subpanel as render_workspace_mounts_panel,
     render_instance_details_pane as render_workspace_instance_details_pane,
@@ -278,12 +278,7 @@ fn instance_details_content(
     }
     if sessions.is_empty() {
         return WorkspaceInstancePaneContent::Empty {
-            message: if session_load_error {
-                "Sessions unavailable (manifest read error)"
-            } else {
-                "No sessions recorded"
-            }
-            .to_string(),
+            message: instance_sessions_empty_message(session_load_error).to_string(),
         };
     }
     WorkspaceInstancePaneContent::Sessions {

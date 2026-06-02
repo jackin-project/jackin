@@ -62,6 +62,15 @@ pub struct WorkspaceListDisplayRow {
     pub hovered: bool,
 }
 
+#[must_use]
+pub const fn instance_sessions_empty_message(session_load_error: bool) -> &'static str {
+    if session_load_error {
+        "Sessions unavailable (manifest read error)"
+    } else {
+        "No sessions recorded"
+    }
+}
+
 pub fn list_name_lines(
     visual_rows: &[Option<WorkspaceListDisplayRow>],
     viewport: usize,
@@ -905,6 +914,18 @@ mod tests {
         let state = create_prelude_mount_dst_choice_state("/host/project");
 
         assert_eq!(state.src, "/host/project");
+    }
+
+    #[test]
+    fn instance_session_empty_message_reports_load_state() {
+        assert_eq!(
+            instance_sessions_empty_message(false),
+            "No sessions recorded"
+        );
+        assert_eq!(
+            instance_sessions_empty_message(true),
+            "Sessions unavailable (manifest read error)"
+        );
     }
 
     #[test]
