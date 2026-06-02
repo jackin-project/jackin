@@ -18,7 +18,8 @@ use jackin_console::tui::screens::workspaces::update::{
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
-    InlineProviderFollowupPlan, inline_provider_followup_plan,
+    InlinePickerShellPlan, InlineProviderFollowupPlan, inline_picker_shell_plan,
+    inline_provider_followup_plan,
 };
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
@@ -515,17 +516,13 @@ pub(super) fn handle_inline_role_picker(
     let Some(picker) = state.inline_role_picker.as_mut() else {
         return InputOutcome::Continue;
     };
-    match key.code {
-        KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(-8));
+    match inline_picker_shell_plan(key, true) {
+        InlinePickerShellPlan::ScrollHorizontal(delta) => {
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(delta));
             InputOutcome::Continue
         }
-        KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(8));
-            InputOutcome::Continue
-        }
-        KeyCode::Char('q' | 'Q') => InputOutcome::ExitJackin,
-        _ => match picker.handle_key(key) {
+        InlinePickerShellPlan::Exit => InputOutcome::ExitJackin,
+        InlinePickerShellPlan::Delegate => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
                 dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
                 InputOutcome::LaunchWithAgent(role)
@@ -546,16 +543,13 @@ pub(super) fn handle_inline_agent_picker(
     let Some((_, picker)) = state.inline_agent_picker.as_mut() else {
         return InputOutcome::Continue;
     };
-    match key.code {
-        KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(-8));
+    match inline_picker_shell_plan(key, false) {
+        InlinePickerShellPlan::ScrollHorizontal(delta) => {
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(delta));
             InputOutcome::Continue
         }
-        KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(8));
-            InputOutcome::Continue
-        }
-        _ => match picker.handle_key(key) {
+        InlinePickerShellPlan::Exit => InputOutcome::ExitJackin,
+        InlinePickerShellPlan::Delegate => match picker.handle_key(key) {
             ModalOutcome::Commit(agent) => {
                 dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
                 InputOutcome::LaunchWithRuntimeAgent(agent)

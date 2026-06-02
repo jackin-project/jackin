@@ -1,5 +1,7 @@
 //! Top-level console TUI update helpers.
 
+use crossterm::event::{KeyCode, KeyEvent};
+
 use crate::tui::components::provider_picker::ProviderPickerState;
 use jackin_tui::runtime::UpdateResult;
 
@@ -25,6 +27,13 @@ pub enum InlinePickerDismissal {
     Agent,
     Provider,
     LaunchProvider,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlinePickerShellPlan {
+    ScrollHorizontal(i16),
+    Exit,
+    Delegate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +143,20 @@ pub fn inline_provider_followup_plan<C, A, P>(
 }
 
 #[must_use]
+pub fn inline_picker_shell_plan(key: KeyEvent, exit_on_q: bool) -> InlinePickerShellPlan {
+    match key.code {
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            InlinePickerShellPlan::ScrollHorizontal(-8)
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            InlinePickerShellPlan::ScrollHorizontal(8)
+        }
+        KeyCode::Char('q' | 'Q') if exit_on_q => InlinePickerShellPlan::Exit,
+        _ => InlinePickerShellPlan::Delegate,
+    }
+}
+
+#[must_use]
 pub const fn drag_state_plan(
     drag: Option<crate::tui::split::DragState>,
 ) -> Option<crate::tui::split::DragState> {
@@ -220,7 +243,13 @@ pub const fn inline_picker_dismissal_plan(kind: InlinePickerDismissal) -> Inline
 
 #[cfg(test)]
 mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
     use super::*;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
 
     #[test]
     fn term_width_scroll_plan_updates_and_clamps_offset() {
@@ -382,6 +411,30 @@ mod tests {
                 context: "container",
                 agent: "claude",
             }
+        );
+    }
+
+    #[test]
+    fn inline_picker_shell_plan_routes_scroll_exit_and_delegate() {
+        assert_eq!(
+            inline_picker_shell_plan(key(KeyCode::Left), true),
+            InlinePickerShellPlan::ScrollHorizontal(-8)
+        );
+        assert_eq!(
+            inline_picker_shell_plan(key(KeyCode::Char('l')), true),
+            InlinePickerShellPlan::ScrollHorizontal(8)
+        );
+        assert_eq!(
+            inline_picker_shell_plan(key(KeyCode::Char('q')), true),
+            InlinePickerShellPlan::Exit
+        );
+        assert_eq!(
+            inline_picker_shell_plan(key(KeyCode::Char('q')), false),
+            InlinePickerShellPlan::Delegate
+        );
+        assert_eq!(
+            inline_picker_shell_plan(key(KeyCode::Enter), true),
+            InlinePickerShellPlan::Delegate
         );
     }
 }
