@@ -16,8 +16,8 @@ use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use jackin_console::focus::moved_selection;
 use jackin_console::tui::screens::editor::update::{
-    clear_editor_auth_kind_plan, editor_tab_move_plan, enter_editor_auth_kind_plan,
-    set_role_expanded as set_editor_role_expanded, step_cursor_down, step_cursor_up,
+    clear_editor_auth_kind_plan, editor_field_selection_plan, editor_tab_move_plan,
+    enter_editor_auth_kind_plan, set_role_expanded as set_editor_role_expanded,
     toggle_general_selected as toggle_editor_general_row,
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
@@ -595,19 +595,17 @@ fn move_editor_field_selection(
         return;
     };
     let FieldFocus::Row(row) = editor.active_field;
-    let candidate = moved_selection(row, max_row.saturating_add(1), delta);
-    let next = if delta.is_negative() {
-        step_cursor_up(skipped_rows, candidate)
-    } else {
-        step_cursor_down(skipped_rows, candidate, max_row)
-    };
-    editor.active_field = FieldFocus::Row(next);
-    editor.tab_scroll_y = jackin_console::focus::cursor_scroll_for_panel(
-        next,
+    let plan = editor_field_selection_plan(
+        row,
+        delta,
+        max_row,
+        skipped_rows,
         editor.tab_scroll_y,
         term.height,
         footer_h,
     );
+    editor.active_field = FieldFocus::Row(plan.active_row);
+    editor.tab_scroll_y = plan.tab_scroll_y;
 }
 
 const fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {

@@ -85,6 +85,39 @@ pub fn enter_editor_auth_kind_plan<K>(kind: K) -> EditorAuthKindPlan<K> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorFieldSelectionPlan {
+    pub active_row: usize,
+    pub tab_scroll_y: u16,
+}
+
+#[must_use]
+pub fn editor_field_selection_plan(
+    active_row: usize,
+    delta: isize,
+    max_row: usize,
+    skipped_rows: &[usize],
+    current_scroll_y: u16,
+    term_height: u16,
+    footer_h: u16,
+) -> EditorFieldSelectionPlan {
+    let candidate = crate::focus::moved_selection(active_row, max_row.saturating_add(1), delta);
+    let next = if delta.is_negative() {
+        step_cursor_up(skipped_rows, candidate)
+    } else {
+        step_cursor_down(skipped_rows, candidate, max_row)
+    };
+    EditorFieldSelectionPlan {
+        active_row: next,
+        tab_scroll_y: crate::focus::cursor_scroll_for_panel(
+            next,
+            current_scroll_y,
+            term_height,
+            footer_h,
+        ),
+    }
+}
+
 #[must_use]
 pub fn step_cursor_down(skipped_rows: &[usize], candidate: usize, max_row: usize) -> usize {
     let mut idx = candidate;
@@ -492,6 +525,13 @@ mod tests {
                 tab_scroll_y: 0,
             }
         );
+    }
+
+    #[test]
+    fn editor_field_selection_plan_skips_rows_and_updates_scroll() {
+        let plan = editor_field_selection_plan(1, 1, 4, &[2], 0, 8, 0);
+        assert_eq!(plan.active_row, 3);
+        assert!(plan.tab_scroll_y > 0);
     }
 
     #[derive(Default)]
