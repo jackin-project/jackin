@@ -153,6 +153,36 @@ pub struct SettingsTrustRowSelectPlan {
     pub scroll_focused: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsScrollFocusPlan {
+    pub mounts: bool,
+    pub env: bool,
+    pub auth: bool,
+    pub trust: bool,
+}
+
+#[must_use]
+pub const fn settings_scroll_focus_plan(
+    active_tab: SettingsTab,
+    modal_open: bool,
+    in_content: bool,
+) -> SettingsScrollFocusPlan {
+    if modal_open {
+        return SettingsScrollFocusPlan {
+            mounts: false,
+            env: false,
+            auth: false,
+            trust: false,
+        };
+    }
+    SettingsScrollFocusPlan {
+        mounts: matches!(active_tab, SettingsTab::Mounts) && in_content,
+        env: matches!(active_tab, SettingsTab::Environments) && in_content,
+        auth: matches!(active_tab, SettingsTab::Auth) && in_content,
+        trust: matches!(active_tab, SettingsTab::Trust) && in_content,
+    }
+}
+
 #[must_use]
 pub const fn settings_trust_row_select_plan(
     selected: usize,
@@ -658,6 +688,37 @@ mod tests {
             SettingsTrustRowSelectPlan {
                 selected: None,
                 scroll_focused: true,
+            }
+        );
+    }
+
+    #[test]
+    fn settings_scroll_focus_plan_routes_by_tab_and_modal() {
+        assert_eq!(
+            settings_scroll_focus_plan(SettingsTab::Mounts, false, true),
+            SettingsScrollFocusPlan {
+                mounts: true,
+                env: false,
+                auth: false,
+                trust: false,
+            }
+        );
+        assert_eq!(
+            settings_scroll_focus_plan(SettingsTab::Auth, false, true),
+            SettingsScrollFocusPlan {
+                mounts: false,
+                env: false,
+                auth: true,
+                trust: false,
+            }
+        );
+        assert_eq!(
+            settings_scroll_focus_plan(SettingsTab::Trust, true, true),
+            SettingsScrollFocusPlan {
+                mounts: false,
+                env: false,
+                auth: false,
+                trust: false,
             }
         );
     }

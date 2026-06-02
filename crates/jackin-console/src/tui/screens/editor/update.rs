@@ -123,6 +123,38 @@ pub struct EditorMountRowSelectPlan {
     pub workspace_mounts_scroll_focused: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorScrollFocusPlan {
+    pub workspace_mounts_scroll_focused: bool,
+    pub tab_content_scroll_focused: bool,
+}
+
+#[must_use]
+pub const fn editor_scroll_focus_plan(
+    active_tab: EditorTab,
+    modal_open: bool,
+    in_workspace_mounts: bool,
+    in_tab_content: bool,
+) -> EditorScrollFocusPlan {
+    if modal_open {
+        return EditorScrollFocusPlan {
+            workspace_mounts_scroll_focused: false,
+            tab_content_scroll_focused: false,
+        };
+    }
+    if matches!(active_tab, EditorTab::Mounts) {
+        EditorScrollFocusPlan {
+            workspace_mounts_scroll_focused: in_workspace_mounts,
+            tab_content_scroll_focused: false,
+        }
+    } else {
+        EditorScrollFocusPlan {
+            workspace_mounts_scroll_focused: false,
+            tab_content_scroll_focused: in_tab_content,
+        }
+    }
+}
+
 #[must_use]
 pub const fn editor_mount_row_select_plan(row: usize) -> EditorMountRowSelectPlan {
     EditorMountRowSelectPlan {
@@ -612,6 +644,31 @@ mod tests {
             EditorMountRowSelectPlan {
                 active_row: 4,
                 workspace_mounts_scroll_focused: true,
+            }
+        );
+    }
+
+    #[test]
+    fn editor_scroll_focus_plan_routes_by_tab_and_modal() {
+        assert_eq!(
+            editor_scroll_focus_plan(EditorTab::Mounts, false, true, true),
+            EditorScrollFocusPlan {
+                workspace_mounts_scroll_focused: true,
+                tab_content_scroll_focused: false,
+            }
+        );
+        assert_eq!(
+            editor_scroll_focus_plan(EditorTab::Secrets, false, true, true),
+            EditorScrollFocusPlan {
+                workspace_mounts_scroll_focused: false,
+                tab_content_scroll_focused: true,
+            }
+        );
+        assert_eq!(
+            editor_scroll_focus_plan(EditorTab::Mounts, true, true, true),
+            EditorScrollFocusPlan {
+                workspace_mounts_scroll_focused: false,
+                tab_content_scroll_focused: false,
             }
         );
     }

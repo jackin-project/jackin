@@ -24,6 +24,8 @@ use crate::console::tui::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
+use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
+use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
@@ -737,41 +739,48 @@ fn update_scroll_focus(
             dispatch_manager(state, ManagerMessage::SetListScrollFocus(focus));
         }
         ManagerStage::Editor(editor) => {
-            if editor.active_tab == EditorTab::Mounts {
-                if editor.modal.is_some() {
-                    editor.workspace_mounts_scroll_focused = false;
+            let plan = if editor.active_tab == EditorTab::Mounts {
+                let in_workspace_mounts = if editor.modal.is_some() {
+                    false
                 } else {
                     let area = editor_scroll_area(editor, term_size);
-                    editor.workspace_mounts_scroll_focused = point_in(mouse, area.area);
-                }
-                editor.tab_content_scroll_focused = false;
+                    point_in(mouse, area.area)
+                };
+                editor_scroll_focus_plan(
+                    editor.active_tab,
+                    editor.modal.is_some(),
+                    in_workspace_mounts,
+                    false,
+                )
             } else {
-                editor.workspace_mounts_scroll_focused = false;
-                if editor.modal.is_some() {
-                    editor.tab_content_scroll_focused = false;
+                let in_tab_content = if editor.modal.is_some() {
+                    false
                 } else {
                     let content_area = editor_content_area(editor, term_size);
-                    let in_content = point_in(mouse, content_area);
-                    editor.tab_content_scroll_focused = in_content;
-                }
-            }
+                    point_in(mouse, content_area)
+                };
+                editor_scroll_focus_plan(
+                    editor.active_tab,
+                    editor.modal.is_some(),
+                    false,
+                    in_tab_content,
+                )
+            };
+            editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+            editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
         }
         ManagerStage::Settings(settings) => {
-            if settings_modal_open(settings) {
-                settings.mounts.scroll_focused = false;
-                settings.env.scroll_focused = false;
-                settings.auth.scroll_focused = false;
-                settings.trust.scroll_focused = false;
-                return;
-            }
-            let content_area = settings_content_area(settings, term_size);
-            let in_content = point_in(mouse, content_area);
-            settings.mounts.scroll_focused =
-                settings.active_tab == SettingsTab::Mounts && in_content;
-            settings.env.scroll_focused =
-                settings.active_tab == SettingsTab::Environments && in_content;
-            settings.auth.scroll_focused = settings.active_tab == SettingsTab::Auth && in_content;
-            settings.trust.scroll_focused = settings.active_tab == SettingsTab::Trust && in_content;
+            let modal_open = settings_modal_open(settings);
+            let in_content = if modal_open {
+                false
+            } else {
+                point_in(mouse, settings_content_area(settings, term_size))
+            };
+            let plan = settings_scroll_focus_plan(settings.active_tab, modal_open, in_content);
+            settings.mounts.scroll_focused = plan.mounts;
+            settings.env.scroll_focused = plan.env;
+            settings.auth.scroll_focused = plan.auth;
+            settings.trust.scroll_focused = plan.trust;
         }
         ManagerStage::CreatePrelude(_)
         | ManagerStage::ConfirmDelete { .. }
