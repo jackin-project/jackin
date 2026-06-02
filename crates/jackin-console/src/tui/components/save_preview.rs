@@ -37,10 +37,38 @@ pub enum WorkspaceSaveMode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceMountDiff {
-    Added(String),
-    Removed(String),
-    Modified { original: String, pending: String },
+    Added(WorkspaceMountPreviewRow),
+    Removed(WorkspaceMountPreviewRow),
+    Modified {
+        original: WorkspaceMountPreviewRow,
+        pending: WorkspaceMountPreviewRow,
+    },
     Unchanged,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceMountPreviewRow {
+    pub src: String,
+    pub dst: String,
+    pub readonly: bool,
+    pub isolation: String,
+    pub kind: String,
+}
+
+impl WorkspaceMountPreviewRow {
+    #[must_use]
+    pub fn summary(&self) -> String {
+        let mode = if self.readonly { "ro" } else { "rw" };
+        let host = if self.src == self.dst {
+            String::new()
+        } else {
+            format!("  host: {}", self.src)
+        };
+        format!(
+            "{}{host}  ({mode}, {}, {})",
+            self.dst, self.isolation, self.kind
+        )
+    }
 }
 
 #[must_use]
@@ -141,7 +169,7 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                 .mount_diffs
                 .iter()
                 .filter_map(|diff| match diff {
-                    WorkspaceMountDiff::Added(summary) => Some(summary),
+                    WorkspaceMountDiff::Added(row) => Some(row.summary()),
                     WorkspaceMountDiff::Removed(_)
                     | WorkspaceMountDiff::Modified { .. }
                     | WorkspaceMountDiff::Unchanged => None,
@@ -236,13 +264,17 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                 out.push(Line::from(Span::styled("Mounts:", heading)));
                 for diff in &preview.mount_diffs {
                     match diff {
-                        WorkspaceMountDiff::Added(summary) => {
+                        WorkspaceMountDiff::Added(row) => {
+                            let summary = row.summary();
                             out.push(Line::from(Span::styled(format!("  + {summary}"), value)));
                         }
-                        WorkspaceMountDiff::Removed(summary) => {
+                        WorkspaceMountDiff::Removed(row) => {
+                            let summary = row.summary();
                             out.push(Line::from(Span::styled(format!("  - {summary}"), dim)));
                         }
                         WorkspaceMountDiff::Modified { original, pending } => {
+                            let original = original.summary();
+                            let pending = pending.summary();
                             out.push(Line::from(Span::styled(format!("  ~ {pending}"), value)));
                             out.push(Line::from(Span::styled(
                                 format!("      was: {original}"),

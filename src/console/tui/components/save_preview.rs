@@ -17,19 +17,17 @@ pub(crate) fn build_confirm_save_lines(
     )
 }
 
-fn mount_summary(
+fn workspace_mount_preview_row(
     m: &crate::workspace::MountConfig,
     cache: &jackin_console::mount_info_cache::MountInfoCache,
-) -> String {
-    let dst = crate::tui::shorten_home(&m.dst);
-    let rw = if m.readonly { "ro" } else { "rw" };
-    let isolation = m.isolation.as_str();
-    let host = if m.src == m.dst {
-        String::new()
-    } else {
-        format!("  host: {}", crate::tui::shorten_home(&m.src))
-    };
-    format!("{dst}{host}  ({rw}, {isolation}, {})", cache.label(&m.src))
+) -> jackin_console::tui::components::save_preview::WorkspaceMountPreviewRow {
+    jackin_console::tui::components::save_preview::WorkspaceMountPreviewRow {
+        src: crate::tui::shorten_home(&m.src),
+        dst: crate::tui::shorten_home(&m.dst),
+        readonly: m.readonly,
+        isolation: m.isolation.as_str().to_string(),
+        kind: cache.label(&m.src),
+    }
 }
 
 fn workspace_save_preview(
@@ -63,7 +61,12 @@ fn workspace_save_preview(
             .pending
             .mounts
             .iter()
-            .map(|mount| WorkspaceMountDiff::Added(mount_summary(mount, &editor.mount_info_cache)))
+            .map(|mount| {
+                WorkspaceMountDiff::Added(workspace_mount_preview_row(
+                    mount,
+                    &editor.mount_info_cache,
+                ))
+            })
             .collect(),
         EditorMode::Edit { .. } => crate::console::tui::state::classify_mount_diffs(
             &editor.original.mounts,
@@ -72,15 +75,21 @@ fn workspace_save_preview(
         .into_iter()
         .map(|diff| match diff {
             crate::console::tui::state::MountDiff::Added(mount) => {
-                WorkspaceMountDiff::Added(mount_summary(&mount, &editor.mount_info_cache))
+                WorkspaceMountDiff::Added(workspace_mount_preview_row(
+                    &mount,
+                    &editor.mount_info_cache,
+                ))
             }
             crate::console::tui::state::MountDiff::Removed(mount) => {
-                WorkspaceMountDiff::Removed(mount_summary(&mount, &editor.mount_info_cache))
+                WorkspaceMountDiff::Removed(workspace_mount_preview_row(
+                    &mount,
+                    &editor.mount_info_cache,
+                ))
             }
             crate::console::tui::state::MountDiff::Modified { original, pending } => {
                 WorkspaceMountDiff::Modified {
-                    original: mount_summary(&original, &editor.mount_info_cache),
-                    pending: mount_summary(&pending, &editor.mount_info_cache),
+                    original: workspace_mount_preview_row(&original, &editor.mount_info_cache),
+                    pending: workspace_mount_preview_row(&pending, &editor.mount_info_cache),
                 }
             }
             crate::console::tui::state::MountDiff::Unchanged(_) => WorkspaceMountDiff::Unchanged,
