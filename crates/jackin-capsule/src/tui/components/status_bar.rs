@@ -26,7 +26,6 @@ use jackin_tui::{
     lay_out_tabs,
 };
 
-use crate::container_context::StatusIdentity;
 use crate::tui::app::{MuxMode, VisibleAgentState};
 use crate::tui::layout::Tab;
 
@@ -108,28 +107,14 @@ impl Default for StatusBar {
 
 impl StatusBar {
     pub fn new() -> Self {
-        Self::new_with_role_and_container(String::new(), String::new())
+        Self::new_with_role_labels(String::new(), String::new(), String::new())
     }
 
     pub fn new_with_role(role: String) -> Self {
-        Self::new_with_role_and_container(role, String::new())
+        Self::new_with_role_labels(role, String::new(), String::new())
     }
 
-    pub fn new_with_role_identity(role: String, identity: StatusIdentity) -> Self {
-        Self::new_with_role_container_and_instance(
-            role,
-            identity.container_name,
-            identity.instance_id,
-        )
-    }
-
-    pub fn new_with_role_and_container(role: String, identity_label: String) -> Self {
-        let instance_id_label = instance_id_from_container_name(&identity_label)
-            .map_or_else(|| identity_label.clone(), str::to_string);
-        Self::new_with_role_container_and_instance(role, identity_label, instance_id_label)
-    }
-
-    fn new_with_role_container_and_instance(
+    pub fn new_with_role_labels(
         role: String,
         identity_label: String,
         instance_id_label: String,
@@ -530,8 +515,6 @@ fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row, col);
 }
 
-use jackin_protocol::instance_id_from_container_base as instance_id_from_container_name;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -567,10 +550,11 @@ mod tests {
     }
 
     #[test]
-    fn status_bar_keeps_full_container_name_and_short_instance_id() {
-        let bar = StatusBar::new_with_role_and_container(
+    fn status_bar_keeps_supplied_container_name_and_instance_id() {
+        let bar = StatusBar::new_with_role_labels(
             "the-architect".to_string(),
             "jk-spamcw91-jackin-thearchitect".to_string(),
+            "spamcw91".to_string(),
         );
 
         assert_eq!(bar.container_name(), "jk-spamcw91-jackin-thearchitect");

@@ -363,9 +363,11 @@ impl Multiplexer {
             workdir_context.is_git_repo,
             workdir_context.default_branch
         );
-        let mut status_bar = StatusBar::new_with_role_identity(
+        let status_identity = crate::container_context::resolve_status_identity();
+        let mut status_bar = StatusBar::new_with_role_labels(
             launch_config.role.clone(),
-            crate::container_context::resolve_status_identity(),
+            status_identity.container_name,
+            status_identity.instance_id,
         );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
 
