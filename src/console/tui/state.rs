@@ -8,7 +8,7 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::domain::{InstanceRefreshSnapshot, role_override_present};
+use crate::console::domain::{InstanceRefreshSnapshot, app_github_env, role_override_present};
 use crate::console::tui::effect::ManagerEffect;
 use jackin_console::tui::auth::{AuthKind, auth_mode_requires_credential};
 use crate::operator_env::OpCache;
@@ -1195,6 +1195,7 @@ impl<'a> SettingsEnvState<'a> {
 
 impl SettingsAuthState {
     pub fn from_config(config: &AppConfig) -> Self {
+        let github_env = app_github_env(config);
         let pending = AuthKind::SETTINGS_KINDS
             .iter()
             .copied()
@@ -1208,16 +1209,8 @@ impl SettingsAuthState {
             selected_kind: None,
             original: pending.clone(),
             pending,
-            github_env: config
-                .github
-                .as_ref()
-                .map(|github| github.env.clone())
-                .unwrap_or_default(),
-            original_github_env: config
-                .github
-                .as_ref()
-                .map(|github| github.env.clone())
-                .unwrap_or_default(),
+            github_env: github_env.clone(),
+            original_github_env: github_env,
             modal: None,
             modal_parents: Vec::new(),
             generating_token: false,

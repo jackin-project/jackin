@@ -1,6 +1,6 @@
 //! Pure console product rules.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::app::context::eligible_roles_for_workspace;
 use crate::agent::Agent;
@@ -77,6 +77,14 @@ pub fn github_auth_config_with_preserved_env(
         auth_forward,
         env: existing.map(|github| github.env.clone()).unwrap_or_default(),
     })
+}
+
+#[must_use]
+pub fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, crate::operator_env::EnvValue> {
+    cfg.github
+        .as_ref()
+        .map(|github| github.env.clone())
+        .unwrap_or_default()
 }
 
 #[must_use]
@@ -754,6 +762,21 @@ mod tests {
         assert_eq!(next.env, existing.env);
         assert!(github_auth_config_with_preserved_env(Some(AuthMode::ApiKey), Some(&existing)).is_none());
         assert!(github_auth_config_with_preserved_env(None, Some(&existing)).is_none());
+    }
+
+    #[test]
+    fn app_github_env_reads_global_github_env() {
+        let mut cfg = AppConfig::default();
+        assert!(app_github_env(&cfg).is_empty());
+
+        let mut github = GithubAuthConfig::default();
+        github.env.insert(
+            "GH_TOKEN".to_string(),
+            crate::operator_env::EnvValue::Plain("token".into()),
+        );
+        cfg.github = Some(github.clone());
+
+        assert_eq!(app_github_env(&cfg), github.env);
     }
 
     #[test]
