@@ -153,10 +153,7 @@ pub(crate) struct BranchContextBarLayout {
     pub(crate) container_region: Option<ColRange>,
 }
 
-pub(crate) fn visible_branch<'a>(
-    branch: Option<&'a str>,
-    is_default_branch: bool,
-) -> Option<&'a str> {
+pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> Option<&str> {
     branch.filter(|_| !is_default_branch)
 }
 

@@ -493,11 +493,8 @@ impl Multiplexer {
                     unblocked = session.mark_operator_input();
                     session.send_input(&bytes);
                 }
-                if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
-                    Some(self.compose_full_frame(reason))
-                } else {
-                    None
-                }
+                pane_data_redraw_reason(snapped, unblocked)
+                    .map(|reason| self.compose_full_frame(reason))
             }
             Action::StartDragResize { row, col } => {
                 self.drag = self.detect_drag_start(row, col);

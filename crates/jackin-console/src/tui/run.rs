@@ -118,6 +118,86 @@ pub fn split_debug_area(area: Rect, debug_mode: bool) -> (Rect, Option<Rect>) {
     (main, Some(bar))
 }
 
+/// Render the 1-row debug status bar.
+///
+/// When `instance_id` is provided, shows `run_id:instance_id` as a single
+/// danger chip right-aligned on a white bar. The combined chip is clickable
+/// in the root event loop.
+pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id: Option<&str>) {
+    let chip_text =
+        instance_id.map_or_else(|| format!(" {run_id} "), |iid| format!(" {run_id}:{iid} "));
+    let [left_area, chip_area] = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(debug_bar_chip_width(run_id, instance_id)),
+    ])
+    .areas(area);
+
+    let white_bg = Style::default()
+        .bg(jackin_tui::theme::WHITE)
+        .fg(jackin_tui::theme::PHOSPHOR_DARK);
+    let chip_style = Style::default()
+        .bg(jackin_tui::theme::DANGER_RED)
+        .fg(jackin_tui::theme::WHITE)
+        .add_modifier(Modifier::BOLD);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::raw("")])).style(white_bg),
+        left_area,
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(chip_text, chip_style)])),
+        chip_area,
+    );
+}
+
+#[must_use]
+pub fn debug_bar_chip_area(area: Rect, run_id: &str, instance_id: Option<&str>) -> Rect {
+    let chip_width = debug_bar_chip_width(run_id, instance_id);
+    Rect {
+        x: area.x + area.width.saturating_sub(chip_width),
+        y: area.y,
+        width: chip_width.min(area.width),
+        height: 1,
+    }
+}
+
+fn debug_bar_chip_width(run_id: &str, instance_id: Option<&str>) -> u16 {
+    let content_width = run_id.chars().count()
+        + instance_id.map_or(0, |instance_id| instance_id.chars().count() + 1);
+    (content_width + 2) as u16
+}
+
+#[must_use]
+pub fn debug_run_id_label(run_id: Option<&str>) -> String {
+    run_id.unwrap_or_default().to_string()
+}
+
+#[must_use]
+pub const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool {
+    !matches!(
+        mouse.kind,
+        crossterm::event::MouseEventKind::ScrollDown
+            | crossterm::event::MouseEventKind::ScrollUp
+            | crossterm::event::MouseEventKind::ScrollLeft
+            | crossterm::event::MouseEventKind::ScrollRight
+    )
+}
+
+#[must_use]
+pub fn quit_confirm_area(frame: Rect, confirm: &jackin_tui::components::ConfirmState) -> Rect {
+    let width: u16 = 44.min(frame.width.saturating_sub(4));
+    let height: u16 = jackin_tui::components::confirm_required_height(confirm)
+        .min(frame.height.saturating_sub(2));
+    let x = frame.x + frame.width.saturating_sub(width) / 2;
+    let y = frame.y + frame.height.saturating_sub(height) / 2;
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,85 +323,5 @@ mod tests {
     fn debug_run_id_label_uses_empty_fallback() {
         assert_eq!(debug_run_id_label(Some("run-1")), "run-1");
         assert_eq!(debug_run_id_label(None), "");
-    }
-}
-
-/// Render the 1-row debug status bar.
-///
-/// When `instance_id` is provided, shows `run_id:instance_id` as a single
-/// danger chip right-aligned on a white bar. The combined chip is clickable
-/// in the root event loop.
-pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id: Option<&str>) {
-    let chip_text =
-        instance_id.map_or_else(|| format!(" {run_id} "), |iid| format!(" {run_id}:{iid} "));
-    let [left_area, chip_area] = Layout::horizontal([
-        Constraint::Min(0),
-        Constraint::Length(debug_bar_chip_width(run_id, instance_id)),
-    ])
-    .areas(area);
-
-    let white_bg = Style::default()
-        .bg(jackin_tui::theme::WHITE)
-        .fg(jackin_tui::theme::PHOSPHOR_DARK);
-    let chip_style = Style::default()
-        .bg(jackin_tui::theme::DANGER_RED)
-        .fg(jackin_tui::theme::WHITE)
-        .add_modifier(Modifier::BOLD);
-
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::raw("")])).style(white_bg),
-        left_area,
-    );
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(chip_text, chip_style)])),
-        chip_area,
-    );
-}
-
-#[must_use]
-pub fn debug_bar_chip_area(area: Rect, run_id: &str, instance_id: Option<&str>) -> Rect {
-    let chip_width = debug_bar_chip_width(run_id, instance_id);
-    Rect {
-        x: area.x + area.width.saturating_sub(chip_width),
-        y: area.y,
-        width: chip_width.min(area.width),
-        height: 1,
-    }
-}
-
-fn debug_bar_chip_width(run_id: &str, instance_id: Option<&str>) -> u16 {
-    let content_width = run_id.chars().count()
-        + instance_id.map_or(0, |instance_id| instance_id.chars().count() + 1);
-    (content_width + 2) as u16
-}
-
-#[must_use]
-pub fn debug_run_id_label(run_id: Option<&str>) -> String {
-    run_id.unwrap_or_default().to_string()
-}
-
-#[must_use]
-pub const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool {
-    !matches!(
-        mouse.kind,
-        crossterm::event::MouseEventKind::ScrollDown
-            | crossterm::event::MouseEventKind::ScrollUp
-            | crossterm::event::MouseEventKind::ScrollLeft
-            | crossterm::event::MouseEventKind::ScrollRight
-    )
-}
-
-#[must_use]
-pub fn quit_confirm_area(frame: Rect, confirm: &jackin_tui::components::ConfirmState) -> Rect {
-    let width: u16 = 44.min(frame.width.saturating_sub(4));
-    let height: u16 = jackin_tui::components::confirm_required_height(confirm)
-        .min(frame.height.saturating_sub(2));
-    let x = frame.x + frame.width.saturating_sub(width) / 2;
-    let y = frame.y + frame.height.saturating_sub(height) / 2;
-    Rect {
-        x,
-        y,
-        width,
-        height,
     }
 }

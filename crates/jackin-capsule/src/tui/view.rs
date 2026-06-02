@@ -283,6 +283,9 @@ pub(crate) fn render_capsule_dialog_bottom_chrome(
     }
 }
 
+/// Dialog snapshot with its bounding rect — factored out to keep `CapsuleRatatuiFrame` readable.
+pub(crate) type DialogFrameSnapshot = (DialogRatatuiSnapshot, (u16, u16, u16, u16));
+
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
     pub(crate) active_tab: usize,
@@ -293,7 +296,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) focused_id: Option<u64>,
     pub(crate) zoomed: bool,
     pub(crate) dialog_open: bool,
-    pub(crate) dialog_snapshot: Option<&'a (DialogRatatuiSnapshot, (u16, u16, u16, u16))>,
+    pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
     pub(crate) scrollback_active: bool,
     pub(crate) pane_screens: &'a [(u64, &'a vt100::Screen)],
 }
