@@ -3,12 +3,15 @@
 use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
+use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
+use crate::console::tui::state::MountInfoCache;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane,
     WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
     list_name_lines as workspace_list_name_lines, provider_picker_title, render_picker_sidebar,
+    render_global_mounts_subpanel, render_mounts_subpanel as render_workspace_mounts_panel,
     render_roles_subpanel,
 };
 
@@ -237,6 +240,35 @@ pub(crate) fn render_agent_picker_sidebar(
             .iter()
             .position(|agent| *agent == picker.focused);
     render_picker_sidebar(frame, area, &title, labels, selected, focused);
+}
+
+pub(crate) fn render_mounts_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    mounts: &[crate::workspace::MountConfig],
+    cache: &MountInfoCache,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let rows = format_mount_rows_with_cache(mounts, cache);
+    render_workspace_mounts_panel(frame, area, &rows, scroll_x, scroll_y, focused);
+}
+
+pub(crate) fn render_global_mount_rows_section(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    rows: &[&crate::config::GlobalMountRow],
+    cache: &MountInfoCache,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    let display_rows = format_mount_rows_with_cache(&mounts, cache);
+    render_global_mounts_subpanel(frame, area, title, &display_rows, scroll_x, scroll_y, focused);
 }
 
 #[cfg(test)]

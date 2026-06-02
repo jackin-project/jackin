@@ -34,16 +34,15 @@ pub(super) use crate::console::tui::layout::list::{
 };
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::format_mount_rows;
-pub(super) use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 use crate::console::tui::components::workspace_list::{
     instance_details_pane, list_name_lines, render_agent_picker_sidebar,
-    render_agents_subpanel_scrollable, render_provider_picker_sidebar, render_role_picker_sidebar,
-    workspace_env_rows,
+    render_agents_subpanel_scrollable, render_global_mount_rows_section, render_mounts_subpanel,
+    render_provider_picker_sidebar, render_role_picker_sidebar, workspace_env_rows,
 };
 use crate::console::tui::state::{
-    ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
+    ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary,
 };
 #[cfg(test)]
 pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
@@ -55,8 +54,7 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
     render_compact_instances_summary, render_list_names_block,
-    render_environments_subpanel, render_general_subpanel, render_global_mounts_subpanel,
-    render_mounts_subpanel as render_workspace_mounts_panel,
+    render_environments_subpanel, render_general_subpanel,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_sentinel_description_pane,
 };
@@ -341,35 +339,6 @@ fn render_instance_details_pane(
 /// `subpanel_content_column_alignment` in the visual regression tests.
 #[cfg(test)]
 const SUBPANEL_CONTENT_INDENT: usize = 2;
-
-fn render_mounts_subpanel(
-    frame: &mut Frame,
-    area: Rect,
-    mounts: &[crate::workspace::MountConfig],
-    cache: &MountInfoCache,
-    scroll_x: u16,
-    scroll_y: u16,
-    focused: bool,
-) {
-    let rows = format_mount_rows_with_cache(mounts, cache);
-    render_workspace_mounts_panel(frame, area, &rows, scroll_x, scroll_y, focused);
-}
-
-fn render_global_mount_rows_section(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    rows: &[&crate::config::GlobalMountRow],
-    cache: &MountInfoCache,
-    scroll_x: u16,
-    scroll_y: u16,
-    focused: bool,
-) {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    let display_rows = format_mount_rows_with_cache(&mounts, cache);
-    render_global_mounts_subpanel(frame, area, title, &display_rows, scroll_x, scroll_y, focused);
-}
 
 #[cfg(test)]
 mod list_name_scroll_tests {
