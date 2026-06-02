@@ -193,7 +193,7 @@ fn execute_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) {
             });
         }
         Err(error) => {
-            crate::console::tui::input::editor::open_editor_action_error(editor, &error);
+            crate::console::tui::state::open_editor_action_error(editor, &error);
         }
     }
 }
@@ -502,7 +502,7 @@ pub(crate) fn apply_role_load_completion(
                     key = load.key,
                     raw = load.raw
                 );
-                crate::console::tui::input::editor::open_role_resolution_error(
+                crate::console::tui::state::open_role_resolution_error(
                     editor,
                     &load.raw,
                     Some(&load.source.git),
@@ -522,7 +522,7 @@ pub(crate) fn apply_role_load_completion(
                     "role source is trusted; adding key={key:?} directly to the workspace",
                     key = load.key
                 );
-                crate::console::tui::input::editor::add_role_to_workspace_editor(
+                crate::console::tui::state::add_role_to_workspace_editor(
                     editor, config, &load.key,
                 );
             } else {
@@ -532,7 +532,7 @@ pub(crate) fn apply_role_load_completion(
                     key = load.key,
                     git = load.source.git.as_str()
                 );
-                crate::console::tui::input::editor::open_role_trust_confirm(
+                crate::console::tui::state::open_role_trust_confirm(
                     editor,
                     load.key,
                     load.source,
@@ -548,7 +548,7 @@ pub(crate) fn apply_role_load_completion(
             );
             let err_text = e.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
-                crate::console::tui::input::editor::open_role_input_error(
+                crate::console::tui::state::open_role_input_error(
                     editor,
                     &format!(
                         "Could not load role {:?}.\n\nThe role loader hit an internal \
@@ -558,7 +558,7 @@ pub(crate) fn apply_role_load_completion(
                 );
                 return;
             }
-            crate::console::tui::input::editor::open_role_resolution_error(
+            crate::console::tui::state::open_role_resolution_error(
                 editor,
                 &load.raw,
                 Some(&load.source.git),
@@ -581,10 +581,10 @@ fn execute_trusted_role_source_persist(
     source.trusted = true;
     match execute_role_source_persist(config, paths, key, &source) {
         Ok(()) => {
-            crate::console::tui::input::editor::add_role_to_workspace_editor(editor, config, key);
+            crate::console::tui::state::add_role_to_workspace_editor(editor, config, key);
         }
         Err(error) => {
-            crate::console::tui::input::editor::open_editor_action_error(editor, &error);
+            crate::console::tui::state::open_editor_action_error(editor, &error);
         }
     }
 }

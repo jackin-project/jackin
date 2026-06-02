@@ -11,6 +11,8 @@ use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan,
     SecretsRow, SecretsScopeTag, TextInputTarget,
+    add_role_to_workspace_editor, open_editor_action_error, open_role_input_error,
+    open_role_resolution_error, open_role_trust_confirm,
     auth_flat_rows, secrets_flat_rows,
 };
 #[cfg(test)]
@@ -22,7 +24,7 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     editor_name_input_state, editor_workdir_pick_state, mount_destination_input_state,
-    mount_dst_choice_state, role_load_input_state, role_trust_confirm_state,
+    mount_dst_choice_state, role_load_input_state,
     secret_delete_confirm_state, secret_key_input_state, secret_new_value_input_state,
     secret_scope_picker_state, secret_source_picker_state, secret_value_input_state,
     secrets_scope_label,
@@ -1692,126 +1694,6 @@ async fn apply_role_input_with_runner(
             let source = crate::console::domain::candidate_role_source(config, &selector).ok();
             open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
         }
-    }
-}
-
-pub(crate) fn open_role_resolution_error(
-    editor: &mut EditorState<'_>,
-    raw: &str,
-    source_url: Option<&String>,
-    err: &anyhow::Error,
-) {
-    crate::debug_log!(
-        "role",
-        "showing role-load error popup for raw={raw:?}: {err:?}"
-    );
-    let message = source_url.map_or_else(
-        || {
-            format!(
-                "Could not load role {raw:?}.\n\nUse a configured role such as \
-             \"agent-smith\" or a GitHub selector like \"owner/agent-name\"."
-            )
-        },
-        |source_url| {
-            format!(
-                "Could not load role {raw:?}.\n\nLooked for repository:\n{source_url}\n\n{}",
-                friendly_role_resolution_error(err)
-            )
-        },
-    );
-    editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_tui::components::ErrorPopupState::new("Load role failed", message),
-    });
-}
-
-pub(crate) fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
-    crate::debug_log!("editor", "failed to apply confirmed editor action: {err}");
-    editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_tui::components::ErrorPopupState::new(
-            "Could not apply change",
-            format!("The change could not be saved.\n\n{err}"),
-        ),
-    });
-}
-
-pub(crate) fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
-    crate::debug_log!("role", "showing direct role-load error popup: {message}");
-    editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_tui::components::ErrorPopupState::new("Load role failed", message),
-    });
-}
-
-/// Translate a runtime role-resolution error into the operator-facing
-/// blurb shown beneath the role-input dialog.
-///
-/// When adding a `RepoError` variant, add the corresponding match arm
-/// here. Errors that were never wrapped as `RepoError` (e.g. fs/IO
-/// errors raised before the clone) hit the fallback branch — generic
-/// rather than mis-classified.
-fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
-    if let Some(repo_err) = err
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<crate::runtime::RepoError>())
-    {
-        return match repo_err {
-            crate::runtime::RepoError::CloneFailed(_) => {
-                "Repository is not available, or you do not have access.".into()
-            }
-            crate::runtime::RepoError::RemoteMismatch => {
-                "A cached copy already exists for this role, but it points at a different \
-                 repository."
-                    .into()
-            }
-            crate::runtime::RepoError::InvalidRoleRepo(detail) => format!(
-                "Repository is not a valid Jackin role: {}.",
-                humanize_invalid_role_repo(detail)
-            ),
-        };
-    }
-    "Repository could not be used as a Jackin role.".into()
-}
-
-/// Render a `RoleRepoValidationError` for the role-input popup.
-///
-/// `Missing(path)` is shown as the basename only — the full repo path
-/// is operator-noise here since the popup already says which role they
-/// asked for. Other variants fall back to the typed `Display` impl with
-/// any trailing period trimmed (the surrounding sentence adds its own).
-fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> String {
-    use crate::repo::RoleRepoValidationError as V;
-    match err {
-        V::Missing(path) => {
-            let file = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map_or_else(|| path.display().to_string(), str::to_string);
-            format!("missing {file}")
-        }
-        _ => err.to_string().trim_end_matches('.').to_string(),
-    }
-}
-
-pub(crate) fn open_role_trust_confirm(
-    editor: &mut EditorState<'_>,
-    key: String,
-    source: crate::config::RoleSource,
-) {
-    let state = role_trust_confirm_state(key.clone(), source.git.clone());
-    editor.modal = Some(Modal::Confirm {
-        target: ConfirmTarget::TrustRoleSource { key, source },
-        state,
-    });
-}
-
-pub(crate) fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
-    if !editor.pending.allowed_roles.is_empty()
-        && !editor.pending.allowed_roles.iter().any(|role| role == key)
-    {
-        editor.pending.allowed_roles.push(key.to_string());
-    }
-
-    if let Some(idx) = config.roles.keys().position(|role| role == key) {
-        editor.active_field = FieldFocus::Row(idx);
     }
 }
 
