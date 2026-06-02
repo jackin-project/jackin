@@ -1,6 +1,6 @@
 //! Editor screen view helpers.
 
-use super::model::{EditorTab, SecretsScopeTag};
+use super::model::{EditorMode, EditorTab, SecretsScopeTag};
 use super::update::forbidden_secret_keys;
 use crate::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
@@ -66,6 +66,14 @@ pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
         tabs: chunks[1],
         body: chunks[2],
         footer: chunks[3],
+    }
+}
+
+#[must_use]
+pub fn editor_header_title(mode: &EditorMode) -> String {
+    match mode {
+        EditorMode::Edit { name } => format!("edit workspace · {name}"),
+        EditorMode::Create => "create workspace".to_string(),
     }
 }
 
@@ -1137,6 +1145,17 @@ mod tests {
         assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
         assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
         assert_eq!(editor_mount_add_row_width(), text_width("  + Add mount"));
+    }
+
+    #[test]
+    fn editor_header_title_is_screen_owned() {
+        assert_eq!(
+            editor_header_title(&EditorMode::Edit {
+                name: "demo".to_string(),
+            }),
+            "edit workspace · demo"
+        );
+        assert_eq!(editor_header_title(&EditorMode::Create), "create workspace");
     }
 
     #[test]

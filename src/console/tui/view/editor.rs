@@ -12,13 +12,13 @@ use crate::console::tui::components::editor::{
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
-use crate::console::tui::state::{EditorMode, EditorState, EditorTab};
+use crate::console::tui::state::{EditorState, EditorTab};
 pub(crate) use crate::console::tui::state::{auth_flat_rows, secrets_flat_rows};
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
-use jackin_console::tui::screens::editor::view::editor_frame_areas;
+use jackin_console::tui::screens::editor::view::{editor_frame_areas, editor_header_title};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{
     Frame,
@@ -39,10 +39,7 @@ pub(super) fn render_editor(
     let footer_h = footer_height(&items, area.width).max(1);
     let areas = editor_frame_areas(area, footer_h);
 
-    let title = match &state.mode {
-        EditorMode::Edit { name } => format!("edit workspace · {name}"),
-        EditorMode::Create => "create workspace".to_string(),
-    };
+    let title = editor_header_title(&state.mode);
     render_header(frame, areas.header, &title);
     render_editor_tab_strip(
         frame,

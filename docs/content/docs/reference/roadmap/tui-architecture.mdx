@@ -300,6 +300,8 @@ Editor save-flow preserved-state confirm wording and running-isolated-state bloc
 
 Editor General-tab content-width calculation now uses <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" /> for the same row labels and enabled/disabled wording used by rendering. Root layout code supplies only the current workspace name, shortened workdir, keep-awake flag, and git-pull flag before applying the crate-owned width helper.
 
+Editor header title wording now also lives with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />. Root rendering passes the editor mode/name facts and no longer owns the `edit workspace` / `create workspace` title copy.
+
 The root-dependent console op-picker adapter now lives under <RepoFile path="src/console/tui/op_picker/mod.rs" /> instead of `src/console/tui/components/`, so the remaining root-bound load/input/state bridge is no longer stored as a visual component.
 
 The op-picker background-worker disconnect message now lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. The root adapter still owns the `operator_env` runner, subscriptions, and cache binding, but visible recoverable-error wording stays with the component boundary.
