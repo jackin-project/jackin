@@ -12,8 +12,9 @@ use crate::console::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };
 use jackin_console::tui::run::{
-    QuitInterceptState, quit_confirm_area, quit_confirm_state, render_debug_bar,
-    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    LetterInputModalKind, LetterInputState, QuitInterceptState, quit_confirm_area,
+    quit_confirm_state, render_debug_bar, should_debug_log_mouse, should_open_quit_confirm,
+    split_debug_area,
 };
 
 use crate::config::AppConfig;
@@ -31,42 +32,59 @@ pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
 /// Modals that consume letters (`TextInput`, pickers with filter-as-
 /// you-type) must shadow the Q-intercept so `Q` types the letter.
 pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
+    jackin_console::tui::run::consumes_letter_input(letter_input_state(state))
+}
+
+const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
     use crate::console::tui::state::{GlobalMountModal, ManagerStage, Modal};
     let ConsoleStage::Manager(ms) = &state.stage;
 
-    if let Some(modal) = &ms.list_modal
-        && matches!(modal, Modal::RolePicker { .. } | Modal::OpPicker { .. })
-    {
-        return true;
+    let mut input_state = LetterInputState {
+        list_modal: match &ms.list_modal {
+            Some(Modal::RolePicker { .. } | Modal::OpPicker { .. }) => {
+                Some(LetterInputModalKind::FilterPicker)
+            }
+            Some(_) => Some(LetterInputModalKind::Other),
+            None => None,
+        },
+        editor_modal: None,
+        create_prelude_modal: None,
+        settings_mount_modal: None,
+    };
+
+    match &ms.stage {
+        ManagerStage::Editor(editor) => {
+            input_state.editor_modal = match &editor.modal {
+                Some(Modal::TextInput { .. }) => Some(LetterInputModalKind::TextInput),
+                Some(
+                    Modal::OpPicker { .. }
+                    | Modal::RolePicker { .. }
+                    | Modal::RoleOverridePicker { .. },
+                ) => Some(LetterInputModalKind::FilterPicker),
+                Some(_) => Some(LetterInputModalKind::Other),
+                None => None,
+            };
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            input_state.create_prelude_modal = match &prelude.modal {
+                Some(Modal::TextInput { .. }) => Some(LetterInputModalKind::TextInput),
+                Some(_) => Some(LetterInputModalKind::Other),
+                None => None,
+            };
+        }
+        ManagerStage::Settings(settings) => {
+            input_state.settings_mount_modal = match &settings.mounts.modal {
+                Some(GlobalMountModal::Text { .. }) => Some(LetterInputModalKind::TextInput),
+                Some(_) => Some(LetterInputModalKind::Other),
+                None => None,
+            };
+        }
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 
-    if let ManagerStage::Editor(editor) = &ms.stage
-        && let Some(modal) = &editor.modal
-        && matches!(
-            modal,
-            Modal::TextInput { .. }
-                | Modal::OpPicker { .. }
-                | Modal::RolePicker { .. }
-                | Modal::RoleOverridePicker { .. }
-        )
-    {
-        return true;
-    }
-
-    if let ManagerStage::CreatePrelude(p) = &ms.stage
-        && let Some(modal) = &p.modal
-        && matches!(modal, Modal::TextInput { .. })
-    {
-        return true;
-    }
-    if let ManagerStage::Settings(settings) = &ms.stage
-        && let Some(modal) = &settings.mounts.modal
-        && matches!(modal, GlobalMountModal::Text { .. })
-    {
-        return true;
-    }
-
-    false
+    input_state
 }
 
 pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptState {

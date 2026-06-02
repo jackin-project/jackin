@@ -14,6 +14,41 @@ pub struct QuitInterceptState {
     pub consumes_letter_input: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LetterInputModalKind {
+    TextInput,
+    FilterPicker,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LetterInputState {
+    pub list_modal: Option<LetterInputModalKind>,
+    pub editor_modal: Option<LetterInputModalKind>,
+    pub create_prelude_modal: Option<LetterInputModalKind>,
+    pub settings_mount_modal: Option<LetterInputModalKind>,
+}
+
+/// Whether the active modal stack should receive bare letter keys.
+///
+/// The root console maps concrete modal variants into these generic facts.
+/// Keeping the consumption policy here prevents the run loop from growing a
+/// second copy of which component shapes type into filters or text inputs.
+#[must_use]
+pub const fn consumes_letter_input(state: LetterInputState) -> bool {
+    modal_kind_consumes_letter_input(state.list_modal)
+        || modal_kind_consumes_letter_input(state.editor_modal)
+        || modal_kind_consumes_letter_input(state.create_prelude_modal)
+        || modal_kind_consumes_letter_input(state.settings_mount_modal)
+}
+
+const fn modal_kind_consumes_letter_input(kind: Option<LetterInputModalKind>) -> bool {
+    matches!(
+        kind,
+        Some(LetterInputModalKind::TextInput | LetterInputModalKind::FilterPicker)
+    )
+}
+
 /// Whether the bare `q`/`Q` key should open the global exit confirmation.
 ///
 /// The root console maps its stage/modal state into [`QuitInterceptState`].
@@ -110,6 +145,23 @@ mod tests {
                 consumes_letter_input: false,
             },
         ));
+    }
+
+    #[test]
+    fn letter_input_state_detects_text_and_filter_modals() {
+        assert!(consumes_letter_input(LetterInputState {
+            editor_modal: Some(LetterInputModalKind::TextInput),
+            ..LetterInputState::default()
+        }));
+        assert!(consumes_letter_input(LetterInputState {
+            list_modal: Some(LetterInputModalKind::FilterPicker),
+            ..LetterInputState::default()
+        }));
+        assert!(!consumes_letter_input(LetterInputState {
+            settings_mount_modal: Some(LetterInputModalKind::Other),
+            ..LetterInputState::default()
+        }));
+        assert!(!consumes_letter_input(LetterInputState::default()));
     }
 }
 
