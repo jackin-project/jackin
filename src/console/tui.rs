@@ -10,6 +10,7 @@ mod launch;
 pub mod message;
 #[cfg(test)]
 mod message_tests;
+pub(crate) mod op_picker;
 pub(crate) mod prompts;
 pub mod run;
 pub mod state;
