@@ -35,6 +35,11 @@ pub enum WorkspaceSaveMode {
     },
 }
 
+#[must_use]
+pub fn workspace_create_display_name(pending_name: Option<&str>) -> String {
+    pending_name.unwrap_or("(unnamed)").to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceMountDiff {
     Added(WorkspaceMountPreviewRow),
@@ -823,4 +828,15 @@ fn settings_trust_diff_lines(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::workspace_create_display_name;
+
+    #[test]
+    fn workspace_create_display_name_uses_pending_or_visible_fallback() {
+        assert_eq!(workspace_create_display_name(Some("demo")), "demo");
+        assert_eq!(workspace_create_display_name(None), "(unnamed)");
+    }
 }

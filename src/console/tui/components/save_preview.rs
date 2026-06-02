@@ -41,10 +41,9 @@ fn workspace_save_preview(
 
     let mode = match &editor.mode {
         EditorMode::Create => WorkspaceSaveMode::Create {
-            name: editor
-                .pending_name
-                .clone()
-                .unwrap_or_else(|| "(unnamed)".into()),
+            name: jackin_console::tui::components::save_preview::workspace_create_display_name(
+                editor.pending_name.as_deref(),
+            ),
         },
         EditorMode::Edit { name } => WorkspaceSaveMode::Edit {
             original_name: name.clone(),
