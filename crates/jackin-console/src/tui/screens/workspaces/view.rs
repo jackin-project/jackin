@@ -331,6 +331,76 @@ pub fn render_global_mounts_subpanel(
     );
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceRoleRow {
+    pub name: String,
+    pub exists: bool,
+    pub is_default: bool,
+    pub scoped_mount_count: usize,
+}
+
+pub fn render_roles_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    default_role: Option<&str>,
+    rows: Vec<WorkspaceRoleRow>,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let mut lines: Vec<Line> = Vec::new();
+    let (value_text, value_style): (String, Style) = default_role.map_or_else(
+        || (
+            "(none)".to_string(),
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+        ),
+        |name| {
+            (
+                name.to_string(),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+            )
+        },
+    );
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled("Default ", Style::default().fg(jackin_tui::theme::WHITE)),
+        Span::styled(value_text, value_style),
+    ]));
+    lines.push(Line::from(""));
+
+    for row in rows {
+        let name_style = if row.exists {
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+        } else {
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)
+        };
+        let mut spans = vec![Span::styled(format!("  {}", row.name), name_style)];
+        if row.is_default {
+            spans.push(Span::styled(
+                " \u{2605}",
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+        }
+        if row.scoped_mount_count > 0 {
+            spans.push(Span::styled(
+                format!("    +{} role mounts", row.scoped_mount_count),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        scroll_x,
+        scroll_y,
+        focused,
+        Some(" Roles "),
+    );
+}
+
 fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
     const SUBPANEL_CONTENT_INDENT: usize = 2;
     let outer_indent = " ".repeat(SUBPANEL_CONTENT_INDENT);

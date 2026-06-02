@@ -58,8 +58,8 @@ pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
     Disclosure, provider_picker_title, render_compact_instances_summary, render_picker_sidebar,
     render_environments_subpanel, render_general_subpanel, render_global_mounts_subpanel,
-    render_mounts_subpanel as render_workspace_mounts_panel, render_sentinel_description_pane,
-    WorkspaceEnvRow,
+    render_mounts_subpanel as render_workspace_mounts_panel, render_roles_subpanel,
+    render_sentinel_description_pane, WorkspaceEnvRow, WorkspaceRoleRow,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -846,60 +846,33 @@ fn render_agents_subpanel_scrollable(
     let all_allowed = ws_config.is_none_or(jackin_console::workspace::allows_all_agents);
     let default = ws_config.and_then(|w| w.default_role.as_deref());
 
-    let mut lines: Vec<Line> = Vec::new();
-    let (value_text, value_style): (String, Style) = default.map_or_else(
-        || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
-        |name| (name.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
-    );
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled("Default ", Style::default().fg(WHITE)),
-        Span::styled(value_text, value_style),
-    ]));
-    lines.push(Line::from(""));
-
     let agent_names: Vec<&str> = if all_allowed {
         config.roles.keys().map(String::as_str).collect()
     } else {
         allowed.iter().map(String::as_str).collect()
     };
-    let name_style = |role: &str| {
-        if config.roles.contains_key(role) {
-            Style::default().fg(PHOSPHOR_GREEN)
-        } else {
-            Style::default().fg(PHOSPHOR_DIM)
-        }
-    };
-    for role in &agent_names {
-        let is_default = Some(*role) == default;
-        let mut spans = vec![Span::styled(format!("  {role}"), name_style(role))];
-        if is_default {
-            spans.push(Span::styled(" \u{2605}", Style::default().fg(PHOSPHOR_DIM)));
-        }
-        if let Ok(selector) = crate::selector::RoleSelector::parse(role) {
-            let scoped_count = config
-                .resolve_mount_rows(&selector)
-                .into_iter()
-                .filter(|row| row.scope.is_some())
-                .count();
-            if scoped_count > 0 {
-                spans.push(Span::styled(
-                    format!("    +{scoped_count} role mounts"),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ));
-            }
-        }
-        lines.push(Line::from(spans));
+    let rows = agent_names
+        .into_iter()
+        .map(|role| WorkspaceRoleRow {
+            name: role.to_string(),
+            exists: config.roles.contains_key(role),
+            is_default: Some(role) == default,
+            scoped_mount_count: role_scoped_mount_count(config, role),
+        })
+        .collect();
+    render_roles_subpanel(frame, area, default, rows, scroll_x, scroll_y, focused);
+}
+
+fn role_scoped_mount_count(config: &AppConfig, role: &str) -> usize {
+    if let Ok(selector) = crate::selector::RoleSelector::parse(role) {
+        config
+            .resolve_mount_rows(&selector)
+            .into_iter()
+            .filter(|row| row.scope.is_some())
+            .count()
+    } else {
+        0
     }
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        scroll_x,
-        scroll_y,
-        focused,
-        Some(" Roles "),
-    );
 }
 
 #[cfg(test)]
