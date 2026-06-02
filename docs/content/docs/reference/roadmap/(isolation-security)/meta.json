@@ -9,6 +9,7 @@
     "../selectable-sandbox-backends",
     "../reproducibility-pinning",
     "../devcontainer-parity",
-    "../open-review-findings"
+    "../open-review-findings",
+    "../security-threat-model-and-signed-releases"
   ]
 }

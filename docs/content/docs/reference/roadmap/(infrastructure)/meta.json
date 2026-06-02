@@ -4,6 +4,7 @@
   "pages": [
     "../architect-code-intelligence-tooling",
     "../construct-user-creation",
-    "../workspace-registry-cache"
+    "../workspace-registry-cache",
+    "../platform-support-and-freshness"
   ]
 }
