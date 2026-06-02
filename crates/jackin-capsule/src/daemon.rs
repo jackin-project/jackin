@@ -105,11 +105,13 @@ use crate::tui::app::{
 };
 use crate::tui::update::{
     ActionFramePlan, DialogActionFramePlan, FullRedrawReason, HoverFramePlan, PartialFramePlan,
-    PartialFrameState, dialog_action_frame_plan, drag_resize_ratio, drag_resize_redraw_reason,
-    focus_change_redraw_reason, hover_frame_plan, pane_data_redraw_reason, partial_frame_plan,
-    palette_route_redraw_reason, pane_cache_miss_redraw_reason, selection_change_redraw_reason,
-    selection_start_redraw_reason, unsafe_partial_fallback_redraw_reason,
-    wheel_scrollback_redraw_reason,
+    PartialFrameState, dialog_action_frame_plan, dialog_change_redraw_reason,
+    drag_resize_ratio, drag_resize_redraw_reason, explicit_redraw_reason,
+    first_attach_redraw_reason, focus_change_redraw_reason, hover_frame_plan,
+    pane_data_redraw_reason, partial_frame_plan, palette_route_redraw_reason,
+    pane_cache_miss_redraw_reason, resize_redraw_reason, selection_change_redraw_reason,
+    selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
+    unsafe_partial_fallback_redraw_reason, wheel_scrollback_redraw_reason,
 };
 use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
 #[cfg(test)]
@@ -665,7 +667,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     }
                 }
                 let mut initial = b"\x1b[2J".to_vec();
-                initial.extend(mux.compose_full_frame(FullRedrawReason::FirstAttach));
+                initial.extend(mux.compose_full_frame(first_attach_redraw_reason()));
                 initial_frames.push((
                     InitialFrameKind::FirstAttach,
                     encode_server(ServerFrame::Output(initial)),
@@ -772,7 +774,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // Matches the operator's mental model: "agent
                         // exited → its tab is gone."
                         mux.remove_exited_session(session_id);
-                        mux.request_full_redraw(FullRedrawReason::SessionExit);
+                        mux.request_full_redraw(session_exit_redraw_reason());
                         // When the last live session exits — whether
                         // the operator typed `/exit` in the agent or
                         // the agent crashed — there is nothing left to
@@ -795,7 +797,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             context,
                             Instant::now(),
                         ) {
-                            mux.request_full_redraw(FullRedrawReason::StatusChange);
+                            mux.request_full_redraw(status_change_redraw_reason());
                         }
                     }
                     SessionEvent::PullRequestContextLoaded {
@@ -811,7 +813,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             outcome,
                             Instant::now(),
                         ) {
-                            mux.request_full_redraw(FullRedrawReason::StatusChange);
+                            mux.request_full_redraw(status_change_redraw_reason());
                         }
                     }
                 }
@@ -878,7 +880,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
                     let frame_data =
-                        mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
+                        mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
                     mux.send_output(frame_data);
                     continue;
                 }
@@ -905,7 +907,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::Resize { rows, cols } => {
             mux.resize(rows, cols);
-            let frame_data = mux.compose_full_frame(FullRedrawReason::Resize);
+            let frame_data = mux.compose_full_frame(resize_redraw_reason());
             mux.send_output(frame_data);
         }
         ClientFrame::Input(bytes) => {
@@ -932,7 +934,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);
-                let frame_data = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+                let frame_data = mux.compose_full_frame(explicit_redraw_reason());
                 mux.send_output(frame_data);
             }
         }
