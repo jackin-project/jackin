@@ -4,10 +4,10 @@
 //! should the multiplexer do with it?" so dispatch can become testable without
 //! a live PTY or attach socket.
 
-use crate::tui::components::dialog::{
-    DialogAction, PaletteCommand, PickerIntent, SplitDirection,
-};
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
+use crate::tui::components::dialog::{
+    ConfirmKind, DialogAction, PaletteCommand, PickerIntent, SplitDirection,
+};
 use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +200,37 @@ pub fn prefix_command_action(cmd: &PrefixCommand) -> Option<Action> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PaletteCommandRoute {
+    OpenSplitDirectionPicker,
+    OpenAgentPicker(PickerIntent),
+    NextTab,
+    PreviousTab,
+    ConfirmAction(ConfirmKind),
+    OpenCloseTargetPicker,
+    ToggleZoom,
+    ClearPane,
+}
+
+pub(crate) fn palette_command_route(
+    cmd: PaletteCommand,
+    active_tab_pane_count: usize,
+) -> PaletteCommandRoute {
+    match cmd {
+        PaletteCommand::Split => PaletteCommandRoute::OpenSplitDirectionPicker,
+        PaletteCommand::NewTab => PaletteCommandRoute::OpenAgentPicker(PickerIntent::NewTab),
+        PaletteCommand::NextTab => PaletteCommandRoute::NextTab,
+        PaletteCommand::PrevTab => PaletteCommandRoute::PreviousTab,
+        PaletteCommand::Close if active_tab_pane_count == 1 => {
+            PaletteCommandRoute::ConfirmAction(ConfirmKind::CloseTab)
+        }
+        PaletteCommand::Close => PaletteCommandRoute::OpenCloseTargetPicker,
+        PaletteCommand::ZoomPane => PaletteCommandRoute::ToggleZoom,
+        PaletteCommand::ClearPane => PaletteCommandRoute::ClearPane,
+        PaletteCommand::Exit => PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit),
+    }
+}
+
 pub fn pane_button_motion_action(dragging: bool, selecting: bool, row: u16, col: u16) -> Action {
     if dragging {
         Action::DragMotion { row, col }
@@ -273,10 +304,12 @@ fn is_wheel_button(button: u8) -> bool {
 mod tests {
     use super::{
         Action, InputDispatchContext, branch_context_bar_click_action, input_event_action,
-        mouse_chrome_update_action, mouse_release_action, pane_button_motion_action,
-        status_bar_click_action, StatusBarClickState,
+        mouse_chrome_update_action, mouse_release_action, palette_command_route,
+        pane_button_motion_action, status_bar_click_action, PaletteCommandRoute,
+        StatusBarClickState,
     };
     use crate::tui::components::branch_context_bar::BranchContextBarHit;
+    use crate::tui::components::dialog::{ConfirmKind, PaletteCommand};
     use crate::tui::input::InputEvent;
     use crate::tui::input::PrefixCommand;
     use crate::tui::components::dialog::{PickerIntent, SplitDirection};
@@ -363,6 +396,30 @@ mod tests {
             Some(Action::SplitFocused(SplitDirection::Below))
         );
         assert_eq!(prefix_command_action(&PrefixCommand::Redraw), None);
+    }
+
+    #[test]
+    fn palette_command_route_keeps_dialog_drill_down_semantics() {
+        assert_eq!(
+            palette_command_route(PaletteCommand::Split, 2),
+            PaletteCommandRoute::OpenSplitDirectionPicker
+        );
+        assert_eq!(
+            palette_command_route(PaletteCommand::NewTab, 1),
+            PaletteCommandRoute::OpenAgentPicker(PickerIntent::NewTab)
+        );
+        assert_eq!(
+            palette_command_route(PaletteCommand::Close, 1),
+            PaletteCommandRoute::ConfirmAction(ConfirmKind::CloseTab)
+        );
+        assert_eq!(
+            palette_command_route(PaletteCommand::Close, 2),
+            PaletteCommandRoute::OpenCloseTargetPicker
+        );
+        assert_eq!(
+            palette_command_route(PaletteCommand::Exit, 2),
+            PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit)
+        );
     }
 
     #[test]

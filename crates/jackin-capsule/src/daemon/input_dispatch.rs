@@ -584,8 +584,8 @@ impl Multiplexer {
         // actions clear the stack and run the action. No blanket
         // clear at the top because that would prevent the sub-dialog
         // back-navigation chain from working.
-        match cmd {
-            PaletteCommand::Split => {
+        match palette_command_route(cmd, self.active_tab_pane_count()) {
+            PaletteCommandRoute::OpenSplitDirectionPicker => {
                 // Open the SplitDirectionPicker sub-dialog. The
                 // operator picks the direction; that resolves to a
                 // `DialogAction::SplitDirection(...)` which
@@ -594,48 +594,41 @@ impl Multiplexer {
                 // confirm spawns the new pane.
                 self.dialog_push(Dialog::new_split_direction_picker());
             }
-            PaletteCommand::NewTab => {
+            PaletteCommandRoute::OpenAgentPicker(intent) => {
                 // Always show the agent picker — even when the role
                 // declares a single agent. The operator must
                 // explicitly choose between that agent and a Shell;
                 // jumping straight into the agent would surprise an
                 // operator who picked "New tab" to open a shell.
                 let agents = self.available_agents.clone();
-                self.dialog_push(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
+                self.dialog_push(Dialog::new_agent_picker(agents, intent));
             }
-            PaletteCommand::NextTab => {
+            PaletteCommandRoute::NextTab => {
                 self.dialog_clear();
                 self.next_tab();
             }
-            PaletteCommand::PrevTab => {
+            PaletteCommandRoute::PreviousTab => {
                 self.dialog_clear();
                 self.prev_tab();
             }
-            PaletteCommand::Close => {
-                if self.active_tab_pane_count() == 1 {
-                    self.dialog_push(Dialog::new_confirm_action(ConfirmKind::CloseTab));
-                } else {
-                    // Drill-down: push the CloseTargetPicker on top
-                    // of the Menu so split tabs still ask whether
-                    // the operator wants the focused pane or every
-                    // pane in the tab. Esc walks back to Menu.
-                    self.dialog_push(Dialog::new_close_target_picker());
-                }
+            PaletteCommandRoute::ConfirmAction(kind) => {
+                self.dialog_push(Dialog::new_confirm_action(kind));
             }
-            PaletteCommand::ZoomPane => {
+            PaletteCommandRoute::OpenCloseTargetPicker => {
+                // Drill-down: push the CloseTargetPicker on top
+                // of the Menu so split tabs still ask whether
+                // the operator wants the focused pane or every
+                // pane in the tab. Esc walks back to Menu.
+                self.dialog_push(Dialog::new_close_target_picker());
+            }
+            PaletteCommandRoute::ToggleZoom => {
                 self.dialog_clear();
                 self.toggle_zoom();
             }
-            PaletteCommand::ClearPane => {
+            PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();
                 self.clear_focused_pane();
                 return Some(self.compose_full_frame(FullRedrawReason::PaneClear));
-            }
-            PaletteCommand::Exit => {
-                // Push ConfirmAction for Exit — the operator
-                // confirms before every agent session is stopped. Esc
-                // walks back to Menu.
-                self.dialog_push(Dialog::new_confirm_action(ConfirmKind::Exit));
             }
         }
         None
