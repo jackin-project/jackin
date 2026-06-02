@@ -13,7 +13,3 @@ pub(crate) mod settings;
 mod snapshot_tests;
 
 pub use frame::render;
-
-pub(crate) use jackin_tui::components::scrollable_panel::{
-    viewport_width as scroll_viewport_width,
-};

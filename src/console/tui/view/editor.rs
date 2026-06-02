@@ -275,6 +275,7 @@ mod general_tab_render_tests {
     use crate::console::tui::layout::editor::prepare_editor_tab_for_area;
     use crate::console::tui::state::{EditorState, FieldFocus};
     use crate::workspace::WorkspaceConfig;
+    use jackin_tui::components::scrollable_panel::viewport_width as scroll_viewport_width;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
@@ -299,7 +300,7 @@ mod general_tab_render_tests {
         })
         .unwrap();
 
-        let viewport = super::super::scroll_viewport_width(area);
+        let viewport = scroll_viewport_width(area);
         assert_eq!(
             editor.tab_scroll_x,
             jackin_tui::components::scrollable_panel::max_offset(
@@ -367,6 +368,7 @@ mod agents_tab_render_tests {
     use crate::console::tui::layout::editor::prepare_editor_tab_for_area;
     use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
+    use jackin_tui::components::scrollable_panel::viewport_width as scroll_viewport_width;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
@@ -453,7 +455,7 @@ mod agents_tab_render_tests {
         })
         .unwrap();
 
-        let viewport = super::super::scroll_viewport_width(area);
+        let viewport = scroll_viewport_width(area);
         assert_eq!(
             editor.tab_scroll_x,
             jackin_tui::components::scrollable_panel::max_offset(
