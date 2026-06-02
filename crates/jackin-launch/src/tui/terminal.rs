@@ -2,6 +2,8 @@
 
 use std::io::IsTerminal;
 
+use ratatui::layout::Rect;
+
 #[must_use]
 pub fn rich_terminal_supported() -> bool {
     terminal_supports_rich_surface(true)
@@ -33,4 +35,29 @@ pub fn terminal_supports_rich_surface(require_stderr: bool) -> bool {
         return false;
     }
     crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
+}
+
+#[must_use]
+pub fn current_terminal_area() -> Rect {
+    terminal_area_from_size(crossterm::terminal::size().ok())
+}
+
+#[must_use]
+pub fn terminal_area_from_size(size: Option<(u16, u16)>) -> Rect {
+    size.map_or_else(Rect::default, |(width, height)| Rect::new(0, 0, width, height))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminal_area_from_size;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn terminal_area_from_size_uses_size_or_empty_fallback() {
+        assert_eq!(
+            terminal_area_from_size(Some((100, 30))),
+            Rect::new(0, 0, 100, 30)
+        );
+        assert_eq!(terminal_area_from_size(None), Rect::default());
+    }
 }

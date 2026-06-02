@@ -18,6 +18,7 @@ use crate::tui::components::prompts::{
 use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
 use crate::tui::message::LaunchMessage;
 use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
+use crate::tui::terminal::current_terminal_area;
 use crate::tui::update::update_launch_view;
 use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
 use crate::{LaunchHostTerminal, LaunchView, PromptContextLine, PromptResult};
@@ -81,10 +82,7 @@ impl RichDriver {
                             let build_log_lines = crate::build_log::snapshot();
                             let build_log_active = crate::build_log::is_active();
                             let build_log_filled = if v.build_log_open {
-                                let area = crossterm::terminal::size()
-                                    .ok()
-                                    .map(|(width, height)| Rect::new(0, 0, width, height))
-                                    .unwrap_or_default();
+                                let area = current_terminal_area();
                                 Some(build_log_scroll_filled_for_lines(area, &build_log_lines))
                             } else {
                                 None

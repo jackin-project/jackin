@@ -13,6 +13,7 @@ use crate::tui::components::container_info_dialog::{
 };
 use crate::tui::components::failure_dialog::{failure_copy_payload, failure_copy_target_at};
 use crate::tui::components::footer::{footer_instance, format_activity};
+use crate::tui::terminal::current_terminal_area;
 use crate::{LaunchHostTerminal, LaunchMessage, LaunchView, update_launch_view};
 
 const BUILD_LOG_SCROLL_STEP: usize = 3;
@@ -170,10 +171,7 @@ pub fn handle_cockpit_input(
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
 ) {
-    let area = crossterm::terminal::size()
-        .ok()
-        .map(|(width, height)| Rect::new(0, 0, width, height))
-        .unwrap_or_default();
+    let area = current_terminal_area();
     while event::poll(Duration::ZERO).unwrap_or(false) {
         let Ok(ev) = event::read() else {
             return;
