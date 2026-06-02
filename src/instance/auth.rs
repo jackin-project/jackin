@@ -1,8 +1,8 @@
 //! Agent credential provisioning: copies or wipes per-agent auth files in the
 //! role-state directory before container launch.
 //!
-//! Implements `RoleState` methods for each supported agent (Claude, Codex,
-//! Amp, Kimi, OpenCode). Each provisioner applies the `AuthForwardMode`
+//! Implements `RoleState` methods for each supported agent (`Claude`, `Codex`,
+//! `Amp`, `Kimi`, `OpenCode`). Each provisioner applies the `AuthForwardMode`
 //! policy (`Sync`, `ApiKey`, `OAuthToken`, `Ignore`) to decide whether to
 //! copy the host credential file, leave it, or wipe it.
 //!
@@ -694,7 +694,7 @@ impl RoleState {
 /// messages. `agent_name` identifies the agent in the parser-bypass log.
 fn provision_single_file_credential(
     target: &Path,
-    host_path: &std::path::PathBuf,
+    host_path: &Path,
     mode: AuthForwardMode,
     label: &str,
     agent_name: &str,

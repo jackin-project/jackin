@@ -61,8 +61,8 @@ pub enum PullRequestStatus<'a> {
 
 pub use super::container_info_dialog::ContainerInfoDiagnostics;
 use super::container_info_dialog::{ContainerInfoRow, non_empty_or_dim};
-pub use super::palette::{PaletteCloseLabel, PaletteCommand};
 pub(super) use super::palette::{PALETTE_ITEMS, palette_filtered_indices, palette_item_label};
+pub use super::palette::{PaletteCloseLabel, PaletteCommand};
 
 impl<'a> PullRequestStatus<'a> {
     pub fn loaded(&self) -> Option<&'a PullRequestInfo> {

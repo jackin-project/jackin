@@ -6,8 +6,8 @@
 //!
 //! * Trust confirmation runs before the image build — an untrusted agent may
 //!   be cloned and resolved but not built until confirmed.
-//! * Token-mode verification fails fast before auth state preparation or DinD
-//!   launch, so a missing token never reaches container startup.
+//! * Token-mode verification fails fast before auth state preparation or
+//!   docker-in-docker launch, so a missing token never reaches container startup.
 //! * Container slot claim runs before the launch summary is printed, so the
 //!   name the operator sees is the final locked name that flows to the
 //!   running container.
