@@ -18,4 +18,5 @@ pub mod save_preview;
 pub mod scope_picker;
 pub mod source_picker;
 pub mod spinner;
+pub mod status_popup;
 pub mod workdir_pick;

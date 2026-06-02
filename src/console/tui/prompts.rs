@@ -31,7 +31,7 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
 {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.status_overlay = Some(jackin_tui::components::StatusPopupState::new(
+    ms.status_overlay = Some(jackin_console::tui::components::status_popup::status_popup_state(
         "Resolving agent role",
         format!("Loading and resolving {}", role.key()),
     ));

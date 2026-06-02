@@ -376,9 +376,9 @@ pub(crate) fn update_manager(
             state.open_list_error_popup(title, message);
         }
         ManagerMessage::OpenStatusPopup { title, message } => {
-            state.status_overlay = Some(jackin_tui::components::StatusPopupState::new(
-                title, message,
-            ));
+            state.status_overlay = Some(
+                jackin_console::tui::components::status_popup::status_popup_state(title, message),
+            );
         }
         ManagerMessage::DismissStatusPopup => {
             state.status_overlay = None;
