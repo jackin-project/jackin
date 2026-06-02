@@ -26,7 +26,7 @@ Non-Rust emulators (libvterm, Ghostty) appear in this document **only as idea so
 - Its model is shaped for **re-emission**, not pixels. The signature API is `Screen::contents_diff(prev)` / `contents_formatted()`: given two screen states it emits the **minimal escape byte sequence** that turns one into the other. That is precisely what a tmux/Zellij-style multiplexer needs, and it is unusual — most terminal libraries model a grid for a GPU to draw, not a grid to *re-serialize back into escape sequences*.
 - It ships a `Callbacks` trait (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`, …) that lets us intercept OSC and unhandled-CSI traffic for passthrough.
 
-So the capsule's entire render path — <RepoFile path="crates/jackin-capsule/src/render.rs" /> and the `OscCapture` callback impl in <RepoFile path="crates/jackin-capsule/src/session.rs" /> — is built directly on `vt100`'s `Screen` + `Callbacks` shape. It works, and it is a good fit for the job.
+So the capsule's entire render path — <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> and the `OscCapture` callback impl in <RepoFile path="crates/jackin-capsule/src/session.rs" /> — is built directly on `vt100`'s `Screen` + `Callbacks` shape. It works, and it is a good fit for the job.
 
 ### The problem with `vt100` and our current implementation
 
@@ -242,7 +242,7 @@ Independent of this whole question: rebase the fork onto a tag, get `clear_scrol
 
 **Goal:** find out whether the capsule has *any* per-frame wall, and if so, in which stage.
 
-**Instrumentation:** add `cdebug!`-gated timers around the three stages, in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and <RepoFile path="crates/jackin-capsule/src/render.rs" />:
+**Instrumentation:** add `cdebug!`-gated timers around the three stages, in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />:
 
 - `t_parse` — `Parser::process(bytes)` per PTY read.
 - `t_diff` — `Screen` diff / `contents_formatted` per rendered frame.
@@ -330,7 +330,7 @@ None. This item is entirely in-container / in-binary terminal modeling and emits
 
 - <RepoFile path="crates/jackin-capsule/Cargo.toml" /> — the pinned `vt100` git fork line.
 - <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `OscCapture` (the `vt100::Callbacks` impl), the scrollback model, and `clear_scrollback_and_request_screen_clear`; **the home of the Experiment 1 `t_parse`/`t_diff` instrumentation.**
-- <RepoFile path="crates/jackin-capsule/src/render.rs" /> — the `vt100::Screen` → host-terminal present path; **the home of the Experiment 1 `t_write` instrumentation.**
+- <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> — the `vt100::Screen` → host-terminal present path; **the home of the Experiment 1 `t_write` instrumentation.**
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
 
 ## Open questions the verification must answer
