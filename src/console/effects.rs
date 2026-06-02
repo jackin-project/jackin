@@ -17,6 +17,7 @@ use crate::console::tui::state::{
     PendingMountInfoRefresh, PendingRoleLoad,
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::components::error_popup;
 
 pub(crate) fn op_cli_available() -> bool {
     crate::console::services::op::cli_available()
@@ -224,7 +225,7 @@ fn execute_create_prelude_file_browser_open(state: &mut ManagerState<'_>) {
             let _ = update_manager(
                 state,
                 ManagerMessage::OpenListErrorPopup {
-                    title: "File browser failed".into(),
+                    title: error_popup::file_browser_failed_error_title().into(),
                     message: format!("{error:#}"),
                 },
             );
@@ -489,7 +490,7 @@ pub(crate) fn execute_remove_workspace(
             let _ = update_manager(
                 state,
                 ManagerMessage::OpenListErrorPopup {
-                    title: "Delete failed".into(),
+                    title: error_popup::delete_failed_error_title().into(),
                     message: format!("{error:#}"),
                 },
             );
@@ -666,17 +667,14 @@ fn report_token_generate_error(state: &mut ManagerState<'_>, error: anyhow::Erro
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
             editor.modal = Some(Modal::ErrorPopup {
-                state: jackin_tui::components::ErrorPopupState::new(
-                    "Token generation failed",
-                    error.to_string(),
-                ),
+                state: error_popup::token_generation_failed_error_popup_state(error),
             });
         }
         ManagerStage::Settings(_) => {
             let _ = update_manager(
                 state,
                 ManagerMessage::OpenSettingsErrorPopup {
-                    title: "Token generation failed".into(),
+                    title: error_popup::token_generation_failed_error_title().into(),
                     message: error.to_string(),
                 },
             );
@@ -689,17 +687,14 @@ fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
             editor.modal = Some(Modal::ErrorPopup {
-                state: jackin_tui::components::ErrorPopupState::new(
-                    "Failed to open URL",
-                    error.to_string(),
-                ),
+                state: error_popup::failed_to_open_url_error_popup_state(&error),
             });
         }
         ManagerStage::Settings(_) => {
             let _ = update_manager(
                 state,
                 ManagerMessage::OpenSettingsErrorPopup {
-                    title: "Failed to open URL".into(),
+                    title: error_popup::failed_to_open_url_error_title().into(),
                     message: error.to_string(),
                 },
             );
@@ -708,7 +703,7 @@ fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
             let _ = update_manager(
                 state,
                 ManagerMessage::OpenListErrorPopup {
-                    title: "Failed to open URL".into(),
+                    title: error_popup::failed_to_open_url_error_title().into(),
                     message: error.to_string(),
                 },
             );

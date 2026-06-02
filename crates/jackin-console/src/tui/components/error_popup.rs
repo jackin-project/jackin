@@ -86,6 +86,34 @@ pub fn save_failed_error_popup_state(
     error_popup_state("Save failed", message)
 }
 
+pub fn token_generation_failed_error_title() -> &'static str {
+    "Token generation failed"
+}
+
+pub fn token_generation_failed_error_popup_state(
+    error: impl std::fmt::Display,
+) -> jackin_tui::components::ErrorPopupState {
+    error_popup_state(token_generation_failed_error_title(), error.to_string())
+}
+
+pub fn failed_to_open_url_error_title() -> &'static str {
+    "Failed to open URL"
+}
+
+pub fn failed_to_open_url_error_popup_state(
+    error: impl std::fmt::Display,
+) -> jackin_tui::components::ErrorPopupState {
+    error_popup_state(failed_to_open_url_error_title(), error.to_string())
+}
+
+pub fn delete_failed_error_title() -> &'static str {
+    "Delete failed"
+}
+
+pub fn file_browser_failed_error_title() -> &'static str {
+    "File browser failed"
+}
+
 pub fn op_read_failed_error_popup_state(
     error: impl std::fmt::Display,
 ) -> jackin_tui::components::ErrorPopupState {
@@ -243,6 +271,19 @@ mod tests {
 
         assert_eq!(state.title, "Save failed");
         assert_eq!(state.message, "bad config");
+    }
+
+    #[test]
+    fn effect_error_popup_helpers_use_standard_titles() {
+        let token = token_generation_failed_error_popup_state("op failed");
+        let url = failed_to_open_url_error_popup_state("browser failed");
+
+        assert_eq!(token.title, token_generation_failed_error_title());
+        assert_eq!(token.message, "op failed");
+        assert_eq!(url.title, failed_to_open_url_error_title());
+        assert_eq!(url.message, "browser failed");
+        assert_eq!(delete_failed_error_title(), "Delete failed");
+        assert_eq!(file_browser_failed_error_title(), "File browser failed");
     }
 
     #[test]
