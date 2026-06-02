@@ -452,6 +452,13 @@ pub(crate) fn spawn_failure_message(
     format!("{agent_label}: {error:#}")
 }
 
+pub(crate) fn spawn_request_failure_message(
+    request_label: &str,
+    error: impl std::fmt::Display,
+) -> String {
+    format!("spawn {request_label} failed: {error:#}")
+}
+
 pub(crate) fn tab_limit_failure_message(max_tabs: usize) -> String {
     format!("tab limit reached ({max_tabs}); close one before spawning another")
 }
@@ -477,7 +484,7 @@ pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
 mod tests {
     use super::{
         pane_limit_failure_message, spawn_failure_banner, spawn_failure_message,
-        tab_limit_failure_message,
+        spawn_request_failure_message, tab_limit_failure_message,
     };
 
     #[test]
@@ -485,6 +492,10 @@ mod tests {
         assert_eq!(
             spawn_failure_message("claude", "missing binary"),
             "claude: missing binary"
+        );
+        assert_eq!(
+            spawn_request_failure_message("codex", "missing binary"),
+            "spawn codex failed: missing binary"
         );
     }
 

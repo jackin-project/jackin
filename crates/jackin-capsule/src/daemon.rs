@@ -102,7 +102,7 @@ use crate::tui::update::{
     FullRedrawReason, HoverFramePlan, PartialFramePlan, PartialFrameState, drag_resize_ratio,
     hover_frame_plan, partial_frame_plan,
 };
-use crate::tui::view::spawn_failure_banner;
+use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
 #[cfg(test)]
 use crate::tui::update::prefix_full_redraw_reason;
 
@@ -600,7 +600,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     let label = spawn_request_label(&request);
                     if let Err(err) = mux.spawn_request(request, &env) {
                         crate::clog!("attach: spawn {label} failed: {err:#}");
-                        spawn_failure = Some(format!("spawn {label} failed: {err:#}"));
+                        spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
                 // Take over from any existing attach client. The shared

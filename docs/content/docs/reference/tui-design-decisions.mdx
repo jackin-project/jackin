@@ -203,7 +203,7 @@ Capsule outer-terminal title, pane-title, pane-agent-label, and OSC window-title
 
 Capsule branch-context default-branch suppression now lives with the branch-context bar component in <RepoFile path="crates/jackin-capsule/src/tui/components/branch_context_bar.rs" />. Daemon code supplies Git/default-branch facts and handles resulting actions.
 
-Capsule dialog state construction defaults for rename-tab, split-direction, close-target, confirm-action, container-info, provider-picker, and GitHub-context dialogs now also live under <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />; container-info diagnostics, provider choices, and GitHub-context branch/PR loading status are TUI-owned display snapshots, while daemon code supplies runtime facts and executes terminal actions. Capsule spawn-capacity failure wording lives with spawn-failure visible formatting in <RepoFile path="crates/jackin-capsule/src/tui/view.rs" />; daemon code still enforces the limits and performs PTY/session allocation.
+Capsule dialog state construction defaults for rename-tab, split-direction, close-target, confirm-action, container-info, provider-picker, and GitHub-context dialogs now also live under <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />; container-info diagnostics, provider choices, and GitHub-context branch/PR loading status are TUI-owned display snapshots, while daemon code supplies runtime facts and executes terminal actions. Capsule attach-spawn and spawn-capacity failure wording lives with spawn-failure visible formatting in <RepoFile path="crates/jackin-capsule/src/tui/view.rs" />; daemon code still enforces the limits, performs PTY/session allocation, and sends the banner frame.
 
 ---
 
