@@ -171,6 +171,21 @@ pub fn content_height_with_error_rows(height: usize, has_error: bool) -> usize {
 }
 
 #[must_use]
+pub fn mounts_content_height(row_height: usize, has_error: bool) -> usize {
+    content_height_with_error_rows(row_height, has_error)
+}
+
+#[must_use]
+pub fn env_content_height(row_count: usize, has_error: bool) -> usize {
+    content_height_with_error_rows(row_count, has_error)
+}
+
+#[must_use]
+pub fn trust_content_height(row_count: usize, has_error: bool) -> usize {
+    content_height_with_error_rows(1 + row_count.max(1), has_error)
+}
+
+#[must_use]
 pub fn general_lines(
     selected_row: usize,
     pending_coauthor_trailer: bool,
@@ -549,6 +564,15 @@ mod tests {
             jackin_tui::components::scrollable_panel::viewport_width(body),
         ) as u16;
         assert_eq!(scroll_x, expected);
+    }
+
+    #[test]
+    fn tab_content_heights_account_for_error_rows() {
+        assert_eq!(mounts_content_height(4, false), 4);
+        assert_eq!(mounts_content_height(4, true), 6);
+        assert_eq!(env_content_height(3, true), 5);
+        assert_eq!(trust_content_height(0, false), 2);
+        assert_eq!(trust_content_height(3, true), 6);
     }
 
     #[test]
