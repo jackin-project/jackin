@@ -14,6 +14,25 @@ pub enum AuthKind {
 }
 
 impl AuthKind {
+    pub const WORKSPACE_PANEL_KINDS: &'static [Self] = &[
+        Self::Claude,
+        Self::Codex,
+        Self::Amp,
+        Self::Opencode,
+        Self::Github,
+        Self::Zai,
+    ];
+
+    pub const SETTINGS_KINDS: &'static [Self] = &[
+        Self::Claude,
+        Self::Codex,
+        Self::Amp,
+        Self::Kimi,
+        Self::Opencode,
+        Self::Github,
+        Self::Zai,
+    ];
+
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -105,6 +124,33 @@ mod tests {
         assert_eq!(AuthKind::Kimi.label(), "Kimi");
         assert_eq!(AuthKind::Opencode.label(), "OpenCode");
         assert_eq!(AuthKind::Github.label(), "GitHub CLI");
+    }
+
+    #[test]
+    fn auth_kind_order_lists_match_console_surfaces() {
+        assert_eq!(
+            AuthKind::WORKSPACE_PANEL_KINDS,
+            &[
+                AuthKind::Claude,
+                AuthKind::Codex,
+                AuthKind::Amp,
+                AuthKind::Opencode,
+                AuthKind::Github,
+                AuthKind::Zai,
+            ],
+        );
+        assert_eq!(
+            AuthKind::SETTINGS_KINDS,
+            &[
+                AuthKind::Claude,
+                AuthKind::Codex,
+                AuthKind::Amp,
+                AuthKind::Kimi,
+                AuthKind::Opencode,
+                AuthKind::Github,
+                AuthKind::Zai,
+            ],
+        );
     }
 
     #[test]

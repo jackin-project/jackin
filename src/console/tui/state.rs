@@ -467,14 +467,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
     let ws_name = workspace_name_for_panel(editor);
     jackin_console::tui::screens::editor::update::auth_flat_rows(
         editor.auth_selected_kind,
-        [
-            AuthKind::Claude,
-            AuthKind::Codex,
-            AuthKind::Amp,
-            AuthKind::Opencode,
-            AuthKind::Github,
-            AuthKind::Zai,
-        ],
+        AuthKind::WORKSPACE_PANEL_KINDS.iter().copied(),
         &editor.pending.roles,
         editor.pending.allowed_roles.len(),
         &editor.auth_expanded,
@@ -1218,19 +1211,12 @@ impl<'a> SettingsEnvState<'a> {
 
 impl SettingsAuthState {
     pub fn from_config(config: &AppConfig) -> Self {
-        let pending = [
-            jackin_console::tui::auth::AuthKind::Claude,
-            jackin_console::tui::auth::AuthKind::Codex,
-            jackin_console::tui::auth::AuthKind::Amp,
-            jackin_console::tui::auth::AuthKind::Kimi,
-            jackin_console::tui::auth::AuthKind::Opencode,
-            jackin_console::tui::auth::AuthKind::Github,
-            jackin_console::tui::auth::AuthKind::Zai,
-        ]
-        .into_iter()
-        .map(|kind| SettingsAuthRow {
-            kind,
-            mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
+        let pending = AuthKind::SETTINGS_KINDS
+            .iter()
+            .copied()
+            .map(|kind| SettingsAuthRow {
+                kind,
+                mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
         })
         .collect::<Vec<_>>();
         Self {
