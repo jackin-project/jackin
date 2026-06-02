@@ -32,7 +32,7 @@ impl LaunchProgress {
         host: &'static dyn LaunchHostTerminal,
         jackin_version: &'static str,
     ) -> anyhow::Result<Self> {
-        require_rich_terminal()?;
+        crate::tui::terminal::require_rich_terminal()?;
         let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
         let rich = RichRenderer::enter(no_motion, host, jackin_version)?;
         let renderer = Renderer::Rich(RichDriver::spawn(
@@ -296,7 +296,7 @@ pub fn prelaunch_select_choice(
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
 ) -> anyhow::Result<usize> {
-    require_rich_terminal()?;
+    crate::tui::terminal::require_rich_terminal()?;
     let mut renderer = RichRenderer::enter(no_motion, host, jackin_version)?;
     renderer.select(title, items)
 }
@@ -327,17 +327,4 @@ pub fn standalone_error_popup(
 ) -> anyhow::Result<()> {
     let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
     renderer.error_popup(title, message)
-}
-
-/// Bail with the canonical rich-terminal requirement message unless the
-/// current terminal can host the launch surface. Both `LaunchProgress::new`
-/// and the pre-launch `prelaunch_select_choice` picker gate through this so
-/// the message cannot drift between them.
-pub fn require_rich_terminal() -> anyhow::Result<()> {
-    if !crate::tui::terminal::rich_terminal_supported() {
-        anyhow::bail!(
-            "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
-        );
-    }
-    Ok(())
 }

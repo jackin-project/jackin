@@ -281,7 +281,12 @@ impl RichRenderer {
         host: &'static dyn LaunchHostTerminal,
         jackin_version: &'static str,
     ) -> anyhow::Result<Self> {
-        Self::enter_with_check(no_motion, host, jackin_version, require_rich_terminal)
+        Self::enter_with_check(
+            no_motion,
+            host,
+            jackin_version,
+            crate::tui::terminal::require_rich_terminal,
+        )
     }
 
     pub fn enter_dialog(
@@ -601,15 +606,6 @@ impl Drop for RichRenderer {
         }
         let _ = std::io::stdout().flush();
     }
-}
-
-fn require_rich_terminal() -> anyhow::Result<()> {
-    if !crate::tui::terminal::rich_terminal_supported() {
-        anyhow::bail!(
-            "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
-        );
-    }
-    Ok(())
 }
 
 #[cfg(test)]
