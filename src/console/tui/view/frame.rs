@@ -3,6 +3,7 @@ use ratatui::{Frame, layout::Rect};
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
+use crate::console::tui::components::workspace_list::render_list_body;
 use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
@@ -14,7 +15,7 @@ use jackin_console::tui::view::{
 };
 use jackin_tui::HintSpan;
 
-use super::{editor, list, settings};
+use super::{editor, settings};
 
 #[allow(clippy::too_many_lines)]
 pub fn render(
@@ -34,7 +35,7 @@ pub fn render(
         render_header(frame, areas.header, "workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
-            list::render_list_body(frame, areas.body, state, config, cwd);
+            render_list_body(frame, areas.body, state, config, cwd);
         }
 
         let footer_items: Vec<HintSpan<'static>> = match &state.stage {

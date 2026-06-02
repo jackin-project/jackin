@@ -6,7 +6,8 @@ mod frame;
 mod consistency_tests;
 #[cfg(test)]
 mod frame_tests;
-pub(crate) mod list;
+#[cfg(test)]
+mod list;
 pub(crate) mod settings;
 #[cfg(test)]
 mod snapshot_tests;
