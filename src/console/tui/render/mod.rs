@@ -12,7 +12,6 @@ pub(crate) mod list;
 pub(crate) mod list_geometry;
 pub(crate) mod modal;
 pub(crate) mod modal_layout;
-pub(crate) mod mount_display;
 mod pre_render;
 pub(crate) mod save_preview;
 pub(crate) mod settings;

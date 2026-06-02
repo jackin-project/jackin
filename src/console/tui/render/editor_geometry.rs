@@ -3,7 +3,7 @@
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::render::mount_display::{
+use crate::console::tui::components::mount_display::{
     workspace_mounts_content_height, workspace_mounts_content_width_with_cache,
 };
 use crate::console::tui::state::{

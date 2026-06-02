@@ -6,7 +6,7 @@
 
 use crate::config::AppConfig;
 use crate::console::domain::resolve_panel_mode;
-use crate::console::tui::render::mount_display::format_mount_rows_with_cache;
+use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;

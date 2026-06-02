@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::components::op_picker::OpPickerState;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
+use crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan,

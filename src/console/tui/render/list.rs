@@ -34,10 +34,10 @@ pub(super) use crate::console::tui::render::list_geometry::{
     global_mounts_content_height, mount_block_height,
 };
 #[cfg(test)]
-pub(super) use crate::console::tui::render::mount_display::format_mount_rows;
-pub(super) use crate::console::tui::render::mount_display::format_mount_rows_with_cache;
+pub(super) use crate::console::tui::components::mount_display::format_mount_rows;
+pub(super) use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 #[cfg(test)]
-pub(super) use crate::console::tui::render::mount_display::mount_path_width;
+pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
