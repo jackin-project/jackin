@@ -1,97 +1,23 @@
-//! Root-console TUI effect requests.
+//! Root-console aliases for crate-owned TUI effect requests.
 
-use jackin_console::tui::effect::ConsoleEffect;
-use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+pub(crate) type ManagerEffect = jackin_console::tui::effect::ConsoleManagerEffect<
+    crate::selector::RoleSelector,
+    crate::config::RoleSource,
+    crate::operator_env::OpRef,
+>;
 
-use crate::console::tui::state::PendingSaveCommit;
+pub(crate) type FileBrowserEffectContext =
+    jackin_console::tui::effect::FileBrowserEffectContext;
 
-#[derive(Debug)]
-pub(crate) enum ManagerEffect {
-    Console(ConsoleEffect),
-    StartRoleRegistration {
-        raw: String,
-        key: String,
-        selector: crate::selector::RoleSelector,
-        source: crate::config::RoleSource,
-    },
-    PersistTrustedRoleSource {
-        key: String,
-        source: crate::config::RoleSource,
-    },
-    OpenCreatePreludeFileBrowser,
-    OpenCreatePreludeFileBrowserAtLastCwd,
-    OpenEditorAddMountFileBrowser,
-    OpenGlobalMountFileBrowser,
-    ApplyFileBrowserOutcome {
-        context: FileBrowserEffectContext,
-        outcome: FileBrowserOutcome<std::path::PathBuf>,
-    },
-    ResolveFileBrowserGitUrl(std::path::PathBuf),
-    PollFileBrowserGitUrls,
-    PollPickerLoads,
-    CopyContainerInfoValue {
-        row: usize,
-        payload: String,
-    },
-    OpenUrl(String),
-    RemoveWorkspace {
-        name: String,
-        cwd: std::path::PathBuf,
-    },
-    ValidateOpCommit {
-        op_ref: crate::operator_env::OpRef,
-        is_settings: bool,
-    },
-}
+pub(crate) type WorkspaceSaveEffect = jackin_console::tui::effect::WorkspaceSaveEffect<
+    crate::workspace::MountConfig,
+    crate::console::tui::state::PendingSaveCommit,
+    crate::isolation::state::IsolationRecord,
+    crate::workspace::WorkspaceConfig,
+>;
 
-#[derive(Debug)]
-pub(crate) enum FileBrowserEffectContext {
-    Editor,
-    Prelude {
-        browser_cwd: Option<std::path::PathBuf>,
-    },
-    SettingsMounts,
-}
+pub(crate) type WorkspaceSaveWriteMode =
+    jackin_console::tui::effect::WorkspaceSaveWriteMode;
 
-pub(crate) enum WorkspaceSaveEffect {
-    StartDriftCheck {
-        original_name: String,
-        prospective_mounts: Vec<crate::workspace::MountConfig>,
-        plan: PendingSaveCommit,
-        exit_on_success: bool,
-    },
-    StartIsolationCleanup {
-        records: Vec<crate::isolation::state::IsolationRecord>,
-        plan: PendingSaveCommit,
-        exit_on_success: bool,
-    },
-    WriteWorkspace {
-        mode: WorkspaceSaveWriteMode,
-        original: crate::workspace::WorkspaceConfig,
-        pending: crate::workspace::WorkspaceConfig,
-        exit_on_success: bool,
-    },
-}
-
-pub(crate) enum WorkspaceSaveWriteMode {
-    Edit {
-        original_name: String,
-        pending_name: Option<String>,
-        effective_removals: Vec<String>,
-    },
-    Create {
-        name: String,
-    },
-}
-
-pub(crate) struct WorkspaceSaveWriteInput<'a> {
-    pub(crate) mode: WorkspaceSaveWriteMode,
-    pub(crate) original: &'a crate::workspace::WorkspaceConfig,
-    pub(crate) pending: &'a crate::workspace::WorkspaceConfig,
-}
-
-impl From<ConsoleEffect> for ManagerEffect {
-    fn from(effect: ConsoleEffect) -> Self {
-        Self::Console(effect)
-    }
-}
+pub(crate) type WorkspaceSaveWriteInput<'a> =
+    jackin_console::tui::effect::WorkspaceSaveWriteInput<'a, crate::workspace::WorkspaceConfig>;
