@@ -4,6 +4,28 @@ use jackin_tui::runtime::UpdateResult;
 
 pub type ConsoleUpdate<E> = UpdateResult<E>;
 
+#[derive(Debug, Clone)]
+pub enum StatusOverlayPlan {
+    Open(jackin_tui::components::StatusPopupState),
+    Dismiss,
+}
+
+#[derive(Debug)]
+pub enum ListModalPlan {
+    ContainerInfo(jackin_tui::components::ContainerInfoState),
+    GithubPicker(crate::tui::components::github_picker::GithubPickerState),
+    Dismiss,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlinePickerDismissal {
+    NewSession,
+    Role,
+    Agent,
+    Provider,
+    LaunchProvider,
+}
+
 #[must_use]
 pub fn selection_move_plan(selected: usize, row_count: usize, delta: isize) -> usize {
     crate::focus::moved_selection(selected, row_count, delta)
@@ -38,6 +60,45 @@ pub fn term_width_scroll_plan(
     scroll_x
 }
 
+#[must_use]
+pub fn open_status_overlay_plan(
+    title: impl Into<String>,
+    message: impl Into<String>,
+) -> StatusOverlayPlan {
+    StatusOverlayPlan::Open(crate::tui::components::status_popup::status_popup_state(
+        title, message,
+    ))
+}
+
+#[must_use]
+pub const fn dismiss_status_overlay_plan() -> StatusOverlayPlan {
+    StatusOverlayPlan::Dismiss
+}
+
+#[must_use]
+pub fn open_container_info_modal_plan(
+    state: jackin_tui::components::ContainerInfoState,
+) -> ListModalPlan {
+    ListModalPlan::ContainerInfo(state)
+}
+
+#[must_use]
+pub fn open_github_picker_modal_plan(
+    state: crate::tui::components::github_picker::GithubPickerState,
+) -> ListModalPlan {
+    ListModalPlan::GithubPicker(state)
+}
+
+#[must_use]
+pub const fn dismiss_list_modal_plan() -> ListModalPlan {
+    ListModalPlan::Dismiss
+}
+
+#[must_use]
+pub const fn inline_picker_dismissal_plan(kind: InlinePickerDismissal) -> InlinePickerDismissal {
+    kind
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,5 +125,27 @@ mod tests {
     fn unclamped_scroll_plan_updates_without_upper_clamp() {
         assert_eq!(unclamped_scroll_plan(4, 3), 7);
         assert_eq!(unclamped_scroll_plan(4, -99), 0);
+    }
+
+    #[test]
+    fn status_overlay_plans_construct_open_and_dismiss() {
+        let StatusOverlayPlan::Open(state) = open_status_overlay_plan("Title", "Body") else {
+            panic!("expected open plan");
+        };
+        let debug = format!("{state:?}");
+        assert!(debug.contains("Title"));
+        assert!(debug.contains("Body"));
+        assert!(matches!(
+            dismiss_status_overlay_plan(),
+            StatusOverlayPlan::Dismiss
+        ));
+    }
+
+    #[test]
+    fn inline_picker_dismissal_plan_returns_requested_kind() {
+        assert_eq!(
+            inline_picker_dismissal_plan(InlinePickerDismissal::Agent),
+            InlinePickerDismissal::Agent
+        );
     }
 }

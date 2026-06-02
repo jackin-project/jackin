@@ -40,6 +40,11 @@ use jackin_console::tui::screens::workspaces::update::{
     preview_pane_cursor_plan, workspace_list_move_selection_plan, workspace_list_select_row_plan,
     workspace_unclamped_scroll_plan,
 };
+use jackin_console::tui::update::{
+    InlinePickerDismissal, ListModalPlan, StatusOverlayPlan, dismiss_list_modal_plan,
+    dismiss_status_overlay_plan, inline_picker_dismissal_plan, open_container_info_modal_plan,
+    open_github_picker_modal_plan, open_status_overlay_plan,
+};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -381,39 +386,84 @@ pub(crate) fn update_manager(
             state.open_list_error_popup(title, message);
         }
         ManagerMessage::OpenStatusPopup { title, message } => {
-            state.status_overlay = Some(
-                jackin_console::tui::components::status_popup::status_popup_state(title, message),
-            );
+            apply_status_overlay_plan(state, open_status_overlay_plan(title, message));
         }
         ManagerMessage::DismissStatusPopup => {
-            state.status_overlay = None;
+            apply_status_overlay_plan(state, dismiss_status_overlay_plan());
         }
         ManagerMessage::OpenListContainerInfo { state: info } => {
-            state.list_modal = Some(crate::console::tui::state::Modal::ContainerInfo { state: info });
+            apply_list_modal_plan(state, open_container_info_modal_plan(info));
         }
         ManagerMessage::OpenListGithubPicker { state: picker } => {
-            state.list_modal = Some(crate::console::tui::state::Modal::GithubPicker { state: picker });
+            apply_list_modal_plan(state, open_github_picker_modal_plan(picker));
         }
         ManagerMessage::DismissListModal => {
-            state.list_modal = None;
+            apply_list_modal_plan(state, dismiss_list_modal_plan());
         }
         ManagerMessage::DismissInlineSessionPicker => {
-            state.inline_new_session_picker = None;
+            apply_inline_picker_dismissal_plan(
+                state,
+                inline_picker_dismissal_plan(InlinePickerDismissal::NewSession),
+            );
         }
         ManagerMessage::DismissInlineRolePicker => {
-            state.inline_role_picker = None;
+            apply_inline_picker_dismissal_plan(
+                state,
+                inline_picker_dismissal_plan(InlinePickerDismissal::Role),
+            );
         }
         ManagerMessage::DismissInlineAgentPicker => {
-            state.inline_agent_picker = None;
+            apply_inline_picker_dismissal_plan(
+                state,
+                inline_picker_dismissal_plan(InlinePickerDismissal::Agent),
+            );
         }
         ManagerMessage::DismissInlineProviderPicker => {
-            state.inline_provider_picker = None;
+            apply_inline_picker_dismissal_plan(
+                state,
+                inline_picker_dismissal_plan(InlinePickerDismissal::Provider),
+            );
         }
         ManagerMessage::DismissLaunchProviderPicker => {
-            state.launch_provider_picker = None;
+            apply_inline_picker_dismissal_plan(
+                state,
+                inline_picker_dismissal_plan(InlinePickerDismissal::LaunchProvider),
+            );
         }
     }
     ManagerUpdate::redraw()
+}
+
+fn apply_status_overlay_plan(state: &mut ManagerState<'_>, plan: StatusOverlayPlan) {
+    match plan {
+        StatusOverlayPlan::Open(overlay) => state.status_overlay = Some(overlay),
+        StatusOverlayPlan::Dismiss => state.status_overlay = None,
+    }
+}
+
+fn apply_list_modal_plan(state: &mut ManagerState<'_>, plan: ListModalPlan) {
+    state.list_modal = match plan {
+        ListModalPlan::ContainerInfo(state) => {
+            Some(crate::console::tui::state::Modal::ContainerInfo { state })
+        }
+        ListModalPlan::GithubPicker(state) => {
+            Some(crate::console::tui::state::Modal::GithubPicker { state })
+        }
+        ListModalPlan::Dismiss => None,
+    };
+}
+
+fn apply_inline_picker_dismissal_plan(
+    state: &mut ManagerState<'_>,
+    plan: InlinePickerDismissal,
+) {
+    match plan {
+        InlinePickerDismissal::NewSession => state.inline_new_session_picker = None,
+        InlinePickerDismissal::Role => state.inline_role_picker = None,
+        InlinePickerDismissal::Agent => state.inline_agent_picker = None,
+        InlinePickerDismissal::Provider => state.inline_provider_picker = None,
+        InlinePickerDismissal::LaunchProvider => state.launch_provider_picker = None,
+    }
 }
 
 const fn apply_preview_focus_plan(state: &mut ManagerState<'_>, plan: PreviewFocusPlan) {
