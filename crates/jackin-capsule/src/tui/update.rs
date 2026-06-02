@@ -161,6 +161,18 @@ pub(crate) fn pane_data_redraw_reason(
     }
 }
 
+pub(crate) fn focus_change_redraw_reason(focus_changed: bool) -> Option<FullRedrawReason> {
+    focus_changed.then_some(FullRedrawReason::FocusChange)
+}
+
+pub(crate) fn drag_resize_redraw_reason() -> FullRedrawReason {
+    FullRedrawReason::LayoutChange
+}
+
+pub(crate) fn selection_change_redraw_reason() -> FullRedrawReason {
+    FullRedrawReason::SelectionRepaint
+}
+
 pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<FullRedrawReason> {
     selection_started.then_some(FullRedrawReason::SelectionRepaint)
 }
@@ -169,8 +181,9 @@ pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<F
 mod tests {
     use super::{
         DialogActionFramePlan, HoverFramePlan, PartialFramePlan, PartialFrameState,
-        dialog_action_frame_plan, drag_resize_ratio, hover_frame_plan, pane_data_redraw_reason,
-        partial_frame_plan, prefix_full_redraw_reason, selection_start_redraw_reason,
+        dialog_action_frame_plan, drag_resize_ratio, drag_resize_redraw_reason,
+        focus_change_redraw_reason, hover_frame_plan, pane_data_redraw_reason, partial_frame_plan,
+        prefix_full_redraw_reason, selection_change_redraw_reason, selection_start_redraw_reason,
     };
     use crate::tui::components::dialog::{DialogAction, PickerIntent};
     use crate::tui::input::{ArrowDir, PrefixCommand};
@@ -306,5 +319,23 @@ mod tests {
             Some(FullRedrawReason::SelectionRepaint)
         );
         assert_eq!(selection_start_redraw_reason(false), None);
+    }
+
+    #[test]
+    fn focus_change_redraw_reason_only_repaints_when_focus_changes() {
+        assert_eq!(
+            focus_change_redraw_reason(true),
+            Some(FullRedrawReason::FocusChange)
+        );
+        assert_eq!(focus_change_redraw_reason(false), None);
+    }
+
+    #[test]
+    fn drag_and_selection_redraw_reasons_use_visible_update_vocabulary() {
+        assert_eq!(drag_resize_redraw_reason(), FullRedrawReason::LayoutChange);
+        assert_eq!(
+            selection_change_redraw_reason(),
+            FullRedrawReason::SelectionRepaint
+        );
     }
 }

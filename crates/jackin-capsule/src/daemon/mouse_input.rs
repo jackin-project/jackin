@@ -176,7 +176,7 @@ impl Multiplexer {
     pub(super) fn selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
         let sel = self.selection.as_mut()?;
         move_selection_end(sel, row, col);
-        Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
+        Some(self.compose_full_frame(selection_change_redraw_reason()))
     }
 
     /// Commit the active selection: extract the selected text from
@@ -197,7 +197,7 @@ impl Multiplexer {
                 self.send_output(bytes);
             }
         }
-        Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
+        Some(self.compose_full_frame(selection_change_redraw_reason()))
     }
 }
 
@@ -225,6 +225,6 @@ impl Multiplexer {
             return None;
         }
         self.resize_panes();
-        Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+        Some(self.compose_full_frame(drag_resize_redraw_reason()))
     }
 }

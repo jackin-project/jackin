@@ -366,9 +366,10 @@ impl Multiplexer {
                 );
                 Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
             }
-            Action::FocusPaneAt { row, col } => self
-                .focus_pane_at(row, col)
-                .then(|| self.compose_full_frame(FullRedrawReason::FocusChange)),
+            Action::FocusPaneAt { row, col } => focus_change_redraw_reason(
+                self.focus_pane_at(row, col),
+            )
+            .map(|reason| self.compose_full_frame(reason)),
             Action::PanePrimaryPress { row, col } => {
                 // Press on a shared pane border starts a drag — skip focus
                 // switch and PTY forward in that case.
@@ -484,7 +485,7 @@ impl Multiplexer {
             Action::DragMotion { row, col } => self.drag_motion(row, col),
             Action::EndDragResize => {
                 self.drag = None;
-                Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+                Some(self.compose_full_frame(drag_resize_redraw_reason()))
             }
             Action::StartSelection { row, col } => {
                 self.selection = self.detect_selection_start(row, col);
