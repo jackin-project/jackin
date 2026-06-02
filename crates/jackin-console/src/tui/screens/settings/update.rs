@@ -49,6 +49,14 @@ pub const fn settings_tab_move_plan(
     }
 }
 
+#[must_use]
+pub const fn settings_tab_select_plan(selected_tab: SettingsTab) -> SettingsTabMovePlan {
+    SettingsTabMovePlan {
+        active_tab: selected_tab,
+        tab_bar_focused: true,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsAuthKindPlan<K> {
     pub selected_kind: Option<K>,
@@ -521,6 +529,17 @@ mod tests {
             SettingsTabMovePlan {
                 active_tab: SettingsTab::Trust,
                 tab_bar_focused: false,
+            }
+        );
+    }
+
+    #[test]
+    fn settings_tab_select_plan_focuses_selected_tab() {
+        assert_eq!(
+            settings_tab_select_plan(SettingsTab::Trust),
+            SettingsTabMovePlan {
+                active_tab: SettingsTab::Trust,
+                tab_bar_focused: true,
             }
         );
     }

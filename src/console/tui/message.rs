@@ -16,7 +16,8 @@ use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use jackin_console::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan, editor_tab_move_plan,
-    enter_editor_auth_kind_plan, set_role_expanded as set_editor_role_expanded,
+    editor_tab_select_plan, enter_editor_auth_kind_plan,
+    set_role_expanded as set_editor_role_expanded,
     toggle_general_selected as toggle_editor_general_row,
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
@@ -25,7 +26,7 @@ use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
     set_role_expanded as set_settings_role_expanded, settings_auth_selection_plan,
     settings_env_selection_plan, settings_global_mounts_selection_plan, settings_tab_move_plan,
-    settings_trust_selection_plan, toggle_general_selected,
+    settings_tab_select_plan, settings_trust_selection_plan, toggle_general_selected,
     toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
@@ -887,15 +888,15 @@ fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    let was_secrets = editor.active_tab == EditorTab::Secrets;
-    editor.active_tab = tab;
-    editor.tab_bar_focused = true;
-    editor.active_field = FieldFocus::Row(0);
-    editor.workspace_mounts_scroll_focused = false;
-    if editor.active_tab != EditorTab::Auth {
+    let plan = editor_tab_select_plan(editor.active_tab, tab);
+    editor.active_tab = plan.active_tab;
+    editor.tab_bar_focused = plan.tab_bar_focused;
+    editor.active_field = FieldFocus::Row(plan.active_row);
+    editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+    if plan.clear_auth_kind {
         editor.auth_selected_kind = None;
     }
-    if was_secrets && editor.active_tab != EditorTab::Secrets {
+    if plan.clear_secret_view_state {
         editor.unmasked_rows.clear();
         editor.secrets_expanded.clear();
     }
@@ -909,12 +910,13 @@ const fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     editor.workspace_mounts_scroll_focused = true;
 }
 
-const fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
+fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.active_tab = tab;
-    settings.tab_bar_focused = true;
+    let plan = settings_tab_select_plan(tab);
+    settings.active_tab = plan.active_tab;
+    settings.tab_bar_focused = plan.tab_bar_focused;
 }
 
 const fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {

@@ -86,6 +86,32 @@ pub fn enter_editor_auth_kind_plan<K>(kind: K) -> EditorAuthKindPlan<K> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorTabSelectPlan {
+    pub active_tab: EditorTab,
+    pub tab_bar_focused: bool,
+    pub active_row: usize,
+    pub workspace_mounts_scroll_focused: bool,
+    pub clear_auth_kind: bool,
+    pub clear_secret_view_state: bool,
+}
+
+#[must_use]
+pub const fn editor_tab_select_plan(
+    previous_tab: EditorTab,
+    selected_tab: EditorTab,
+) -> EditorTabSelectPlan {
+    EditorTabSelectPlan {
+        active_tab: selected_tab,
+        tab_bar_focused: true,
+        active_row: 0,
+        workspace_mounts_scroll_focused: false,
+        clear_auth_kind: !matches!(selected_tab, EditorTab::Auth),
+        clear_secret_view_state: matches!(previous_tab, EditorTab::Secrets)
+            && !matches!(selected_tab, EditorTab::Secrets),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorFieldSelectionPlan {
     pub active_row: usize,
     pub tab_scroll_y: u16,
@@ -497,6 +523,21 @@ mod tests {
                 tab_scroll_y: 0,
                 clear_auth_kind: true,
                 clear_secret_view_state: false,
+            }
+        );
+    }
+
+    #[test]
+    fn editor_tab_select_plan_focuses_tab_and_clears_departed_state() {
+        assert_eq!(
+            editor_tab_select_plan(EditorTab::Secrets, EditorTab::Mounts),
+            EditorTabSelectPlan {
+                active_tab: EditorTab::Mounts,
+                tab_bar_focused: true,
+                active_row: 0,
+                workspace_mounts_scroll_focused: false,
+                clear_auth_kind: true,
+                clear_secret_view_state: true,
             }
         );
     }
