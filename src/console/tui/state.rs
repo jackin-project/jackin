@@ -336,19 +336,12 @@ pub(crate) fn open_role_resolution_error(
         "role",
         "showing role-load error popup for raw={raw:?}: {err:?}"
     );
+    use jackin_console::tui::components::error_popup::{
+        configured_role_load_error_message, repository_role_load_error_message,
+    };
     let message = source_url.map_or_else(
-        || {
-            format!(
-                "Could not load role {raw:?}.\n\nUse a configured role such as \
-             \"agent-smith\" or a GitHub selector like \"owner/agent-name\"."
-            )
-        },
-        |source_url| {
-            format!(
-                "Could not load role {raw:?}.\n\nLooked for repository:\n{source_url}\n\n{}",
-                friendly_role_resolution_error(err)
-            )
-        },
+        || configured_role_load_error_message(raw),
+        |source_url| repository_role_load_error_message(raw, source_url, friendly_role_resolution_error(err)),
     );
     editor.modal = Some(Modal::ErrorPopup {
         state: jackin_console::tui::components::error_popup::role_load_error_popup_state(message),

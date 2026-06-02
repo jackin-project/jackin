@@ -1479,7 +1479,7 @@ pub(super) fn apply_text_input_to_pending(
             crate::debug_log!("role", "role loader input committed: raw={value:?}");
             open_role_input_error(
                 editor,
-                "Role input was routed through the generic text-input handler.",
+                jackin_console::tui::components::error_popup::role_input_misroute_error_message(),
             );
         }
         TextInputTarget::EnvKey { scope } => {
@@ -1537,13 +1537,14 @@ fn apply_role_input(
         Err(e) => {
             let err_text = e.error.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                let message =
+                    jackin_console::tui::components::error_popup::internal_role_load_error_message(
+                        &e.raw,
+                        panic_message,
+                    );
                 open_role_input_error(
                     editor,
-                    &format!(
-                        "Could not load role {:?}.\n\nThe role loader hit an internal \
-                         error while registering the repository.\n\n{panic_message}",
-                        e.raw
-                    ),
+                    &message,
                 );
                 return EditorModalOutcome::Continue;
             }
@@ -1661,12 +1662,14 @@ async fn apply_role_input_with_runner(
             );
             let err_text = e.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                let message =
+                    jackin_console::tui::components::error_popup::internal_role_load_error_message(
+                        raw,
+                        panic_message,
+                    );
                 open_role_input_error(
                     editor,
-                    &format!(
-                        "Could not load role {raw:?}.\n\nThe role loader hit an internal \
-                         error while registering the repository.\n\n{panic_message}"
-                    ),
+                    &message,
                 );
                 return;
             }

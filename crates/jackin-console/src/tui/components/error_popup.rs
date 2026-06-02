@@ -15,6 +15,35 @@ pub fn role_load_error_popup_state(
     error_popup_state("Load role failed", message)
 }
 
+pub fn configured_role_load_error_message(raw: impl std::fmt::Debug) -> String {
+    format!(
+        "Could not load role {raw:?}.\n\nUse a configured role such as \
+         \"agent-smith\" or a GitHub selector like \"owner/agent-name\"."
+    )
+}
+
+pub fn repository_role_load_error_message(
+    raw: impl std::fmt::Debug,
+    source_url: impl std::fmt::Display,
+    detail: impl std::fmt::Display,
+) -> String {
+    format!("Could not load role {raw:?}.\n\nLooked for repository:\n{source_url}\n\n{detail}")
+}
+
+pub fn internal_role_load_error_message(
+    raw: impl std::fmt::Debug,
+    detail: impl std::fmt::Display,
+) -> String {
+    format!(
+        "Could not load role {raw:?}.\n\nThe role loader hit an internal \
+         error while registering the repository.\n\n{detail}"
+    )
+}
+
+pub fn role_input_misroute_error_message() -> &'static str {
+    "Role input was routed through the generic text-input handler."
+}
+
 pub fn editor_action_error_popup_state(
     err: impl std::fmt::Display,
 ) -> jackin_tui::components::ErrorPopupState {
@@ -118,6 +147,26 @@ mod tests {
 
         assert_eq!(state.title, "Load role failed");
         assert_eq!(state.message, "bad role");
+    }
+
+    #[test]
+    fn role_load_error_messages_name_configured_or_repository_source() {
+        assert_eq!(
+            configured_role_load_error_message("bad-role"),
+            "Could not load role \"bad-role\".\n\nUse a configured role such as \"agent-smith\" or a GitHub selector like \"owner/agent-name\"."
+        );
+        assert_eq!(
+            repository_role_load_error_message("bad-role", "https://example.test/repo.git", "not valid"),
+            "Could not load role \"bad-role\".\n\nLooked for repository:\nhttps://example.test/repo.git\n\nnot valid"
+        );
+        assert_eq!(
+            internal_role_load_error_message("bad-role", "panic payload"),
+            "Could not load role \"bad-role\".\n\nThe role loader hit an internal error while registering the repository.\n\npanic payload"
+        );
+        assert_eq!(
+            role_input_misroute_error_message(),
+            "Role input was routed through the generic text-input handler."
+        );
     }
 
     #[test]
