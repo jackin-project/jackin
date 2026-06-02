@@ -73,7 +73,7 @@ use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
-use crate::protocol::control::{AgentState, SessionInfo};
+use crate::protocol::control::SessionInfo;
 use crate::pull_request::PullRequestInfo;
 use crate::tui::render::{PaneBodyCache, PaneBodyRenderMode};
 use crate::tui::selection::{

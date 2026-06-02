@@ -4,9 +4,10 @@
 //! state enums live here so hover and pointer rendering share the TUI boundary
 //! instead of being defined in daemon internals.
 
+use crate::protocol::AgentState;
+use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::layout::{Rect, SplitOrient, Tab};
 use crate::tui::render::PaneBodyDim;
-use crate::tui::components::branch_context_bar::BranchContextBarHit;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuxMode {
@@ -185,6 +186,15 @@ pub(crate) enum VisibleAgentState {
     Blocked,
 }
 
+pub(crate) fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState {
+    match state {
+        AgentState::Idle => VisibleAgentState::Idle,
+        AgentState::Working => VisibleAgentState::Working,
+        AgentState::Done => VisibleAgentState::Done,
+        AgentState::Blocked => VisibleAgentState::Blocked,
+    }
+}
+
 /// Human-readable label for an agent/shell visible in tab and pane chrome.
 pub(crate) fn visible_agent_label(agent_slug: Option<&str>, provider_label: Option<&str>) -> String {
     let Some(slug) = agent_slug else {
@@ -321,16 +331,17 @@ pub(crate) struct DragState {
 
 #[cfg(test)]
 mod tests {
+    use crate::protocol::AgentState;
     use crate::tui::components::branch_context_bar::BranchContextBarHit;
     use crate::tui::layout::{PaneTree, Rect, SplitOrient, Tab};
     use crate::tui::render::PaneBodyDim;
 
     use super::{
         ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
-        PointerShape, PointerShapeState, VisibleTabPaneFacts, VisibleTabPaneKind,
+        PointerShape, PointerShapeState, VisibleAgentState, VisibleTabPaneFacts, VisibleTabPaneKind,
         chrome_hover_target_for_state, cursor_visible_for_state, hover_target_for_state,
         mux_mode_for_state, pointer_shape_for_state, tab_auto_label, visible_agent_label,
-        visible_panes_for_layout, visible_tab_pane_kind,
+        visible_agent_state_from_protocol, visible_panes_for_layout, visible_tab_pane_kind,
     };
 
     #[test]
@@ -612,6 +623,26 @@ mod tests {
         assert_eq!(
             visible_agent_label(Some("claude"), Some("Z.AI")),
             "Claude (Z.AI)"
+        );
+    }
+
+    #[test]
+    fn visible_agent_state_mapping_uses_protocol_state() {
+        assert_eq!(
+            visible_agent_state_from_protocol(AgentState::Idle),
+            VisibleAgentState::Idle
+        );
+        assert_eq!(
+            visible_agent_state_from_protocol(AgentState::Working),
+            VisibleAgentState::Working
+        );
+        assert_eq!(
+            visible_agent_state_from_protocol(AgentState::Done),
+            VisibleAgentState::Done
+        );
+        assert_eq!(
+            visible_agent_state_from_protocol(AgentState::Blocked),
+            VisibleAgentState::Blocked
         );
     }
 
