@@ -41,11 +41,16 @@ jackin/
 - **Tier 2**: `operator_env/`, `runtime/`, `repo/`
 - **Tier 3**: `console/` — **almost** no import from `runtime/` (2 call sites need fixing first)
 
+## Visibility is the real blocker
+
+The LOC-based triggers above are useful heuristics, but the actual blocker for a meaningful workspace split is visibility discipline. Today 89% of functions are `pub` (423 `pub fn` vs 55 `pub(crate) fn`), so an external consumer importing `jackin::*` would be coupled to internals immediately. Any crate boundary drawn under the current visibility surface would either expose too much (defeating the purpose of the split) or require a sweeping `pub` → `pub(crate)` pass that touches nearly every module. The visibility pass — already roadmap'd as [the `pub(crate)` visibility item](/reference/roadmap/pub-crate-visibility/) — is the real prerequisite: it makes each crate's public API a deliberate, auditable surface rather than an accidental one.
+
 ## Prerequisites before this phase
 
-1. **Phase 2 file splits** — establish clean internal module boundaries
-2. **Phase 1.5 DRY extractions** — reduce duplication that would otherwise be frozen into crate APIs
-3. **Fix the 2 console→runtime dependencies** — `register_agent_repo` and `RepoError` must move to a shared module or through a trait
+1. **Visibility pass** — complete the `pub(crate)` migration ([`pub-crate-visibility`](/reference/roadmap/pub-crate-visibility/)) so crate boundaries are enforceable
+2. **Phase 2 file splits** — establish clean internal module boundaries
+3. **Phase 1.5 DRY extractions** — reduce duplication that would otherwise be frozen into crate APIs
+4. **Fix the 2 console→runtime dependencies** — `register_agent_repo` and `RepoError` must move to a shared module or through a trait
 
 ## Related files
 
