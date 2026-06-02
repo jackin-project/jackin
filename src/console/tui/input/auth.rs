@@ -743,8 +743,6 @@ fn apply_op_picker_to_auth_form_with_validator(
     op_ref: crate::operator_env::OpRef,
     validate: impl FnOnce(&crate::operator_env::OpRef) -> anyhow::Result<()>,
 ) {
-    use jackin_tui::components::ErrorPopupState;
-
     let Some(Modal::AuthForm {
         target,
         mut state,
@@ -770,7 +768,9 @@ fn apply_op_picker_to_auth_form_with_validator(
             literal_buffer,
         });
         editor.modal = Some(Modal::ErrorPopup {
-            state: ErrorPopupState::new("1Password read failed", e.to_string()),
+            state: jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(
+                e,
+            ),
         });
         return;
     }
