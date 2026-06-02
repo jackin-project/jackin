@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use crossterm::event::KeyCode;
+use jackin_tui::ModalOutcome;
 
 use super::model::ManagerListRow;
 
@@ -34,6 +35,13 @@ pub enum PreviewPaneKeyPlan {
     ExitPreview,
     Move { delta: isize },
     ReconnectSelected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DestructiveConfirmPlan {
+    Continue,
+    ReturnToList,
+    Commit,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -116,6 +124,15 @@ pub const fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPa
         KeyCode::Down | KeyCode::Char('j' | 'J') => PreviewPaneKeyPlan::Move { delta: 1 },
         KeyCode::Enter => PreviewPaneKeyPlan::ReconnectSelected,
         _ => PreviewPaneKeyPlan::Continue,
+    }
+}
+
+#[must_use]
+pub const fn destructive_confirm_plan(outcome: ModalOutcome<bool>) -> DestructiveConfirmPlan {
+    match outcome {
+        ModalOutcome::Commit(true) => DestructiveConfirmPlan::Commit,
+        ModalOutcome::Commit(false) | ModalOutcome::Cancel => DestructiveConfirmPlan::ReturnToList,
+        ModalOutcome::Continue => DestructiveConfirmPlan::Continue,
     }
 }
 
@@ -238,5 +255,25 @@ mod tests {
             ManagerListRow::WorkspaceInstance(1, 0),
             0
         ));
+    }
+
+    #[test]
+    fn destructive_confirm_plan_routes_commit_cancel_and_continue() {
+        assert_eq!(
+            destructive_confirm_plan(ModalOutcome::Commit(true)),
+            DestructiveConfirmPlan::Commit
+        );
+        assert_eq!(
+            destructive_confirm_plan(ModalOutcome::Commit(false)),
+            DestructiveConfirmPlan::ReturnToList
+        );
+        assert_eq!(
+            destructive_confirm_plan(ModalOutcome::Cancel),
+            DestructiveConfirmPlan::ReturnToList
+        );
+        assert_eq!(
+            destructive_confirm_plan(ModalOutcome::Continue),
+            DestructiveConfirmPlan::Continue
+        );
     }
 }

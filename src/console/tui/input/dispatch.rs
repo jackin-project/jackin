@@ -9,7 +9,9 @@ use super::{InputOutcome, editor, global_mounts, list, prelude, save};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::effect::ConsoleEffect;
-use jackin_tui::ModalOutcome;
+use jackin_console::tui::screens::workspaces::update::{
+    DestructiveConfirmPlan, destructive_confirm_plan,
+};
 
 #[allow(clippy::too_many_lines)]
 pub fn handle_key(
@@ -356,21 +358,21 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
     else {
         return InputOutcome::Continue;
     };
-    let outcome = confirm_state.handle_key(key);
+    let plan = destructive_confirm_plan(confirm_state.handle_key(key));
     let container_name = container.clone();
-    match outcome {
-        ModalOutcome::Commit(true) => {
+    match plan {
+        DestructiveConfirmPlan::Commit => {
             let _ = update_manager(state, ManagerMessage::ReturnToList);
             InputOutcome::InstanceAction {
                 container: container_name,
                 action: crate::console::ConsoleInstanceAction::Purge,
             }
         }
-        ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+        DestructiveConfirmPlan::ReturnToList => {
             let _ = update_manager(state, ManagerMessage::ReturnToList);
             InputOutcome::Continue
         }
-        ModalOutcome::Continue => InputOutcome::Continue,
+        DestructiveConfirmPlan::Continue => InputOutcome::Continue,
     }
 }
 
@@ -386,10 +388,10 @@ fn handle_confirm_delete_key(
     else {
         return InputOutcome::Continue;
     };
-    let outcome = confirm_state.handle_key(key);
+    let plan = destructive_confirm_plan(confirm_state.handle_key(key));
     let ws_name = name.clone();
-    match outcome {
-        ModalOutcome::Commit(true) => {
+    match plan {
+        DestructiveConfirmPlan::Commit => {
             let _ = update_manager(state, ManagerMessage::ReturnToList);
             state.request_effect(ManagerEffect::RemoveWorkspace {
                 name: ws_name,
@@ -397,10 +399,10 @@ fn handle_confirm_delete_key(
             });
             InputOutcome::Continue
         }
-        ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+        DestructiveConfirmPlan::ReturnToList => {
             let _ = update_manager(state, ManagerMessage::ReturnToList);
             InputOutcome::Continue
         }
-        ModalOutcome::Continue => InputOutcome::Continue,
+        DestructiveConfirmPlan::Continue => InputOutcome::Continue,
     }
 }
