@@ -95,3 +95,39 @@ pub enum ConsoleSettingsAuthOutcome<OpRef> {
     Continue,
     ValidateOpRef(OpRef),
 }
+
+pub enum AgentPickerResolution {
+    Opened,
+    NotNeeded,
+    Failed(anyhow::Error),
+}
+
+pub enum AgentPickerChoices<Agent> {
+    Choices(Vec<Agent>),
+    NotNeeded,
+    Failed(anyhow::Error),
+}
+
+pub enum PromptOutcome {
+    Launch,
+    Defer,
+}
+
+#[derive(Clone, Copy)]
+pub enum OnPromptFailure {
+    ClearPending,
+    RestorePending,
+}
+
+pub enum LaunchPromptDispatch<Outcome, Request> {
+    Launch(Outcome),
+    Prompt(Request),
+    None,
+}
+
+pub struct LaunchPromptRequest<Role, Workspace, Input> {
+    pub role: Role,
+    pub workspace: Workspace,
+    pub input: Input,
+    pub on_failure: OnPromptFailure,
+}

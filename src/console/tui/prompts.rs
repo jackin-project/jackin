@@ -8,20 +8,15 @@ use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
 use jackin_console::tui::components::status_popup::role_resolution_status_popup_state;
+use jackin_console::tui::message::AgentPickerResolution;
+pub(in crate::console) use jackin_console::tui::message::{
+    OnPromptFailure, PromptOutcome,
+};
 
 use super::{ConsoleStage, ConsoleState};
 
-pub(super) enum AgentPickerResolution {
-    Opened,
-    NotNeeded,
-    Failed(anyhow::Error),
-}
-
-pub(in crate::console) enum AgentPickerChoices {
-    Choices(Vec<crate::agent::Agent>),
-    NotNeeded,
-    Failed(anyhow::Error),
-}
+pub(in crate::console) type AgentPickerChoices =
+    jackin_console::tui::message::AgentPickerChoices<crate::agent::Agent>;
 
 pub(super) fn draw_role_resolution_dialog<B>(
     terminal: &mut ratatui::Terminal<B>,
@@ -82,24 +77,6 @@ pub(super) fn try_prompt_for_agent(
     ms.inline_role_picker = None;
     state.pending_launch_role = Some(role.clone());
     AgentPickerResolution::Opened
-}
-
-/// Outcome of `prompt_agent_for_launch`. Two states because callers
-/// only branch on "the helper already drives the next interaction"
-/// (`Defer`) vs "no prompt was needed, launch immediately" (`Launch`).
-pub(in crate::console) enum PromptOutcome {
-    Launch,
-    Defer,
-}
-
-/// Whether `prompt_agent_for_launch` should hold the pending-launch
-/// pin so the operator can retry after dismissing the error popup.
-/// Arms that pinned `pending_launch` upstream pass `RestorePending`;
-/// arms that built `input` fresh from the key event pass `ClearPending`.
-#[derive(Clone, Copy)]
-pub(in crate::console) enum OnPromptFailure {
-    ClearPending,
-    RestorePending,
 }
 
 pub(in crate::console) fn prompt_agent_for_launch(
@@ -172,18 +149,15 @@ pub(super) fn committed_role_prompt(
     }))
 }
 
-pub(super) enum LaunchPromptDispatch {
-    Launch(ConsoleOutcome),
-    Prompt(LaunchPromptRequest),
-    None,
-}
+pub(super) type LaunchPromptDispatch =
+    jackin_console::tui::message::LaunchPromptDispatch<ConsoleOutcome, LaunchPromptRequest>;
 
-pub(super) struct LaunchPromptRequest {
-    pub(super) role: RoleSelector,
-    pub(super) workspace: ResolvedWorkspace,
-    pub(super) input: LoadWorkspaceInput,
-    pub(super) on_failure: OnPromptFailure,
-}
+pub(super) type LaunchPromptRequest =
+    jackin_console::tui::message::LaunchPromptRequest<
+        RoleSelector,
+        ResolvedWorkspace,
+        LoadWorkspaceInput,
+    >;
 
 pub(super) fn launch_with_committed_agent(
     state: &mut ConsoleState,
