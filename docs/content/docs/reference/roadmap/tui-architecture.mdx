@@ -340,6 +340,8 @@ Capsule palette-route redraw planning now lives with visible update vocabulary i
 
 Capsule direct-action frame planning now lives with visible update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon still validates action preconditions and mutates concrete tabs, panes, dialogs, zoom, and detach state, but the visible full-frame versus overlay-frame reason for those direct actions is TUI-owned.
 
+Capsule wheel scrollback, unsafe partial fallback, and pane-cache-miss redraw reasons now live with visible update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon/compositor still computes scrollback availability, Ratatui fallback, and pane-body cache validity, but the visible invalidation reasons are TUI-owned.
+
 Settings screen view geometry now owns the reusable global-mount scroll-frame calculation in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root settings geometry supplies only root mount rows and cache-derived content width.
 
 Settings header title wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering asks the screen helper for the title instead of carrying settings-screen copy.

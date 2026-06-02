@@ -205,6 +205,18 @@ pub(crate) fn selection_change_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::SelectionRepaint
 }
 
+pub(crate) fn wheel_scrollback_redraw_reason() -> FullRedrawReason {
+    FullRedrawReason::ScrollbackMovement
+}
+
+pub(crate) fn unsafe_partial_fallback_redraw_reason() -> FullRedrawReason {
+    FullRedrawReason::UnsafePartial
+}
+
+pub(crate) fn pane_cache_miss_redraw_reason() -> FullRedrawReason {
+    FullRedrawReason::PaneCacheMiss
+}
+
 pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<FullRedrawReason> {
     selection_started.then_some(FullRedrawReason::SelectionRepaint)
 }
@@ -225,8 +237,9 @@ mod tests {
         PartialFrameState, action_frame_plan, dialog_action_frame_plan, drag_resize_ratio,
         drag_resize_redraw_reason,
         focus_change_redraw_reason, hover_frame_plan, pane_data_redraw_reason, partial_frame_plan,
-        palette_route_redraw_reason, prefix_full_redraw_reason, selection_change_redraw_reason,
-        selection_start_redraw_reason,
+        palette_route_redraw_reason, pane_cache_miss_redraw_reason, prefix_full_redraw_reason,
+        selection_change_redraw_reason, selection_start_redraw_reason,
+        unsafe_partial_fallback_redraw_reason, wheel_scrollback_redraw_reason,
     };
     use crate::tui::components::dialog::{DialogAction, PickerIntent};
     use crate::tui::input::{ArrowDir, PrefixCommand};
@@ -406,6 +419,22 @@ mod tests {
         assert_eq!(
             selection_change_redraw_reason(),
             FullRedrawReason::SelectionRepaint
+        );
+    }
+
+    #[test]
+    fn wheel_and_partial_fallback_redraw_reasons_use_visible_update_vocabulary() {
+        assert_eq!(
+            wheel_scrollback_redraw_reason(),
+            FullRedrawReason::ScrollbackMovement
+        );
+        assert_eq!(
+            unsafe_partial_fallback_redraw_reason(),
+            FullRedrawReason::UnsafePartial
+        );
+        assert_eq!(
+            pane_cache_miss_redraw_reason(),
+            FullRedrawReason::PaneCacheMiss
         );
     }
 

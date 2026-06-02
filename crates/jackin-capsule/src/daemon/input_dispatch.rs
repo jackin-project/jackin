@@ -389,7 +389,7 @@ impl Multiplexer {
                     focused,
                     session.scrollback_offset
                 );
-                Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
+                Some(self.compose_full_frame(wheel_scrollback_redraw_reason()))
             }
             Action::FocusPaneAt { row, col } => focus_change_redraw_reason(
                 self.focus_pane_at(row, col),

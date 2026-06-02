@@ -434,7 +434,7 @@ impl Multiplexer {
                     out.extend_from_slice(&ratatui_output);
                     return out;
                 }
-                return self.compose_full_frame(FullRedrawReason::UnsafePartial);
+                return self.compose_full_frame(unsafe_partial_fallback_redraw_reason());
             }
             PartialFramePlan::Full(reason) => return self.compose_full_frame(reason),
             PartialFramePlan::Partial => {}
@@ -508,7 +508,7 @@ impl Multiplexer {
                 let stats =
                     render_capsule_pane_body_partial(&mut buf, cache, pane, session.screen());
                 if stats.mode == PaneBodyRenderMode::Full {
-                    return self.compose_full_frame(FullRedrawReason::PaneCacheMiss);
+                    return self.compose_full_frame(pane_cache_miss_redraw_reason());
                 }
                 if stats.rows_emitted > 0 {
                     panes_rendered += 1;
