@@ -16,7 +16,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::mount_display::{MountDisplayRow, mount_path_width};
+use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
     AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
     render_secret_key_line,

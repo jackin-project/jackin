@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::{
-    mount_display::{MountDisplayRow, mount_path_width},
+    tui::mount_display::{MountDisplayRow, mount_path_width},
     tui::components::mount_rows::{
         render_global_mount_header, render_global_mount_lines, render_mount_header,
         render_mount_lines,

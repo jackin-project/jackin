@@ -2,10 +2,10 @@
 
 use crate::console::tui::state::MountInfoCache;
 
-use jackin_console::mount_display::MountDisplayInput;
-pub(crate) use jackin_console::mount_display::MountDisplayRow;
+use jackin_console::tui::mount_display::MountDisplayInput;
+pub(crate) use jackin_console::tui::mount_display::MountDisplayRow;
 #[cfg(test)]
-pub(crate) use jackin_console::mount_display::mount_path_width;
+pub(crate) use jackin_console::tui::mount_display::mount_path_width;
 
 #[cfg(test)]
 pub(crate) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {
@@ -18,7 +18,7 @@ pub(crate) fn format_mount_rows_with_cache(
     mounts: &[crate::workspace::MountConfig],
     cache: &MountInfoCache,
 ) -> Vec<MountDisplayRow> {
-    jackin_console::mount_display::format_mount_rows(
+    jackin_console::tui::mount_display::format_mount_rows(
         mounts.iter().map(|m| MountDisplayInput {
             src: &m.src,
             dst: &m.dst,
@@ -42,11 +42,11 @@ pub(crate) fn workspace_mounts_content_width_with_cache(
     cache: &MountInfoCache,
 ) -> usize {
     let rows = format_mount_rows_with_cache(mounts, cache);
-    jackin_console::mount_display::workspace_mounts_content_width(&rows)
+    jackin_console::tui::mount_display::workspace_mounts_content_width(&rows)
 }
 
 pub(crate) fn workspace_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    jackin_console::mount_display::mounts_content_height(
+    jackin_console::tui::mount_display::mounts_content_height(
         mounts.iter().map(|m| m.src == m.dst),
     )
 }
@@ -63,7 +63,7 @@ pub(crate) fn global_mounts_content_width_with_cache(
     cache: &MountInfoCache,
 ) -> usize {
     let rows = format_mount_rows_with_cache(mounts, cache);
-    jackin_console::mount_display::global_mounts_content_width(&rows)
+    jackin_console::tui::mount_display::global_mounts_content_width(&rows)
 }
 
 pub(crate) fn settings_global_mounts_content_width_with_cache(
@@ -72,13 +72,13 @@ pub(crate) fn settings_global_mounts_content_width_with_cache(
 ) -> usize {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_mount_rows_with_cache(&mounts, cache);
-    jackin_console::mount_display::settings_global_mounts_content_width(&display_rows)
+    jackin_console::tui::mount_display::settings_global_mounts_content_width(&display_rows)
 }
 
 pub(crate) fn settings_global_mounts_content_height(
     rows: &[crate::config::GlobalMountRow],
 ) -> usize {
-    jackin_console::mount_display::settings_global_mounts_content_height(
+    jackin_console::tui::mount_display::settings_global_mounts_content_height(
         rows.iter().map(|row| row.mount.src == row.mount.dst),
         rows.is_empty(),
     )

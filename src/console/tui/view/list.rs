@@ -34,7 +34,7 @@ pub(super) use jackin_console::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
 };
 #[cfg(test)]
-pub(super) use jackin_console::mount_display::MountDisplayRow;
+pub(super) use jackin_console::tui::mount_display::MountDisplayRow;
 
 /// Number of leading spaces every content row in the General / Mounts /
 /// Environments / Roles sub-panels is prefixed with, so the first visible

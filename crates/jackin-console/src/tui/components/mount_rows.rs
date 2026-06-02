@@ -1,6 +1,6 @@
 //! Shared mount-table row render helpers.
 
-use crate::mount_display::MountDisplayRow;
+use crate::tui::mount_display::MountDisplayRow;
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
