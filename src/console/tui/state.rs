@@ -559,36 +559,11 @@ pub type SettingsEnvModal<'a> = jackin_console::tui::screens::settings::model::S
     ConfirmState,
 >;
 
-#[derive(Debug)]
-pub struct SettingsAuthState {
-    pub selected: usize,
-    pub selected_kind: Option<jackin_console::tui::auth::AuthKind>,
-    pub pending: Vec<SettingsAuthRow>,
-    pub original: Vec<SettingsAuthRow>,
-    pub github_env: BTreeMap<String, crate::operator_env::EnvValue>,
-    pub original_github_env: BTreeMap<String, crate::operator_env::EnvValue>,
-    pub modal: Option<SettingsAuthModal<'static>>,
-    /// Parent modal chain for the auth sub-modal stack.
-    ///
-    /// When the auth form opens a sub-modal (`SourcePicker`, `TextInput`,
-    /// `OpPicker`), it pushes the current `AuthForm` modal here so Esc pops
-    /// back to it instead of requiring a separate stash slot. Mirrors the
-    /// same pattern used by `GlobalMountsState`, `SettingsEnvState`, and
-    /// `EditorState`.
-    pub modal_parents: Vec<SettingsAuthModal<'static>>,
-    /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is
-    /// open, so its commit knows the pick is a token-generate (always
-    /// global Claude) rather than a browse/provide pick.
-    pub generating_token: bool,
-    pub error: Option<String>,
-    /// In-flight 1Password read for an op-picker auth-form commit in the
-    /// settings panel. Spawned on `spawn_blocking` so Touch ID / the 1Password
-    /// desktop dialog don't freeze the TUI reactor. Polled each tick by the
-    /// outer console loop.
-    pub pending_op_commit: Option<PendingOpCommit>,
-    pub scroll_y: u16,
-    pub scroll_focused: bool,
-}
+pub type SettingsAuthState = jackin_console::tui::screens::settings::model::SettingsAuthState<
+    crate::operator_env::EnvValue,
+    SettingsAuthModal<'static>,
+    PendingOpCommit,
+>;
 
 pub type SettingsAuthModal<'a> = jackin_console::tui::screens::settings::model::SettingsAuthModal<
     TextInputState<'a>,
@@ -840,7 +815,7 @@ impl SettingsState<'_> {
             general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
-            auth: SettingsAuthState::from_config(config),
+            auth: settings_auth_from_config(config),
             trust: settings_trust_from_config(config),
             error_popup: None,
             pending_token_generate: None,
@@ -1004,74 +979,30 @@ impl<'a> SettingsEnvState<'a> {
     }
 }
 
-impl SettingsAuthState {
-    pub fn from_config(config: &AppConfig) -> Self {
-        let github_env = app_github_env(config);
-        let pending = AuthKind::SETTINGS_KINDS
-            .iter()
-            .copied()
-            .map(|kind| SettingsAuthRow {
-                kind,
-                mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
+fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
+    let github_env = app_github_env(config);
+    let pending = AuthKind::SETTINGS_KINDS
+        .iter()
+        .copied()
+        .map(|kind| SettingsAuthRow {
+            kind,
+            mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
         })
         .collect::<Vec<_>>();
-        Self {
-            selected: 0,
-            selected_kind: None,
-            original: pending.clone(),
-            pending,
-            github_env: github_env.clone(),
-            original_github_env: github_env,
-            modal: None,
-            modal_parents: Vec::new(),
-            generating_token: false,
-            error: None,
-            pending_op_commit: None,
-            scroll_y: 0,
-            scroll_focused: false,
-        }
-    }
-
-    #[must_use]
-    pub fn is_dirty(&self) -> bool {
-        self.pending != self.original || self.github_env != self.original_github_env
-    }
-
-    #[must_use]
-    pub fn row_count(&self) -> usize {
-        let Some(kind) = self.selected_kind else {
-            return self.pending.len();
-        };
-        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
-            return 0;
-        };
-        jackin_console::tui::screens::settings::update::settings_auth_detail_row_count(
-            kind, row.mode,
-        )
-    }
-
-    pub fn discard(&mut self) {
-        self.pending = self.original.clone();
-        self.github_env = self.original_github_env.clone();
-        self.selected_kind = None;
-        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
-        self.modal = None;
-        self.modal_parents.clear();
-        self.generating_token = false;
-        self.error = None;
-    }
-
-    pub fn restore_pending_auth_form(&mut self) {
-        self.modal = self.modal_parents.pop();
-    }
-
-    /// Push the current auth modal onto the parent stack so a sub-modal can
-    /// open without losing the auth form's in-progress state.
-    pub fn push_auth_modal(&mut self, sub_modal: SettingsAuthModal<'static>) {
-        if let Some(current) = self.modal.take() {
-            self.modal_parents.push(current);
-        }
-        self.modal = Some(sub_modal);
+    SettingsAuthState {
+        selected: 0,
+        selected_kind: None,
+        original: pending.clone(),
+        pending,
+        github_env: github_env.clone(),
+        original_github_env: github_env,
+        modal: None,
+        modal_parents: Vec::new(),
+        generating_token: false,
+        error: None,
+        pending_op_commit: None,
+        scroll_y: 0,
+        scroll_focused: false,
     }
 }
 

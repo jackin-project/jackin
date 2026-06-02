@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::tui::auth::{AuthKind, AuthMode};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     General,
@@ -292,6 +294,74 @@ pub enum SettingsAuthModal<
         focus: AuthFormFocus,
         literal_buffer: String,
     },
+}
+
+#[derive(Debug)]
+pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
+    pub selected: usize,
+    pub selected_kind: Option<AuthKind>,
+    pub pending: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
+    pub original: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
+    pub github_env: BTreeMap<String, EnvValue>,
+    pub original_github_env: BTreeMap<String, EnvValue>,
+    pub modal: Option<Modal>,
+    /// Parent modal chain for the auth sub-modal stack.
+    pub modal_parents: Vec<Modal>,
+    /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is open.
+    pub generating_token: bool,
+    pub error: Option<String>,
+    /// In-flight 1Password read for an op-picker auth-form commit.
+    pub pending_op_commit: Option<PendingOpCommit>,
+    pub scroll_y: u16,
+    pub scroll_focused: bool,
+}
+
+impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
+    #[must_use]
+    pub fn is_dirty(&self) -> bool
+    where
+        EnvValue: PartialEq,
+    {
+        self.pending != self.original || self.github_env != self.original_github_env
+    }
+
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        let Some(kind) = self.selected_kind else {
+            return self.pending.len();
+        };
+        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
+            return 0;
+        };
+        crate::tui::screens::settings::update::settings_auth_detail_row_count(kind, row.mode)
+    }
+
+    pub fn discard(&mut self)
+    where
+        EnvValue: Clone,
+    {
+        self.pending = self.original.clone();
+        self.github_env = self.original_github_env.clone();
+        self.selected_kind = None;
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.modal = None;
+        self.modal_parents.clear();
+        self.generating_token = false;
+        self.error = None;
+    }
+
+    pub fn restore_pending_auth_form(&mut self) {
+        self.modal = self.modal_parents.pop();
+    }
+
+    /// Push the current auth modal onto the parent stack so a sub-modal can
+    /// open without losing the auth form's in-progress state.
+    pub fn push_auth_modal(&mut self, sub_modal: Modal) {
+        if let Some(current) = self.modal.take() {
+            self.modal_parents.push(current);
+        }
+        self.modal = Some(sub_modal);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
