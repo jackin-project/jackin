@@ -13,27 +13,15 @@ use crate::session::Session;
 
 const OUTER_TERMINAL_TITLE_MAX_CHARS: usize = 180;
 
-/// First letter of `slug` capitalised; the rest preserved unchanged.
-pub(crate) fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().to_string() + c.as_str(),
-    }
-}
-
 /// Human-readable label for the agent running in `session`.
 ///
 /// Returns "Shell" when no agent is present, `"Slug (provider)"` when
 /// a provider label is known, or `"Slug"` otherwise.
 pub(crate) fn session_agent_label(session: &Session) -> String {
-    let Some(slug) = session.agent.as_deref() else {
-        return "Shell".to_string();
-    };
-    match session.provider.as_ref() {
-        Some(provider) => format!("{} ({})", capitalize(slug), provider.label),
-        None => capitalize(slug),
-    }
+    crate::tui::app::visible_agent_label(
+        session.agent.as_deref(),
+        session.provider.as_ref().map(|provider| provider.label.as_str()),
+    )
 }
 
 /// Human-readable title for the pane box drawn above the session.

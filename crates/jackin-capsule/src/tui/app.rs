@@ -185,6 +185,22 @@ pub(crate) enum VisibleAgentState {
     Blocked,
 }
 
+/// Human-readable label for an agent/shell visible in tab and pane chrome.
+pub(crate) fn visible_agent_label(agent_slug: Option<&str>, provider_label: Option<&str>) -> String {
+    let Some(slug) = agent_slug else {
+        return "Shell".to_string();
+    };
+    let mut chars = slug.chars();
+    let base = match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().to_string() + chars.as_str(),
+    };
+    match provider_label {
+        Some(provider) => format!("{base} ({provider})"),
+        None => base,
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisiblePane {
     pub(crate) id: u64,
@@ -297,7 +313,7 @@ mod tests {
         ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
         PointerShape, PointerShapeState, VisibleTabPaneKind, chrome_hover_target_for_state,
         cursor_visible_for_state, hover_target_for_state, mux_mode_for_state,
-        pointer_shape_for_state, tab_auto_label, visible_panes_for_layout,
+        pointer_shape_for_state, tab_auto_label, visible_agent_label, visible_panes_for_layout,
     };
 
     #[test]
@@ -569,6 +585,16 @@ mod tests {
                 [VisibleTabPaneKind::Agent("Claude".into()), VisibleTabPaneKind::Shell],
             ),
             "Mix (2)"
+        );
+    }
+
+    #[test]
+    fn visible_agent_label_formats_shell_agent_and_provider() {
+        assert_eq!(visible_agent_label(None, None), "Shell");
+        assert_eq!(visible_agent_label(Some("claude"), None), "Claude");
+        assert_eq!(
+            visible_agent_label(Some("claude"), Some("Z.AI")),
+            "Claude (Z.AI)"
         );
     }
 }

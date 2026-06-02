@@ -228,10 +228,7 @@ impl Multiplexer {
         let cwd = self.workdir.as_path();
         match agent {
             Some(slug) => {
-                let label = match provider_label {
-                    Some(p) => format!("{} ({})", capitalize(slug), p),
-                    None => capitalize(slug),
-                };
+                let label = crate::tui::app::visible_agent_label(Some(slug), provider_label);
                 SessionLaunch {
                     label,
                     cmd: build_agent_command(
