@@ -1008,36 +1008,45 @@ fn scroll_active_panel(
                 return;
             }
             if editor.active_tab != EditorTab::Mounts {
-                editor.workspace_mounts_scroll_focused = false;
                 let area = editor_content_area(editor, term_size);
-                if point_in(mouse, area)
-                    && is_horizontally_scrollable(area, editor.tab_content_width)
-                {
-                    editor.tab_content_scroll_focused = true;
+                let in_scrollable_content = point_in(mouse, area)
+                    && is_horizontally_scrollable(area, editor.tab_content_width);
+                let plan = editor_scroll_focus_plan(
+                    editor.active_tab,
+                    false,
+                    false,
+                    in_scrollable_content,
+                );
+                editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+                editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+                if plan.tab_content_scroll_focused {
                     apply_horizontal_scroll(
                         &mut editor.tab_scroll_x,
                         delta,
                         area,
                         editor.tab_content_width,
                     );
-                } else {
-                    editor.tab_content_scroll_focused = false;
                 }
                 return;
             }
             let area = editor_scroll_area(editor, term_size);
-            if point_in(mouse, area.area)
-                && is_horizontally_scrollable(area.area, area.content_width)
-            {
-                editor.workspace_mounts_scroll_focused = true;
+            let in_scrollable_workspace = point_in(mouse, area.area)
+                && is_horizontally_scrollable(area.area, area.content_width);
+            let plan = editor_scroll_focus_plan(
+                editor.active_tab,
+                false,
+                in_scrollable_workspace,
+                false,
+            );
+            editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+            editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+            if plan.workspace_mounts_scroll_focused {
                 apply_horizontal_scroll(
                     &mut editor.workspace_mounts_scroll_x,
                     delta,
                     area.area,
                     area.content_width,
                 );
-            } else {
-                editor.workspace_mounts_scroll_focused = false;
             }
         }
         ManagerStage::Settings(settings) => {
