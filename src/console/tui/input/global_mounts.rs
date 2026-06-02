@@ -1217,21 +1217,23 @@ pub(super) fn handle_settings_confirm_modal(
                 settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });
             }
         },
-        GlobalMountModal::Confirm { action, mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(true) => {
-                outcome = commit_settings_confirm(settings, action);
-            }
-            ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
-                if matches!(action, GlobalMountConfirm::Sensitive) {
+        GlobalMountModal::Confirm { action, mut state } => {
+            match settings_update::settings_confirm_plan(action, state.handle_key(key)) {
+                settings_update::SettingsConfirmPlan::Commit => {
+                    outcome = commit_settings_confirm(settings, action);
+                }
+                settings_update::SettingsConfirmPlan::Cancel { abort_sensitive } => {
+                    if abort_sensitive {
                     settings.mounts.error =
                         Some("Save aborted: sensitive paths not confirmed.".into());
+                    }
+                    settings.mounts.clear_modal_chain();
                 }
-                settings.mounts.clear_modal_chain();
+                settings_update::SettingsConfirmPlan::Continue => {
+                    settings.mounts.modal = Some(GlobalMountModal::Confirm { action, state });
+                }
             }
-            ModalOutcome::Continue => {
-                settings.mounts.modal = Some(GlobalMountModal::Confirm { action, state });
-            }
-        },
+        }
         GlobalMountModal::PreviewSave { mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(_) => {
                 outcome = request_settings_save(settings);

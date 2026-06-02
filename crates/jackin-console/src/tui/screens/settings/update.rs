@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{
-    SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope,
-    SettingsGeneralState, SettingsTab, SettingsTrustState,
+    GlobalMountConfirm, SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow,
+    SettingsEnvScope, SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
+use jackin_tui::ModalOutcome;
 
 #[must_use]
 pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
@@ -54,6 +55,27 @@ pub const fn settings_tab_select_plan(selected_tab: SettingsTab) -> SettingsTabM
     SettingsTabMovePlan {
         active_tab: selected_tab,
         tab_bar_focused: true,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsConfirmPlan {
+    Continue,
+    Commit,
+    Cancel { abort_sensitive: bool },
+}
+
+#[must_use]
+pub const fn settings_confirm_plan(
+    action: GlobalMountConfirm,
+    outcome: ModalOutcome<bool>,
+) -> SettingsConfirmPlan {
+    match outcome {
+        ModalOutcome::Commit(true) => SettingsConfirmPlan::Commit,
+        ModalOutcome::Commit(false) | ModalOutcome::Cancel => SettingsConfirmPlan::Cancel {
+            abort_sensitive: matches!(action, GlobalMountConfirm::Sensitive),
+        },
+        ModalOutcome::Continue => SettingsConfirmPlan::Continue,
     }
 }
 
@@ -851,6 +873,30 @@ mod tests {
                 scope: SettingsEnvScope::Role("alpha".to_string()),
                 label: "New alpha environment key".to_string()
             }
+        );
+    }
+
+    #[test]
+    fn settings_confirm_plan_routes_confirm_cancel_and_continue() {
+        assert_eq!(
+            settings_confirm_plan(GlobalMountConfirm::Save, ModalOutcome::Commit(true)),
+            SettingsConfirmPlan::Commit
+        );
+        assert_eq!(
+            settings_confirm_plan(GlobalMountConfirm::Save, ModalOutcome::Commit(false)),
+            SettingsConfirmPlan::Cancel {
+                abort_sensitive: false
+            }
+        );
+        assert_eq!(
+            settings_confirm_plan(GlobalMountConfirm::Sensitive, ModalOutcome::Cancel),
+            SettingsConfirmPlan::Cancel {
+                abort_sensitive: true
+            }
+        );
+        assert_eq!(
+            settings_confirm_plan(GlobalMountConfirm::Remove, ModalOutcome::Continue),
+            SettingsConfirmPlan::Continue
         );
     }
 }
