@@ -24,6 +24,44 @@ pub enum AuthSourceDisplay {
     Unset { env_name: String, mode_label: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthSourceValue {
+    Plain(String),
+    OpRefPath(String),
+}
+
+#[must_use]
+pub fn auth_source_display(
+    value: Option<AuthSourceValue>,
+    env_name: impl Into<String>,
+    mode_label: impl Into<String>,
+) -> AuthSourceDisplay {
+    match value {
+        Some(AuthSourceValue::Plain(value)) if !value.is_empty() => {
+            AuthSourceDisplay::MaskedPlain {
+                chars: value.chars().count(),
+            }
+        }
+        Some(AuthSourceValue::OpRefPath(path)) => AuthSourceDisplay::OpRefPath(path),
+        _ => AuthSourceDisplay::Unset {
+            env_name: env_name.into(),
+            mode_label: mode_label.into(),
+        },
+    }
+}
+
+#[must_use]
+pub fn auth_source_display_for_required_env(
+    required_env_name: Option<&str>,
+    value: Option<AuthSourceValue>,
+    mode_label: impl Into<String>,
+) -> AuthSourceDisplay {
+    let Some(env_name) = required_env_name else {
+        return AuthSourceDisplay::NotRequired;
+    };
+    auth_source_display(value, env_name, mode_label)
+}
+
 #[must_use]
 pub fn action_row_style(selected: bool) -> Style {
     let style = Style::default().fg(ACTION_ACCENT);
@@ -133,4 +171,52 @@ pub fn render_secret_key_line(
     };
     spans.push(Span::styled(rendered_value, value_style));
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_source_display_maps_secret_value_state() {
+        assert_eq!(
+            auth_source_display(
+                Some(AuthSourceValue::Plain("secret".to_string())),
+                "API_KEY",
+                "api-key",
+            ),
+            AuthSourceDisplay::MaskedPlain { chars: 6 },
+        );
+        assert_eq!(
+            auth_source_display(
+                Some(AuthSourceValue::OpRefPath("Vault/Item/key".to_string())),
+                "API_KEY",
+                "api-key",
+            ),
+            AuthSourceDisplay::OpRefPath("Vault/Item/key".to_string()),
+        );
+        assert_eq!(
+            auth_source_display(
+                Some(AuthSourceValue::Plain(String::new())),
+                "API_KEY",
+                "api-key",
+            ),
+            AuthSourceDisplay::Unset {
+                env_name: "API_KEY".to_string(),
+                mode_label: "api-key".to_string(),
+            },
+        );
+    }
+
+    #[test]
+    fn auth_source_display_returns_not_required_without_env() {
+        assert_eq!(
+            auth_source_display_for_required_env(
+                None,
+                Some(AuthSourceValue::Plain("secret".to_string())),
+                "ignore",
+            ),
+            AuthSourceDisplay::NotRequired,
+        );
+    }
 }

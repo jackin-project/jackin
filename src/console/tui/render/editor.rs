@@ -22,7 +22,8 @@ pub(crate) use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, SecretValueDisplay, render_tab_strip,
+    AuthSourceDisplay, AuthSourceValue, SecretValueDisplay,
+    auth_source_display_for_required_env, render_tab_strip,
 };
 use jackin_console::tui::screens::editor::view::{
     EditorAuthLineRow, EditorRoleRow, auth_lines as editor_auth_lines, editor_frame_areas,
@@ -295,7 +296,7 @@ fn auth_display_row(
             }
         }
         AuthRow::WorkspaceSource { kind } => EditorAuthLineRow::WorkspaceSource {
-            display: auth_source_display(synthesized, workspace_name, "", *kind),
+            display: editor_auth_source_display(synthesized, workspace_name, "", *kind),
         },
         AuthRow::RoleHeader { role, expanded } => EditorAuthLineRow::RoleHeader {
             role: role.clone(),
@@ -308,7 +309,7 @@ fn auth_display_row(
             }
         }
         AuthRow::RoleSource { role, kind } => EditorAuthLineRow::RoleSource {
-            display: auth_source_display(synthesized, workspace_name, role, *kind),
+            display: editor_auth_source_display(synthesized, workspace_name, role, *kind),
         },
         AuthRow::AddSentinel { eligible } => EditorAuthLineRow::AddSentinel {
             eligible: *eligible,
@@ -317,7 +318,7 @@ fn auth_display_row(
     }
 }
 
-fn auth_source_display(
+fn editor_auth_source_display(
     synthesized: &AppConfig,
     workspace_name: &str,
     role: &str,
@@ -328,22 +329,14 @@ fn auth_source_display(
     let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
     let env_name = kind.required_env_var(mode);
 
-    let Some(env_name) = env_name else {
-        return AuthSourceDisplay::NotRequired;
-    };
+    let value = env_name
+        .and_then(|env_name| auth_source_value(synthesized, workspace_name, role, env_name, kind))
+        .map(|value| match value {
+            EnvValue::OpRef(r) => AuthSourceValue::OpRefPath(r.path.clone()),
+            EnvValue::Plain(s) => AuthSourceValue::Plain(s.clone()),
+        });
 
-    let value = auth_source_value(synthesized, workspace_name, role, env_name, kind);
-
-    match value {
-        Some(EnvValue::OpRef(r)) => AuthSourceDisplay::OpRefPath(r.path.clone()),
-        Some(EnvValue::Plain(s)) if !s.is_empty() => AuthSourceDisplay::MaskedPlain {
-            chars: s.chars().count(),
-        },
-        _ => AuthSourceDisplay::Unset {
-            env_name: env_name.to_string(),
-            mode_label: mode_str(mode).to_string(),
-        },
-    }
+    auth_source_display_for_required_env(env_name, value, mode_str(mode))
 }
 
 /// Explicit workspace-level mode for a kind, if any.

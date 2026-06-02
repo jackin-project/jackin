@@ -30,12 +30,6 @@ pub enum SettingsAuthLineRow {
     Spacer,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettingsAuthSourceValue {
-    Plain(String),
-    OpRefPath(String),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsFrameAreas {
     pub header: Rect,
@@ -329,26 +323,6 @@ pub fn auth_lines(
             render_auth_line(row, selected)
         })
         .collect()
-}
-
-#[must_use]
-pub fn auth_source_display(
-    value: Option<SettingsAuthSourceValue>,
-    env_name: impl Into<String>,
-    mode_label: impl Into<String>,
-) -> AuthSourceDisplay {
-    match value {
-        Some(SettingsAuthSourceValue::Plain(value)) if !value.is_empty() => {
-            AuthSourceDisplay::MaskedPlain {
-                chars: value.chars().count(),
-            }
-        }
-        Some(SettingsAuthSourceValue::OpRefPath(path)) => AuthSourceDisplay::OpRefPath(path),
-        _ => AuthSourceDisplay::Unset {
-            env_name: env_name.into(),
-            mode_label: mode_label.into(),
-        },
-    }
 }
 
 fn render_auth_line(row: &SettingsAuthLineRow, selected: bool) -> Line<'static> {
@@ -720,37 +694,6 @@ mod tests {
         assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} ");
         assert_eq!(lines[2].spans[2].content.as_ref(), "\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}");
         assert!(lines[3].spans.is_empty());
-    }
-
-    #[test]
-    fn auth_source_display_maps_secret_value_state() {
-        assert_eq!(
-            auth_source_display(
-                Some(SettingsAuthSourceValue::Plain("secret".to_string())),
-                "API_KEY",
-                "api-key",
-            ),
-            AuthSourceDisplay::MaskedPlain { chars: 6 },
-        );
-        assert_eq!(
-            auth_source_display(
-                Some(SettingsAuthSourceValue::OpRefPath("Vault/Item/key".to_string())),
-                "API_KEY",
-                "api-key",
-            ),
-            AuthSourceDisplay::OpRefPath("Vault/Item/key".to_string()),
-        );
-        assert_eq!(
-            auth_source_display(
-                Some(SettingsAuthSourceValue::Plain(String::new())),
-                "API_KEY",
-                "api-key",
-            ),
-            AuthSourceDisplay::Unset {
-                env_name: "API_KEY".to_string(),
-                mode_label: "api-key".to_string(),
-            },
-        );
     }
 
     #[test]
