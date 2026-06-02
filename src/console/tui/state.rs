@@ -805,28 +805,8 @@ pub struct EditorState<'a> {
     pub cached_footer_h: u16,
 }
 
-/// In-flight 1Password read triggered by an op picker commit from the auth form.
-///
-/// Spawned on a `spawn_blocking` thread so Touch ID / the 1Password desktop
-/// dialog don't freeze the TUI reactor. The receiver is polled each tick; on
-/// completion the result is applied via the `_committed` or `_failed` helpers.
-pub struct PendingOpCommit {
-    /// The op reference that was committed (preserved so the `_committed`
-    /// helper can set it on the form after the read succeeds).
-    pub op_ref: crate::operator_env::OpRef,
-    /// Oneshot receiver for the `spawn_blocking` result.
-    pub rx: BlockingSubscription<anyhow::Result<()>>,
-}
-
-impl PendingOpCommit {
-    #[must_use]
-    pub fn new(
-        op_ref: crate::operator_env::OpRef,
-        rx: BlockingSubscription<anyhow::Result<()>>,
-    ) -> Self {
-        Self { op_ref, rx }
-    }
-}
+pub type PendingOpCommit =
+    jackin_console::tui::subscriptions::PendingOpCommit<crate::operator_env::OpRef>;
 
 pub(crate) type PendingMountInfoRefresh =
     jackin_console::tui::message::PendingMountInfoRefresh;
@@ -834,93 +814,16 @@ pub(crate) type PendingMountInfoRefresh =
 pub(crate) type MountInfoRefreshTarget =
     jackin_console::tui::message::MountInfoRefreshTarget;
 
-impl std::fmt::Debug for PendingOpCommit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PendingOpCommit")
-            .field("op_ref", &self.op_ref)
-            .finish_non_exhaustive()
-    }
-}
+pub type PendingDriftCheck = jackin_console::tui::subscriptions::PendingDriftCheck<
+    crate::config::DriftDetection,
+    PendingSaveCommit,
+>;
 
-/// In-flight isolation-drift check for a save operation.
-pub struct PendingDriftCheck {
-    pub rx: BlockingSubscription<anyhow::Result<crate::config::DriftDetection>>,
-    pub plan: PendingSaveCommit,
-    pub exit_on_success: bool,
-    pub original_name: String,
-}
+pub type PendingIsolationCleanup =
+    jackin_console::tui::subscriptions::PendingIsolationCleanup<PendingSaveCommit>;
 
-pub struct PendingIsolationCleanup {
-    pub rx: BlockingSubscription<anyhow::Result<()>>,
-    pub plan: PendingSaveCommit,
-    pub exit_on_success: bool,
-}
-
-impl PendingIsolationCleanup {
-    #[must_use]
-    pub fn new(
-        rx: BlockingSubscription<anyhow::Result<()>>,
-        plan: PendingSaveCommit,
-        exit_on_success: bool,
-    ) -> Self {
-        Self {
-            rx,
-            plan,
-            exit_on_success,
-        }
-    }
-}
-
-impl std::fmt::Debug for PendingIsolationCleanup {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PendingIsolationCleanup")
-            .field("exit_on_success", &self.exit_on_success)
-            .finish_non_exhaustive()
-    }
-}
-
-impl PendingDriftCheck {
-    #[must_use]
-    pub fn new(
-        rx: BlockingSubscription<anyhow::Result<crate::config::DriftDetection>>,
-        original_name: String,
-        plan: PendingSaveCommit,
-        exit_on_success: bool,
-    ) -> Self {
-        Self {
-            rx,
-            plan,
-            exit_on_success,
-            original_name,
-        }
-    }
-}
-
-impl std::fmt::Debug for PendingDriftCheck {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PendingDriftCheck")
-            .field("original_name", &self.original_name)
-            .field("exit_on_success", &self.exit_on_success)
-            .finish_non_exhaustive()
-    }
-}
-
-pub struct PendingRoleLoad {
-    pub raw: String,
-    pub key: String,
-    pub source: crate::config::RoleSource,
-    pub rx: BlockingSubscription<anyhow::Result<()>>,
-}
-
-impl std::fmt::Debug for PendingRoleLoad {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PendingRoleLoad")
-            .field("raw", &self.raw)
-            .field("key", &self.key)
-            .field("source", &self.source)
-            .finish_non_exhaustive()
-    }
-}
+pub type PendingRoleLoad =
+    jackin_console::tui::subscriptions::PendingRoleLoad<crate::config::RoleSource>;
 
 impl GlobalMountsState<'_> {
     pub fn from_config(config: &AppConfig) -> Self {
