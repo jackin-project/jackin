@@ -48,12 +48,10 @@ impl Multiplexer {
     /// the caller is reusing an existing tab.
     pub(super) fn ensure_capacity_for_new_session(&self, add_tab: bool) -> Result<()> {
         if add_tab && self.tabs.len() >= MAX_TABS {
-            anyhow::bail!("tab limit reached ({MAX_TABS}); close one before spawning another");
+            anyhow::bail!(crate::tui::view::tab_limit_failure_message(MAX_TABS));
         }
         if self.sessions.len() >= MAX_SESSIONS {
-            anyhow::bail!(
-                "pane limit reached ({MAX_SESSIONS}); close some panes before opening more"
-            );
+            anyhow::bail!(crate::tui::view::pane_limit_failure_message(MAX_SESSIONS));
         }
         Ok(())
     }

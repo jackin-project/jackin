@@ -452,6 +452,14 @@ pub(crate) fn spawn_failure_message(
     format!("{agent_label}: {error:#}")
 }
 
+pub(crate) fn tab_limit_failure_message(max_tabs: usize) -> String {
+    format!("tab limit reached ({max_tabs}); close one before spawning another")
+}
+
+pub(crate) fn pane_limit_failure_message(max_sessions: usize) -> String {
+    format!("pane limit reached ({max_sessions}); close some panes before opening more")
+}
+
 pub(crate) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
     format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
 }
@@ -467,7 +475,10 @@ pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{spawn_failure_banner, spawn_failure_message};
+    use super::{
+        pane_limit_failure_message, spawn_failure_banner, spawn_failure_message,
+        tab_limit_failure_message,
+    };
 
     #[test]
     fn spawn_failure_message_prefixes_visible_agent_label() {
@@ -483,5 +494,17 @@ mod tests {
         assert!(banner.starts_with("\x1b7\x1b[1;1H"));
         assert!(banner.contains("jackin: shell: cap hit"));
         assert!(banner.ends_with("\x1b8"));
+    }
+
+    #[test]
+    fn spawn_capacity_messages_report_visible_limits() {
+        assert_eq!(
+            tab_limit_failure_message(32),
+            "tab limit reached (32); close one before spawning another"
+        );
+        assert_eq!(
+            pane_limit_failure_message(64),
+            "pane limit reached (64); close some panes before opening more"
+        );
     }
 }
