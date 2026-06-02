@@ -2595,9 +2595,8 @@ plugins = []
             rx,
         });
         editor.modal = Some(Modal::StatusPopup {
-            state: jackin_tui::components::StatusPopupState::new(
-                "Loading role",
-                "Loading role chainargos/agent-brown",
+            state: jackin_console::tui::components::status_popup::role_loading_status_popup_state(
+                "chainargos/agent-brown",
             ),
         });
         tx.send(Ok(())).unwrap();

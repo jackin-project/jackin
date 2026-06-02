@@ -1328,8 +1328,8 @@ mod mouse_drag_tests {
     };
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
     use jackin_console::tui::screens::settings::view::global_mount_confirm_state;
-    use jackin_tui::components::SaveDiscardState;
     use ratatui::layout::Rect;
 
     /// Build a `ManagerState` in the List stage at the default split,
@@ -2490,7 +2490,7 @@ mod mouse_drag_tests {
         editor.active_tab = EditorTab::Roles;
         editor.tab_content_height = 50;
         editor.modal = Some(Modal::SaveDiscardCancel {
-            state: SaveDiscardState::new("Save changes?"),
+            state: editor_exit_save_discard_state(),
         });
         state.stage = ManagerStage::Editor(editor);
 
@@ -2514,7 +2514,7 @@ mod mouse_drag_tests {
         editor.active_tab = EditorTab::Roles;
         editor.tab_content_height = 50;
         editor.modal = Some(Modal::SaveDiscardCancel {
-            state: SaveDiscardState::new("Save changes?"),
+            state: editor_exit_save_discard_state(),
         });
         state.stage = ManagerStage::Editor(editor);
 
