@@ -21,3 +21,27 @@ pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationClean
         result: anyhow::Result<()>,
     },
 }
+
+#[derive(Debug)]
+pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
+    Continue,
+    ExitJackin,
+    LaunchNamed(String),
+    LaunchCurrentDir,
+    LaunchWithAgent(RoleSelector),
+    LaunchWithRuntimeAgent(Agent),
+    InstanceAction {
+        container: String,
+        action: InstanceAction,
+    },
+    NewSessionWithProvider {
+        container: String,
+        agent: Agent,
+        provider: Provider,
+    },
+    LaunchWithProvider {
+        selector: RoleSelector,
+        agent: Agent,
+        provider: Provider,
+    },
+}
