@@ -32,8 +32,9 @@ use portable_pty::CommandBuilder;
 use crate::tui::message::{
     Action, ConfirmedActionRoute, InputDispatchContext, branch_context_bar_click_action,
     confirmed_action_route, input_event_action, mouse_chrome_update_action,
-    mouse_release_action, palette_command_route, pane_button_motion_action,
-    prefix_command_action, status_bar_click_action, PaletteCommandRoute, StatusBarClickState,
+    mouse_release_action, palette_command_route, palette_toggle_route, pane_button_motion_action,
+    prefix_command_action, status_bar_click_action, PaletteCommandRoute, PaletteToggleRoute,
+    StatusBarClickState,
 };
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
@@ -3427,6 +3428,18 @@ mod tests {
             "OpenPalette should push CommandPalette dialog"
         );
         assert_eq!(mux.mux_mode(), MuxMode::Dialog);
+    }
+
+    #[test]
+    fn apply_action_open_palette_closes_existing_dialog() {
+        let mut mux = single_pane_tab_mux();
+        mux.open_command_palette();
+        assert!(mux.dialog_open());
+
+        mux.apply_action(Action::OpenPalette);
+
+        assert!(!mux.dialog_open(), "palette toggle should close open dialog");
+        assert_eq!(mux.mux_mode(), MuxMode::Normal);
     }
 
     #[test]

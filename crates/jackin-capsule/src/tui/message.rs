@@ -246,6 +246,20 @@ pub(crate) fn confirmed_action_route(kind: ConfirmKind) -> ConfirmedActionRoute 
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PaletteToggleRoute {
+    CloseDialog,
+    OpenPalette,
+}
+
+pub(crate) fn palette_toggle_route(dialog_open: bool) -> PaletteToggleRoute {
+    if dialog_open {
+        PaletteToggleRoute::CloseDialog
+    } else {
+        PaletteToggleRoute::OpenPalette
+    }
+}
+
 pub fn pane_button_motion_action(dragging: bool, selecting: bool, row: u16, col: u16) -> Action {
     if dragging {
         Action::DragMotion { row, col }
@@ -320,9 +334,9 @@ mod tests {
     use super::{
         Action, ConfirmedActionRoute, InputDispatchContext, branch_context_bar_click_action,
         confirmed_action_route, input_event_action, mouse_chrome_update_action,
-        mouse_release_action, palette_command_route,
+        mouse_release_action, palette_command_route, palette_toggle_route,
         pane_button_motion_action, status_bar_click_action, PaletteCommandRoute,
-        StatusBarClickState,
+        PaletteToggleRoute, StatusBarClickState,
     };
     use crate::tui::components::branch_context_bar::BranchContextBarHit;
     use crate::tui::components::dialog::{ConfirmKind, PaletteCommand};
@@ -451,6 +465,18 @@ mod tests {
         assert_eq!(
             confirmed_action_route(ConfirmKind::Exit),
             ConfirmedActionRoute::ExitAllSessions
+        );
+    }
+
+    #[test]
+    fn palette_toggle_route_closes_existing_dialog_before_opening_palette() {
+        assert_eq!(
+            palette_toggle_route(true),
+            PaletteToggleRoute::CloseDialog
+        );
+        assert_eq!(
+            palette_toggle_route(false),
+            PaletteToggleRoute::OpenPalette
         );
     }
 

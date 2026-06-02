@@ -155,10 +155,9 @@ impl Multiplexer {
         match action {
             Action::OpenPalette => {
                 self.cancel_drag();
-                if self.dialog_open() {
-                    self.dialog_clear();
-                } else {
-                    self.open_command_palette();
+                match palette_toggle_route(self.dialog_open()) {
+                    PaletteToggleRoute::CloseDialog => self.dialog_clear(),
+                    PaletteToggleRoute::OpenPalette => self.open_command_palette(),
                 }
                 Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
             }
