@@ -196,6 +196,11 @@ pub fn global_mount_add_cancelled_message() -> &'static str {
 }
 
 #[must_use]
+pub fn global_mount_no_github_url_message() -> &'static str {
+    "no GitHub URL for this mount"
+}
+
+#[must_use]
 pub fn settings_no_registered_roles_error_message() -> &'static str {
     "No registered roles available."
 }
@@ -811,6 +816,10 @@ mod tests {
         assert_eq!(
             global_mount_add_cancelled_message(),
             "Add mount cancelled."
+        );
+        assert_eq!(
+            global_mount_no_github_url_message(),
+            "no GitHub URL for this mount"
         );
         assert_eq!(
             settings_no_registered_roles_error_message(),

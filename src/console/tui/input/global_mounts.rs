@@ -21,6 +21,7 @@ use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_cancelled_message, global_mount_confirm_state,
+    global_mount_no_github_url_message,
     global_mount_scope_picker_state, global_mount_text_input_state, global_mount_text_target_label,
     settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
     settings_env_add_cancelled_message, settings_env_edit_cancelled_message,
@@ -291,7 +292,7 @@ fn handle_global_mounts_key(
                 if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
                     *open_url = Some(web_url);
                 } else {
-                    global.error = Some("no GitHub URL for this mount".into());
+                    global.error = Some(global_mount_no_github_url_message().into());
                 }
             }
         }
