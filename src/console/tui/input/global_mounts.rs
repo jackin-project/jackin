@@ -1,5 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::console::domain::{
+    apply_settings_auth_env_commit, clear_settings_auth_env_values,
+};
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::components::mount_display::settings_global_mounts_content_width_with_cache;
 use crate::console::tui::state::{
@@ -909,21 +912,13 @@ fn persist_settings_auth_form(
     if let Some(row) = auth.pending.iter_mut().find(|row| row.kind == form.kind) {
         row.mode = outcome.mode;
     }
-    if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value) {
-        match form.kind {
-            jackin_console::tui::auth::AuthKind::Github => {
-                auth.github_env.insert(name.to_string(), value);
-            }
-            jackin_console::tui::auth::AuthKind::Claude
-            | jackin_console::tui::auth::AuthKind::Codex
-            | jackin_console::tui::auth::AuthKind::Amp
-            | jackin_console::tui::auth::AuthKind::Kimi
-            | jackin_console::tui::auth::AuthKind::Opencode
-            | jackin_console::tui::auth::AuthKind::Zai => {
-                env.pending.env.insert(name.to_string(), value);
-            }
-        }
-    }
+    apply_settings_auth_env_commit(
+        form.kind,
+        outcome.env_var_name,
+        outcome.env_value,
+        &mut auth.github_env,
+        &mut env.pending.env,
+    );
     auth.selected = auth.selected.min(auth.row_count().saturating_sub(1));
 }
 
@@ -938,23 +933,7 @@ fn clear_settings_auth_kind(
     if let Some(row) = auth.pending.iter_mut().find(|row| row.kind == *kind) {
         row.mode = jackin_console::tui::auth::AuthMode::Sync;
     }
-    for mode in kind.supported_modes() {
-        if let Some(env_var) = kind.required_env_var(*mode) {
-            match kind {
-                jackin_console::tui::auth::AuthKind::Github => {
-                    auth.github_env.remove(env_var);
-                }
-                jackin_console::tui::auth::AuthKind::Claude
-                | jackin_console::tui::auth::AuthKind::Codex
-                | jackin_console::tui::auth::AuthKind::Amp
-                | jackin_console::tui::auth::AuthKind::Kimi
-                | jackin_console::tui::auth::AuthKind::Opencode
-                | jackin_console::tui::auth::AuthKind::Zai => {
-                    env.pending.env.remove(env_var);
-                }
-            }
-        }
-    }
+    clear_settings_auth_env_values(*kind, &mut auth.github_env, &mut env.pending.env);
 }
 
 fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {

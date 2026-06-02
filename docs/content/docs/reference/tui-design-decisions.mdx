@@ -195,7 +195,7 @@ Console launch prompt agent-choice lookup calls the non-TUI agent service bounda
 
 Console GitHub auth mode changes preserve existing `[github.env]` maps through <RepoFile path="src/console/domain.rs" />. Editor Auth-tab commit/reset mutation for workspace and role auth layers also lives there: root auth input commits the shared auth form, then delegates mode-block updates, Github env insertion, and Zai ignore cleanup.
 
-Console settings-auth global GitHub env extraction and source lookup also live in <RepoFile path="src/console/domain.rs" />. Root settings state stores pending/original maps for UI dirty tracking, form mounting, and save previews; it does not decide inline whether a credential comes from `[github.env]` or normal environment maps.
+Console settings-auth global GitHub env extraction, source lookup, credential-env commit routing, and credential-env clear routing also live in <RepoFile path="src/console/domain.rs" />. Root settings state stores pending/original maps for UI dirty tracking, form mounting, and save previews; it does not decide inline whether a credential comes from `[github.env]` or normal environment maps.
 
 Editor auth row/form adapters ask <RepoFile path="src/console/domain.rs" /> for effective-mode credential requirements, eligible role keys, explicit workspace modes, display source-layer lookup, and workspace/role mode-plus-credential derivation. The root TUI state maps those facts into crate-owned editor row planning and shared auth forms; it does not own those product rules inline.
 

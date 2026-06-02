@@ -252,6 +252,47 @@ pub fn clear_role_auth_layer(role: &mut WorkspaceRoleOverride, kind: AuthKind) {
     set_role_auth_mode(role, kind, None);
 }
 
+pub fn apply_settings_auth_env_commit(
+    kind: AuthKind,
+    env_var_name: Option<&str>,
+    env_value: Option<crate::operator_env::EnvValue>,
+    github_env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
+    agent_env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
+) {
+    let (Some(name), Some(value)) = (env_var_name, env_value) else {
+        return;
+    };
+    settings_auth_env_map_mut(kind, github_env, agent_env).insert(name.to_string(), value);
+}
+
+pub fn clear_settings_auth_env_values(
+    kind: AuthKind,
+    github_env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
+    agent_env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
+) {
+    for mode in kind.supported_modes() {
+        if let Some(env_var) = kind.required_env_var(*mode) {
+            settings_auth_env_map_mut(kind, github_env, agent_env).remove(env_var);
+        }
+    }
+}
+
+fn settings_auth_env_map_mut<'a>(
+    kind: AuthKind,
+    github_env: &'a mut BTreeMap<String, crate::operator_env::EnvValue>,
+    agent_env: &'a mut BTreeMap<String, crate::operator_env::EnvValue>,
+) -> &'a mut BTreeMap<String, crate::operator_env::EnvValue> {
+    match kind {
+        AuthKind::Github => github_env,
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode
+        | AuthKind::Zai => agent_env,
+    }
+}
+
 fn apply_auth_env_value(
     env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
     github: Option<&mut GithubAuthConfig>,
@@ -1269,6 +1310,55 @@ mod tests {
         clear_workspace_auth_layer(&mut ws, AuthKind::Github);
 
         assert!(ws.github.is_none());
+    }
+
+    #[test]
+    fn apply_settings_auth_env_commit_routes_by_kind() {
+        let mut github_env = BTreeMap::new();
+        let mut agent_env = BTreeMap::new();
+
+        apply_settings_auth_env_commit(
+            AuthKind::Github,
+            Some("GH_TOKEN"),
+            Some(crate::operator_env::EnvValue::Plain("token".into())),
+            &mut github_env,
+            &mut agent_env,
+        );
+        apply_settings_auth_env_commit(
+            AuthKind::Claude,
+            Some("ANTHROPIC_API_KEY"),
+            Some(crate::operator_env::EnvValue::Plain("key".into())),
+            &mut github_env,
+            &mut agent_env,
+        );
+
+        assert_eq!(
+            github_env.get("GH_TOKEN"),
+            Some(&crate::operator_env::EnvValue::Plain("token".into()))
+        );
+        assert_eq!(
+            agent_env.get("ANTHROPIC_API_KEY"),
+            Some(&crate::operator_env::EnvValue::Plain("key".into()))
+        );
+    }
+
+    #[test]
+    fn clear_settings_auth_env_values_removes_kind_credentials() {
+        let mut github_env = BTreeMap::new();
+        let mut agent_env = BTreeMap::new();
+        github_env.insert(
+            "GH_TOKEN".to_string(),
+            crate::operator_env::EnvValue::Plain("token".into()),
+        );
+        agent_env.insert(
+            "ANTHROPIC_API_KEY".to_string(),
+            crate::operator_env::EnvValue::Plain("key".into()),
+        );
+
+        clear_settings_auth_env_values(AuthKind::Github, &mut github_env, &mut agent_env);
+
+        assert!(!github_env.contains_key("GH_TOKEN"));
+        assert!(agent_env.contains_key("ANTHROPIC_API_KEY"));
     }
 
     #[test]
