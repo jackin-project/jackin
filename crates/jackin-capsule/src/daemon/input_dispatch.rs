@@ -404,30 +404,26 @@ impl Multiplexer {
                 self.apply_action(action)
             }
             Action::StatusBarClick { col } => {
-                // 1) Click on a tab cell switches active tab. A
-                //    second click on the same cell within the
-                //    double-click window opens the rename modal.
-                if let Some(idx) = self.status_bar.tab_at_col(col + 1)
-                    && idx < self.tabs.len()
-                {
-                    let now = std::time::Instant::now();
-                    let is_double = self
-                        .last_tab_click
-                        .filter(|(prev_idx, prev_t)| {
+                let tab = self.status_bar.tab_at_col(col + 1);
+                let now = std::time::Instant::now();
+                let double_click = tab
+                    .and_then(|idx| {
+                        self.last_tab_click.filter(|(prev_idx, prev_t)| {
                             *prev_idx == idx
                                 && now.duration_since(*prev_t) <= TAB_DOUBLE_CLICK_WINDOW
                         })
-                        .is_some();
-                    if is_double {
-                        return self.apply_action(Action::OpenRenameTab(idx));
-                    }
-                    self.last_tab_click = Some((idx, now));
-                    return self.apply_action(Action::SwitchTab(idx));
+                    })
+                    .is_some();
+                let action = status_bar_click_action(StatusBarClickState {
+                    tab,
+                    tab_count: self.tabs.len(),
+                    double_click,
+                    menu_hit: self.status_bar.hint_at(1, col + 1),
+                })?;
+                if matches!(action, Action::SwitchTab(_)) {
+                    self.last_tab_click = tab.map(|idx| (idx, now));
                 }
-                if self.status_bar.hint_at(1, col + 1) {
-                    return self.apply_action(Action::OpenPalette);
-                }
-                None
+                self.apply_action(action)
             }
             Action::BranchContextBarClick { row, col } => {
                 let action = match branch_context_bar_hit(

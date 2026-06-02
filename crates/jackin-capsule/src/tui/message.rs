@@ -235,6 +235,27 @@ pub fn mouse_release_action(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StatusBarClickState {
+    pub tab: Option<usize>,
+    pub tab_count: usize,
+    pub double_click: bool,
+    pub menu_hit: bool,
+}
+
+pub fn status_bar_click_action(state: StatusBarClickState) -> Option<Action> {
+    if let Some(idx) = state.tab
+        && idx < state.tab_count
+    {
+        return Some(if state.double_click {
+            Action::OpenRenameTab(idx)
+        } else {
+            Action::SwitchTab(idx)
+        });
+    }
+    state.menu_hit.then_some(Action::OpenPalette)
+}
+
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
@@ -243,7 +264,8 @@ fn is_wheel_button(button: u8) -> bool {
 mod tests {
     use super::{
         Action, InputDispatchContext, input_event_action, mouse_chrome_update_action,
-        mouse_release_action, pane_button_motion_action,
+        mouse_release_action, pane_button_motion_action, status_bar_click_action,
+        StatusBarClickState,
     };
     use crate::tui::input::InputEvent;
     use crate::tui::input::PrefixCommand;
@@ -372,6 +394,41 @@ mod tests {
                 button: 1,
                 press: false,
             }
+        );
+    }
+
+    #[test]
+    fn status_bar_click_action_routes_tabs_before_menu() {
+        assert_eq!(
+            status_bar_click_action(StatusBarClickState {
+                tab: Some(2),
+                tab_count: 3,
+                double_click: false,
+                menu_hit: true,
+            }),
+            Some(Action::SwitchTab(2))
+        );
+        assert_eq!(
+            status_bar_click_action(StatusBarClickState {
+                tab: Some(2),
+                tab_count: 3,
+                double_click: true,
+                menu_hit: false,
+            }),
+            Some(Action::OpenRenameTab(2))
+        );
+        assert_eq!(
+            status_bar_click_action(StatusBarClickState {
+                tab: Some(3),
+                tab_count: 3,
+                double_click: true,
+                menu_hit: true,
+            }),
+            Some(Action::OpenPalette)
+        );
+        assert_eq!(
+            status_bar_click_action(StatusBarClickState::default()),
+            None
         );
     }
 }
