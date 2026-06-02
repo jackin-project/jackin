@@ -316,6 +316,8 @@ Capsule tab-pane visible-kind derivation now lives with the capsule TUI app voca
 
 Capsule pane-motion and mouse-release gesture routing now lives with semantic TUI action vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/message.rs" />. The daemon input dispatcher still owns the concrete drag/selection state mutations and PTY forwarding in <RepoFile path="crates/jackin-capsule/src/daemon/input_dispatch.rs" />, but it asks the TUI message boundary whether a motion/release should become drag motion, selection motion/finalization, resize end, or mouse forwarding.
 
+Capsule pane-data redraw planning now lives with visible update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon dispatcher still sends the operator bytes to the focused PTY and updates session-side scrollback/input state, but the visible reason for a redraw after pane data (`scrollback-movement`, `explicit-redraw`, or no redraw) is derived by the TUI update boundary.
+
 Settings screen view geometry now owns the reusable global-mount scroll-frame calculation in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root settings geometry supplies only root mount rows and cache-derived content width.
 
 Settings header title wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering asks the screen helper for the title instead of carrying settings-screen copy.

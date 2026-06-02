@@ -478,12 +478,7 @@ impl Multiplexer {
                     unblocked = session.mark_operator_input();
                     session.send_input(&bytes);
                 }
-                if snapped || unblocked {
-                    let reason = if snapped {
-                        FullRedrawReason::ScrollbackMovement
-                    } else {
-                        FullRedrawReason::ExplicitRedraw
-                    };
+                if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
                     Some(self.compose_full_frame(reason))
                 } else {
                     None

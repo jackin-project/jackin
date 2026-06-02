@@ -133,11 +133,24 @@ pub(crate) fn partial_frame_plan(state: PartialFrameState) -> PartialFramePlan {
     }
 }
 
+pub(crate) fn pane_data_redraw_reason(
+    snapped_scrollback: bool,
+    unblocked_operator_input: bool,
+) -> Option<FullRedrawReason> {
+    if snapped_scrollback {
+        Some(FullRedrawReason::ScrollbackMovement)
+    } else if unblocked_operator_input {
+        Some(FullRedrawReason::ExplicitRedraw)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         HoverFramePlan, PartialFramePlan, PartialFrameState, drag_resize_ratio, hover_frame_plan,
-        partial_frame_plan, prefix_full_redraw_reason,
+        pane_data_redraw_reason, partial_frame_plan, prefix_full_redraw_reason,
     };
     use crate::tui::input::{ArrowDir, PrefixCommand};
     use crate::tui::layout::{Rect, SplitOrient};
@@ -235,5 +248,18 @@ mod tests {
             }),
             PartialFramePlan::Full(FullRedrawReason::PaneCacheMiss)
         );
+    }
+
+    #[test]
+    fn pane_data_redraw_reason_prioritizes_scrollback_snap() {
+        assert_eq!(
+            pane_data_redraw_reason(true, true),
+            Some(FullRedrawReason::ScrollbackMovement)
+        );
+        assert_eq!(
+            pane_data_redraw_reason(false, true),
+            Some(FullRedrawReason::ExplicitRedraw)
+        );
+        assert_eq!(pane_data_redraw_reason(false, false), None);
     }
 }
