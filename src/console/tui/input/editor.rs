@@ -11,10 +11,8 @@ use crate::console::tui::components::mount_display::workspace_mounts_content_wid
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan,
-    SecretsRow, SecretsScopeTag, TextInputTarget,
-    add_role_to_workspace_editor, open_editor_action_error, open_role_input_error,
-    open_role_resolution_error, open_role_trust_confirm,
-    auth_flat_rows, secrets_flat_rows,
+    SecretsRow, SecretsScopeTag, TextInputTarget, open_editor_action_error,
+    open_role_input_error, open_role_resolution_error, auth_flat_rows, secrets_flat_rows,
 };
 #[cfg(test)]
 use crate::console::tui::state::PendingRoleLoad;
@@ -1587,99 +1585,6 @@ fn poll_role_load_completion(
     Some((load, result))
 }
 
-#[cfg(test)]
-async fn apply_role_input_with_runner(
-    editor: &mut EditorState<'_>,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-    value: &str,
-    runner: &mut impl crate::docker::CommandRunner,
-) {
-    let raw = value.trim();
-    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
-    let selector = match crate::selector::RoleSelector::parse(raw) {
-        Ok(selector) => selector,
-        Err(e) => {
-            crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
-            let err = anyhow::Error::new(e);
-            open_role_resolution_error(editor, raw, None, &err);
-            return;
-        }
-    };
-    crate::debug_log!("role", "parsed role selector: {selector}");
-
-    let key = selector.key();
-    let result: anyhow::Result<crate::config::RoleSource> = async {
-        let source = crate::console::domain::candidate_role_source(config, &selector)?;
-        crate::debug_log!(
-            "role",
-            "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
-            git = source.git.as_str(),
-            trusted = source.trusted
-        );
-        crate::debug_log!(
-            "role",
-            "registering role repo for key={key:?} git={git:?}",
-            git = source.git.as_str()
-        );
-        crate::console::services::role_load::register_with_runner(
-            paths,
-            &selector,
-            &source.git,
-            runner,
-            crate::tui::is_debug_mode(),
-        )
-        .await?;
-        crate::console::effects::execute_role_source_persist(config, paths, &key, &source)?;
-        crate::debug_log!(
-            "role",
-            "role repo registration completed for key={key:?} git={git:?}",
-            git = source.git.as_str()
-        );
-        Ok(source)
-    }
-    .await;
-
-    match result {
-        Ok(source) if source.trusted => {
-            crate::debug_log!(
-                "role",
-                "role source is trusted; adding key={key:?} directly to the workspace"
-            );
-            add_role_to_workspace_editor(editor, config, &key);
-        }
-        Ok(source) => {
-            crate::debug_log!(
-                "role",
-                "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
-                git = source.git.as_str()
-            );
-            open_role_trust_confirm(editor, key, source);
-        }
-        Err(e) => {
-            crate::debug_log!(
-                "role",
-                "role loader failed for key={key:?} raw={raw:?}: {e:?}"
-            );
-            let err_text = e.to_string();
-            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
-                let message =
-                    jackin_console::tui::components::error_popup::internal_role_load_error_message(
-                        raw,
-                        panic_message,
-                    );
-                open_role_input_error(
-                    editor,
-                    &message,
-                );
-                return;
-            }
-            let source = crate::console::domain::candidate_role_source(config, &selector).ok();
-            open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
-        }
-    }
-}
-
 fn apply_editor_confirm(
     editor: &mut EditorState<'_>,
     target: &ConfirmTarget,
@@ -1809,9 +1714,9 @@ mod tests {
     };
     use super::super::test_support::{key, mount};
     use super::{
-        apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
-        add_role_to_workspace_editor, env_key_input_state, handle_editor_modal, poll_role_load,
-        role_load_input_state, secret_new_key_label, secrets_flat_rows, EditorModalOutcome,
+        apply_file_browser_to_editor, apply_text_input_to_pending, env_key_input_state,
+        handle_editor_modal, poll_role_load, role_load_input_state, secret_new_key_label,
+        secrets_flat_rows, EditorModalOutcome,
     };
     use crate::config::AppConfig;
     use crate::console::tui::input::handle_key;
@@ -1850,9 +1755,9 @@ mod tests {
         match outcome {
             EditorModalOutcome::PersistTrustedRoleSource { key, mut source } => {
                 source.trusted = true;
-                crate::console::effects::execute_role_source_persist(config, paths, &key, &source)
-                    .unwrap();
-                add_role_to_workspace_editor(editor, config, &key);
+                crate::console::effects::persist_trusted_role_source_for_tests(
+                    editor, config, paths, &key, source,
+                );
             }
             EditorModalOutcome::OpenUrl(_) => panic!("test helper did not expect URL-open"),
             _ => {}
@@ -2484,7 +2389,7 @@ plugins = []
             Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
         ));
 
-        apply_role_input_with_runner(
+        crate::console::effects::apply_role_input_with_runner_for_tests(
             &mut editor,
             &mut config,
             &paths,
@@ -2684,7 +2589,7 @@ plugins = []
             Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
         ));
 
-        apply_role_input_with_runner(
+        crate::console::effects::apply_role_input_with_runner_for_tests(
             &mut editor,
             &mut config,
             &paths,
@@ -2747,7 +2652,7 @@ plugins = []
             Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
         ));
 
-        apply_role_input_with_runner(
+        crate::console::effects::apply_role_input_with_runner_for_tests(
             &mut editor,
             &mut config,
             &paths,
@@ -2791,7 +2696,7 @@ plugins = []
         // When the config already has a trusted role source the editor
         // must register the cached repo and add it to the workspace
         // *without* re-prompting for trust (`Ok(source) if
-        // source.trusted` branch in `apply_role_input_with_runner`).
+        // source.trusted` branch in the role-registration effect executor).
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -2815,7 +2720,7 @@ plugins = []
             Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
         ));
 
-        apply_role_input_with_runner(
+        crate::console::effects::apply_role_input_with_runner_for_tests(
             &mut editor,
             &mut config,
             &paths,
@@ -2853,7 +2758,7 @@ plugins = []
             .fail_with
             .push(("git clone".into(), "repository not found".into()));
 
-        apply_role_input_with_runner(
+        crate::console::effects::apply_role_input_with_runner_for_tests(
             &mut editor,
             &mut config,
             &paths,
@@ -2928,7 +2833,7 @@ plugins = []
             }),
         ));
 
-        apply_role_input_with_runner(
+        crate::console::effects::apply_role_input_with_runner_for_tests(
             &mut editor,
             &mut config,
             &paths,
@@ -3017,7 +2922,7 @@ plugins = []
             Box::new(|| panic!("test panic while cloning role repo")),
         ));
 
-        apply_role_input_with_runner(
+        crate::console::effects::apply_role_input_with_runner_for_tests(
             &mut editor,
             &mut config,
             &paths,

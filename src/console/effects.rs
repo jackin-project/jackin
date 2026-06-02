@@ -582,6 +582,85 @@ pub(crate) fn apply_role_load_completion(
     }
 }
 
+#[cfg(test)]
+pub(crate) async fn apply_role_input_with_runner_for_tests(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    value: &str,
+    runner: &mut impl crate::docker::CommandRunner,
+) {
+    let raw = value.trim();
+    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
+    let resolved = match crate::console::domain::resolve_role_input_source(config, raw) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            if let Some(git) = error.source_url.as_ref() {
+                crate::console::tui::state::open_role_resolution_error(
+                    editor,
+                    &error.raw,
+                    Some(git),
+                    &error.error,
+                );
+            } else {
+                crate::console::tui::state::open_role_resolution_error(
+                    editor,
+                    &error.raw,
+                    None,
+                    &error.error,
+                );
+            }
+            return;
+        }
+    };
+
+    crate::debug_log!(
+        "role",
+        "registering role repo for key={key:?} git={git:?}",
+        key = resolved.key,
+        git = resolved.source.git.as_str()
+    );
+    let result = crate::console::services::role_load::register_with_runner(
+        paths,
+        &resolved.selector,
+        &resolved.source.git,
+        runner,
+        crate::tui::is_debug_mode(),
+    )
+    .await;
+    let (_tx, rx) = tokio::sync::oneshot::channel();
+    apply_role_load_completion(
+        editor,
+        config,
+        paths,
+        PendingRoleLoad {
+            raw: resolved.raw,
+            key: resolved.key,
+            source: resolved.source,
+            rx,
+        },
+        result,
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn persist_trusted_role_source_for_tests(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    key: &str,
+    source: crate::config::RoleSource,
+) {
+    match execute_role_source_persist(config, paths, key, &source) {
+        Ok(()) => {
+            crate::console::tui::state::add_role_to_workspace_editor(editor, config, key);
+        }
+        Err(error) => {
+            crate::console::tui::state::open_editor_action_error(editor, &error);
+        }
+    }
+}
+
 fn execute_trusted_role_source_persist(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
