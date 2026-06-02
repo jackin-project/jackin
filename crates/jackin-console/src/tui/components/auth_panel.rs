@@ -69,6 +69,11 @@ pub fn auth_credential_input_state<'a>(
 }
 
 #[must_use]
+pub fn auth_panel_title(kind_label: &str) -> String {
+    format!(" {kind_label} ")
+}
+
+#[must_use]
 pub const fn auth_form_key_plan(
     focus: AuthFormFocus,
     key: KeyCode,
@@ -546,6 +551,11 @@ mod tests {
         let state = auth_source_picker_state("CLAUDE_API_KEY", true);
 
         assert_eq!(state.key, "CLAUDE_API_KEY");
+    }
+
+    #[test]
+    fn auth_panel_title_pads_kind_label_for_panel() {
+        assert_eq!(auth_panel_title("Claude"), " Claude ");
     }
 
     #[test]

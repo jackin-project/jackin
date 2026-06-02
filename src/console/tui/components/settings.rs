@@ -9,6 +9,7 @@ use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
     SettingsState, SettingsTab, settings_env_flat_rows,
 };
+use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
 use jackin_console::tui::screens::settings::view::{
     env_lines as settings_env_lines, global_mount_lines as settings_global_mount_lines,
@@ -85,7 +86,7 @@ pub(crate) fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area:
 }
 
 pub(crate) fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
-    let title = state.auth.selected_kind.map(|k| format!(" {} ", k.label()));
+    let title = state.auth.selected_kind.map(|k| auth_panel_title(k.label()));
     let lines = settings_auth_lines_for_state(state);
     let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
