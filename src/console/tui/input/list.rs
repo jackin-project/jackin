@@ -6,7 +6,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceAction, WorkspaceInstanceStatus,
-    instance_action_accepts_status, preview_pane_key_plan,
+    instance_action_accepts_status, is_preview_pane_entry_target, preview_pane_key_plan,
+    should_enter_preview_pane,
 };
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
@@ -39,14 +40,14 @@ pub(super) fn handle_list_key(
     // tree-expand because instance rows have no expand semantics; →
     // on a non-instance row continues to the existing handler below.
     let selected_row = state.selected_row();
-    if matches!(key.code, KeyCode::Tab | KeyCode::Right)
-        && matches!(
-            selected_row,
-            ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
-        )
+    if is_preview_pane_entry_target(key.code, selected_row)
         && let Some(container) =
             selected_instance_container(state, ConsoleInstanceAction::Reconnect)
-        && !state.flattened_preview_panes(&container).is_empty()
+        && should_enter_preview_pane(
+            key.code,
+            selected_row,
+            state.flattened_preview_panes(&container).len(),
+        )
     {
         dispatch_manager(state, ManagerMessage::EnterPreview);
         return Ok(InputOutcome::Continue);

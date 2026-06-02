@@ -85,6 +85,24 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::focus::selected_index(selected, row_count)
 }
 
+#[must_use]
+pub const fn is_preview_pane_entry_target(key: KeyCode, row: ManagerListRow) -> bool {
+    matches!(key, KeyCode::Tab | KeyCode::Right)
+        && matches!(
+            row,
+            ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
+        )
+}
+
+#[must_use]
+pub const fn should_enter_preview_pane(
+    key: KeyCode,
+    row: ManagerListRow,
+    pane_count: usize,
+) -> bool {
+    is_preview_pane_entry_target(key, row) && pane_count > 0
+}
+
 /// Preview-pane navigation mode: Esc / Left / BackTab exits, Up/Down
 /// move inside the snapshot, and Enter reconnects to the selected pane.
 #[must_use]
@@ -191,5 +209,34 @@ mod tests {
         );
         assert_eq!(preview_pane_key_plan(KeyCode::Tab, 2), PreviewPaneKeyPlan::Continue);
         assert_eq!(preview_pane_key_plan(KeyCode::Enter, 0), PreviewPaneKeyPlan::ExitPreview);
+    }
+
+    #[test]
+    fn should_enter_preview_pane_requires_instance_row_key_and_panes() {
+        assert!(should_enter_preview_pane(
+            KeyCode::Tab,
+            ManagerListRow::WorkspaceInstance(1, 0),
+            2
+        ));
+        assert!(should_enter_preview_pane(
+            KeyCode::Right,
+            ManagerListRow::CurrentDirectoryInstance(0),
+            1
+        ));
+        assert!(!should_enter_preview_pane(
+            KeyCode::Tab,
+            ManagerListRow::SavedWorkspace(1),
+            2
+        ));
+        assert!(!should_enter_preview_pane(
+            KeyCode::Down,
+            ManagerListRow::WorkspaceInstance(1, 0),
+            2
+        ));
+        assert!(!should_enter_preview_pane(
+            KeyCode::Tab,
+            ManagerListRow::WorkspaceInstance(1, 0),
+            0
+        ));
     }
 }
