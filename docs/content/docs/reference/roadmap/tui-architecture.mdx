@@ -308,6 +308,8 @@ The op-picker background-worker disconnect message now lives in <RepoFile path="
 
 Settings screen view geometry now owns the reusable global-mount scroll-frame calculation in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root settings geometry supplies only root mount rows and cache-derived content width.
 
+Settings header title wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering asks the screen helper for the title instead of carrying settings-screen copy.
+
 Settings global-mount scroll clamping now uses the same crate-owned settings frame geometry helper that settings rendering uses, so scroll preparation and frame rendering cannot drift on header/tab/body/footer row allocation.
 
 Settings tab content-height rules for Mounts, Environment, and Trust tabs now live with the settings screen view helpers. Root layout code supplies row counts and error-state facts instead of owning the tab-specific height math.

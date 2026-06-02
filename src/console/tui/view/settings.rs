@@ -12,7 +12,9 @@ use crate::console::tui::components::settings::{
     render_settings_tab_strip, render_trust_tab,
 };
 use crate::console::tui::state::{SettingsState, SettingsTab};
-use jackin_console::tui::screens::settings::view::settings_frame_areas;
+use jackin_console::tui::screens::settings::view::{
+    settings_frame_areas, settings_header_title,
+};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
 pub(super) fn render_settings(
@@ -25,7 +27,7 @@ pub(super) fn render_settings(
         crate::console::tui::components::footer::settings::settings_footer_items(state, op_available);
     let footer_h = footer_height(&footer, area.width).max(1);
     let areas = settings_frame_areas(area, footer_h);
-    render_header(frame, areas.header, "settings");
+    render_header(frame, areas.header, settings_header_title());
     render_settings_tab_strip(
         frame,
         areas.tabs,

@@ -58,6 +58,11 @@ pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
 }
 
 #[must_use]
+pub const fn settings_header_title() -> &'static str {
+    "settings"
+}
+
+#[must_use]
 pub fn tab_labels(active: SettingsTab) -> Vec<(&'static str, bool)> {
     SettingsTab::ALL
         .iter()
@@ -652,6 +657,11 @@ mod tests {
         assert_eq!(areas.tabs, Rect::new(0, 3, 80, 2));
         assert_eq!(areas.body, Rect::new(0, 5, 80, 13));
         assert_eq!(areas.footer, Rect::new(0, 18, 80, 2));
+    }
+
+    #[test]
+    fn settings_header_title_is_screen_owned() {
+        assert_eq!(settings_header_title(), "settings");
     }
 
     #[test]
