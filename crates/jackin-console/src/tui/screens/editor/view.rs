@@ -78,6 +78,18 @@ pub fn editor_header_title(mode: &EditorMode) -> String {
 }
 
 #[must_use]
+pub fn editor_name_value(
+    mode: &EditorMode,
+    pending_name: Option<&str>,
+    create_fallback: &str,
+) -> String {
+    match mode {
+        EditorMode::Edit { name } => pending_name.unwrap_or(name).to_string(),
+        EditorMode::Create => pending_name.unwrap_or(create_fallback).to_string(),
+    }
+}
+
+#[must_use]
 pub fn secret_delete_confirm_prompt(key: &str) -> String {
     format!("Delete environment variable {key}?")
 }
@@ -1156,6 +1168,24 @@ mod tests {
             "edit workspace · demo"
         );
         assert_eq!(editor_header_title(&EditorMode::Create), "create workspace");
+    }
+
+    #[test]
+    fn editor_name_value_uses_pending_or_mode_fallback() {
+        let edit = EditorMode::Edit {
+            name: "saved".to_string(),
+        };
+
+        assert_eq!(editor_name_value(&edit, Some("pending"), ""), "pending");
+        assert_eq!(editor_name_value(&edit, None, ""), "saved");
+        assert_eq!(
+            editor_name_value(&EditorMode::Create, Some("pending"), "(new workspace)"),
+            "pending"
+        );
+        assert_eq!(
+            editor_name_value(&EditorMode::Create, None, "(new workspace)"),
+            "(new workspace)"
+        );
     }
 
     #[test]

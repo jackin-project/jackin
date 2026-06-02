@@ -310,6 +310,8 @@ Editor General-tab content-width calculation now uses <RepoFile path="crates/jac
 
 Editor header title wording now also lives with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />. Root rendering passes the editor mode/name facts and no longer owns the `edit workspace` / `create workspace` title copy.
 
+Editor workspace-name fallback derivation now also lives with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />. Root editor input and root auth-panel state pass only edit/create mode, optional pending name, and the caller-specific create fallback before opening the rename input or resolving the workspace key used by the auth panel.
+
 The root-dependent console op-picker adapter now lives under <RepoFile path="src/console/tui/op_picker/mod.rs" /> instead of `src/console/tui/components/`, so the remaining root-bound load/input/state bridge is no longer stored as a visual component.
 
 The op-picker background-worker disconnect message now lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. The root adapter still owns the `operator_env` runner, subscriptions, and cache binding, but visible recoverable-error wording stays with the component boundary.

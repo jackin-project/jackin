@@ -9,7 +9,7 @@ use jackin_console::tui::components::save_discard::editor_exit_save_discard_stat
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache;
 use crate::console::tui::state::{
-    AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
+    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan,
     SecretsRow, SecretsScopeTag, TextInputTarget,
     add_role_to_workspace_editor, open_editor_action_error, open_role_input_error,
@@ -26,8 +26,8 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
-    editor_name_input_state, editor_workdir_pick_state, mount_destination_input_state,
-    mount_dst_choice_state, role_load_input_state,
+    editor_name_input_state, editor_name_value, editor_workdir_pick_state,
+    mount_destination_input_state, mount_dst_choice_state, role_load_input_state,
     secret_delete_confirm_state, secret_empty_key_label, secret_key_input_state_from_pending,
     secret_new_key_after_picker_label, secret_new_key_label, secret_new_value_input_state,
     secret_scope_picker_state, secret_source_picker_state, secret_value_input_state,
@@ -544,12 +544,7 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
         let FieldFocus::Row(n) = editor.active_field;
         match n {
             0 => {
-                let current = match &editor.mode {
-                    EditorMode::Edit { name } => {
-                        editor.pending_name.clone().unwrap_or_else(|| name.clone())
-                    }
-                    EditorMode::Create => editor.pending_name.clone().unwrap_or_default(),
-                };
+                let current = editor_name_value(&editor.mode, editor.pending_name.as_deref(), "");
                 editor.modal = Some(Modal::TextInput {
                     target: TextInputTarget::Name,
                     state: editor_name_input_state(current),

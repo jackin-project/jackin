@@ -535,13 +535,11 @@ pub(crate) fn synthesize_appconfig_for_auth(
 /// otherwise a stable placeholder ("(new workspace)") so the panel can still
 /// render with the pending values populated.
 pub(crate) fn workspace_name_for_panel(state: &EditorState<'_>) -> String {
-    match &state.mode {
-        EditorMode::Edit { name } => state.pending_name.clone().unwrap_or_else(|| name.clone()),
-        EditorMode::Create => state
-            .pending_name
-            .clone()
-            .unwrap_or_else(|| "(new workspace)".to_string()),
-    }
+    jackin_console::tui::screens::editor::view::editor_name_value(
+        &state.mode,
+        state.pending_name.as_deref(),
+        "(new workspace)",
+    )
 }
 
 /// Map a flattened auth row index (the cursor) into the
