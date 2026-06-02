@@ -11,7 +11,6 @@ pub(crate) mod footer;
 pub(crate) mod list;
 pub(crate) mod list_geometry;
 pub(crate) mod modal;
-pub(crate) mod modal_layout;
 mod pre_render;
 pub(crate) mod settings;
 pub(crate) mod settings_geometry;

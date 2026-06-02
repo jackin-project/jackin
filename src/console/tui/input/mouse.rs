@@ -9,7 +9,7 @@ use crate::console::tui::render::list_geometry::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::effect::ManagerEffect;
-use crate::console::tui::render::modal_layout::modal_outer_rect;
+use crate::console::tui::components::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use crate::console::tui::components::mount_display::global_mounts_content_width;
 #[cfg(test)]
