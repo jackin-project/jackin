@@ -231,6 +231,21 @@ pub(crate) fn palette_command_route(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConfirmedActionRoute {
+    ClosePane,
+    CloseTab,
+    ExitAllSessions,
+}
+
+pub(crate) fn confirmed_action_route(kind: ConfirmKind) -> ConfirmedActionRoute {
+    match kind {
+        ConfirmKind::ClosePane => ConfirmedActionRoute::ClosePane,
+        ConfirmKind::CloseTab => ConfirmedActionRoute::CloseTab,
+        ConfirmKind::Exit => ConfirmedActionRoute::ExitAllSessions,
+    }
+}
+
 pub fn pane_button_motion_action(dragging: bool, selecting: bool, row: u16, col: u16) -> Action {
     if dragging {
         Action::DragMotion { row, col }
@@ -303,8 +318,9 @@ fn is_wheel_button(button: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Action, InputDispatchContext, branch_context_bar_click_action, input_event_action,
-        mouse_chrome_update_action, mouse_release_action, palette_command_route,
+        Action, ConfirmedActionRoute, InputDispatchContext, branch_context_bar_click_action,
+        confirmed_action_route, input_event_action, mouse_chrome_update_action,
+        mouse_release_action, palette_command_route,
         pane_button_motion_action, status_bar_click_action, PaletteCommandRoute,
         StatusBarClickState,
     };
@@ -419,6 +435,22 @@ mod tests {
         assert_eq!(
             palette_command_route(PaletteCommand::Exit, 2),
             PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit)
+        );
+    }
+
+    #[test]
+    fn confirmed_action_route_maps_confirm_kind_to_terminal_action() {
+        assert_eq!(
+            confirmed_action_route(ConfirmKind::ClosePane),
+            ConfirmedActionRoute::ClosePane
+        );
+        assert_eq!(
+            confirmed_action_route(ConfirmKind::CloseTab),
+            ConfirmedActionRoute::CloseTab
+        );
+        assert_eq!(
+            confirmed_action_route(ConfirmKind::Exit),
+            ConfirmedActionRoute::ExitAllSessions
         );
     }
 

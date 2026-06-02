@@ -30,8 +30,8 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::tui::message::{
-    Action, InputDispatchContext, branch_context_bar_click_action, input_event_action,
-    mouse_chrome_update_action,
+    Action, ConfirmedActionRoute, InputDispatchContext, branch_context_bar_click_action,
+    confirmed_action_route, input_event_action, mouse_chrome_update_action,
     mouse_release_action, palette_command_route, pane_button_motion_action,
     prefix_command_action, status_bar_click_action, PaletteCommandRoute, StatusBarClickState,
 };
@@ -43,9 +43,11 @@ use crate::attach_protocol::{
 use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
 use crate::tui::components::dialog::{
-    ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
-    PickerIntent, SplitDirection, github_context_view_from_state,
+    Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand, PickerIntent,
+    SplitDirection, github_context_view_from_state,
 };
+#[cfg(test)]
+use crate::tui::components::dialog::ConfirmKind;
 #[cfg(test)]
 use crate::git_context::{
     PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, read_branch_from_git_head,

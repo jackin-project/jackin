@@ -141,10 +141,10 @@ impl Multiplexer {
                 // Terminal action — clear every dialog under us and
                 // fire the matching destructive call.
                 self.dialog_clear();
-                match kind {
-                    ConfirmKind::ClosePane => self.close_focused_pane(),
-                    ConfirmKind::CloseTab => self.close_focused_tab(),
-                    ConfirmKind::Exit => self.exit_all_sessions(),
+                match confirmed_action_route(kind) {
+                    ConfirmedActionRoute::ClosePane => self.close_focused_pane(),
+                    ConfirmedActionRoute::CloseTab => self.close_focused_tab(),
+                    ConfirmedActionRoute::ExitAllSessions => self.exit_all_sessions(),
                 }
             }
         }
