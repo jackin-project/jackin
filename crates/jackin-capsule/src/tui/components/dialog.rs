@@ -15,7 +15,6 @@
 /// - **Hint footer** follows the console TUI's structured format:
 ///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
-use crate::container_context::ContainerDiagnostics;
 use crate::pull_request::PullRequestInfo;
 
 /// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
@@ -36,6 +35,25 @@ pub enum PullRequestStatus<'a> {
     Loaded(&'a PullRequestInfo),
     Resolving,
     Idle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContainerInfoDiagnostics {
+    pub host_version: String,
+    pub run_id: String,
+    pub run_log_display: String,
+    pub run_log_href: Option<String>,
+}
+
+impl Default for ContainerInfoDiagnostics {
+    fn default() -> Self {
+        Self {
+            host_version: "unknown".to_string(),
+            run_id: String::new(),
+            run_log_display: "(not set)".to_string(),
+            run_log_href: None,
+        }
+    }
 }
 
 impl<'a> PullRequestStatus<'a> {
@@ -151,7 +169,7 @@ pub enum Dialog {
         role: String,
         focused_agent: Option<String>,
         workdir: String,
-        diagnostics: ContainerDiagnostics,
+        diagnostics: ContainerInfoDiagnostics,
         copied: bool,
     },
     /// Read-only modal opened from the bottom branch/PR context.
@@ -385,7 +403,7 @@ impl Dialog {
         role: String,
         focused_agent: Option<String>,
         workdir: String,
-        diagnostics: ContainerDiagnostics,
+        diagnostics: ContainerInfoDiagnostics,
     ) -> Self {
         Self::ContainerInfo {
             container_name,
@@ -2111,7 +2129,7 @@ fn render_container_info(
     role: &str,
     focused_agent: Option<&str>,
     workdir: &str,
-    diagnostics: &ContainerDiagnostics,
+    diagnostics: &ContainerInfoDiagnostics,
     copied: bool,
     copy_target_hovered: bool,
 ) {
@@ -2920,7 +2938,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
-            diagnostics: ContainerDiagnostics::default(),
+            diagnostics: ContainerInfoDiagnostics::default(),
             copied: false,
         }
     }
@@ -3009,7 +3027,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
-            diagnostics: ContainerDiagnostics::default(),
+            diagnostics: ContainerInfoDiagnostics::default(),
             copied: true,
         };
         assert!(d.clear_copy_feedback());
@@ -3026,7 +3044,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
-            diagnostics: ContainerDiagnostics::default(),
+            diagnostics: ContainerInfoDiagnostics::default(),
             copied: true,
         };
         let mut buf = Vec::new();

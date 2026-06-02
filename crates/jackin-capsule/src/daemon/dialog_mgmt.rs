@@ -47,12 +47,18 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .and_then(|s| s.agent.clone());
         let container_name = self.status_bar.container_name().to_string();
+        let diagnostics = crate::container_context::resolve_container_diagnostics();
         self.dialog_push(Dialog::new_container_info(
             container_name,
             self.status_bar.role().to_string(),
             focused_agent,
             self.workdir.to_string_lossy().into_owned(),
-            crate::container_context::resolve_container_diagnostics(),
+            crate::tui::components::dialog::ContainerInfoDiagnostics {
+                host_version: diagnostics.host_version,
+                run_id: diagnostics.run_id,
+                run_log_display: diagnostics.run_log_display,
+                run_log_href: diagnostics.run_log_href,
+            },
         ));
     }
 

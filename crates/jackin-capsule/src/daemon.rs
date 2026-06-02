@@ -3305,7 +3305,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace".to_string(),
-            diagnostics: crate::container_context::ContainerDiagnostics::default(),
+            diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
             copied: true,
         });
         let now = Instant::now();
@@ -3327,7 +3327,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace".to_string(),
-            diagnostics: crate::container_context::ContainerDiagnostics::default(),
+            diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
             copied: false,
         });
         let (tx, mut rx) = mpsc::unbounded_channel();
