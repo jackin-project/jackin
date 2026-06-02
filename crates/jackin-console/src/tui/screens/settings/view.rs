@@ -123,6 +123,11 @@ pub fn settings_env_text_input_state<'a>(
 }
 
 #[must_use]
+pub fn settings_env_value_text_label(key: &str) -> String {
+    format!("Edit {key}")
+}
+
+#[must_use]
 pub fn settings_env_source_picker_state(
     key: impl Into<String>,
 ) -> crate::tui::components::source_picker::SourcePickerState {
@@ -629,6 +634,11 @@ mod tests {
 
         assert!(value_state.is_valid());
         assert!(!key_state.is_valid());
+    }
+
+    #[test]
+    fn settings_env_value_text_label_names_key() {
+        assert_eq!(settings_env_value_text_label("TOKEN"), "Edit TOKEN");
     }
 
     #[test]

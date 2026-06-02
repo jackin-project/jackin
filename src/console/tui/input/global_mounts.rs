@@ -23,7 +23,7 @@ use jackin_console::tui::screens::settings::view::{
     env_scope_label, global_mount_confirm_state, global_mount_scope_picker_state,
     global_mount_text_input_state, global_mount_text_target_label, settings_env_delete_confirm_state,
     settings_env_key_input_state, settings_env_scope_picker_state, settings_env_source_picker_state,
-    settings_env_text_input_state,
+    settings_env_text_input_state, settings_env_value_text_label,
 };
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
@@ -1718,7 +1718,8 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
                 scope,
                 key: key.clone(),
             };
-            let state = settings_env_text_input_state(&target, format!("Edit {key}"), current);
+            let state =
+                settings_env_text_input_state(&target, settings_env_value_text_label(&key), current);
             settings.env.modal = Some(SettingsEnvModal::Text {
                 target,
                 state: Box::new(state),
