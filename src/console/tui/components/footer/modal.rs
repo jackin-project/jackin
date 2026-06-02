@@ -10,12 +10,15 @@ use jackin_console::tui::components::footer_hints::{
 };
 
 #[allow(clippy::too_many_lines)]
-pub(crate) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
+pub(crate) fn modal_footer_items(
+    modal: &Modal<'_>,
+    can_generate_token: bool,
+) -> Vec<HintSpan<'static>> {
     match modal {
         Modal::AuthForm { state, focus, .. } => shared_modal_footer_items(ModalFooterMode::AuthForm {
             focus: *focus,
             shows_credential_block: state.shows_credential_block(),
-            can_generate_token: false,
+            can_generate_token,
         }),
         Modal::TextInput { .. } => shared_modal_footer_items(ModalFooterMode::ConfirmDismiss),
         Modal::FileBrowser { state, .. } => state.footer_items(),

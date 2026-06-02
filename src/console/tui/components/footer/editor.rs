@@ -12,8 +12,8 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    AuthRowFooterMode, add_row_footer_items, append_generate_token_footer_item,
-    auth_row_footer_items, content_footer_items, editor_general_row_footer_items,
+    AuthRowFooterMode, add_row_footer_items, auth_row_footer_items, content_footer_items,
+    editor_general_row_footer_items,
     editor_role_row_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
     secret_plain_row_footer_items, secret_role_header_footer_items, tab_bar_footer_items,
     workspace_mount_row_footer_items,
@@ -25,13 +25,11 @@ pub(crate) fn editor_footer_items(
     op_available: bool,
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
-        let mut items = modal_footer_items(modal);
-        if matches!(modal, Modal::AuthForm { .. })
-            && crate::console::tui::input::auth::auth_form_can_generate_token(state)
-        {
-            append_generate_token_footer_item(&mut items);
-        }
-        return items;
+        return modal_footer_items(
+            modal,
+            matches!(modal, Modal::AuthForm { .. })
+                && crate::console::tui::input::auth::auth_form_can_generate_token(state),
+        );
     }
     if state.tab_bar_focused {
         return tab_bar_footer_items(
