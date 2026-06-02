@@ -19,7 +19,7 @@ mod tests {
         console::tui::state::{
             EditorState, EditorTab, GlobalMountConfirm, GlobalMountModal, ManagerStage,
             ManagerState, Modal, MountScrollFocus, SettingsEnvModal, SettingsEnvScope,
-            SettingsEnvTextTarget, SettingsState,
+            SettingsEnvTextTarget, settings_state_from_config,
         },
         workspace::WorkspaceConfig,
     };
@@ -155,7 +155,7 @@ readonly = false
         modal: GlobalMountModal<'a>,
     ) -> ManagerState<'a> {
         let mut state = ManagerState::from_config(config, cwd);
-        let mut settings = SettingsState::from_config(config);
+        let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
         settings.tab_bar_focused = false;
         settings.mounts.scroll_focused = true;
@@ -170,7 +170,7 @@ readonly = false
         modal: SettingsEnvModal<'a>,
     ) -> ManagerState<'a> {
         let mut state = ManagerState::from_config(config, cwd);
-        let mut settings = SettingsState::from_config(config);
+        let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
         settings.tab_bar_focused = false;
         settings.env.scroll_focused = true;
@@ -185,7 +185,7 @@ readonly = false
         modal: crate::console::tui::state::SettingsAuthModal<'static>,
     ) -> ManagerState<'static> {
         let mut state = ManagerState::from_config(config, cwd);
-        let mut settings = SettingsState::from_config(config);
+        let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
         settings.tab_bar_focused = false;
         settings.auth.scroll_focused = true;
@@ -238,7 +238,7 @@ readonly = false
         let config = AppConfig::default();
         let cwd = test_cwd();
         let mut state = ManagerState::from_config(&config, &cwd);
-        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+        state.stage = ManagerStage::Settings(settings_state_from_config(&config));
         let rendered = render_manager_state(&mut state, &config, &cwd, 90, 20);
         insta::assert_snapshot!("settings_general_90x20", rendered);
     }
@@ -315,7 +315,7 @@ readonly = false
 
         for tab in crate::console::tui::state::SettingsTab::ALL {
             let mut state = ManagerState::from_config(&config, &cwd);
-            let mut settings = SettingsState::from_config(&config);
+            let mut settings = settings_state_from_config(&config);
             settings.active_tab = tab;
             settings.tab_bar_focused = false;
             settings.mounts.scroll_focused =
@@ -642,7 +642,7 @@ readonly = false
         cases.push(("editor auth form", editor_auth_form));
 
         let mut settings_mounts_confirm = ManagerState::from_config(&config, &cwd);
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
         settings.tab_bar_focused = false;
         settings.mounts.scroll_focused = true;
@@ -736,7 +736,7 @@ readonly = false
         ));
 
         let mut settings_env_text = ManagerState::from_config(&config, &cwd);
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
         settings.tab_bar_focused = false;
         settings.env.scroll_focused = true;
@@ -815,7 +815,7 @@ readonly = false
         ));
 
         let mut settings_auth_text = ManagerState::from_config(&config, &cwd);
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
         settings.tab_bar_focused = false;
         settings.auth.scroll_focused = true;

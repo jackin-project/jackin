@@ -51,6 +51,7 @@ pub(super) fn render_settings(
 mod tests {
     use super::*;
     use crate::config::AppConfig;
+    use crate::console::tui::state::settings_state_from_config;
     use ratatui::{Terminal, backend::TestBackend};
 
     fn render_settings_to_dump(state: &SettingsState<'_>) -> String {
@@ -73,7 +74,7 @@ mod tests {
     fn settings_header_does_not_duplicate_active_tab_label() {
         let config = AppConfig::default();
         for tab in SettingsTab::ALL {
-            let mut state = SettingsState::from_config(&config);
+            let mut state = settings_state_from_config(&config);
             state.active_tab = tab;
             let dump = render_settings_to_dump(&state);
             let header = dump.lines().next().unwrap_or_default();

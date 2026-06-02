@@ -26,7 +26,7 @@ use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::instance_action::workspace_instance_action_fact;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    EditorState, ManagerListRow, ManagerState, Modal, SettingsState,
+    EditorState, ManagerListRow, ManagerState, Modal, settings_state_from_config,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -224,7 +224,7 @@ pub(super) fn handle_list_key(
             ) {
                 dispatch_manager(
                     state,
-                    ManagerMessage::EnterSettings(SettingsState::from_config(config)),
+                    ManagerMessage::EnterSettings(settings_state_from_config(config)),
                 );
             }
             Ok(InputOutcome::Continue)

@@ -97,7 +97,7 @@ fn settings_error_popup_dismissed_by_enter() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut settings = crate::console::tui::state::SettingsState::from_config(&config);
+    let mut settings = crate::console::tui::state::settings_state_from_config(&config);
     settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
         "Test", "details",
     ));
@@ -132,7 +132,7 @@ fn settings_error_popup_unrelated_key_does_not_dismiss() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut settings = crate::console::tui::state::SettingsState::from_config(&config);
+    let mut settings = crate::console::tui::state::settings_state_from_config(&config);
     settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
         "Test", "details",
     ));

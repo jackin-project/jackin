@@ -9,7 +9,9 @@ use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
-    SettingsEnvTextTarget, SettingsTab, settings_env_flat_rows, settings_env_state_flat_rows,
+    SettingsEnvTextTarget, SettingsStateExt, SettingsTab, settings_env_flat_rows,
+    settings_env_state_flat_rows,
+    settings_state_from_config,
 };
 use crate::console::tui::effect::ManagerEffect;
 use jackin_tui::ModalOutcome;
@@ -1990,7 +1992,7 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Mounts;
         state.stage = ManagerStage::Settings(settings);
 
@@ -2017,7 +2019,7 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Mounts;
         state.stage = ManagerStage::Settings(settings);
 
@@ -2046,7 +2048,7 @@ mod tests {
     #[test]
     fn global_mount_filebrowser_open_git_url_returns_typed_outcome() {
         let tmp = tempfile::tempdir().unwrap();
-        let mut settings = SettingsState::from_config(&AppConfig::default());
+        let mut settings = settings_state_from_config(&AppConfig::default());
         let mut browser =
             jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
                 jackin_console::services::file_browser::listing_from_home().unwrap(),
@@ -2084,7 +2086,7 @@ mod tests {
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Mounts;
         state.stage = ManagerStage::Settings(settings);
 
@@ -2133,7 +2135,7 @@ mod tests {
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Mounts;
         state.stage = ManagerStage::Settings(settings);
 
@@ -2167,7 +2169,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+        state.stage = ManagerStage::Settings(settings_state_from_config(&config));
         // Settings opens with tab_bar_focused = true; Right cycles forward.
         assert!(
             matches!(&state.stage, ManagerStage::Settings(s) if s.tab_bar_focused),
@@ -2202,7 +2204,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+        state.stage = ManagerStage::Settings(settings_state_from_config(&config));
 
         handle_settings_key(&mut state, key(KeyCode::Down));
         assert!(
@@ -2242,7 +2244,7 @@ mod tests {
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Trust;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2270,7 +2272,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::General;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2328,7 +2330,7 @@ mod tests {
             let tmp = tempfile::tempdir().unwrap();
             let config = AppConfig::default();
             let mut state = ManagerState::from_config(&config, tmp.path());
-            let mut settings = SettingsState::from_config(&config);
+            let mut settings = settings_state_from_config(&config);
             settings.active_tab = SettingsTab::General;
             settings.tab_bar_focused = false;
             settings.general.selected = selected;
@@ -2363,7 +2365,7 @@ mod tests {
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Trust;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2384,7 +2386,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Auth;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2422,7 +2424,7 @@ mod tests {
         use jackin_console::tui::auth::{AuthKind, AuthMode};
 
         let config = AppConfig::default();
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Auth;
         settings.tab_bar_focused = false;
         settings.auth.selected_kind = Some(AuthKind::Claude);
@@ -2489,7 +2491,7 @@ mod tests {
         }
 
         let config = AppConfig::default();
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Auth;
         settings.tab_bar_focused = false;
         settings.auth.selected_kind = Some(AuthKind::Claude);
@@ -2531,8 +2533,8 @@ mod tests {
             panic!("mint completion must re-mount the settings auth form");
         };
         assert_eq!(
-            *focus,
-            AuthFormFocus::Save,
+            focus,
+            &AuthFormFocus::Save,
             "post-mint re-mount drops the cursor onto Save"
         );
         match &state.credential {
@@ -2554,7 +2556,7 @@ mod tests {
         use jackin_console::tui::auth::{AuthKind, AuthMode};
 
         let config = AppConfig::default();
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Auth;
         settings.tab_bar_focused = false;
         settings.auth.selected_kind = Some(AuthKind::Claude);
@@ -2592,7 +2594,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Environments;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2627,7 +2629,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Environments;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2666,7 +2668,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Environments;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2717,7 +2719,7 @@ mod tests {
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::Environments;
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
@@ -2779,7 +2781,7 @@ mod tests {
                 )]),
             },
         );
-        let settings = SettingsState::from_config(&config);
+        let settings = settings_state_from_config(&config);
         let rows = settings_env_flat_rows(&settings);
 
         assert!(
@@ -2821,7 +2823,7 @@ mod tests {
             paths.ensure_base_dirs().unwrap();
             let config = AppConfig::default();
             let mut state = ManagerState::from_config(&config, tmp.path());
-            let mut settings = SettingsState::from_config(&config);
+            let mut settings = settings_state_from_config(&config);
             set_error(&mut settings);
             state.stage = ManagerStage::Settings(settings);
 
@@ -2854,7 +2856,7 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
+        let mut settings = settings_state_from_config(&config);
         settings.mounts.exit_requested = true;
         state.stage = ManagerStage::Settings(settings);
 

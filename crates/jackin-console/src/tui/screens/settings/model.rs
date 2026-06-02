@@ -44,6 +44,27 @@ impl SettingsTab {
     }
 }
 
+#[derive(Debug)]
+pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
+    pub active_tab: SettingsTab,
+    /// W3C ARIA Tabs: when true, focus is on the tab list; when false, focus
+    /// is in the tab panel.
+    pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer.
+    pub hovered_tab: Option<usize>,
+    pub general: SettingsGeneralState,
+    pub mounts: Mounts,
+    pub env: Env,
+    pub auth: Auth,
+    pub trust: Trust,
+    /// Error popup shown on top of all settings content.
+    pub error_popup: Option<ErrorPopup>,
+    /// Token-generate request drained by the run loop.
+    pub pending_token_generate: Option<PendingToken>,
+    /// Cached footer height for mouse hit-testing.
+    pub cached_footer_h: u16,
+}
+
 /// Cursor position inside the auth-edit form modal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthFormFocus {

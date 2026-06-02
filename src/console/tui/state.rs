@@ -241,31 +241,14 @@ pub type GlobalMountsState<'a> = jackin_console::tui::screens::settings::model::
     GlobalMountModal<'a>,
 >;
 
-#[derive(Debug)]
-pub struct SettingsState<'a> {
-    pub active_tab: SettingsTab,
-    /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
-    /// Tab/↓ enters content); when false, focus is in the tab panel.
-    pub tab_bar_focused: bool,
-    /// Index of the tab cell under the pointer, repainted on mouse motion so
-    /// the strip reacts to hover like the in-container multiplexer tabs.
-    pub hovered_tab: Option<usize>,
-    pub general: SettingsGeneralState,
-    pub mounts: GlobalMountsState<'a>,
-    pub env: SettingsEnvState<'a>,
-    pub auth: SettingsAuthState,
-    pub trust: SettingsTrustState,
-    /// Error popup shown on top of all settings content. Dismissed with
-    /// Enter / O / Esc; clears automatically when opened again.
-    pub error_popup: Option<ErrorPopupState>,
-    /// Set by the Auth-tab `g`/`G` generate action; drained by the
-    /// `run_console` loop to run the global Claude OAuth-token mint.
-    pub pending_token_generate: Option<PendingTokenGenerate>,
-    /// Footer height (rows) the renderer last laid out, cached so mouse
-    /// hit-testing subtracts the same dynamic footer the frame drew rather than
-    /// a stale constant — otherwise clicks near the bottom mis-map.
-    pub cached_footer_h: u16,
-}
+pub type SettingsState<'a> = jackin_console::tui::screens::settings::model::SettingsState<
+    GlobalMountsState<'a>,
+    SettingsEnvState<'a>,
+    SettingsAuthState,
+    SettingsTrustState,
+    ErrorPopupState,
+    PendingTokenGenerate,
+>;
 
 pub use jackin_console::tui::screens::editor::model::{
     AuthRow as GenericAuthRow, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus,
@@ -742,25 +725,32 @@ fn settings_global_mounts_from_config(config: &AppConfig) -> GlobalMountsState<'
     }
 }
 
-impl SettingsState<'_> {
-    pub fn from_config(config: &AppConfig) -> Self {
-        Self {
-            active_tab: SettingsTab::General,
-            tab_bar_focused: true,
-            hovered_tab: None,
-            general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
-            mounts: settings_global_mounts_from_config(config),
-            env: settings_env_from_config(config),
-            auth: settings_auth_from_config(config),
-            trust: settings_trust_from_config(config),
-            error_popup: None,
-            pending_token_generate: None,
-            cached_footer_h: 1,
-        }
+pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'static> {
+    SettingsState {
+        active_tab: SettingsTab::General,
+        tab_bar_focused: true,
+        hovered_tab: None,
+        general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
+        mounts: settings_global_mounts_from_config(config),
+        env: settings_env_from_config(config),
+        auth: settings_auth_from_config(config),
+        trust: settings_trust_from_config(config),
+        error_popup: None,
+        pending_token_generate: None,
+        cached_footer_h: 1,
     }
+}
 
-    #[must_use]
-    pub fn is_dirty(&self) -> bool {
+pub(crate) trait SettingsStateExt {
+    fn is_dirty(&self) -> bool;
+    fn change_count(&self) -> usize;
+    fn discard(&mut self);
+    fn remove_zai_key_when_auth_ignored(&mut self);
+    fn mark_saved(&mut self);
+}
+
+impl SettingsStateExt for SettingsState<'_> {
+    fn is_dirty(&self) -> bool {
         self.general.is_dirty()
             || self.mounts.is_dirty()
             || self.env.is_dirty()
@@ -768,21 +758,16 @@ impl SettingsState<'_> {
             || self.trust.is_dirty()
     }
 
-    #[must_use]
-    pub fn change_count(&self) -> usize {
+    fn change_count(&self) -> usize {
         self.general.change_count()
-            + self.mounts_change_count()
+            + settings_vec_change_count(&self.mounts.original, &self.mounts.pending)
             + self.env.change_count()
             + settings_vec_change_count(&self.auth.original, &self.auth.pending)
             + settings_map_change_count(&self.auth.original_github_env, &self.auth.github_env)
             + settings_vec_change_count(&self.trust.original, &self.trust.pending)
     }
 
-    fn mounts_change_count(&self) -> usize {
-        settings_vec_change_count(&self.mounts.original, &self.mounts.pending)
-    }
-
-    pub fn discard(&mut self) {
+    fn discard(&mut self) {
         self.general.discard();
         self.mounts.discard();
         self.env.discard();
@@ -795,7 +780,7 @@ impl SettingsState<'_> {
         self.pending_token_generate = None;
     }
 
-    pub fn remove_zai_key_when_auth_ignored(&mut self) {
+    fn remove_zai_key_when_auth_ignored(&mut self) {
         for row in &self.auth.pending {
             if row.kind == jackin_console::tui::auth::AuthKind::Zai
                 && row.mode == jackin_console::tui::auth::AuthMode::Ignore
@@ -805,7 +790,7 @@ impl SettingsState<'_> {
         }
     }
 
-    pub fn mark_saved(&mut self) {
+    fn mark_saved(&mut self) {
         self.general.mark_clean();
         self.mounts.original = self.mounts.pending.clone();
         self.env.original = self.env.pending.clone();
@@ -2835,7 +2820,7 @@ ZAI_API_KEY = "secret"
         )
         .unwrap();
         let config = AppConfig::load_or_init(&paths).unwrap();
-        let mut state = SettingsState::from_config(&config);
+        let mut state = settings_state_from_config(&config);
         let row = state
             .auth
             .pending

@@ -1352,7 +1352,7 @@ mod mouse_drag_tests {
     use crate::console::tui::state::{
         DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
         GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
-        MountScrollFocus, SecretsScopeTag, SettingsState, SettingsTab,
+        MountScrollFocus, SecretsScopeTag, SettingsTab, settings_state_from_config,
     };
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -1376,10 +1376,10 @@ mod mouse_drag_tests {
         use super::{
             SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT, editor_content_area, settings_content_area,
         };
-        use crate::console::tui::state::SettingsState;
+        use crate::console::tui::state::settings_state_from_config;
         let term = Rect::new(0, 0, 80, 24);
 
-        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
         settings.cached_footer_h = 3;
         let s = settings_content_area(&settings, term);
         assert_eq!(s.y, SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT);
@@ -2562,7 +2562,7 @@ mod mouse_drag_tests {
     #[test]
     fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
         let mut state = list_state();
-        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
         settings.active_tab = SettingsTab::Mounts;
         settings.mounts.pending = (0..20)
             .map(|idx| crate::config::GlobalMountRow {
