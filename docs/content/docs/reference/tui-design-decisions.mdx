@@ -998,7 +998,7 @@ Settings header title wording lives with settings screen view helpers in <RepoFi
 
 Workspace-list header title wording lives with top-level console view helpers in <RepoFile path="crates/jackin-console/src/tui/view.rs" />. Root frame rendering should ask that helper for the workspace screen title rather than carrying workspace-screen copy.
 
-Editor and settings save-footer base labels live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer adapters may pass dirty/change facts and row modes, but they should not carry the `save workspace` or `save settings` copy.
+Editor/settings save-footer base labels and pick-list modal commit labels live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer adapters may pass dirty/change facts, row modes, and modal variants, but they should not carry the `save workspace`, `save settings`, `select`, or `confirm` copy.
 
 #### Lookbook focus behavior
 

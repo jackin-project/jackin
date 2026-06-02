@@ -7,6 +7,7 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::components::footer_hints::{
     ModalFooterMode, modal_footer_items as shared_modal_footer_items, op_picker_modal_footer_mode,
+    pick_list_confirm_footer_label, pick_list_select_footer_label,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -29,10 +30,14 @@ pub(crate) fn modal_footer_items(
             shared_modal_footer_items(ModalFooterMode::SegmentedChoice)
         }
         Modal::WorkdirPick { .. } => {
-            shared_modal_footer_items(ModalFooterMode::PickList { commit_label: "select" })
+            shared_modal_footer_items(ModalFooterMode::PickList {
+                commit_label: pick_list_select_footer_label(),
+            })
         }
         Modal::GithubPicker { .. } => {
-            shared_modal_footer_items(ModalFooterMode::PickList { commit_label: "confirm" })
+            shared_modal_footer_items(ModalFooterMode::PickList {
+                commit_label: pick_list_confirm_footer_label(),
+            })
         }
         Modal::ConfirmSave { state } => shared_modal_footer_items(ModalFooterMode::ConfirmSave {
             scrollable: !state.lines.is_empty(),

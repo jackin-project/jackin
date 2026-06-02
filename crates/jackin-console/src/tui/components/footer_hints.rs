@@ -206,6 +206,16 @@ pub const fn settings_save_footer_label() -> &'static str {
 }
 
 #[must_use]
+pub const fn pick_list_select_footer_label() -> &'static str {
+    "select"
+}
+
+#[must_use]
+pub const fn pick_list_confirm_footer_label() -> &'static str {
+    "confirm"
+}
+
+#[must_use]
 pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         HintSpan::Dyn("Create workspace — follow the prompts".to_string()),
@@ -979,6 +989,8 @@ mod tests {
     fn save_footer_labels_are_component_owned() {
         assert_eq!(editor_save_footer_label(), "save workspace");
         assert_eq!(settings_save_footer_label(), "save settings");
+        assert_eq!(pick_list_select_footer_label(), "select");
+        assert_eq!(pick_list_confirm_footer_label(), "confirm");
     }
 
     #[test]
