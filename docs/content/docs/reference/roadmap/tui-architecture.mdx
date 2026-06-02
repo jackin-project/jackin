@@ -314,7 +314,7 @@ Capsule pane-local mouse coordinate mapping now lives with visible pane geometry
 
 Capsule mouse text-selection start-state construction now lives with selection state, motion, and copy helpers in <RepoFile path="crates/jackin-capsule/src/tui/selection.rs" />. The daemon still finds the target pane and gates selection on the session's mouse protocol mode.
 
-Capsule visible pane-list derivation now lives with the visible multiplexer model in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" />. The daemon still supplies active tab, focus, zoom, and content-rect facts before rendering.
+Capsule visible pane-list derivation and tab auto-label derivation now live with the visible multiplexer model in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" />. The daemon still supplies active tab, focus, zoom, content-rect, and session agent/shell facts before rendering or refreshing tab chrome.
 
 Capsule parsed-input and prefix-command to semantic-action mapping now lives with action vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/message.rs" />. The daemon still supplies live context such as dialog-captures-input and branch-bar hit-testing, then executes the returned action against PTY/session state.
 

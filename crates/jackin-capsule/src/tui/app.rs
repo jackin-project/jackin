@@ -234,6 +234,45 @@ pub(crate) fn visible_panes_for_layout(
         .collect()
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum VisibleTabPaneKind {
+    Agent(String),
+    Shell,
+}
+
+/// Derive the auto-label shown in the tab strip from visible pane makeup.
+///
+/// Operator-owned custom labels still shadow this in [`Tab::label`]; this helper
+/// only owns the visible default when the daemon refreshes tab chrome.
+pub(crate) fn tab_auto_label(
+    pane_count: usize,
+    panes: impl IntoIterator<Item = VisibleTabPaneKind>,
+) -> String {
+    let mut agent_labels: Vec<String> = Vec::new();
+    let mut has_shell = false;
+    for pane in panes {
+        match pane {
+            VisibleTabPaneKind::Agent(label) => {
+                if !agent_labels.iter().any(|existing| existing == &label) {
+                    agent_labels.push(label);
+                }
+            }
+            VisibleTabPaneKind::Shell => has_shell = true,
+        }
+    }
+    let base = match (agent_labels.len(), has_shell) {
+        (0, _) => "Shell".to_string(),
+        (1, false) => agent_labels[0].clone(),
+        (_, false) => "Agents".to_string(),
+        (_, true) => "Mix".to_string(),
+    };
+    if pane_count > 1 {
+        format!("{base} ({pane_count})")
+    } else {
+        base
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct DragState {
     pub(crate) tab_idx: usize,
@@ -256,9 +295,9 @@ mod tests {
 
     use super::{
         ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
-        PointerShape, PointerShapeState, chrome_hover_target_for_state, cursor_visible_for_state,
-        hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
-        visible_panes_for_layout,
+        PointerShape, PointerShapeState, VisibleTabPaneKind, chrome_hover_target_for_state,
+        cursor_visible_for_state, hover_target_for_state, mux_mode_for_state,
+        pointer_shape_for_state, tab_auto_label, visible_panes_for_layout,
     };
 
     #[test]
@@ -505,5 +544,31 @@ mod tests {
         assert_eq!(panes[0].inner, Rect::new(2, 1, 8, 18));
         assert!(panes[0].focused);
         assert_eq!(panes[0].body_dim, PaneBodyDim::Normal);
+    }
+
+    #[test]
+    fn tab_auto_label_tracks_visible_pane_makeup() {
+        assert_eq!(tab_auto_label(1, [VisibleTabPaneKind::Shell]), "Shell");
+        assert_eq!(
+            tab_auto_label(1, [VisibleTabPaneKind::Agent("Claude (Z.AI)".into())]),
+            "Claude (Z.AI)"
+        );
+        assert_eq!(
+            tab_auto_label(
+                2,
+                [
+                    VisibleTabPaneKind::Agent("Claude".into()),
+                    VisibleTabPaneKind::Agent("Codex".into()),
+                ],
+            ),
+            "Agents (2)"
+        );
+        assert_eq!(
+            tab_auto_label(
+                2,
+                [VisibleTabPaneKind::Agent("Claude".into()), VisibleTabPaneKind::Shell],
+            ),
+            "Mix (2)"
+        );
     }
 }

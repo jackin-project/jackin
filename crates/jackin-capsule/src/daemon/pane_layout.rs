@@ -240,41 +240,21 @@ impl Multiplexer {
     }
 
     /// Derive the label that should appear in the tab strip for `tab`
-    /// given the current pane contents. Operator's mental model is
-    /// "what kinds of things am I running in here?", so the label
-    /// tracks the kind makeup instead of pinning to the first
-    /// session spawned: a single-agent tab carries that agent's
-    /// name; shells-only is `Shell`; two distinct agents is
-    /// `Agents`; any agent + any shell is `Mix`.
+    /// from session facts, then delegate the visible naming rule to the
+    /// TUI model boundary.
     pub(super) fn tab_display_label(&self, tab: &Tab) -> String {
         let ids = tab.tree.all_ids();
         let pane_count = ids.len();
-        let mut agent_labels: Vec<String> = Vec::new();
-        let mut has_shell = false;
-        for id in ids {
-            if let Some(s) = self.sessions.get(&id) {
-                match &s.agent {
-                    Some(_) => {
-                        let label = session_agent_label(s);
-                        if !agent_labels.iter().any(|existing| existing == &label) {
-                            agent_labels.push(label);
-                        }
-                    }
-                    None => has_shell = true,
+        let panes = ids.into_iter().filter_map(|id| {
+            self.sessions.get(&id).map(|session| {
+                if session.agent.is_some() {
+                    crate::tui::app::VisibleTabPaneKind::Agent(session_agent_label(session))
+                } else {
+                    crate::tui::app::VisibleTabPaneKind::Shell
                 }
-            }
-        }
-        let base = match (agent_labels.len(), has_shell) {
-            (0, _) => "Shell".to_string(),
-            (1, false) => agent_labels[0].clone(),
-            (_, false) => "Agents".to_string(),
-            (_, true) => "Mix".to_string(),
-        };
-        if pane_count > 1 {
-            format!("{base} ({pane_count})")
-        } else {
-            base
-        }
+            })
+        });
+        crate::tui::app::tab_auto_label(pane_count, panes)
     }
 
     /// Rewrite each tab's auto-label after a spawn / split / remove.
