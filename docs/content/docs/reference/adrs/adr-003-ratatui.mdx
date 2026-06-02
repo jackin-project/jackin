@@ -1,0 +1,41 @@
+---
+title: "ADR-003: Ratatui as the TUI rendering library"
+description: "Why jackin' uses ratatui and not tui-rs, crossterm-raw, or another terminal rendering approach."
+---
+
+**Status**: Accepted
+**Date**: 2026-05-30
+**Deciders**: Operator + agent
+
+## Context
+
+jackin' needs to render full-screen terminal UIs on three surfaces: the host workspace console (`jackin-console`), the launch progress cockpit (`jackin-launch`), and the in-container multiplexer (`jackin-capsule`). The choices at the time of evaluation were:
+
+- **`tui-rs`** — the original Rust immediate-mode TUI library. Archived/abandoned in 2023.
+- **`ratatui`** — a community fork of `tui-rs`, actively maintained as its de-facto successor.
+- **Raw ANSI/crossterm** — write escape sequences directly; maximum control, no widget abstraction.
+- **`cursive`** — retained-mode widget library; richer widget tree but heavier, less composable.
+
+## Decision
+
+**Use `ratatui` as the primary TUI rendering library across all three surfaces.**
+
+`ratatui` is pinned at `0.30` in the workspace root <RepoFile path="Cargo.toml" />:
+
+```toml
+ratatui = "0.30"
+```
+
+**Why ratatui over tui-rs:** `tui-rs` is archived. `ratatui` is the fork that the `tui-rs` maintainer and the broader community adopted as the continuation. All active development, bug fixes, and new widget work happens in `ratatui`. Using `tui-rs` would mean no upstream fixes.
+
+**Why ratatui over raw ANSI everywhere:** Raw ANSI gives byte-level control but requires hand-rolling layout, clipping, UTF-8 display-width, scrollbar geometry, and double-buffered diffing. `ratatui` handles all of that through its `Buffer`/`Rect`/`Widget` model, which is composable and testable via `TestBackend`. The capsule still uses raw ANSI for pane body content (see ADR-004) because pane bodies need to pass vt100 output through directly — but chrome, dialogs, and overlays all use `ratatui`.
+
+**Why ratatui over cursive:** `cursive` is retained-mode (a widget tree you mutate) versus `ratatui`'s immediate-mode (render from state every frame). Immediate-mode pairs directly with the Elm Architecture adopted across all jackin' TUI surfaces: state → render, no widget identity to track. `ratatui` also has a much larger and more active ecosystem of third-party widgets and examples.
+
+## Consequences
+
+- All three surfaces share the same rendering primitives, `Rect`/`Layout`/`Block`/`Paragraph`/`Widget` model, and `TestBackend` for snapshot tests.
+- The shared `jackin-tui` crate owns cross-surface components; `ratatui` types flow through its public API, making `ratatui` an intentional public dependency.
+- The capsule uses a custom `SocketBackend` that serialises `Buffer::diff` output over the attach socket (see ADR-004); this is possible because `ratatui`'s backend trait is open.
+- Major `ratatui` version bumps require auditing widget API changes across all three surfaces. The workspace-level pin ensures all crates use the same version.
+- `ratatui` is pre-1.0 but is the canonical active successor to `tui-rs` with broad ecosystem adoption; the pre-1.0 API instability is acceptable given the lack of maintained alternatives.

@@ -369,7 +369,7 @@ observing real footprint.
   Tokio runtime, but adds a meaningful build-time cost (offline mode
   with macro-checked queries). `rusqlite` is simpler and battle-tested
   but blocking — needs `spawn_blocking` discipline. Recommended:
-  *write an ADR* (see [ADR roadmap](/reference/roadmap/architecture-decision-records/));
+  *write an ADR* (see [ADR roadmap](/reference/adrs/));
   this is the kind of decision that earns one.
 - **Schema in code vs schema in `.sql` files.** Diesel-style embedded
   migrations are clean but add a new toolchain dependency. A small
@@ -410,5 +410,5 @@ observing real footprint.
 - [Native APM support](/reference/roadmap/native-apm-role-support/) —
   package/install layer for skills, prompts, and MCP clients; complementary to
   mutable workspace memory
-- [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) —
+- [Architecture Decision Records](/reference/adrs/) —
   the right home for the sqlx-vs-rusqlite decision

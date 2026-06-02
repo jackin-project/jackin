@@ -11,6 +11,7 @@ jackin' is a functional proof of concept, not a stable product line. **`Claude C
 
 ## Completed
 
+- Architecture Decision Records — four foundational ADRs written and published at [/reference/adrs/](/reference/adrs/): single-crate vs workspace (ADR-001), Rust toolchain pinning (ADR-002), ratatui selection (ADR-003), and capsule pane-body rendering (ADR-004).
 - `Claude Code` and `Codex` agent runtimes with full-speed mode (`--dangerously-skip-permissions` / YOLO) inside the container boundary
 - Layered authentication forwarding per (workspace × role × agent) — `sync` / `api_key` / `oauth_token` / `ignore` for `Claude Code`, and `sync` / `api_key` / `ignore` for `Codex`, `Amp`, `Kimi`, and `OpenCode` (none supports `oauth_token`)
 - `Docker` container isolation with `Docker-in-Docker`
