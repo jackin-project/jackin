@@ -38,6 +38,11 @@ pub enum PreviewPaneKeyPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewFocusPlan {
+    pub focused: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DestructiveConfirmPlan {
     Continue,
     ReturnToList,
@@ -197,6 +202,16 @@ pub const fn should_enter_preview_pane(
     is_preview_pane_entry_target(key, row) && pane_count > 0
 }
 
+#[must_use]
+pub const fn enter_preview_focus_plan() -> PreviewFocusPlan {
+    PreviewFocusPlan { focused: true }
+}
+
+#[must_use]
+pub const fn exit_preview_focus_plan() -> PreviewFocusPlan {
+    PreviewFocusPlan { focused: false }
+}
+
 /// Preview-pane navigation mode: Esc / Left / BackTab exits, Up/Down
 /// move inside the snapshot, and Enter reconnects to the selected pane.
 #[must_use]
@@ -345,6 +360,12 @@ mod tests {
             expand_selected_tree_plan(ManagerListRow::NewWorkspace),
             WorkspaceTreeDisclosurePlan::None
         );
+    }
+
+    #[test]
+    fn preview_focus_plans_set_focus_state() {
+        assert_eq!(enter_preview_focus_plan(), PreviewFocusPlan { focused: true });
+        assert_eq!(exit_preview_focus_plan(), PreviewFocusPlan { focused: false });
     }
 
     #[test]

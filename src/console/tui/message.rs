@@ -35,7 +35,8 @@ use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    WorkspaceTreeDisclosurePlan, collapse_selected_tree_plan, expand_selected_tree_plan,
+    PreviewFocusPlan, WorkspaceTreeDisclosurePlan, collapse_selected_tree_plan,
+    enter_preview_focus_plan, exit_preview_focus_plan, expand_selected_tree_plan,
     preview_pane_cursor_plan, workspace_list_move_selection_plan, workspace_list_select_row_plan,
     workspace_unclamped_scroll_plan,
 };
@@ -225,7 +226,7 @@ pub(crate) fn update_manager(
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
-        ManagerMessage::EnterPreview => state.preview_focused = true,
+        ManagerMessage::EnterPreview => apply_preview_focus_plan(state, enter_preview_focus_plan()),
         ManagerMessage::EnterConfirmDelete { name } => enter_confirm_delete(state, name),
         ManagerMessage::EnterConfirmInstancePurge { container, label } => {
             enter_confirm_instance_purge(state, container, label);
@@ -262,7 +263,7 @@ pub(crate) fn update_manager(
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
         ManagerMessage::FocusSettingsContent => set_settings_tab_bar_focus(state, false),
         ManagerMessage::FocusSettingsTabBar => set_settings_tab_bar_focus(state, true),
-        ManagerMessage::ExitPreview => state.preview_focused = false,
+        ManagerMessage::ExitPreview => apply_preview_focus_plan(state, exit_preview_focus_plan()),
         ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
         ManagerMessage::ClearSettingsAuthKind => clear_settings_auth_kind(state),
         ManagerMessage::DismissSettingsErrorPopup => dismiss_settings_error_popup(state),
@@ -413,6 +414,10 @@ pub(crate) fn update_manager(
         }
     }
     ManagerUpdate::redraw()
+}
+
+const fn apply_preview_focus_plan(state: &mut ManagerState<'_>, plan: PreviewFocusPlan) {
+    state.preview_focused = plan.focused;
 }
 
 const fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {

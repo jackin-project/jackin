@@ -53,6 +53,17 @@ fn select_list_row_resets_selection_local_state() {
 }
 
 #[test]
+fn preview_focus_messages_toggle_preview_focus() {
+    let mut state = state_with_saved_count(1);
+
+    assert!(update_manager(&mut state, ManagerMessage::EnterPreview).is_dirty());
+    assert!(state.preview_focused);
+
+    assert!(update_manager(&mut state, ManagerMessage::ExitPreview).is_dirty());
+    assert!(!state.preview_focused);
+}
+
+#[test]
 fn mouse_selection_messages_update_tabs_and_rows() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(
