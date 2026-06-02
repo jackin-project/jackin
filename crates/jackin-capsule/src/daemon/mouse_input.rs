@@ -29,10 +29,9 @@ impl Multiplexer {
             return None;
         }
         self.hover_target = next;
-        if self.dialog_open() {
-            Some(self.compose_full_frame(FullRedrawReason::DialogChange))
-        } else {
-            Some(self.compose_chrome_hover_frame())
+        match hover_frame_plan(self.dialog_open()) {
+            HoverFramePlan::DialogOverlay(reason) => Some(self.compose_full_frame(reason)),
+            HoverFramePlan::ChromeHover => Some(self.compose_chrome_hover_frame()),
         }
     }
 

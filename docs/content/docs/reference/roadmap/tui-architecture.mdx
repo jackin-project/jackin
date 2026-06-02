@@ -322,7 +322,7 @@ Capsule initial attach-frame labels now live with attach-client effect vocabular
 
 Capsule visible multiplexer mode vocabulary (`Normal`, prefix-await, dialog, drag, selection) now lives with the visible TUI model in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> instead of a root crate module.
 
-Capsule mux-mode priority, chrome-hover priority, pointer-shape priority, cursor-visibility priority, and drag-resize ratio math now live under <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. Daemon mouse/dialog code supplies the current protocol/session facts and applies the resulting action, but no longer owns those visible-state decisions.
+Capsule mux-mode priority, chrome-hover priority, hover redraw policy, pointer-shape priority, cursor-visibility priority, and drag-resize ratio math now live under <RepoFile path="crates/jackin-capsule/src/tui/app.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. Daemon mouse/dialog code supplies the current protocol/session facts and applies the resulting action, but no longer owns those visible-state decisions.
 
 Capsule dialog copy-feedback timeout now lives with visible redraw/update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon still owns the timer deadline and clears dialog feedback when it expires, but the UI-visible duration is no longer daemon-owned.
 

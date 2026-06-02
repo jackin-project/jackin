@@ -73,6 +73,20 @@ pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HoverFramePlan {
+    DialogOverlay(FullRedrawReason),
+    ChromeHover,
+}
+
+pub(crate) fn hover_frame_plan(dialog_open: bool) -> HoverFramePlan {
+    if dialog_open {
+        HoverFramePlan::DialogOverlay(FullRedrawReason::DialogChange)
+    } else {
+        HoverFramePlan::ChromeHover
+    }
+}
+
 pub(crate) fn drag_resize_ratio(orient: SplitOrient, rect: Rect, row: u16, col: u16) -> f32 {
     match orient {
         SplitOrient::Horizontal => {
@@ -121,7 +135,10 @@ pub(crate) fn partial_frame_plan(state: PartialFrameState) -> PartialFramePlan {
 
 #[cfg(test)]
 mod tests {
-    use super::{PartialFramePlan, PartialFrameState, drag_resize_ratio, partial_frame_plan, prefix_full_redraw_reason};
+    use super::{
+        HoverFramePlan, PartialFramePlan, PartialFrameState, drag_resize_ratio, hover_frame_plan,
+        partial_frame_plan, prefix_full_redraw_reason,
+    };
     use crate::tui::input::{ArrowDir, PrefixCommand};
     use crate::tui::layout::{Rect, SplitOrient};
     use crate::tui::update::FullRedrawReason;
@@ -140,6 +157,15 @@ mod tests {
             prefix_full_redraw_reason(&PrefixCommand::Detach),
             FullRedrawReason::ExplicitRedraw
         );
+    }
+
+    #[test]
+    fn hover_frame_plan_uses_overlay_when_dialog_owns_screen() {
+        assert_eq!(
+            hover_frame_plan(true),
+            HoverFramePlan::DialogOverlay(FullRedrawReason::DialogChange)
+        );
+        assert_eq!(hover_frame_plan(false), HoverFramePlan::ChromeHover);
     }
 
     #[test]

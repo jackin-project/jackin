@@ -99,7 +99,8 @@ use crate::tui::app::{
     visible_panes_for_layout,
 };
 use crate::tui::update::{
-    FullRedrawReason, PartialFramePlan, PartialFrameState, drag_resize_ratio, partial_frame_plan,
+    FullRedrawReason, HoverFramePlan, PartialFramePlan, PartialFrameState, drag_resize_ratio,
+    hover_frame_plan, partial_frame_plan,
 };
 use crate::tui::view::spawn_failure_banner;
 #[cfg(test)]
