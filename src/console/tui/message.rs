@@ -25,8 +25,9 @@ use jackin_console::tui::screens::editor::update::{
 use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
     set_role_expanded as set_settings_role_expanded, settings_auth_selection_plan,
-    settings_env_selection_plan, settings_tab_move_plan, settings_trust_selection_plan,
-    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    settings_env_selection_plan, settings_global_mounts_selection_plan, settings_tab_move_plan,
+    settings_trust_selection_plan, toggle_general_selected,
+    toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
@@ -783,25 +784,16 @@ fn move_settings_global_mounts_selection(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let max = settings.mounts.pending.len();
-    settings.mounts.selected = if delta.is_negative() {
-        settings
-            .mounts
-            .selected
-            .saturating_sub(delta.unsigned_abs())
-    } else {
-        settings
-            .mounts
-            .selected
-            .saturating_add(delta as usize)
-            .min(max)
-    };
-    settings.mounts.scroll_y = jackin_console::focus::cursor_scroll_for_panel(
+    let plan = settings_global_mounts_selection_plan(
         settings.mounts.selected,
+        settings.mounts.pending.len(),
+        delta,
         settings.mounts.scroll_y,
         term.height,
         footer_h,
     );
+    settings.mounts.selected = plan.selected;
+    settings.mounts.scroll_y = plan.scroll_y;
 }
 
 fn move_settings_env_selection(
