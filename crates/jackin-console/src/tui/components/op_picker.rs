@@ -100,6 +100,21 @@ pub enum OpPickerFatalState {
     GenericFatal { message: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountsLoadedPlan {
+    NotSignedIn,
+    SelectSingleAccount,
+    ShowAccountPane,
+}
+
+pub const fn accounts_loaded_plan(account_count: usize) -> AccountsLoadedPlan {
+    match account_count {
+        0 => AccountsLoadedPlan::NotSignedIn,
+        1 => AccountsLoadedPlan::SelectSingleAccount,
+        _ => AccountsLoadedPlan::ShowAccountPane,
+    }
+}
+
 /// Background load completion routed back into the picker.
 #[derive(Debug)]
 pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
@@ -2327,5 +2342,15 @@ mod tests {
         assert!(OpPickerStage::Field.is_filterable());
         assert!(!OpPickerStage::Section.is_filterable());
         assert!(!OpPickerStage::FieldLabel.is_filterable());
+    }
+
+    #[test]
+    fn account_load_completion_plan_keeps_root_adapter_out_of_transition_policy() {
+        assert_eq!(accounts_loaded_plan(0), AccountsLoadedPlan::NotSignedIn);
+        assert_eq!(
+            accounts_loaded_plan(1),
+            AccountsLoadedPlan::SelectSingleAccount
+        );
+        assert_eq!(accounts_loaded_plan(2), AccountsLoadedPlan::ShowAccountPane);
     }
 }

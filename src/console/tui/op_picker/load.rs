@@ -11,8 +11,8 @@ use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 use super::{
-    FieldLabelOrigin, LoadRequest, LoadResult, OpCache, OpLoadState, OpPickerAccount, OpPickerError,
-    OpPickerFatalState, OpPickerMode, OpPickerStage, OpPickerState,
+    AccountsLoadedPlan, FieldLabelOrigin, LoadRequest, LoadResult, OpCache, OpLoadState,
+    OpPickerAccount, OpPickerError, OpPickerFatalState, OpPickerMode, OpPickerStage, OpPickerState,
     OpPickerPendingLoad,
 };
 #[cfg(test)]
@@ -163,28 +163,30 @@ impl OpPickerState {
 
     fn handle_accounts_loaded(&mut self, accounts: Vec<OpPickerAccount>) {
         self.op_cache.borrow_mut().put_accounts(accounts.clone());
-        if accounts.is_empty() {
-            // Empty list is functionally "not signed in"; same panel,
-            // same recovery (`op signin` in the host shell).
-            self.load_state =
-                OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn));
-            return;
+        match jackin_console::tui::components::op_picker::accounts_loaded_plan(accounts.len()) {
+            AccountsLoadedPlan::NotSignedIn => {
+                // Empty list is functionally "not signed in"; same panel,
+                // same recovery (`op signin` in the host shell).
+                self.load_state =
+                    OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn));
+            }
+            AccountsLoadedPlan::SelectSingleAccount => {
+                // Single-account fast path: skip the Account pane entirely.
+                // `self.accounts` stays empty; the Esc guard in
+                // `handle_vault_key` uses `accounts.len() > 1` as a proxy for
+                // "multi-account session".
+                let account = accounts.into_iter().next().expect("len == 1");
+                let account_id = account.id.clone();
+                self.selected_account = Some(account);
+                self.start_vault_load(Some(account_id));
+            }
+            AccountsLoadedPlan::ShowAccountPane => {
+                self.accounts = accounts;
+                self.account_list_state = list_state_for_count(self.accounts.len());
+                self.stage = OpPickerStage::Account;
+                self.load_state = OpLoadState::Ready;
+            }
         }
-        if accounts.len() == 1 {
-            // Single-account fast path: skip the Account pane entirely.
-            // `self.accounts` stays empty; the Esc guard in
-            // `handle_vault_key` uses `accounts.len() > 1` as a proxy for
-            // "multi-account session".
-            let account = accounts.into_iter().next().expect("len == 1");
-            let account_id = account.id.clone();
-            self.selected_account = Some(account);
-            self.start_vault_load(Some(account_id));
-            return;
-        }
-        self.accounts = accounts;
-        self.account_list_state = list_state_for_count(self.accounts.len());
-        self.stage = OpPickerStage::Account;
-        self.load_state = OpLoadState::Ready;
     }
 
     /// Stage advances at request time (not result time) so the
