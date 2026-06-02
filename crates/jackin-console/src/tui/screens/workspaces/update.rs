@@ -2,6 +2,30 @@ use std::collections::BTreeSet;
 
 use super::model::ManagerListRow;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceInstanceAction {
+    Reconnect,
+    NewSession,
+    Shell,
+    Inspect,
+    Stop,
+    Purge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceInstanceStatus {
+    Active,
+    Running,
+    CleanExited,
+    Crashed,
+    PreservedDirty,
+    PreservedUnpushed,
+    RestoreAvailable,
+    Superseded,
+    Purged,
+    FailedSetup,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct WorkspaceRowLayout<'a> {
     pub current_dir_expanded: bool,
@@ -49,4 +73,78 @@ pub fn moved_selection(selected: usize, row_count: usize, delta: isize) -> usize
 #[must_use]
 pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::focus::selected_index(selected, row_count)
+}
+
+/// Action x status acceptance grid. Each arm enumerates the exact set
+/// of statuses the action runs against. Positive matching keeps future
+/// status variants from becoming accepted by accident.
+#[must_use]
+pub const fn instance_action_accepts_status(
+    action: WorkspaceInstanceAction,
+    status: WorkspaceInstanceStatus,
+) -> bool {
+    use WorkspaceInstanceAction as A;
+    use WorkspaceInstanceStatus as S;
+    match (action, status) {
+        // Reconnect / Inspect: anything that still has on-disk state to read.
+        (A::Reconnect | A::Inspect, status) => match status {
+            S::Active
+            | S::Running
+            | S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::FailedSetup => true,
+            S::Purged => false,
+        },
+        // NewSession / Shell / Stop: live container required.
+        (A::NewSession | A::Shell | A::Stop, status) => match status {
+            S::Active | S::Running => true,
+            S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::Purged
+            | S::FailedSetup => false,
+        },
+        // Purge: anything that has not already been purged. Crashed /
+        // CleanExited / Preserved* rows have local state worth deleting
+        // even though their containers are gone.
+        (A::Purge, status) => match status {
+            S::Active
+            | S::Running
+            | S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::FailedSetup => true,
+            S::Purged => false,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn instance_action_accepts_status_grid_smoke() {
+        use WorkspaceInstanceAction as A;
+        use WorkspaceInstanceStatus as S;
+
+        assert!(instance_action_accepts_status(A::Stop, S::Running));
+        assert!(!instance_action_accepts_status(A::Stop, S::CleanExited));
+        assert!(!instance_action_accepts_status(A::Stop, S::Purged));
+        assert!(instance_action_accepts_status(A::Purge, S::Running));
+        assert!(instance_action_accepts_status(A::Purge, S::PreservedDirty));
+        assert!(!instance_action_accepts_status(A::Purge, S::Purged));
+        assert!(instance_action_accepts_status(A::Reconnect, S::Crashed));
+        assert!(!instance_action_accepts_status(A::Reconnect, S::Purged));
+    }
 }

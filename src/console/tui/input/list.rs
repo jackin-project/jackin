@@ -4,6 +4,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_console::tui::layout::list_body_area;
+use jackin_console::tui::screens::workspaces::update::{
+    WorkspaceInstanceAction, WorkspaceInstanceStatus, instance_action_accepts_status,
+};
 use jackin_tui::ModalOutcome;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
@@ -352,7 +355,7 @@ fn selected_instance_container(
     if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
         let instances = state.workspace_active_instances(ws_idx);
         let entry = instances.get(inst_idx)?;
-        return if instance_action_accepts_status(action, entry.status) {
+        return if accepts_instance_status(action, entry.status) {
             Some(entry.container_base.clone())
         } else {
             None
@@ -361,7 +364,7 @@ fn selected_instance_container(
     if let ManagerListRow::CurrentDirectoryInstance(inst_idx) = state.selected_row() {
         let instances = state.current_dir_active_instances();
         let entry = instances.get(inst_idx)?;
-        return if instance_action_accepts_status(action, entry.status) {
+        return if accepts_instance_status(action, entry.status) {
             Some(entry.container_base.clone())
         } else {
             None
@@ -376,7 +379,7 @@ fn selected_instance_container(
         agent_runtime: None,
     };
     state.instances.iter().find_map(|entry| {
-        (entry.matches(query) && instance_action_accepts_status(action, entry.status))
+        (entry.matches(query) && accepts_instance_status(action, entry.status))
             .then(|| entry.container_base.clone())
     })
 }
@@ -407,71 +410,41 @@ fn selected_instance_scope<'a>(
     }
 }
 
-/// Action × status acceptance grid. Each arm enumerates the exact set
-/// of statuses the action runs against. Negative `!matches!` idioms
-/// were intentionally avoided: a future `InstanceStatus` variant
-/// (e.g. `Stopping`) would silently flip every action that used a
-/// negative match to "accept this new state too", which is almost
-/// never what the operator wants. The positive form forces the
-/// developer adding a variant to consider each action explicitly.
-const fn instance_action_accepts_status(
+const fn accepts_instance_status(
     action: ConsoleInstanceAction,
     status: crate::instance::InstanceStatus,
 ) -> bool {
+    instance_action_accepts_status(instance_action_fact(action), instance_status_fact(status))
+}
+
+const fn instance_action_fact(action: ConsoleInstanceAction) -> WorkspaceInstanceAction {
+    match action {
+        ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::ReconnectFocus(_) => {
+            WorkspaceInstanceAction::Reconnect
+        }
+        ConsoleInstanceAction::NewSession | ConsoleInstanceAction::NewSessionWithAgent(_) => {
+            WorkspaceInstanceAction::NewSession
+        }
+        ConsoleInstanceAction::Shell => WorkspaceInstanceAction::Shell,
+        ConsoleInstanceAction::Inspect => WorkspaceInstanceAction::Inspect,
+        ConsoleInstanceAction::Stop => WorkspaceInstanceAction::Stop,
+        ConsoleInstanceAction::Purge => WorkspaceInstanceAction::Purge,
+    }
+}
+
+const fn instance_status_fact(status: crate::instance::InstanceStatus) -> WorkspaceInstanceStatus {
     use crate::instance::InstanceStatus as S;
-    match (action, status) {
-        // Reconnect / ReconnectFocus / Inspect: anything that still has on-disk state to read.
-        (
-            ConsoleInstanceAction::Reconnect
-            | ConsoleInstanceAction::ReconnectFocus(_)
-            | ConsoleInstanceAction::Inspect,
-            status,
-        ) => match status {
-            S::Active
-            | S::Running
-            | S::CleanExited
-            | S::Crashed
-            | S::PreservedDirty
-            | S::PreservedUnpushed
-            | S::RestoreAvailable
-            | S::Superseded
-            | S::FailedSetup => true,
-            S::Purged => false,
-        },
-        // NewSession / Shell / Stop: live container required.
-        (
-            ConsoleInstanceAction::NewSession
-            | ConsoleInstanceAction::NewSessionWithAgent(_)
-            | ConsoleInstanceAction::Shell
-            | ConsoleInstanceAction::Stop,
-            status,
-        ) => match status {
-            S::Active | S::Running => true,
-            S::CleanExited
-            | S::Crashed
-            | S::PreservedDirty
-            | S::PreservedUnpushed
-            | S::RestoreAvailable
-            | S::Superseded
-            | S::Purged
-            | S::FailedSetup => false,
-        },
-        // Purge: anything that hasn't already been purged. Crashed /
-        // CleanExited / Preserved* rows have local state worth deleting
-        // even though their containers are gone — Purge cleans both
-        // halves of the leftover.
-        (ConsoleInstanceAction::Purge, status) => match status {
-            S::Active
-            | S::Running
-            | S::CleanExited
-            | S::Crashed
-            | S::PreservedDirty
-            | S::PreservedUnpushed
-            | S::RestoreAvailable
-            | S::Superseded
-            | S::FailedSetup => true,
-            S::Purged => false,
-        },
+    match status {
+        S::Active => WorkspaceInstanceStatus::Active,
+        S::Running => WorkspaceInstanceStatus::Running,
+        S::CleanExited => WorkspaceInstanceStatus::CleanExited,
+        S::Crashed => WorkspaceInstanceStatus::Crashed,
+        S::PreservedDirty => WorkspaceInstanceStatus::PreservedDirty,
+        S::PreservedUnpushed => WorkspaceInstanceStatus::PreservedUnpushed,
+        S::RestoreAvailable => WorkspaceInstanceStatus::RestoreAvailable,
+        S::Superseded => WorkspaceInstanceStatus::Superseded,
+        S::Purged => WorkspaceInstanceStatus::Purged,
+        S::FailedSetup => WorkspaceInstanceStatus::FailedSetup,
     }
 }
 
@@ -733,7 +706,7 @@ mod tests {
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
     use crate::console::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
-    use super::{InputOutcome, handle_new_session_picker, instance_action_accepts_status};
+    use super::{InputOutcome, accepts_instance_status, handle_new_session_picker};
     use crate::agent::AgentChoiceState;
     use crate::config::AppConfig;
     use crate::console::tui::effect::ManagerEffect;
@@ -1318,20 +1291,14 @@ mod tests {
     }
 
     #[test]
-    fn instance_action_accepts_status_grid_smoke() {
+    fn accepts_instance_status_maps_root_facts() {
         use crate::console::ConsoleInstanceAction as A;
         use crate::instance::InstanceStatus as S;
-        // Smoke test the grid: a couple of cells per action so a
-        // future refactor that flips the action × status matrix has to
-        // touch this test.
-        assert!(instance_action_accepts_status(A::Stop, S::Running));
-        assert!(!instance_action_accepts_status(A::Stop, S::CleanExited));
-        assert!(!instance_action_accepts_status(A::Stop, S::Purged));
-        assert!(instance_action_accepts_status(A::Purge, S::Running));
-        assert!(instance_action_accepts_status(A::Purge, S::PreservedDirty));
-        assert!(!instance_action_accepts_status(A::Purge, S::Purged));
-        assert!(instance_action_accepts_status(A::Reconnect, S::Crashed));
-        assert!(!instance_action_accepts_status(A::Reconnect, S::Purged));
+
+        assert!(accepts_instance_status(A::Stop, S::Running));
+        assert!(!accepts_instance_status(A::Stop, S::CleanExited));
+        assert!(accepts_instance_status(A::Purge, S::PreservedDirty));
+        assert!(!accepts_instance_status(A::Reconnect, S::Purged));
     }
 
     #[test]
