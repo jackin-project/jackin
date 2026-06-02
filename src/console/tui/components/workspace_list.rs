@@ -5,7 +5,9 @@ use ratatui::{Frame, layout::Rect, text::Line};
 use crate::config::AppConfig;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_console::tui::screens::workspaces::view::{
-    WorkspaceEnvRow, WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
+    WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent,
+    WorkspaceInstanceSessionRow, WorkspaceInstanceTab, WorkspaceInstanceTabPane,
+    WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
     list_name_lines as workspace_list_name_lines, render_roles_subpanel,
 };
 
@@ -117,6 +119,73 @@ pub(crate) fn workspace_env_rows(
         }
     }
     rows
+}
+
+pub(crate) fn instance_details_pane(
+    entry: &crate::instance::InstanceIndexEntry,
+    sessions: &[crate::instance::SessionRecord],
+    session_load_error: bool,
+    snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
+    selected_pane: Option<u64>,
+    preview_focused: bool,
+) -> WorkspaceInstancePane {
+    WorkspaceInstancePane {
+        instance_id: entry.instance_id.clone(),
+        focused: preview_focused,
+        content: instance_details_content(sessions, session_load_error, snapshot, selected_pane),
+    }
+}
+
+fn instance_details_content(
+    sessions: &[crate::instance::SessionRecord],
+    session_load_error: bool,
+    snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
+    selected_pane: Option<u64>,
+) -> WorkspaceInstancePaneContent {
+    if let Some(snapshot) = snapshot {
+        return WorkspaceInstancePaneContent::Live {
+            tabs: snapshot
+                .tabs
+                .iter()
+                .enumerate()
+                .map(|(tab_idx, tab)| WorkspaceInstanceTab {
+                    index: tab_idx,
+                    label: tab.label.clone(),
+                    active: tab_idx == snapshot.active_tab as usize,
+                    panes: tab
+                        .panes
+                        .iter()
+                        .map(|pane| WorkspaceInstanceTabPane {
+                            label: pane.label.clone(),
+                            agent_label: pane.agent.clone().unwrap_or_else(|| "shell".to_string()),
+                            state_label: pane.state.label().to_string(),
+                            focused: pane.session_id == tab.focused_pane,
+                            selected: selected_pane == Some(pane.session_id),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        };
+    }
+    if sessions.is_empty() {
+        return WorkspaceInstancePaneContent::Empty {
+            message: if session_load_error {
+                "Sessions unavailable (manifest read error)"
+            } else {
+                "No sessions recorded"
+            }
+            .to_string(),
+        };
+    }
+    WorkspaceInstancePaneContent::Sessions {
+        rows: sessions
+            .iter()
+            .map(|session| WorkspaceInstanceSessionRow {
+                name: session.tmux_name.clone(),
+                agent_runtime: session.agent_runtime.clone(),
+            })
+            .collect(),
+    }
 }
 
 #[cfg(test)]
