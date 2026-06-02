@@ -397,24 +397,19 @@ pub fn remove_settings_env_row<V>(
 #[must_use]
 pub fn settings_env_add_target_for_row(
     row: Option<&SettingsEnvRow>,
-) -> Option<(SettingsEnvScope, String)> {
+) -> Option<SettingsEnvScope> {
     match row? {
         SettingsEnvRow::Key {
             scope: SettingsEnvScope::Global,
             ..
         }
-        | SettingsEnvRow::GlobalAddSentinel => {
-            Some((SettingsEnvScope::Global, "New global environment key".to_string()))
-        }
+        | SettingsEnvRow::GlobalAddSentinel => Some(SettingsEnvScope::Global),
         SettingsEnvRow::RoleHeader { role, .. }
         | SettingsEnvRow::Key {
             scope: SettingsEnvScope::Role(role),
             ..
         }
-        | SettingsEnvRow::RoleAddSentinel(role) => Some((
-            SettingsEnvScope::Role(role.clone()),
-            format!("New {role} environment key"),
-        )),
+        | SettingsEnvRow::RoleAddSentinel(role) => Some(SettingsEnvScope::Role(role.clone())),
         SettingsEnvRow::SectionSpacer => None,
     }
 }
@@ -459,7 +454,6 @@ pub fn settings_env_enter_plan_for_row<V>(
         Some(SettingsEnvRow::RoleAddSentinel(role)) => {
             SettingsEnvEnterPlan::AddRoleKey {
                 scope: SettingsEnvScope::Role(role.clone()),
-                label: format!("New {role} environment key"),
             }
         }
         Some(SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer) | None => {
@@ -775,17 +769,11 @@ mod tests {
 
         assert_eq!(
             settings_env_add_target_for_row(Some(&global)),
-            Some((
-                SettingsEnvScope::Global,
-                "New global environment key".to_string()
-            ))
+            Some(SettingsEnvScope::Global)
         );
         assert_eq!(
             settings_env_add_target_for_row(Some(&role)),
-            Some((
-                SettingsEnvScope::Role("alpha".to_string()),
-                "New alpha environment key".to_string()
-            ))
+            Some(SettingsEnvScope::Role("alpha".to_string()))
         );
     }
 
@@ -871,7 +859,6 @@ mod tests {
             ),
             SettingsEnvEnterPlan::AddRoleKey {
                 scope: SettingsEnvScope::Role("alpha".to_string()),
-                label: "New alpha environment key".to_string()
             }
         );
     }

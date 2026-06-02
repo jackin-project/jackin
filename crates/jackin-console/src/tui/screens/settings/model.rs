@@ -117,10 +117,7 @@ pub enum SettingsEnvEnterPlan {
     },
     OpenScopePicker,
     ExpandRole(String),
-    AddRoleKey {
-        scope: SettingsEnvScope,
-        label: String,
-    },
+    AddRoleKey { scope: SettingsEnvScope },
     Noop,
 }
 

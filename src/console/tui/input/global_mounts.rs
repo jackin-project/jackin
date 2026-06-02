@@ -1740,7 +1740,8 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
         SettingsEnvEnterPlan::ExpandRole(role) => {
             settings.env.expanded.insert(role);
         }
-        SettingsEnvEnterPlan::AddRoleKey { scope, label } => {
+        SettingsEnvEnterPlan::AddRoleKey { scope } => {
+            let label = settings_env_new_key_label(&scope);
             let state = settings_env_key_input_state(&settings.env.pending, &scope, label, "");
             settings.env.modal = Some(SettingsEnvModal::Text {
                 target: SettingsEnvTextTarget::EnvKey { scope },
@@ -1753,11 +1754,11 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
 
 fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
-    let Some((scope, label)) =
-        settings_update::settings_env_add_target_for_row(rows.get(settings.env.selected))
+    let Some(scope) = settings_update::settings_env_add_target_for_row(rows.get(settings.env.selected))
     else {
         return;
     };
+    let label = settings_env_new_key_label(&scope);
     let state = settings_env_key_input_state(&settings.env.pending, &scope, label, "");
     settings.env.modal = Some(SettingsEnvModal::Text {
         target: SettingsEnvTextTarget::EnvKey { scope },
