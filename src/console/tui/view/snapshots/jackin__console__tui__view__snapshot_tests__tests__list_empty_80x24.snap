@@ -1,5 +1,5 @@
 ---
-source: src/console/tui/render/snapshot_tests.rs
+source: src/console/tui/view/snapshot_tests.rs
 assertion_line: 63
 expression: rendered
 ---

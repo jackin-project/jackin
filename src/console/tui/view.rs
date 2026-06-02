@@ -1,4 +1,4 @@
-//! Render functions for the workspace manager TUI.
+//! View functions for the workspace manager TUI.
 
 pub mod editor;
 mod frame;

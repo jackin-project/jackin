@@ -581,7 +581,7 @@ The workspace mounts formula uses `.max(1)` because an empty mount list renders 
 
 ## Scrollable Blocks — Shared Component
 
-**All bordered scrollable content blocks must use `render_scrollable_block`** (defined in <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />, re-exported through `render/mod.rs` for manager-internal callers). Never hand-roll block creation, Paragraph scroll, or scrollbar rendering inline.
+**All bordered scrollable content blocks must use `render_scrollable_block`** (defined in <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />, re-exported through `view.rs` for manager-internal callers). Never hand-roll block creation, Paragraph scroll, or scrollbar rendering inline.
 
 `render_scrollable_block` guarantees:
 - Border color `PHOSPHOR_GREEN` when focused, `PHOSPHOR_DARK` otherwise.
@@ -945,9 +945,9 @@ The lookbook is the visual regression surface for every component in the catalog
 
 jackin' has **one** convention for "add a new thing to this list": a sentinel row rendered at the bottom of the list with a leading `+ ` and the action label. It is the same across every surface:
 
-- `+ New workspace` — list stage (<RepoFile path="src/console/tui/render/list.rs" />)
-- `+ Add role` — workspace editor Roles tab (<RepoFile path="src/console/tui/render/editor.rs" />)
-- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/tui/render/settings.rs" />)
+- `+ New workspace` — list stage (<RepoFile path="src/console/tui/view/list.rs" />)
+- `+ Add role` — workspace editor Roles tab (<RepoFile path="src/console/tui/view/editor.rs" />)
+- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/tui/view/settings.rs" />)
 - `+ Override for a role` — Auth tab per-role override
 
 Selecting a creation sentinel opens the next step in the flow — usually the **text input box** to name the new thing, or a two-button choice. Any new "add an item to this list" affordance MUST render as a `+ ` sentinel row in the same position and style, and MUST route its selection through the text input box (for naming) or a picker (for choosing). Do not invent a different add-affordance (no separate "New…" button floating elsewhere, no key-only shortcut without a visible row).

@@ -1,6 +1,6 @@
-//! Snapshot tests for the TUI render layer.
+//! Snapshot tests for the TUI view layer.
 //!
-//! Uses `insta` to pin the text output of key render functions. Any change to
+//! Uses `insta` to pin the text output of key view functions. Any change to
 //! rendered output fails CI until reviewed and accepted with `cargo insta review`.
 //! This is the Phase 0 regression net for the TUI architecture refactor.
 //!

@@ -13,7 +13,7 @@ pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
-use crate::console::tui::render::env_value_secret_display;
+use crate::console::tui::view::env_value_secret_display;
 pub(crate) use crate::console::tui::state::{
     auth_flat_rows, secrets_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
 };

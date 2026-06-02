@@ -2,16 +2,16 @@
 title: "Snapshot tests for TUI render"
 ---
 
-**Status**: Partially implemented — four `insta` snapshot tests (list, settings, editor-general, editor-mounts) land in <RepoFile path="src/console/tui/render/snapshot_tests.rs" /> with committed `.snap` files; additional coverage (global mounts, auth tab, PR context) follows as render work proceeds.
+**Status**: Partially implemented — four `insta` snapshot tests (list, settings, editor-general, editor-mounts) land in <RepoFile path="src/console/tui/view/snapshot_tests.rs" /> with committed `.snap` files; additional coverage (global mounts, auth tab, PR context) follows as view work proceeds.
 
 ## Problem
 
-The TUI has no snapshot-style regression net for the largest composite panes. The render layer has grown significantly since the original analysis:
+The TUI has no snapshot-style regression net for the largest composite panes. The view layer has grown significantly since the original analysis:
 
-- <RepoFile path="src/console/tui/render/editor.rs" /> is now **3231L** (was ~1682L — nearly doubled)
-- <RepoFile path="src/console/tui/render/list.rs" /> is now **2816L** (was ~2069L)
-- <RepoFile path="src/console/tui/render/mod.rs" /> is now **1165L** (was ~500L)
-- <RepoFile path="src/console/tui/render/settings.rs" /> is now **839L** (new sub-module)
+- <RepoFile path="src/console/tui/view/editor.rs" /> is now **3231L** (was ~1682L — nearly doubled)
+- <RepoFile path="src/console/tui/view/list.rs" /> is now **2816L** (was ~2069L)
+- <RepoFile path="src/console/tui/view/mod.rs" /> is now **1165L** (was ~500L)
+- <RepoFile path="src/console/tui/view/settings.rs" /> is now **839L** (new sub-module)
 
 No `insta` or other snapshot testing library exists in the dependency tree. All render testing uses manual `TestBackend` + `assert!` assertions against buffer contents.
 
@@ -19,17 +19,17 @@ No `insta` or other snapshot testing library exists in the dependency tree. All 
 
 | Function | File | What to snapshot |
 |---|---|---|
-| `render_sentinel_description_pane` | <RepoFile path="src/console/tui/render/list.rs" /> | Static "+ New workspace" panel. Zero state. 80×10 terminal. |
-| `render_tab_strip` | <RepoFile path="src/console/tui/render/editor.rs" /> | Tab bar with `EditorTab` active. 4 variants × 1 snapshot each. 80×3 terminal. |
-| `render_mounts_subpanel` | <RepoFile path="src/console/tui/render/list.rs" /> | Mount list subpanel. 3 cases: empty, 1 mount, 3 mounts. 60×20 terminal. |
+| `render_sentinel_description_pane` | <RepoFile path="src/console/tui/view/list.rs" /> | Static "+ New workspace" panel. Zero state. 80×10 terminal. |
+| `render_tab_strip` | <RepoFile path="src/console/tui/view/editor.rs" /> | Tab bar with `EditorTab` active. 4 variants × 1 snapshot each. 80×3 terminal. |
+| `render_mounts_subpanel` | <RepoFile path="src/console/tui/view/list.rs" /> | Mount list subpanel. 3 cases: empty, 1 mount, 3 mounts. 60×20 terminal. |
 
 **Additional high-value targets identified in re-analysis:**
 
 | Function | File | What to snapshot |
 |---|---|---|
-| Global mounts editor rendering | <RepoFile path="src/console/tui/render/settings.rs" /> | Per-subtab renders. New 839L file with no snapshot coverage. |
-| Per-tab editor body renders | <RepoFile path="src/console/tui/render/editor.rs" /> | At minimum: General, Mounts, Agents, Secrets tab body renders. |
-| Workspace list renders | <RepoFile path="src/console/tui/render/list.rs" /> | Active workspace detail panel with various mount configurations. |
+| Global mounts editor rendering | <RepoFile path="src/console/tui/view/settings.rs" /> | Per-subtab renders. New 839L file with no snapshot coverage. |
+| Per-tab editor body renders | <RepoFile path="src/console/tui/view/editor.rs" /> | At minimum: General, Mounts, Agents, Secrets tab body renders. |
+| Workspace list renders | <RepoFile path="src/console/tui/view/list.rs" /> | Active workspace detail panel with various mount configurations. |
 
 ## Implementation
 
@@ -39,7 +39,7 @@ Use `insta` for snapshot storage + review workflow; `ratatui::backend::TestBacke
 |---|---|---|---|
 | `insta` | ~4k | String snapshots with `cargo insta review` | Best — simple, no async, inline or file-based |
 | `ratatui::backend::TestBackend` | built-in | Raw buffer comparison | Already available |
-| `trycmd` | ~400 | CLI snapshot testing | Wrong layer — tests full CLI, not render functions |
+| `trycmd` | ~400 | CLI snapshot testing | Wrong layer — tests full CLI, not view functions |
 
 ## Steps
 
@@ -50,4 +50,4 @@ Use `insta` for snapshot storage + review workflow; `ratatui::backend::TestBacke
 
 ## Why before Phase 2
 
-These snapshot tests are the regression net for the Phase 2 file splits AND the Phase 1.5 DRY extractions. The TUI render layer has extreme boilerplate duplication (120 `Style::default()` chains, 18 `Block::default()` constructions, 192 `Span` constructions) — snapshot tests make it safe to extract shared helpers without silently changing TUI appearance.
+These snapshot tests are the regression net for the Phase 2 file splits AND the Phase 1.5 DRY extractions. The TUI view layer has extreme boilerplate duplication (120 `Style::default()` chains, 18 `Block::default()` constructions, 192 `Span` constructions) — snapshot tests make it safe to extract shared helpers without silently changing TUI appearance.

@@ -151,7 +151,7 @@ The console reads the instance index and shows active/recoverable instances for 
 
 The console should treat the index as a discoverability source, not as proof that Docker resources still exist. Refresh paths reconcile local state with Docker when an action needs live container data.
 
-Implementation lives in <RepoFile path="src/console/tui/state.rs" />, <RepoFile path="src/console/tui/render/list.rs" />, and <RepoFile path="src/console/tui/input/list.rs" />.
+Implementation lives in <RepoFile path="src/console/tui/state.rs" />, <RepoFile path="src/console/tui/view/list.rs" />, and <RepoFile path="src/console/tui/input/list.rs" />.
 
 ## Persistence Boundary
 
@@ -192,5 +192,5 @@ Implementation lives in <RepoFile path="src/runtime/cleanup.rs" />.
 | Eject, purge, orphan cleanup | <RepoFile path="src/runtime/cleanup.rs" /> |
 | Workspace/materialized mount state | <RepoFile path="src/isolation/materialize.rs" /> and <RepoFile path="src/isolation/state.rs" /> |
 | Foreground finalizer | <RepoFile path="src/isolation/finalize.rs" /> |
-| Console instance rendering/actions | <RepoFile path="src/console/tui/render/list.rs" /> and <RepoFile path="src/console/tui/input/list.rs" /> |
+| Console instance rendering/actions | <RepoFile path="src/console/tui/view/list.rs" /> and <RepoFile path="src/console/tui/input/list.rs" /> |
 | DinD/Testcontainers smoke coverage | <RepoFile path="tests/dind_e2e.rs" /> |

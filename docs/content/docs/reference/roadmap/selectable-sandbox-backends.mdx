@@ -257,7 +257,7 @@ The probe results and the chosen backend must be reported in the launch contract
 
 ## TUI / Operator Console Surface
 
-Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="src/console/tui/render/list.rs" /> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
+Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="src/console/tui/view/list.rs" /> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
 
 ```text
 backend:   orbstack-isolated

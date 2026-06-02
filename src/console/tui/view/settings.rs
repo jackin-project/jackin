@@ -9,7 +9,7 @@ use ratatui::{
     text::Line,
 };
 use jackin_console::tui::auth::AuthKind;
-use crate::console::tui::render::env_value_secret_display;
+use crate::console::tui::view::env_value_secret_display;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,

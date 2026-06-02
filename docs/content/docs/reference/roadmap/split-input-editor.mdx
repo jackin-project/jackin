@@ -8,7 +8,7 @@ title: "Split input/editor.rs"
 
 <RepoFile path="src/console/tui/input/editor.rs" /> is **4002L** total (was ~3796L at original analysis). It handles keyboard dispatch for all editor tabs (General, Mounts, Agents, Secrets) and is one of the biggest concentrated editor-state files.
 
-Its render counterpart <RepoFile path="src/console/tui/render/editor.rs" /> is now **3331L** (was ~1682L — nearly doubled). Both files should be split together as a paired operation.
+Its render counterpart <RepoFile path="src/console/tui/view/editor.rs" /> is now **3331L** (was ~1682L — nearly doubled). Both files should be split together as a paired operation.
 
 ## Proposed split
 
@@ -23,7 +23,7 @@ src/console/tui/input/editor/
 
 The render counterpart would split similarly:
 ```
-src/console/tui/render/editor/
+src/console/tui/view/editor/
   mod.rs      ← re-exports, render_editor dispatcher
   general.rs  ← General tab rendering
   mounts.rs   ← Mounts tab rendering
@@ -56,7 +56,7 @@ To audit "did the AI correctly implement the Secrets tab?", a reviewer reads onl
 
 1. Complete Phase 1.5 TUI rendering DRY extractions first (named styles, `titled_block` helper).
 2. Complete snapshot tests item first (regression net).
-3. Create `src/console/tui/input/editor/` and `src/console/tui/render/editor/` directories.
+3. Create `src/console/tui/input/editor/` and `src/console/tui/view/editor/` directories.
 4. Move each tab's handlers to the appropriate file, keeping `mod.rs` as the dispatcher.
 5. Fix import paths (the `super::super::` depth changes).
 6. Verify `cargo nextest run` passes.

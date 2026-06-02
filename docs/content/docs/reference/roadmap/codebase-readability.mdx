@@ -30,7 +30,7 @@ Make AI-generated code verifiable and maintainable. The codebase has grown to ~9
 
 ### Weakest parts (highest duplication / entropy risk)
 
-- **TUI render layer** — `console/tui/render/` and all widget files: 296 `Style::default().fg()` calls, 357 `Span::styled()` calls, 27 `Block::default()` chains, inline color constants duplicated across 10+ files instead of using the centralized palette in `console/tui/components/mod.rs`
+- **TUI view layer** — `console/tui/view/` and all widget files: 296 `Style::default().fg()` calls, 357 `Span::styled()` calls, 27 `Block::default()` chains, inline color constants duplicated across 10+ files instead of using the centralized palette in `console/tui/components/mod.rs`
 - **Auth provisioning** — `instance/auth.rs` contains 5 near-identical provision functions; 7+ agent match-arm dispatch blocks across the codebase mean adding a new agent requires touching 7+ files
 - **String literal duplication** — `"FROM projectjackin/construct:trixie\n"` and related construct base FROM lines, `"jackin.role.toml"` (154), `"Dockerfile"` (227) — all inline instead of shared constants
 - **Test infrastructure** — 11 separate mock/fake struct definitions; 10 independent mount helper functions in 7 files; 4 byte-for-byte-identical `config_with_agents` test helpers; 20 inline `ResolvedWorkspace` constructions
@@ -107,7 +107,7 @@ The unified TUI scrollbar extraction has shipped: shared metrics, clamping, drag
 | `fn titled_block(title, focused) -> Block` | 18 `Block::default().borders(ALL)` + 15 border_style chains + 13 title constructions (78 total sites) | `render/editor.rs`, `render/list.rs`, `render/settings.rs` | Collapses 78 boilerplate chains |
 | Named style constants (`BOLD_WHITE`, `DIM`, `GREEN`, `BORDER`, `DANGER`) | 296 `Style::default().fg(...)` chains across 22 files; `Style::default().fg(WHITE).add_modifier(BOLD)` alone appears 26+ times | All render files + all widget files + `input/save.rs` | Eliminates 296 inline style constructions |
 | Centralized color palette import | Inline `Color::Rgb(...)` values duplicated in `input/save.rs`, `scope_picker.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `file_browser/render.rs` instead of importing from `console/tui/components/mod.rs` | 6+ files | Removes ~20 inline magic color values |
-| `fn app_layout(area) -> Rc<[Rect]>` for header/body/footer | 4 identical `Layout::default()` splits with `[Length(3), Min(..), Length(2)]` | `render/mod.rs`, `render/settings.rs` | Removes 4 duplicate layout constructions |
+| `fn app_layout(area) -> Rc<[Rect]>` for header/body/footer | 4 identical `Layout::default()` splits with `[Length(3), Min(..), Length(2)]` | `view.rs`, `render/settings.rs` | Removes 4 duplicate layout constructions |
 | Deduplicate breadcrumb logic | `push_op_breadcrumb_spans()` at `render/editor.rs:1427` is fully duplicated inline at lines 1058–1091 | `render/editor.rs` | One call replaces ~30 duplicated lines |
 | Extract `config_with_agents` to shared test utility | 4 copies of the same function (3 are byte-for-byte identical in `render/editor.rs`); 1 variant in `input/editor.rs` | `render/editor.rs`, `input/editor.rs` | 4 functions → 1 shared helper |
 
@@ -175,10 +175,10 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 | <RepoFile path="src/runtime/launch.rs" /> | **7966** | Hardest file in the codebase. `fn load_role_with` is 751L. | `load_role_with` (751L), `launch_role_runtime` (407L), `resolve_restore_candidate` (118L) |
 | <RepoFile path="src/console/tui/input/editor.rs" /> | **4002** | 61-arm match on modal, 53-arm match on key.code. Deep nesting to 36+ spaces. | `role_input_resolves_then_persists...` (135L) |
 | <RepoFile path="src/operator_env.rs" /> | **3573** | Cross-cutting; 4 production `unwrap()` calls. | `resolve_op_uri_with_dollar_var_errors` (401L), `item_create` (145L) |
-| <RepoFile path="src/console/tui/render/editor.rs" /> | **3331** | 25-arm match on tab. | `contextual_row_items` (205L), `render_secrets_tab` (104L) |
+| <RepoFile path="src/console/tui/view/editor.rs" /> | **3331** | 25-arm match on tab. | `contextual_row_items` (205L), `render_secrets_tab` (104L) |
 | <RepoFile path="src/instance/auth.rs" /> | **3206** | 5 copy-pasted provision functions. 132 deeply nested lines. | — |
 | <RepoFile path="src/app/mod.rs" /> | **2932** | `fn run` is 1239L with a 51-arm match. | `fn run` (1239L), `render_workspace_show` (147L), `handle_claude_token` (117L) |
-| <RepoFile path="src/console/tui/render/list.rs" /> | **2920** | 41 `TestBackend::new()` calls. | `render_details_pane` (116L) |
+| <RepoFile path="src/console/tui/view/list.rs" /> | **2920** | 41 `TestBackend::new()` calls. | `render_details_pane` (116L) |
 | <RepoFile path="src/console/tui/input/save.rs" /> | **2908** | Deep nesting to 36+ spaces. Inline color re-declarations. | `build_confirm_save_lines` (245L) |
 | <RepoFile path="src/console/tui/state.rs" /> | **2522** | State machine + modal definitions mixed. | — |
 | <RepoFile path="src/config/editor.rs" /> | **2412** | 51 `JackinPaths::for_tests()` calls. | — |
@@ -204,14 +204,14 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 | <RepoFile path="src/workspace/mod.rs" /> | **1076** | Core workspace types; crossed the 1000L line since the previous re-bake. |
 | <RepoFile path="src/manifest/mod.rs" /> | **1047** | Manifest loading; crossed the 1000L line since the previous re-bake. |
 | <RepoFile path="src/console/tui/input/list.rs" /> | **1030** | List-stage key handling; crossed the 1000L line since the previous re-bake. |
-| <RepoFile path="src/console/tui/render/mod.rs" /> | **1025** | `fn render` is 201L. Central render orchestrator; crossed the 1000L line since the previous re-bake. |
+| <RepoFile path="src/console/tui/view/mod.rs" /> | **1025** | `fn render` is 201L. Central render orchestrator; crossed the 1000L line since the previous re-bake. |
 
 ### Tier C — files 800–1000 lines (5 files, lower priority)
 
 | File | LOC | Note |
 |---|---|---|
 | <RepoFile path="src/instance/manifest.rs" /> | **945** | Per-instance manifest (grew from 851 since the original audit) |
-| <RepoFile path="src/console/tui/render/settings.rs" /> | **893** | Settings rendering |
+| <RepoFile path="src/console/tui/view/settings.rs" /> | **893** | Settings rendering |
 | <RepoFile path="src/cli/workspace.rs" /> | **861** | Workspace CLI commands |
 | <RepoFile path="src/config/workspaces.rs" /> | **805** | Per-workspace file parsing / serialization |
 | <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" /> | **802** | Scrollable widget primitive |
@@ -226,7 +226,7 @@ The remaining Tier A/B/C entries below do not yet have dedicated design pages; t
 6. **`config/editor.rs`** (2412L) — after the editor split patterns are established
 7. **`input/mouse.rs`** (2068L) — extract seam drag from click handling
 8. **`input/global_mounts.rs`** (2114L) — per-subtab handler extraction
-9. **Tier B remaining** — `state.rs`, `render/list.rs`, `input/save.rs`, `finalize.rs`, `input/auth.rs`, `token_setup.rs`, `context.rs`, `config/mod.rs`, `validate.rs`, `render/mod.rs`, plus the new arrivals (`runtime/cleanup.rs`, `runtime/attach.rs`, `runtime/repo_cache.rs`, `derived_image.rs`, `workspace/mod.rs`, `manifest/mod.rs`, `input/list.rs`)
+9. **Tier B remaining** — `state.rs`, `render/list.rs`, `input/save.rs`, `finalize.rs`, `input/auth.rs`, `token_setup.rs`, `context.rs`, `config/mod.rs`, `validate.rs`, `view.rs`, plus the new arrivals (`runtime/cleanup.rs`, `runtime/attach.rs`, `runtime/repo_cache.rs`, `derived_image.rs`, `workspace/mod.rs`, `manifest/mod.rs`, `input/list.rs`)
 10. **Tier C** — address as part of normal development or when specific files become review blockers
 11. **`runtime/launch.rs`** (7966L) — **LAST**; hardest file, most complex test suite, behavioral spec must exist
 
