@@ -149,6 +149,8 @@ src/
 
 Settings-modal render adapters now call crate-owned modal rect specs directly instead of carrying duplicate root wrapper helpers.
 
+Root-modal widget dispatch now lives in <RepoFile path="src/console/tui/components/modal.rs" /> while <RepoFile path="src/console/tui/view/modal.rs" /> only aliases that adapter for the root frame view.
+
 Console op-picker pending-load requests now use the generic carrier in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />; the root adapter still supplies root `operator_env` result types and executes `op` metadata loads outside the TUI boundary.
 
 Console global quit/Q-intercept policy and confirm-state construction now live in <RepoFile path="crates/jackin-console/src/tui/run.rs" />; the root run loop supplies `QuitInterceptState` facts from root stage/modal state.

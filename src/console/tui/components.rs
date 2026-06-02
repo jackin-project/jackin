@@ -3,6 +3,7 @@
 pub(crate) mod auth_panel;
 pub(crate) mod editor;
 pub(crate) mod footer;
+pub(crate) mod modal;
 pub(crate) mod modal_layout;
 pub(crate) mod mount_display;
 pub(crate) mod op_picker;
