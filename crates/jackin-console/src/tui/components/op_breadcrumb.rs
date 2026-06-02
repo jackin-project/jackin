@@ -5,7 +5,7 @@ use ratatui::{
     text::Span,
 };
 
-use crate::op_breadcrumb::parse_path_breadcrumb;
+use crate::tui::op_breadcrumb::parse_path_breadcrumb;
 
 use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 

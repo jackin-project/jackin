@@ -654,7 +654,7 @@ fn secret_key_line_width(
     const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let op_breadcrumb = match value {
-        SecretValueDisplay::OpRefPath(path) => crate::op_breadcrumb::parse_path_breadcrumb(path),
+        SecretValueDisplay::OpRefPath(path) => crate::tui::op_breadcrumb::parse_path_breadcrumb(path),
         SecretValueDisplay::Plain(_) => None,
     };
     let marker = if op_breadcrumb.is_some() {
@@ -665,7 +665,7 @@ fn secret_key_line_width(
     let prefix_width =
         text_width("  ") + text_width(marker) + text_width(&format!("{key:label_width$}")) + 2;
     let value_width = if let Some(parts) = op_breadcrumb.as_ref() {
-        crate::op_breadcrumb::breadcrumb_display_width(parts)
+        crate::tui::op_breadcrumb::breadcrumb_display_width(parts)
     } else if masked {
         text_width(MASK)
     } else {
@@ -800,8 +800,8 @@ fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usiz
         AuthSourceDisplay::NotRequired => text_width("not required"),
         AuthSourceDisplay::OpRefPath(path) => {
             text_width("[op] ")
-                + crate::op_breadcrumb::parse_path_breadcrumb(path)
-                    .map(|parts| crate::op_breadcrumb::breadcrumb_display_width(&parts))
+                + crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
+                    .map(|parts| crate::tui::op_breadcrumb::breadcrumb_display_width(&parts))
                     .unwrap_or_else(|| text_width("<unparseable path - re-pick>"))
         }
         AuthSourceDisplay::MaskedPlain { chars } => {

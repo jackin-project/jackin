@@ -117,7 +117,7 @@ pub fn render_secret_key_line(
     };
     let dim = Style::default().fg(PHOSPHOR_DIM);
     let op_breadcrumb = match value {
-        SecretValueDisplay::OpRefPath(path) => crate::op_breadcrumb::parse_path_breadcrumb(path),
+        SecretValueDisplay::OpRefPath(path) => crate::tui::op_breadcrumb::parse_path_breadcrumb(path),
         SecretValueDisplay::Plain(_) => None,
     };
     let marker = if op_breadcrumb.is_some() {
