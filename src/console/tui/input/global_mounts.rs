@@ -15,6 +15,7 @@ use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
+    generated_token_source_picker_state,
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::auth::can_generate_claude_oauth_token;
@@ -533,7 +534,7 @@ pub(super) fn handle_settings_auth_modal(
                 // push it directly to preserve the in-progress form state.
                 auth.modal_parents.push(modal);
                 auth.modal = Some(SettingsAuthModal::SourcePicker {
-                    state: auth_source_picker_state("generated token", op_available),
+                    state: generated_token_source_picker_state(op_available),
                 });
                 return SettingsAuthOutcome::Continue;
             }

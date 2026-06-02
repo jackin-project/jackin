@@ -20,6 +20,7 @@ use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_to
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
+    generated_token_source_picker_state,
 };
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
@@ -480,7 +481,7 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
         literal_buffer,
     });
     editor.modal = Some(Modal::AuthSourcePicker {
-        state: auth_source_picker_state("generated token", op_available),
+        state: generated_token_source_picker_state(op_available),
     });
     true
 }

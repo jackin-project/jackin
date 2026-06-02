@@ -62,6 +62,11 @@ pub fn auth_source_picker_state(
 }
 
 #[must_use]
+pub fn generated_token_source_picker_state(op_available: bool) -> SourcePickerState {
+    auth_source_picker_state("generated token", op_available)
+}
+
+#[must_use]
 pub fn auth_credential_input_state<'a>(
     literal: impl Into<String>,
 ) -> TextInputState<'a> {
@@ -551,6 +556,13 @@ mod tests {
         let state = auth_source_picker_state("CLAUDE_API_KEY", true);
 
         assert_eq!(state.key, "CLAUDE_API_KEY");
+    }
+
+    #[test]
+    fn generated_token_source_picker_state_uses_component_label() {
+        let state = generated_token_source_picker_state(true);
+
+        assert_eq!(state.key, "generated token");
     }
 
     #[test]
