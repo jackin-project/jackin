@@ -302,6 +302,57 @@ pub fn settings_trust_row_footer_items(has_roles: bool) -> Vec<HintSpan<'static>
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsContextFooterMode {
+    General,
+    MountRow {
+        has_github_url: bool,
+    },
+    MountAddRow,
+    EnvOpRefRow,
+    EnvPlainRow,
+    EnvRoleHeader,
+    EnvAddRow,
+    Empty,
+    AuthManage,
+    AuthEditMode,
+    AuthEditSource,
+    Trust {
+        has_roles: bool,
+    },
+}
+
+#[must_use]
+pub fn settings_contextual_row_footer_items(
+    mode: SettingsContextFooterMode,
+    op_available: bool,
+) -> Vec<HintSpan<'static>> {
+    match mode {
+        SettingsContextFooterMode::General => settings_general_row_footer_items(),
+        SettingsContextFooterMode::MountRow { has_github_url } => {
+            global_mount_row_footer_items(has_github_url)
+        }
+        SettingsContextFooterMode::MountAddRow => add_row_footer_items("add"),
+        SettingsContextFooterMode::EnvOpRefRow => secret_op_ref_row_footer_items(op_available),
+        SettingsContextFooterMode::EnvPlainRow => secret_plain_row_footer_items(op_available),
+        SettingsContextFooterMode::EnvRoleHeader => secret_role_header_footer_items(),
+        SettingsContextFooterMode::EnvAddRow => secret_add_row_footer_items(op_available),
+        SettingsContextFooterMode::Empty => Vec::new(),
+        SettingsContextFooterMode::AuthManage => {
+            auth_row_footer_items(AuthRowFooterMode::ManageAuth)
+        }
+        SettingsContextFooterMode::AuthEditMode => {
+            auth_row_footer_items(AuthRowFooterMode::EditMode)
+        }
+        SettingsContextFooterMode::AuthEditSource => {
+            auth_row_footer_items(AuthRowFooterMode::EditSource)
+        }
+        SettingsContextFooterMode::Trust { has_roles } => {
+            settings_trust_row_footer_items(has_roles)
+        }
+    }
+}
+
 #[must_use]
 pub fn add_row_footer_items(label: &'static str) -> Vec<HintSpan<'static>> {
     vec![HintSpan::Key("↵/A"), HintSpan::Text(label)]
@@ -980,6 +1031,85 @@ mod tests {
                 "Q",
                 "quit",
             ]
+        );
+    }
+
+    #[test]
+    fn settings_context_footer_routes_mounts_and_auth() {
+        assert_eq!(
+            labels(settings_contextual_row_footer_items(
+                SettingsContextFooterMode::MountAddRow,
+                false,
+            )),
+            vec!["↵/A", "add"]
+        );
+        assert_eq!(
+            labels(settings_contextual_row_footer_items(
+                SettingsContextFooterMode::MountRow {
+                    has_github_url: true,
+                },
+                false,
+            )),
+            vec![
+                "D",
+                "remove",
+                "A",
+                "add",
+                "O",
+                "open in GitHub",
+                "R",
+                "toggle ro/rw",
+                "N",
+                "rename",
+                "1",
+                "edit source",
+                "2",
+                "edit dst",
+                "3",
+                "edit scope",
+                "H/L",
+                "scroll",
+            ]
+        );
+        assert_eq!(
+            labels(settings_contextual_row_footer_items(
+                SettingsContextFooterMode::AuthEditSource,
+                false,
+            )),
+            vec!["↵", "edit source"]
+        );
+    }
+
+    #[test]
+    fn settings_context_footer_routes_env_rows() {
+        assert_eq!(
+            labels(settings_contextual_row_footer_items(
+                SettingsContextFooterMode::EnvOpRefRow,
+                true,
+            )),
+            vec![
+                "↵",
+                "P",
+                "re-pick from 1Password",
+                "D",
+                "delete",
+                "A",
+                "add",
+            ]
+        );
+        assert_eq!(
+            labels(settings_contextual_row_footer_items(
+                SettingsContextFooterMode::EnvAddRow,
+                false,
+            )),
+            vec!["↵", "add"]
+        );
+        assert!(
+            labels(settings_contextual_row_footer_items(
+                SettingsContextFooterMode::Empty,
+                true,
+            ))
+            .is_empty()
         );
     }
 

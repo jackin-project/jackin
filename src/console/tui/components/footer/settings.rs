@@ -11,10 +11,8 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
-    AuthRowFooterMode, add_row_footer_items, auth_row_footer_items, content_footer_items,
-    global_mount_row_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
-    secret_plain_row_footer_items, secret_role_header_footer_items, settings_general_row_footer_items,
-    settings_trust_row_footer_items, tab_bar_footer_items,
+    SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
+    tab_bar_footer_items,
 };
 
 pub(crate) fn settings_footer_items(
@@ -51,24 +49,26 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
 
 #[allow(clippy::too_many_lines)]
 fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
+    settings_contextual_row_footer_items(settings_context_footer_mode(state), op_available)
+}
+
+fn settings_context_footer_mode(state: &SettingsState<'_>) -> SettingsContextFooterMode {
     match state.active_tab {
-        SettingsTab::General => settings_general_row_footer_items(),
+        SettingsTab::General => SettingsContextFooterMode::General,
         SettingsTab::Mounts => {
             let cursor = state.mounts.selected;
             let mount_count = state.mounts.pending.len();
             if cursor == mount_count {
-                add_row_footer_items("add")
+                SettingsContextFooterMode::MountAddRow
             } else {
-                global_mount_row_footer_items(
-                    state
+                SettingsContextFooterMode::MountRow {
+                    has_github_url: state
                         .mounts
                         .pending
                         .get(cursor)
-                        .and_then(|row| {
-                            state.mounts.mount_info_cache.github_web_url(&row.mount.src)
-                        })
+                        .and_then(|row| state.mounts.mount_info_cache.github_web_url(&row.mount.src))
                         .is_some(),
-                )
+                }
             }
         }
         SettingsTab::Environments => {
@@ -77,28 +77,28 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                 Some(SettingsEnvRow::Key { scope, key })
                     if settings_env_value_is_op_ref(state, scope, key) =>
                 {
-                    secret_op_ref_row_footer_items(op_available)
+                    SettingsContextFooterMode::EnvOpRefRow
                 }
-                Some(SettingsEnvRow::Key { .. }) => {
-                    secret_plain_row_footer_items(op_available)
-                }
-                Some(SettingsEnvRow::RoleHeader { .. }) => secret_role_header_footer_items(),
+                Some(SettingsEnvRow::Key { .. }) => SettingsContextFooterMode::EnvPlainRow,
+                Some(SettingsEnvRow::RoleHeader { .. }) => SettingsContextFooterMode::EnvRoleHeader,
                 Some(SettingsEnvRow::GlobalAddSentinel | SettingsEnvRow::RoleAddSentinel(_)) => {
-                    secret_add_row_footer_items(op_available)
+                    SettingsContextFooterMode::EnvAddRow
                 }
-                Some(SettingsEnvRow::SectionSpacer) | None => Vec::new(),
+                Some(SettingsEnvRow::SectionSpacer) | None => SettingsContextFooterMode::Empty,
             }
         }
         SettingsTab::Auth => {
             if state.auth.selected_kind.is_none() {
-                auth_row_footer_items(AuthRowFooterMode::ManageAuth)
+                SettingsContextFooterMode::AuthManage
             } else if state.auth.selected == 0 {
-                auth_row_footer_items(AuthRowFooterMode::EditMode)
+                SettingsContextFooterMode::AuthEditMode
             } else {
-                auth_row_footer_items(AuthRowFooterMode::EditSource)
+                SettingsContextFooterMode::AuthEditSource
             }
         }
-        SettingsTab::Trust => settings_trust_row_footer_items(!state.trust.pending.is_empty()),
+        SettingsTab::Trust => SettingsContextFooterMode::Trust {
+            has_roles: !state.trust.pending.is_empty(),
+        },
     }
 }
 
