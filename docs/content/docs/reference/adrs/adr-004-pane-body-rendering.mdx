@@ -3,6 +3,7 @@ title: "ADR-004: Capsule pane-body rendering mechanism"
 ---
 
 **Status**: Accepted  
+**Current state**: `SocketBackend` serialises `Buffer::diff` over the attach socket; raw-ANSI vt100 passthrough for pane body content. Ratatui handles all chrome, dialogs, and overlays.  
 **Date**: 2026-05-30  
 **Deciders**: Operator + agent
 
