@@ -7,7 +7,7 @@ use jackin_tui::HintSpan;
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::modal::modal_footer_items;
 use crate::console::tui::state::{
-    AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow,
+    AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal, SecretsRow,
     auth_flat_rows, secrets_flat_rows,
 };
 use crate::operator_env::EnvValue;

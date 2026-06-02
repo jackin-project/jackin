@@ -567,125 +567,19 @@ pub(crate) fn token_generate_scope_label(
     }
 }
 
-#[derive(Debug)]
-pub struct EditorState<'a> {
-    pub mode: EditorMode,
-    pub active_tab: EditorTab,
-    /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
-    /// Tab/↓ enters content); when false, focus is in the tab panel.
-    pub tab_bar_focused: bool,
-    /// Index of the tab cell under the pointer, repainted on mouse motion so
-    /// the strip reacts to hover like the in-container multiplexer tabs.
-    pub hovered_tab: Option<usize>,
-    pub active_field: FieldFocus,
-    pub original: WorkspaceConfig,
-    pub pending: WorkspaceConfig,
-    pub mount_info_cache: MountInfoCache,
-    pub modal: Option<Modal<'a>>,
-    /// Parent chain backing the Esc-back rule from
-    /// `docs/.../tui-design-decisions.mdx` — modals that opened a
-    /// sub-modal (`open_sub_modal`) stash themselves here so cancel
-    /// on the child can pop back rather than dumping to the
-    /// underlying tab. Top of the vec = parent immediately under
-    /// the currently-visible `modal`. Empty = the visible modal has
-    /// no parent in the chain (Esc closes back to the tab as
-    /// before). `clear_modal_chain` empties both this and `modal` on
-    /// terminal commits where the chain has finished its job.
-    pub modal_parents: Vec<Modal<'a>>,
-    /// Create-mode only; Edit mode reads name from `EditorMode::Edit`.
-    pub pending_name: Option<String>,
-    /// Signals the outer `handle_key` to save and/or pop to List.
-    pub exit_after_save: Option<ExitIntent>,
-    pub save_flow: EditorSaveFlow,
-    /// Secrets tab: keys whose value is currently unmasked. Cleared on
-    /// tab leave so re-entry starts all-masked. Op:// rows ignore this
-    /// — they render as a breadcrumb, not a masked value.
-    pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
-    pub secrets_expanded: BTreeSet<String>,
-    pub auth_expanded: BTreeSet<String>,
-    /// Auth tab two-screen state: `None` renders the auth-kind
-    /// picker; `Some(kind)` renders the focused editor for that
-    /// auth kind. Cleared by Esc on the focused screen (see the Auth
-    /// branch in `input::editor::handle_editor_key`'s `KeyCode::Esc`
-    /// arm) and by Tab/BackTab leaving the Auth tab. The Esc-pop
-    /// is in-tab navigation and intentionally bypasses the
-    /// dirty-modal flow — pending edits stay in `editor.pending`.
-    ///
-    /// Widened from `Agent` to [`AuthKind`] so `Github` can sit on
-    /// the panel without forcing a runtime `Agent::Github` variant.
-    pub auth_selected_kind: Option<jackin_console::tui::auth::AuthKind>,
-    /// Stashed by `P` on a Secrets row so `OpPicker` knows where to
-    /// write its `op://` path. `Some((scope, Some(key)))` replaces a
-    /// row's value; `Some((scope, None))` opens the `EnvKey` modal
-    /// next with the value pre-stashed in `pending_picker_value`.
-    pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
-    /// In the sentinel-add flow, holds the picker-supplied `OpRef`
-    /// (wrapped as `EnvValue::OpRef`) until the operator names the key
-    /// and the `EnvKey` modal commits both fields at once.
-    pub pending_picker_value: Option<crate::operator_env::EnvValue>,
-    /// Stash for the auth-form ↔ side-modal round trips. Set when the
-    /// operator presses Enter on the credential row, and consumed when
-    /// the side modal commits or cancels:
-    ///
-    ///   - `AuthSourcePicker` (literal) → `TextInput` → `AuthForm`
-    ///   - `AuthSourcePicker` (1Password) → `OpPicker` → `AuthForm`
-    ///
-    /// On commit the form is reconstructed with the new credential
-    /// applied after root input code validates the `OpRef`; on cancel
-    /// it's reconstructed pristine.
-    /// Threading the auth-form context through this single field
-    /// (rather than via a payload on each side variant) keeps the
-    /// picker/text-input variants orthogonal to their caller, at the
-    pub workspace_mounts_scroll_x: u16,
-    pub workspace_mounts_scroll_focused: bool,
-    /// Mounts-tab row the pointer is hovering (lifts its background like a
-    /// hovered tab). Transient; set on mouse motion.
-    pub hovered_mount_row: Option<usize>,
-    /// Horizontal scroll offset shared across non-Mounts editor content tabs.
-    /// Reset to 0 on every tab change so each tab starts at the left edge.
-    pub tab_scroll_x: u16,
-    /// Vertical scroll offset shared across all editor content tabs.
-    /// Reset to 0 on every tab change so each tab starts at the top.
-    pub tab_scroll_y: u16,
-    /// Whether the non-Mounts tab content block has keyboard/click focus
-    /// (green border). Updated each click via `update_scroll_focus`.
-    pub tab_content_scroll_focused: bool,
-    /// Last rendered content width for the active non-Mounts tab content block.
-    pub tab_content_width: usize,
-    /// Last rendered line count for the active editor tab content block.
-    /// Written by the render function; read by scroll input so wheel and
-    /// scrollbar-drag routing use the same content height the renderer used.
-    pub tab_content_height: usize,
-    /// Set when the auth-form "generate token" action launches the
-    /// `op_picker` in Create mode, so the `op_picker` commit knows the
-    /// pick is a token-generate (not a browse/provide pick) and which
-    /// layer it targets. Consumed (taken) by the `op_picker` commit.
-    pub generating_token_target: Option<AuthFormTarget>,
-    /// Set by the `op_picker` commit when `generating_token_target` was
-    /// present; drained by the `run_console` loop to run the mint.
-    pub pending_token_generate: Option<PendingTokenGenerate>,
-    /// Role repository registration kicked off from the Roles tab. Drained by
-    /// the outer console loop so the editor can keep rendering a loading
-    /// dialog instead of blocking the TUI while git works.
-    pub pending_role_load: Option<PendingRoleLoad>,
-    /// Isolation-drift check dispatched by the save flow. Holds the oneshot
-    /// receiver plus the save plan and flags needed to continue once the check
-    /// completes. The outer console loop polls this each tick so the reactor is
-    /// not blocked while the Docker/git check runs on the `spawn_blocking` pool.
-    pub pending_drift_check: Option<PendingDriftCheck>,
-    /// Acknowledged isolated-state cleanup dispatched by the save flow.
-    /// The outer console loop polls this each tick; once it succeeds, the
-    /// save is retried with `isolated_cleanup_complete = true`.
-    pub pending_isolation_cleanup: Option<PendingIsolationCleanup>,
-    /// In-flight 1Password read for an op-picker auth-form commit. Spawned on
-    /// `spawn_blocking` so Touch ID / the 1Password desktop dialog don't freeze
-    /// the TUI reactor. Polled each tick by the outer console loop.
-    pub pending_op_commit: Option<PendingOpCommit>,
-    /// Footer height (rows) the renderer last laid out, cached so mouse
-    /// hit-testing subtracts the same dynamic footer the frame drew rather than
-    /// a stale constant — otherwise clicks near the bottom mis-map.
-    pub cached_footer_h: u16,
-}
+pub type EditorState<'a> = jackin_console::tui::screens::editor::model::EditorState<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal<'a>,
+    EditorSaveFlow,
+    crate::operator_env::EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>;
 
 pub type PendingOpCommit =
     jackin_console::tui::subscriptions::PendingOpCommit<crate::operator_env::OpRef>;
@@ -1778,133 +1672,14 @@ impl ManagerState<'_> {
     }
 }
 
-impl<'a> EditorState<'a> {
-    /// Open `child` as a sub-modal of the currently-visible modal. If
-    /// a modal is already open it is stashed into `modal_parents`
-    /// (top of vec = nearest parent); Esc on `child` will then call
-    /// `pop_modal_chain` and restore the stashed parent. Use this for
-    /// every modal→modal transition unless the parent's commit is
-    /// terminal (in which case use `set_modal_terminal`).
-    pub fn open_sub_modal(&mut self, child: Modal<'a>) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
-    }
-
-    /// Pop one frame from the modal chain. If `modal_parents` is
-    /// non-empty the previous parent becomes visible; otherwise the
-    /// chain finishes and `modal` is cleared. Mirrors
-    /// `crates/jackin-capsule/src/dialog.rs::dialog_pop_one` and is
-    /// the canonical "Esc went back" arm for child modals.
-    pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
-        if self.modal.is_none() {
-            self.drop_modal_scratch();
-        }
-    }
-
-    /// Terminal commit: clear `modal` and the entire `modal_parents`
-    /// chain so the operator lands on the underlying tab in one step.
-    /// Use on the final action of a multi-step flow (env key + value
-    /// both committed, role + auth form saved, etc.).
-    pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
-        self.drop_modal_scratch();
-    }
-
-    /// Scratch slots used to thread env-key + source-picker context
-    /// across child modals (e.g. `EnvKey` → `SourcePicker` → `OpPicker`).
-    /// Whenever the chain unwinds to no modal, these must clear so a
-    /// later unrelated commit cannot pick up stale (scope, key) and
-    /// write a secret to the wrong target.
-    fn drop_modal_scratch(&mut self) {
-        self.pending_picker_value = None;
-    }
+pub(crate) trait EditorStateExt {
+    fn is_dirty(&self) -> bool;
+    fn change_count(&self) -> usize;
+    fn cycle_isolation_for_selected_mount(&mut self);
 }
 
-impl EditorState<'_> {
-    pub fn new_edit(name: String, ws: WorkspaceConfig) -> Self {
-        Self {
-            mode: EditorMode::Edit { name },
-            active_tab: EditorTab::General,
-            tab_bar_focused: true,
-            hovered_tab: None,
-            active_field: FieldFocus::Row(0),
-            original: ws.clone(),
-            pending: ws,
-            mount_info_cache: MountInfoCache::default(),
-            modal: None,
-            modal_parents: Vec::new(),
-            pending_name: None,
-            exit_after_save: None,
-            save_flow: EditorSaveFlow::Idle,
-            unmasked_rows: BTreeSet::default(),
-            secrets_expanded: BTreeSet::default(),
-            auth_expanded: BTreeSet::default(),
-            auth_selected_kind: None,
-            pending_picker_target: None,
-            pending_picker_value: None,
-            workspace_mounts_scroll_x: 0,
-            workspace_mounts_scroll_focused: false,
-            hovered_mount_row: None,
-            tab_scroll_x: 0,
-            tab_scroll_y: 0,
-            tab_content_scroll_focused: false,
-            tab_content_width: 0,
-            tab_content_height: 0,
-            generating_token_target: None,
-            pending_token_generate: None,
-            pending_role_load: None,
-            pending_drift_check: None,
-            pending_isolation_cleanup: None,
-            pending_op_commit: None,
-            cached_footer_h: 1,
-        }
-    }
-
-    pub fn new_create() -> Self {
-        let empty = WorkspaceConfig::default();
-        Self {
-            mode: EditorMode::Create,
-            active_tab: EditorTab::General,
-            tab_bar_focused: true,
-            hovered_tab: None,
-            active_field: FieldFocus::Row(0),
-            original: empty.clone(),
-            pending: empty,
-            mount_info_cache: MountInfoCache::default(),
-            modal: None,
-            modal_parents: Vec::new(),
-            pending_name: None,
-            exit_after_save: None,
-            save_flow: EditorSaveFlow::Idle,
-            unmasked_rows: BTreeSet::default(),
-            secrets_expanded: BTreeSet::default(),
-            auth_expanded: BTreeSet::default(),
-            auth_selected_kind: None,
-            pending_picker_target: None,
-            pending_picker_value: None,
-            workspace_mounts_scroll_x: 0,
-            workspace_mounts_scroll_focused: false,
-            hovered_mount_row: None,
-            tab_scroll_x: 0,
-            tab_scroll_y: 0,
-            tab_content_scroll_focused: false,
-            tab_content_width: 0,
-            tab_content_height: 0,
-            generating_token_target: None,
-            pending_token_generate: None,
-            pending_role_load: None,
-            pending_drift_check: None,
-            pending_isolation_cleanup: None,
-            pending_op_commit: None,
-            cached_footer_h: 1,
-        }
-    }
-
-    pub fn is_dirty(&self) -> bool {
+impl EditorStateExt for EditorState<'_> {
+    fn is_dirty(&self) -> bool {
         if self.pending != self.original {
             return true;
         }
@@ -1917,7 +1692,7 @@ impl EditorState<'_> {
     }
 
     /// Field-level diff count used for "s save (N changes)".
-    pub fn change_count(&self) -> usize {
+    fn change_count(&self) -> usize {
         let mut n = 0;
         if self.pending.workdir != self.original.workdir {
             n += 1;
@@ -1993,7 +1768,7 @@ impl EditorState<'_> {
     /// Cycle the per-mount isolation strategy on the highlighted mount row.
     /// Sequence: `Shared → Worktree → Clone → Shared`. Silent no-op when the cursor
     /// is on the `+ Add mount` sentinel (i.e. past the last data row).
-    pub fn cycle_isolation_for_selected_mount(&mut self) {
+    fn cycle_isolation_for_selected_mount(&mut self) {
         use crate::isolation::MountIsolation::{Clone, Shared, Worktree};
         let FieldFocus::Row(n) = self.active_field;
         if let Some(m) = self.pending.mounts.get_mut(n) {

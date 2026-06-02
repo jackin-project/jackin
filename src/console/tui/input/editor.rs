@@ -9,7 +9,7 @@ use jackin_console::tui::components::save_discard::editor_exit_save_discard_stat
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache;
 use crate::console::tui::state::{
-    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
+    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorStateExt, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan,
     SecretsRow, SecretsScopeTag, TextInputTarget, open_editor_action_error,
     open_role_input_error, open_role_resolution_error, auth_flat_rows, secrets_flat_rows,
@@ -1695,8 +1695,9 @@ mod tests {
     //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
     //! bindings, and mount-row readonly toggle.
     use crate::console::tui::state::{
-        ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
-        ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
+        ConfirmTarget, EditorState, EditorStateExt, EditorTab, FieldFocus, FileBrowserTarget,
+        ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag,
+        TextInputTarget,
     };
     use super::super::test_support::{key, mount};
     use super::{

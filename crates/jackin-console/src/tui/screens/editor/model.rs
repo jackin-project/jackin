@@ -34,6 +34,174 @@ pub enum EditorMode {
     Create,
 }
 
+#[derive(Debug)]
+pub struct EditorState<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+> {
+    pub mode: EditorMode,
+    pub active_tab: EditorTab,
+    /// W3C ARIA Tabs: when true, focus is on the tab list; when false, focus
+    /// is in the tab panel.
+    pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer.
+    pub hovered_tab: Option<usize>,
+    pub active_field: FieldFocus,
+    pub original: WorkspaceConfig,
+    pub pending: WorkspaceConfig,
+    pub mount_info_cache: MountInfoCache,
+    pub modal: Option<Modal>,
+    pub modal_parents: Vec<Modal>,
+    /// Create-mode only; Edit mode reads name from `EditorMode::Edit`.
+    pub pending_name: Option<String>,
+    /// Signals the outer input handler to save and/or pop to List.
+    pub exit_after_save: Option<ExitIntent>,
+    pub save_flow: SaveFlow,
+    /// Secrets tab keys whose value is currently unmasked.
+    pub unmasked_rows: std::collections::BTreeSet<(SecretsScopeTag, String)>,
+    pub secrets_expanded: std::collections::BTreeSet<String>,
+    pub auth_expanded: std::collections::BTreeSet<String>,
+    pub auth_selected_kind: Option<crate::tui::auth::AuthKind>,
+    pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
+    pub pending_picker_value: Option<EnvValue>,
+    pub workspace_mounts_scroll_x: u16,
+    pub workspace_mounts_scroll_focused: bool,
+    pub hovered_mount_row: Option<usize>,
+    pub tab_scroll_x: u16,
+    pub tab_scroll_y: u16,
+    pub tab_content_scroll_focused: bool,
+    pub tab_content_width: usize,
+    pub tab_content_height: usize,
+    pub generating_token_target: Option<AuthFormTarget>,
+    pub pending_token_generate: Option<PendingTokenGenerate>,
+    pub pending_role_load: Option<PendingRoleLoad>,
+    pub pending_drift_check: Option<PendingDriftCheck>,
+    pub pending_isolation_cleanup: Option<PendingIsolationCleanup>,
+    pub pending_op_commit: Option<PendingOpCommit>,
+    pub cached_footer_h: u16,
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>
+    EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    pub fn new_edit(name: String, ws: WorkspaceConfig) -> Self
+    where
+        WorkspaceConfig: Clone,
+        MountInfoCache: Default,
+        SaveFlow: Default,
+    {
+        Self {
+            mode: EditorMode::Edit { name },
+            active_tab: EditorTab::General,
+            tab_bar_focused: true,
+            hovered_tab: None,
+            active_field: FieldFocus::Row(0),
+            original: ws.clone(),
+            pending: ws,
+            mount_info_cache: MountInfoCache::default(),
+            modal: None,
+            modal_parents: Vec::new(),
+            pending_name: None,
+            exit_after_save: None,
+            save_flow: SaveFlow::default(),
+            unmasked_rows: std::collections::BTreeSet::default(),
+            secrets_expanded: std::collections::BTreeSet::default(),
+            auth_expanded: std::collections::BTreeSet::default(),
+            auth_selected_kind: None,
+            pending_picker_target: None,
+            pending_picker_value: None,
+            workspace_mounts_scroll_x: 0,
+            workspace_mounts_scroll_focused: false,
+            hovered_mount_row: None,
+            tab_scroll_x: 0,
+            tab_scroll_y: 0,
+            tab_content_scroll_focused: false,
+            tab_content_width: 0,
+            tab_content_height: 0,
+            generating_token_target: None,
+            pending_token_generate: None,
+            pending_role_load: None,
+            pending_drift_check: None,
+            pending_isolation_cleanup: None,
+            pending_op_commit: None,
+            cached_footer_h: 1,
+        }
+    }
+
+    pub fn new_create() -> Self
+    where
+        WorkspaceConfig: Clone + Default,
+        MountInfoCache: Default,
+        SaveFlow: Default,
+    {
+        let empty = WorkspaceConfig::default();
+        Self::new_edit(String::new(), empty).into_create_mode()
+    }
+
+    #[must_use]
+    fn into_create_mode(mut self) -> Self {
+        self.mode = EditorMode::Create;
+        self
+    }
+
+    pub fn open_sub_modal(&mut self, child: Modal) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+        if self.modal.is_none() {
+            self.drop_modal_scratch();
+        }
+    }
+
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
+        self.drop_modal_scratch();
+    }
+
+    fn drop_modal_scratch(&mut self) {
+        self.pending_picker_value = None;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldFocus {
     Row(usize),
