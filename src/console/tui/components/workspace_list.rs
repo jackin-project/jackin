@@ -5,9 +5,12 @@ use ratatui::{Frame, layout::Rect, text::Line};
 use crate::config::AppConfig;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::layout::list::{
-    SidebarInputs, SidebarLayout, split_global_mount_rows,
+    SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
+    sidebar_inputs_for_workspace, split_global_mount_rows,
 };
-use crate::console::tui::state::{ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus};
+use crate::console::tui::state::{
+    ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
+};
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane,
@@ -15,6 +18,7 @@ use jackin_console::tui::screens::workspaces::view::{
     list_name_lines as workspace_list_name_lines, provider_picker_title,
     render_compact_instances_summary, render_environments_subpanel, render_general_subpanel,
     render_global_mounts_subpanel, render_mounts_subpanel as render_workspace_mounts_panel,
+    render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_picker_sidebar, render_roles_subpanel,
 };
 
@@ -233,6 +237,54 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame, area: Rect, state: &Manager
             state.list_names_scroll_x,
         );
     }
+}
+
+pub(crate) fn render_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    ws: &WorkspaceSummary,
+    config: &AppConfig,
+    state: &ManagerState<'_>,
+) {
+    let inputs = sidebar_inputs_for_workspace(ws, config, state);
+    let layout = compute_sidebar_layout(area, &inputs);
+    render_sidebar_body(frame, &layout, &inputs, config, state);
+}
+
+pub(crate) fn render_current_dir_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    cwd: &std::path::Path,
+    config: &AppConfig,
+    state: &ManagerState<'_>,
+) {
+    let cwd_str = cwd.display().to_string();
+    let mounts = [crate::console::domain::current_dir_mount_config(&cwd_str)];
+    let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
+    let layout = compute_sidebar_layout(area, &inputs);
+    render_sidebar_body(frame, &layout, &inputs, config, state);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_instance_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    entry: &crate::instance::InstanceIndexEntry,
+    sessions: &[crate::instance::SessionRecord],
+    session_load_error: bool,
+    snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
+    selected_pane: Option<u64>,
+    preview_focused: bool,
+) {
+    let pane = instance_details_pane(
+        entry,
+        sessions,
+        session_load_error,
+        snapshot,
+        selected_pane,
+        preview_focused,
+    );
+    render_workspace_instance_details_pane(frame, area, &pane);
 }
 
 pub(crate) fn render_provider_picker_sidebar(

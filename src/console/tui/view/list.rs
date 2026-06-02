@@ -24,9 +24,6 @@ use ratatui::{
 };
 
 use crate::config::AppConfig;
-use crate::console::tui::layout::list::{
-    compute_sidebar_layout, sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace,
-};
 #[cfg(test)]
 pub(super) use crate::console::tui::layout::list::{
     global_mounts_content_height, mount_block_height,
@@ -36,11 +33,10 @@ pub(super) use crate::console::tui::components::mount_display::format_mount_rows
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 use crate::console::tui::components::workspace_list::{
-    instance_details_pane, render_list_sidebar, render_sidebar_body,
+    render_current_dir_details_pane, render_details_pane, render_instance_details_pane,
+    render_list_sidebar,
 };
-use crate::console::tui::state::{
-    ManagerListRow, ManagerState, WorkspaceSummary,
-};
+use crate::console::tui::state::{ManagerListRow, ManagerState};
 #[cfg(test)]
 pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
 #[cfg(test)]
@@ -50,7 +46,6 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
-    render_instance_details_pane as render_workspace_instance_details_pane,
     render_sentinel_description_pane,
 };
 
@@ -89,7 +84,7 @@ pub(super) fn render_list_body(
         }
         ManagerListRow::SavedWorkspace(i) => {
             if let Some(ws) = state.workspaces.get(i).cloned() {
-                render_details_pane(frame, columns[1], i, &ws, config, state);
+                render_details_pane(frame, columns[1], &ws, config, state);
             }
         }
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
@@ -145,64 +140,6 @@ pub(super) fn render_list_body(
     }
 
     render_list_sidebar(frame, list_area, state);
-}
-
-fn render_details_pane(
-    frame: &mut Frame,
-    area: Rect,
-    _ws_idx: usize,
-    ws: &WorkspaceSummary,
-    config: &AppConfig,
-    state: &ManagerState<'_>,
-) {
-    let inputs = sidebar_inputs_for_workspace(ws, config, state);
-    let layout = compute_sidebar_layout(area, &inputs);
-    render_sidebar_body(frame, &layout, &inputs, config, state);
-}
-
-/// Cursor on the synthetic "Current directory" row — mirrors
-/// `workspace::current_dir_workspace`: src=dst=cwd, rw, any role.
-fn render_current_dir_details_pane(
-    frame: &mut Frame,
-    area: Rect,
-    cwd: &std::path::Path,
-    config: &AppConfig,
-    state: &ManagerState<'_>,
-) {
-    let cwd_str = cwd.display().to_string();
-    let mounts = [crate::console::domain::current_dir_mount_config(&cwd_str)];
-    let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
-    let layout = compute_sidebar_layout(area, &inputs);
-    render_sidebar_body(frame, &layout, &inputs, config, state);
-}
-
-/// Right-panel shown when operator selects an instance row in the tree.
-/// When the daemon's bind-mounted socket gives us a live snapshot we
-/// render the tab/pane tree (active tab marked, focused pane marked,
-/// per-pane agent + state); otherwise we fall back to the on-disk
-/// manifest sessions, and finally to a "no sessions recorded" hint
-/// when neither is available.
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_lines)]
-fn render_instance_details_pane(
-    frame: &mut Frame,
-    area: Rect,
-    entry: &crate::instance::InstanceIndexEntry,
-    sessions: &[crate::instance::SessionRecord],
-    session_load_error: bool,
-    snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
-    selected_pane: Option<u64>,
-    preview_focused: bool,
-) {
-    let pane = instance_details_pane(
-        entry,
-        sessions,
-        session_load_error,
-        snapshot,
-        selected_pane,
-        preview_focused,
-    );
-    render_workspace_instance_details_pane(frame, area, &pane);
 }
 
 /// Number of leading spaces every content row in the General / Mounts /
@@ -1656,7 +1593,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1716,7 +1653,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary(), &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &state);
         })
         .unwrap();
 
@@ -1757,7 +1694,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1830,7 +1767,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1878,7 +1815,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1941,7 +1878,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
+            crate::console::tui::components::workspace_list::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
