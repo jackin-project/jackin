@@ -12,6 +12,15 @@ use dockerfile_parser_rs::{Dockerfile, Instruction};
 
 use crate::repo::RoleRepoValidationError;
 
+/// Filename of the role manifest that every role repo must contain.
+/// Used across repo validation, manifest parsing, image build, and role
+/// authoring. Future home: `jackin-core`.
+pub const MANIFEST_FILENAME: &str = "jackin.role.toml";
+
+/// Name of the Dockerfile that every role repo must contain.
+/// Future home: `jackin-core`.
+pub const DOCKERFILE_NAME: &str = "Dockerfile";
+
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
 pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
 /// Floating stable-channel tag. Default returned by `construct_image()` when
