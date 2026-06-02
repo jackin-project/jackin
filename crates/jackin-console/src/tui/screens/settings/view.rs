@@ -176,6 +176,31 @@ pub fn settings_env_empty_key_label() -> &'static str {
 }
 
 #[must_use]
+pub fn settings_env_empty_key_error_message() -> &'static str {
+    "Env key cannot be empty."
+}
+
+#[must_use]
+pub fn settings_env_edit_cancelled_message() -> &'static str {
+    "Env edit cancelled."
+}
+
+#[must_use]
+pub fn global_mount_add_cancelled_message() -> &'static str {
+    "Add mount cancelled."
+}
+
+#[must_use]
+pub fn settings_no_registered_roles_error_message() -> &'static str {
+    "No registered roles available."
+}
+
+#[must_use]
+pub fn settings_auth_op_read_failed_message(error: impl std::fmt::Display) -> String {
+    format!("1Password read failed: {error}")
+}
+
+#[must_use]
 pub fn env_forbidden_label(scope: &SettingsEnvScope) -> String {
     match scope {
         SettingsEnvScope::Global => "global env".to_string(),
@@ -762,6 +787,23 @@ mod tests {
             "New environment key for alpha"
         );
         assert_eq!(settings_env_empty_key_label(), "Key cannot be empty");
+        assert_eq!(
+            settings_env_empty_key_error_message(),
+            "Env key cannot be empty."
+        );
+        assert_eq!(settings_env_edit_cancelled_message(), "Env edit cancelled.");
+        assert_eq!(
+            global_mount_add_cancelled_message(),
+            "Add mount cancelled."
+        );
+        assert_eq!(
+            settings_no_registered_roles_error_message(),
+            "No registered roles available."
+        );
+        assert_eq!(
+            settings_auth_op_read_failed_message("bad"),
+            "1Password read failed: bad"
+        );
     }
 
     #[test]

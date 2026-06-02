@@ -20,12 +20,14 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
-    global_mount_confirm_state, global_mount_scope_picker_state, global_mount_text_input_state,
-    global_mount_text_target_label, settings_env_delete_confirm_state,
+    global_mount_add_cancelled_message, global_mount_confirm_state,
+    global_mount_scope_picker_state, global_mount_text_input_state, global_mount_text_target_label,
+    settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
+    settings_env_edit_cancelled_message, settings_env_empty_key_error_message,
     settings_env_empty_key_label, settings_env_key_input_state,
     settings_env_new_key_after_picker_label, settings_env_new_key_label,
     settings_env_scope_picker_state, settings_env_source_picker_state, settings_env_text_input_state,
-    settings_env_value_text_label,
+    settings_env_value_text_label, settings_no_registered_roles_error_message,
 };
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
@@ -851,7 +853,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
                 focus,
                 literal_buffer,
             });
-            auth.error = Some(format!("1Password read failed: {err}"));
+            auth.error = Some(settings_auth_op_read_failed_message(err));
         }
     }
 }
@@ -900,7 +902,7 @@ pub(in crate::console) fn apply_op_picker_settings_commit_failed(
     auth: &mut crate::console::tui::state::SettingsAuthState,
     error: &anyhow::Error,
 ) {
-    auth.error = Some(format!("1Password read failed: {error}"));
+    auth.error = Some(settings_auth_op_read_failed_message(error));
 }
 
 fn persist_settings_auth_form(
@@ -1110,7 +1112,7 @@ pub(super) fn handle_settings_confirm_modal(
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
                 if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some("Add mount cancelled.".to_string());
+                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_string());
                 }
             }
             ModalOutcome::Continue => {
@@ -1192,7 +1194,7 @@ pub(super) fn handle_settings_confirm_modal(
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
                 if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some("Add mount cancelled.".to_string());
+                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_string());
                 }
             }
             ModalOutcome::Continue => {
@@ -1212,7 +1214,7 @@ pub(super) fn handle_settings_confirm_modal(
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
                 if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some("Add mount cancelled.".to_string());
+                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_string());
                 }
             }
             ModalOutcome::Continue => {
@@ -1270,7 +1272,7 @@ pub(super) fn handle_settings_env_modal(
                 if env.modal.is_none() {
                     env.pending_env_key = None;
                     env.pending_picker_value = None;
-                    env.error = Some("Env edit cancelled.".to_string());
+                    env.error = Some(settings_env_edit_cancelled_message().to_string());
                 }
             }
             ModalOutcome::Continue => {
@@ -1550,7 +1552,7 @@ fn commit_env_text(
     match target {
         SettingsEnvTextTarget::EnvKey { scope } => {
             if trimmed.is_empty() {
-                env.error = Some("Env key cannot be empty.".into());
+                env.error = Some(settings_env_empty_key_error_message().into());
                 let state = settings_env_key_input_state(
                     &env.pending,
                     scope,
@@ -1601,7 +1603,7 @@ fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsE
         .filter_map(|role| RoleSelector::parse(role).ok())
         .collect::<Vec<_>>();
     if roles.is_empty() {
-        env.error = Some("No registered roles available.".into());
+        env.error = Some(settings_no_registered_roles_error_message().into());
         return;
     }
     env.open_sub_modal(SettingsEnvModal::RolePicker {
@@ -1905,7 +1907,7 @@ fn open_global_mount_role_picker(settings: &mut crate::console::tui::state::Sett
         .filter_map(|row| RoleSelector::parse(&row.role).ok())
         .collect::<Vec<_>>();
     if roles.is_empty() {
-        settings.mounts.error = Some("No registered roles available.".into());
+        settings.mounts.error = Some(settings_no_registered_roles_error_message().into());
         return;
     }
     settings
