@@ -4,15 +4,18 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
-use crate::console::tui::state::{ManagerListRow, ManagerState};
-use crate::console::tui::state::MountInfoCache;
+use crate::console::tui::layout::list::{
+    SidebarInputs, SidebarLayout, split_global_mount_rows,
+};
+use crate::console::tui::state::{ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus};
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane,
     WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
-    list_name_lines as workspace_list_name_lines, provider_picker_title, render_picker_sidebar,
+    list_name_lines as workspace_list_name_lines, provider_picker_title,
+    render_compact_instances_summary, render_environments_subpanel, render_general_subpanel,
     render_global_mounts_subpanel, render_mounts_subpanel as render_workspace_mounts_panel,
-    render_roles_subpanel,
+    render_picker_sidebar, render_roles_subpanel,
 };
 
 pub(crate) fn list_name_lines(
@@ -269,6 +272,82 @@ pub(crate) fn render_global_mount_rows_section(
         rows.iter().map(|row| row.mount.clone()).collect();
     let display_rows = format_mount_rows_with_cache(&mounts, cache);
     render_global_mounts_subpanel(frame, area, title, &display_rows, scroll_x, scroll_y, focused);
+}
+
+pub(crate) fn render_sidebar_body(
+    frame: &mut Frame,
+    layout: &SidebarLayout,
+    inputs: &SidebarInputs<'_>,
+    config: &AppConfig,
+    state: &ManagerState<'_>,
+) {
+    if let Some(area) = layout.instances {
+        render_compact_instances_summary(
+            frame,
+            area,
+            inputs.instance_count,
+            inputs.instance_expanded,
+        );
+    }
+    render_general_subpanel(
+        frame,
+        layout.general,
+        &crate::tui::shorten_home(inputs.workdir),
+    );
+    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
+    render_mounts_subpanel(
+        frame,
+        layout.mounts,
+        inputs.mounts,
+        &inputs.mount_info_cache,
+        state.list_mounts_scroll_x,
+        state.list_mounts_scroll_y,
+        ws_focused,
+    );
+    if layout.global.is_some() || layout.role_global.is_some() {
+        let global_focused = state.list_scroll_focus;
+        let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+        if let Some(area) = layout.global {
+            render_global_mount_rows_section(
+                frame,
+                area,
+                " Global mounts ",
+                &global_rows,
+                &inputs.mount_info_cache,
+                state.list_global_mounts_scroll_x,
+                state.list_global_mounts_scroll_y,
+                global_focused == Some(MountScrollFocus::Global),
+            );
+        }
+        if let Some(area) = layout.role_global {
+            let title = format!(" Role global mounts · {} ", inputs.picker_role_label);
+            render_global_mount_rows_section(
+                frame,
+                area,
+                &title,
+                &role_global_rows,
+                &inputs.mount_info_cache,
+                state.list_role_global_mounts_scroll_x,
+                state.list_role_global_mounts_scroll_y,
+                global_focused == Some(MountScrollFocus::RoleGlobal),
+            );
+        }
+    }
+    if let Some(area) = layout.env {
+        render_environments_subpanel(frame, area, workspace_env_rows(inputs.ws_config));
+    }
+    if let Some(area) = layout.roles {
+        let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
+        render_agents_subpanel_scrollable(
+            frame,
+            area,
+            inputs.ws_config,
+            config,
+            state.list_roles_scroll_x,
+            state.list_roles_scroll_y,
+            roles_focused,
+        );
+    }
 }
 
 #[cfg(test)]

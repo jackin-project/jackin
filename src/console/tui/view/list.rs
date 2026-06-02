@@ -25,8 +25,7 @@ use ratatui::{
 
 use crate::config::AppConfig;
 use crate::console::tui::layout::list::{
-    SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
-    sidebar_inputs_for_workspace, split_global_mount_rows,
+    compute_sidebar_layout, sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace,
 };
 #[cfg(test)]
 pub(super) use crate::console::tui::layout::list::{
@@ -38,11 +37,10 @@ pub(super) use crate::console::tui::components::mount_display::format_mount_rows
 pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 use crate::console::tui::components::workspace_list::{
     instance_details_pane, list_name_lines, render_agent_picker_sidebar,
-    render_agents_subpanel_scrollable, render_global_mount_rows_section, render_mounts_subpanel,
-    render_provider_picker_sidebar, render_role_picker_sidebar, workspace_env_rows,
+    render_provider_picker_sidebar, render_role_picker_sidebar, render_sidebar_body,
 };
 use crate::console::tui::state::{
-    ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary,
+    ManagerListRow, ManagerState, WorkspaceSummary,
 };
 #[cfg(test)]
 pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
@@ -53,8 +51,7 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
-    render_compact_instances_summary, render_list_names_block,
-    render_environments_subpanel, render_general_subpanel,
+    render_list_names_block,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_sentinel_description_pane,
 };
@@ -194,82 +191,6 @@ pub(super) fn render_list_body(
             content_width,
             state.list_names_focused,
             state.list_names_scroll_x,
-        );
-    }
-}
-
-fn render_sidebar_body(
-    frame: &mut Frame,
-    layout: &SidebarLayout,
-    inputs: &SidebarInputs<'_>,
-    config: &AppConfig,
-    state: &ManagerState<'_>,
-) {
-    if let Some(area) = layout.instances {
-        render_compact_instances_summary(
-            frame,
-            area,
-            inputs.instance_count,
-            inputs.instance_expanded,
-        );
-    }
-    render_general_subpanel(
-        frame,
-        layout.general,
-        &crate::tui::shorten_home(inputs.workdir),
-    );
-    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
-    render_mounts_subpanel(
-        frame,
-        layout.mounts,
-        inputs.mounts,
-        &inputs.mount_info_cache,
-        state.list_mounts_scroll_x,
-        state.list_mounts_scroll_y,
-        ws_focused,
-    );
-    if layout.global.is_some() || layout.role_global.is_some() {
-        let global_focused = state.list_scroll_focus;
-        let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
-        if let Some(area) = layout.global {
-            render_global_mount_rows_section(
-                frame,
-                area,
-                " Global mounts ",
-                &global_rows,
-                &inputs.mount_info_cache,
-                state.list_global_mounts_scroll_x,
-                state.list_global_mounts_scroll_y,
-                global_focused == Some(MountScrollFocus::Global),
-            );
-        }
-        if let Some(area) = layout.role_global {
-            let title = format!(" Role global mounts · {} ", inputs.picker_role_label);
-            render_global_mount_rows_section(
-                frame,
-                area,
-                &title,
-                &role_global_rows,
-                &inputs.mount_info_cache,
-                state.list_role_global_mounts_scroll_x,
-                state.list_role_global_mounts_scroll_y,
-                global_focused == Some(MountScrollFocus::RoleGlobal),
-            );
-        }
-    }
-    if let Some(area) = layout.env {
-        render_environments_subpanel(frame, area, workspace_env_rows(inputs.ws_config));
-    }
-    if let Some(area) = layout.roles {
-        let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
-        render_agents_subpanel_scrollable(
-            frame,
-            area,
-            inputs.ws_config,
-            config,
-            state.list_roles_scroll_x,
-            state.list_roles_scroll_y,
-            roles_focused,
         );
     }
 }
@@ -809,16 +730,16 @@ mod subpanel_padding_tests {
     //! by the General / Mounts / Roles sub-panels. All three render content
     //! rows starting at the same column so the first visible character of
     //! the three blocks, giving the right pane a tidy left edge.
-    use super::{
-        SUBPANEL_CONTENT_INDENT, render_environments_subpanel, render_general_subpanel,
-        render_mounts_subpanel,
-    };
+    use super::SUBPANEL_CONTENT_INDENT;
     use crate::config::AppConfig;
     use crate::console::tui::components::workspace_list::{
-        render_agents_subpanel, workspace_env_rows,
+        render_agents_subpanel, render_mounts_subpanel, workspace_env_rows,
     };
     use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
     use crate::workspace::WorkspaceConfig;
+    use jackin_console::tui::screens::workspaces::view::{
+        render_environments_subpanel, render_general_subpanel,
+    };
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
