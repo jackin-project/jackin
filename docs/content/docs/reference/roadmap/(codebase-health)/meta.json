@@ -4,6 +4,7 @@
   "pages": [
     "../codebase-readability",
     "../agent-runtime-trait",
+    "../structured-tracing-metrics",
     "../pr-verification",
     "../tui-architecture",
     "(phase-1-docs-setup)",
