@@ -1,6 +1,6 @@
 //! Manager-owned state preparation before drawing.
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer;
@@ -9,7 +9,7 @@ use crate::console::tui::layout::editor::prepare_editor_for_render;
 use crate::console::tui::layout::list::clamp_list_scroll_for_area;
 use crate::console::tui::layout::settings::clamp_global_mounts_scroll_for_frame;
 use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
-use jackin_console::tui::view::footer_height;
+use jackin_console::tui::view::{footer_height, workspace_frame_areas};
 
 pub fn prepare_for_render(
     state: &mut ManagerState<'_>,
@@ -30,15 +30,8 @@ pub fn prepare_for_render(
             clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
         }
         ManagerStage::List => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(2),
-                    Constraint::Min(10),
-                    Constraint::Length(2),
-                ])
-                .split(area);
-            clamp_list_scroll_for_area(chunks[1], state, config, cwd);
+            let areas = workspace_frame_areas(area);
+            clamp_list_scroll_for_area(areas.body, state, config, cwd);
         }
         ManagerStage::CreatePrelude(_)
         | ManagerStage::ConfirmDelete { .. }
