@@ -125,6 +125,140 @@ pub fn settings_auth_env_value<'a>(
 }
 
 #[must_use]
+pub fn workspace_auth_mode_and_credential(
+    workspace: &WorkspaceConfig,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
+    match kind {
+        AuthKind::Claude => agent_workspace_mode_and_credential(
+            workspace.claude.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Codex => agent_workspace_mode_and_credential(
+            workspace.codex.as_ref().map(|c| c.0.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Amp => agent_workspace_mode_and_credential(
+            workspace.amp.as_ref().map(|c| c.0.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Kimi => agent_workspace_mode_and_credential(
+            workspace.kimi.as_ref().map(|c| c.0.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Opencode => agent_workspace_mode_and_credential(
+            workspace.opencode.as_ref().map(|c| c.0.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Github => {
+            let mode = workspace
+                .github
+                .as_ref()
+                .map(|github| auth_mode_from_github(github.auth_forward));
+            let credential = mode
+                .and_then(|mode| kind.required_env_var(mode))
+                .and_then(|name| {
+                    workspace
+                        .github
+                        .as_ref()
+                        .and_then(|github| github.env.get(name).cloned())
+                });
+            (mode, credential)
+        }
+        AuthKind::Zai => zai_mode_and_credential(&workspace.env),
+    }
+}
+
+#[must_use]
+pub fn role_auth_mode_and_credential(
+    role: Option<&WorkspaceRoleOverride>,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
+    match kind {
+        AuthKind::Claude => agent_role_mode_and_credential(
+            role.and_then(|role| role.claude.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Codex => agent_role_mode_and_credential(
+            role.and_then(|role| role.codex.as_ref())
+                .map(|config| config.0.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Amp => agent_role_mode_and_credential(
+            role.and_then(|role| role.amp.as_ref())
+                .map(|config| config.0.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Kimi => agent_role_mode_and_credential(
+            role.and_then(|role| role.kimi.as_ref())
+                .map(|config| config.0.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Opencode => agent_role_mode_and_credential(
+            role.and_then(|role| role.opencode.as_ref())
+                .map(|config| config.0.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Github => {
+            let mode = role
+                .and_then(|role| role.github.as_ref())
+                .map(|github| auth_mode_from_github(github.auth_forward));
+            let credential = mode
+                .and_then(|mode| kind.required_env_var(mode))
+                .and_then(|name| {
+                    role.and_then(|role| role.github.as_ref())
+                        .and_then(|github| github.env.get(name).cloned())
+                });
+            (mode, credential)
+        }
+        AuthKind::Zai => role.map_or((None, None), |role| zai_mode_and_credential(&role.env)),
+    }
+}
+
+fn agent_workspace_mode_and_credential(
+    auth_forward: Option<AuthForwardMode>,
+    env: &BTreeMap<String, crate::operator_env::EnvValue>,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
+    let mode = auth_forward.map(auth_mode_from_auth_forward);
+    let credential = mode
+        .and_then(|mode| kind.required_env_var(mode))
+        .and_then(|name| env.get(name).cloned());
+    (mode, credential)
+}
+
+fn agent_role_mode_and_credential(
+    auth_forward: Option<AuthForwardMode>,
+    role: Option<&WorkspaceRoleOverride>,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
+    let mode = auth_forward.map(auth_mode_from_auth_forward);
+    let credential = mode
+        .and_then(|mode| kind.required_env_var(mode))
+        .and_then(|name| role.and_then(|role| role.env.get(name).cloned()));
+    (mode, credential)
+}
+
+fn zai_mode_and_credential(
+    env: &BTreeMap<String, crate::operator_env::EnvValue>,
+) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
+    let credential = env.get(crate::env_model::ZAI_API_KEY_ENV_NAME).cloned();
+    let mode = credential.as_ref().map(|_| AuthMode::ApiKey);
+    (mode, credential)
+}
+
+#[must_use]
 pub const fn auth_mode_from_auth_forward(mode: AuthForwardMode) -> AuthMode {
     match mode {
         AuthForwardMode::Sync => AuthMode::Sync,
@@ -889,6 +1023,67 @@ mod tests {
             &agent_env
         )
         .is_none());
+    }
+
+    #[test]
+    fn workspace_auth_mode_and_credential_reads_workspace_layers() {
+        let mut workspace = WorkspaceConfig {
+            claude: Some(crate::config::AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            }),
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Token,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        workspace.env.insert(
+            AuthKind::Claude
+                .required_env_var(AuthMode::ApiKey)
+                .expect("Claude API key env var")
+                .into(),
+            crate::operator_env::EnvValue::Plain("anthropic-key".into()),
+        );
+        workspace.github.as_mut().expect("github").env.insert(
+            "GH_TOKEN".into(),
+            crate::operator_env::EnvValue::Plain("github-token".into()),
+        );
+
+        assert!(matches!(
+            workspace_auth_mode_and_credential(&workspace, AuthKind::Claude),
+            (Some(AuthMode::ApiKey), Some(crate::operator_env::EnvValue::Plain(value)))
+                if value == "anthropic-key"
+        ));
+        assert!(matches!(
+            workspace_auth_mode_and_credential(&workspace, AuthKind::Github),
+            (Some(AuthMode::Token), Some(crate::operator_env::EnvValue::Plain(value)))
+                if value == "github-token"
+        ));
+    }
+
+    #[test]
+    fn role_auth_mode_and_credential_reads_role_layers() {
+        let mut role = WorkspaceRoleOverride {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Token,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        role.github.as_mut().expect("github").env.insert(
+            "GH_TOKEN".into(),
+            crate::operator_env::EnvValue::Plain("github-token".into()),
+        );
+
+        assert!(matches!(
+            role_auth_mode_and_credential(Some(&role), AuthKind::Github),
+            (Some(AuthMode::Token), Some(crate::operator_env::EnvValue::Plain(value)))
+                if value == "github-token"
+        ));
+        assert_eq!(
+            role_auth_mode_and_credential(None, AuthKind::Github),
+            (None, None)
+        );
     }
 
     #[test]

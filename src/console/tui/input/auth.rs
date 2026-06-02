@@ -13,8 +13,8 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::console::domain::{
-    auth_mode_from_auth_forward, auth_mode_from_github, auth_mode_to_auth_forward,
-    github_auth_config_with_preserved_env, role_override_present,
+    auth_mode_to_auth_forward, github_auth_config_with_preserved_env, role_auth_mode_and_credential,
+    role_override_present, workspace_auth_mode_and_credential,
 };
 use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
@@ -179,148 +179,9 @@ fn current_mode_and_credential(
     target: &AuthFormTarget,
 ) -> (Option<AuthMode>, Option<EnvValue>) {
     match target {
-        AuthFormTarget::Workspace { kind } => match kind {
-            AuthKind::Claude => {
-                let mode = editor
-                    .pending
-                    .claude
-                    .as_ref()
-                    .map(|c| auth_mode_from_auth_forward(c.auth_forward));
-                let env_var = mode.and_then(|m| kind.required_env_var(m));
-                let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
-                (mode, cred)
-            }
-            AuthKind::Codex => {
-                let mode = editor
-                    .pending
-                    .codex
-                    .as_ref()
-                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                let env_var = mode.and_then(|m| kind.required_env_var(m));
-                let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
-                (mode, cred)
-            }
-            AuthKind::Amp => {
-                let mode = editor
-                    .pending
-                    .amp
-                    .as_ref()
-                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                let env_var = mode.and_then(|m| kind.required_env_var(m));
-                let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
-                (mode, cred)
-            }
-            AuthKind::Kimi => {
-                let mode = editor
-                    .pending
-                    .kimi
-                    .as_ref()
-                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                let env_var = mode.and_then(|m| kind.required_env_var(m));
-                let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
-                (mode, cred)
-            }
-            AuthKind::Opencode => {
-                let mode = editor
-                    .pending
-                    .opencode
-                    .as_ref()
-                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                let env_var = mode.and_then(|m| kind.required_env_var(m));
-                let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
-                (mode, cred)
-            }
-            AuthKind::Github => {
-                let mode = editor
-                    .pending
-                    .github
-                    .as_ref()
-                    .map(|g| auth_mode_from_github(g.auth_forward));
-                let env_var = mode.and_then(|m| kind.required_env_var(m));
-                // GH_TOKEN lives on `[workspaces.<ws>.github.env]`,
-                // parallel to how the global `[github.env]` is laid out
-                // — see [`crate::config::build_github_env_layers`].
-                let cred = env_var.and_then(|v| {
-                    editor
-                        .pending
-                        .github
-                        .as_ref()
-                        .and_then(|g| g.env.get(v).cloned())
-                });
-                (mode, cred)
-            }
-            AuthKind::Zai => {
-                let cred = editor.pending.env.get("ZAI_API_KEY").cloned();
-                let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
-                (mode, cred)
-            }
-        },
+        AuthFormTarget::Workspace { kind } => workspace_auth_mode_and_credential(&editor.pending, *kind),
         AuthFormTarget::WorkspaceRole { role, kind } => {
-            let override_ref = editor.pending.roles.get(role);
-            match kind {
-                AuthKind::Claude => {
-                    let mode = override_ref
-                        .and_then(|ro| ro.claude.as_ref())
-                        .map(|c| auth_mode_from_auth_forward(c.auth_forward));
-                    let env_var = mode.and_then(|m| kind.required_env_var(m));
-                    let cred =
-                        env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
-                    (mode, cred)
-                }
-                AuthKind::Codex => {
-                    let mode = override_ref
-                        .and_then(|ro| ro.codex.as_ref())
-                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                    let env_var = mode.and_then(|m| kind.required_env_var(m));
-                    let cred =
-                        env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
-                    (mode, cred)
-                }
-                AuthKind::Amp => {
-                    let mode = override_ref
-                        .and_then(|ro| ro.amp.as_ref())
-                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                    let env_var = mode.and_then(|m| kind.required_env_var(m));
-                    let cred =
-                        env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
-                    (mode, cred)
-                }
-                AuthKind::Kimi => {
-                    let mode = override_ref
-                        .and_then(|ro| ro.kimi.as_ref())
-                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                    let env_var = mode.and_then(|m| kind.required_env_var(m));
-                    let cred =
-                        env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
-                    (mode, cred)
-                }
-                AuthKind::Opencode => {
-                    let mode = override_ref
-                        .and_then(|ro| ro.opencode.as_ref())
-                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
-                    let env_var = mode.and_then(|m| kind.required_env_var(m));
-                    let cred =
-                        env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
-                    (mode, cred)
-                }
-                AuthKind::Github => {
-                    let mode = override_ref
-                        .and_then(|ro| ro.github.as_ref())
-                        .map(|g| auth_mode_from_github(g.auth_forward));
-                    let env_var = mode.and_then(|m| kind.required_env_var(m));
-                    let cred = env_var.and_then(|v| {
-                        override_ref
-                            .and_then(|ro| ro.github.as_ref())
-                            .and_then(|g| g.env.get(v).cloned())
-                    });
-                    (mode, cred)
-                }
-                AuthKind::Zai => {
-                    let cred = override_ref.and_then(|ro| ro.env.get("ZAI_API_KEY").cloned());
-                    let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
-                    (mode, cred)
-                }
-            }
+            role_auth_mode_and_credential(editor.pending.roles.get(role), *kind)
         }
     }
 }
