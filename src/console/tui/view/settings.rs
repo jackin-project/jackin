@@ -7,18 +7,15 @@ use ratatui::{
     Frame,
     layout::Rect,
 };
-use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
 use crate::console::tui::components::settings::{
-    global_mount_lines_for_rows, settings_env_lines_for_state, settings_trust_lines_for_state,
+    render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab, render_trust_tab,
 };
 use crate::console::tui::state::{
     GlobalMountModal, SettingsAuthModal, SettingsEnvModal, SettingsState, SettingsTab,
 };
 use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
-use jackin_console::tui::screens::settings::view::{
-    general_lines as settings_general_lines, settings_frame_areas, tab_labels,
-};
+use jackin_console::tui::screens::settings::view::{settings_frame_areas, tab_labels};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
 pub(super) fn render_settings(
@@ -49,83 +46,6 @@ pub(super) fn render_settings(
     }
 
     render_footer(frame, areas.footer, &footer);
-}
-
-fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    let focused = !state.tab_bar_focused && state.error_popup.is_none();
-    let lines = settings_general_lines(
-        state.general.selected,
-        state.general.pending_coauthor_trailer,
-        state.general.pending_dco,
-        focused,
-    );
-    super::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
-}
-
-fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    // Only show the cursor when the mounts content block is focused — not when
-    // the tab bar owns focus. Pass None as `selected` to suppress `▸` entirely.
-    let focused =
-        !state.tab_bar_focused && state.mounts.scroll_focused && state.mounts.modal.is_none();
-    let selected = if focused {
-        Some(state.mounts.selected)
-    } else {
-        None
-    };
-    let lines = global_mount_lines_for_rows(
-        &state.mounts.pending,
-        selected,
-        true,
-        &state.mounts.mount_info_cache,
-    );
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.mounts.scroll_x,
-        state.mounts.scroll_y,
-        focused,
-        None,
-    );
-}
-
-fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    let lines = settings_env_lines_for_state(state, area.width);
-    let focused = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
-    super::render_scrollable_block_at(frame, area, lines, 0, state.env.scroll_y, focused, None);
-}
-
-fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    let title = state.auth.selected_kind.map(|k| format!(" {} ", k.label()));
-    let lines = settings_auth_lines_for_state(state);
-    let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        0,
-        state.auth.scroll_y,
-        focused,
-        title.as_deref(),
-    );
-}
-
-fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    let lines = settings_trust_lines_for_state(state);
-    let focused = !state.tab_bar_focused
-        && state.trust.scroll_focused
-        && state.auth.modal.is_none()
-        && state.env.modal.is_none()
-        && state.mounts.modal.is_none();
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.trust.scroll_x,
-        state.trust.scroll_y,
-        focused,
-        None,
-    );
 }
 
 pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountModal<'_>) {

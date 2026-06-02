@@ -1,7 +1,8 @@
 //! Root-console settings display adapters.
 
-use ratatui::text::Line;
+use ratatui::{Frame, layout::Rect, text::Line};
 
+use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
 use crate::console::tui::components::env_value_secret_display;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
@@ -9,8 +10,93 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::screens::settings::view::{
     env_lines as settings_env_lines, global_mount_lines as settings_global_mount_lines,
-    trust_lines as settings_trust_lines,
+    general_lines as settings_general_lines, trust_lines as settings_trust_lines,
 };
+
+pub(crate) fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+    let focused = !state.tab_bar_focused && state.error_popup.is_none();
+    let lines = settings_general_lines(
+        state.general.selected,
+        state.general.pending_coauthor_trailer,
+        state.general.pending_dco,
+        focused,
+    );
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame, area, lines, 0, 0, focused, None,
+    );
+}
+
+pub(crate) fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+    let focused =
+        !state.tab_bar_focused && state.mounts.scroll_focused && state.mounts.modal.is_none();
+    let selected = if focused {
+        Some(state.mounts.selected)
+    } else {
+        None
+    };
+    let lines = global_mount_lines_for_rows(
+        &state.mounts.pending,
+        selected,
+        true,
+        &state.mounts.mount_info_cache,
+    );
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.mounts.scroll_x,
+        state.mounts.scroll_y,
+        focused,
+        None,
+    );
+}
+
+pub(crate) fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+    let lines = settings_env_lines_for_state(state, area.width);
+    let focused = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        0,
+        state.env.scroll_y,
+        focused,
+        None,
+    );
+}
+
+pub(crate) fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+    let title = state.auth.selected_kind.map(|k| format!(" {} ", k.label()));
+    let lines = settings_auth_lines_for_state(state);
+    let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        0,
+        state.auth.scroll_y,
+        focused,
+        title.as_deref(),
+    );
+}
+
+pub(crate) fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+    let lines = settings_trust_lines_for_state(state);
+    let focused = !state.tab_bar_focused
+        && state.trust.scroll_focused
+        && state.auth.modal.is_none()
+        && state.env.modal.is_none()
+        && state.mounts.modal.is_none();
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.trust.scroll_x,
+        state.trust.scroll_y,
+        focused,
+        None,
+    );
+}
 
 pub(crate) fn settings_env_lines_for_state(
     state: &SettingsState<'_>,
