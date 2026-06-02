@@ -8,20 +8,16 @@ use ratatui::{
     layout::Rect,
     text::Line,
 };
-use jackin_console::tui::auth::AuthKind;
+use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
 use crate::console::tui::view::env_value_secret_display;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
     SettingsState, SettingsTab, settings_env_flat_rows,
 };
-use crate::operator_env::EnvValue;
-use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceValue, auth_source_display, render_tab_strip,
-};
+use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
 use jackin_console::tui::screens::settings::view::{
-    SettingsAuthLineRow, auth_lines as settings_auth_lines,
     env_lines as settings_env_lines, general_lines as settings_general_lines,
     global_mount_lines as settings_global_mount_lines, settings_frame_areas, tab_labels,
     trust_lines as settings_trust_lines,
@@ -104,7 +100,7 @@ fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::l
 
 fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let title = state.auth.selected_kind.map(|k| format!(" {} ", k.label()));
-    let lines = auth_lines(state);
+    let lines = settings_auth_lines_for_state(state);
     let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     super::render_scrollable_block_at(
         frame,
@@ -174,67 +170,6 @@ fn settings_env_value<'a>(
             .roles
             .get(role)
             .and_then(|env| env.get(key)),
-    }
-}
-
-fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    use crate::console::tui::components::auth_panel::mode_str;
-
-    let show_cursor =
-        !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
-    let Some(kind) = state.auth.selected_kind else {
-        let rows: Vec<SettingsAuthLineRow> = state
-            .auth
-            .pending
-            .iter()
-            .map(|row| SettingsAuthLineRow::Kind {
-                label: row.kind.label().to_string(),
-            })
-            .collect();
-        return settings_auth_lines(&rows, state.auth.selected, show_cursor);
-    };
-    let Some(row) = state.auth.pending.iter().find(|row| row.kind == kind) else {
-        return Vec::new();
-    };
-    let mut rows = vec![SettingsAuthLineRow::Mode {
-        mode_label: mode_str(row.mode).to_string(),
-    }];
-    if let Some(env_name) = kind.required_env_var(row.mode) {
-        rows.push(SettingsAuthLineRow::Source {
-            display: settings_auth_source_display(state, kind, row.mode, env_name),
-        });
-    }
-    rows.push(SettingsAuthLineRow::Spacer);
-    settings_auth_lines(&rows, state.auth.selected, show_cursor)
-}
-
-fn settings_auth_source_display(
-    state: &SettingsState<'_>,
-    kind: AuthKind,
-    mode: jackin_console::tui::auth::AuthMode,
-    env_name: &str,
-) -> AuthSourceDisplay {
-    use crate::console::tui::components::auth_panel::mode_str;
-
-    auth_source_display(
-        settings_auth_source_value(state, kind, env_name).map(|value| match value {
-            EnvValue::Plain(value) => AuthSourceValue::Plain(value.clone()),
-            EnvValue::OpRef(op_ref) => AuthSourceValue::OpRefPath(op_ref.path.clone()),
-        }),
-        env_name,
-        mode_str(mode),
-    )
-}
-
-fn settings_auth_source_value<'a>(
-    state: &'a SettingsState<'_>,
-    kind: AuthKind,
-    env_name: &str,
-) -> Option<&'a EnvValue> {
-    if kind == AuthKind::Github {
-        state.auth.github_env.get(env_name)
-    } else {
-        state.env.pending.env.get(env_name)
     }
 }
 

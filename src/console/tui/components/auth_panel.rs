@@ -2,12 +2,15 @@
 
 use crate::config::AppConfig;
 use crate::console::domain::resolve_panel_mode;
-use crate::console::tui::state::AuthRow;
+use crate::console::tui::state::{AuthRow, SettingsState};
 use crate::operator_env::{EnvValue, OpRef};
 use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceValue, auth_source_display_for_required_env,
+    AuthSourceDisplay, AuthSourceValue, auth_source_display, auth_source_display_for_required_env,
 };
 use jackin_console::tui::screens::editor::view::EditorAuthLineRow;
+use jackin_console::tui::screens::settings::view::{
+    SettingsAuthLineRow, auth_lines as settings_auth_lines,
+};
 
 pub type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvValue>;
 
@@ -83,6 +86,63 @@ pub(crate) fn editor_auth_display_row(
             eligible: *eligible,
         },
         AuthRow::Spacer => EditorAuthLineRow::Spacer,
+    }
+}
+
+pub(crate) fn settings_auth_lines_for_state(state: &SettingsState<'_>) -> Vec<ratatui::text::Line<'static>> {
+    let show_cursor =
+        !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
+    let Some(kind) = state.auth.selected_kind else {
+        let rows: Vec<SettingsAuthLineRow> = state
+            .auth
+            .pending
+            .iter()
+            .map(|row| SettingsAuthLineRow::Kind {
+                label: row.kind.label().to_string(),
+            })
+            .collect();
+        return settings_auth_lines(&rows, state.auth.selected, show_cursor);
+    };
+    let Some(row) = state.auth.pending.iter().find(|row| row.kind == kind) else {
+        return Vec::new();
+    };
+    let mut rows = vec![SettingsAuthLineRow::Mode {
+        mode_label: mode_str(row.mode).to_string(),
+    }];
+    if let Some(env_name) = kind.required_env_var(row.mode) {
+        rows.push(SettingsAuthLineRow::Source {
+            display: settings_auth_source_display(state, kind, row.mode, env_name),
+        });
+    }
+    rows.push(SettingsAuthLineRow::Spacer);
+    settings_auth_lines(&rows, state.auth.selected, show_cursor)
+}
+
+fn settings_auth_source_display(
+    state: &SettingsState<'_>,
+    kind: jackin_console::tui::auth::AuthKind,
+    mode: jackin_console::tui::auth::AuthMode,
+    env_name: &str,
+) -> AuthSourceDisplay {
+    auth_source_display(
+        settings_auth_source_value(state, kind, env_name).map(|value| match value {
+            EnvValue::Plain(value) => AuthSourceValue::Plain(value.clone()),
+            EnvValue::OpRef(op_ref) => AuthSourceValue::OpRefPath(op_ref.path.clone()),
+        }),
+        env_name,
+        mode_str(mode),
+    )
+}
+
+fn settings_auth_source_value<'a>(
+    state: &'a SettingsState<'_>,
+    kind: jackin_console::tui::auth::AuthKind,
+    env_name: &str,
+) -> Option<&'a EnvValue> {
+    if kind == jackin_console::tui::auth::AuthKind::Github {
+        state.auth.github_env.get(env_name)
+    } else {
+        state.env.pending.env.get(env_name)
     }
 }
 
