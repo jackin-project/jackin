@@ -29,8 +29,9 @@ pub use jackin_console::tui::components::op_picker::{
     FieldStageCommitPlan, FieldStageRefreshPlan, ItemStageBackPlan, ItemStageCommitPlan,
     ItemStageRefreshPlan, NamingStagePlan, OpLoadState, OpPickerAccount, OpPickerCache,
     OpPickerError, OpPickerFatalState, OpPickerField, OpPickerFieldRef, OpPickerItem,
-    OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode, OpPickerStage,
-    OpPickerVault, OpPickerVaultRef, SectionCollapseIntent, SectionStageBackPlan,
+    OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
+    OpPickerPendingLoad as GenericOpPickerPendingLoad, OpPickerStage, OpPickerVault,
+    OpPickerVaultRef, SectionCollapseIntent, SectionStageBackPlan,
     SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan, VaultStageRefreshPlan,
     account_stage_commit_plan, account_stage_refresh_plan, browse_field_display_rows,
     build_op_picker_ref, create_field_display_rows, existing_field_commit_plan,
@@ -55,6 +56,14 @@ pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPicke
 type LoadResult = OpPickerLoadResult<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
 
 type LoadRequest = OpPickerLoadRequest;
+
+#[cfg(test)]
+type PendingLoadRunner = std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>;
+#[cfg(not(test))]
+type PendingLoadRunner = ();
+
+pub(in crate::console) type OpPickerPendingLoad =
+    GenericOpPickerPendingLoad<LoadResult, LoadRequest, PendingLoadRunner>;
 
 pub type OpAccount = OpPickerAccount;
 pub type OpVault = OpPickerVault;

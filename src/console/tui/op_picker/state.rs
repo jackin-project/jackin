@@ -12,8 +12,9 @@ use ratatui::text::Line;
 use tui_widget_list::ListState;
 
 use super::{
-    FieldDisplayRow, FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerAccount,
-    OpPickerField, OpPickerItem, OpPickerMode, OpPickerStage, OpPickerVault, OpCache,
+    FieldDisplayRow, FieldLabelOrigin, LoadResult, OpLoadState, OpPickerAccount,
+    OpPickerField, OpPickerItem, OpPickerMode, OpPickerPendingLoad, OpPickerStage, OpPickerVault,
+    OpCache,
 };
 use jackin_console::tui::components::op_picker::{
     OpPickerAccountRef, OpPickerFieldDisplayRef, OpPickerItemRef, OpPickerRenderState,
@@ -84,13 +85,6 @@ pub struct OpPickerState {
     /// Session-scoped cache shared with `ConsoleState`; the default
     /// constructor allocates a fresh empty one for unit tests.
     pub(super) op_cache: Rc<RefCell<OpCache>>,
-}
-
-pub(in crate::console) struct OpPickerPendingLoad {
-    pub cached: Option<LoadResult>,
-    pub request: LoadRequest,
-    #[cfg(test)]
-    pub runner: Arc<dyn OpStructRunner + Send + Sync>,
 }
 
 // rx and test runner aren't Debug; skipped fields are plumbing only.

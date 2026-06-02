@@ -13,8 +13,8 @@ use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 use super::{
     FieldLabelOrigin, LoadRequest, LoadResult, OpCache, OpLoadState, OpPickerAccount, OpPickerError,
     OpPickerFatalState, OpPickerMode, OpPickerStage, OpPickerState,
+    OpPickerPendingLoad,
 };
-use super::state::OpPickerPendingLoad;
 #[cfg(test)]
 use crate::operator_env::OpStructRunner;
 
@@ -248,6 +248,8 @@ impl OpPickerState {
             request,
             #[cfg(test)]
             runner: self.runner_clone_for_worker(),
+            #[cfg(not(test))]
+            runner: (),
         });
     }
 

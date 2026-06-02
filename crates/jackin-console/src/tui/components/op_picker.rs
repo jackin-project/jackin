@@ -127,6 +127,15 @@ pub enum OpPickerLoadRequest {
     },
 }
 
+/// Typed pending load request emitted by picker state and executed by the
+/// owning non-TUI service adapter.
+#[derive(Debug)]
+pub struct OpPickerPendingLoad<LoadResult, LoadRequest, Runner> {
+    pub cached: Option<LoadResult>,
+    pub request: LoadRequest,
+    pub runner: Runner,
+}
+
 /// What the operator chose when the picker commits.
 #[derive(Debug, Clone)]
 pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
