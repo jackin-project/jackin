@@ -53,6 +53,25 @@ pub enum SidebarScrollFocus {
     Roles,
 }
 
+impl From<crate::focus::MountScrollFocus> for SidebarScrollFocus {
+    fn from(focus: crate::focus::MountScrollFocus) -> Self {
+        match focus {
+            crate::focus::MountScrollFocus::Workspace => Self::Workspace,
+            crate::focus::MountScrollFocus::Global => Self::Global,
+            crate::focus::MountScrollFocus::RoleGlobal => Self::RoleGlobal,
+            crate::focus::MountScrollFocus::Roles => Self::Roles,
+        }
+    }
+}
+
+#[must_use]
+pub fn focused_mount_scroll_area_still_scrollable(
+    focus: crate::focus::MountScrollFocus,
+    areas: Option<&SidebarScrollAreas>,
+) -> bool {
+    focused_scroll_area_still_scrollable(focus.into(), areas)
+}
+
 #[must_use]
 pub fn focused_scroll_area_still_scrollable(
     focus: SidebarScrollFocus,
@@ -320,6 +339,14 @@ mod tests {
         assert!(!focused_scroll_area_still_scrollable(
             SidebarScrollFocus::Roles,
             None
+        ));
+        assert!(focused_mount_scroll_area_still_scrollable(
+            crate::focus::MountScrollFocus::Workspace,
+            Some(&areas)
+        ));
+        assert!(!focused_mount_scroll_area_still_scrollable(
+            crate::focus::MountScrollFocus::Global,
+            Some(&areas)
         ));
     }
 }

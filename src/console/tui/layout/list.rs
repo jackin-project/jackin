@@ -15,7 +15,7 @@ use jackin_console::tui::screens::workspaces::view::{
 };
 use jackin_console::tui::update::list_pre_render_focus_plan;
 pub(crate) use jackin_console::tui::sidebar_layout::{
-    SidebarLayout, SidebarScrollArea, SidebarScrollAreas, SidebarScrollFocus,
+    SidebarLayout, SidebarScrollArea, SidebarScrollAreas,
 };
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
@@ -139,23 +139,11 @@ fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
     jackin_console::tui::sidebar_layout::clamp_scroll_area_y(area, value);
 }
 
-fn sidebar_scroll_focus(focus: MountScrollFocus) -> SidebarScrollFocus {
-    match focus {
-        MountScrollFocus::Workspace => SidebarScrollFocus::Workspace,
-        MountScrollFocus::Global => SidebarScrollFocus::Global,
-        MountScrollFocus::RoleGlobal => SidebarScrollFocus::RoleGlobal,
-        MountScrollFocus::Roles => SidebarScrollFocus::Roles,
-    }
-}
-
 fn focused_block_still_scrollable(
     focus: MountScrollFocus,
     areas: Option<&SidebarScrollAreas>,
 ) -> bool {
-    jackin_console::tui::sidebar_layout::focused_scroll_area_still_scrollable(
-        sidebar_scroll_focus(focus),
-        areas,
-    )
+    jackin_console::tui::sidebar_layout::focused_mount_scroll_area_still_scrollable(focus, areas)
 }
 
 fn list_row_width(
