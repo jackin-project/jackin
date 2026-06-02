@@ -21,7 +21,7 @@ use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     env_scope_label, global_mount_confirm_state, global_mount_scope_picker_state,
-    global_mount_text_input_state, settings_env_delete_confirm_state,
+    global_mount_text_input_state, global_mount_text_target_label, settings_env_delete_confirm_state,
     settings_env_key_input_state, settings_env_scope_picker_state, settings_env_source_picker_state,
     settings_env_text_input_state,
 };
@@ -1159,11 +1159,12 @@ pub(super) fn handle_settings_confirm_modal(
                         draft.dst.clone_from(&src);
                     }
                     settings.mounts.modal = Some(GlobalMountModal::MountDstChoice { state });
-                    settings.mounts.open_sub_modal(text_modal(
-                        GlobalMountTextTarget::AddDestination,
-                        "Destination",
-                        &src,
-                    ));
+                    settings
+                        .mounts
+                        .open_sub_modal(text_modal_for_target(
+                            GlobalMountTextTarget::AddDestination,
+                            &src,
+                        ));
                 }
                 ModalOutcome::Cancel => {
                     settings.mounts.pop_modal_chain();
@@ -1611,7 +1612,7 @@ fn commit_add_scope_text(
 fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
     if value.is_empty() {
         global.error = Some(MOUNT_NAME_EMPTY.into());
-        global.modal = Some(text_modal(GlobalMountTextTarget::AddName, "Mount name", ""));
+        global.modal = Some(text_modal_for_target(GlobalMountTextTarget::AddName, ""));
         return;
     }
     let Some(draft) = global.add_draft.as_mut() else {
@@ -1619,7 +1620,7 @@ fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsSta
         return;
     };
     draft.name = value.to_string();
-    global.open_sub_modal(text_modal(GlobalMountTextTarget::AddSource, "Source", ""));
+    global.open_sub_modal(text_modal_for_target(GlobalMountTextTarget::AddSource, ""));
 }
 
 fn commit_add_source_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
@@ -1628,9 +1629,8 @@ fn commit_add_source_text(global: &mut crate::console::tui::state::GlobalMountsS
         return;
     };
     draft.src = resolve_path(value);
-    global.open_sub_modal(text_modal(
+    global.open_sub_modal(text_modal_for_target(
         GlobalMountTextTarget::AddDestination,
-        "Destination",
         "",
     ));
 }
@@ -1685,19 +1685,19 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
     let Some(row) = global.pending.get(global.selected) else {
         return;
     };
-    let (label, initial) = match target {
-        GlobalMountTextTarget::Rename => ("Rename mount", row.name.clone()),
-        GlobalMountTextTarget::Source => ("Source", row.mount.src.clone()),
-        GlobalMountTextTarget::Destination => ("Destination", row.mount.dst.clone()),
-        GlobalMountTextTarget::Scope => (
-            "Scope (empty = global)",
-            row.scope.clone().unwrap_or_default(),
-        ),
+    let initial = match target {
+        GlobalMountTextTarget::Rename => row.name.clone(),
+        GlobalMountTextTarget::Source => row.mount.src.clone(),
+        GlobalMountTextTarget::Destination => row.mount.dst.clone(),
+        GlobalMountTextTarget::Scope => row.scope.clone().unwrap_or_default(),
         // Add-flow targets are driven by the four-step text wizard, not this entry point.
         GlobalMountTextTarget::AddScope
         | GlobalMountTextTarget::AddName
         | GlobalMountTextTarget::AddSource
         | GlobalMountTextTarget::AddDestination => return,
+    };
+    let Some(label) = global_mount_text_target_label(&target) else {
+        return;
     };
     global.modal = Some(text_modal(target, label, &initial));
 }
@@ -1910,6 +1910,11 @@ fn text_modal(
         target,
         state: Box::new(global_mount_text_input_state(label, initial)),
     }
+}
+
+fn text_modal_for_target(target: GlobalMountTextTarget, initial: &str) -> GlobalMountModal<'static> {
+    let label = global_mount_text_target_label(&target).unwrap_or("Value");
+    text_modal(target, label, initial)
 }
 
 fn env_text_modal(

@@ -1,6 +1,7 @@
 //! Settings screen view helpers.
 
 use super::model::GlobalMountConfirm;
+use super::model::GlobalMountTextTarget;
 use super::model::SettingsAuthRow;
 use super::model::SettingsEnvConfig;
 use super::model::SettingsEnvRow;
@@ -92,6 +93,20 @@ pub fn global_mount_text_input_state<'a>(
     initial: impl Into<String>,
 ) -> jackin_tui::components::TextInputState<'a> {
     jackin_tui::components::TextInputState::new(label, initial)
+}
+
+#[must_use]
+pub const fn global_mount_text_target_label(target: &GlobalMountTextTarget) -> Option<&'static str> {
+    match target {
+        GlobalMountTextTarget::AddScope => Some("Scope (empty = global)"),
+        GlobalMountTextTarget::AddName => Some("Mount name"),
+        GlobalMountTextTarget::AddSource => Some("Source"),
+        GlobalMountTextTarget::AddDestination => Some("Destination"),
+        GlobalMountTextTarget::Source => Some("Source"),
+        GlobalMountTextTarget::Destination => Some("Destination"),
+        GlobalMountTextTarget::Scope => Some("Scope (empty = global)"),
+        GlobalMountTextTarget::Rename => Some("Rename mount"),
+    }
 }
 
 #[must_use]
@@ -641,6 +656,22 @@ mod tests {
 
         assert_eq!(state.label, "Destination");
         assert_eq!(state.value(), "/workspace");
+    }
+
+    #[test]
+    fn global_mount_text_target_labels_are_settings_owned() {
+        assert_eq!(
+            global_mount_text_target_label(&GlobalMountTextTarget::Rename),
+            Some("Rename mount")
+        );
+        assert_eq!(
+            global_mount_text_target_label(&GlobalMountTextTarget::AddScope),
+            Some("Scope (empty = global)")
+        );
+        assert_eq!(
+            global_mount_text_target_label(&GlobalMountTextTarget::AddDestination),
+            Some("Destination")
+        );
     }
 
     #[test]
