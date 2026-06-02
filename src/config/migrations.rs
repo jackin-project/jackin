@@ -1,3 +1,11 @@
+//! Config and workspace file version migration registry.
+//!
+//! Defines `CURRENT_CONFIG_VERSION`, `CURRENT_WORKSPACE_VERSION`,
+//! `MigrationStep`, and the `CONFIG_MIGRATIONS` / `WORKSPACE_MIGRATIONS`
+//! chains. Not responsible for manifest migrations — those live in
+//! `manifest/migrations.rs`. One version bump per PR targeting the next
+//! version after `main`.
+
 use std::num::NonZeroU32;
 use std::path::Path;
 

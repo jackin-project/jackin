@@ -1,3 +1,9 @@
+//! Auth-forward mode resolution: walk global → workspace → workspace×role layers.
+//!
+//! Not responsible for auth token acquisition, credential forwarding
+//! mechanics, or GitHub CLI interaction — only the three-layer config
+//! precedence lookup that yields `AuthForwardMode`.
+
 use super::{AppConfig, AuthForwardMode, GithubAuthMode, RoleSource};
 use crate::agent::Agent;
 use crate::operator_env::EnvValue;

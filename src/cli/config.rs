@@ -1,3 +1,8 @@
+//! CLI argument structs for `jackin config` subcommands (auth, mounts, git, env, trust).
+//!
+//! Not responsible for: reading or writing config state — structs are parsed
+//! by `clap` and dispatched to handlers in `src/commands/config/`.
+
 use clap::Subcommand;
 
 use super::{BANNER, HELP_STYLES};

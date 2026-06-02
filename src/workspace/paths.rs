@@ -1,3 +1,9 @@
+//! Path helpers: tilde expansion, path normalization (without filesystem access).
+//!
+//! Not responsible for mount parsing or workspace config — purely string/path
+//! manipulation. `expand_tilde` and `resolve_path` are the only entry points;
+//! `normalize_path` is internal.
+
 use std::path::{Component, Path, PathBuf};
 
 fn home_dir() -> Option<String> {

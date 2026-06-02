@@ -1,3 +1,13 @@
+//! Host-side path layout: `JackinPaths` centralises every directory jackin'
+//! reads or writes on the host machine.
+//!
+//! `JackinPaths::detect()` resolves from the OS home directory with
+//! `JACKIN_HOME_DIR` and `JACKIN_CONFIG_DIR` env-var overrides for tests and
+//! non-default installs.
+//!
+//! All jackin-owned host paths are rooted here — nothing else should construct
+//! `~/.jackin/` or `~/.config/jackin/` paths directly.
+
 use directories::BaseDirs;
 use std::path::{Path, PathBuf};
 

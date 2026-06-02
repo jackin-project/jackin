@@ -1,3 +1,9 @@
+//! Detect sensitive host paths (`~/.ssh`, `~/.aws`, etc.) in mount sources; prompt confirmation.
+//!
+//! Pure classification against a static suffix table — no filesystem access
+//! or operator I/O. Callers own the prompt and the decision to abort or
+//! proceed.
+
 use crate::workspace::MountConfig;
 
 /// Path suffixes that indicate sensitive host directories. A mount source is

@@ -1,3 +1,9 @@
+//! `IsolationRecord` persistence: write/read `isolation.json` inside the container state directory.
+//!
+//! Not responsible for worktree or branch lifecycle — those are in
+//! `cleanup.rs`. The file is the sole authority on whether a container has
+//! active isolation that must be preserved before purge.
+
 use crate::debug_log;
 use crate::isolation::MountIsolation;
 use anyhow::Context;

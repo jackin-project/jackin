@@ -1,3 +1,9 @@
+//! Cache the agent binary version baked into a Docker image to skip redundant version probes.
+//!
+//! One cache file per image per agent under `~/.jackin/cache/image-<agent>-version/`.
+//! Not responsible for downloading binaries or building images — only the
+//! read/write of the cached version string.
+
 use crate::paths::JackinPaths;
 use std::path::PathBuf;
 

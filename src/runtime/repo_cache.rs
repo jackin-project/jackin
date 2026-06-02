@@ -1,3 +1,10 @@
+//! Role-repo resolution: clone or update from git, validate, cache under `~/.jackin/roles/`.
+//!
+//! Typed errors (`RepoError`) allow callers to downcast and produce
+//! operator-friendly messages without substring-matching free text. Not
+//! responsible for Dockerfile validation or manifest parsing — those are
+//! handled in `repo.rs` and `repo_contract.rs` after the cache is warm.
+
 use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::runtime_slug;
 use crate::paths::JackinPaths;

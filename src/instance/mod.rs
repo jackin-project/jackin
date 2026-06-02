@@ -1,3 +1,14 @@
+//! Role instance lifecycle: instance index, role-state directory, auth
+//! provisioning, and container naming.
+//!
+//! An "instance" is the on-disk and in-Docker state for a single running or
+//! previously-run role container. `InstanceIndex` tracks container status;
+//! `RoleState` holds the credential and state files bind-mounted into the
+//! container at launch.
+//!
+//! Not responsible for: Docker network/image/DinD resource management
+//! (`runtime/`), or mount materialization (`isolation/materialize.rs`).
+
 use crate::config::{AuthForwardMode, GithubAuthMode};
 use crate::manifest::RoleManifest;
 use crate::paths::JackinPaths;

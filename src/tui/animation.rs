@@ -1,3 +1,8 @@
+//! Terminal animation primitives: spinner frames and timing for the CLI loading surfaces.
+//!
+//! Not responsible for: full-screen ratatui renders or debug-output lines —
+//! those live in `src/tui/output.rs` and `crates/jackin-tui/`.
+
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
 

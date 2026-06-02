@@ -1,3 +1,9 @@
+//! Capture host git user.name/email and UID/GID for derived-image UID remapping.
+//!
+//! All reads are best-effort: missing git config or id failures produce empty
+//! strings or zeros rather than hard errors. Not responsible for applying the
+//! identity to the image — callers in `image.rs` pass it as build-args.
+
 use crate::docker::CommandRunner;
 
 pub(super) struct GitIdentity {

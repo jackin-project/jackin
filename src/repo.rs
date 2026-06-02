@@ -1,3 +1,10 @@
+//! Role repo validation: locate `jackin.role.toml`, clone/update, validate structure.
+//!
+//! Produces `ValidatedRoleRepo` once the manifest parses and the Dockerfile
+//! passes `repo_contract` checks. Not responsible for git clone/update
+//! mechanics (`runtime::repo_cache`) or manifest migration
+//! (`manifest::migrations`).
+
 use crate::manifest::RoleManifest;
 use crate::paths::JackinPaths;
 use crate::repo_contract::{ValidatedDockerfile, validate_agent_dockerfile};

@@ -1,3 +1,9 @@
+//! Derive the `jackin/scratch/<selector>` branch name for isolated worktree mounts.
+//!
+//! Pure string derivation — no filesystem or git access. Not responsible for
+//! creating or deleting the branch; that lives in `cleanup.rs` and the
+//! worktree materialization path.
+
 /// Build the scratch branch name for an isolated mount.
 ///
 /// Selector namespace `/` is preserved; an optional `suffix` is

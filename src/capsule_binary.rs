@@ -1,3 +1,11 @@
+//! Locate or bundle the `jackin-capsule` binary embedded into derived role images.
+//!
+//! Acquisition strategy (priority order): `JACKIN_CAPSULE_BIN` env override →
+//! local cache hit → Homebrew formula `libexec/` → GitHub Release download.
+//!
+//! Not responsible for: building the binary, injecting it into a Docker image,
+//! or verifying runtime compatibility between capsule and host versions.
+
 /// Download, cache, and verify the `jackin-capsule` binary.
 ///
 /// Acquisition strategy — in priority order:

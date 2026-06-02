@@ -1,3 +1,8 @@
+//! CLI argument structs for `jackin eject` and `jackin purge` subcommands.
+//!
+//! Not responsible for: executing eject or purge logic — structs are parsed
+//! by `clap` and dispatched to handlers in `src/commands/`.
+
 use clap::Args;
 
 use super::{BANNER, HELP_STYLES};

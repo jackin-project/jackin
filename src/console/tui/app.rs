@@ -1,3 +1,10 @@
+//! Top-level console TUI application: event loop wiring and effect dispatch.
+//!
+//! Owns `ConsoleState` and `ConsoleStage` type aliases that bind the generic
+//! `jackin-console` app to host-side concrete types. Not responsible for
+//! terminal setup/teardown (`run.rs`) or individual prompt rendering
+//! (`prompts.rs`).
+
 use std::cell::RefCell;
 use std::rc::Rc;
 

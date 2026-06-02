@@ -1,3 +1,13 @@
+//! `DockerApi` trait and its `BollardDockerClient` implementation: the async
+//! Docker daemon API used by the runtime pipeline.
+//!
+//! Dependency-injected at call sites that need container inspect, create,
+//! start, remove, image list, and volume/network operations, so tests can
+//! stub Docker without a running daemon.
+//!
+//! Not responsible for: subprocess-level `docker` CLI invocations (`docker.rs`),
+//! or the launch pipeline orchestration (`runtime/launch.rs`).
+
 use std::{collections::HashMap, ffi::OsStr, process::Command, sync::OnceLock};
 
 use anyhow::{Context, bail};

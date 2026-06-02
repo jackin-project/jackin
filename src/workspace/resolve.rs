@@ -1,3 +1,10 @@
+//! Workspace resolution: build `ResolvedWorkspace` from a saved or current-directory workspace.
+//!
+//! Handles both `LoadWorkspaceInput::Saved` and `LoadWorkspaceInput::CurrentDir`
+//! paths through the same validation pipeline. Not responsible for mount
+//! parsing from CLI strings (`workspace::mounts`) or sensitive-path detection
+//! (`workspace::sensitive`).
+
 use std::path::{Path, PathBuf};
 
 use crate::workspace::mounts::validate_mount_paths;

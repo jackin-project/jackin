@@ -1,3 +1,8 @@
+//! Test helpers: `FakeRunner` for subprocess injection and minimal role-repo seed utilities.
+//!
+//! Not responsible for: asserting test outcomes — callers inspect `FakeRunner::recorded`
+//! and `FakeRunner::run_options` directly after the call under test.
+
 use crate::docker::{CommandRunner, RunOptions};
 use std::collections::VecDeque;
 

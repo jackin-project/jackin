@@ -1,3 +1,10 @@
+//! Role and container selector types: `Selector` (role or bare container
+//! name), `RoleSelector` (optional namespace + role name), and
+//! `RolePickerState` for TUI interactive selection.
+//!
+//! Used by CLI argument parsing, workspace resolution, and the launch pipeline
+//! to identify which role or container the operator is targeting.
+
 use std::fmt;
 use thiserror::Error;
 

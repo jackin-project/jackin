@@ -1,3 +1,8 @@
+//! CLI argument structs for `jackin workspace` subcommands (add, remove, list, edit).
+//!
+//! Not responsible for: reading or writing workspace state — structs are parsed
+//! by `clap` and dispatched to handlers in `src/commands/workspace/`.
+
 use clap::Subcommand;
 use std::str::FromStr;
 

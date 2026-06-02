@@ -1,3 +1,10 @@
+//! Console TUI run entry: terminal setup, raw mode, cleanup on exit.
+//!
+//! Drives the per-tick event loop, input dispatch, and suspend/resume around
+//! container attach. Not responsible for state construction (`app.rs`) or
+//! individual dialog rendering — those are in sibling modules and
+//! `jackin-console`.
+
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,

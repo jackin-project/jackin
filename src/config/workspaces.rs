@@ -1,3 +1,10 @@
+//! Workspace drift detection: find isolated mounts whose src changed while containers are running.
+//!
+//! Classifies drifted records into `running_containers` (edit blocked) and
+//! `stopped_records` (requires `--delete-isolated-state`). Not responsible
+//! for applying edits or removing isolation records — callers handle that
+//! after inspecting the returned `DriftDetection`.
+
 use super::AppConfig;
 use crate::isolation::state::{IsolationRecord, list_records_for_workspace};
 use crate::workspace::{WorkspaceConfig, WorkspaceEdit, validate_workspace_config};

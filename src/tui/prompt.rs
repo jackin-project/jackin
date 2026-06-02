@@ -1,3 +1,10 @@
+//! Interactive terminal prompts: yes/no confirmation and single-item selection used by CLI flows.
+//!
+//! Invariant: callers must check `require_interactive_stdin` (or call it themselves)
+//! before invoking any prompt — all prompts bail if stdin is not a TTY.
+//!
+//! Not responsible for: ratatui-based TUI dialogs or non-interactive output.
+
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;

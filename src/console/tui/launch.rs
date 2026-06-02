@@ -1,3 +1,9 @@
+//! Wire the console TUI launch flow: role picker → launch confirmation → `LoadOptions` construction.
+//!
+//! Not responsible for: actually launching a container or connecting to a
+//! running one — returns a resolved `(RoleSelector, ResolvedWorkspace)` pair
+//! for the caller to act on.
+
 use crate::config::AppConfig;
 use crate::console::domain::LaunchDispatchResolution;
 use crate::selector::RoleSelector;

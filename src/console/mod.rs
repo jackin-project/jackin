@@ -1,3 +1,15 @@
+//! jackin' interactive console (`jackin console`): TUI and domain logic.
+//!
+//! Entry point is `run_console`. The module tree is split into:
+//!
+//! * `domain` — pure data transforms and business rules (no side effects).
+//! * `tui` — Elm Architecture state machine, input handling, and render loop.
+//! * `services` — background async helpers (refresh, drift check, etc.).
+//! * `effects` — side-effecting operations dispatched by the event loop.
+//!
+//! Not responsible for: the rendering primitives themselves (those live in
+//! `jackin-console` and `jackin-tui` crates).
+
 // `ConsoleStage` collapsed to a single variant in PR #171's Modal::RolePicker
 // cleanup. The module is kept as-is (with `if let ConsoleStage::Manager(_)`
 // patterns) so a future stage can be added without rewriting every match

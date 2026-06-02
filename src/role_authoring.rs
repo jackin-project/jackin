@@ -1,3 +1,8 @@
+//! `jackin role` subcommand handlers: init, validate, migrate, and pack role repos.
+//!
+//! Not responsible for: manifest schema definitions or migration registry —
+//! those live in `src/manifest/`.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;

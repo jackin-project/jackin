@@ -1,3 +1,9 @@
+//! Parse `src[:dst][:ro]` mount specs from CLI arguments into `MountConfig`.
+//!
+//! Not responsible for global mount config deserialization (`config::mounts`)
+//! or isolation type selection — only the CLI `src[:dst][:ro]` grammar and
+//! path expansion.
+
 use std::path::Path;
 
 use crate::workspace::MountConfig;

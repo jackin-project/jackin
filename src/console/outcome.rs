@@ -1,3 +1,8 @@
+//! Console session outcome types: what action the event loop should take when `run_console` returns.
+//!
+//! Not responsible for: executing the chosen action — callers pattern-match the
+//! returned `ConsoleOutcome` and dispatch to the appropriate runtime handler.
+
 use crate::selector::RoleSelector;
 use crate::workspace::ResolvedWorkspace;
 

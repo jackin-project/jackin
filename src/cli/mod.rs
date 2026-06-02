@@ -1,3 +1,9 @@
+//! CLI argument types: `Cli` root struct, `Command` enum, and all subcommand
+//! arg structs parsed by `clap`.
+//!
+//! Parsing only — no business logic. `app/mod.rs` maps these parsed structs to
+//! runtime and console calls.
+
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 

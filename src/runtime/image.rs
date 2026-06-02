@@ -1,3 +1,12 @@
+//! Docker image build pipeline: prepare binaries, build derived image, tag and cache.
+//!
+//! Stages: collect agent binaries → build derived context → `docker build` →
+//! tag. Not responsible for container start, session attach, or identity
+//! capture — those live in sibling modules.
+//!
+//! Key invariant: the derived image label set written here is the authority
+//! consumed by `discovery` and `naming` for cache-hit detection.
+
 use crate::capsule_binary;
 use crate::derived_image::create_derived_build_context;
 use crate::docker::{CommandRunner, RunOptions};

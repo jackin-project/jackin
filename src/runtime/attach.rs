@@ -1,3 +1,13 @@
+//! Session attach/reconnect/hardline for running containers.
+//!
+//! Drives capsule client connections and session inventory queries against a
+//! live container's daemon socket. Not responsible for container start-up,
+//! image build, or identity resolution — those live in sibling modules.
+//!
+//! Key invariant: callers treat `AgentSessionInventory::Unavailable` as a
+//! transient state during the setup-once window; they must not surface it as
+//! a terminal error.
+
 use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;

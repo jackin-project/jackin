@@ -1,3 +1,8 @@
+//! CLI argument structs for `jackin load`, `jackin console`, and `jackin hardline`.
+//!
+//! Not responsible for: resolving workspaces, building images, or spawning
+//! containers — structs are parsed by `clap` and dispatched to runtime handlers.
+
 use clap::{Args, Subcommand};
 use std::path::PathBuf;
 

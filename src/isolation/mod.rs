@@ -1,3 +1,15 @@
+//! Mount isolation: `MountIsolation` enum and the sub-modules that implement
+//! the three isolation strategies.
+//!
+//! * `Shared` — read-write bind mount of the host path; no git operations.
+//! * `Worktree` — git-worktree clone of the host repo, finalized post-attach.
+//! * `Clone` — full directory copy, finalized post-attach.
+//!
+//! Sub-modules: `materialize` (produces bind specs from `WorkspaceConfig`),
+//! `finalize` (post-attach preserve-vs-clean policy), `cleanup` (forced
+//! removal), `state` (`IsolationRecord` persistence), `branch` (worktree
+//! branch naming).
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;

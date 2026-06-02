@@ -1,3 +1,14 @@
+//! Role manifest: `RoleManifest` serde shape and per-agent config types read
+//! from `jackin.role.toml`.
+//!
+//! The struct represents the manifest *as parsed and migrated* by
+//! `manifest/migrations.rs`. Rules that serde alone cannot enforce live in
+//! `manifest/validate.rs`.
+//!
+//! Not responsible for: filesystem validation of the role repo (`repo.rs`),
+//! migration logic (`manifest/migrations.rs`), or environment-var resolution
+//! (`operator_env.rs`).
+
 pub use crate::env_model::{JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

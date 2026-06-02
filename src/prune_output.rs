@@ -1,3 +1,9 @@
+//! Formatted prune/cleanup terminal output: section headers, item rows, status columns.
+//!
+//! Not responsible for prune logic or Docker interaction — purely terminal
+//! formatting. `PendingRow` must be finalized before drop; the Drop impl
+//! emits a visible error marker if the caller forgets.
+
 use owo_colors::OwoColorize;
 use std::io::Write;
 

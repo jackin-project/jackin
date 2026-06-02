@@ -1,3 +1,8 @@
+//! Top-level frame render: compose sidebar, main area, and footer into one `ratatui` frame.
+//!
+//! Not responsible for: state mutation, event handling, or individual component
+//! rendering — delegates to sub-modules in `view/` and `components/`.
+
 use ratatui::{Frame, layout::Rect};
 
 use crate::config::AppConfig;

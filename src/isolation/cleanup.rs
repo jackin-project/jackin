@@ -1,3 +1,10 @@
+//! Force-delete an isolated worktree, scratch branch, and `isolation.json` record.
+//!
+//! Tolerates idempotent paths (already-removed worktree, already-deleted
+//! branch). Bails without removing the record on real failures so the operator
+//! can investigate and re-run `jackin purge`. Not responsible for branch-name
+//! derivation (`branch.rs`) or record persistence schema (`state.rs`).
+
 use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::state::{IsolationRecord, remove_record};

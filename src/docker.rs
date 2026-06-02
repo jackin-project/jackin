@@ -1,3 +1,12 @@
+//! `CommandRunner` trait and `RunOptions`: the subprocess execution seam for
+//! `docker`, `git`, and other external commands.
+//!
+//! `CommandRunner` is dependency-injected into the runtime pipeline so tests
+//! can replace it with `FakeRunner` without spawning real processes.
+//!
+//! Not responsible for: the async Docker daemon API (`docker_client.rs`), or
+//! parsing Docker output formats (those live in the callers).
+
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;

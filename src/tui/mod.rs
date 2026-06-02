@@ -1,3 +1,11 @@
+//! Host-side TUI helpers: debug-mode flag, warp intro, and terminal-mode guards.
+//!
+//! Invariant: `set_rich_surface_active(true)` must be paired with
+//! `set_rich_surface_active(false)` — ancillary stderr output gates on this flag
+//! to avoid streaming over a full-screen ratatui cockpit.
+//!
+//! Not responsible for: ratatui widget rendering or capsule-side TUI code.
+
 use std::sync::{
     Mutex, OnceLock,
     atomic::{AtomicBool, Ordering},

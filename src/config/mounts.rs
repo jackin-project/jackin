@@ -1,3 +1,9 @@
+//! Global mount config types (`GlobalMountConfig`, `MountEntry`, `DockerMounts`) and display helpers.
+//!
+//! Not responsible for workspace-scoped mounts (those carry an `isolation`
+//! field and live in `workspace::mounts`) or for mount validation against the
+//! filesystem — purely config deserialization and display.
+
 use super::{AppConfig, MountConfig};
 use crate::selector::RoleSelector;
 use crate::workspace::expand_tilde;

@@ -1,3 +1,10 @@
+//! Dockerfile validation rules: ensure the role Dockerfile extends `projectjackin/construct`.
+//!
+//! Produces `ValidatedDockerfile` whose fields are guaranteed by the
+//! invariants enforced here; external crates cannot construct it via struct
+//! literal. Not responsible for image build or tag logic — those live in
+//! `runtime::image`.
+
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 

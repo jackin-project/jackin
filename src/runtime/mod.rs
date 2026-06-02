@@ -1,3 +1,13 @@
+//! jackin' container runtime: image build, launch, attach, cleanup, and
+//! discovery.
+//!
+//! Re-exports the public entry points consumed by `app/mod.rs` and `console/`.
+//! Each sub-module owns one slice of the container lifecycle:
+//! `launch` (full load pipeline), `attach` (session management),
+//! `image` (Dockerfile build), `cleanup` (teardown and prune),
+//! `discovery` (list running or managed containers), `naming` (stable
+//! Docker resource names).
+
 pub(crate) mod attach;
 mod caffeinate;
 mod cleanup;

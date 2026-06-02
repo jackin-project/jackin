@@ -1,3 +1,10 @@
+//! Modal dialog layout helpers: compute centered rect and backdrop area for overlay dialogs.
+//!
+//! Single source of truth for modal sizing; delegates per-modal size constants
+//! to `jackin_console::tui::components::modal_rects`.
+//!
+//! Not responsible for: rendering modal content or managing modal open/close state.
+
 use ratatui::layout::Rect;
 
 use crate::console::tui::components::auth_panel;

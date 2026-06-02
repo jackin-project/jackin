@@ -1,3 +1,9 @@
+//! Download and cache agent CLI binaries (Kimi, etc.) for injection into derived images.
+//!
+//! Fetches from upstream CDN, verifies SHA-256, caches under `~/.jackin/cache/`
+//! with a 1-hour TTL. Not responsible for injecting binaries into the Docker
+//! build context — callers in `runtime::image` handle that step.
+
 use crate::agent::Agent;
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,

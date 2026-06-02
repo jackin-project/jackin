@@ -1,3 +1,9 @@
+//! Atomic TOML config writes: staged-write + rename, workspace file stem validation.
+//!
+//! Uses a per-process counter mixed with the PID so concurrent migrations
+//! cannot clobber each other's staged files. Not responsible for config
+//! deserialization, migration logic, or mount resolution.
+
 use super::AppConfig;
 use crate::paths::JackinPaths;
 use anyhow::Context;

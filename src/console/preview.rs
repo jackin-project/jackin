@@ -1,3 +1,8 @@
+//! Console role-preview rendering: show role metadata before launch confirmation.
+//!
+//! Not responsible for: launch confirmation UI or constructing `LoadOptions` —
+//! those live in `src/console/tui/launch.rs`.
+
 use super::domain::WorkspaceChoice;
 use crate::config::AppConfig;
 use crate::selector::RoleSelector;

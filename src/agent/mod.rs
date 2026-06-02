@@ -1,3 +1,11 @@
+//! `Agent` enum: the set of AI agents jackin' can provision inside a role
+//! container.
+//!
+//! Single source of truth for agent identity — variant ordering, display
+//! labels, CLI slug parsing, and serde shape. Every match arm across the
+//! codebase that keys on agent identity should use this enum rather than
+//! string comparisons.
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;

@@ -1,3 +1,8 @@
+//! Settings screen render: tabs (Auth, Env, Global Mounts) and their current focus state.
+//!
+//! Not responsible for: settings state mutations or keyboard event handling —
+//! those live in the settings event-loop in `src/console/tui/`.
+
 #![allow(clippy::redundant_pub_crate)]
 
 use crate::console::tui::components::settings::{

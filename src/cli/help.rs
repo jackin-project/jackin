@@ -1,3 +1,9 @@
+//! Render the styled help footer shown at the bottom of `--help` output.
+//!
+//! Tries `man` first, falls back to `less`/`more`, then raw stdout.
+//!
+//! Not responsible for: clap argument parsing or terminal color configuration.
+
 use std::io::Write;
 
 use anyhow::Context as _;

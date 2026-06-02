@@ -1,3 +1,10 @@
+//! Run-level diagnostics: write structured JSONL events to `~/.jackin/data/diagnostics/runs/<id>.jsonl`.
+//!
+//! One `RunDiagnostics` per process, held in a `OnceLock`. Rotates stale run
+//! artifacts automatically on init. Not responsible for log formatting shown
+//! to the operator — that is `clog!`/`cdebug!`; this writes machine-readable
+//! JSONL for post-hoc triage.
+
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};

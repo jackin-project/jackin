@@ -1,3 +1,10 @@
+//! Resolve manifest `env` declarations (prompts, defaults, interpolation) into concrete `(name, value)` pairs.
+//!
+//! Handles `${env.VAR_NAME}` placeholder substitution left-to-right in a
+//! single pass so resolved values are never re-interpreted. Not responsible
+//! for the reserved-env-var list (`env_model.rs`) or Docker injection —
+//! callers pass the resolved set to the container launch path.
+
 use crate::manifest::EnvVarDecl;
 use std::collections::BTreeMap;
 

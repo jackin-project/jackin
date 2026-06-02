@@ -1,3 +1,9 @@
+//! jackin' library crate root.
+//!
+//! Re-exports the public module tree consumed by `main.rs`, `src/bin/role.rs`,
+//! and integration tests. The crate is simultaneously a binary (via `main.rs`)
+//! and a library (via `lib.rs`); `pub mod` here is the library boundary.
+
 #![allow(clippy::redundant_pub_crate)]
 
 pub mod agent;

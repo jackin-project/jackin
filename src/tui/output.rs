@@ -1,3 +1,8 @@
+//! Formatted terminal output helpers: `tprintln!` macro and status-line writing.
+//!
+//! Not responsible for: spinner animation or interactive prompts —
+//! those live in `src/tui/animation.rs` and `src/tui/prompt.rs`.
+
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
 

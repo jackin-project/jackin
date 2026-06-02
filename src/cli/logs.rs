@@ -1,3 +1,8 @@
+//! CLI argument structs for `jackin logs` subcommand.
+//!
+//! Not responsible for: reading log files or tailing them — structs are parsed
+//! by `clap` and dispatched to the handler in `src/commands/logs.rs`.
+
 use clap::Args;
 
 use super::{BANNER, HELP_STYLES};

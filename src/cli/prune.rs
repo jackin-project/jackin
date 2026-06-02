@@ -1,3 +1,8 @@
+//! CLI argument structs for `jackin prune` subcommands (images, instances, cache, diagnostics, all).
+//!
+//! Not responsible for: executing deletion logic — structs are parsed by `clap`
+//! and dispatched to handlers in `src/commands/prune/`.
+
 use clap::{Args, Subcommand};
 
 use super::{BANNER, HELP_STYLES};

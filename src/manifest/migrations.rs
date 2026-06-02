@@ -1,3 +1,10 @@
+//! Role manifest (`jackin.role.toml`) version migration registry.
+//!
+//! Owns `CURRENT_MANIFEST_VERSION` and the `MANIFEST_MIGRATIONS` chain.
+//! Migration steps delegate to shared helpers in `config::migrations`. Not
+//! responsible for config or workspace migrations — those live in
+//! `config/migrations.rs`.
+
 use std::path::Path;
 
 use anyhow::bail;
