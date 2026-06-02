@@ -1,7 +1,6 @@
 //! Render functions for the workspace manager TUI.
 
 pub mod editor;
-pub(crate) mod editor_geometry;
 mod frame;
 #[cfg(test)]
 mod consistency_tests;
@@ -12,7 +11,6 @@ pub(crate) mod list;
 pub(crate) mod modal;
 mod pre_render;
 pub(crate) mod settings;
-pub(crate) mod settings_geometry;
 #[cfg(test)]
 mod snapshot_tests;
 

@@ -671,7 +671,7 @@ mod contextual_row_items_tests {
 mod general_tab_render_tests {
     use super::render_general_tab;
     use crate::config::AppConfig;
-    use crate::console::tui::render::editor_geometry::prepare_editor_tab_for_area;
+    use crate::console::tui::layout::editor::prepare_editor_tab_for_area;
     use crate::console::tui::state::{EditorState, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
@@ -763,7 +763,7 @@ mod agents_tab_render_tests {
     //! `allowed_roles` is the "all allowed" shorthand.
     use super::render_roles_tab;
     use crate::config::{AppConfig, RoleSource};
-    use crate::console::tui::render::editor_geometry::prepare_editor_tab_for_area;
+    use crate::console::tui::layout::editor::prepare_editor_tab_for_area;
     use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;

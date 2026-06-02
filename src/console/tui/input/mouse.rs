@@ -17,7 +17,7 @@ use crate::console::tui::components::mount_display::workspace_mounts_content_wid
 use crate::console::tui::components::mount_display::{
     settings_global_mounts_content_width_with_cache, workspace_mounts_content_width_with_cache,
 };
-use crate::console::tui::render::settings_geometry::{
+use crate::console::tui::layout::settings::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
 };
 use crate::console::tui::state::{
