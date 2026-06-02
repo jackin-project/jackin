@@ -21,6 +21,8 @@ use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_cancelled_message, global_mount_confirm_state,
+    global_mount_add_draft_lost_message, global_mount_destination_empty_message,
+    global_mount_gone_message, global_mount_name_empty_message,
     global_mount_no_github_url_message,
     global_mount_scope_picker_state, global_mount_text_input_state, global_mount_text_target_label,
     settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
@@ -32,10 +34,6 @@ use jackin_console::tui::screens::settings::view::{
     settings_env_scope_picker_state, settings_env_source_picker_state, settings_env_text_input_state,
     settings_env_value_text_label, settings_no_registered_roles_error_message,
 };
-
-const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
-const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
-const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum SettingsModalOutcome {
@@ -1211,7 +1209,7 @@ pub(super) fn handle_settings_confirm_modal(
                     settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });
                     outcome = SettingsModalOutcome::OpenGlobalMountFileBrowser;
                 } else {
-                    settings.mounts.error = Some(ADD_DRAFT_LOST.into());
+                    settings.mounts.error = Some(global_mount_add_draft_lost_message().into());
                 }
             }
             ModalOutcome::Cancel => {
@@ -1508,7 +1506,7 @@ fn commit_text(
         }
         GlobalMountTextTarget::Source => {
             let Some(row) = global.pending.get_mut(global.selected) else {
-                global.error = Some(MOUNT_GONE.into());
+                global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
             row.mount.src = resolve_path(trimmed);
@@ -1516,7 +1514,7 @@ fn commit_text(
         }
         GlobalMountTextTarget::Destination => {
             let Some(row) = global.pending.get_mut(global.selected) else {
-                global.error = Some(MOUNT_GONE.into());
+                global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
             row.mount.dst = trimmed.to_string();
@@ -1524,7 +1522,7 @@ fn commit_text(
         }
         GlobalMountTextTarget::Scope => {
             let Some(row) = global.pending.get_mut(global.selected) else {
-                global.error = Some(MOUNT_GONE.into());
+                global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
             row.scope = crate::console::domain::global_mount_scope_value(trimmed);
@@ -1532,11 +1530,11 @@ fn commit_text(
         }
         GlobalMountTextTarget::Rename => {
             if trimmed.is_empty() {
-                global.error = Some(MOUNT_NAME_EMPTY.into());
+                global.error = Some(global_mount_name_empty_message().into());
                 return SettingsModalOutcome::Continue;
             }
             let Some(row) = global.pending.get_mut(global.selected) else {
-                global.error = Some(MOUNT_GONE.into());
+                global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
             row.name = trimmed.to_string();
@@ -1619,7 +1617,7 @@ fn commit_add_scope_text(
     value: &str,
 ) -> SettingsModalOutcome {
     let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(ADD_DRAFT_LOST.into());
+        global.error = Some(global_mount_add_draft_lost_message().into());
         return SettingsModalOutcome::Continue;
     };
     draft.scope = crate::console::domain::global_mount_scope_value(value);
@@ -1628,12 +1626,12 @@ fn commit_add_scope_text(
 
 fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
     if value.is_empty() {
-        global.error = Some(MOUNT_NAME_EMPTY.into());
+        global.error = Some(global_mount_name_empty_message().into());
         global.modal = Some(text_modal_for_target(GlobalMountTextTarget::AddName, ""));
         return;
     }
     let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(ADD_DRAFT_LOST.into());
+        global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
     draft.name = value.to_string();
@@ -1642,7 +1640,7 @@ fn commit_add_name_text(global: &mut crate::console::tui::state::GlobalMountsSta
 
 fn commit_add_source_text(global: &mut crate::console::tui::state::GlobalMountsState<'_>, value: &str) {
     let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(ADD_DRAFT_LOST.into());
+        global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
     draft.src = resolve_path(value);
@@ -1657,7 +1655,7 @@ fn commit_add_destination_text(
     value: &str,
 ) {
     let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(ADD_DRAFT_LOST.into());
+        global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
     draft.dst = value.to_string();
@@ -1672,11 +1670,11 @@ fn open_global_mount_scope_picker(global: &mut crate::console::tui::state::Globa
 
 fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
     let Some(mut draft) = global.add_draft.take() else {
-        global.error = Some(ADD_DRAFT_LOST.into());
+        global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
     if draft.dst.trim().is_empty() {
-        global.error = Some("Mount destination cannot be empty.".into());
+        global.error = Some(global_mount_destination_empty_message().into());
         global.add_draft = Some(draft);
         return;
     }

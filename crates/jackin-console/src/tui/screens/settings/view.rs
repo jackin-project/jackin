@@ -196,6 +196,26 @@ pub fn global_mount_add_cancelled_message() -> &'static str {
 }
 
 #[must_use]
+pub fn global_mount_name_empty_message() -> &'static str {
+    "Mount name cannot be empty."
+}
+
+#[must_use]
+pub fn global_mount_gone_message() -> &'static str {
+    "Mount no longer exists; selection was cleared."
+}
+
+#[must_use]
+pub fn global_mount_add_draft_lost_message() -> &'static str {
+    "Add-mount draft was lost; press 'a' to start over."
+}
+
+#[must_use]
+pub fn global_mount_destination_empty_message() -> &'static str {
+    "Mount destination cannot be empty."
+}
+
+#[must_use]
 pub fn global_mount_no_github_url_message() -> &'static str {
     "no GitHub URL for this mount"
 }
@@ -816,6 +836,22 @@ mod tests {
         assert_eq!(
             global_mount_add_cancelled_message(),
             "Add mount cancelled."
+        );
+        assert_eq!(
+            global_mount_name_empty_message(),
+            "Mount name cannot be empty."
+        );
+        assert_eq!(
+            global_mount_gone_message(),
+            "Mount no longer exists; selection was cleared."
+        );
+        assert_eq!(
+            global_mount_add_draft_lost_message(),
+            "Add-mount draft was lost; press 'a' to start over."
+        );
+        assert_eq!(
+            global_mount_destination_empty_message(),
+            "Mount destination cannot be empty."
         );
         assert_eq!(
             global_mount_no_github_url_message(),
