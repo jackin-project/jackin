@@ -459,18 +459,13 @@ fn open_settings_auth_form(
     let Some(row) = auth.pending.iter().find(|row| row.kind == kind) else {
         return;
     };
-    let existing_credential = kind
-        .required_env_var(row.mode)
-        .and_then(|name| match kind {
-            jackin_console::tui::auth::AuthKind::Github => auth.github_env.get(name),
-            jackin_console::tui::auth::AuthKind::Claude
-            | jackin_console::tui::auth::AuthKind::Codex
-            | jackin_console::tui::auth::AuthKind::Amp
-            | jackin_console::tui::auth::AuthKind::Kimi
-            | jackin_console::tui::auth::AuthKind::Opencode
-            | jackin_console::tui::auth::AuthKind::Zai => env.pending.env.get(name),
-        })
-        .cloned();
+    let existing_credential = crate::console::domain::settings_auth_env_value(
+        kind,
+        row.mode,
+        &auth.github_env,
+        &env.pending.env,
+    )
+    .cloned();
     let form = AuthForm::from_existing(kind, row.mode, existing_credential);
     let literal_buffer = form.literal_buffer();
     auth.modal = Some(SettingsAuthModal::AuthForm {

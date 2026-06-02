@@ -150,7 +150,7 @@ fn settings_auth_source_display(
     env_name: &str,
 ) -> AuthSourceDisplay {
     auth_source_display(
-        settings_auth_source_value(state, kind, env_name).map(|value| match value {
+        settings_auth_source_value(state, kind, mode).map(|value| match value {
             EnvValue::Plain(value) => AuthSourceValue::Plain(value.clone()),
             EnvValue::OpRef(op_ref) => AuthSourceValue::OpRefPath(op_ref.path.clone()),
         }),
@@ -162,13 +162,14 @@ fn settings_auth_source_display(
 fn settings_auth_source_value<'a>(
     state: &'a SettingsState<'_>,
     kind: jackin_console::tui::auth::AuthKind,
-    env_name: &str,
+    mode: jackin_console::tui::auth::AuthMode,
 ) -> Option<&'a EnvValue> {
-    if kind == jackin_console::tui::auth::AuthKind::Github {
-        state.auth.github_env.get(env_name)
-    } else {
-        state.env.pending.env.get(env_name)
-    }
+    crate::console::domain::settings_auth_env_value(
+        kind,
+        mode,
+        &state.auth.github_env,
+        &state.env.pending.env,
+    )
 }
 
 fn editor_auth_source_display(

@@ -110,6 +110,21 @@ pub fn eligible_role_keys_for_override(cfg: &AppConfig, workspace: &WorkspaceCon
 }
 
 #[must_use]
+pub fn settings_auth_env_value<'a>(
+    kind: AuthKind,
+    mode: AuthMode,
+    github_env: &'a BTreeMap<String, crate::operator_env::EnvValue>,
+    agent_env: &'a BTreeMap<String, crate::operator_env::EnvValue>,
+) -> Option<&'a crate::operator_env::EnvValue> {
+    let env_name = kind.required_env_var(mode)?;
+    if kind == AuthKind::Github {
+        github_env.get(env_name)
+    } else {
+        agent_env.get(env_name)
+    }
+}
+
+#[must_use]
 pub const fn auth_mode_from_auth_forward(mode: AuthForwardMode) -> AuthMode {
     match mode {
         AuthForwardMode::Sync => AuthMode::Sync,
@@ -841,6 +856,39 @@ mod tests {
             eligible_role_keys_for_override(&cfg, &workspace),
             vec!["ghost".to_string()]
         );
+    }
+
+    #[test]
+    fn settings_auth_env_value_uses_github_or_agent_env() {
+        let mut github_env = BTreeMap::new();
+        github_env.insert(
+            "GH_TOKEN".into(),
+            crate::operator_env::EnvValue::Plain("github-token".into()),
+        );
+        let mut agent_env = BTreeMap::new();
+        agent_env.insert(
+            AuthKind::Claude
+                .required_env_var(AuthMode::ApiKey)
+                .expect("Claude API key env var")
+                .into(),
+            crate::operator_env::EnvValue::Plain("anthropic-key".into()),
+        );
+
+        assert!(matches!(
+            settings_auth_env_value(AuthKind::Github, AuthMode::Token, &github_env, &agent_env),
+            Some(crate::operator_env::EnvValue::Plain(value)) if value == "github-token"
+        ));
+        assert!(matches!(
+            settings_auth_env_value(AuthKind::Claude, AuthMode::ApiKey, &github_env, &agent_env),
+            Some(crate::operator_env::EnvValue::Plain(value)) if value == "anthropic-key"
+        ));
+        assert!(settings_auth_env_value(
+            AuthKind::Claude,
+            AuthMode::Sync,
+            &github_env,
+            &agent_env
+        )
+        .is_none());
     }
 
     #[test]
