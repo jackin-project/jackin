@@ -145,6 +145,10 @@ pub fn instance_action_failed_error_title(action: WorkspaceInstanceAction) -> &'
     }
 }
 
+pub fn instance_action_failed_error_message(error: impl std::fmt::Display) -> String {
+    format!("{error:#}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +283,10 @@ mod tests {
         assert_eq!(
             instance_action_failed_error_title(WorkspaceInstanceAction::Inspect),
             "Action failed"
+        );
+        assert_eq!(
+            instance_action_failed_error_message(anyhow::anyhow!("docker failed")),
+            "docker failed"
         );
     }
 }

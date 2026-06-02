@@ -10,7 +10,9 @@ use crate::console::terminal::{
 use crate::console::tui::debug::{console_location_debug, key_debug_name};
 use crate::console::tui::instance_action::workspace_instance_action_fact;
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
-use jackin_console::tui::components::error_popup::instance_action_failed_error_title;
+use jackin_console::tui::components::error_popup::{
+    instance_action_failed_error_message, instance_action_failed_error_title,
+};
 use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
@@ -543,7 +545,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                             ms,
                                             crate::console::tui::ManagerMessage::OpenListErrorPopup {
                                                 title: err_title.into(),
-                                                message: format!("{error:#}"),
+                                                message: instance_action_failed_error_message(error),
                                             },
                                         );
                                     }
