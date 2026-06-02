@@ -6,7 +6,6 @@ mod frame;
 mod consistency_tests;
 #[cfg(test)]
 mod frame_tests;
-pub(crate) mod footer;
 pub(crate) mod list;
 pub(crate) mod modal;
 mod pre_render;

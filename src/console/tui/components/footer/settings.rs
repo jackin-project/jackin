@@ -2,7 +2,7 @@
 
 use jackin_tui::HintSpan;
 
-use crate::console::tui::render::footer::modal::{
+use crate::console::tui::components::footer::modal::{
     settings_auth_modal_footer_items, settings_env_modal_footer_items,
     settings_mounts_modal_footer_items,
 };

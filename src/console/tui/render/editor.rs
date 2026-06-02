@@ -48,7 +48,7 @@ pub(super) fn render_editor(
     op_available: bool,
 ) {
     let items =
-        crate::console::tui::render::footer::editor::editor_footer_items(state, config, op_available);
+        crate::console::tui::components::footer::editor::editor_footer_items(state, config, op_available);
     let footer_h = footer_height(&items, area.width).max(1);
     let areas = editor_frame_areas(area, footer_h);
 
@@ -467,7 +467,7 @@ mod contextual_row_items_tests {
     //! Row-specific footer-hint composition for the editor tabs.
 
     use crate::config::{AppConfig, RoleSource};
-    use crate::console::tui::render::footer::editor::contextual_row_items;
+    use crate::console::tui::components::footer::editor::contextual_row_items;
     use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use jackin_tui::HintSpan;

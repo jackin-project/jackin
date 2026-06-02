@@ -35,7 +35,7 @@ pub(super) fn render_settings(
     op_available: bool,
 ) {
     let footer =
-        crate::console::tui::render::footer::settings::settings_footer_items(state, op_available);
+        crate::console::tui::components::footer::settings::settings_footer_items(state, op_available);
     let footer_h = footer_height(&footer, area.width).max(1);
     let areas = settings_frame_areas(area, footer_h);
     render_header(frame, areas.header, "settings");
