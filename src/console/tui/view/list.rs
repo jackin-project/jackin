@@ -18,12 +18,6 @@
     reason = "existing row-builder shape is preserved during the directory migration"
 )]
 
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-};
-
-use crate::config::AppConfig;
 #[cfg(test)]
 pub(super) use crate::console::tui::layout::list::{
     global_mounts_content_height, mount_block_height,
@@ -32,11 +26,7 @@ pub(super) use crate::console::tui::layout::list::{
 pub(super) use crate::console::tui::components::mount_display::format_mount_rows;
 #[cfg(test)]
 pub(super) use crate::console::tui::components::mount_display::mount_path_width;
-use crate::console::tui::components::workspace_list::{
-    render_current_dir_details_pane, render_details_pane, render_instance_details_pane,
-    render_list_sidebar,
-};
-use crate::console::tui::state::{ManagerListRow, ManagerState};
+pub(super) use crate::console::tui::components::workspace_list::render_list_body;
 #[cfg(test)]
 pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
 #[cfg(test)]
@@ -45,102 +35,6 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 };
 #[cfg(test)]
 pub(super) use jackin_console::mount_display::MountDisplayRow;
-use jackin_console::tui::screens::workspaces::view::{
-    render_sentinel_description_pane,
-};
-
-#[allow(clippy::too_many_lines)]
-pub(super) fn render_list_body(
-    frame: &mut Frame,
-    area: Rect,
-    state: &ManagerState<'_>,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-) {
-    // See ManagerListRow docs for row layout.
-    // Split driven by `state.list_split_pct` (default 30), adjustable via
-    // mouse-drag on the seam column. Keeps the right pane visible on every
-    // row. Row-specific right-pane renderers:
-    //   CurrentDirectory  → current-dir details
-    //   SavedWorkspace(i) → saved-workspace details
-    //   NewWorkspace      → description-of-what-a-workspace-is pane
-    let left_pct = state.list_split_pct;
-    let right_pct = 100u16.saturating_sub(left_pct);
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(left_pct),
-            Constraint::Percentage(right_pct),
-        ])
-        .split(area);
-    let list_area = columns[0];
-
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
-            render_current_dir_details_pane(frame, columns[1], cwd, config, state);
-        }
-        ManagerListRow::NewWorkspace => {
-            render_sentinel_description_pane(frame, columns[1]);
-        }
-        ManagerListRow::SavedWorkspace(i) => {
-            if let Some(ws) = state.workspaces.get(i).cloned() {
-                render_details_pane(frame, columns[1], &ws, config, state);
-            }
-        }
-        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
-            let instances = state.workspace_active_instances(ws_idx);
-            if let Some(entry) = instances.get(inst_idx).copied() {
-                let sessions = state.sessions_for_instance(&entry.container_base);
-                let session_load_error = state.has_session_load_error(&entry.container_base);
-                let snapshot = state.snapshot_for_instance(&entry.container_base);
-                let selected_pane = if state.preview_focused {
-                    state
-                        .preview_selected_pane(&entry.container_base)
-                        .map(|(_, id)| id)
-                } else {
-                    None
-                };
-                render_instance_details_pane(
-                    frame,
-                    columns[1],
-                    entry,
-                    sessions,
-                    session_load_error,
-                    snapshot,
-                    selected_pane,
-                    state.preview_focused,
-                );
-            }
-        }
-        ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
-            let instances = state.current_dir_active_instances();
-            if let Some(entry) = instances.get(inst_idx).copied() {
-                let sessions = state.sessions_for_instance(&entry.container_base);
-                let session_load_error = state.has_session_load_error(&entry.container_base);
-                let snapshot = state.snapshot_for_instance(&entry.container_base);
-                let selected_pane = if state.preview_focused {
-                    state
-                        .preview_selected_pane(&entry.container_base)
-                        .map(|(_, id)| id)
-                } else {
-                    None
-                };
-                render_instance_details_pane(
-                    frame,
-                    columns[1],
-                    entry,
-                    sessions,
-                    session_load_error,
-                    snapshot,
-                    selected_pane,
-                    state.preview_focused,
-                );
-            }
-        }
-    }
-
-    render_list_sidebar(frame, list_area, state);
-}
 
 /// Number of leading spaces every content row in the General / Mounts /
 /// Environments / Roles sub-panels is prefixed with, so the first visible
