@@ -1188,22 +1188,7 @@ pub enum Modal<'a> {
     },
 }
 
-#[derive(Debug)]
-pub struct CreatePreludeState<'a> {
-    pub step: CreateStep,
-    pub pending_mount_src: Option<PathBuf>,
-    pub pending_mount_dst: Option<String>,
-    pub pending_readonly: bool,
-    pub pending_workdir: Option<String>,
-    pub pending_name: Option<String>,
-    pub modal: Option<Modal<'a>>,
-    /// Captured so Esc on `MountDstChoice` re-opens `FileBrowser` at
-    /// the same directory instead of `$HOME`.
-    pub last_browser_cwd: Option<PathBuf>,
-    /// Picks Esc-on-`WorkdirPick` rewind target: `TextInputDst` when
-    /// the Edit-destination branch was used, else `MountDstChoice`.
-    pub used_edit_dst: bool,
-}
+pub type CreatePreludeState<'a> = jackin_console::tui::app::ConsoleCreatePreludeState<Modal<'a>>;
 
 // ── Impls ──────────────────────────────────────────────────────────
 
@@ -2318,69 +2303,19 @@ impl EditorState<'_> {
     }
 }
 
-impl Default for CreatePreludeState<'_> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CreatePreludeState<'_> {
-    pub const fn new() -> Self {
-        Self {
-            step: CreateStep::PickFirstMountSrc,
-            pending_mount_src: None,
-            pending_mount_dst: None,
-            pending_readonly: false,
-            pending_workdir: None,
-            pending_name: None,
-            modal: None,
-            last_browser_cwd: None,
-            used_edit_dst: false,
-        }
-    }
-
-    pub fn accept_mount_src(&mut self, src: PathBuf) {
-        self.pending_mount_src = Some(src);
-        self.step = CreateStep::PickFirstMountDst;
-    }
-
-    /// Default mount dst = same absolute path as host src. Operator can
-    /// overwrite in the dst modal.
-    pub fn default_mount_dst(&self) -> String {
-        let src_display = self
-            .pending_mount_src
-            .as_ref()
-            .map(|path| path.display().to_string());
-        jackin_console::tui::screens::workspaces::view::create_prelude_mount_destination_default(
-            src_display.as_deref(),
-        )
-    }
-
-    pub fn accept_mount_dst(&mut self, dst: String, readonly: bool) {
-        self.pending_mount_dst = Some(dst);
-        self.pending_readonly = readonly;
-        self.step = CreateStep::PickWorkdir;
-    }
-
-    pub fn accept_workdir(&mut self, workdir: String) {
-        self.pending_workdir = Some(workdir);
-        self.step = CreateStep::NameWorkspace;
-    }
-
-    /// Default name = mount dst basename.
-    pub fn default_name(&self) -> String {
-        jackin_console::tui::screens::workspaces::view::create_prelude_workspace_name_default(
-            self.pending_mount_dst.as_deref(),
-        )
-    }
-
-    pub fn accept_name(&mut self, name: String) {
-        self.pending_name = Some(name);
-    }
-
+pub(crate) trait CreatePreludeWorkspaceExt {
     /// Produce the `WorkspaceConfig` for commit. Returns None if any
     /// required field is missing.
-    pub fn build_workspace(&self) -> Option<WorkspaceConfig> {
+    fn build_workspace(&self) -> Option<WorkspaceConfig>;
+
+    /// The wizard is complete iff a name, a mount source, a mount dst,
+    /// and a workdir have all been captured. Returns the owned pair the
+    /// dispatcher needs to transition to the editor.
+    fn completed(&self) -> Option<(String, WorkspaceConfig)>;
+}
+
+impl CreatePreludeWorkspaceExt for CreatePreludeState<'_> {
+    fn build_workspace(&self) -> Option<WorkspaceConfig> {
         let src = self.pending_mount_src.as_ref()?;
         let dst = self.pending_mount_dst.as_ref()?;
         let workdir = self.pending_workdir.as_ref()?;
@@ -2397,14 +2332,7 @@ impl CreatePreludeState<'_> {
         })
     }
 
-    pub fn name(&self) -> Option<&str> {
-        self.pending_name.as_deref()
-    }
-
-    /// The wizard is complete iff a name, a mount source, a mount dst,
-    /// and a workdir have all been captured. Returns the owned pair the
-    /// dispatcher needs to transition to the editor.
-    pub fn completed(&self) -> Option<(String, WorkspaceConfig)> {
+    fn completed(&self) -> Option<(String, WorkspaceConfig)> {
         let name = self.pending_name.clone()?;
         let workspace = self.build_workspace()?;
         Some((name, workspace))
