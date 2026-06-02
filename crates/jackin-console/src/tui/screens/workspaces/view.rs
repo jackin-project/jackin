@@ -63,6 +63,45 @@ pub struct WorkspaceListDisplayRow {
 }
 
 #[must_use]
+pub fn current_directory_display_row(
+    expanded: bool,
+    has_instances: bool,
+    selected: bool,
+    hovered: bool,
+) -> WorkspaceListDisplayRow {
+    WorkspaceListDisplayRow {
+        label: "Current directory".to_string(),
+        tone: WorkspaceListRowTone::White,
+        expanded,
+        has_instances,
+        selected,
+        hovered,
+    }
+}
+
+#[must_use]
+pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceListDisplayRow {
+    WorkspaceListDisplayRow {
+        label: "+ New workspace".to_string(),
+        tone: WorkspaceListRowTone::White,
+        expanded: false,
+        has_instances: false,
+        selected,
+        hovered,
+    }
+}
+
+#[must_use]
+pub fn workspace_instance_list_label(instance_id: &str, role_key: &str) -> String {
+    format!("{instance_id}  {role_key}")
+}
+
+#[must_use]
+pub fn workspace_instance_pane_agent_label(agent: Option<&str>) -> String {
+    agent.unwrap_or("shell").to_string()
+}
+
+#[must_use]
 pub const fn instance_sessions_empty_message(session_load_error: bool) -> &'static str {
     if session_load_error {
         "Sessions unavailable (manifest read error)"
@@ -925,6 +964,29 @@ mod tests {
         assert_eq!(
             instance_sessions_empty_message(true),
             "Sessions unavailable (manifest read error)"
+        );
+    }
+
+    #[test]
+    fn workspace_list_display_helpers_own_visible_defaults() {
+        let current = current_directory_display_row(true, true, true, false);
+        assert_eq!(current.label, "Current directory");
+        assert!(current.expanded);
+        assert!(current.has_instances);
+        assert!(current.selected);
+
+        let new_workspace = new_workspace_display_row(false, true);
+        assert_eq!(new_workspace.label, "+ New workspace");
+        assert!(new_workspace.hovered);
+        assert!(!new_workspace.expanded);
+        assert_eq!(
+            workspace_instance_list_label("abc123", "chainargos/agent-smith"),
+            "abc123  chainargos/agent-smith"
+        );
+        assert_eq!(workspace_instance_pane_agent_label(None), "shell");
+        assert_eq!(
+            workspace_instance_pane_agent_label(Some("claude")),
+            "claude"
         );
     }
 

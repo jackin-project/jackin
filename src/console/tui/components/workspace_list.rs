@@ -19,12 +19,14 @@ use jackin_console::tui::screens::workspaces::view::{
     WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane,
     WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow,
-    instance_sessions_empty_message, list_name_lines as workspace_list_name_lines, provider_picker_title,
+    current_directory_display_row, instance_sessions_empty_message,
+    list_name_lines as workspace_list_name_lines, new_workspace_display_row, provider_picker_title,
     render_compact_instances_summary, render_environments_subpanel, render_general_subpanel,
     render_global_mounts_subpanel, render_mounts_subpanel as render_workspace_mounts_panel,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_picker_sidebar, render_roles_subpanel,
-    render_sentinel_description_pane,
+    render_sentinel_description_pane, workspace_instance_list_label,
+    workspace_instance_pane_agent_label,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -151,14 +153,12 @@ fn workspace_list_display_row(
     hovered: bool,
 ) -> Option<WorkspaceListDisplayRow> {
     match row {
-        ManagerListRow::CurrentDirectory => Some(WorkspaceListDisplayRow {
-            label: "Current directory".to_string(),
-            tone: WorkspaceListRowTone::White,
-            expanded: state.current_dir_expanded,
-            has_instances: state.has_current_dir_active_instances(),
+        ManagerListRow::CurrentDirectory => Some(current_directory_display_row(
+            state.current_dir_expanded,
+            state.has_current_dir_active_instances(),
             selected,
             hovered,
-        }),
+        )),
         ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
             .current_dir_active_instances()
             .get(*inst_idx)
@@ -178,14 +178,7 @@ fn workspace_list_display_row(
             .workspace_active_instances(*ws_idx)
             .get(*inst_idx)
             .map(|entry| instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)),
-        ManagerListRow::NewWorkspace => Some(WorkspaceListDisplayRow {
-            label: "+ New workspace".to_string(),
-            tone: WorkspaceListRowTone::White,
-            expanded: false,
-            has_instances: false,
-            selected,
-            hovered,
-        }),
+        ManagerListRow::NewWorkspace => Some(new_workspace_display_row(selected, hovered)),
     }
 }
 
@@ -196,7 +189,7 @@ fn instance_display_row(
     hovered: bool,
 ) -> WorkspaceListDisplayRow {
     WorkspaceListDisplayRow {
-        label: format!("{instance_id}  {role_key}"),
+        label: workspace_instance_list_label(instance_id, role_key),
         tone: WorkspaceListRowTone::Instance,
         expanded: false,
         has_instances: false,
@@ -266,7 +259,7 @@ fn instance_details_content(
                         .iter()
                         .map(|pane| WorkspaceInstanceTabPane {
                             label: pane.label.clone(),
-                            agent_label: pane.agent.clone().unwrap_or_else(|| "shell".to_string()),
+                            agent_label: workspace_instance_pane_agent_label(pane.agent.as_deref()),
                             state_label: pane.state.label().to_string(),
                             focused: pane.session_id == tab.focused_pane,
                             selected: selected_pane == Some(pane.session_id),
