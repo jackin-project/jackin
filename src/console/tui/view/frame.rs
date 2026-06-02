@@ -1,7 +1,4 @@
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-};
+use ratatui::{Frame, layout::Rect};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
@@ -9,10 +6,13 @@ use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
-use jackin_console::tui::view::{render_footer, render_header};
+use jackin_console::tui::view::{
+    delete_confirm_area, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
+    settings_error_area, status_overlay_area, workspace_frame_areas,
+};
 use jackin_tui::HintSpan;
 
-use super::{centered_rect_fixed, editor, list, modal, settings};
+use super::{editor, list, modal, settings};
 
 #[allow(clippy::too_many_lines)]
 pub fn render(
@@ -27,19 +27,12 @@ pub fn render(
     } else if let ManagerStage::Settings(settings) = &state.stage {
         settings::render_settings(frame, area, settings, state.op_available);
     } else {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(2), // header (brand pill + 1 spacer row)
-                Constraint::Min(10),   // body
-                Constraint::Length(2), // footer
-            ])
-            .split(area);
+        let areas = workspace_frame_areas(area);
 
-        render_header(frame, chunks[0], "workspaces");
+        render_header(frame, areas.header, "workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
-            list::render_list_body(frame, chunks[1], state, config, cwd);
+            list::render_list_body(frame, areas.body, state, config, cwd);
         }
 
         let footer_items: Vec<HintSpan<'static>> = match &state.stage {
@@ -51,11 +44,11 @@ pub fn render(
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
             ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),
         };
-        render_footer(frame, chunks[2], &footer_items);
+        render_footer(frame, areas.footer, &footer_items);
     }
 
     if has_modal_overlay(state) {
-        frame.render_widget(jackin_tui::components::ModalBackdrop, area);
+        render_modal_backdrop(frame, area);
     }
 
     // List-anchored modal lives on `ManagerState`, not on a stage
@@ -84,7 +77,7 @@ pub fn render(
             } => {
                 // ConfirmState is a top-level field on the variant, not wrapped
                 // in Modal::Confirm, so render it directly.
-                let modal_area = centered_rect_fixed(area, 60, 7);
+                let modal_area = delete_confirm_area(area);
                 jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
             ManagerStage::ConfirmInstancePurge {
@@ -93,7 +86,7 @@ pub fn render(
             } => {
                 // The two-line prompt is taller than ConfirmDelete's
                 // single line, so allocate more rows for the modal.
-                let modal_area = centered_rect_fixed(area, 70, 9);
+                let modal_area = purge_confirm_area(area);
                 jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
             ManagerStage::List => {
@@ -108,7 +101,7 @@ pub fn render(
                         inner_width,
                         max_rows,
                     );
-                    let popup_area = centered_rect_fixed(area, 60, h);
+                    let popup_area = settings_error_area(area, h);
                     jackin_tui::components::render_error_dialog(frame, popup_area, popup);
                 } else if let Some(modal) = &settings.mounts.modal {
                     settings::render_global_mount_modal(frame, modal);
@@ -122,7 +115,7 @@ pub fn render(
     }
 
     if let Some(overlay) = &state.status_overlay {
-        let overlay_area = centered_rect_fixed(area, 50, 7);
+        let overlay_area = status_overlay_area(area);
         jackin_tui::components::render_status_popup(frame, overlay_area, overlay);
     }
 }

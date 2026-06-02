@@ -14,8 +14,6 @@ mod snapshot_tests;
 
 pub use frame::render;
 
-pub(super) use jackin_console::tui::layout::centered_rect_fixed;
-
 pub(crate) use jackin_tui::components::scrollable_panel::{
     viewport_width as scroll_viewport_width,
 };
