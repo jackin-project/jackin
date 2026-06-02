@@ -58,6 +58,14 @@ pub enum AuthFormTarget<K> {
     WorkspaceRole { role: String, kind: K },
 }
 
+impl<K> AuthFormTarget<K> {
+    pub const fn kind(&self) -> &K {
+        match self {
+            Self::Workspace { kind } | Self::WorkspaceRole { kind, .. } => kind,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsAuthRow<K, M> {
     pub kind: K,

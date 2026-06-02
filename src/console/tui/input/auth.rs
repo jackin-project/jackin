@@ -49,7 +49,7 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppCon
         );
         return;
     };
-    let kind = target_kind(&target);
+    let kind = *target.kind();
     let (existing_mode, existing_cred) = current_mode_and_credential(editor, &target);
     let form = existing_mode.map_or_else(
         || AuthForm::new(kind),
@@ -143,14 +143,6 @@ pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppCon
             clear_workspace_kind(&mut editor.pending, kind);
         }
         _ => {}
-    }
-}
-
-/// Lift the [`AuthKind`] out of an [`AuthFormTarget`] regardless of
-/// whether it points at the workspace or the workspace × role layer.
-const fn target_kind(target: &AuthFormTarget) -> AuthKind {
-    match target {
-        AuthFormTarget::Workspace { kind } | AuthFormTarget::WorkspaceRole { kind, .. } => *kind,
     }
 }
 
