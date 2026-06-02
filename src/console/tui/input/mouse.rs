@@ -4,7 +4,7 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-use crate::console::tui::render::list_geometry::{
+use crate::console::tui::layout::list::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};

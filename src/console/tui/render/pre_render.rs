@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use crate::config::AppConfig;
 use crate::console::tui::render::editor_geometry::prepare_editor_for_render;
-use crate::console::tui::render::list_geometry::clamp_list_scroll_for_area;
+use crate::console::tui::layout::list::clamp_list_scroll_for_area;
 use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::render::settings_geometry::clamp_global_mounts_scroll_for_frame;
 use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};

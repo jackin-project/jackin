@@ -25,12 +25,12 @@ use ratatui::{
 };
 
 use crate::config::AppConfig;
-use crate::console::tui::render::list_geometry::{
+use crate::console::tui::layout::list::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
     sidebar_inputs_for_workspace, split_global_mount_rows,
 };
 #[cfg(test)]
-pub(super) use crate::console::tui::render::list_geometry::{
+pub(super) use crate::console::tui::layout::list::{
     global_mounts_content_height, mount_block_height,
 };
 #[cfg(test)]
@@ -646,7 +646,7 @@ mod list_name_scroll_tests {
     use super::render_list_body;
     use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
     use crate::config::AppConfig;
-    use crate::console::tui::render::list_geometry::{
+    use crate::console::tui::layout::list::{
         clamp_list_scroll_for_area, list_names_content_width,
     };
     use crate::console::tui::state::{ManagerListRow, ManagerState};

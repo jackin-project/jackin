@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::console::tui::render::list_geometry::{
+use crate::console::tui::layout::list::{
     clamp_list_scroll_for_area, selected_sidebar_scroll_areas,
 };
 use crate::console::tui::state::ManagerState;

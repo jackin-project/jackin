@@ -223,7 +223,7 @@ fn clamp_list_scroll_after_key(
 ) {
     let area = state.cached_term_size;
     let body = list_body_area(area);
-    crate::console::tui::render::list_geometry::clamp_list_scroll_for_area(body, state, config, cwd);
+    crate::console::tui::layout::list::clamp_list_scroll_for_area(body, state, config, cwd);
 }
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
