@@ -5,7 +5,7 @@
 //! composition that varies with the active tab + cursor.
 
 use crate::config::AppConfig;
-use crate::console::tui::components::auth_panel::editor_auth_display_row;
+use crate::console::tui::components::auth_panel::editor_auth_lines_for_state;
 use crate::console::tui::components::editor::{
     editor_general_lines_for_state, editor_mount_lines_for_state, editor_role_lines_for_state,
     editor_secret_lines_for_state,
@@ -13,23 +13,18 @@ use crate::console::tui::components::editor::{
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
-use crate::console::tui::state::{EditorMode, EditorState, EditorTab, FieldFocus};
-pub(crate) use crate::console::tui::state::{
-    auth_flat_rows, secrets_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
-};
+use crate::console::tui::state::{EditorMode, EditorState, EditorTab};
+pub(crate) use crate::console::tui::state::{auth_flat_rows, secrets_flat_rows};
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
 use jackin_console::tui::components::editor_rows::render_tab_strip;
-use jackin_console::tui::screens::editor::view::{
-    EditorAuthLineRow, auth_lines as editor_auth_lines, editor_frame_areas, tab_labels,
-};
+use jackin_console::tui::screens::editor::view::{editor_frame_areas, tab_labels};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{
     Frame,
     layout::Rect,
-    text::Line,
 };
 
 // ── Editor stage ────────────────────────────────────────────────────
@@ -146,7 +141,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
 /// merged with the (mostly read-only) global layer of the live config so
 /// in-flight edits are reflected immediately.
 fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let lines = auth_tab_lines(state, config);
+    let lines = editor_auth_lines_for_state(state, config);
     let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
     let focused =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
@@ -159,24 +154,6 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
         focused,
         title.as_deref(),
     );
-}
-
-fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
-    let synthesized = synthesize_appconfig_for_auth(state, config);
-    let workspace_name = workspace_name_for_panel(state);
-    let rows = auth_flat_rows(state, config);
-
-    let FieldFocus::Row(cursor) = state.active_field;
-    let max_idx = rows.len().saturating_sub(1);
-    let cursor_clamped = cursor.min(max_idx);
-    let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-
-    let display_rows: Vec<EditorAuthLineRow> = rows
-        .iter()
-        .map(|row| editor_auth_display_row(row, &synthesized, &workspace_name))
-        .collect();
-    editor_auth_lines(&display_rows, cursor_clamped, show_cursor)
 }
 
 #[cfg(test)]

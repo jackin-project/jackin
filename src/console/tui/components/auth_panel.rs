@@ -2,12 +2,16 @@
 
 use crate::config::AppConfig;
 use crate::console::domain::resolve_panel_mode;
-use crate::console::tui::state::{AuthRow, SettingsState};
+use crate::console::tui::state::{
+    AuthRow, EditorState, FieldFocus, SettingsState, auth_flat_rows,
+    synthesize_appconfig_for_auth, workspace_name_for_panel,
+};
 use crate::operator_env::{EnvValue, OpRef};
 use jackin_console::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceValue, auth_source_display, auth_source_display_for_required_env,
 };
 use jackin_console::tui::screens::editor::view::EditorAuthLineRow;
+use jackin_console::tui::screens::editor::view::auth_lines as editor_auth_lines;
 use jackin_console::tui::screens::settings::view::{
     SettingsAuthLineRow, auth_lines as settings_auth_lines,
 };
@@ -87,6 +91,27 @@ pub(crate) fn editor_auth_display_row(
         },
         AuthRow::Spacer => EditorAuthLineRow::Spacer,
     }
+}
+
+pub(crate) fn editor_auth_lines_for_state(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+) -> Vec<ratatui::text::Line<'static>> {
+    let synthesized = synthesize_appconfig_for_auth(state, config);
+    let workspace_name = workspace_name_for_panel(state);
+    let rows = auth_flat_rows(state, config);
+
+    let FieldFocus::Row(cursor) = state.active_field;
+    let max_idx = rows.len().saturating_sub(1);
+    let cursor_clamped = cursor.min(max_idx);
+    let show_cursor =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+
+    let display_rows: Vec<EditorAuthLineRow> = rows
+        .iter()
+        .map(|row| editor_auth_display_row(row, &synthesized, &workspace_name))
+        .collect();
+    editor_auth_lines(&display_rows, cursor_clamped, show_cursor)
 }
 
 pub(crate) fn settings_auth_lines_for_state(state: &SettingsState<'_>) -> Vec<ratatui::text::Line<'static>> {
