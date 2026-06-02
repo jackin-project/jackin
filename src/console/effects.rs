@@ -116,6 +116,9 @@ pub(crate) fn execute_manager_effect(
         }
         ManagerEffect::PollFileBrowserGitUrls => poll_file_browser_git_urls(state),
         ManagerEffect::PollPickerLoads => poll_picker_loads(state),
+        ManagerEffect::CopyContainerInfoValue { row, payload } => {
+            execute_container_info_copy(state, row, &payload)
+        }
         ManagerEffect::OpenUrl(url) => execute_open_url(state, &url),
         ManagerEffect::RemoveWorkspace { name, cwd } => {
             execute_remove_workspace(state, config, paths, &cwd, &name)
@@ -128,6 +131,24 @@ pub(crate) fn execute_manager_effect(
             true
         }
     }
+}
+
+fn execute_container_info_copy(state: &mut ManagerState<'_>, row: usize, payload: &str) -> bool {
+    let mut out = std::io::stdout();
+    let copied = std::io::Write::write_all(
+        &mut out,
+        &jackin_tui::ansi::encode_osc52_clipboard_write(payload),
+    )
+    .and_then(|()| std::io::Write::flush(&mut out))
+    .is_ok();
+    if !copied {
+        return false;
+    }
+    let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
+        return false;
+    };
+    info.mark_copied(row);
+    true
 }
 
 pub(crate) fn execute_pending_workspace_save_commit(

@@ -29,6 +29,10 @@ pub(crate) enum ManagerEffect {
     ResolveFileBrowserGitUrl(std::path::PathBuf),
     PollFileBrowserGitUrls,
     PollPickerLoads,
+    CopyContainerInfoValue {
+        row: usize,
+        payload: String,
+    },
     OpenUrl(String),
     RemoveWorkspace {
         name: String,

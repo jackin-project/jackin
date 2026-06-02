@@ -286,7 +286,7 @@ fn try_copy_container_info_value(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
+    let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
         return false;
     };
     let area = modal_outer_rect(
@@ -300,16 +300,7 @@ fn try_copy_container_info_value(
     else {
         return false;
     };
-    let mut out = std::io::stdout();
-    if std::io::Write::write_all(
-        &mut out,
-        &jackin_tui::ansi::encode_osc52_clipboard_write(&payload),
-    )
-    .and_then(|()| std::io::Write::flush(&mut out))
-    .is_ok()
-    {
-        info.mark_copied(row);
-    }
+    state.request_effect(ManagerEffect::CopyContainerInfoValue { row, payload });
     true
 }
 
@@ -1612,6 +1603,52 @@ mod mouse_drag_tests {
             row,
             modifiers: KeyModifiers::NONE,
         }
+    }
+
+    #[test]
+    fn container_info_copy_click_queues_typed_effect() {
+        let mut state = list_state();
+        state.list_modal = Some(Modal::ContainerInfo {
+            state: jackin_tui::components::ContainerInfoState::new(
+                "Container info",
+                vec![jackin_tui::components::ContainerInfoRow::new("Run ID", "run-123")
+                    .copyable()
+                    .emphasised()],
+            ),
+        });
+        let term = term_120x40();
+        let mut hit = None;
+        for y in 0..term.height {
+            for x in 0..term.width {
+                let mouse = mouse_down_at(x, y);
+                if super::container_info_copyable_row_at(&state, mouse, term) {
+                    hit = Some(mouse);
+                    break;
+                }
+            }
+            if hit.is_some() {
+                break;
+            }
+        }
+        let hit = hit.expect("copyable container-info row should have a hitbox");
+
+        handle_mouse(&mut state, hit, term);
+
+        match state.drain_effects().as_slice() {
+            [ManagerEffect::CopyContainerInfoValue { row, payload }] => {
+                assert_eq!(*row, 0);
+                assert_eq!(payload, "run-123");
+            }
+            other => panic!("expected CopyContainerInfoValue effect, got {other:?}"),
+        }
+        let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
+            panic!("expected container-info modal");
+        };
+        assert_eq!(
+            info.copied_row(),
+            None,
+            "mouse input must not mark copied before the effect executor writes OSC52"
+        );
     }
 
     #[test]
