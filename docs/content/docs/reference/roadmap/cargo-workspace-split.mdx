@@ -2,58 +2,53 @@
 title: "Cargo Workspace Split"
 ---
 
-**Status**: Deferred — Phase 3 (trigger not yet met, but architecture is ready)
+**Status**: Partially implemented — the surface crates are extracted; the non-visual core still lives in the root `src/` binary crate. Re-baked 2026-06-02.
 
-## When to do this
+## What shipped
 
-`jackin` today is **~93K lines of production Rust** (119 files in `src/`, re-baked 2026-05-17) — still below the ~150K threshold where a multi-crate Cargo workspace outweighs its overhead, but growing fast (was ~50K at original analysis — 88% growth). This item is not ready to execute. The trigger conditions are:
-
-- LOC exceeds ~150K, **or**
-- A sub-component needs external consumers for third-party agent manifest tooling, **or**
-- Compile times on the CI `check` job exceed 5 minutes cold cache
-
-<Aside type="caution">
-**The original claim "`console/` has zero imports from `runtime/` in production code" is FALSE.** The re-analysis found 2 production-code dependencies: `crate::runtime::register_agent_repo` and `crate::runtime::RepoError` in `console/tui/input/editor.rs`. The Cargo workspace split will need these 2 sites addressed first — either through a trait abstraction or by moving the shared function to a common module.
-</Aside>
-
-## Target 6-crate structure
-
-Follows matklad's virtual manifest + flat `crates/` pattern:
+`jackin` is now a Cargo workspace using the virtual-manifest + flat `crates/` pattern. The 2026 TUI architecture work extracted every terminal-UI surface into its own crate:
 
 ```
 jackin/
-├── Cargo.toml             ← virtual workspace manifest (no [package])
+├── Cargo.toml             ← virtual workspace manifest + root `jackin` binary
 ├── crates/
-│   ├── jackin-core/       ← Tier 0: workspace types, manifest, selector, paths, docker trait
-│   ├── jackin-config/     ← Tier 1: TOML persistence (AppConfig, ConfigEditor)
-│   ├── jackin-tui/        ← Tier 1: terminal output, animation, prompts
-│   ├── jackin-runtime/    ← Tier 2: container bootstrap pipeline
-│   ├── jackin-console/    ← Tier 3: workspace manager TUI + operator_env
-│   └── jackin-shell/      ← ShellRunner (concrete subprocess impl)
-├── src/                   ← thin binary (CLI dispatch)
-└── validate/              ← jackin-role binary
+│   ├── jackin-tui/        ← shared TUI component library + theme/geometry/scroll
+│   ├── jackin-console/    ← host console TUI (Elm layers + screens)
+│   ├── jackin-launch/     ← launch progress cockpit
+│   ├── jackin-capsule/    ← in-container multiplexer
+│   ├── jackin-protocol/   ← capsule wire protocol
+│   ├── jackin-tui-lookbook/ ← component lookbook + SVG generator
+│   └── jackin-build-meta/ ← build-time version metadata
+└── src/                   ← root binary: runtime, config, instance, isolation, app, manifest, cli
 ```
 
-## Dependency tiers (verified)
+This split was **surface-oriented**: it drew the boundary around terminal UI, which is where the worst duplication lived (see [TUI Design](/reference/tui/)). It did not extract the non-visual core.
 
-- **Tier 0** (no cross-module deps): `workspace/`, `manifest/`, `docker.rs`, `paths.rs`, `selector.rs`
-- **Tier 1**: `config/`, `tui/`, `instance/`, `env_resolver/`
-- **Tier 2**: `operator_env/`, `runtime/`, `repo/`
-- **Tier 3**: `console/` — **almost** no import from `runtime/` (2 call sites need fixing first)
+## What remains — the non-visual core split
 
-## Visibility is the real blocker
+The root `src/` crate still holds ~108K lines of runtime, config, instance, isolation, app-dispatch, manifest, and CLI code. The remaining work is to extract the tier-based core crates from it:
 
-The LOC-based triggers above are useful heuristics, but the actual blocker for a meaningful workspace split is visibility discipline. Today 89% of functions are `pub` (423 `pub fn` vs 55 `pub(crate) fn`), so an external consumer importing `jackin::*` would be coupled to internals immediately. Any crate boundary drawn under the current visibility surface would either expose too much (defeating the purpose of the split) or require a sweeping `pub` → `pub(crate)` pass that touches nearly every module. The visibility pass — already roadmap'd as [the `pub(crate)` visibility item](/reference/roadmap/pub-crate-visibility/) — is the real prerequisite: it makes each crate's public API a deliberate, auditable surface rather than an accidental one.
+- **`jackin-core`** — Tier 0 leaf types with no cross-module deps: `workspace/`, `manifest/`, `selector.rs`, `paths.rs`, and the docker-runner trait.
+- **`jackin-config`** — TOML persistence (`AppConfig`, `ConfigEditor`, migrations).
+- **`jackin-runtime`** — the container bootstrap pipeline (`runtime/`, `instance/`, `isolation/`, `derived_image.rs`).
 
-## Prerequisites before this phase
+The root `src/` then becomes a thin CLI-dispatch binary over those crates.
 
-1. **Visibility pass** — complete the `pub(crate)` migration ([`pub-crate-visibility`](/reference/roadmap/pub-crate-visibility/)) so crate boundaries are enforceable
-2. **Phase 2 file splits** — establish clean internal module boundaries
-3. **Phase 1.5 DRY extractions** — reduce duplication that would otherwise be frozen into crate APIs
-4. **Fix the 2 console→runtime dependencies** — `register_agent_repo` and `RepoError` must move to a shared module or through a trait
+## Trigger — now met
+
+The original LOC trigger (production Rust over ~150K) is met: the workspace totals ~170K lines (108K in `src/`, 62K in `crates/`). But LOC was always a heuristic; the real blockers are sequencing, not size. **Do not start the core split until the prerequisites below are done** — extracting monolithic, duplicated, undocumented files into crates would freeze that entropy into crate APIs.
+
+## Prerequisites before the core split
+
+1. **File splits** — the root-crate monoliths (`runtime/launch.rs` at 9,482 L, `app/mod.rs` at 3,966 L, `operator_env.rs` at 4,209 L, `instance/auth.rs` at 3,302 L) must become focused modules before they can become focused crates. Tracked under [Codebase readability → Split the root-crate monoliths](/reference/roadmap/codebase-readability/).
+2. **DRY extractions** — shared string constants, auth-provisioning, and agent dispatch must be deduplicated so the duplication is not frozen into the crate boundary.
+3. **Visibility pass** — continue the [`pub(crate)` migration](/reference/roadmap/pub-crate-visibility/). The root crate's `pub(crate)` share rose from ~11% to ~31% as the surface crates drew explicit public boundaries, but a meaningful core split needs each new crate's public API to be a deliberate, auditable surface rather than an accidental one.
+
+## Already resolved
+
+The earlier blocker — a `console/` → `runtime/` production dependency in TUI input code — is resolved. That call (`register_agent_repo`) now lives correctly inside a service adapter at <RepoFile path="src/console/services/role_load.rs" />, outside the TUI boundary, so a future `jackin-runtime` crate boundary no longer cuts through TUI code.
 
 ## Related files
 
-- <RepoFile path="Cargo.toml" /> — target: convert to virtual workspace manifest
-- <RepoFile path="src/console/tui/input/editor.rs" /> — contains the 2 runtime dependencies that must be resolved
-- <RepoFile path="src/runtime/launch.rs" /> — the runtime entry point (7575L)
+- <RepoFile path="Cargo.toml" /> — already a virtual workspace manifest; the core split adds new `members`.
+- <RepoFile path="src/runtime/launch.rs" /> — the runtime entry point (9,482 L); split before extracting `jackin-runtime`.
