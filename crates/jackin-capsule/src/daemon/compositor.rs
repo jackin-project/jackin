@@ -139,7 +139,7 @@ impl Multiplexer {
     /// Returns the ANSI output to send to the attach client, or `None` if
     /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
     pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
-        use crate::title::display_title;
+        use crate::tui::title::display_title;
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, render_capsule_ratatui_frame};
 

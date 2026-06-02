@@ -16,5 +16,6 @@ pub mod selection;
 pub mod socket_backend;
 pub mod subscriptions;
 pub mod terminal;
+pub mod title;
 pub mod update;
 pub mod view;

@@ -92,7 +92,7 @@ use crate::session::{
 use crate::socket;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
-use crate::title::{
+use crate::tui::title::{
     append_osc_window_title, compose_outer_terminal_title, display_title, session_agent_label,
 };
 use crate::tui::app::{
