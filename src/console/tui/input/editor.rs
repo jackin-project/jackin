@@ -534,24 +534,10 @@ fn secret_is_text_editable(editor: &EditorState<'_>, scope: &SecretsScopeTag, ke
 fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, String)> {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
-    let row = rows.get(n).cloned()?;
-    let key = match row {
-        SecretsRow::WorkspaceKeyRow(key) => {
-            // OpRef rows render as breadcrumbs and ignore mask state.
-            if !secret_is_text_editable(editor, &SecretsScopeTag::Workspace, &key) {
-                return None;
-            }
-            (SecretsScopeTag::Workspace, key)
-        }
-        SecretsRow::RoleKeyRow { role, key } => {
-            if !secret_is_text_editable(editor, &SecretsScopeTag::Role(role.clone()), &key) {
-                return None;
-            }
-            (SecretsScopeTag::Role(role), key)
-        }
-        _ => return None,
-    };
-    Some(key)
+    editor_update::secret_unmask_target_for_row(rows.get(n), |scope, key| {
+        // OpRef rows render as breadcrumbs and ignore mask state.
+        secret_is_text_editable(editor, scope, key)
+    })
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {

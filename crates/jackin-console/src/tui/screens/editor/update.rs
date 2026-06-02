@@ -281,6 +281,27 @@ pub fn secret_delete_target_for_row(
 }
 
 #[must_use]
+pub fn secret_unmask_target_for_row(
+    row: Option<&SecretsRow>,
+    can_unmask_key: impl Fn(&SecretsScopeTag, &str) -> bool,
+) -> Option<(SecretsScopeTag, String)> {
+    match row? {
+        SecretsRow::WorkspaceKeyRow(key) => {
+            let scope = SecretsScopeTag::Workspace;
+            can_unmask_key(&scope, key).then(|| (scope, key.clone()))
+        }
+        SecretsRow::RoleKeyRow { role, key } => {
+            let scope = SecretsScopeTag::Role(role.clone());
+            can_unmask_key(&scope, key).then(|| (scope, key.clone()))
+        }
+        SecretsRow::WorkspaceAddSentinel
+        | SecretsRow::RoleHeader { .. }
+        | SecretsRow::RoleAddSentinel(_)
+        | SecretsRow::SectionSpacer => None,
+    }
+}
+
+#[must_use]
 pub fn secret_add_target_for_row(row: Option<&SecretsRow>) -> Option<(SecretsScopeTag, String)> {
     match row? {
         SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => Some((
@@ -699,6 +720,14 @@ mod tests {
         assert_eq!(
             secret_picker_target_for_row(Some(&role)),
             Some((SecretsScopeTag::Role("alpha".to_string()), None))
+        );
+        assert_eq!(
+            secret_unmask_target_for_row(Some(&workspace), |_, _| true),
+            Some((SecretsScopeTag::Workspace, "TOKEN".to_string()))
+        );
+        assert_eq!(
+            secret_unmask_target_for_row(Some(&workspace), |_, _| false),
+            None
         );
     }
 
