@@ -196,11 +196,7 @@ impl OpPickerState {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
-                let vault_id = self
-                    .selected_vault
-                    .as_ref()
-                    .map(|v| v.id.clone())
-                    .unwrap_or_default();
+                let vault_id = self.selected_vault_id_or_default();
                 self.op_cache
                     .borrow_mut()
                     .invalidate_items(account_id.as_deref(), &vault_id);
@@ -250,11 +246,7 @@ impl OpPickerState {
                 match item_stage_commit_plan(picked) {
                     ItemStageCommitPlan::ExistingItem(item) => {
                         let item_id = item.id.clone();
-                        let vault_id = self
-                            .selected_vault
-                            .as_ref()
-                            .map(|v| v.id.clone())
-                            .unwrap_or_default();
+                        let vault_id = self.selected_vault_id_or_default();
                         let account_id = self.selected_account_id();
                         self.selected_item = Some(item);
                         self.start_field_load(item_id, vault_id, account_id);
@@ -357,16 +349,8 @@ impl OpPickerState {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
-                let vault_id = self
-                    .selected_vault
-                    .as_ref()
-                    .map(|v| v.id.clone())
-                    .unwrap_or_default();
-                let item_id = self
-                    .selected_item
-                    .as_ref()
-                    .map(|i| i.id.clone())
-                    .unwrap_or_default();
+                let vault_id = self.selected_vault_id_or_default();
+                let item_id = self.selected_item_id_or_default();
                 self.op_cache.borrow_mut().invalidate_fields(
                     account_id.as_deref(),
                     &vault_id,

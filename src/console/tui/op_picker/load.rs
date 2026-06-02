@@ -282,6 +282,16 @@ impl OpPickerState {
         })
     }
 
+    pub(super) fn selected_vault_id_or_default(&self) -> String {
+        super::selected_entity_id_or_default(self.selected_vault.as_ref(), |vault| {
+            vault.id.as_str()
+        })
+    }
+
+    pub(super) fn selected_item_id_or_default(&self) -> String {
+        super::selected_entity_id_or_default(self.selected_item.as_ref(), |item| item.id.as_str())
+    }
+
     #[cfg(test)]
     fn runner_clone_for_worker(&self) -> Arc<dyn OpStructRunner + Send + Sync> {
         Arc::clone(&self.runner)
@@ -324,11 +334,7 @@ impl OpPickerState {
             }
             SubscriptionPoll::Ready(LoadResult::Items(Ok(items))) => {
                 self.rx = None;
-                let vault_id = self
-                    .selected_vault
-                    .as_ref()
-                    .map(|vault| vault.id.clone())
-                    .unwrap_or_default();
+                let vault_id = self.selected_vault_id_or_default();
                 self.op_cache.borrow_mut().put_items(
                     self.selected_account_id_ref(),
                     &vault_id,
@@ -348,16 +354,8 @@ impl OpPickerState {
             SubscriptionPoll::Ready(LoadResult::Fields(Ok(mut fields))) => {
                 self.rx = None;
                 super::sort_fields_by_concealed_first(&mut fields, |field| field.concealed);
-                let vault_id = self
-                    .selected_vault
-                    .as_ref()
-                    .map(|vault| vault.id.clone())
-                    .unwrap_or_default();
-                let item_id = self
-                    .selected_item
-                    .as_ref()
-                    .map(|item| item.id.clone())
-                    .unwrap_or_default();
+                let vault_id = self.selected_vault_id_or_default();
+                let item_id = self.selected_item_id_or_default();
                 self.op_cache.borrow_mut().put_fields(
                     self.selected_account_id_ref(),
                     &vault_id,

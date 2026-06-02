@@ -265,6 +265,15 @@ pub fn selected_account_id_ref<'a, Account>(
     selected_account.map(account_id)
 }
 
+pub fn selected_entity_id_or_default<Entity>(
+    selected_entity: Option<&Entity>,
+    entity_id: impl FnOnce(&Entity) -> &str,
+) -> String {
+    selected_entity
+        .map(|entity| entity_id(entity).to_string())
+        .unwrap_or_default()
+}
+
 /// Background load completion routed back into the picker.
 #[derive(Debug)]
 pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
@@ -2828,6 +2837,24 @@ mod tests {
         assert_eq!(
             selected_account_id_ref::<Account>(None, |account| account.id),
             None
+        );
+    }
+
+    #[test]
+    fn selected_entity_id_or_default_derives_or_falls_back_empty() {
+        struct Vault {
+            id: &'static str,
+        }
+
+        let vault = Vault { id: "vault_1" };
+
+        assert_eq!(
+            selected_entity_id_or_default(Some(&vault), |vault| vault.id),
+            "vault_1"
+        );
+        assert_eq!(
+            selected_entity_id_or_default::<Vault>(None, |vault| vault.id),
+            ""
         );
     }
 }
