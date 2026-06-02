@@ -117,6 +117,20 @@ pub struct EditorFieldSelectionPlan {
     pub tab_scroll_y: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorMountRowSelectPlan {
+    pub active_row: usize,
+    pub workspace_mounts_scroll_focused: bool,
+}
+
+#[must_use]
+pub const fn editor_mount_row_select_plan(row: usize) -> EditorMountRowSelectPlan {
+    EditorMountRowSelectPlan {
+        active_row: row,
+        workspace_mounts_scroll_focused: true,
+    }
+}
+
 #[must_use]
 pub fn editor_field_selection_plan(
     active_row: usize,
@@ -589,6 +603,17 @@ mod tests {
         let plan = editor_field_selection_plan(1, 1, 4, &[2], 0, 8, 0);
         assert_eq!(plan.active_row, 3);
         assert!(plan.tab_scroll_y > 0);
+    }
+
+    #[test]
+    fn editor_mount_row_select_plan_focuses_workspace_mounts() {
+        assert_eq!(
+            editor_mount_row_select_plan(4),
+            EditorMountRowSelectPlan {
+                active_row: 4,
+                workspace_mounts_scroll_focused: true,
+            }
+        );
     }
 
     #[derive(Default)]

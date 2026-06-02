@@ -147,6 +147,27 @@ pub struct SettingsSelectionScrollPlan {
     pub scroll_y: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsTrustRowSelectPlan {
+    pub selected: Option<usize>,
+    pub scroll_focused: bool,
+}
+
+#[must_use]
+pub const fn settings_trust_row_select_plan(
+    selected: usize,
+    row_count: usize,
+) -> SettingsTrustRowSelectPlan {
+    SettingsTrustRowSelectPlan {
+        selected: if selected < row_count {
+            Some(selected)
+        } else {
+            None
+        },
+        scroll_focused: true,
+    }
+}
+
 #[must_use]
 pub fn settings_trust_selection_plan(
     selected: usize,
@@ -621,6 +642,24 @@ mod tests {
         let plan = settings_trust_selection_plan(0, 4, 99, 0, 8, 0);
         assert_eq!(plan.selected, 3);
         assert!(plan.scroll_y > 0);
+    }
+
+    #[test]
+    fn settings_trust_row_select_plan_bounds_checks_and_focuses_scroll() {
+        assert_eq!(
+            settings_trust_row_select_plan(1, 3),
+            SettingsTrustRowSelectPlan {
+                selected: Some(1),
+                scroll_focused: true,
+            }
+        );
+        assert_eq!(
+            settings_trust_row_select_plan(3, 3),
+            SettingsTrustRowSelectPlan {
+                selected: None,
+                scroll_focused: true,
+            }
+        );
     }
 
     #[test]
