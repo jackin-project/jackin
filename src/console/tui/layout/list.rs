@@ -13,6 +13,7 @@ use crate::console::tui::state::{
 use jackin_console::tui::screens::workspaces::view::{
     current_directory_workspace_title, new_workspace_list_label,
 };
+use jackin_console::tui::update::list_pre_render_focus_plan;
 pub(crate) use jackin_console::tui::sidebar_layout::{
     SidebarLayout, SidebarScrollArea, SidebarScrollAreas, SidebarScrollFocus,
 };
@@ -48,6 +49,11 @@ pub(crate) fn clamp_list_scroll_for_area(
         state.list_split_pct,
     );
     let sidebar_areas = selected_sidebar_scroll_areas(columns.preview, state, config, cwd);
+    let sidebar_available = sidebar_areas.is_some();
+    let focused_block_scrollable = state
+        .list_scroll_focus
+        .map(|focus| focused_block_still_scrollable(focus, sidebar_areas.as_ref()))
+        .unwrap_or(true);
 
     if let Some(areas) = sidebar_areas.as_ref() {
         clamp_scroll_area(areas.workspace, &mut state.list_mounts_scroll_x);
@@ -79,18 +85,17 @@ pub(crate) fn clamp_list_scroll_for_area(
         state.list_role_global_mounts_scroll_y = 0;
         state.list_roles_scroll_x = 0;
         state.list_roles_scroll_y = 0;
-        state.list_scroll_focus = None;
-        if !state.preview_focused {
-            state.list_names_focused = true;
-        }
     }
 
-    if let Some(focus) = state.list_scroll_focus
-        && !focused_block_still_scrollable(focus, sidebar_areas.as_ref())
-    {
-        state.list_scroll_focus = None;
-        state.list_names_focused = true;
-    }
+    let focus_plan = list_pre_render_focus_plan(
+        state.list_scroll_focus,
+        state.list_names_focused,
+        state.preview_focused,
+        sidebar_available,
+        focused_block_scrollable,
+    );
+    state.list_scroll_focus = focus_plan.list_scroll_focus;
+    state.list_names_focused = focus_plan.list_names_focused;
 
     let left_viewport_w = jackin_console::tui::layout::scroll_viewport_width(columns.names);
     let name_content_w = list_names_content_width(state, left_viewport_w);

@@ -26,6 +26,12 @@ pub enum InlinePickerDismissal {
     LaunchProvider,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListPreRenderFocusPlan {
+    pub list_scroll_focus: Option<crate::focus::MountScrollFocus>,
+    pub list_names_focused: bool,
+}
+
 #[must_use]
 pub const fn list_scroll_focus_plan(
     focus: Option<crate::focus::MountScrollFocus>,
@@ -36,6 +42,38 @@ pub const fn list_scroll_focus_plan(
 #[must_use]
 pub const fn list_names_focus_plan(focused: bool) -> bool {
     focused
+}
+
+#[must_use]
+pub const fn list_pre_render_focus_plan(
+    list_scroll_focus: Option<crate::focus::MountScrollFocus>,
+    list_names_focused: bool,
+    preview_focused: bool,
+    sidebar_available: bool,
+    focused_block_scrollable: bool,
+) -> ListPreRenderFocusPlan {
+    if !sidebar_available {
+        return ListPreRenderFocusPlan {
+            list_scroll_focus: None,
+            list_names_focused: if preview_focused {
+                list_names_focused
+            } else {
+                true
+            },
+        };
+    }
+
+    if list_scroll_focus.is_some() && !focused_block_scrollable {
+        return ListPreRenderFocusPlan {
+            list_scroll_focus: None,
+            list_names_focused: true,
+        };
+    }
+
+    ListPreRenderFocusPlan {
+        list_scroll_focus,
+        list_names_focused,
+    }
 }
 
 #[must_use]
@@ -187,5 +225,51 @@ mod tests {
         assert_eq!(drag_state_plan(Some(drag)), Some(drag));
         assert_eq!(list_split_pct_plan(1), crate::split::MIN_SPLIT_PCT);
         assert_eq!(list_split_pct_plan(99), crate::split::MAX_SPLIT_PCT);
+    }
+
+    #[test]
+    fn list_pre_render_focus_plan_handles_sidebar_liveness() {
+        let missing_sidebar = list_pre_render_focus_plan(
+            Some(crate::focus::MountScrollFocus::Workspace),
+            false,
+            false,
+            false,
+            false,
+        );
+        assert_eq!(missing_sidebar.list_scroll_focus, None);
+        assert!(missing_sidebar.list_names_focused);
+
+        let preview_missing_sidebar = list_pre_render_focus_plan(
+            Some(crate::focus::MountScrollFocus::Workspace),
+            false,
+            true,
+            false,
+            false,
+        );
+        assert_eq!(preview_missing_sidebar.list_scroll_focus, None);
+        assert!(!preview_missing_sidebar.list_names_focused);
+
+        let stale_focus = list_pre_render_focus_plan(
+            Some(crate::focus::MountScrollFocus::Workspace),
+            false,
+            true,
+            true,
+            false,
+        );
+        assert_eq!(stale_focus.list_scroll_focus, None);
+        assert!(stale_focus.list_names_focused);
+
+        let live_focus = list_pre_render_focus_plan(
+            Some(crate::focus::MountScrollFocus::Workspace),
+            false,
+            false,
+            true,
+            true,
+        );
+        assert_eq!(
+            live_focus.list_scroll_focus,
+            Some(crate::focus::MountScrollFocus::Workspace)
+        );
+        assert!(!live_focus.list_names_focused);
     }
 }
