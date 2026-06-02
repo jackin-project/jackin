@@ -139,7 +139,6 @@ impl Multiplexer {
     /// Returns the ANSI output to send to the attach client, or `None` if
     /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
     pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
-        use crate::tui::title::display_title;
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, render_capsule_ratatui_frame};
 
@@ -162,7 +161,7 @@ impl Multiplexer {
             .filter_map(|pane| {
                 self.sessions
                     .get(&pane.id)
-                    .map(|s| (pane.id, display_title(s)))
+                    .map(|s| (pane.id, session_display_title(s)))
             })
             .collect();
         let pane_screens: Vec<(u64, &vt100::Screen)> = panes
@@ -307,7 +306,7 @@ impl Multiplexer {
                 .and_then(|()| self.selection.filter(|sel| sel.session_id == pane.id));
             if let Some(session) = self.sessions.get_mut(&pane.id) {
                 scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
-                title = Some(display_title(session));
+                title = Some(session_display_title(session));
                 let body_snapshot = session.render_snapshot(pane.inner.rows, pane.inner.cols);
                 if let Some(sel) = selection_for_pane {
                     selection_paint = Some((body_snapshot.clone(), sel, pane.body_dim));
@@ -512,7 +511,7 @@ impl Multiplexer {
             let mut title = None;
             if let Some(session) = self.sessions.get_mut(&pane.id) {
                 scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
-                title = Some(display_title(session));
+                title = Some(session_display_title(session));
                 let before = buf.len();
                 let cache = self.pane_body_caches.entry(pane.id).or_default();
                 let stats =

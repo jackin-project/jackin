@@ -9,31 +9,31 @@ use std::path::Path;
 use jackin_tui::sanitize_terminal_title;
 
 use crate::pull_request::PullRequestInfo;
-use crate::session::Session;
 
 const OUTER_TERMINAL_TITLE_MAX_CHARS: usize = 180;
 
-/// Human-readable label for the agent running in `session`.
+/// Human-readable label for a pane's visible agent facts.
 ///
-/// Returns "Shell" when no agent is present, `"Slug (provider)"` when
-/// a provider label is known, or `"Slug"` otherwise.
-pub(crate) fn session_agent_label(session: &Session) -> String {
-    crate::tui::app::visible_agent_label(
-        session.agent.as_deref(),
-        session.provider.as_ref().map(|provider| provider.label.as_str()),
-    )
+/// Returns "Shell" when no agent is present, `"Slug (provider)"` when a
+/// provider label is known, or `"Slug"` otherwise.
+pub(crate) fn pane_agent_label(agent: Option<&str>, provider_label: Option<&str>) -> String {
+    crate::tui::app::visible_agent_label(agent, provider_label)
 }
 
-/// Human-readable title for the pane box drawn above the session.
+/// Human-readable title for the pane box drawn above a session.
 ///
 /// Priority: OSC 2 title > shortened cwd > session label.
-pub(crate) fn display_title(session: &Session) -> String {
-    let title = session.title().filter(|title| !title.trim().is_empty());
-    let cwd = session.cwd().map(jackin_tui::shorten_home);
+pub(crate) fn pane_display_title(
+    title: Option<&str>,
+    cwd: Option<&str>,
+    fallback_label: &str,
+) -> String {
+    let title = title.filter(|title| !title.trim().is_empty());
+    let cwd = cwd.map(jackin_tui::shorten_home);
     title
         .map(str::to_string)
         .or(cwd)
-        .unwrap_or_else(|| session.label.clone())
+        .unwrap_or_else(|| fallback_label.to_string())
 }
 
 /// Compose the outer terminal's OSC 2 window title from the workspace

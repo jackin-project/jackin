@@ -93,7 +93,7 @@ use crate::socket;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::tui::title::{
-    append_osc_window_title, compose_outer_terminal_title, display_title, session_agent_label,
+    append_osc_window_title, compose_outer_terminal_title, pane_agent_label, pane_display_title,
 };
 use crate::tui::app::{
     ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
@@ -104,6 +104,9 @@ use crate::tui::app::{
 use crate::tui::update::{
     FullRedrawReason, PartialFramePlan, PartialFrameState, drag_resize_ratio, partial_frame_plan,
 };
+use crate::tui::view::spawn_failure_banner;
+#[cfg(test)]
+use crate::tui::update::prefix_full_redraw_reason;
 
 mod compositor;
 mod context_mgmt;
@@ -113,9 +116,17 @@ mod mouse_input;
 mod multiplexer_utils;
 mod pane_layout;
 mod session_lifecycle;
-use crate::tui::view::spawn_failure_banner;
-#[cfg(test)]
-use crate::tui::update::prefix_full_redraw_reason;
+
+fn session_display_title(session: &Session) -> String {
+    pane_display_title(session.title(), session.cwd(), &session.label)
+}
+
+fn session_agent_label(session: &Session) -> String {
+    pane_agent_label(
+        session.agent.as_deref(),
+        session.provider.as_ref().map(|provider| provider.label.as_str()),
+    )
+}
 
 struct SessionLaunch {
     label: String,
@@ -1158,7 +1169,7 @@ mod tests {
         let (mut session, _rx) = test_shell_session(20, 80);
         session.feed_pty(b"\x1b]2;\x07");
 
-        assert_eq!(display_title(&session), "Test");
+        assert_eq!(session_display_title(&session), "Test");
     }
 
     #[test]
@@ -1166,7 +1177,7 @@ mod tests {
         let (mut session, _rx) = test_shell_session(20, 80);
         session.feed_pty(b"\x1b]2;prompt title\x07");
 
-        assert_eq!(display_title(&session), "prompt title");
+        assert_eq!(session_display_title(&session), "prompt title");
     }
 
     #[test]
@@ -1174,7 +1185,7 @@ mod tests {
         let (mut session, _rx) = test_shell_session(20, 80);
         session.feed_pty(b"\x1b]7;file:///workspace/project\x07");
 
-        assert_eq!(display_title(&session), "/workspace/project");
+        assert_eq!(session_display_title(&session), "/workspace/project");
     }
 
     #[test]

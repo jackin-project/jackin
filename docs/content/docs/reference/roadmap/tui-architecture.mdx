@@ -314,7 +314,7 @@ Capsule pane-local mouse coordinate mapping now lives with visible pane geometry
 
 Capsule mouse text-selection start-state construction now lives with selection state, motion, and copy helpers in <RepoFile path="crates/jackin-capsule/src/tui/selection.rs" />. The daemon still finds the target pane and gates selection on the session's mouse protocol mode.
 
-Capsule visible pane-list derivation, visible agent-label formatting, and tab auto-label derivation now live with the visible multiplexer model in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" />. Capsule outer-terminal title, pane-title, and OSC window-title helpers now live under <RepoFile path="crates/jackin-capsule/src/tui/title.rs" />. The daemon still supplies active tab, focus, zoom, content-rect, and session agent/shell/provider/title facts before rendering or refreshing tab chrome.
+Capsule visible pane-list derivation, visible agent-label formatting, and tab auto-label derivation now live with the visible multiplexer model in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" />. Capsule outer-terminal title, pane-title, pane-agent-label, and OSC window-title helpers now live under <RepoFile path="crates/jackin-capsule/src/tui/title.rs" /> as pure fact-based helpers. The daemon still owns `Session` access and supplies active tab, focus, zoom, content-rect, and session agent/shell/provider/title/cwd/label facts before rendering or refreshing tab chrome.
 
 Capsule branch-context default-branch suppression now lives with the branch-context bar component in <RepoFile path="crates/jackin-capsule/src/tui/components/branch_context_bar.rs" />. The daemon still supplies Git/default-branch facts and executes GitHub/container actions.
 
