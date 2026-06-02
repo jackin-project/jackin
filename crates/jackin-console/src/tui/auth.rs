@@ -83,6 +83,11 @@ impl AuthMode {
     }
 }
 
+#[must_use]
+pub const fn can_generate_claude_oauth_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
+    matches!((kind, mode), (AuthKind::Claude, Some(AuthMode::OAuthToken)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +148,22 @@ mod tests {
             Some("ZAI_API_KEY")
         );
         assert_eq!(AuthKind::Github.required_env_var(AuthMode::Sync), None);
+    }
+
+    #[test]
+    fn token_generation_gate_is_claude_oauth_only() {
+        assert!(can_generate_claude_oauth_token(
+            AuthKind::Claude,
+            Some(AuthMode::OAuthToken),
+        ));
+        assert!(!can_generate_claude_oauth_token(
+            AuthKind::Claude,
+            Some(AuthMode::ApiKey),
+        ));
+        assert!(!can_generate_claude_oauth_token(
+            AuthKind::Github,
+            Some(AuthMode::Token),
+        ));
+        assert!(!can_generate_claude_oauth_token(AuthKind::Claude, None));
     }
 }

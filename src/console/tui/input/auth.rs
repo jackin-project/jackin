@@ -16,7 +16,7 @@ use crate::console::domain::{
     auth_mode_from_auth_forward, auth_mode_from_github, auth_mode_to_auth_forward,
     auth_mode_to_github, role_override_present,
 };
-use jackin_console::tui::auth::{AuthKind, AuthMode};
+use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use jackin_console::tui::components::auth_panel::{
     auth_credential_input_state, auth_source_picker_state,
@@ -425,8 +425,7 @@ pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
     let Some(Modal::AuthForm { target, state, .. }) = editor.modal.as_ref() else {
         return false;
     };
-    state.kind == AuthKind::Claude
-        && state.mode == Some(AuthMode::OAuthToken)
+    can_generate_claude_oauth_token(state.kind, state.mode)
         && matches!(
             target,
             AuthFormTarget::Workspace {

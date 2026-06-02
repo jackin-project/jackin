@@ -17,6 +17,7 @@ use jackin_console::tui::components::auth_panel::{
     auth_credential_input_state, auth_source_picker_state,
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     env_scope_label, global_mount_confirm_state, global_mount_scope_picker_state,
@@ -484,8 +485,7 @@ pub fn settings_auth_can_generate_token(auth: &crate::console::tui::state::Setti
     matches!(
         auth.modal.as_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
-            if state.kind == jackin_console::tui::auth::AuthKind::Claude
-                && state.mode == Some(jackin_console::tui::auth::AuthMode::OAuthToken)
+            if can_generate_claude_oauth_token(state.kind, state.mode)
     )
 }
 
@@ -521,8 +521,7 @@ pub(super) fn handle_settings_auth_modal(
             // is disambiguated by the `generating_token` flag, which the
             // source-picker / op-picker commit arms check first.
             if matches!(key.code, KeyCode::Char('g' | 'G'))
-                && state.kind == jackin_console::tui::auth::AuthKind::Claude
-                && state.mode == Some(jackin_console::tui::auth::AuthMode::OAuthToken)
+                && can_generate_claude_oauth_token(state.kind, state.mode)
             {
                 auth.generating_token = true;
                 // modal was taken from auth.modal at the start of this fn;
