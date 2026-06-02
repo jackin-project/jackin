@@ -58,7 +58,8 @@ pub(super) use jackin_console::tui::components::mount_rows::{
 pub(super) use jackin_console::mount_display::MountDisplayRow;
 use jackin_console::tui::screens::workspaces::view::{
     Disclosure, provider_picker_title, render_compact_instances_summary, render_picker_sidebar,
-    render_general_subpanel, render_sentinel_description_pane,
+    render_environments_subpanel, render_general_subpanel, render_sentinel_description_pane,
+    WorkspaceEnvRow,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -571,7 +572,7 @@ fn render_sidebar_body(
         }
     }
     if let Some(area) = layout.env {
-        render_environments_subpanel(frame, area, inputs.ws_config);
+        render_environments_subpanel(frame, area, workspace_env_rows(inputs.ws_config));
     }
     if let Some(area) = layout.roles {
         let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
@@ -765,6 +766,7 @@ fn render_instance_details_pane(
 /// character lines up across all blocks (at
 /// `border_col + SUBPANEL_CONTENT_INDENT`). Pinned by
 /// `subpanel_content_column_alignment` in the visual regression tests.
+#[cfg(test)]
 const SUBPANEL_CONTENT_INDENT: usize = 2;
 
 fn render_mounts_subpanel(
@@ -827,59 +829,13 @@ fn render_global_mount_rows_section(
     super::render_scrollable_block_at(frame, area, lines, scroll_x, scroll_y, focused, Some(title));
 }
 
-/// One row in the flat Environments preview list.
-struct EnvRow {
-    /// The env-key name (left-aligned in the middle column).
-    name: String,
-    /// `None` for a workspace-level key, `Some(role_name)` for a per-role
-    /// override. Workspace-level rows render with an empty right column;
-    /// per-role rows show the role name on the right in `PHOSPHOR_DIM`.
-    scope: Option<String>,
-    /// `true` when the value is an `op://...` reference, so the row gets
-    /// a leading `[op] ` marker. The value itself never renders.
-    is_op: bool,
-}
-
-/// Right-pane Environments block — flat alphabetical list, one row per
-/// (env name, scope) entry.
-///
-/// ```text
-///        API_KEY
-///        DB_URL
-///        DEBUG                   agent-smith
-///        LOG_LEVEL               agent-brown
-///  [op]  STRIPE_KEY
-///  [op]  TEST                    agent-smith
-/// ```
-///
-/// Workspace-level keys (`WorkspaceConfig.env`) and per-role override
-/// keys (`WorkspaceRoleOverride.env`) are merged into a single list,
-/// sorted alphabetically by name. When the same name appears at both
-/// scopes, the workspace row comes first; role rows for tied names
-/// then sort alphabetically by role name. Each row has a fixed left
-/// marker column (`[op] ` / 5 spaces) matching the editor's
-/// Environments-tab alignment, the env key in the middle, and the
-/// role name on the right (workspace rows leave the right column
-/// blank). Values themselves never appear — only key names.
-///
-/// Caller is expected to have already verified at least one env entry
-/// exists at any scope (via `workspace_has_any_env`) before calling —
-/// the layout omits this block entirely when the workspace has no env
-/// vars, so the renderer no longer falls back to a placeholder line.
-fn render_environments_subpanel(
-    frame: &mut Frame,
-    area: Rect,
+fn workspace_env_rows(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
-) {
-    let block = Panel::new()
-        .title(" Environments ")
-        .focus(PanelFocus::Unfocused)
-        .block();
-
-    let mut rows: Vec<EnvRow> = Vec::new();
+) -> Vec<WorkspaceEnvRow> {
+    let mut rows = Vec::new();
     if let Some(ws) = ws_config {
         for (key, value) in &ws.env {
-            rows.push(EnvRow {
+            rows.push(WorkspaceEnvRow {
                 name: key.clone(),
                 scope: None,
                 is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
@@ -887,7 +843,7 @@ fn render_environments_subpanel(
         }
         for (role, overrides) in &ws.roles {
             for (key, value) in &overrides.env {
-                rows.push(EnvRow {
+                rows.push(WorkspaceEnvRow {
                     name: key.clone(),
                     scope: Some(role.clone()),
                     is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
@@ -895,74 +851,7 @@ fn render_environments_subpanel(
             }
         }
     }
-
-    // Alphabetical, ties: workspace before role; role-vs-role by name.
-    rows.sort_by(|a, b| {
-        a.name
-            .cmp(&b.name)
-            .then_with(|| match (&a.scope, &b.scope) {
-                (None, None) => std::cmp::Ordering::Equal,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (Some(_), None) => std::cmp::Ordering::Greater,
-                (Some(x), Some(y)) => x.cmp(y),
-            })
-    });
-
-    let inner_width = super::scroll_viewport_width(area);
-    let lines: Vec<Line> = rows
-        .iter()
-        .map(|row| env_row_line(row, inner_width))
-        .collect();
-
-    let p = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
-}
-
-/// `<indent><[op] | 5 spaces><space><name>...<pad>...<role>` —
-/// role is right-aligned to `inner_width`; dropped if the left
-/// content already fills the row.
-fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
-    let outer_indent = " ".repeat(SUBPANEL_CONTENT_INDENT);
-    let marker_text: &'static str = if row.is_op { "[op] " } else { "     " };
-    let gap = " ";
-    let left_visible_width = outer_indent.len() + marker_text.len() + gap.len() + row.name.len();
-
-    let mut spans: Vec<Span<'static>> = Vec::with_capacity(5);
-    spans.push(Span::raw(outer_indent));
-    if row.is_op {
-        spans.push(Span::styled(
-            marker_text,
-            Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::ITALIC),
-        ));
-    } else {
-        spans.push(Span::raw(marker_text));
-    }
-    spans.push(Span::raw(gap));
-    spans.push(Span::styled(
-        row.name.clone(),
-        Style::default().fg(PHOSPHOR_GREEN),
-    ));
-
-    if let Some(role) = &row.scope {
-        // Reserve a 1-cell gap to the right border; when too narrow,
-        // fall back to a single-space gap and let Paragraph clip.
-        let pad_count = if left_visible_width + 1 + role.len() + 1 < inner_width {
-            inner_width - left_visible_width - role.len() - 1
-        } else {
-            1
-        };
-        spans.push(Span::raw(" ".repeat(pad_count)));
-        spans.push(Span::styled(
-            role.clone(),
-            Style::default().fg(PHOSPHOR_DIM),
-        ));
-    }
-
-    Line::from(spans)
+    rows
 }
 
 #[cfg(test)]
@@ -1514,7 +1403,7 @@ mod subpanel_padding_tests {
     //! the three blocks, giving the right pane a tidy left edge.
     use super::{
         SUBPANEL_CONTENT_INDENT, render_agents_subpanel, render_environments_subpanel,
-        render_general_subpanel, render_mounts_subpanel,
+        render_general_subpanel, render_mounts_subpanel, workspace_env_rows,
     };
     use crate::config::AppConfig;
     use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
@@ -2058,7 +1947,11 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(width, height);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, width, height), Some(ws));
+            render_environments_subpanel(
+                f,
+                Rect::new(0, 0, width, height),
+                workspace_env_rows(Some(ws)),
+            );
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -2282,7 +2175,11 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(width, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, width, 4), Some(&ws));
+            render_environments_subpanel(
+                f,
+                Rect::new(0, 0, width, 4),
+                workspace_env_rows(Some(&ws)),
+            );
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -2413,7 +2310,11 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(60, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, 60, 4), Some(&ws));
+            render_environments_subpanel(
+                f,
+                Rect::new(0, 0, 60, 4),
+                workspace_env_rows(Some(&ws)),
+            );
         })
         .unwrap();
 

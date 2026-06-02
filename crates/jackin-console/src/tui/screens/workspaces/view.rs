@@ -221,6 +221,87 @@ pub fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir_display: &
     frame.render_widget(panel, area);
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceEnvRow {
+    pub name: String,
+    pub scope: Option<String>,
+    pub is_op: bool,
+}
+
+pub fn render_environments_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    mut rows: Vec<WorkspaceEnvRow>,
+) {
+    let block = jackin_tui::components::Panel::new()
+        .title(" Environments ")
+        .focus(jackin_tui::components::PanelFocus::Unfocused)
+        .block();
+
+    rows.sort_by(|a, b| {
+        a.name
+            .cmp(&b.name)
+            .then_with(|| match (&a.scope, &b.scope) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(x), Some(y)) => x.cmp(y),
+            })
+    });
+
+    let inner_width = jackin_tui::components::scrollable_panel::viewport_width(area);
+    let lines: Vec<Line> = rows
+        .iter()
+        .map(|row| env_row_line(row, inner_width))
+        .collect();
+
+    let panel = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN));
+    frame.render_widget(panel, area);
+}
+
+fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
+    const SUBPANEL_CONTENT_INDENT: usize = 2;
+    let outer_indent = " ".repeat(SUBPANEL_CONTENT_INDENT);
+    let marker_text: &'static str = if row.is_op { "[op] " } else { "     " };
+    let gap = " ";
+    let left_visible_width = outer_indent.len() + marker_text.len() + gap.len() + row.name.len();
+
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(5);
+    spans.push(Span::raw(outer_indent));
+    if row.is_op {
+        spans.push(Span::styled(
+            marker_text,
+            Style::default()
+                .fg(jackin_tui::theme::PHOSPHOR_DIM)
+                .add_modifier(Modifier::ITALIC),
+        ));
+    } else {
+        spans.push(Span::raw(marker_text));
+    }
+    spans.push(Span::raw(gap));
+    spans.push(Span::styled(
+        row.name.clone(),
+        Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
+    ));
+
+    if let Some(role) = &row.scope {
+        let pad_count = if left_visible_width + 1 + role.len() + 1 < inner_width {
+            inner_width - left_visible_width - role.len() - 1
+        } else {
+            1
+        };
+        spans.push(Span::raw(" ".repeat(pad_count)));
+        spans.push(Span::styled(
+            role.clone(),
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+        ));
+    }
+
+    Line::from(spans)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
