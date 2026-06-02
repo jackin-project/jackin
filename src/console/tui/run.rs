@@ -12,7 +12,8 @@ use crate::console::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };
 use jackin_console::tui::run::{
-    quit_confirm_area, render_debug_bar, should_debug_log_mouse, split_debug_area,
+    QuitInterceptState, quit_confirm_area, quit_confirm_state, render_debug_bar,
+    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
 };
 
 use crate::config::AppConfig;
@@ -66,6 +67,13 @@ pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
     }
 
     false
+}
+
+pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptState {
+    QuitInterceptState {
+        on_main_screen: is_on_main_screen(state),
+        consumes_letter_input: consumes_letter_input(state),
+    }
 }
 
 async fn execute_launch_prompt<B>(
@@ -155,7 +163,7 @@ pub async fn run_console<H: InstanceActionHandler>(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+    use crossterm::event::{Event, KeyCode, KeyEventKind};
     use futures_util::{FutureExt as _, StreamExt as _};
 
     let op_available = crate::console::effects::op_cli_available();
@@ -345,13 +353,8 @@ pub async fn run_console<H: InstanceActionHandler>(
 
                     // Q intercept: outside main screen, pop the exit
                     // confirm. SHIFT tolerated for caps-lock parity.
-                    if matches!(key.code, KeyCode::Char('q' | 'Q'))
-                        && (key.modifiers - KeyModifiers::SHIFT).is_empty()
-                        && !is_on_main_screen(&state)
-                        && !consumes_letter_input(&state)
-                    {
-                        state.quit_confirm =
-                            Some(jackin_tui::components::ConfirmState::new("Exit jackin'?"));
+                    if should_open_quit_confirm(key, quit_intercept_state(&state)) {
+                        state.quit_confirm = Some(quit_confirm_state());
                         continue;
                     }
 

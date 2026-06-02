@@ -8,6 +8,35 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuitInterceptState {
+    pub on_main_screen: bool,
+    pub consumes_letter_input: bool,
+}
+
+/// Whether the bare `q`/`Q` key should open the global exit confirmation.
+///
+/// The root console maps its stage/modal state into [`QuitInterceptState`].
+/// Keeping the key policy here prevents the event loop from owning a parallel
+/// interpretation of visible console focus.
+#[must_use]
+pub fn should_open_quit_confirm(
+    key: crossterm::event::KeyEvent,
+    state: QuitInterceptState,
+) -> bool {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    matches!(key.code, KeyCode::Char('q' | 'Q'))
+        && (key.modifiers - KeyModifiers::SHIFT).is_empty()
+        && !state.on_main_screen
+        && !state.consumes_letter_input
+}
+
+#[must_use]
+pub fn quit_confirm_state() -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::new("Exit jackin'?")
+}
+
 /// Split `area` into a main region and an optional 1-row debug bar at the
 /// bottom.
 #[must_use]
@@ -25,6 +54,63 @@ pub fn split_debug_area(area: Rect, debug_mode: bool) -> (Rect, Option<Rect>) {
         ..area
     };
     (main, Some(bar))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn quit_intercept_opens_off_main_for_bare_q() {
+        let state = QuitInterceptState {
+            on_main_screen: false,
+            consumes_letter_input: false,
+        };
+
+        assert!(should_open_quit_confirm(
+            key(KeyCode::Char('q'), KeyModifiers::NONE),
+            state,
+        ));
+        assert!(should_open_quit_confirm(
+            key(KeyCode::Char('Q'), KeyModifiers::SHIFT),
+            state,
+        ));
+    }
+
+    #[test]
+    fn quit_intercept_ignores_main_text_input_and_modified_keys() {
+        assert!(!should_open_quit_confirm(
+            key(KeyCode::Char('q'), KeyModifiers::NONE),
+            QuitInterceptState {
+                on_main_screen: true,
+                consumes_letter_input: false,
+            },
+        ));
+        assert!(!should_open_quit_confirm(
+            key(KeyCode::Char('q'), KeyModifiers::NONE),
+            QuitInterceptState {
+                on_main_screen: false,
+                consumes_letter_input: true,
+            },
+        ));
+        assert!(!should_open_quit_confirm(
+            key(KeyCode::Char('q'), KeyModifiers::CONTROL),
+            QuitInterceptState {
+                on_main_screen: false,
+                consumes_letter_input: false,
+            },
+        ));
+    }
 }
 
 /// Render the 1-row debug status bar.
