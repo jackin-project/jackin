@@ -395,23 +395,13 @@ impl Multiplexer {
                 focus_frame
             }
             Action::PaneButtonMotion { row, col } => {
-                if self.drag.is_some() {
-                    return self.apply_action(Action::DragMotion { row, col });
-                }
-                if self.selection.is_some() {
-                    return self.apply_action(Action::SelectionMotion { row, col });
-                }
-                // No drag / selection in flight: motion events belong to the
-                // focused pane only if it asked for any-event tracking
-                // (`?1003h`) or button-motion tracking (`?1002h`). Forwarding
-                // them blindly would dump SGR bytes into shells that ignored
-                // mouse mode.
-                self.apply_action(Action::ForwardMouse {
+                let action = pane_button_motion_action(
+                    self.drag.is_some(),
+                    self.selection.is_some(),
                     row,
                     col,
-                    button: 32,
-                    press: true,
-                })
+                );
+                self.apply_action(action)
             }
             Action::StatusBarClick { col } => {
                 // 1) Click on a tab cell switches active tab. A
@@ -466,23 +456,14 @@ impl Multiplexer {
                 None
             }
             Action::MouseRelease { row, col, button } => {
-                // End an in-flight pane resize on left-button release. Drop the
-                // PTY forward so the source agent does not see a half-paired
-                // release in the middle of a drag.
-                if self.drag.is_some() && (button & 0b11) == 0 {
-                    return self.apply_action(Action::EndDragResize);
-                }
-                // Commit any active text selection: copy to clipboard and clear
-                // the highlight.
-                if self.selection.is_some() && (button & 0b11) == 0 {
-                    return self.apply_action(Action::FinalizeSelection);
-                }
-                self.apply_action(Action::ForwardMouse {
+                let action = mouse_release_action(
+                    self.drag.is_some(),
+                    self.selection.is_some(),
                     row,
                     col,
                     button,
-                    press: false,
-                })
+                );
+                self.apply_action(action)
             }
             Action::PaneData(bytes) => {
                 let mut snapped = false;

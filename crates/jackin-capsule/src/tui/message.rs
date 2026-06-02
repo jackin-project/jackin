@@ -199,13 +199,52 @@ pub fn prefix_command_action(cmd: &PrefixCommand) -> Option<Action> {
     }
 }
 
+pub fn pane_button_motion_action(dragging: bool, selecting: bool, row: u16, col: u16) -> Action {
+    if dragging {
+        Action::DragMotion { row, col }
+    } else if selecting {
+        Action::SelectionMotion { row, col }
+    } else {
+        Action::ForwardMouse {
+            row,
+            col,
+            button: 32,
+            press: true,
+        }
+    }
+}
+
+pub fn mouse_release_action(
+    dragging: bool,
+    selecting: bool,
+    row: u16,
+    col: u16,
+    button: u8,
+) -> Action {
+    if dragging && (button & 0b11) == 0 {
+        Action::EndDragResize
+    } else if selecting && (button & 0b11) == 0 {
+        Action::FinalizeSelection
+    } else {
+        Action::ForwardMouse {
+            row,
+            col,
+            button,
+            press: false,
+        }
+    }
+}
+
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, InputDispatchContext, input_event_action, mouse_chrome_update_action};
+    use super::{
+        Action, InputDispatchContext, input_event_action, mouse_chrome_update_action,
+        mouse_release_action, pane_button_motion_action,
+    };
     use crate::tui::input::InputEvent;
     use crate::tui::input::PrefixCommand;
     use crate::tui::components::dialog::{PickerIntent, SplitDirection};
@@ -292,5 +331,47 @@ mod tests {
             Some(Action::SplitFocused(SplitDirection::Below))
         );
         assert_eq!(prefix_command_action(&PrefixCommand::Redraw), None);
+    }
+
+    #[test]
+    fn pane_motion_action_prefers_drag_then_selection_then_forward() {
+        assert_eq!(
+            pane_button_motion_action(true, true, 4, 8),
+            Action::DragMotion { row: 4, col: 8 }
+        );
+        assert_eq!(
+            pane_button_motion_action(false, true, 4, 8),
+            Action::SelectionMotion { row: 4, col: 8 }
+        );
+        assert_eq!(
+            pane_button_motion_action(false, false, 4, 8),
+            Action::ForwardMouse {
+                row: 4,
+                col: 8,
+                button: 32,
+                press: true,
+            }
+        );
+    }
+
+    #[test]
+    fn mouse_release_action_closes_tui_gestures_before_forwarding() {
+        assert_eq!(
+            mouse_release_action(true, true, 4, 8, 0),
+            Action::EndDragResize
+        );
+        assert_eq!(
+            mouse_release_action(false, true, 4, 8, 0),
+            Action::FinalizeSelection
+        );
+        assert_eq!(
+            mouse_release_action(false, true, 4, 8, 1),
+            Action::ForwardMouse {
+                row: 4,
+                col: 8,
+                button: 1,
+                press: false,
+            }
+        );
     }
 }
