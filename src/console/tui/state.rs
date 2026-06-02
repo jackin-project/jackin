@@ -2226,9 +2226,13 @@ impl ManagerState<'_> {
         self.preview_pane_cursor.clear();
         self.current_dir_expanded = false;
         self.preview_focused = false;
-        let message = format!("instance index error: {error}");
+        let message =
+            jackin_console::tui::components::error_popup::instance_index_error_message(error);
         if self.instances_last_error.as_deref() != Some(&message) {
-            self.open_list_error_popup("Instance index error", &message);
+            self.open_list_error_popup(
+                jackin_console::tui::components::error_popup::instance_index_error_title(),
+                &message,
+            );
             self.instances_last_error = Some(message);
         }
     }

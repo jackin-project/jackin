@@ -101,6 +101,14 @@ pub fn instance_unavailable_error_message() -> &'static str {
     "Instance no longer active; list refreshes automatically."
 }
 
+pub fn instance_index_error_title() -> &'static str {
+    "Instance index error"
+}
+
+pub fn instance_index_error_message(error: impl std::fmt::Display) -> String {
+    format!("instance index error: {error}")
+}
+
 pub fn no_instance_error_title() -> &'static str {
     "No instance"
 }
@@ -225,6 +233,11 @@ mod tests {
         assert_eq!(
             instance_unavailable_error_message(),
             "Instance no longer active; list refreshes automatically."
+        );
+        assert_eq!(instance_index_error_title(), "Instance index error");
+        assert_eq!(
+            instance_index_error_message("missing record"),
+            "instance index error: missing record"
         );
         assert_eq!(no_instance_error_title(), "No instance");
         assert_eq!(
