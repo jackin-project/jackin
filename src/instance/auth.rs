@@ -706,7 +706,7 @@ fn provision_single_file_credential(
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
             eprintln!(
-                "[jackin] internal: provision_{agent_name}_auth received unsupported \
+                "[jackin] internal: {agent_name} provision received unsupported \
                  OAuthToken mode — parser invariant bypassed; \
                  wiping role state and falling back to token-mode."
             );
