@@ -2,7 +2,7 @@
 title: "Codebase readability & restructuring"
 ---
 
-**Status**: Open — active program. Stage 0 complete (2026-06-02): all production modules documented, unreachable_pub lint active, behavioral specs published, Developer Reference section live. Stage 2 DRY pass underway: shared string constants, named style constants, and auth provisioning helper extracted. Stage 1 (jackin-core extraction) is next.
+**Status**: Open — active program. Stages 0 and 1 complete (2026-06-02): `jackin-core` leaf crate ships with `Agent`, `MountIsolation`, `AuthForwardMode`, and shared constants; cyclic dependency graph broken. Stage 2 DRY pass ongoing. Stage 3 (monolith splits) next.
 
 ## Goal
 
@@ -22,7 +22,8 @@ These are done. Listed so the remaining work is not confused with completed work
 - **Module contracts (`//!` docs)** — all production source files in `src/` and `crates/` now have `//!` orientation blocks (purpose + scope + key invariants). Tracked in [Module contracts](/reference/roadmap/module-contracts/).
 - **Behavioral specs** — `runtime/launch.rs` (INV-1 through INV-6) and `op_picker` (INV-1 through INV-4) specs published in the new [Developer Reference → Behavioral Specs](/internal/specs/) section.
 - **Developer Reference section** — `/internal/` section live with Architecture, Code Tour, and Behavioral Specs pages.
-- **Stage 2 DRY pass started** — `MANIFEST_FILENAME` / `DOCKERFILE_NAME` constants extracted to <RepoFile path="src/repo_contract.rs" />; named `Style` constants (`BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `GREEN`, `DANGER`) added to `jackin-tui/theme.rs`; `provision_single_file_credential` extracted from the near-identical Amp and OpenCode auth provisioners in <RepoFile path="src/instance/auth.rs" />.
+- **Stage 1 complete** — `jackin-core` leaf crate created with `Agent`, `MountIsolation`, `AuthForwardMode`, and shared constants (`MANIFEST_FILENAME`, `DOCKERFILE_NAME`, `CLAUDE_OAUTH_TOKEN_ENV`). Cyclic dependency graph broken: `config ↔ workspace` and `agent → config` cycles are dissolved. Original modules re-export from `jackin-core`. `jackin-console` depends on `jackin-core` and provides the `AgentChoice` impl, satisfying the orphan rule. All 16 agent behavioral tests ported to `jackin-core`.
+- **Stage 2 DRY pass ongoing** — `MANIFEST_FILENAME` / `DOCKERFILE_NAME` constants extracted to `jackin-core` (also re-exported from <RepoFile path="src/repo_contract.rs" />); named `Style` constants (`BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `GREEN`, `BORDER`, `DANGER`) added to `jackin-tui/theme.rs`; `provision_single_file_credential` extracted from the near-identical `Amp` and `OpenCode` auth provisioners in <RepoFile path="src/instance/auth.rs" />; `MANIFEST_FILENAME` literal replaced in <RepoFile path="src/manifest/mod.rs" />, <RepoFile path="src/repo.rs" />, and <RepoFile path="src/role_authoring.rs" />.
 
 ## The target: a tiered core-crate workspace
 
