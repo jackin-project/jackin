@@ -534,18 +534,14 @@ pub(super) fn handle_settings_auth_modal(
             }
             match *focus {
                 AuthFormFocus::Mode => match key.code {
-                    KeyCode::Char(' ') => cycle_auth_form_mode(state),
+                    KeyCode::Char(' ') => state.cycle_mode(),
                     // Down/j moves within the field area; Tab crosses into the button area.
                     // No credential row: Down is a no-op at the bottom of the field area.
                     KeyCode::Down | KeyCode::Char('j') if state.shows_credential_block() => {
                         *focus = AuthFormFocus::CredentialSource;
                     }
                     KeyCode::Tab => {
-                        *focus = if state.shows_credential_block() {
-                            AuthFormFocus::CredentialSource
-                        } else {
-                            AuthFormFocus::Save
-                        };
+                        *focus = state.next_focus_after_mode();
                     }
                     KeyCode::BackTab => *focus = AuthFormFocus::Reset,
                     _ => {}
@@ -792,18 +788,6 @@ fn handle_settings_token_generate_pick(
         scope: crate::workspace::token_setup::TokenSetupScope::Global,
         args,
     });
-}
-
-fn cycle_auth_form_mode(form: &mut AuthForm) {
-    let modes = form.available_modes();
-    if modes.is_empty() {
-        return;
-    }
-    let next = form.mode.map_or(modes[0], |current| {
-        let idx = modes.iter().position(|mode| *mode == current).unwrap_or(0);
-        modes[(idx + 1) % modes.len()]
-    });
-    form.set_mode(next);
 }
 
 fn restore_settings_auth_form(auth: &mut crate::console::tui::state::SettingsAuthState) {

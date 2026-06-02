@@ -128,6 +128,26 @@ impl<V: AuthCredential> AuthForm<V> {
         matches!(self.mode, Some(mode) if mode_requires_credential(self.kind, mode))
     }
 
+    pub fn cycle_mode(&mut self) {
+        let modes = self.available_modes();
+        if modes.is_empty() {
+            return;
+        }
+        let next = self.mode.map_or(modes[0], |current| {
+            let idx = modes.iter().position(|mode| *mode == current).unwrap_or(0);
+            modes[(idx + 1) % modes.len()]
+        });
+        self.set_mode(next);
+    }
+
+    pub const fn next_focus_after_mode(&self) -> AuthFormFocus {
+        if self.shows_credential_block() {
+            AuthFormFocus::CredentialSource
+        } else {
+            AuthFormFocus::Save
+        }
+    }
+
     /// Modes the user can pick.
     pub const fn available_modes(&self) -> &'static [AuthMode] {
         self.kind.supported_modes()
@@ -508,6 +528,26 @@ mod tests {
             outcome.env_value,
             Some(TestCredential::Plain(ref value)) if value == "ghp_xxxx"
         ));
+    }
+
+    #[test]
+    fn cycle_mode_wraps_supported_modes_and_updates_focus_target() {
+        let mut form = TestForm::new(AuthKind::Github);
+
+        assert_eq!(form.next_focus_after_mode(), AuthFormFocus::Save);
+        form.cycle_mode();
+        assert_eq!(form.mode, Some(AuthMode::Sync));
+        assert_eq!(form.next_focus_after_mode(), AuthFormFocus::Save);
+        form.cycle_mode();
+        assert_eq!(form.mode, Some(AuthMode::Token));
+        assert_eq!(
+            form.next_focus_after_mode(),
+            AuthFormFocus::CredentialSource
+        );
+        form.cycle_mode();
+        assert_eq!(form.mode, Some(AuthMode::Ignore));
+        form.cycle_mode();
+        assert_eq!(form.mode, Some(AuthMode::Sync));
     }
 
     #[test]

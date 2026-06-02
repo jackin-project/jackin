@@ -812,13 +812,13 @@ fn apply_op_picker_to_auth_form_with_validator(
 
 fn handle_mode_key(focus: &mut AuthFormFocus, form: &mut AuthForm, key: KeyEvent) {
     match key.code {
-        KeyCode::Char(' ') => cycle_mode(form),
+        KeyCode::Char(' ') => form.cycle_mode(),
         // Down/j moves within the field area; Tab crosses into the button area.
         // No credential row: Down is a no-op at the bottom of the field area.
         KeyCode::Down | KeyCode::Char('j') if form.shows_credential_block() => {
             *focus = AuthFormFocus::CredentialSource;
         }
-        KeyCode::Tab => *focus = next_focus_after_mode(form),
+        KeyCode::Tab => *focus = form.next_focus_after_mode(),
         // BackTab wraps backward through the cycle to Reset (the last
         // focusable control). Tab from Reset wraps forward to Mode.
         KeyCode::BackTab => *focus = AuthFormFocus::Reset,
@@ -907,26 +907,6 @@ fn handle_reset_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
             true
         }
         _ => false,
-    }
-}
-
-fn cycle_mode(form: &mut AuthForm) {
-    let modes = form.available_modes();
-    if modes.is_empty() {
-        return;
-    }
-    let next = form.mode.map_or(modes[0], |current| {
-        let idx = modes.iter().position(|m| *m == current).unwrap_or(0);
-        modes[(idx + 1) % modes.len()]
-    });
-    form.set_mode(next);
-}
-
-const fn next_focus_after_mode(form: &AuthForm) -> AuthFormFocus {
-    if form.shows_credential_block() {
-        AuthFormFocus::CredentialSource
-    } else {
-        AuthFormFocus::Save
     }
 }
 
