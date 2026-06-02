@@ -13,6 +13,7 @@ pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
+use crate::console::tui::render::env_value_secret_display;
 pub(crate) use crate::console::tui::state::{
     auth_flat_rows, secrets_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
@@ -22,8 +23,7 @@ pub(crate) use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceValue, SecretValueDisplay,
-    auth_source_display_for_required_env, render_tab_strip,
+    AuthSourceDisplay, AuthSourceValue, auth_source_display_for_required_env, render_tab_strip,
 };
 use jackin_console::tui::screens::editor::view::{
     EditorAuthLineRow, EditorRoleRow, auth_lines as editor_auth_lines, editor_frame_areas,
@@ -214,25 +214,18 @@ fn secrets_tab_lines(
         show_cursor,
         area.width,
         |scope, key| match scope {
-            SecretsScopeTag::Workspace => state.pending.env.get(key).map(secret_value_display),
+            SecretsScopeTag::Workspace => state.pending.env.get(key).map(env_value_secret_display),
             SecretsScopeTag::Role(role) => state
                 .pending
                 .roles
                 .get(role)
                 .and_then(|role_override| role_override.env.get(key))
-                .map(secret_value_display),
+                .map(env_value_secret_display),
         },
         |scope, key| state.unmasked_rows.contains(&(scope.clone(), key.to_string())),
         |role| config.roles.contains_key(role),
         |role| state.pending.roles.get(role).map_or(0, |o| o.env.len()),
     )
-}
-
-fn secret_value_display(value: &EnvValue) -> SecretValueDisplay<'_> {
-    match value {
-        EnvValue::Plain(value) => SecretValueDisplay::Plain(value),
-        EnvValue::OpRef(op_ref) => SecretValueDisplay::OpRefPath(&op_ref.path),
-    }
 }
 
 /// Render the Auth tab directly from [`auth_flat_rows`].

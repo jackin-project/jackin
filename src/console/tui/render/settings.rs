@@ -9,16 +9,15 @@ use ratatui::{
     text::Line,
 };
 use jackin_console::tui::auth::AuthKind;
-use crate::console::tui::render::mount_display::{
-    format_mount_rows_with_cache,
-};
+use crate::console::tui::render::env_value_secret_display;
+use crate::console::tui::render::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
     SettingsState, SettingsTab, settings_env_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceValue, SecretValueDisplay, auth_source_display, render_tab_strip,
+    AuthSourceDisplay, AuthSourceValue, auth_source_display, render_tab_strip,
 };
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
 use jackin_console::tui::screens::settings::view::{
@@ -156,17 +155,10 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
         state.env.selected,
         show_cursor,
         area_width,
-        |scope, key| settings_env_value(state, scope, key).map(secret_value_display),
+        |scope, key| settings_env_value(state, scope, key).map(env_value_secret_display),
         |scope, key| state.env.unmasked_rows.contains(&(scope.clone(), key.to_string())),
         |role| state.env.pending.roles.get(role).map_or(0, std::collections::BTreeMap::len),
     )
-}
-
-fn secret_value_display(value: &EnvValue) -> SecretValueDisplay<'_> {
-    match value {
-        EnvValue::Plain(value) => SecretValueDisplay::Plain(value),
-        EnvValue::OpRef(op_ref) => SecretValueDisplay::OpRefPath(&op_ref.path),
-    }
 }
 
 fn settings_env_value<'a>(
