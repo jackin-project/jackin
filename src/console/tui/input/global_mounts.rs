@@ -14,7 +14,7 @@ use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_console::tui::components::auth_panel::{
-    auth_credential_input_state, auth_source_picker_state,
+    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
 };
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::auth::can_generate_claude_oauth_token;
@@ -532,22 +532,17 @@ pub(super) fn handle_settings_auth_modal(
                 });
                 return SettingsAuthOutcome::Continue;
             }
-            match *focus {
-                AuthFormFocus::Mode => match key.code {
-                    KeyCode::Char(' ') => state.cycle_mode(),
-                    // Down/j moves within the field area; Tab crosses into the button area.
-                    // No credential row: Down is a no-op at the bottom of the field area.
-                    KeyCode::Down | KeyCode::Char('j') if state.shows_credential_block() => {
-                        *focus = AuthFormFocus::CredentialSource;
-                    }
-                    KeyCode::Tab => {
-                        *focus = state.next_focus_after_mode();
-                    }
-                    KeyCode::BackTab => *focus = AuthFormFocus::Reset,
-                    _ => {}
-                },
-                AuthFormFocus::CredentialSource => match key.code {
-                    KeyCode::Enter => {
+            let plan = auth_form_key_plan(
+                *focus,
+                key.code,
+                state.shows_credential_block(),
+                state.can_save(),
+            );
+            match plan {
+                AuthFormKeyPlan::Stay => {}
+                AuthFormKeyPlan::Focus(next) => *focus = next,
+                AuthFormKeyPlan::CycleMode => state.cycle_mode(),
+                AuthFormKeyPlan::OpenCredentialSource => {
                         let Some(env_var) = state.mode.and_then(|m| state.kind.required_env_var(m))
                         else {
                             auth.modal = Some(modal);
@@ -558,48 +553,16 @@ pub(super) fn handle_settings_auth_modal(
                             state: auth_source_picker_state(env_var, op_available),
                         });
                         return SettingsAuthOutcome::Continue;
-                    }
-                    // Down/j is a no-op at the bottom of the field area; Tab crosses to button area.
-                    KeyCode::Tab => {
-                        *focus = AuthFormFocus::Save;
-                    }
-                    KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
-                        *focus = AuthFormFocus::Mode;
-                    }
-                    _ => {}
-                },
-                AuthFormFocus::Save => match key.code {
-                    KeyCode::Right | KeyCode::Tab => *focus = AuthFormFocus::Cancel,
-                    // Up is a no-op at the top of the button area; BackTab crosses back to field area.
-                    KeyCode::BackTab => {
-                        *focus = if state.shows_credential_block() {
-                            AuthFormFocus::CredentialSource
-                        } else {
-                            AuthFormFocus::Mode
-                        };
-                    }
-                    KeyCode::Enter if state.can_save() => {
-                        persist_settings_auth_form(auth, env, state);
-                        return SettingsAuthOutcome::Continue;
-                    }
-                    _ => {}
-                },
-                AuthFormFocus::Cancel => match key.code {
-                    KeyCode::Left | KeyCode::BackTab => *focus = AuthFormFocus::Save,
-                    KeyCode::Right | KeyCode::Tab => *focus = AuthFormFocus::Reset,
-                    KeyCode::Enter => return SettingsAuthOutcome::Continue,
-                    _ => {}
-                },
-                AuthFormFocus::Reset => match key.code {
-                    KeyCode::Left | KeyCode::BackTab => *focus = AuthFormFocus::Cancel,
-                    // Tab wraps the cycle back to the first field; Right stays on the button row.
-                    KeyCode::Tab => *focus = AuthFormFocus::Mode,
-                    KeyCode::Enter => {
-                        clear_settings_auth_kind(auth, env, target);
-                        return SettingsAuthOutcome::Continue;
-                    }
-                    _ => {}
-                },
+                }
+                AuthFormKeyPlan::Save => {
+                    persist_settings_auth_form(auth, env, state);
+                    return SettingsAuthOutcome::Continue;
+                }
+                AuthFormKeyPlan::Cancel => return SettingsAuthOutcome::Continue,
+                AuthFormKeyPlan::Reset => {
+                    clear_settings_auth_kind(auth, env, target);
+                    return SettingsAuthOutcome::Continue;
+                }
             }
             auth.modal = Some(modal);
         }

@@ -19,7 +19,7 @@ use crate::console::domain::{
 use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use jackin_console::tui::components::auth_panel::{
-    auth_credential_input_state, auth_source_picker_state,
+    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
 };
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
@@ -386,28 +386,40 @@ pub(super) fn handle_auth_form_key(
         return true;
     }
 
-    if current_focus == AuthFormFocus::CredentialSource {
-        return handle_credential_source_key(editor, key, op_available);
-    }
-
-    let Some(Modal::AuthForm { state, focus, .. }) = editor.modal.as_mut() else {
+    let Some(Modal::AuthForm { state, .. }) = editor.modal.as_ref() else {
         return false;
     };
+    let plan = auth_form_key_plan(
+        current_focus,
+        key.code,
+        state.shows_credential_block(),
+        state.can_save(),
+    );
 
-    match current_focus {
-        AuthFormFocus::Mode => handle_mode_key(focus, state.as_mut(), key),
-        AuthFormFocus::CredentialSource => unreachable!("handled above"),
-        AuthFormFocus::Save => {
-            return handle_save_key(editor, key);
+    match plan {
+        AuthFormKeyPlan::Stay => false,
+        AuthFormKeyPlan::Focus(next) => {
+            if let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_mut() {
+                *focus = next;
+            }
+            false
         }
-        AuthFormFocus::Cancel => {
-            return handle_cancel_key(editor, key);
+        AuthFormKeyPlan::CycleMode => {
+            if let Some(Modal::AuthForm { state, .. }) = editor.modal.as_mut() {
+                state.cycle_mode();
+            }
+            false
         }
-        AuthFormFocus::Reset => {
-            return handle_reset_key(editor, key);
+        AuthFormKeyPlan::OpenCredentialSource => {
+            open_auth_source_picker_from_form(editor, op_available)
         }
+        AuthFormKeyPlan::Save => commit_auth_form_save(editor),
+        AuthFormKeyPlan::Cancel => {
+            editor.modal = None;
+            true
+        }
+        AuthFormKeyPlan::Reset => reset_auth_form_layer(editor),
     }
-    false
 }
 
 /// Whether the open auth form is eligible for the `g`/`G` generate
@@ -479,35 +491,6 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
         state: auth_source_picker_state("generated token", op_available),
     });
     true
-}
-
-/// Keystroke router for the `CredentialSource` row.
-///
-/// - `Enter` → open the shared source picker (literal vs. 1Password).
-/// - `Down/j` → no-op (bottom of the field area; Tab crosses to the button area).
-/// - `Tab` → focus `Save` (cross-area jump to the button row).
-/// - `Up/k`/`BackTab` → focus `Mode` (intra-area up / reverse cross-area).
-fn handle_credential_source_key(
-    editor: &mut EditorState<'_>,
-    key: KeyEvent,
-    op_available: bool,
-) -> bool {
-    let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_mut() else {
-        return false;
-    };
-
-    match key.code {
-        KeyCode::Enter => open_auth_source_picker_from_form(editor, op_available),
-        KeyCode::Tab => {
-            *focus = AuthFormFocus::Save;
-            false
-        }
-        KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
-            *focus = AuthFormFocus::Mode;
-            false
-        }
-        _ => false,
-    }
 }
 
 /// Detach the open `Modal::AuthForm` into `pending_auth_form_return`
@@ -810,104 +793,31 @@ fn apply_op_picker_to_auth_form_with_validator(
     });
 }
 
-fn handle_mode_key(focus: &mut AuthFormFocus, form: &mut AuthForm, key: KeyEvent) {
-    match key.code {
-        KeyCode::Char(' ') => form.cycle_mode(),
-        // Down/j moves within the field area; Tab crosses into the button area.
-        // No credential row: Down is a no-op at the bottom of the field area.
-        KeyCode::Down | KeyCode::Char('j') if form.shows_credential_block() => {
-            *focus = AuthFormFocus::CredentialSource;
-        }
-        KeyCode::Tab => *focus = form.next_focus_after_mode(),
-        // BackTab wraps backward through the cycle to Reset (the last
-        // focusable control). Tab from Reset wraps forward to Mode.
-        KeyCode::BackTab => *focus = AuthFormFocus::Reset,
-        _ => {}
-    }
-}
-
-fn handle_save_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
+fn commit_auth_form_save(editor: &mut EditorState<'_>) -> bool {
     let Some(Modal::AuthForm {
         target,
         state,
-        focus,
         ..
     }) = editor.modal.as_mut()
     else {
         return false;
     };
-    match key.code {
-        KeyCode::Right | KeyCode::Tab => {
-            *focus = AuthFormFocus::Cancel;
-            false
-        }
-        // Up is a no-op at the top of the button area; BackTab crosses back into the field area.
-        KeyCode::BackTab => {
-            *focus = if state.shows_credential_block() {
-                AuthFormFocus::CredentialSource
-            } else {
-                AuthFormFocus::Mode
-            };
-            false
-        }
-        KeyCode::Enter => {
-            if !state.can_save() {
-                return false;
-            }
-            let committed_target = target.clone();
-            let kind = state.kind;
-            let form = std::mem::replace(state.as_mut(), AuthForm::new(kind));
-            editor.modal = None;
-            persist_form(editor, &committed_target, &form);
-            true
-        }
-        _ => false,
-    }
+    let committed_target = target.clone();
+    let kind = state.kind;
+    let form = std::mem::replace(state.as_mut(), AuthForm::new(kind));
+    editor.modal = None;
+    persist_form(editor, &committed_target, &form);
+    true
 }
 
-fn handle_cancel_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
-    let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_mut() else {
+fn reset_auth_form_layer(editor: &mut EditorState<'_>) -> bool {
+    let Some(Modal::AuthForm { target, .. }) = editor.modal.as_mut() else {
         return false;
     };
-    match key.code {
-        KeyCode::Left | KeyCode::BackTab => {
-            *focus = AuthFormFocus::Save;
-            false
-        }
-        KeyCode::Right | KeyCode::Tab => {
-            *focus = AuthFormFocus::Reset;
-            false
-        }
-        KeyCode::Enter => {
-            editor.modal = None;
-            true
-        }
-        _ => false,
-    }
-}
-
-fn handle_reset_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
-    let Some(Modal::AuthForm { target, focus, .. }) = editor.modal.as_mut() else {
-        return false;
-    };
-    match key.code {
-        KeyCode::Left | KeyCode::BackTab => {
-            *focus = AuthFormFocus::Cancel;
-            false
-        }
-        // Tab wraps the cycle back to the first field; Right stays on the button row.
-        KeyCode::Tab => {
-            *focus = AuthFormFocus::Mode;
-            false
-        }
-        KeyCode::Enter => {
-            let committed_target = target.clone();
-            editor.modal = None;
-            clear_layer(editor, &committed_target);
-            true
-        }
-        _ => false,
-    }
+    let committed_target = target.clone();
+    editor.modal = None;
+    clear_layer(editor, &committed_target);
+    true
 }
 
 /// Apply a successful form commit to `editor.pending`. Writes both the

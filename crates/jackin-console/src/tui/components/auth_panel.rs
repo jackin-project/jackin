@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -41,6 +42,17 @@ pub enum CredentialInput<R> {
     OpRef(R),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthFormKeyPlan {
+    Stay,
+    Focus(AuthFormFocus),
+    CycleMode,
+    OpenCredentialSource,
+    Save,
+    Cancel,
+    Reset,
+}
+
 #[must_use]
 pub fn auth_source_picker_state(
     env_var: impl Into<String>,
@@ -54,6 +66,64 @@ pub fn auth_credential_input_state<'a>(
     literal: impl Into<String>,
 ) -> TextInputState<'a> {
     TextInputState::new("Credential", literal)
+}
+
+#[must_use]
+pub const fn auth_form_key_plan(
+    focus: AuthFormFocus,
+    key: KeyCode,
+    shows_credential_block: bool,
+    can_save: bool,
+) -> AuthFormKeyPlan {
+    match focus {
+        AuthFormFocus::Mode => match key {
+            KeyCode::Char(' ') => AuthFormKeyPlan::CycleMode,
+            KeyCode::Down | KeyCode::Char('j') if shows_credential_block => {
+                AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+            }
+            KeyCode::Tab => {
+                if shows_credential_block {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+                } else {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::Save)
+                }
+            }
+            KeyCode::BackTab => AuthFormKeyPlan::Focus(AuthFormFocus::Reset),
+            _ => AuthFormKeyPlan::Stay,
+        },
+        AuthFormFocus::CredentialSource => match key {
+            KeyCode::Enter => AuthFormKeyPlan::OpenCredentialSource,
+            KeyCode::Tab => AuthFormKeyPlan::Focus(AuthFormFocus::Save),
+            KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
+                AuthFormKeyPlan::Focus(AuthFormFocus::Mode)
+            }
+            _ => AuthFormKeyPlan::Stay,
+        },
+        AuthFormFocus::Save => match key {
+            KeyCode::Right | KeyCode::Tab => AuthFormKeyPlan::Focus(AuthFormFocus::Cancel),
+            KeyCode::BackTab => {
+                if shows_credential_block {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+                } else {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::Mode)
+                }
+            }
+            KeyCode::Enter if can_save => AuthFormKeyPlan::Save,
+            _ => AuthFormKeyPlan::Stay,
+        },
+        AuthFormFocus::Cancel => match key {
+            KeyCode::Left | KeyCode::BackTab => AuthFormKeyPlan::Focus(AuthFormFocus::Save),
+            KeyCode::Right | KeyCode::Tab => AuthFormKeyPlan::Focus(AuthFormFocus::Reset),
+            KeyCode::Enter => AuthFormKeyPlan::Cancel,
+            _ => AuthFormKeyPlan::Stay,
+        },
+        AuthFormFocus::Reset => match key {
+            KeyCode::Left | KeyCode::BackTab => AuthFormKeyPlan::Focus(AuthFormFocus::Cancel),
+            KeyCode::Tab => AuthFormKeyPlan::Focus(AuthFormFocus::Mode),
+            KeyCode::Enter => AuthFormKeyPlan::Reset,
+            _ => AuthFormKeyPlan::Stay,
+        },
+    }
 }
 
 /// The form's mutable state. Mode and credential are independently editable;
@@ -548,6 +618,42 @@ mod tests {
         assert_eq!(form.mode, Some(AuthMode::Ignore));
         form.cycle_mode();
         assert_eq!(form.mode, Some(AuthMode::Sync));
+    }
+
+    #[test]
+    fn auth_form_key_plan_routes_shared_focus_model() {
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::Mode, KeyCode::Char(' '), false, false),
+            AuthFormKeyPlan::CycleMode
+        );
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::Mode, KeyCode::Tab, true, false),
+            AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+        );
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::CredentialSource, KeyCode::Enter, true, false),
+            AuthFormKeyPlan::OpenCredentialSource
+        );
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::Save, KeyCode::BackTab, true, false),
+            AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+        );
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::Save, KeyCode::Enter, true, false),
+            AuthFormKeyPlan::Stay
+        );
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::Save, KeyCode::Enter, true, true),
+            AuthFormKeyPlan::Save
+        );
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::Cancel, KeyCode::Enter, false, false),
+            AuthFormKeyPlan::Cancel
+        );
+        assert_eq!(
+            auth_form_key_plan(AuthFormFocus::Reset, KeyCode::Enter, false, false),
+            AuthFormKeyPlan::Reset
+        );
     }
 
     #[test]
