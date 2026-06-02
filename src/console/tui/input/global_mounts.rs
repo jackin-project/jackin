@@ -25,7 +25,8 @@ use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_destination_empty_message,
     global_mount_gone_message, global_mount_name_empty_message,
     global_mount_no_github_url_message,
-    global_mount_scope_picker_state, global_mount_text_input_state, global_mount_text_target_label,
+    global_mount_scope_picker_state, global_mount_scope_text_value,
+    global_mount_text_input_state, global_mount_text_target_label,
     settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
     settings_env_add_cancelled_message, settings_env_edit_cancelled_message,
     settings_env_empty_key_error_message,
@@ -1707,7 +1708,7 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
         GlobalMountTextTarget::Rename => row.name.clone(),
         GlobalMountTextTarget::Source => row.mount.src.clone(),
         GlobalMountTextTarget::Destination => row.mount.dst.clone(),
-        GlobalMountTextTarget::Scope => row.scope.clone().unwrap_or_default(),
+        GlobalMountTextTarget::Scope => global_mount_scope_text_value(row.scope.as_deref()),
         // Add-flow targets are driven by the four-step text wizard, not this entry point.
         GlobalMountTextTarget::AddScope
         | GlobalMountTextTarget::AddName

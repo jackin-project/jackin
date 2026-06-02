@@ -157,7 +157,7 @@ Capsule wheel scrollback, unsafe partial fallback, and pane-cache-miss redraw re
 
 Capsule first-attach, resize, session-exit, status-change, dialog-change, and explicit redraw reasons also live with visible update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon still owns attach, resize, session, status-worker, and prefix-mode facts, but it should request named TUI update helpers instead of constructing those full-redraw reasons inline.
 
-Console settings global-mount missing-GitHub-URL and add/edit validation wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root global-mount input supplies only mount-info URL availability, selected row, and add-draft presence facts.
+Console settings global-mount missing-GitHub-URL, scope text fallback, and add/edit validation wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root global-mount input supplies only mount-info URL availability, selected row, add-draft presence, and optional configured role-scope facts.
 
 Console editor Roles-tab status, role-row, and load-row width planning now lives with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" />; root editor geometry supplies only role counts and names before applying the crate-owned width rules.
 

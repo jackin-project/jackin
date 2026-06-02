@@ -101,6 +101,11 @@ pub fn global_mount_text_input_state<'a>(
 }
 
 #[must_use]
+pub fn global_mount_scope_text_value(scope: Option<&str>) -> String {
+    scope.unwrap_or_default().to_string()
+}
+
+#[must_use]
 pub const fn global_mount_text_target_label(target: &GlobalMountTextTarget) -> Option<&'static str> {
     match target {
         GlobalMountTextTarget::AddScope => Some("Scope (empty = global)"),
@@ -759,6 +764,12 @@ mod tests {
 
         assert_eq!(state.label, "Destination");
         assert_eq!(state.value(), "/workspace");
+    }
+
+    #[test]
+    fn global_mount_scope_text_value_uses_empty_global_fallback() {
+        assert_eq!(global_mount_scope_text_value(Some("ops")), "ops");
+        assert_eq!(global_mount_scope_text_value(None), "");
     }
 
     #[test]
