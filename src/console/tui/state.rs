@@ -846,18 +846,11 @@ impl PendingOpCommit {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct PendingMountInfoRefresh {
-    pub(crate) target: MountInfoRefreshTarget,
-    pub(crate) entries: Vec<(String, jackin_console::mount_info::MountKind)>,
-}
+pub(crate) type PendingMountInfoRefresh =
+    jackin_console::tui::message::PendingMountInfoRefresh;
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum MountInfoRefreshTarget {
-    ManagerList,
-    Editor,
-    SettingsMounts,
-}
+pub(crate) type MountInfoRefreshTarget =
+    jackin_console::tui::message::MountInfoRefreshTarget;
 
 impl std::fmt::Debug for PendingOpCommit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -131,3 +131,16 @@ pub struct LaunchPromptRequest<Role, Workspace, Input> {
     pub input: Input,
     pub on_failure: OnPromptFailure,
 }
+
+#[derive(Debug)]
+pub struct PendingMountInfoRefresh {
+    pub target: MountInfoRefreshTarget,
+    pub entries: Vec<(String, crate::mount_info::MountKind)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MountInfoRefreshTarget {
+    ManagerList,
+    Editor,
+    SettingsMounts,
+}
