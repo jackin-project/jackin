@@ -474,18 +474,10 @@ fn truncate(value: &str, width: usize) -> String {
 }
 
 pub fn clamp_mounts_scroll_x_for_frame(area: Rect, content_width: usize, scroll_x: &mut u16) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(10),
-            Constraint::Length(2),
-        ])
-        .split(area);
+    let areas = settings_frame_areas(area, 2);
     jackin_tui::components::scrollable_panel::clamp_scroll_offset(
         content_width,
-        jackin_tui::components::scrollable_panel::viewport_width(chunks[2]),
+        jackin_tui::components::scrollable_panel::viewport_width(areas.body),
         scroll_x,
     );
 }
@@ -542,6 +534,21 @@ mod tests {
         assert_eq!(areas.tabs, Rect::new(0, 3, 80, 2));
         assert_eq!(areas.body, Rect::new(0, 5, 80, 13));
         assert_eq!(areas.footer, Rect::new(0, 18, 80, 2));
+    }
+
+    #[test]
+    fn clamp_mounts_scroll_x_for_frame_uses_settings_body_area() {
+        let mut scroll_x = u16::MAX;
+        let area = Rect::new(0, 0, 80, 20);
+
+        clamp_mounts_scroll_x_for_frame(area, 100, &mut scroll_x);
+
+        let body = settings_frame_areas(area, 2).body;
+        let expected = jackin_tui::components::scrollable_panel::max_offset(
+            100,
+            jackin_tui::components::scrollable_panel::viewport_width(body),
+        ) as u16;
+        assert_eq!(scroll_x, expected);
     }
 
     #[test]
