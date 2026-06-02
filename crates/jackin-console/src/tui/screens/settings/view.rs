@@ -158,6 +158,19 @@ pub fn env_scope_label(scope: &SettingsEnvScope) -> &str {
 }
 
 #[must_use]
+pub fn settings_env_new_key_label(scope: &SettingsEnvScope) -> String {
+    match scope {
+        SettingsEnvScope::Global => "New global environment key".to_string(),
+        SettingsEnvScope::Role(role) => format!("New {role} environment key"),
+    }
+}
+
+#[must_use]
+pub fn settings_env_new_key_after_picker_label(scope: &SettingsEnvScope) -> String {
+    format!("New environment key for {}", env_scope_label(scope))
+}
+
+#[must_use]
 pub fn env_forbidden_label(scope: &SettingsEnvScope) -> String {
     match scope {
         SettingsEnvScope::Global => "global env".to_string(),
@@ -723,6 +736,22 @@ mod tests {
             "ROLE_TOKEN",
         );
         assert!(duplicate.is_duplicate());
+    }
+
+    #[test]
+    fn settings_env_new_key_labels_name_scope() {
+        assert_eq!(
+            settings_env_new_key_label(&SettingsEnvScope::Global),
+            "New global environment key"
+        );
+        assert_eq!(
+            settings_env_new_key_label(&SettingsEnvScope::Role("alpha".to_string())),
+            "New alpha environment key"
+        );
+        assert_eq!(
+            settings_env_new_key_after_picker_label(&SettingsEnvScope::Global),
+            "New environment key for global"
+        );
     }
 
     #[test]

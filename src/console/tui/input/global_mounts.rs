@@ -20,9 +20,10 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
-    env_scope_label, global_mount_confirm_state, global_mount_scope_picker_state,
-    global_mount_text_input_state, global_mount_text_target_label, settings_env_delete_confirm_state,
-    settings_env_key_input_state, settings_env_scope_picker_state, settings_env_source_picker_state,
+    global_mount_confirm_state, global_mount_scope_picker_state, global_mount_text_input_state,
+    global_mount_text_target_label, settings_env_delete_confirm_state,
+    settings_env_key_input_state, settings_env_new_key_after_picker_label,
+    settings_env_new_key_label, settings_env_scope_picker_state, settings_env_source_picker_state,
     settings_env_text_input_state, settings_env_value_text_label,
 };
 
@@ -1342,8 +1343,12 @@ pub(super) fn handle_settings_env_modal(
                     Some((scope, None)) => {
                         env.pending_picker_value =
                             Some(crate::operator_env::EnvValue::OpRef(op_ref));
-                        let label = format!("New environment key for {}", env_scope_label(&scope));
-                        let state = settings_env_key_input_state(&env.pending, &scope, label, "");
+                        let state = settings_env_key_input_state(
+                            &env.pending,
+                            &scope,
+                            settings_env_new_key_after_picker_label(&scope),
+                            "",
+                        );
                         env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
                         env.open_sub_modal(SettingsEnvModal::Text {
                             target: SettingsEnvTextTarget::EnvKey { scope },
@@ -1369,7 +1374,7 @@ pub(super) fn handle_settings_env_modal(
                 let state = settings_env_key_input_state(
                     &env.pending,
                     &scope,
-                    format!("New {role_key} environment key"),
+                    settings_env_new_key_label(&scope),
                     "",
                 );
                 env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
@@ -1395,7 +1400,7 @@ pub(super) fn handle_settings_env_modal(
                     let input_state = settings_env_key_input_state(
                         &env.pending,
                         &scope,
-                        "New global environment key",
+                        settings_env_new_key_label(&scope),
                         "",
                     );
                     // Don't stash the just-committed ScopePicker as
