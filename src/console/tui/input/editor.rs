@@ -5,6 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::components::op_picker::OpPickerState;
+use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache;
 use crate::console::tui::state::{
@@ -81,9 +82,7 @@ pub(super) fn handle_editor_key(
                 if dirty {
                     if let ManagerStage::Editor(editor) = &mut state.stage {
                         editor.modal = Some(Modal::SaveDiscardCancel {
-                            state: jackin_tui::components::SaveDiscardState::new(
-                                "Save changes before leaving?",
-                            ),
+                            state: editor_exit_save_discard_state(),
                         });
                     }
                 } else {
