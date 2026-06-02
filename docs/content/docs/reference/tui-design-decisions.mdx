@@ -183,6 +183,8 @@ Root-modal widget dispatch now lives in <RepoFile path="src/console/tui/componen
 
 Console container-info click-copy now queues `ManagerEffect::CopyContainerInfoValue`; <RepoFile path="src/console/effects.rs" /> writes the OSC52 clipboard sequence and marks copied feedback outside mouse input.
 
+Console editor/settings file-browser URL opens return typed modal outcomes and are queued as `ManagerEffect::OpenUrl` by input dispatch. Modal handlers must not side-channel browser requests through mutable URL slots.
+
 Console op-picker selected label fallback, account/vault/item/field load-completion planning, selected account/vault/item cache-key derivation, concealed-first field-load sorting policy, and pending-load requests now use crate-owned helpers/carriers in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />; the root adapter still supplies root `operator_env` result types and executes `op` metadata loads outside the TUI boundary.
 
 Console op-picker commit selection shaping now also lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. Root code may provide concrete `operator_env` reference and field-target values, but it must use the crate-owned helpers for the `Existing`, `NewItem`, and `EditItemField` picker selection shapes.

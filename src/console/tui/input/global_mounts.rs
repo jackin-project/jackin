@@ -8,6 +8,7 @@ use crate::console::tui::state::{
     SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
     SettingsEnvTextTarget, SettingsTab, settings_env_flat_rows, settings_env_state_flat_rows,
 };
+use crate::console::tui::effect::ManagerEffect;
 use jackin_tui::ModalOutcome;
 use crate::console::tui::components::auth_panel::{AuthForm, CredentialInput};
 use crate::selector::RolePickerState;
@@ -43,6 +44,7 @@ pub(super) enum SettingsModalOutcome {
     Continue,
     SaveSettings,
     OpenGlobalMountFileBrowser,
+    OpenUrl(String),
     ApplyFileBrowserOutcome(
         jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
     ),
@@ -57,15 +59,10 @@ pub(super) enum SettingsAuthOutcome {
 
 #[cfg(test)]
 pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    let mut open_url = None;
-    handle_settings_key_with_open_url(state, key, &mut open_url);
+    handle_settings_key_with_effects(state, key);
 }
 
-pub(super) fn handle_settings_key_with_open_url(
-    state: &mut ManagerState<'_>,
-    key: KeyEvent,
-    open_url: &mut Option<String>,
-) {
+pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
@@ -171,7 +168,7 @@ pub(super) fn handle_settings_key_with_open_url(
     }
     match settings.active_tab {
         SettingsTab::General => handle_general_key(state, key),
-        SettingsTab::Mounts => handle_global_mounts_key(state, key, open_url),
+        SettingsTab::Mounts => handle_global_mounts_key(state, key),
         SettingsTab::Environments => handle_env_key(state, key),
         SettingsTab::Auth => handle_auth_key(state, key),
         SettingsTab::Trust => handle_trust_key(state, key),
@@ -186,7 +183,6 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 fn handle_global_mounts_key(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
-    open_url: &mut Option<String>,
 ) {
     // S is handled here, before `global` borrows `settings.mounts`, so
     // `open_settings_save_preview` can receive all of `settings`.
@@ -291,7 +287,7 @@ fn handle_global_mounts_key(
         KeyCode::Char('o' | 'O') => {
             if let Some(row) = global.pending.get(global.selected) {
                 if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
-                    *open_url = Some(web_url);
+                    state.request_effect(ManagerEffect::OpenUrl(web_url));
                 } else {
                     global.error = Some(global_mount_no_github_url_message().into());
                 }
@@ -1093,7 +1089,6 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 pub(super) fn handle_settings_confirm_modal(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     key: KeyEvent,
-    open_url: &mut Option<String>,
 ) -> SettingsModalOutcome {
     let Some(modal) = settings.mounts.modal.take() else {
         return SettingsModalOutcome::Continue;
@@ -1130,8 +1125,8 @@ pub(super) fn handle_settings_confirm_modal(
                     outcome = SettingsModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
                 FileBrowserOutcome::OpenGitUrl(url) => {
-                    *open_url = Some(url);
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                    outcome = SettingsModalOutcome::OpenUrl(url);
                 }
                 FileBrowserOutcome::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
@@ -1959,8 +1954,7 @@ mod tests {
         paths: &crate::paths::JackinPaths,
         key: KeyEvent,
     ) {
-        let mut open_url = None;
-        let outcome = handle_settings_confirm_modal(settings, key, &mut open_url);
+        let outcome = handle_settings_confirm_modal(settings, key);
         if matches!(outcome, SettingsModalOutcome::SaveSettings) {
             match crate::console::services::config::save_settings(
                 paths,
@@ -2000,7 +1994,10 @@ mod tests {
                 }
             }
         }
-        assert!(open_url.is_none(), "test helper did not expect URL-open");
+        assert!(
+            !matches!(outcome, SettingsModalOutcome::OpenUrl(_)),
+            "test helper did not expect URL-open"
+        );
     }
 
     #[test]
@@ -2077,6 +2074,32 @@ mod tests {
             "Esc from add-mount FileBrowser should close the chain; got {:?}",
             settings.mounts.modal
         );
+    }
+
+    #[test]
+    fn global_mount_filebrowser_open_git_url_returns_typed_outcome() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut settings = SettingsState::from_config(&AppConfig::default());
+        let mut browser =
+            jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+                jackin_console::services::file_browser::listing_from_home().unwrap(),
+            );
+        browser.pending_git_prompt = Some(tmp.path().to_path_buf());
+        browser.pending_git_url = Some("file:///tmp/settings-url".into());
+        settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
+            state: Box::new(browser),
+        });
+
+        let outcome = handle_settings_confirm_modal(&mut settings, key(KeyCode::Char('O')));
+
+        assert!(matches!(
+            outcome,
+            SettingsModalOutcome::OpenUrl(url) if url == "file:///tmp/settings-url"
+        ));
+        assert!(matches!(
+            settings.mounts.modal,
+            Some(GlobalMountModal::FileBrowser { .. })
+        ));
     }
 
     #[test]

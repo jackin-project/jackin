@@ -58,7 +58,6 @@ pub fn handle_key(
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {
-        let mut open_url = None;
         let editor_outcome = editor::handle_editor_modal(
             editor,
             key,
@@ -66,7 +65,6 @@ pub fn handle_key(
             op_cache,
             config,
             paths,
-            &mut open_url,
         );
         match editor_outcome {
             editor::EditorModalOutcome::Continue => {}
@@ -95,6 +93,9 @@ pub fn handle_key(
             editor::EditorModalOutcome::ResolveFileBrowserGitUrl(path) => {
                 state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
             }
+            editor::EditorModalOutcome::OpenUrl(url) => {
+                state.request_effect(ManagerEffect::OpenUrl(url));
+            }
             editor::EditorModalOutcome::ValidateOpRef(op_ref) => {
                 state.request_effect(ManagerEffect::ValidateOpCommit {
                     op_ref,
@@ -103,10 +104,6 @@ pub fn handle_key(
             }
         }
         state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
-        if let Some(url) = open_url {
-            state.request_effect(ManagerEffect::OpenUrl(url));
-            return Ok(InputOutcome::Continue);
-        }
 
         // After modal handling, check if an exit intent was signalled by
         // the SaveDiscardCancel modal.
@@ -159,9 +156,7 @@ pub fn handle_key(
     if let ManagerStage::Settings(settings) = &mut state.stage
         && settings.mounts.modal.is_some()
     {
-        let mut open_url = None;
-        let modal_outcome =
-            global_mounts::handle_settings_confirm_modal(settings, key, &mut open_url);
+        let modal_outcome = global_mounts::handle_settings_confirm_modal(settings, key);
         match modal_outcome {
             global_mounts::SettingsModalOutcome::Continue => {}
             global_mounts::SettingsModalOutcome::SaveSettings => {
@@ -169,6 +164,9 @@ pub fn handle_key(
             }
             global_mounts::SettingsModalOutcome::OpenGlobalMountFileBrowser => {
                 state.request_effect(ManagerEffect::OpenGlobalMountFileBrowser);
+            }
+            global_mounts::SettingsModalOutcome::OpenUrl(url) => {
+                state.request_effect(ManagerEffect::OpenUrl(url));
             }
             global_mounts::SettingsModalOutcome::ResolveFileBrowserGitUrl(path) => {
                 state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
@@ -181,10 +179,6 @@ pub fn handle_key(
             }
         }
         global_mounts::after_settings_event(state);
-        if let Some(url) = open_url {
-            state.request_effect(ManagerEffect::OpenUrl(url));
-            return Ok(InputOutcome::Continue);
-        }
         return Ok(InputOutcome::Continue);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
@@ -333,12 +327,8 @@ pub fn handle_key(
         StageDis::List => list::handle_list_key(state, config, paths, cwd, key),
         StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
         StageDis::Settings => {
-            let mut open_url = None;
-            global_mounts::handle_settings_key_with_open_url(state, key, &mut open_url);
+            global_mounts::handle_settings_key_with_effects(state, key);
             global_mounts::after_settings_event(state);
-            if let Some(url) = open_url {
-                state.request_effect(ManagerEffect::OpenUrl(url));
-            }
             Ok(InputOutcome::Continue)
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),

@@ -761,6 +761,7 @@ pub(super) enum EditorModalOutcome {
         jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
     ),
     ResolveFileBrowserGitUrl(std::path::PathBuf),
+    OpenUrl(String),
     ValidateOpRef(crate::operator_env::OpRef),
 }
 
@@ -772,7 +773,6 @@ pub(super) fn handle_editor_modal(
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
     config: &mut AppConfig,
     _paths: &JackinPaths,
-    open_url: &mut Option<String>,
 ) -> EditorModalOutcome {
     let Some(modal) = editor.modal.as_mut() else {
         return EditorModalOutcome::Continue;
@@ -824,7 +824,7 @@ pub(super) fn handle_editor_modal(
                 FileBrowserOutcome::ResolveGitUrl(path) => {
                     return EditorModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
-                FileBrowserOutcome::OpenGitUrl(url) => *open_url = Some(url),
+                FileBrowserOutcome::OpenGitUrl(url) => return EditorModalOutcome::OpenUrl(url),
                 FileBrowserOutcome::Continue => {}
                 FileBrowserOutcome::Commit(_)
                 | FileBrowserOutcome::NavigateTo(_)
@@ -1839,7 +1839,6 @@ mod tests {
         config: &mut AppConfig,
         paths: &JackinPaths,
     ) {
-        let mut open_url = None;
         let outcome = handle_editor_modal(
             editor,
             k,
@@ -1847,16 +1846,17 @@ mod tests {
             std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
             config,
             paths,
-            &mut open_url,
         );
-        if let EditorModalOutcome::PersistTrustedRoleSource { key, source } = outcome {
-            let mut source = source;
-            source.trusted = true;
-            crate::console::effects::execute_role_source_persist(config, paths, &key, &source)
-                .unwrap();
-            add_role_to_workspace_editor(editor, config, &key);
+        match outcome {
+            EditorModalOutcome::PersistTrustedRoleSource { key, mut source } => {
+                source.trusted = true;
+                crate::console::effects::execute_role_source_persist(config, paths, &key, &source)
+                    .unwrap();
+                add_role_to_workspace_editor(editor, config, &key);
+            }
+            EditorModalOutcome::OpenUrl(_) => panic!("test helper did not expect URL-open"),
+            _ => {}
         }
-        assert!(open_url.is_none(), "test helper did not expect URL-open");
     }
 
     /// Test helper: invoke `apply_text_input_to_pending` with
@@ -2159,6 +2159,39 @@ plugins = []
             editor.modal
         );
         assert!(editor.modal_parents.is_empty());
+    }
+
+    #[test]
+    fn filebrowser_open_git_url_returns_typed_outcome() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut browser =
+            jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+                jackin_console::services::file_browser::listing_from_home().unwrap(),
+            );
+        browser.pending_git_prompt = Some(tmp.path().to_path_buf());
+        browser.pending_git_url = Some("file:///tmp/editor-url".into());
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::EditAddMountSrc,
+            state: browser,
+        });
+
+        let outcome = handle_editor_modal(
+            &mut editor,
+            key(KeyCode::Char('O')),
+            false,
+            std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
+            &mut config,
+            &paths,
+        );
+
+        assert!(matches!(
+            outcome,
+            EditorModalOutcome::OpenUrl(url) if url == "file:///tmp/editor-url"
+        ));
     }
 
     #[test]
