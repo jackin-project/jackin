@@ -27,6 +27,30 @@ pub enum InlinePickerDismissal {
 }
 
 #[must_use]
+pub const fn list_scroll_focus_plan(
+    focus: Option<crate::focus::MountScrollFocus>,
+) -> Option<crate::focus::MountScrollFocus> {
+    focus
+}
+
+#[must_use]
+pub const fn list_names_focus_plan(focused: bool) -> bool {
+    focused
+}
+
+#[must_use]
+pub const fn drag_state_plan(
+    drag: Option<crate::split::DragState>,
+) -> Option<crate::split::DragState> {
+    drag
+}
+
+#[must_use]
+pub const fn list_split_pct_plan(pct: u16) -> u16 {
+    crate::split::clamp_split(pct)
+}
+
+#[must_use]
 pub fn selection_move_plan(selected: usize, row_count: usize, delta: isize) -> usize {
     crate::focus::moved_selection(selected, row_count, delta)
 }
@@ -147,5 +171,21 @@ mod tests {
             inline_picker_dismissal_plan(InlinePickerDismissal::Agent),
             InlinePickerDismissal::Agent
         );
+    }
+
+    #[test]
+    fn shell_state_plans_return_normalized_values() {
+        assert_eq!(
+            list_scroll_focus_plan(Some(crate::focus::MountScrollFocus::Workspace)),
+            Some(crate::focus::MountScrollFocus::Workspace)
+        );
+        assert!(list_names_focus_plan(true));
+        let drag = crate::split::DragState {
+            anchor_pct: 30,
+            anchor_x: 12,
+        };
+        assert_eq!(drag_state_plan(Some(drag)), Some(drag));
+        assert_eq!(list_split_pct_plan(1), crate::split::MIN_SPLIT_PCT);
+        assert_eq!(list_split_pct_plan(99), crate::split::MAX_SPLIT_PCT);
     }
 }

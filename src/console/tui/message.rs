@@ -42,8 +42,9 @@ use jackin_console::tui::screens::workspaces::update::{
 };
 use jackin_console::tui::update::{
     InlinePickerDismissal, ListModalPlan, StatusOverlayPlan, dismiss_list_modal_plan,
-    dismiss_status_overlay_plan, inline_picker_dismissal_plan, open_container_info_modal_plan,
-    open_github_picker_modal_plan, open_status_overlay_plan,
+    dismiss_status_overlay_plan, drag_state_plan, inline_picker_dismissal_plan,
+    list_names_focus_plan, list_scroll_focus_plan, list_split_pct_plan,
+    open_container_info_modal_plan, open_github_picker_modal_plan, open_status_overlay_plan,
 };
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -371,16 +372,16 @@ pub(crate) fn update_manager(
             scroll_focused_mount_block_vertical(state, delta);
         }
         ManagerMessage::SetListScrollFocus(focus) => {
-            state.list_scroll_focus = focus;
+            state.list_scroll_focus = list_scroll_focus_plan(focus);
         }
         ManagerMessage::SetListNamesFocused(focused) => {
-            state.list_names_focused = focused;
+            state.list_names_focused = list_names_focus_plan(focused);
         }
         ManagerMessage::SetDragState(drag) => {
-            state.drag_state = drag;
+            state.drag_state = drag_state_plan(drag);
         }
         ManagerMessage::SetListSplitPct(pct) => {
-            state.list_split_pct = pct;
+            state.list_split_pct = list_split_pct_plan(pct);
         }
         ManagerMessage::OpenListErrorPopup { title, message } => {
             state.open_list_error_popup(title, message);
