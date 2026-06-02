@@ -6,14 +6,14 @@
 
 use crate::config::AppConfig;
 use crate::console::tui::components::auth_panel::editor_auth_display_row;
-use crate::console::tui::components::env_value_secret_display;
-use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
+use crate::console::tui::components::editor::{
+    editor_general_lines_for_state, editor_mount_lines_for_state, editor_role_lines_for_state,
+    editor_secret_lines_for_state,
+};
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
-use crate::console::tui::state::{
-    EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
-};
+use crate::console::tui::state::{EditorMode, EditorState, EditorTab, FieldFocus};
 pub(crate) use crate::console::tui::state::{
     auth_flat_rows, secrets_flat_rows, synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
@@ -23,10 +23,7 @@ pub(crate) use crate::console::tui::state::{
 };
 use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::screens::editor::view::{
-    EditorAuthLineRow, EditorRoleRow, auth_lines as editor_auth_lines, editor_frame_areas,
-    general_lines as editor_general_lines,
-    mount_lines as editor_mount_lines, role_lines as editor_role_lines,
-    secret_lines as editor_secret_lines, tab_labels,
+    EditorAuthLineRow, auth_lines as editor_auth_lines, editor_frame_areas, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{
@@ -84,7 +81,7 @@ fn render_editor_tab_strip(
 }
 
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let rows = general_tab_lines(state);
+    let rows = editor_general_lines_for_state(state);
     let focused =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
@@ -98,29 +95,8 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     );
 }
 
-fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-
-    let name_value = match &state.mode {
-        EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
-        EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
-    };
-    let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-
-    editor_general_lines(
-        cursor,
-        show_cursor,
-        name_value,
-        &workdir_display,
-        state.pending.keep_awake.enabled,
-        state.pending.git_pull_on_entry,
-    )
-}
-
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let lines = mounts_tab_lines(state);
+    let lines = editor_mount_lines_for_state(state);
     super::render_scrollable_block_at(
         frame,
         area,
@@ -132,16 +108,8 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     );
 }
 
-fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor =
-        !state.tab_bar_focused && state.workspace_mounts_scroll_focused && state.modal.is_none();
-    let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
-    editor_mount_lines(&rows, cursor, state.hovered_mount_row, show_cursor)
-}
-
 fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let lines = roles_tab_lines(state, config);
+    let lines = editor_role_lines_for_state(state, config);
     let focused =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
@@ -153,35 +121,12 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
         focused,
         None,
     );
-}
-
-fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-
-    let is_all = jackin_console::workspace::allows_all_agents(&state.pending);
-    let allowed_count = state.pending.allowed_roles.len();
-    let rows: Vec<EditorRoleRow> = config
-        .roles
-        .keys()
-        .map(|role_name| EditorRoleRow {
-            name: role_name.clone(),
-            effectively_allowed: jackin_console::workspace::agent_is_effectively_allowed(
-                &state.pending,
-                role_name,
-            ),
-            is_default: state.pending.default_role.as_deref() == Some(role_name.as_str()),
-        })
-        .collect();
-
-    editor_role_lines(&rows, allowed_count, is_all, cursor, show_cursor)
 }
 
 // Linear match per row kind reads better than scattered helpers.
 #[allow(clippy::too_many_lines)]
 fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let lines = secrets_tab_lines(area, state, config);
+    let lines = editor_secret_lines_for_state(area, state, config);
     let focused =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
@@ -193,36 +138,6 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
         focused,
         None,
     );
-}
-
-fn secrets_tab_lines(
-    area: Rect,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
-
-    let rows = secrets_flat_rows(state);
-    editor_secret_lines(
-        &rows,
-        cursor,
-        show_cursor,
-        area.width,
-        |scope, key| match scope {
-            SecretsScopeTag::Workspace => state.pending.env.get(key).map(env_value_secret_display),
-            SecretsScopeTag::Role(role) => state
-                .pending
-                .roles
-                .get(role)
-                .and_then(|role_override| role_override.env.get(key))
-                .map(env_value_secret_display),
-        },
-        |scope, key| state.unmasked_rows.contains(&(scope.clone(), key.to_string())),
-        |role| config.roles.contains_key(role),
-        |role| state.pending.roles.get(role).map_or(0, |o| o.env.len()),
-    )
 }
 
 /// Render the Auth tab directly from [`auth_flat_rows`].

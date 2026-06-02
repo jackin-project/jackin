@@ -362,6 +362,8 @@ Settings auth-row display mapping also lives in the root auth-panel adapter at <
 
 Settings environment/trust display mapping now lives in the root settings component adapter at <RepoFile path="src/console/tui/components/settings.rs" />, and root `EnvValue` to secret-display mapping lives under <RepoFile path="src/console/tui/components.rs" />. The settings view keeps frame/tab composition while environment source lookup, unmask checks, role counts, and trust cursor facts are derived outside the view module.
 
+Editor General/Mounts/Roles/Secrets display mapping now lives in the root editor component adapter at <RepoFile path="src/console/tui/components/editor.rs" />. The editor view supplies state/config facts and delegates tab line construction, mount row formatting, role allow/default row construction, and secret value/unmask lookups before drawing the selected tab.
+
 Root workspace-list environment and role row display mapping now lives in the root workspace-list adapter at <RepoFile path="src/console/tui/components/workspace_list.rs" />. The root list view supplies workspace/config facts and delegates `WorkspaceEnvRow` and `WorkspaceRoleRow` construction before calling the crate-owned workspaces screen render helpers.
 
 Workspace-list mount row rendering for workspace mounts and global mounts now lives with console-local mount row components in <RepoFile path="crates/jackin-console/src/tui/components/mount_rows.rs" />. Root list rendering still gathers root workspace/global mount data and mount-info labels, then passes crate-owned display rows into the component helpers.
