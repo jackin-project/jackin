@@ -3,7 +3,7 @@
 use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
-use crate::console::tui::components::env_value_secret_display;
+use crate::console::tui::components::env_value::secret_display as env_value_secret_display;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
