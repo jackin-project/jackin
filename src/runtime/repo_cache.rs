@@ -564,7 +564,7 @@ pub(super) async fn resolve_agent_repo_with(
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_support::FakeRunner;
+    use super::super::test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
     use super::*;
     use crate::paths::JackinPaths;
     use crate::selector::RoleSelector;
@@ -1030,47 +1030,6 @@ plugins = []
                 .join("branches/feat/caveman-all-install/README.md")
                 .is_file()
         );
-    }
-
-    /// Materialise a valid role repo at `repo_dir` — `.git`, `Dockerfile`,
-    /// and `jackin.role.toml` are all required by `validate_role_repo`.
-    fn seed_valid_role_repo(repo_dir: &std::path::Path) {
-        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
-        std::fs::write(
-            repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:0.1-trixie\n",
-        )
-        .unwrap();
-        std::fs::write(
-            repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-"#,
-        )
-        .unwrap();
-    }
-
-    /// Find the `repo` subdir under the first `role-resolve-*` temp dir
-    /// `register_agent_repo` creates inside `data_dir`. Used inside
-    /// `git clone` side-effect callbacks where the path isn't known
-    /// until the function runs.
-    fn first_temp_role_repo(data_dir: &std::path::Path) -> std::path::PathBuf {
-        std::fs::read_dir(data_dir)
-            .unwrap()
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .find(|path| {
-                path.is_dir()
-                    && path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name.starts_with("role-resolve-"))
-            })
-            .expect("role registration temp dir should exist before git clone side-effect")
-            .join("repo")
     }
 
     #[tokio::test]

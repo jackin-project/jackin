@@ -1717,6 +1717,7 @@ mod tests {
     };
     use crate::operator_env::OpCache;
     use crate::paths::JackinPaths;
+    use crate::runtime::test_support::{first_temp_role_repo, seed_valid_role_repo};
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
     use tempfile::TempDir;
@@ -1783,41 +1784,6 @@ mod tests {
         }
         config.workspaces.insert("ws".into(), empty_ws());
         config
-    }
-
-    fn seed_valid_role_repo(repo_dir: &std::path::Path) {
-        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
-        std::fs::write(
-            repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:0.1-trixie\n",
-        )
-        .unwrap();
-        std::fs::write(
-            repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-"#,
-        )
-        .unwrap();
-    }
-
-    fn first_temp_role_repo(data_dir: &std::path::Path) -> std::path::PathBuf {
-        std::fs::read_dir(data_dir)
-            .unwrap()
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .find(|path| {
-                path.is_dir()
-                    && path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name.starts_with("role-resolve-"))
-            })
-            .expect("role registration temp dir should exist before git clone side-effect")
-            .join("repo")
     }
 
     fn seed_first_temp_valid_role_repo(data_dir: &std::path::Path) {
