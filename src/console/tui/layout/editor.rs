@@ -7,13 +7,11 @@ use crate::console::tui::components::mount_display::{
     workspace_mounts_content_height, workspace_mounts_content_width_with_cache,
 };
 use crate::console::tui::state::{
-    EditorMode, EditorState, EditorTab, SecretsRow, SecretsScopeTag, auth_flat_rows,
-    secrets_flat_rows,
+    EditorMode, EditorState, EditorTab, SecretsScopeTag, auth_flat_rows, secrets_flat_rows,
 };
-use crate::operator_env::EnvValue;
 use jackin_console::tui::screens::editor::view::{
     editor_auth_line_width, editor_body_area, editor_role_load_row_width, editor_role_row_width,
-    editor_roles_status_width, editor_row_width, padded_width, padded_width_cols, text_width,
+    editor_roles_status_width, editor_row_width, editor_secret_line_width, text_width,
 };
 
 pub(crate) fn prepare_editor_for_render(
@@ -138,7 +136,16 @@ fn secrets_tab_geometry(
     let rows = secrets_flat_rows(state);
     let content_width = rows
         .iter()
-        .map(|row| secrets_row_width(row, area, state, config))
+        .map(|row| {
+            editor_secret_line_width(
+                row,
+                area.width,
+                |scope, key| secret_value_display(state, scope, key),
+                |scope, key| state.unmasked_rows.contains(&(scope.clone(), key.to_string())),
+                |role| config.roles.contains_key(role),
+                |role| state.pending.roles.get(role).map_or(0, |role| role.env.len()),
+            )
+        })
         .max()
         .unwrap_or(0);
     EditorTabGeometry {
@@ -154,11 +161,13 @@ fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGe
     let content_width = rows
         .iter()
         .map(|row| {
-            editor_auth_line_width(&crate::console::tui::components::auth_panel::editor_auth_display_row(
-                row,
-                &synthesized,
-                &workspace_name,
-            ))
+            let display_row =
+                crate::console::tui::components::auth_panel::editor_auth_display_row(
+                    row,
+                    &synthesized,
+                    &workspace_name,
+                );
+            editor_auth_line_width(&display_row)
         })
         .max()
         .unwrap_or(0);
@@ -168,78 +177,18 @@ fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGe
     }
 }
 
-fn secrets_row_width(
-    row: &SecretsRow,
-    area: Rect,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) -> usize {
-    const LABEL_WIDTH: usize = 22;
-    match row {
-        SecretsRow::WorkspaceKeyRow(key) => {
-            let default_value = EnvValue::Plain(String::new());
-            let value = state.pending.env.get(key).unwrap_or(&default_value);
-            let masked = !state
-                .unmasked_rows
-                .contains(&(SecretsScopeTag::Workspace, key.clone()));
-            secrets_key_width(key, value, masked, area.width, LABEL_WIDTH)
-        }
-        SecretsRow::WorkspaceAddSentinel => text_width("  + Add environment variable"),
-        SecretsRow::RoleHeader { role, .. } => {
-            let count = state.pending.roles.get(role).map_or(0, |o| o.env.len());
-            let mut width = text_width(&format!("       ▼ Role: {role}  ({count} vars)"));
-            if !config.roles.contains_key(role) {
-                width += text_width("  (not in registry)");
-            }
-            padded_width_cols(width, 7)
-        }
-        SecretsRow::RoleKeyRow { role, key } => {
-            let default_value = EnvValue::Plain(String::new());
-            let value = state
-                .pending
-                .roles
-                .get(role)
-                .and_then(|role| role.env.get(key))
-                .unwrap_or(&default_value);
-            let masked = !state
-                .unmasked_rows
-                .contains(&(SecretsScopeTag::Role(role.clone()), key.clone()));
-            secrets_key_width(key, value, masked, area.width, LABEL_WIDTH)
-        }
-        SecretsRow::RoleAddSentinel(role) => {
-            padded_width(&format!("       + Add {role} environment variable"))
-        }
-        SecretsRow::SectionSpacer => 0,
-    }
-}
-
-fn secrets_key_width(
+fn secret_value_display<'a>(
+    state: &'a EditorState<'_>,
+    scope: &SecretsScopeTag,
     key: &str,
-    value: &EnvValue,
-    masked: bool,
-    area_width: u16,
-    label_width: usize,
-) -> usize {
-    let prefix_width = 2 + 5 + text_width(&format!("{key:label_width$}")) + 2;
-    let value_width = match value {
-        EnvValue::OpRef(reference) => op_reference_width(&reference.path)
-            .map(|width| text_width("[op] ") + width)
-            .unwrap_or_else(|| text_width("     <unparseable path - re-pick>")),
-        EnvValue::Plain(_) if masked => text_width("●●●●●●●●●●●"),
-        EnvValue::Plain(value) => {
-            let budget = (area_width as usize)
-                .saturating_sub(label_width)
-                .saturating_sub(8)
-                .max(1);
-            value.chars().count().min(budget)
-        }
-    };
-    padded_width_cols(prefix_width + value_width, 2)
-}
-
-fn op_reference_width(path: &str) -> Option<usize> {
-    let parts = jackin_console::op_breadcrumb::parse_path_breadcrumb(path)?;
-    Some(jackin_console::op_breadcrumb::breadcrumb_display_width(
-        &parts,
-    ))
+) -> Option<jackin_console::tui::components::editor_rows::SecretValueDisplay<'a>> {
+    let value = match scope {
+        SecretsScopeTag::Workspace => state.pending.env.get(key),
+        SecretsScopeTag::Role(role) => state
+            .pending
+            .roles
+            .get(role)
+            .and_then(|role| role.env.get(key)),
+    }?;
+    Some(crate::console::tui::components::env_value::secret_display(value))
 }

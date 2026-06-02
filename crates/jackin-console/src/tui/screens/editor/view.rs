@@ -507,6 +507,101 @@ pub fn secret_lines<'a>(
 }
 
 #[must_use]
+pub fn editor_secret_line_width<'a>(
+    row: &super::model::SecretsRow,
+    area_width: u16,
+    value_for: impl Fn(&SecretsScopeTag, &str) -> Option<SecretValueDisplay<'a>>,
+    is_unmasked: impl Fn(&SecretsScopeTag, &str) -> bool,
+    role_in_registry: impl Fn(&str) -> bool,
+    role_var_count: impl Fn(&str) -> usize,
+) -> usize {
+    const LABEL_WIDTH: usize = 22;
+    match row {
+        super::model::SecretsRow::WorkspaceKeyRow(key) => {
+            let scope = SecretsScopeTag::Workspace;
+            let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
+            secret_key_line_width(
+                key,
+                value,
+                !is_unmasked(&scope, key),
+                area_width,
+                LABEL_WIDTH,
+            )
+        }
+        super::model::SecretsRow::WorkspaceAddSentinel => {
+            padded_width("  + Add environment variable")
+        }
+        super::model::SecretsRow::RoleHeader { role, .. } => {
+            let mut width = text_width(&format!(
+                "       \u{25bc} Role: {role}  ({} vars)",
+                role_var_count(role)
+            ));
+            if !role_in_registry(role) {
+                width += text_width("  (not in registry)");
+            }
+            padded_width_cols(width, 7)
+        }
+        super::model::SecretsRow::RoleKeyRow { role, key } => {
+            let scope = SecretsScopeTag::Role(role.clone());
+            let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
+            secret_key_line_width(
+                key,
+                value,
+                !is_unmasked(&scope, key),
+                area_width,
+                LABEL_WIDTH,
+            )
+        }
+        super::model::SecretsRow::RoleAddSentinel(role) => {
+            padded_width(&format!("       + Add {role} environment variable"))
+        }
+        super::model::SecretsRow::SectionSpacer => 0,
+    }
+}
+
+fn secret_key_line_width(
+    key: &str,
+    value: SecretValueDisplay<'_>,
+    masked: bool,
+    area_width: u16,
+    label_width: usize,
+) -> usize {
+    const OP_MARKER: &str = "[op] ";
+    const NO_MARKER: &str = "     ";
+    const MASK: &str =
+        "\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}";
+    const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
+
+    let op_breadcrumb = match value {
+        SecretValueDisplay::OpRefPath(path) => crate::op_breadcrumb::parse_path_breadcrumb(path),
+        SecretValueDisplay::Plain(_) => None,
+    };
+    let marker = if op_breadcrumb.is_some() {
+        OP_MARKER
+    } else {
+        NO_MARKER
+    };
+    let prefix_width =
+        text_width("  ") + text_width(marker) + text_width(&format!("{key:label_width$}")) + 2;
+    let value_width = if let Some(parts) = op_breadcrumb.as_ref() {
+        crate::op_breadcrumb::breadcrumb_display_width(parts)
+    } else if masked {
+        text_width(MASK)
+    } else {
+        let plain_str = match value {
+            SecretValueDisplay::Plain(value) => value,
+            SecretValueDisplay::OpRefPath(_) => OP_REF_REPICK_PLACEHOLDER,
+        };
+        let budget = (area_width as usize)
+            .saturating_sub(label_width)
+            .saturating_sub(8)
+            .max(1);
+        plain_str.chars().count().min(budget)
+    };
+    padded_width_cols(prefix_width + value_width, 2)
+}
+
+#[must_use]
 pub fn auth_lines(
     rows: &[EditorAuthLineRow],
     cursor: usize,
@@ -1046,6 +1141,32 @@ mod tests {
         assert_eq!(lines[2].spans[2].content.as_ref(), " Role: alpha  (1 vars)");
         assert_eq!(lines[3].spans[0].content.as_ref(), "\u{25b8} ");
         assert_eq!(lines[4].spans[0].content.as_ref(), "       + Add alpha environment variable");
+        assert_eq!(
+            editor_secret_line_width(
+                &rows[0],
+                80,
+                |scope, key| match (scope, key) {
+                    (SecretsScopeTag::Workspace, "TOKEN") => Some(SecretValueDisplay::Plain("secret")),
+                    _ => None,
+                },
+                |scope, key| matches!((scope, key), (SecretsScopeTag::Workspace, "TOKEN")),
+                |_| true,
+                |_| 1,
+            ),
+            39
+        );
+        assert_eq!(
+            editor_secret_line_width(&rows[1], 80, |_, _| None, |_, _| false, |_| true, |_| 1),
+            padded_width("  + Add environment variable")
+        );
+        assert_eq!(
+            editor_secret_line_width(&rows[2], 80, |_, _| None, |_, _| false, |_| true, |_| 1),
+            padded_width("       \u{25bc} Role: alpha  (1 vars)")
+        );
+        assert_eq!(
+            editor_secret_line_width(&rows[4], 80, |_, _| None, |_, _| false, |_| true, |_| 1),
+            padded_width("       + Add alpha environment variable")
+        );
     }
 
     #[test]
