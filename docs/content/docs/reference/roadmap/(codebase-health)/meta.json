@@ -10,6 +10,7 @@
     "../terminal-emulation-crate",
     "../rust-ci-tooling",
     "../test-infra-behavioral-specs",
+    "../ci-matrix-split",
     "(phase-1-docs-setup)",
     "(phase-2-file-splits)",
     "(phase-3-deferred)"
