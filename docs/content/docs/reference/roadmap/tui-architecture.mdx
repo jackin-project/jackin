@@ -338,6 +338,8 @@ Capsule focus-change, drag-resize, and selection-change redraw planning now also
 
 Capsule palette-route redraw planning now lives with visible update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon still executes palette commands against tabs, panes, and dialogs, but the route-to-redraw rule for terminal actions is TUI-owned.
 
+Capsule direct-action frame planning now lives with visible update vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/update.rs" />. The daemon still validates action preconditions and mutates concrete tabs, panes, dialogs, zoom, and detach state, but the visible full-frame versus overlay-frame reason for those direct actions is TUI-owned.
+
 Settings screen view geometry now owns the reusable global-mount scroll-frame calculation in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root settings geometry supplies only root mount rows and cache-derived content width.
 
 Settings header title wording now lives with settings screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering asks the screen helper for the title instead of carrying settings-screen copy.

@@ -7,7 +7,7 @@
 use crate::tui::components::dialog::DialogAction;
 use crate::tui::input::PrefixCommand;
 use crate::tui::layout::{Rect, SplitOrient};
-use crate::tui::message::PaletteCommandRoute;
+use crate::tui::message::{Action, PaletteCommandRoute};
 
 /// Duration for transient "copied" feedback in TUI dialogs.
 pub(crate) const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration =
@@ -95,11 +95,42 @@ pub(crate) enum DialogActionFramePlan {
     Overlay(FullRedrawReason),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ActionFramePlan {
+    Full(FullRedrawReason),
+    Overlay(FullRedrawReason),
+}
+
 pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFramePlan {
     if matches!(action, DialogAction::CopyToClipboard(_)) {
         DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
     } else {
         DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+    }
+}
+
+pub(crate) fn action_frame_plan(action: &Action) -> Option<ActionFramePlan> {
+    match action {
+        Action::OpenPalette => Some(ActionFramePlan::Full(FullRedrawReason::PaletteOverlay)),
+        Action::OpenContainerInfo | Action::OpenGithubContext => {
+            Some(ActionFramePlan::Overlay(FullRedrawReason::DialogChange))
+        }
+        Action::OpenRenameTab(_) => Some(ActionFramePlan::Full(FullRedrawReason::DialogChange)),
+        Action::OpenAgentPicker(_) => Some(ActionFramePlan::Full(FullRedrawReason::PaletteOverlay)),
+        Action::SwitchTab(_) | Action::NextTab | Action::PreviousTab | Action::JumpTab(_) => {
+            Some(ActionFramePlan::Full(FullRedrawReason::TabSwitch))
+        }
+        Action::SplitFocused(_) | Action::ResizePane(_) => {
+            Some(ActionFramePlan::Full(FullRedrawReason::LayoutChange))
+        }
+        Action::MoveFocus(_) => Some(ActionFramePlan::Full(FullRedrawReason::FocusChange)),
+        Action::ToggleZoom => Some(ActionFramePlan::Full(FullRedrawReason::ZoomChange)),
+        Action::CloseFocusedPane | Action::CloseFocusedTab => {
+            Some(ActionFramePlan::Full(FullRedrawReason::SplitClose))
+        }
+        Action::ClearFocusedPane => Some(ActionFramePlan::Full(FullRedrawReason::PaneClear)),
+        Action::Detach => Some(ActionFramePlan::Full(FullRedrawReason::ExplicitRedraw)),
+        _ => None,
     }
 }
 
@@ -190,8 +221,9 @@ pub(crate) fn palette_route_redraw_reason(
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogActionFramePlan, HoverFramePlan, PartialFramePlan, PartialFrameState,
-        dialog_action_frame_plan, drag_resize_ratio, drag_resize_redraw_reason,
+        ActionFramePlan, DialogActionFramePlan, HoverFramePlan, PartialFramePlan,
+        PartialFrameState, action_frame_plan, dialog_action_frame_plan, drag_resize_ratio,
+        drag_resize_redraw_reason,
         focus_change_redraw_reason, hover_frame_plan, pane_data_redraw_reason, partial_frame_plan,
         palette_route_redraw_reason, prefix_full_redraw_reason, selection_change_redraw_reason,
         selection_start_redraw_reason,
@@ -199,7 +231,7 @@ mod tests {
     use crate::tui::components::dialog::{DialogAction, PickerIntent};
     use crate::tui::input::{ArrowDir, PrefixCommand};
     use crate::tui::layout::{Rect, SplitOrient};
-    use crate::tui::message::PaletteCommandRoute;
+    use crate::tui::message::{Action, PaletteCommandRoute};
     use crate::tui::update::FullRedrawReason;
 
     #[test]
@@ -239,6 +271,32 @@ mod tests {
                 intent: PickerIntent::NewTab,
             }),
             DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+        );
+    }
+
+    #[test]
+    fn direct_actions_map_to_visible_frame_plans() {
+        assert_eq!(
+            action_frame_plan(&Action::OpenContainerInfo),
+            Some(ActionFramePlan::Overlay(FullRedrawReason::DialogChange))
+        );
+        assert_eq!(
+            action_frame_plan(&Action::OpenPalette),
+            Some(ActionFramePlan::Full(FullRedrawReason::PaletteOverlay))
+        );
+        assert_eq!(
+            action_frame_plan(&Action::NextTab),
+            Some(ActionFramePlan::Full(FullRedrawReason::TabSwitch))
+        );
+        assert_eq!(
+            action_frame_plan(&Action::ClearFocusedPane),
+            Some(ActionFramePlan::Full(FullRedrawReason::PaneClear))
+        );
+        assert_eq!(
+            action_frame_plan(&Action::Palette(
+                crate::tui::components::dialog::PaletteCommand::ClearPane
+            )),
+            None
         );
     }
 

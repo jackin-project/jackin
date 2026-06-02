@@ -104,8 +104,8 @@ use crate::tui::app::{
     visible_panes_for_layout,
 };
 use crate::tui::update::{
-    DialogActionFramePlan, FullRedrawReason, HoverFramePlan, PartialFramePlan, PartialFrameState,
-    dialog_action_frame_plan, drag_resize_ratio, drag_resize_redraw_reason,
+    ActionFramePlan, DialogActionFramePlan, FullRedrawReason, HoverFramePlan, PartialFramePlan,
+    PartialFrameState, dialog_action_frame_plan, drag_resize_ratio, drag_resize_redraw_reason,
     focus_change_redraw_reason, hover_frame_plan, pane_data_redraw_reason, partial_frame_plan,
     palette_route_redraw_reason, selection_change_redraw_reason, selection_start_redraw_reason,
 };

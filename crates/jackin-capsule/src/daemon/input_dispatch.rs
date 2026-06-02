@@ -2,6 +2,7 @@
 
 use crate::tui::components::branch_context_bar::branch_context_bar_hit;
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
+use crate::tui::update::action_frame_plan;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
@@ -9,6 +10,13 @@ use crate::tui::view::encode_osc52_clipboard_write;
 use super::*;
 
 impl Multiplexer {
+    fn compose_action_frame_plan(&mut self, plan: ActionFramePlan) -> Vec<u8> {
+        match plan {
+            ActionFramePlan::Full(reason) => self.compose_full_frame(reason),
+            ActionFramePlan::Overlay(reason) => self.compose_dialog_overlay_frame(reason),
+        }
+    }
+
     /// Single dispatch point for a `DialogAction`. Both the
     /// mouse-click and key-event paths call `Dialog::handle_*`
     /// and route the result here, so adding a new variant means
@@ -162,15 +170,18 @@ impl Multiplexer {
                     PaletteToggleRoute::CloseDialog => self.dialog_clear(),
                     PaletteToggleRoute::OpenPalette => self.open_command_palette(),
                 }
-                Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
+                action_frame_plan(&Action::OpenPalette)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::OpenContainerInfo => {
                 self.open_container_info_dialog();
-                Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange))
+                action_frame_plan(&Action::OpenContainerInfo)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::OpenGithubContext => {
                 self.open_github_context_dialog(Instant::now());
-                Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange))
+                action_frame_plan(&Action::OpenGithubContext)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::OpenRenameTab(idx) => {
                 if idx >= self.tabs.len() {
@@ -183,12 +194,14 @@ impl Multiplexer {
                     .unwrap_or_default();
                 self.dialog_push(Dialog::new_rename_tab(idx, initial));
                 self.last_tab_click = None;
-                Some(self.compose_full_frame(FullRedrawReason::DialogChange))
+                action_frame_plan(&Action::OpenRenameTab(idx))
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::OpenAgentPicker(intent) => {
                 let agents = self.available_agents.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
-                Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
+                action_frame_plan(&Action::OpenAgentPicker(intent))
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::SwitchTab(idx) => {
                 if idx >= self.tabs.len() || idx == self.active_tab {
@@ -198,49 +211,60 @@ impl Multiplexer {
                 let prev = self.active_focused_id();
                 self.active_tab = idx;
                 self.synthesise_focus_swap(prev, self.active_focused_id());
-                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+                action_frame_plan(&Action::SwitchTab(idx))
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::NextTab => {
                 self.next_tab();
-                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+                action_frame_plan(&Action::NextTab)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::PreviousTab => {
                 self.prev_tab();
-                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+                action_frame_plan(&Action::PreviousTab)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::JumpTab(idx) => {
                 self.jump_tab(idx);
-                Some(self.compose_full_frame(FullRedrawReason::TabSwitch))
+                action_frame_plan(&Action::JumpTab(idx))
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::SplitFocused(direction) => {
                 if let Err(err) = self.split_focused(direction) {
                     crate::clog!("split ({direction:?}) failed: {err:?}");
                 }
-                Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+                action_frame_plan(&Action::SplitFocused(direction))
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::MoveFocus(dir) => {
                 self.move_focus(dir);
-                Some(self.compose_full_frame(FullRedrawReason::FocusChange))
+                action_frame_plan(&Action::MoveFocus(dir))
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::ToggleZoom => {
                 self.toggle_zoom();
-                Some(self.compose_full_frame(FullRedrawReason::ZoomChange))
+                action_frame_plan(&Action::ToggleZoom)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::CloseFocusedPane => {
                 self.close_focused_pane();
-                Some(self.compose_full_frame(FullRedrawReason::SplitClose))
+                action_frame_plan(&Action::CloseFocusedPane)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::CloseFocusedTab => {
                 self.close_focused_tab();
-                Some(self.compose_full_frame(FullRedrawReason::SplitClose))
+                action_frame_plan(&Action::CloseFocusedTab)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::ClearFocusedPane => {
                 self.clear_focused_pane();
-                Some(self.compose_full_frame(FullRedrawReason::PaneClear))
+                action_frame_plan(&Action::ClearFocusedPane)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::Detach => {
                 self.detach_requested = true;
-                Some(self.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                action_frame_plan(&Action::Detach)
+                    .map(|plan| self.compose_action_frame_plan(plan))
             }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
@@ -255,7 +279,8 @@ impl Multiplexer {
                     None
                 } else {
                     self.resize_focused(dir);
-                    Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+                    action_frame_plan(&Action::ResizePane(dir))
+                        .map(|plan| self.compose_action_frame_plan(plan))
                 }
             }
             Action::FocusReport(focused) => {
