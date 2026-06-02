@@ -1,6 +1,10 @@
 //! Ratatui adapters for shared jackin' design tokens.
+//!
+//! Also exposes named `Style` constants for the most-repeated combinations
+//! (`BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `DANGER`) so callers avoid writing
+//! `Style::default().fg(WHITE).add_modifier(Modifier::BOLD)` inline.
 
-use ratatui::style::Color;
+use ratatui::style::{Color, Modifier, Style};
 
 use crate::{
     ACTION_ACCENT as ACTION_ACCENT_RGB, BORDER_GRAY as BORDER_GRAY_RGB, CYAN as CYAN_RGB,
@@ -41,6 +45,13 @@ pub const CYAN: Color = color(CYAN_RGB);
 pub const CYAN_DIM: Color = color(CYAN_DIM_RGB);
 pub const ACTION_ACCENT: Color = color(ACTION_ACCENT_RGB);
 pub const DISCLOSURE_ACCENT: Color = color(DISCLOSURE_ACCENT_RGB);
+
+/// Named style constants — the most-repeated `Style::default().fg(…).add_modifier(…)` chains.
+pub const BOLD_WHITE: Style = Style::new().fg(WHITE).add_modifier(Modifier::BOLD);
+pub const BOLD_GREEN: Style = Style::new().fg(PHOSPHOR_GREEN).add_modifier(Modifier::BOLD);
+pub const DIM: Style = Style::new().fg(PHOSPHOR_DIM);
+pub const GREEN: Style = Style::new().fg(PHOSPHOR_GREEN);
+pub const DANGER: Style = Style::new().fg(DANGER_RED).add_modifier(Modifier::BOLD);
 
 #[must_use]
 pub fn faded(color: Color, alpha: f32) -> Color {
