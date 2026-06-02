@@ -149,7 +149,7 @@ src/
 
 Settings-modal render adapters now call crate-owned modal rect specs directly instead of carrying duplicate root wrapper helpers.
 
-Root-modal widget dispatch now lives in <RepoFile path="src/console/tui/components/modal.rs" /> while <RepoFile path="src/console/tui/view/modal.rs" /> only aliases that adapter for the root frame view.
+Root-modal widget dispatch now lives in <RepoFile path="src/console/tui/components/modal.rs" />; the root frame view imports that adapter directly instead of carrying a view-layer alias.
 
 Console container-info click-copy now queues `ManagerEffect::CopyContainerInfoValue`; <RepoFile path="src/console/effects.rs" /> writes the OSC52 clipboard sequence and marks copied feedback outside mouse input.
 

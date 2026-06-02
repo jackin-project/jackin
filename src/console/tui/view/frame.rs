@@ -2,6 +2,7 @@ use ratatui::{Frame, layout::Rect};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
+use crate::console::tui::components::modal::render_modal;
 use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
@@ -13,7 +14,7 @@ use jackin_console::tui::view::{
 };
 use jackin_tui::HintSpan;
 
-use super::{editor, list, modal, settings};
+use super::{editor, list, settings};
 
 #[allow(clippy::too_many_lines)]
 pub fn render(
@@ -58,18 +59,18 @@ pub fn render(
     let is_list_stage = matches!(state.stage, ManagerStage::List);
     if is_list_stage {
         if let Some(modal) = &state.list_modal {
-            modal::render_modal(frame, modal);
+            render_modal(frame, modal);
         }
     } else {
         match &state.stage {
             ManagerStage::Editor(editor) => {
                 if let Some(modal) = &editor.modal {
-                    modal::render_modal(frame, modal);
+                    render_modal(frame, modal);
                 }
             }
             ManagerStage::CreatePrelude(prelude) => {
                 if let Some(modal) = &prelude.modal {
-                    modal::render_modal(frame, modal);
+                    render_modal(frame, modal);
                 }
             }
             ManagerStage::ConfirmDelete {
