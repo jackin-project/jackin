@@ -590,20 +590,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                             let _ = crate::console::tui::update_manager(
                                 ms,
                                 crate::console::tui::ManagerMessage::OpenListContainerInfo {
-                                    state: jackin_tui::components::ContainerInfoState::new(
-                                        "Container info",
-                                        vec![
-                                            jackin_tui::components::ContainerInfoRow::new(
-                                                "Run ID",
-                                                run.run_id(),
-                                            )
-                                            .copyable()
-                                            .emphasised(),
-                                            jackin_tui::components::ContainerInfoRow::new(
-                                                "Run log", &log_path,
-                                            )
-                                            .hyperlink(format!("file://{log_path}")),
-                                        ],
+                                    state: jackin_console::tui::components::container_info::debug_run_info_state(
+                                        run.run_id(),
+                                        log_path,
                                     ),
                                 },
                             );
