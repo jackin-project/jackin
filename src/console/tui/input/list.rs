@@ -10,6 +10,9 @@ use jackin_console::tui::components::error_popup::{
     no_recoverable_instance_selected_message, no_running_instance_for_workspace_message,
     no_running_instance_to_stop_message,
 };
+use jackin_console::tui::components::provider_picker::{
+    ProviderPickerKey, ProviderPickerOutcome,
+};
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceStatus, instance_action_accepts_status,
@@ -30,6 +33,16 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::paths::JackinPaths;
+
+fn provider_picker_key(key: KeyEvent) -> ProviderPickerKey {
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => ProviderPickerKey::Up,
+        KeyCode::Down | KeyCode::Char('j') => ProviderPickerKey::Down,
+        KeyCode::Enter => ProviderPickerKey::Commit,
+        KeyCode::Esc => ProviderPickerKey::Cancel,
+        _ => ProviderPickerKey::Other,
+    }
+}
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_list_key(
@@ -618,33 +631,24 @@ pub(super) fn handle_inline_provider_picker(
     let Some(picker) = state.inline_provider_picker.as_mut() else {
         return InputOutcome::Continue;
     };
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            picker.move_up();
-            InputOutcome::Continue
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            picker.move_down();
-            InputOutcome::Continue
-        }
-        KeyCode::Enter => {
-            let Some(provider) = picker.selected_provider() else {
-                return InputOutcome::Continue;
-            };
-            let container = picker.context.clone();
-            let agent = picker.agent;
+    match picker.handle_key(provider_picker_key(key)) {
+        ProviderPickerOutcome::Commit {
+            context,
+            agent,
+            provider,
+        } => {
             dispatch_manager(state, ManagerMessage::DismissInlineProviderPicker);
             InputOutcome::NewSessionWithProvider {
-                container,
+                container: context,
                 agent,
                 provider,
             }
         }
-        KeyCode::Esc => {
+        ProviderPickerOutcome::Cancel => {
             dispatch_manager(state, ManagerMessage::DismissInlineProviderPicker);
             InputOutcome::Continue
         }
-        _ => InputOutcome::Continue,
+        ProviderPickerOutcome::Continue => InputOutcome::Continue,
     }
 }
 
@@ -655,31 +659,24 @@ pub(super) fn handle_launch_provider_picker(
     let Some(picker) = state.launch_provider_picker.as_mut() else {
         return InputOutcome::Continue;
     };
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            picker.move_up();
-            InputOutcome::Continue
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            picker.move_down();
-            InputOutcome::Continue
-        }
-        KeyCode::Enter => {
-            let Some(provider) = picker.selected_provider() else {
-                return InputOutcome::Continue;
-            };
-            let picker = state.launch_provider_picker.take().expect("checked above");
+    match picker.handle_key(provider_picker_key(key)) {
+        ProviderPickerOutcome::Commit {
+            context,
+            agent,
+            provider,
+        } => {
+            state.launch_provider_picker = None;
             InputOutcome::LaunchWithProvider {
-                selector: picker.context,
-                agent: picker.agent,
+                selector: context,
+                agent,
                 provider,
             }
         }
-        KeyCode::Esc => {
+        ProviderPickerOutcome::Cancel => {
             dispatch_manager(state, ManagerMessage::DismissLaunchProviderPicker);
             InputOutcome::Continue
         }
-        _ => InputOutcome::Continue,
+        ProviderPickerOutcome::Continue => InputOutcome::Continue,
     }
 }
 

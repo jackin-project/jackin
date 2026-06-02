@@ -9,6 +9,22 @@ pub struct ProviderPickerState<C, A, P> {
     selected: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderPickerKey {
+    Up,
+    Down,
+    Commit,
+    Cancel,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderPickerOutcome<C, A, P> {
+    Continue,
+    Commit { context: C, agent: A, provider: P },
+    Cancel,
+}
+
 impl<C, A, P> ProviderPickerState<C, A, P> {
     pub const fn new(context: C, agent: A, providers: Vec<P>) -> Self {
         Self {
@@ -45,5 +61,83 @@ impl<C, A, P> ProviderPickerState<C, A, P> {
         P: Copy,
     {
         self.providers.get(self.selected).copied()
+    }
+
+    #[must_use]
+    pub fn handle_key(&mut self, key: ProviderPickerKey) -> ProviderPickerOutcome<C, A, P>
+    where
+        C: Clone,
+        A: Copy,
+        P: Copy,
+    {
+        match key {
+            ProviderPickerKey::Up => {
+                self.move_up();
+                ProviderPickerOutcome::Continue
+            }
+            ProviderPickerKey::Down => {
+                self.move_down();
+                ProviderPickerOutcome::Continue
+            }
+            ProviderPickerKey::Commit => self
+                .selected_provider()
+                .map_or(ProviderPickerOutcome::Continue, |provider| {
+                    ProviderPickerOutcome::Commit {
+                        context: self.context.clone(),
+                        agent: self.agent,
+                        provider,
+                    }
+                }),
+            ProviderPickerKey::Cancel => ProviderPickerOutcome::Cancel,
+            ProviderPickerKey::Other => ProviderPickerOutcome::Continue,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ProviderPickerKey, ProviderPickerOutcome, ProviderPickerState};
+
+    #[test]
+    fn provider_picker_key_plan_moves_and_commits() {
+        let mut picker = ProviderPickerState::new("ctx", "agent", vec!["a", "b"]);
+
+        assert_eq!(
+            picker.handle_key(ProviderPickerKey::Down),
+            ProviderPickerOutcome::Continue
+        );
+        assert_eq!(picker.selected(), 1);
+        assert_eq!(
+            picker.handle_key(ProviderPickerKey::Down),
+            ProviderPickerOutcome::Continue
+        );
+        assert_eq!(picker.selected(), 1);
+        assert_eq!(
+            picker.handle_key(ProviderPickerKey::Up),
+            ProviderPickerOutcome::Continue
+        );
+        assert_eq!(picker.selected(), 0);
+        assert_eq!(
+            picker.handle_key(ProviderPickerKey::Commit),
+            ProviderPickerOutcome::Commit {
+                context: "ctx",
+                agent: "agent",
+                provider: "a",
+            }
+        );
+    }
+
+    #[test]
+    fn provider_picker_key_plan_cancels_and_ignores_other() {
+        let mut picker = ProviderPickerState::new(7, 11, vec![13]);
+
+        assert_eq!(
+            picker.handle_key(ProviderPickerKey::Other),
+            ProviderPickerOutcome::Continue
+        );
+        assert_eq!(
+            picker.handle_key(ProviderPickerKey::Cancel),
+            ProviderPickerOutcome::Cancel
+        );
     }
 }
