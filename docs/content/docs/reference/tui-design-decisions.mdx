@@ -241,6 +241,8 @@ Console workspace instance action/status acceptance planning, preview-pane focus
 
 Console auth-panel title formatting, auth-form mode cycling, mode-to-next-focus planning, and full auth-form key/focus planning now live with the shared auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />; auth-form target kind access lives with <RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs" />. Editor and settings auth input keep root modal persistence, token-generation return paths, credential-source side trips, and credential commit/reset side effects, but share the same component-owned title and focus behavior.
 
+Auth form literal-buffer derivation lives with the shared auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />. Root editor/settings adapters may store the buffer for modal round-trips, but they do not inspect credential variants to compute it.
+
 Capsule tab auto-label derivation now lives with visible multiplexer model helpers in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" />. Daemon code supplies session agent/shell facts and applies the returned label to tab chrome.
 
 Capsule visible agent-label formatting for pane/tab chrome and shell session launch labels now live with visible multiplexer model helpers in <RepoFile path="crates/jackin-capsule/src/tui/app.rs" />. Daemon/session code supplies agent slug and provider label facts.

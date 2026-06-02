@@ -53,11 +53,7 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppCon
         || AuthForm::new(kind),
         |mode| AuthForm::from_existing(kind, mode, existing_cred),
     );
-    let literal_buffer = if let CredentialInput::Literal(s) = &form.credential {
-        s.clone()
-    } else {
-        String::new()
-    };
+    let literal_buffer = form.literal_buffer();
     editor.modal = Some(Modal::AuthForm {
         target,
         state: Box::new(form),

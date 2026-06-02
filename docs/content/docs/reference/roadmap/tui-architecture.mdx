@@ -468,7 +468,7 @@ Shared auth source-picker state, auth panel title formatting, credential text-in
 
 Generated-token source-picker label construction now also lives with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />. Editor and settings token-generation input code still decides when generation starts, but it asks the component helper for the visible source-picker state.
 
-Generated-token 1Password item-name default construction now also lives with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />. Editor and settings token-generation input code still supplies the configured template and concrete scope label, but the component helper owns applying the scope label to the visible item-name default.
+Generated-token 1Password item-name default construction now also lives with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs" />. Editor and settings token-generation input code still supplies the configured template and concrete scope label, but the component helper owns applying the scope label to the visible item-name default. Auth form literal-buffer derivation also lives with the auth-panel component, so editor/settings root adapters no longer inspect credential enum variants when mounting the shared form.
 
 Root editor auth-row display mapping now lives in the root auth-panel adapter at <RepoFile path="src/console/tui/components/auth_panel.rs" />. The editor view passes synthesized config facts and auth rows to that adapter instead of owning auth-mode inheritance and credential-source display derivation inline.
 

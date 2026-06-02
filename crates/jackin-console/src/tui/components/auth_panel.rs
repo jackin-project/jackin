@@ -200,6 +200,13 @@ impl<V: AuthCredential> AuthForm<V> {
         self.credential = CredentialInput::Literal(value);
     }
 
+    pub fn literal_buffer(&self) -> String {
+        match &self.credential {
+            CredentialInput::Literal(value) => value.clone(),
+            CredentialInput::None | CredentialInput::OpRef(_) => String::new(),
+        }
+    }
+
     pub fn set_op_ref(&mut self, value: V::Ref) {
         self.credential = CredentialInput::OpRef(value);
     }
@@ -609,6 +616,20 @@ mod tests {
         form.set_mode(AuthMode::ApiKey);
         form.set_literal("sk-ant-test".into());
         assert!(form.can_save());
+    }
+
+    #[test]
+    fn literal_buffer_reads_only_plain_literal() {
+        let mut form = TestForm::new(AuthKind::Claude);
+        assert_eq!(form.literal_buffer(), "");
+
+        form.set_literal("sk-ant-test".into());
+        assert_eq!(form.literal_buffer(), "sk-ant-test");
+
+        form.set_op_ref(TestOpRef {
+            path: "vault/item/field".into(),
+        });
+        assert_eq!(form.literal_buffer(), "");
     }
 
     #[test]

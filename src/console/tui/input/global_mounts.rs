@@ -472,11 +472,7 @@ fn open_settings_auth_form(
         })
         .cloned();
     let form = AuthForm::from_existing(kind, row.mode, existing_credential);
-    let literal_buffer = if let CredentialInput::Literal(s) = &form.credential {
-        s.clone()
-    } else {
-        String::new()
-    };
+    let literal_buffer = form.literal_buffer();
     auth.modal = Some(SettingsAuthModal::AuthForm {
         target: AuthFormTarget::Workspace { kind },
         state: Box::new(form),
