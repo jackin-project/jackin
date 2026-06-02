@@ -27,6 +27,11 @@ impl<R: RoleChoice> RolePickerState<R> {
     }
 
     #[must_use]
+    pub fn launch(roles: Vec<R>) -> Self {
+        Self::with_confirm_label(roles, "launch")
+    }
+
+    #[must_use]
     pub fn with_confirm_label(roles: Vec<R>, confirm_label: &str) -> Self {
         let filtered = roles.clone();
         let list_state = crate::tui::components::list_helpers::list_state_for_count(filtered.len());
@@ -207,6 +212,13 @@ mod tests {
     fn new_selects_nothing_when_empty() {
         let s = RolePickerState::<TestRole>::new(vec![]);
         assert_eq!(s.list_state.selected, None);
+    }
+
+    #[test]
+    fn launch_uses_launch_confirm_label() {
+        let s = RolePickerState::launch(roles(&["agent-smith"]));
+
+        assert_eq!(s.confirm_label, "launch");
     }
 
     #[test]
