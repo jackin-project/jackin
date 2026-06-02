@@ -488,9 +488,8 @@ impl Multiplexer {
             }
             Action::StartSelection { row, col } => {
                 self.selection = self.detect_selection_start(row, col);
-                self.selection
-                    .is_some()
-                    .then(|| self.compose_full_frame(FullRedrawReason::SelectionRepaint))
+                selection_start_redraw_reason(self.selection.is_some())
+                    .map(|reason| self.compose_full_frame(reason))
             }
             Action::SelectionMotion { row, col } => self.selection_motion(row, col),
             Action::FinalizeSelection => self.finalize_selection(),

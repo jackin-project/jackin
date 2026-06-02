@@ -161,12 +161,16 @@ pub(crate) fn pane_data_redraw_reason(
     }
 }
 
+pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<FullRedrawReason> {
+    selection_started.then_some(FullRedrawReason::SelectionRepaint)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         DialogActionFramePlan, HoverFramePlan, PartialFramePlan, PartialFrameState,
         dialog_action_frame_plan, drag_resize_ratio, hover_frame_plan, pane_data_redraw_reason,
-        partial_frame_plan, prefix_full_redraw_reason,
+        partial_frame_plan, prefix_full_redraw_reason, selection_start_redraw_reason,
     };
     use crate::tui::components::dialog::{DialogAction, PickerIntent};
     use crate::tui::input::{ArrowDir, PrefixCommand};
@@ -293,5 +297,14 @@ mod tests {
             Some(FullRedrawReason::ExplicitRedraw)
         );
         assert_eq!(pane_data_redraw_reason(false, false), None);
+    }
+
+    #[test]
+    fn selection_start_redraw_reason_only_repaints_when_selection_begins() {
+        assert_eq!(
+            selection_start_redraw_reason(true),
+            Some(FullRedrawReason::SelectionRepaint)
+        );
+        assert_eq!(selection_start_redraw_reason(false), None);
     }
 }
