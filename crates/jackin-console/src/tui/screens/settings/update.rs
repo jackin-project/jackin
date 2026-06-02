@@ -101,6 +101,33 @@ pub fn move_trust_selection(state: &mut SettingsTrustState, delta: isize) {
     state.selected = crate::focus::moved_selection(state.selected, state.pending.len(), delta);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsSelectionScrollPlan {
+    pub selected: usize,
+    pub scroll_y: u16,
+}
+
+#[must_use]
+pub fn settings_trust_selection_plan(
+    selected: usize,
+    row_count: usize,
+    delta: isize,
+    current_scroll_y: u16,
+    term_height: u16,
+    footer_h: u16,
+) -> SettingsSelectionScrollPlan {
+    let selected = crate::focus::moved_selection(selected, row_count, delta);
+    SettingsSelectionScrollPlan {
+        selected,
+        scroll_y: crate::focus::cursor_scroll_for_panel(
+            selected,
+            current_scroll_y,
+            term_height,
+            footer_h,
+        ),
+    }
+}
+
 pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
     if let Some(row) = state.pending.get_mut(state.selected) {
         row.trusted = !row.trusted;
@@ -470,6 +497,13 @@ mod tests {
     fn settings_auth_selection_plan_clamps_to_rows() {
         assert_eq!(settings_auth_selection_plan(0, 3, 99), 2);
         assert_eq!(settings_auth_selection_plan(2, 3, -99), 0);
+    }
+
+    #[test]
+    fn settings_trust_selection_plan_clamps_and_updates_scroll() {
+        let plan = settings_trust_selection_plan(0, 4, 99, 0, 8, 0);
+        assert_eq!(plan.selected, 3);
+        assert!(plan.scroll_y > 0);
     }
 
     fn env_config() -> SettingsEnvConfig<&'static str> {

@@ -25,9 +25,9 @@ use jackin_console::tui::screens::editor::update::{
 use jackin_console::tui::screens::settings::model::SettingsEnvRow;
 use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
-    move_trust_selection, set_role_expanded as set_settings_role_expanded, settings_tab_move_plan,
-    settings_auth_selection_plan, step_cursor_down_by, step_cursor_up_by, toggle_general_selected,
-    toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    set_role_expanded as set_settings_role_expanded, settings_auth_selection_plan,
+    settings_tab_move_plan, settings_trust_selection_plan, step_cursor_down_by, step_cursor_up_by,
+    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::view::{
     instance_purge_confirm_state, workspace_delete_confirm_state,
@@ -851,13 +851,16 @@ fn move_settings_trust_selection(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    move_trust_selection(&mut settings.trust, delta);
-    settings.trust.scroll_y = jackin_console::focus::cursor_scroll_for_panel(
+    let plan = settings_trust_selection_plan(
         settings.trust.selected,
+        settings.trust.pending.len(),
+        delta,
         settings.trust.scroll_y,
         term.height,
         footer_h,
     );
+    settings.trust.selected = plan.selected;
+    settings.trust.scroll_y = plan.scroll_y;
 }
 
 fn collapse_selected_tree(state: &mut ManagerState<'_>) {

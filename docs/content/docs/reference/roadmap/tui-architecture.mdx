@@ -300,7 +300,7 @@ Global-mount confirm state, global-mount scope-picker state, global-mount text-i
 
 Settings environment source-picker state, scope-picker state, and delete-confirm state now also live in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root settings input keeps routing key commits and pending picker values, while the screen helper owns the reusable component state for the environment modal chain.
 
-Settings tab-move focus planning, auth-row selection planning, and auth-kind entry/clear focus planning now live with settings screen update helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/update.rs" />. Root update applies the returned plans to concrete settings state instead of owning the generic tab cycling, focus assignment, auth row movement, and auth detail-row reset rules inline.
+Settings tab-move focus planning, auth-row selection planning, trust-row selection/scroll planning, and auth-kind entry/clear focus planning now live with settings screen update helpers in <RepoFile path="crates/jackin-console/src/tui/screens/settings/update.rs" />. Root update applies the returned plans to concrete settings state instead of owning the generic tab cycling, focus assignment, auth row movement, trust row movement/scrolling, and auth detail-row reset rules inline.
 
 Workspace-list row sizing now includes the generic list-name content-width fold in <RepoFile path="crates/jackin-console/src/tui/list_geometry.rs" />; the root list layout adapter in <RepoFile path="src/console/tui/layout/list.rs" /> maps manager rows to widths and delegates the viewport floor calculation.
 
