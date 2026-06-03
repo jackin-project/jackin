@@ -1,6 +1,6 @@
 ---
-source: src/console/tui/view/snapshot_tests.rs
-assertion_line: 893
+source: crates/jackin/src/console/tui/view/snapshot_tests.rs
+assertion_line: 896
 expression: rendered
 ---
  jackin'  · workspaces                                                                                        
@@ -31,4 +31,5 @@ expression: rendered
 │                               │                                                                             
 │                               │                                                                             
 └───────────────────────────────┘                                                                             
+                                                                                                              
                                   ↑↓ · ↵ launch   N new · S settings   Q quit

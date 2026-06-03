@@ -287,9 +287,17 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame, area: Rect, state: &Manager
             Some(short_id),
             picker.providers(),
             picker.selected(),
+            state.list_names_focused,
         );
     } else if let Some(picker) = state.launch_provider_picker.as_ref() {
-        render_provider_picker_sidebar(frame, area, None, picker.providers(), picker.selected());
+        render_provider_picker_sidebar(
+            frame,
+            area,
+            None,
+            picker.providers(),
+            picker.selected(),
+            state.list_names_focused,
+        );
     } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container);
@@ -373,13 +381,14 @@ pub(crate) fn render_provider_picker_sidebar(
     container_id: Option<&str>,
     providers: &[jackin_protocol::Provider],
     selected: usize,
+    focused: bool,
 ) {
     let title = provider_picker_title(container_id);
     let labels = providers
         .iter()
         .map(|provider| provider.label().to_string())
         .collect();
-    render_picker_sidebar(frame, area, &title, labels, Some(selected), false);
+    render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
 }
 
 pub(crate) fn render_role_picker_sidebar(

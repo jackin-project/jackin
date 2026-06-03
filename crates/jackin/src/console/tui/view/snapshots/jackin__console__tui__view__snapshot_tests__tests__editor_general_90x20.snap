@@ -1,6 +1,6 @@
 ---
-source: src/console/tui/view/snapshot_tests.rs
-assertion_line: 86
+source: crates/jackin/src/console/tui/view/snapshot_tests.rs
+assertion_line: 258
 expression: rendered
 ---
  jackin'  · edit workspace · my-workspace                                                 
@@ -20,6 +20,6 @@ expression: rendered
 │                                                                                        │
 │                                                                                        │
 │                                                                                        │
-│                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
+                                                                                          
                         ←→ switch tab   S save workspace   Esc back
