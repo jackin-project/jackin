@@ -7,9 +7,8 @@
 
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
-use std::sync::atomic::Ordering;
 
-use super::{DEBUG_MODE, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb, rich_terminal_owned};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, is_debug_mode, rgb, rich_terminal_owned};
 
 // ── Interactive prompt ───────────────────────────────────────────────────
 
@@ -107,7 +106,7 @@ where
     let mut last_err = None;
     let mut frame_idx: usize = 0;
 
-    let debug = DEBUG_MODE.load(Ordering::Relaxed);
+    let debug = is_debug_mode();
     // A full-screen rich surface (the launch cockpit) owns the terminal —
     // its own waiting animation conveys progress, so the spinner must stay
     // silent or it streams over the alternate screen.

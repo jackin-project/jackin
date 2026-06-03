@@ -1,0 +1,38 @@
+//! Host observability substrate: structured JSONL run diagnostics, debug-mode
+//! flag, terminal-ownership guards, and the `debug_log!` macro.
+
+pub mod logging;
+pub mod run;
+pub mod terminal;
+
+pub use logging::{
+    begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line, emit_debug_line,
+    end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
+};
+pub use run::{
+    ActiveRunGuard, RunDiagnostics, active_debug, active_run, prune_all_runs, prune_old_runs,
+};
+pub use terminal::{
+    host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
+    set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
+};
+
+/// Verbose-trace helper for `--debug` runs. No-op when the flag is off.
+///
+/// `category` is a short tag (`isolation`, `worktree`, etc.) that keeps shared
+/// logs greppable. Use `format!`-style trailing args:
+///
+/// ```ignore
+/// debug_log!("isolation", "git worktree add -b {branch} {path}");
+/// ```
+#[macro_export]
+macro_rules! debug_log {
+    ($category:expr, $($arg:tt)*) => {
+        if $crate::is_debug_mode() {
+            $crate::emit_debug_line($category, &::std::format!($($arg)*));
+        }
+    };
+}
+
+#[cfg(test)]
+mod tests;

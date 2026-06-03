@@ -25,6 +25,28 @@ pub trait LaunchDiagnostics: Send + Sync {
     fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>);
 }
 
+impl LaunchDiagnostics for jackin_diagnostics::RunDiagnostics {
+    fn run_id(&self) -> &str {
+        self.run_id()
+    }
+
+    fn path(&self) -> &Path {
+        self.path()
+    }
+
+    fn command_output_path(&self, name: &str) -> PathBuf {
+        self.command_output_path(name)
+    }
+
+    fn compact(&self, kind: &str, message: &str) {
+        self.compact(kind, message);
+    }
+
+    fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
+        self.stage(kind, stage, message, detail);
+    }
+}
+
 pub trait LaunchHostTerminal: Send + Sync {
     fn set_rich_surface_active(&self, active: bool);
     fn host_screen_owned(&self) -> bool;

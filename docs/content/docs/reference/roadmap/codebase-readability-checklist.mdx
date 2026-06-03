@@ -104,11 +104,11 @@ These five forks were resolved during planning. Each is recorded with its ration
 - [x] `cargo check -p jackin-tui`.
 
 ### 0.3 `jackin-diagnostics` crate (D1)
-- [ ] Create `crates/jackin-diagnostics/` (deps: `jackin-core`, `jackin-tui`, `serde`/`serde_json`, `rand`, `anyhow`; `mod_module_files = "deny"`, `unsafe_code = "forbid"`). Add to `[workspace.members]`.
-- [ ] Move `diagnostics/mod.rs` (395 L) → `jackin-diagnostics/src/lib.rs` (+ submodules). It already uses `jackin_core::JackinPaths` and `jackin_tui::ansi_text` (shims) and `prune_output` (now in jackin-tui) — repoint those imports.
-- [ ] Move the **logging substrate** out of `tui/mod.rs` into `jackin-diagnostics`: the `debug_log!` macro (re-home so `$crate` resolves to `jackin-diagnostics`), `is_debug_mode`, `set_debug_mode`, `emit_debug_line`, `emit_compact_line`, `begin_debug_buffering`, `drain_debug_buffer_for_test`, and the terminal-ownership flags `rich_terminal_owned`, `set_rich_surface_active`, `rich_surface_active`, `host_screen_owned`, `set_host_screen_owned`, `reassert_alt_screen`, `set_terminal_title`, `shorten_home`. Keep `tui/mod.rs`'s `require_interactive_stdin`/`prompt` host-interactive pieces in the binary (they need stdin).
-- [ ] Leave binary shims (`diagnostics/mod.rs`, `tui/mod.rs`) re-exporting from `jackin_diagnostics` so the ~39 diagnostics consumers + ~55 `tui::*` callers compile unchanged.
-- [ ] `cargo check -p jackin-diagnostics` standalone. Confirm it carries no config/runtime dep.
+- [x] Create `crates/jackin-diagnostics/` (deps: `jackin-core`, `jackin-tui`, `serde`/`serde_json`, `rand`, `anyhow`; `mod_module_files = "deny"`, `unsafe_code = "forbid"`). Add to `[workspace.members]`.
+- [x] Move `diagnostics/mod.rs` (395 L) → `jackin-diagnostics/src/lib.rs` (+ submodules). It already uses `jackin_core::JackinPaths` and `jackin_tui::ansi_text` (shims) and `prune_output` (now in jackin-tui) — repoint those imports.
+- [x] Move the **logging substrate** out of `tui/mod.rs` into `jackin-diagnostics`: the `debug_log!` macro (re-home so `$crate` resolves to `jackin-diagnostics`), `is_debug_mode`, `set_debug_mode`, `emit_debug_line`, `emit_compact_line`, `begin_debug_buffering`, `drain_debug_buffer_for_test`, and the terminal-ownership flags `rich_terminal_owned`, `set_rich_surface_active`, `rich_surface_active`, `host_screen_owned`, `set_host_screen_owned`, `reassert_alt_screen`, `set_terminal_title`, `shorten_home`. Keep `tui/mod.rs`'s `require_interactive_stdin`/`prompt` host-interactive pieces in the binary (they need stdin).
+- [x] Leave binary shims (`diagnostics/mod.rs`, `tui/mod.rs`) re-exporting from `jackin_diagnostics` so the ~39 diagnostics consumers + ~55 `tui::*` callers compile unchanged.
+- [x] `cargo check -p jackin-diagnostics` standalone. Confirm it carries no config/runtime dep.
 
 ---
 

@@ -39,7 +39,7 @@ pub use jackin_launch::{
     LaunchView, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
-use jackin_launch::{LaunchDiagnostics, LaunchHostTerminal};
+use jackin_launch::LaunchHostTerminal;
 #[cfg(test)]
 use jackin_tui::components::ConfirmState;
 #[cfg(test)]
@@ -52,28 +52,6 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 #[cfg(test)]
 use ratatui::style::Color;
-
-impl LaunchDiagnostics for crate::diagnostics::RunDiagnostics {
-    fn run_id(&self) -> &str {
-        self.run_id()
-    }
-
-    fn path(&self) -> &std::path::Path {
-        self.path()
-    }
-
-    fn command_output_path(&self, name: &str) -> std::path::PathBuf {
-        self.command_output_path(name)
-    }
-
-    fn compact(&self, kind: &str, message: &str) {
-        self.compact(kind, message);
-    }
-
-    fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
-        self.stage(kind, stage, message, detail);
-    }
-}
 
 struct HostTerminal;
 

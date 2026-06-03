@@ -1690,6 +1690,7 @@ dependencies = [
  "jackin-config",
  "jackin-console",
  "jackin-core",
+ "jackin-diagnostics",
  "jackin-env",
  "jackin-launch",
  "jackin-protocol",
@@ -1793,6 +1794,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-diagnostics"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "directories",
+ "jackin-core",
+ "jackin-tui",
+ "rand 0.10.1",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "jackin-env"
 version = "0.6.0-dev"
 dependencies = [
@@ -1808,6 +1824,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
+ "jackin-diagnostics",
  "jackin-protocol",
  "jackin-tui",
  "ratatui",

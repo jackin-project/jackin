@@ -48,29 +48,9 @@ pub fn fatal(msg: &str) {
     }
 }
 
-pub fn set_terminal_title(title: &str) {
-    eprint!("\x1b]0;jackin' \u{00b7} {title}\x07");
-    let _ = io::stderr().flush();
-}
-
 pub fn clear_screen() {
     eprint!("\x1b[2J\x1b[H");
     let _ = io::stderr().flush();
-}
-
-/// Replace the user's home directory prefix with `~/` for shorter display paths.
-pub fn shorten_home(path: &str) -> String {
-    if let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().display().to_string()) {
-        if path == home {
-            return "~".to_string();
-        }
-        if let Some(rest) = path.strip_prefix(&home)
-            && rest.starts_with('/')
-        {
-            return format!("~{rest}");
-        }
-    }
-    path.to_string()
 }
 
 /// Print a hint line with a highlighted command.

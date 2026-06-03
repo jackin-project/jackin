@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 anyhow = "1.0"
 crossterm = "0.29"
+jackin-diagnostics = { path = "../jackin-diagnostics" }
 jackin-protocol = { path = "../jackin-protocol" }
 jackin-tui = { path = "../jackin-tui" }
 ratatui = "0.30"
