@@ -2,24 +2,8 @@ use super::cli::OpCli;
 pub(super) use jackin_core::FieldTarget;
 use jackin_core::OpRef;
 
-/// Structural `op` queries used by the picker.
-///
-/// Distinct from [`super::OpRunner`] (single-value resolution): the picker is
-/// a metadata browser and must never deserialize a secret value — see
-/// [`RawOpField`].
-pub trait OpStructRunner {
-    /// Doubles as the sign-in probe before any other call.
-    fn account_list(&self) -> anyhow::Result<Vec<OpAccount>>;
-    /// `account = None` lets `op` use its default-account context.
-    fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>>;
-    fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>>;
-    fn item_get(
-        &self,
-        item_id: &str,
-        vault_id: &str,
-        account: Option<&str>,
-    ) -> anyhow::Result<Vec<OpField>>;
-}
+/// Re-exported from `jackin-env` — canonical definitions live there.
+pub use jackin_env::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
 
 pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + Sync> {
     std::sync::Arc::new(OpCli::new())
@@ -127,114 +111,6 @@ impl From<RawOpField> for OpField {
             reference: raw.reference,
         }
     }
-}
-
-/// Mutating 1Password operations used by the workspace-token setup
-/// orchestrator.
-///
-/// Held in a separate trait from [`OpStructRunner`] so the read-only
-/// SAFETY contract on the picker's `OpCache` cannot be accidentally
-/// widened by a future `item_create` impl that decides to memoise
-/// its return value.
-///
-/// All write paths take secret material on **stdin**, never on argv —
-/// `op item create login.password=value` is forbidden because that
-/// places the secret in `/proc/<pid>/cmdline` where any process on the
-/// host with the right uid can read it. Implementations must use
-/// `op item create login.password[password]=-` (or the equivalent
-/// `--field`) and pipe the value through stdin.
-///
-/// See `docs/src/content/docs/reference/roadmap/workspace-claude-token-setup.mdx`
-/// for the operator-facing flow this trait powers.
-pub trait OpWriteRunner {
-    /// Create an item and return the canonical `op://...` reference
-    /// pointing at the named field. `value` lands on the child's
-    /// stdin — never on argv.
-    ///
-    /// `category` is an `op` item category in the underscore form the
-    /// CLI accepts (`"API_CREDENTIAL"`, `"PASSWORD"`, `"SECURE_NOTE"`;
-    /// see `op item template list`). `notes_plain` populates the
-    /// item's free-form notes block (used by the orchestrator to
-    /// stamp `{workspace, host, created, expires, token_sha256_prefix}`).
-    fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef>;
-
-    /// Overwrite (or add) a single field in an existing 1Password item.
-    ///
-    /// For [`FieldTarget::Existing`] the field is located by its exact op
-    /// id, its `value` is overwritten, its type is set to `CONCEALED`, and
-    /// its existing section placement is left untouched — overwriting a
-    /// value must never re-parent the field. For [`FieldTarget::New`] the
-    /// field is located by label (overwrite if present); if no such field
-    /// exists a new `CONCEALED` field is appended, placed in `section` when
-    /// one is given. All other fields and item metadata are preserved.
-    ///
-    /// The secret value reaches `op` via stdin (GET → modify in-process
-    /// → EDIT via stdin), following the same never-on-argv contract as
-    /// `item_create`. The implementation issues two `op` invocations:
-    /// 1. `op item get <id> --vault <vault> --format json` — fetch the
-    ///    full item template.
-    /// 2. `op item edit <id> --vault <vault> --format json` — pipe the
-    ///    modified template back on stdin.
-    fn item_field_set(
-        &self,
-        item_id: &str,
-        vault_id: &str,
-        target: &FieldTarget,
-        value: &str,
-        section: Option<&str>,
-    ) -> anyhow::Result<OpRef>;
-
-    /// Delete an item entirely. Used by
-    /// `jackin workspace claude-token revoke --delete-op-item` and
-    /// by the rotate flow to remove the prior 1P item once the new
-    /// one is wired and validated.
-    fn item_delete(
-        &self,
-        item_id: &str,
-        vault_id: &str,
-        account: Option<&str>,
-    ) -> anyhow::Result<()>;
-
-    /// Read an item's `tags` array. Used by the rotate flow to decide
-    /// whether the prior item is jackin-owned (and therefore safe to
-    /// delete) versus an item the operator adopted via `--reuse` /
-    /// interactive edit-in-place (which jackin must not delete, since it
-    /// may hold the operator's other fields).
-    fn item_tags(
-        &self,
-        item_id: &str,
-        vault_id: &str,
-        account: Option<&str>,
-    ) -> anyhow::Result<Vec<String>>;
-}
-
-/// Parameters for [`OpWriteRunner::item_create`]. Borrowed-form to
-/// match the existing `OpStructRunner` style and avoid cloning every
-/// string at the call site.
-///
-/// The `op` account is pinned on the [`OpCli`] instance via
-/// [`OpCli::with_account`] before the call — there is no per-call
-/// override, mirroring how [`super::OpRunner::read`] consumes
-/// [`OpCli::account`].
-#[derive(Debug, Clone, Copy)]
-pub struct OpItemCreateParams<'a> {
-    pub vault_id: &'a str,
-    pub title: &'a str,
-    /// `op` item category in the underscore form (e.g.
-    /// [`crate::workspace::token_setup::DEFAULT_ITEM_CATEGORY`]).
-    pub category: &'a str,
-    /// Field label (`"token"`, `"password"`, etc.).
-    pub field_label: &'a str,
-    /// Field value — lands on stdin, never on argv.
-    pub value: &'a str,
-    /// Optional `notesPlain` block (provenance metadata stamp).
-    pub notes_plain: Option<&'a str>,
-    /// `op` item tags applied at create time so list/search filters
-    /// can find every jackin-managed item.
-    pub tags: &'a [&'a str],
-    /// Optional 1Password section label. When set, the field is placed
-    /// in a section with this label; when `None`, the field is unsectioned.
-    pub section: Option<&'a str>,
 }
 
 /// Slug a 1Password section label into a deterministic section id:

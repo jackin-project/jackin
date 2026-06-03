@@ -8,6 +8,8 @@
 
 pub mod env_layer;
 pub mod op_runner;
+pub mod op_struct;
 
 pub use env_layer::{EnvLayer, merge_layers};
 pub use op_runner::{OpRunner, resolve_env_value};
+pub use op_struct::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
