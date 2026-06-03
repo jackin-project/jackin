@@ -541,11 +541,10 @@ pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditor
     crate::operator_env::OpRef,
 >;
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
-    clippy::needless_pass_by_value,
-    clippy::option_if_let_else,
-    clippy::needless_pass_by_ref_mut
+    clippy::needless_pass_by_ref_mut,
+    reason = "pending per-modal split — tracked in codebase-readability roadmap"
 )]
 pub(super) fn handle_editor_modal(
     editor: &mut EditorState<'_>,
