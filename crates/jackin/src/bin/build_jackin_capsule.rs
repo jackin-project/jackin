@@ -66,8 +66,8 @@ struct Args {
 
 /// Walk up from the crate manifest dir to find the Cargo workspace root.
 ///
-/// Before Phase 8 the binary lived at the workspace root, so CARGO_MANIFEST_DIR
-/// pointed there directly. Now it lives at crates/jackin/; the workspace root is
+/// Before Phase 8 the binary lived at the workspace root, so `CARGO_MANIFEST_DIR`
+/// pointed there directly. Now it lives at `crates/jackin/`; the workspace root is
 /// the ancestor whose Cargo.toml contains `[workspace]`.
 fn workspace_root() -> PathBuf {
     let mut dir = PathBuf::from(MANIFEST_DIR);
