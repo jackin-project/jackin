@@ -16,6 +16,14 @@ pub const DOCKERFILE_NAME: &str = "Dockerfile";
 /// container reads it to skip interactive login.
 pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
+/// Current role manifest schema version. Serde default for `RoleManifest.version`.
+pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha4";
+
+/// Serde-default helper for `RoleManifest.version`.
+pub fn current_manifest_version() -> String {
+    CURRENT_MANIFEST_VERSION.to_string()
+}
+
 /// Canonical source of truth from `jackin-protocol` — re-exported here so
 /// crates that depend on `jackin-core` (but not `jackin-protocol` directly)
 /// can use the prefix without literal drift.

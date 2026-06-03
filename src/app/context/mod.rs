@@ -606,7 +606,7 @@ pub(crate) fn supported_agents_requiring_prompt(
         return None;
     }
     let cached = crate::repo::CachedRepo::new(paths, selector);
-    let supported = crate::manifest::RoleManifest::load(&cached.repo_dir)
+    let supported = crate::manifest::load_role_manifest(&cached.repo_dir)
         .ok()?
         .supported_agents();
     (supported.len() >= 2).then_some(supported)

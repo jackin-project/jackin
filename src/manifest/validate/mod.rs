@@ -127,138 +127,149 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
     Ok(warnings)
 }
 
-impl RoleManifest {
-    pub fn validate(&self) -> anyhow::Result<Vec<ManifestWarning>> {
-        let mut warnings = validate_agent_consistency(self)?;
+/// Validate env-var declarations and agent consistency.
+///
+/// Returns hard errors for invalid manifests and non-fatal `ManifestWarning`
+/// values for config that parses but is likely wrong.
+///
+/// # Errors
+/// Returns an error if the manifest has invalid env vars, reserved names,
+/// or inconsistent agent configuration.
+pub fn validate_role_manifest(manifest: &RoleManifest) -> anyhow::Result<Vec<ManifestWarning>> {
+    let mut warnings = validate_agent_consistency(manifest)?;
 
-        for (name, decl) in &self.env {
-            // Env var names must be valid identifiers: [A-Za-z_][A-Za-z0-9_]*
-            if !is_valid_env_var_name(name) {
-                anyhow::bail!(
-                    "env var \"{name}\": name must contain only ASCII letters, digits, and underscores, and cannot start with a digit"
-                );
-            }
-
-            if let Some((_, value)) = crate::env_model::RESERVED_RUNTIME_ENV_VARS
-                .iter()
-                .find(|(reserved, _)| name == reserved)
-            {
-                let detail = value.as_ref().map_or_else(
-                    || " and set automatically by jackin at runtime".to_string(),
-                    |value| format!(" and set automatically to {value}"),
-                );
-                anyhow::bail!("env var {name}: reserved for jackin runtime metadata{detail}");
-            }
-
-            // Non-interactive without default is an error
-            if !decl.interactive && decl.default_value.is_none() {
-                anyhow::bail!("env var {name}: non-interactive variable must have a default value");
-            }
-
-            // options without interactive is an error
-            if !decl.interactive && !decl.options.is_empty() {
-                anyhow::bail!("env var {name}: options requires interactive = true");
-            }
-
-            // prompt without interactive is a warning
-            if !decl.interactive && decl.prompt.is_some() {
-                warnings.push(ManifestWarning {
-                    message: format!(
-                        "env var {name}: prompt is ignored without interactive = true"
-                    ),
-                });
-            }
-
-            // skippable without interactive is a warning
-            if !decl.interactive && decl.skippable {
-                warnings.push(ManifestWarning {
-                    message: format!(
-                        "env var {name}: skippable is meaningless without interactive = true"
-                    ),
-                });
-            }
-
-            self.validate_env_interpolation(name, decl)?;
-        }
-
-        // Cycle detection via topological sort (shared with
-        // env_resolver::resolve_env — one Kahn's implementation).
-        crate::env_model::topological_env_order(&self.env)?;
-
-        Ok(warnings)
-    }
-
-    /// Validate a single `env.VAR_NAME` reference: non-empty, valid name, and declared.
-    fn validate_env_ref(&self, owner: &str, context: &str, ref_name: &str) -> anyhow::Result<()> {
-        if ref_name.is_empty() {
-            anyhow::bail!("env var {owner}: {context} contains empty env reference \"env.\"");
-        }
-        if !is_valid_env_var_name(ref_name) {
+    for (name, decl) in &manifest.env {
+        // Env var names must be valid identifiers: [A-Za-z_][A-Za-z0-9_]*
+        if !is_valid_env_var_name(name) {
             anyhow::bail!(
-                "env var {owner}: {context} contains invalid env var name \"{ref_name}\""
+                "env var \"{name}\": name must contain only ASCII letters, digits, and underscores, and cannot start with a digit"
             );
         }
-        if !self.env.contains_key(ref_name) {
-            anyhow::bail!("env var {owner}: {context} references unknown env var \"{ref_name}\"");
+
+        if let Some((_, value)) = crate::env_model::RESERVED_RUNTIME_ENV_VARS
+            .iter()
+            .find(|(reserved, _)| name == reserved)
+        {
+            let detail = value.as_ref().map_or_else(
+                || " and set automatically by jackin at runtime".to_string(),
+                |value| format!(" and set automatically to {value}"),
+            );
+            anyhow::bail!("env var {name}: reserved for jackin runtime metadata{detail}");
         }
-        Ok(())
+
+        // Non-interactive without default is an error
+        if !decl.interactive && decl.default_value.is_none() {
+            anyhow::bail!("env var {name}: non-interactive variable must have a default value");
+        }
+
+        // options without interactive is an error
+        if !decl.interactive && !decl.options.is_empty() {
+            anyhow::bail!("env var {name}: options requires interactive = true");
+        }
+
+        // prompt without interactive is a warning
+        if !decl.interactive && decl.prompt.is_some() {
+            warnings.push(ManifestWarning {
+                message: format!("env var {name}: prompt is ignored without interactive = true"),
+            });
+        }
+
+        // skippable without interactive is a warning
+        if !decl.interactive && decl.skippable {
+            warnings.push(ManifestWarning {
+                message: format!(
+                    "env var {name}: skippable is meaningless without interactive = true"
+                ),
+            });
+        }
+
+        validate_env_interpolation(manifest, name, decl)?;
     }
 
-    fn validate_env_interpolation(&self, name: &str, decl: &EnvVarDecl) -> anyhow::Result<()> {
-        // Reject ${env.*} interpolation placeholders in options (options are always static)
-        for option in &decl.options {
-            if !extract_interpolation_refs(option).is_empty() {
-                anyhow::bail!(
-                    "env var {name}: options cannot contain interpolation placeholders — options are static"
-                );
-            }
+    // Cycle detection via topological sort (shared with
+    // env_resolver::resolve_env — one Kahn's implementation).
+    crate::env_model::topological_env_order(&manifest.env)?;
+
+    Ok(warnings)
+}
+
+/// Validate a single `env.VAR_NAME` reference: non-empty, valid name, and declared.
+fn validate_env_ref(
+    manifest: &RoleManifest,
+    owner: &str,
+    context: &str,
+    ref_name: &str,
+) -> anyhow::Result<()> {
+    if ref_name.is_empty() {
+        anyhow::bail!("env var {owner}: {context} contains empty env reference \"env.\"");
+    }
+    if !is_valid_env_var_name(ref_name) {
+        anyhow::bail!("env var {owner}: {context} contains invalid env var name \"{ref_name}\"");
+    }
+    if !manifest.env.contains_key(ref_name) {
+        anyhow::bail!("env var {owner}: {context} references unknown env var \"{ref_name}\"");
+    }
+    Ok(())
+}
+
+fn validate_env_interpolation(
+    manifest: &RoleManifest,
+    name: &str,
+    decl: &EnvVarDecl,
+) -> anyhow::Result<()> {
+    // Reject ${env.*} interpolation placeholders in options (options are always static)
+    for option in &decl.options {
+        if !extract_interpolation_refs(option).is_empty() {
+            anyhow::bail!(
+                "env var {name}: options cannot contain interpolation placeholders — options are static"
+            );
+        }
+    }
+
+    // Validate depends_on entries
+    let mut seen_deps: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for dep in &decl.depends_on {
+        let Some(dep_name) = dep.strip_prefix("env.") else {
+            anyhow::bail!(
+                "env var {name}: depends_on entry \"{dep}\" must use env. prefix (e.g., \"env.{dep}\")"
+            );
+        };
+
+        if dep_name == name {
+            anyhow::bail!("env var {name}: depends_on cannot reference self");
         }
 
-        // Validate depends_on entries
-        let mut seen_deps: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for dep in &decl.depends_on {
-            let Some(dep_name) = dep.strip_prefix("env.") else {
-                anyhow::bail!(
-                    "env var {name}: depends_on entry \"{dep}\" must use env. prefix (e.g., \"env.{dep}\")"
-                );
-            };
-
-            if dep_name == name {
-                anyhow::bail!("env var {name}: depends_on cannot reference self");
-            }
-
-            if !seen_deps.insert(dep_name) {
-                anyhow::bail!("env var {name}: depends_on contains duplicate entry \"{dep_name}\"");
-            }
-
-            self.validate_env_ref(name, "depends_on", dep_name)?;
+        if !seen_deps.insert(dep_name) {
+            anyhow::bail!("env var {name}: depends_on contains duplicate entry \"{dep_name}\"");
         }
 
-        // Validate ${env.VAR_NAME} interpolation references in prompt and default_value
-        let dep_names: std::collections::HashSet<&str> = decl
-            .depends_on
-            .iter()
-            .filter_map(|d| d.strip_prefix("env."))
-            .collect();
+        validate_env_ref(manifest, name, "depends_on", dep_name)?;
+    }
 
-        for (field, value) in [
-            ("prompt", decl.prompt.as_deref()),
-            ("default", decl.default_value.as_deref()),
-        ] {
-            if let Some(v) = value {
-                for ref_name in extract_interpolation_refs(v) {
-                    self.validate_env_ref(name, field, ref_name)?;
-                    if !dep_names.contains(ref_name) {
-                        anyhow::bail!(
-                            "env var {name}: {field} references \"{ref_name}\" which is not listed in depends_on"
-                        );
-                    }
+    // Validate ${env.VAR_NAME} interpolation references in prompt and default_value
+    let dep_names: std::collections::HashSet<&str> = decl
+        .depends_on
+        .iter()
+        .filter_map(|d| d.strip_prefix("env."))
+        .collect();
+
+    for (field, value) in [
+        ("prompt", decl.prompt.as_deref()),
+        ("default", decl.default_value.as_deref()),
+    ] {
+        if let Some(v) = value {
+            for ref_name in extract_interpolation_refs(v) {
+                validate_env_ref(manifest, name, field, ref_name)?;
+                if !dep_names.contains(ref_name) {
+                    anyhow::bail!(
+                        "env var {name}: {field} references \"{ref_name}\" which is not listed in depends_on"
+                    );
                 }
             }
         }
-
-        Ok(())
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

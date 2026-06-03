@@ -21,7 +21,7 @@ plugins = []
     )
     .unwrap();
 
-    let m = RoleManifest::load(temp.path()).unwrap();
+    let m = load_role_manifest(temp.path()).unwrap();
     assert_eq!(
         m.supported_agents(),
         vec![
@@ -49,7 +49,7 @@ plugins = []
     )
     .unwrap();
 
-    let m = RoleManifest::load(temp.path()).unwrap();
+    let m = load_role_manifest(temp.path()).unwrap();
     assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Claude]);
     assert_eq!(m.claude.as_ref().unwrap().model.as_deref(), Some("sonnet"));
 }
@@ -69,7 +69,7 @@ model = "gpt-5"
     )
     .unwrap();
 
-    let m = RoleManifest::load(temp.path()).unwrap();
+    let m = load_role_manifest(temp.path()).unwrap();
     assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Codex]);
     assert_eq!(m.codex.as_ref().unwrap().model.as_deref(), Some("gpt-5"));
 }
@@ -89,7 +89,7 @@ model = "zai-coding-plan/glm-5.1"
     )
     .unwrap();
 
-    let m = RoleManifest::load(temp.path()).unwrap();
+    let m = load_role_manifest(temp.path()).unwrap();
     assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Opencode]);
     assert_eq!(
         m.opencode.as_ref().unwrap().model.as_deref(),
@@ -112,7 +112,7 @@ plugins = []
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
     assert!(
         chain.contains("foo") || chain.contains("unknown"),
@@ -133,7 +133,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
     assert_eq!(
         manifest.supported_agents(),
         vec![crate::agent::Agent::Claude]
@@ -154,7 +154,7 @@ plugins = []
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
     assert!(chain.contains("only understands up to v1alpha4"), "{chain}");
 }
@@ -173,7 +173,7 @@ agents = ["opencode"]
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
     assert!(chain.contains("requires v1alpha3"), "{chain}");
     assert!(chain.contains("jackin role migrate"), "{chain}");
@@ -195,7 +195,7 @@ plugins = []
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
     assert!(chain.contains("requires v1alpha3"), "{chain}");
 }
@@ -214,7 +214,7 @@ agents = ["kimi"]
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
     assert!(chain.contains("requires v1alpha4"), "{chain}");
     assert!(chain.contains("jackin role migrate"), "{chain}");
@@ -236,7 +236,7 @@ plugins = []
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
     assert!(chain.contains("requires v1alpha4"), "{chain}");
 }
@@ -255,7 +255,7 @@ plugins = ["code-review@claude-plugins-official"]
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(manifest.dockerfile, "Dockerfile");
     assert!(manifest.claude.as_ref().unwrap().marketplaces.is_empty());
@@ -281,7 +281,7 @@ sparse = ["plugins", ".claude-plugin"]
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(
         manifest.claude.as_ref().unwrap().plugins,
@@ -314,7 +314,7 @@ source = "jackin-project/jackin-marketplace"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
     assert_eq!(
@@ -343,7 +343,7 @@ source = "obra/superpowers-marketplace"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert!(manifest.claude.as_ref().unwrap().plugins.is_empty());
     assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
@@ -366,7 +366,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(manifest.identity.as_ref().unwrap().name, "Agent Smith");
 }
@@ -388,7 +388,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(manifest.display_name("agent-smith"), "Agent Smith");
 }
@@ -407,7 +407,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(manifest.display_name("agent-smith"), "agent-smith");
 }
@@ -427,7 +427,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(
         manifest.published_image.as_deref(),
@@ -449,7 +449,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert!(manifest.published_image.is_none());
 }
@@ -469,7 +469,7 @@ plugins = []
     )
     .unwrap();
 
-    let error = RoleManifest::load(temp.path()).unwrap_err();
+    let error = load_role_manifest(temp.path()).unwrap_err();
 
     assert!(format!("{error:#}").contains("unknown field"));
 }
@@ -489,7 +489,7 @@ typo = "oops"
     )
     .unwrap();
 
-    let error = RoleManifest::load(temp.path()).unwrap_err();
+    let error = load_role_manifest(temp.path()).unwrap_err();
 
     assert!(format!("{error:#}").contains("unknown field"));
 }
@@ -512,7 +512,7 @@ plugins = []
     )
     .unwrap();
 
-    let error = RoleManifest::load(temp.path()).unwrap_err();
+    let error = load_role_manifest(temp.path()).unwrap_err();
 
     assert!(format!("{error:#}").contains("unknown field"));
 }
@@ -570,7 +570,7 @@ preflight = "hooks/preflight.sh"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     let hooks = manifest.hooks.as_ref().unwrap();
     assert_eq!(hooks.setup_once.as_deref(), Some("hooks/setup-once.sh"));
@@ -592,7 +592,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert!(manifest.hooks.is_none());
 }
@@ -614,7 +614,7 @@ post_launch = "bad"
     )
     .unwrap();
 
-    let error = RoleManifest::load(temp.path()).unwrap_err();
+    let error = load_role_manifest(temp.path()).unwrap_err();
 
     assert!(format!("{error:#}").contains("unknown field"));
 }
@@ -636,7 +636,7 @@ default = "docker"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert_eq!(manifest.env.len(), 1);
     let var = &manifest.env["RUNTIME"];
@@ -663,7 +663,7 @@ options = ["project1", "project2"]
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     let var = &manifest.env["PROJECT"];
     assert!(var.interactive);
@@ -695,7 +695,7 @@ prompt = "Branch:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     let var = &manifest.env["BRANCH"];
     assert_eq!(var.depends_on, vec!["env.PROJECT"]);
@@ -720,7 +720,7 @@ prompt = "API key (optional):"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     let var = &manifest.env["API_KEY"];
     assert!(var.skippable);
@@ -740,7 +740,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     assert!(manifest.env.is_empty());
 }
@@ -763,7 +763,7 @@ typo = true
     )
     .unwrap();
 
-    let error = RoleManifest::load(temp.path()).unwrap_err();
+    let error = load_role_manifest(temp.path()).unwrap_err();
 
     assert!(format!("{error:#}").contains("unknown field"));
 }

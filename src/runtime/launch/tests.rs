@@ -160,7 +160,7 @@ model = "zai/glm"
     )
     .unwrap();
 
-    let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     let config = capsule_config(&selector, "/workspace", &manifest, None);
 
@@ -418,7 +418,7 @@ plugins = []
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     let (state, _) = RoleState::prepare(
         &paths,
@@ -478,7 +478,7 @@ plugins = []
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     // Seed a fake host home with both Claude files so sync resolves.
     let host_home = temp.path().join("host_home");
@@ -548,7 +548,7 @@ plugins = []
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     let (state, _) = RoleState::prepare(
         &paths,
@@ -600,7 +600,7 @@ agents = ["codex"]
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     let (state, _) = RoleState::prepare(
         &paths,
@@ -651,7 +651,7 @@ agents = ["codex"]
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     // Stage a host ~/.codex/auth.json so Sync mode succeeds.
     let host_home = temp.path().join("host_home");
@@ -709,7 +709,7 @@ agents = ["codex"]
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     let (state, _) = RoleState::prepare(
         &paths,
@@ -756,7 +756,7 @@ agents = ["amp"]
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     let host_home = temp.path().join("host_home");
     std::fs::create_dir_all(host_home.join(".local/share/amp")).unwrap();
@@ -815,7 +815,7 @@ agents = ["amp"]
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
     let (state, _) = RoleState::prepare(
         &paths,
@@ -1379,7 +1379,7 @@ plugins = []
 "#,
     )
     .unwrap();
-    let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+    let manifest = crate::manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
 
     let err =

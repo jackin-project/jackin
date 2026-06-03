@@ -1,5 +1,6 @@
 //! Tests for `manifest/validate`.
 use super::*;
+use crate::manifest::load_role_manifest;
 use tempfile::tempdir;
 
 #[test]
@@ -35,7 +36,7 @@ plugins = []
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     assert!(err.to_string().contains("must not be empty"));
 }
 
@@ -54,7 +55,7 @@ plugins = []
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     assert!(err.to_string().contains("[codex]"));
 }
 
@@ -73,7 +74,7 @@ plugins = []
     )
     .unwrap();
 
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = load_role_manifest(temp.path()).unwrap_err();
     assert!(err.to_string().contains("[amp]"));
 }
 
@@ -91,7 +92,8 @@ plugins = []
     )
     .unwrap();
 
-    let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
     assert!(warnings.is_empty());
 }
 
@@ -117,7 +119,8 @@ model = "gpt-5"
     )
     .unwrap();
 
-    let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].message.contains("[codex]"));
     assert!(warnings[0].message.contains("ignored"));
@@ -140,7 +143,8 @@ plugins = []
     )
     .unwrap();
 
-    let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].message.contains("[amp]"));
     assert!(warnings[0].message.contains("ignored"));
@@ -165,7 +169,8 @@ plugins = []
     )
     .unwrap();
 
-    let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].message.contains("[claude]"));
 }
@@ -186,8 +191,8 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("FOO"));
@@ -211,8 +216,8 @@ options = ["a", "b"]
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("options"));
@@ -237,8 +242,8 @@ prompt = "Branch:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("NONEXISTENT"));
@@ -263,8 +268,8 @@ prompt = "Value:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("self"));
@@ -294,8 +299,8 @@ prompt = "B:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("cycle"));
@@ -324,8 +329,8 @@ prompt = "Branch:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("env."));
@@ -359,8 +364,8 @@ default = "main"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let warnings = manifest.validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
 
     assert!(warnings.is_empty());
 }
@@ -382,8 +387,8 @@ default = "docker"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("JACKIN"));
@@ -406,8 +411,8 @@ default = "sidecar"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(
@@ -438,8 +443,8 @@ default = "override"
         )
         .unwrap();
 
-        let manifest = RoleManifest::load(temp.path()).unwrap();
-        let result = manifest.validate();
+        let manifest = load_role_manifest(temp.path()).unwrap();
+        let result = validate_role_manifest(&manifest);
 
         assert!(result.is_err(), "{var} should be rejected as reserved");
         assert!(
@@ -467,8 +472,8 @@ prompt = "This is ignored"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let warnings = manifest.validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
 
     assert!(!warnings.is_empty());
     assert!(warnings[0].message.contains("prompt"));
@@ -492,8 +497,8 @@ skippable = true
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let warnings = manifest.validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
 
     assert!(!warnings.is_empty());
     assert!(warnings[0].message.contains("skippable"));
@@ -524,8 +529,8 @@ default = "feature/${env.PROJECT}"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let warnings = manifest.validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
 
     assert!(warnings.is_empty());
 }
@@ -549,8 +554,8 @@ prompt = "Branch for ${env.NONEXISTENT}:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("NONEXISTENT"));
@@ -579,8 +584,8 @@ prompt = "Branch for ${env.PROJECT}:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -608,8 +613,8 @@ prompt = "Branch:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("GHOST"));
@@ -632,8 +637,8 @@ default = "value"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("MY-VAR"));
@@ -656,8 +661,8 @@ default = "value"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("1FOO"));
@@ -686,8 +691,8 @@ default = "c"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_ok());
 }
@@ -717,8 +722,8 @@ prompt = "Branch:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(
@@ -747,8 +752,8 @@ prompt = "Value (use ${other.THING} for other):"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let warnings = manifest.validate().unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let warnings = validate_role_manifest(&manifest).unwrap();
 
     // ${other.THING} is not an env. ref, so no error or warning
     assert!(warnings.is_empty());
@@ -778,8 +783,8 @@ default = "feature/${env.PROJECT}"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -811,8 +816,8 @@ prompt = "Label for ${env.PROJECT} in ${env.MISSING}:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("MISSING"));
@@ -836,8 +841,8 @@ prompt = "Value: ${env.}"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
@@ -862,8 +867,8 @@ prompt = "Value: ${env.MY-VAR}"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(
@@ -893,8 +898,8 @@ default = "prefix-${env.}"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
@@ -919,8 +924,8 @@ prompt = "Value:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
@@ -945,8 +950,8 @@ prompt = "Value:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(
@@ -981,8 +986,8 @@ prompt = "Branch:"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let result = manifest.validate();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let result = validate_role_manifest(&manifest);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("duplicate"));

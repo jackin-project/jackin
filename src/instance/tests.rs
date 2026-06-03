@@ -1,5 +1,6 @@
 //! Tests for `instance`.
 use super::*;
+use crate::manifest::load_role_manifest;
 use crate::paths::JackinPaths;
 use tempfile::tempdir;
 
@@ -19,7 +20,7 @@ plugins = []
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    crate::manifest::RoleManifest::load(temp.path()).unwrap()
+    crate::manifest::load_role_manifest(temp.path()).unwrap()
 }
 
 #[test]
@@ -97,7 +98,7 @@ model = "gpt-5"
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     let (state, outcome) = RoleState::prepare(
         &paths,
@@ -165,7 +166,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
 
     // Claude → Sync (host missing → HostMissing, forward_auth = true)
     // Codex → ApiKey (would wipe Claude state if applied cross-agent)

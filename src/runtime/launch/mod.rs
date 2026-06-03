@@ -1477,7 +1477,7 @@ pub async fn resolve_supported_agents_for_console(
     // re-validates. Saves a git round trip per role-row Enter.
     let cached = crate::repo::CachedRepo::new(paths, selector);
     if cached.repo_dir.join(".git").is_dir() {
-        match crate::manifest::RoleManifest::load(&cached.repo_dir) {
+        match crate::manifest::load_role_manifest(&cached.repo_dir) {
             Ok(manifest) => return Ok(manifest.supported_agents()),
             Err(error) => crate::debug_log!(
                 "console",

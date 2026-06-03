@@ -191,7 +191,7 @@ pub(crate) fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 /// and the runtime resolution path cannot diverge on what counts as
 /// a cycle.
 pub(crate) fn topological_env_order(
-    declarations: &std::collections::BTreeMap<String, crate::manifest::EnvVarDecl>,
+    declarations: &std::collections::BTreeMap<String, jackin_core::manifest::EnvVarDecl>,
 ) -> anyhow::Result<Vec<String>> {
     use std::collections::{BTreeSet, HashMap};
 

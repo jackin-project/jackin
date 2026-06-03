@@ -34,7 +34,7 @@ plugins = []
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    crate::manifest::RoleManifest::load(temp.path()).unwrap()
+    crate::manifest::load_role_manifest(temp.path()).unwrap()
 }
 
 // ── Auth forwarding tests ───────────────────────────────────────────

@@ -1,16 +1,16 @@
 //! Role manifest (`jackin.role.toml`) version migration registry.
 //!
-//! Owns `CURRENT_MANIFEST_VERSION` and the `MANIFEST_MIGRATIONS` chain.
-//! Migration steps delegate to shared helpers in `config::migrations`. Not
-//! responsible for config or workspace migrations — those live in
-//! `config/migrations.rs`.
+//! `CURRENT_MANIFEST_VERSION` is defined in `jackin-core` and re-exported
+//! here for backward-compatibility. Migration steps delegate to shared
+//! helpers in `config::migrations`. Not responsible for config or workspace
+//! migrations — those live in `config/migrations.rs`.
 
 use std::path::Path;
 
 use anyhow::bail;
 use toml_edit::DocumentMut;
 
-pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha4";
+pub use jackin_core::constants::CURRENT_MANIFEST_VERSION;
 
 const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] = &[
     crate::config::migrations::MigrationStep {
@@ -35,9 +35,7 @@ const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] = &[
     },
 ];
 
-pub fn current_manifest_version() -> String {
-    CURRENT_MANIFEST_VERSION.to_string()
-}
+pub use jackin_core::constants::current_manifest_version;
 
 /// Migrate `path` (typically `<repo>/jackin.role.toml`) to
 /// `CURRENT_MANIFEST_VERSION`.

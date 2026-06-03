@@ -1,4 +1,4 @@
-use jackin::manifest::{RoleManifest, validate::validate_agent_consistency};
+use jackin::manifest::validate::validate_agent_consistency;
 use tempfile::tempdir;
 
 #[test]
@@ -24,7 +24,7 @@ plugins = []
     // Now that load() runs validate_agent_consistency, the load itself
     // fails — operator no longer has to remember to call validate
     // separately.
-    let err = RoleManifest::load(temp.path()).unwrap_err();
+    let err = jackin::manifest::load_role_manifest(temp.path()).unwrap_err();
     assert!(err.to_string().contains("[codex]"));
 }
 
@@ -47,7 +47,7 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = jackin::manifest::load_role_manifest(temp.path()).unwrap();
     validate_agent_consistency(&manifest).unwrap();
 }
 
@@ -70,7 +70,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = jackin::manifest::load_role_manifest(temp.path()).unwrap();
     validate_agent_consistency(&manifest).unwrap();
 }
 
@@ -93,6 +93,6 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
+    let manifest = jackin::manifest::load_role_manifest(temp.path()).unwrap();
     validate_agent_consistency(&manifest).unwrap();
 }

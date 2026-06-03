@@ -134,13 +134,13 @@ Dev/build-only crates outside the tiers: jackin-build-meta, jackin-tui-lookbook.
 Each move follows the same shape: a **type/trait definition** moves down to `jackin-core`; the **behavior that uses it** (anyhow / fs / tokio / toml) stays in the binary and references `jackin_core::…`; the original module keeps a `pub use jackin_core::…` re-export so consumer sites compile unchanged. Inherent methods cannot be added to a foreign-crate type, so pure methods move *with* the type and impure ones become free functions or an extension trait.
 
 **Manifest types** (gated by: nothing; cuts the `env_model ↔ manifest` cycle as a side effect)
-- [ ] Add `CURRENT_MANIFEST_VERSION` const + serde-default fn to `jackin_core::constants`; re-export it from `manifest/migrations/mod.rs:13` so there is one source of truth
-- [ ] Create `jackin-core/src/manifest.rs`; move type defs: `RoleManifest` (`manifest/mod.rs:24`), `ClaudeConfig` (`:176`), `ClaudeMarketplaceConfig` (`:168`), `CodexConfig` (`:60`), `AmpConfig` (`:74`), `KimiConfig` (`:82`), `OpencodeConfig` (`:94`), `EnvVarDecl` (`:101`), `HooksConfig` (`:117`, + `entries()` `:137`), `HookEntry` (`:130`), `IdentityConfig` (`:162`), `ManifestWarning` (`:188`, + `new()` `:192`). Change the `agents` field (`:41`) to `Option<Vec<jackin_core::Agent>>`
-- [ ] Move pure methods `RoleManifest::display_name` + `supported_agents` into the core `impl`; convert `load` (`:211`) and `validate` to binary-side free functions (inherent impls can't cross crates)
-- [ ] Keep behind in `src/manifest/`: `RoleManifest::load` (anyhow/toml_edit/fs), `validate_feature_versions` (`:257`, needs `config::migrations::SchemaVersion`), `validate_agent_consistency` (`manifest/validate/mod.rs:48`, needs `env_model`)
-- [ ] Repoint `env_model/mod.rs:194` `topological_env_order` param to `jackin_core::manifest::EnvVarDecl` — **cuts the `env_model ↔ manifest` cycle** (unlisted in the roadmap)
-- [ ] Add `pub mod manifest;` + re-exports to `jackin-core/src/lib.rs`; add `pub use jackin_core::manifest::{…}` to `manifest/mod.rs` (13 consumer files compile unchanged)
-- [ ] **Versioned-schema check:** confirm the serde representation is byte-identical (relocation only) → no `CURRENT_MANIFEST_VERSION` bump, no migration step, no fixture re-bake required (AGENTS.md's five-artifact rule triggers on serde-shape changes, not file moves)
+- [x] Add `CURRENT_MANIFEST_VERSION` const + serde-default fn to `jackin_core::constants`; re-export it from `manifest/migrations/mod.rs:13` so there is one source of truth
+- [x] Create `jackin-core/src/manifest.rs`; move type defs: `RoleManifest`, `ClaudeConfig`, `ClaudeMarketplaceConfig`, `CodexConfig`, `AmpConfig`, `KimiConfig`, `OpencodeConfig`, `EnvVarDecl`, `HooksConfig` (+ `entries()`), `HookEntry`, `IdentityConfig`, `ManifestWarning` (+ `new()`). `agents` field uses `Option<Vec<jackin_core::Agent>>`
+- [x] Move pure methods `RoleManifest::display_name` + `supported_agents` into the core `impl`; convert `load_role_manifest` and `validate_role_manifest` to binary-side free functions (inherent impls can't cross crates)
+- [x] Keep behind in `src/manifest/`: `load_role_manifest` (anyhow/toml_edit/fs), `validate_feature_versions` (needs `config::migrations::SchemaVersion`), `validate_agent_consistency` (`manifest/validate/mod.rs:48`, needs `env_model`)
+- [x] Repoint `env_model/mod.rs:194` `topological_env_order` param to `jackin_core::manifest::EnvVarDecl` — **cuts the `env_model ↔ manifest` cycle** (unlisted in the roadmap)
+- [x] Add `pub mod manifest;` + re-exports to `jackin-core/src/lib.rs`; add `pub use jackin_core::manifest::{…}` to `manifest/mod.rs` (13 consumer files compile unchanged)
+- [x] **Versioned-schema check:** serde representation is byte-identical (relocation only) → no `CURRENT_MANIFEST_VERSION` bump, no migration step, no fixture re-bake required
 
 **Selector** (gated by: prefix decision; cuts the selector→TUI coupling)
 - [x] Expose `CONTAINER_PREFIX` / `CONTAINER_PREFIX_DASH` from `jackin_core::constants` per the prefix decision
@@ -175,7 +175,7 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 - [~] `config ↔ workspace`: the `*AuthConfig` data half already pre-extracted to the `jackin-config` scaffold; **residual is genuine logic coupling** (`token_setup → ConfigEditor/AppConfig`, `resolve → AppConfig`, version constants). Dissolves only when config + workspace become one `jackin-config` crate (Stage 4)
 - [~] `config → isolation::state → workspace → config`: the `MountIsolation` leg already dissolved (enum in core); the live leg is `config/workspaces → isolation::state`. Dissolves when `isolation` → `jackin-runtime`
 - [ ] `config ↔ operator_env`: cut by the `validate_reserved_names` relocation above
-- [ ] `env_model ↔ manifest`: cut by moving `EnvVarDecl` to core (above)
+- [x] `env_model ↔ manifest`: cut by moving `EnvVarDecl` to core (above)
 
 ---
 

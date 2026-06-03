@@ -113,7 +113,7 @@ pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepo
         return Err(RoleRepoValidationError::Missing(manifest_path));
     }
 
-    let manifest = RoleManifest::load(repo_dir)?;
+    let manifest = crate::manifest::load_role_manifest(repo_dir)?;
     let dockerfile_path = validate_relative_path(repo_dir, &manifest.dockerfile, "dockerfile")?;
     let dockerfile = validate_agent_dockerfile(&dockerfile_path)?;
 
@@ -131,7 +131,7 @@ pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepo
         }
     }
 
-    let warnings = manifest.validate()?;
+    let warnings = crate::manifest::validate::validate_role_manifest(&manifest)?;
     for warning in &warnings {
         crate::tui::emit_compact_line("warning", &format!("warning: {}", warning.message));
     }
