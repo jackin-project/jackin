@@ -2,6 +2,8 @@
   "title": "Codebase health",
   "defaultOpen": false,
   "pages": [
+    "../post-restructure-fixes",
+    "../post-restructure-fixes-checklist",
     "../agent-runtime-trait",
     "../structured-tracing-metrics",
     "../pr-verification",

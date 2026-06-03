@@ -1,0 +1,34 @@
+---
+title: "Post-restructure correctness & polish fixes"
+---
+
+**Status**: Open — active program. A running list of correctness and polish defects surfaced while smoke-testing the freshly-restructured workspace (after the [codebase readability program](/reference/getting-oriented/codebase-map/) landed). Each defect is analyzed, root-caused against the current tree, and broken into verifiable tasks in the [implementation checklist](/reference/roadmap/post-restructure-fixes-checklist/).
+
+## Why this exists
+
+The crate restructure moved ~60K lines of Rust across fifteen crates and deleted the root `src/` binary. The mechanical moves preserved behavior, but the smoke pass over the rebuilt binary and the `jackin-tui-lookbook` browser surfaced a set of small, independent defects — TUI rendering inconsistencies, a build-path regression, and visual-polish gaps — that are each cheap to fix but collectively erode the "looks finished" bar. This item collects them so none is lost, each is fixed against the real current code (not the pre-restructure layout), and the docs/tests stay green per the repo rules.
+
+Defects are grouped by surface in the checklist. Each entry names the exact file and the canonical pattern it should follow, so the fix is a convergence on an existing in-repo convention rather than a fresh invention.
+
+## Surfaces in scope
+
+- **`jackin-tui-lookbook`** — the contributor component browser (`cargo run -p jackin-tui-lookbook -- --terminal`). The lookbook is the reference implementation for every shared component; rendering inconsistencies here teach the wrong pattern. See <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" />.
+- **`jackin-tui` shared components** — when the lookbook reveals a missing affordance (scrollbar, backdrop, padding helper), the fix belongs in the library, not a lookbook-local workaround (per <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md" />).
+- **Build tooling** — `build-jackin-capsule` and any other path that hard-coded a layout assumption invalidated by the restructure.
+
+## Fix the whole class, never one instance (hard rule)
+
+Every defect below is a **class**, not a single broken widget. The components and surfaces share the same building blocks (the same `Panel`, the same scroll module, the same render helpers, the same padding idioms), so a defect that shows up on one component almost always exists on every sibling that uses the same block. Before fixing any entry, **scan the entire repository for every site that exhibits the same pattern and fix them all in one pass** — do not patch the one screenshot the operator happened to capture and leave the rest. A fix that lands on one story while the same flaw survives on five others is incomplete and reopens the defect.
+
+Concretely, for each entry: grep the workspace for the construct (the helper call, the widget, the layout idiom), enumerate every call site, and converge all of them on the corrected shared pattern. When the right fix is a new or changed shared helper in `jackin-tui`, route **every** site through it so the correction cannot drift back apart.
+
+## The checklist is a starting point, not the full truth (hard rule)
+
+This checklist was written from operator screenshots and a first-pass scan; it is necessarily incomplete and occasionally inaccurate. **When you execute any entry, do a fresh analysis first — re-scan the repository for that defect class, confirm the listed sites are right, and find the sites the checklist missed — then fix everything you find, not only what is written down.** Treat each entry's site list and root cause as a hypothesis to verify, not a closed set. If your analysis turns up additional sites, additional root causes, or a better shared fix, expand the entry and fix the superset. A defect that the checklist under-described but you left half-fixed because "it wasn't on the list" is a miss, not a defense.
+
+## Conventions every fix follows
+
+- Reuse the canonical in-repo pattern named in each checklist entry; do not hand-roll a parallel one (DRY rule in <RepoFile path="AGENTS.md" />).
+- Lookbook stories and interactors call only `jackin-tui` public API; a missing affordance is fixed in the library first (<RepoFile path="crates/jackin-tui-lookbook/AGENTS.md" />).
+- TUI behavior rules that generalize go into [TUI Design Decisions](/reference/tui/) in the same PR.
+- Every PR runs `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, the test suite, and — for lookbook visual changes — regenerates and `--check`s the SVG previews.

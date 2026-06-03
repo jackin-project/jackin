@@ -1,0 +1,565 @@
+---
+title: "Post-restructure fixes — implementation checklist"
+---
+
+The ordered, agent-executable checklist for the [post-restructure correctness & polish program](/reference/roadmap/post-restructure-fixes/).
+
+**How to use this document.** Each `## Defect` is one self-contained fix. Before starting any defect, re-read the **Fix the whole class, never one instance** rule on the program page: every entry is a *class* of identical sites, and the fix must converge **all** of them on one shared pattern in a single pass — never patch only the screenshot the operator captured. Each entry states the root cause against the current tree, the canonical pattern to converge on, and a repo-wide scan command to enumerate sibling sites. `[ ]` not done · `[~]` partial · `[x]` done.
+
+**Mandatory per-item analysis (hard rule).** This checklist is a starting point, not the full truth — it was written from screenshots and a first-pass scan and is necessarily incomplete. When you execute any entry, **first** re-scan the repo for that defect class, verify the listed sites and root cause, and discover the sites the checklist missed; **then** fix the whole superset. Each entry's site list is a hypothesis to confirm, not a closed set. If analysis reveals more sites, more root causes, or a better shared fix, expand the entry and fix all of it. Leaving a site unfixed because "it wasn't listed" is a miss.
+
+**Validation gate for every defect:** `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, the test suite, and — for any lookbook visual change — regenerate SVGs (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) then verify no drift (`cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook`). Any cross-cutting TUI rule established goes into [TUI Design Decisions](/reference/tui/) in the same PR.
+
+---
+
+## Defect 1 — scrollable lists must show a scrollbar and accept the wheel everywhere
+
+**Symptom:** the lookbook `stories` sidebar lists more components than fit the viewport but renders no vertical scrollbar, and the mouse wheel over the sidebar does nothing — only keyboard `↑↓` moves the (auto-following) selection. Long story ids are also hard-truncated (`status-footer/launch-progr`) with no affordance. The sidebar is the reference list widget; an operator reading it learns that lists in jackin' silently overflow.
+
+**Root cause:** <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> builds the sidebar with raw `ratatui::widgets::List` + `ListState` (the `List::new(items)` block around the `render_stateful_widget` call) instead of routing through the canonical scrollable pattern. The canonical pattern lives in <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" /> (`render_scrollable_block` / `cursor_follow_offset` / `render_vertical_scrollbar`) and <RepoFile path="crates/jackin-tui/src/components/select_list.rs" /> (`render_select_list`, which already draws a `full_cell_thumb` scrollbar and follows the cursor). The raw `List` path has none of that and the sidebar region is excluded from the wheel handler (only the preview panel forwards mouse events to the interactor).
+
+**Canonical pattern to converge on:** every overflowing list renders a vertical scrollbar via `jackin_tui::scroll` (`is_scrollable` + `full_cell_thumb`) and follows the cursor via `cursor_follow_offset`, and every scrollable region accepts mouse-wheel `ScrollUp`/`ScrollDown` mapped by pointer position (per the wheel-routing rule in [TUI Navigation](/reference/tui/navigation/)).
+
+**Tasks:**
+- [ ] Scan repo-wide for raw list rendering that bypasses the canonical helper: `rg -l "ListState|widgets::List|List::new" crates/*/src --glob '!**/select_list.rs' --glob '!**/tests.rs'`. For each hit, determine whether it (a) renders a scrollbar when content overflows and (b) accepts the wheel. Enumerate every offender.
+- [ ] Fix the lookbook `stories` sidebar in `main.rs`: render the two-row-per-story list through a scrollbar-bearing helper (either `render_scrollable_block` with pre-built `Vec<Line>` + a tracked `sidebar_scroll` offset, or a 2-line-capable list helper added to `jackin-tui`). The selected story must stay visible via `cursor_follow_offset`; a thumb must appear when stories overflow the sidebar height.
+- [ ] Add mouse-wheel handling for the sidebar region in the `Event::Mouse` arm of `run_terminal`: `ScrollUp`/`ScrollDown` over `last_sidebar_inner_area` scrolls the sidebar offset, mirroring the existing preview-scroll affordance.
+- [ ] Resolve the long-id truncation: either widen the sidebar to fit the longest id, wrap the id, or horizontally scroll the focused row — pick the option already used elsewhere in the repo for the same situation and apply it.
+- [ ] If a 2-row scrollable list helper is the right shape and `jackin-tui` lacks it, add it to `jackin-tui` (not lookbook-local) and route the sidebar through it (lookbook public-API rule).
+- [ ] Audit and fix every other offender found in the first task so no list in the workspace overflows without a scrollbar + wheel.
+
+---
+
+## Defect 2 — every preview component must sit on the same dark "card" background
+
+**Symptom:** some lookbook previews (e.g. `ConfirmDialog`) read as a clearly-bounded widget on a dark backdrop, while others (`Panel`, `BrandHeader`) blend into the preview canvas so it is unclear where the component starts and ends. The dark background must be uniform across **all** previews.
+
+**Root cause:** the preview canvas charcoal fill in <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> (the `Color::Rgb(28, 28, 28)` block applied to `preview_inner`) is one layer, but individual components differ in whether they paint their own bounded surface: `modal_block`-based dialogs read as a card because the dialog occupies a centered sub-rect with visible canvas framing it, while a `Panel` story sized to fill the canvas has no framing and its transparent interior is indistinguishable from the backdrop. The treatment is per-story and inconsistent rather than a single shared rule.
+
+**Canonical pattern to converge on:** one shared preview-canvas treatment so **every** story renders on an identical dark card with consistent framing, regardless of component type — the operator should never have to guess a component's bounds.
+
+**Tasks:**
+- [ ] Decide and document the single canonical preview-card treatment (uniform charcoal canvas + consistent inset/framing for every component, dialog or not) and record it as a rule in the lookbook section so future stories inherit it.
+- [ ] Apply it uniformly in `main.rs`'s preview render path so all stories — `BrandHeader`, `Panel`, `ButtonStrip`, `TabStrip`, dialogs, `FilterInput`, `HintBar`, `SelectList`, `ScrollablePanel`, `StatusFooter`, `TextInput`, `StatusPopup` — get identical backdrop + framing. No per-story background special-casing.
+- [ ] Verify against the full story list in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> that no story renders with a background that differs from the shared treatment.
+- [ ] Regenerate SVGs and confirm the docs previews show the uniform card for every component.
+
+---
+
+## Defect 3 — StatusFooter lookbook story must match the real status bar
+
+**Symptom:** the `StatusFooter` story (`status-footer/launch-progress`) does not match how the status bar actually renders in the running surfaces. The **correct** reference is the console/workspaces screen: a white hint row (`↑↓ · ↵ launch   N new · S settings   Q quit`) with a right-aligned run-id chip on its own row below; in `--debug` mode the chip is a **red** `Debug mode` + RunID chip pinned bottom-right. The lookbook story renders an approximation instead of the real footer.
+
+**Root cause:** the shared footer component is <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" /> (`StatusFooter` / `render_status_footer` / `right_debug` chip + `status_footer_right_chip_rect`); the capsule renders its own status bar in <RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" />. The lookbook story does not route through the canonical render path, so it drifts from the real widget (violates the lookbook public-API rule in <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md" />).
+
+**Canonical pattern to converge on:** one shared status-footer representation — white hint row + right-aligned run-id chip, red debug chip in debug mode — rendered identically by console, launch, capsule, and the lookbook story.
+
+**Tasks:**
+- [ ] Scan repo-wide for every status-bar / status-footer renderer: `rg -l "status_footer|StatusFooter|status_bar|StatusBar|render_status_footer|right_debug" crates/*/src`. Enumerate `status_footer.rs`, the capsule `status_bar.rs`, the launch surface, and the console — confirm which is canonical and which have drifted.
+- [ ] Update the lookbook `StatusFooter` story (`story_status_footer_launch_progress` in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" />) to call the canonical `render_status_footer` so the preview is the real widget, including the red debug chip variant.
+- [ ] Converge any drifted status-bar renderer on the shared representation so console, launch, capsule, and lookbook paint the identical bar (fix the whole class).
+- [ ] Record the status-bar layout rule (white hint row + right-aligned run-id chip; red debug chip in debug mode; chip is bottom-right) in [TUI Design Decisions](/reference/tui/chrome/) so the surfaces cannot drift again.
+
+---
+
+## Defect 4 — consistent padding on titled panels (title spacing + body inset) everywhere
+
+**Symptom:** the lookbook `Panel` story renders `┌Workspace───┐` with the title flush against the corner and the body rows (`Name:`, `Role:`…) flush against the left border — "thick and ugly." The `about` block in the lookbook chrome has the same problem (content flush to top/left/right). Dialogs, by contrast, render `┌ Confirm ─┐` with a padded title and inset body. Padding must be uniform across every titled panel.
+
+**Root cause:** two separate inconsistencies in the same class:
+1. **Title spacing.** The repo convention is to pass titles pre-padded as `" Title "` (30+ call sites already do, e.g. `.title(" preview ")`, `.title(" Select Role ")`). A few sites pass bare titles — `story_panel_focused` in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> uses `.title("Workspace")`, producing `┌Workspace` with no spaces. `Panel::title()` in <RepoFile path="crates/jackin-tui/src/components/panel.rs" /> does not normalize spacing, so the convention is unenforced and drifts.
+2. **Body inset.** Panel bodies are rendered directly into `block.inner(area)` with no horizontal/top margin, so content touches the border. The preview canvas in `main.rs` applies `Margin { horizontal: 1, vertical: 1 }` but the `about` description block and the `Panel` story body do not.
+
+**Canonical pattern to converge on:** every titled panel shows a space-padded title (`┌ Title ┐`) and insets its body content off the border with a consistent margin. Pick one enforcement point — ideally normalize in the shared `Panel` API so callers cannot get it wrong — and route every site through it.
+
+**Tasks:**
+- [ ] Decide the enforcement point for **title spacing**: either (a) make `Panel::title()` normalize to `" {} "` internally and strip the now-redundant manual spaces from all `" X "` call sites, or (b) keep the caller convention and fix only the bare-title offenders. Whichever is chosen, apply it to **every** `.title(...)` site — scan with `rg "\.title\(" crates/*/src` and converge all of them.
+- [ ] Decide the enforcement point for **body inset**: define a shared inner-padding helper/margin (or a `Panel` method) and apply it to every titled-panel body so content never touches the border. Scan for panel bodies rendered into `block.inner(...)` without a margin and fix each.
+- [ ] Fix the lookbook `about` block and `Panel` story (`main.rs` + `stories.rs`) as part of the same pass — they are instances of this class, not special cases.
+- [ ] Record the title-spacing + body-inset rule in [TUI Design Decisions](/reference/tui/) so new panels inherit it.
+- [ ] Regenerate SVGs and confirm padded titles + inset bodies across every titled-panel preview.
+
+---
+
+## Defect 5 — dialogs need symmetric vertical padding (top spacer + bottom spacer) across all dialog types
+
+**Symptom:** dialog internal vertical spacing is inconsistent and asymmetric across the family. `ConfirmDialog` (`confirm/default`) renders its prompt flush against the **top** border — no blank line above the first content row. `ErrorDialog` (`error/default`) is the mirror image: it has a top blank line but the `OK` button is flush against the **bottom** border (no trailing blank). `SaveDiscardDialog` (`save-discard/default`) over-corrects: it has the top spacer and the content→buttons spacer, but **two** blank lines below the buttons instead of one. `StatusPopup` (`status-popup/default`) has its `Please wait` status row flush against the bottom border (no trailing spacer) — it must move up one row. No two dialogs agree.
+
+**Canonical dialog vertical layout (operator-specified, exact):**
+
+```text
+┌ Title ────────────┐
+│                    │  ← 1 leading spacer row
+│      content       │  ← content (1+ rows)
+│                    │  ← 1 spacer row
+│   Save  …  Cancel  │  ← action/button row
+│                    │  ← exactly 1 trailing spacer row
+└────────────────────┘
+```
+
+Every dialog must match this exactly: one leading spacer, content, one spacer, the action row, exactly one trailing spacer — no more, no less.
+
+**Root cause:** each dialog hand-rolls its own vertical `Layout` constraints, and they disagree:
+- <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> splits the inner area as `[prompt_lines, 1 (spacer), 1 (buttons)]` — **no leading spacer row**, so the prompt touches the top border.
+- <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" /> splits as `[1 (top spacer), body, 1 (spacer), 1 (button)]` — the button is `chunks[3]`, the **last** inner row, so it touches the bottom border (no trailing spacer).
+
+There is no shared dialog body-layout helper enforcing symmetric top/bottom insets, so each dialog drifts independently.
+
+**Canonical pattern to converge on:** every modal dialog reserves a one-row blank spacer **both** above its first content row and below its action row, so content and buttons float with equal breathing room. Ideally express this once (a shared dialog body-layout helper or a Margin convention) and route every dialog through it.
+
+**Tasks:**
+- [ ] Scan repo-wide for every modal dialog renderer: `rg -l "modal_block|render_confirm_dialog|render_error_dialog|render_save_discard|render_status_popup|Clear.render" crates/jackin-tui/src/components`. Enumerate `confirm_dialog.rs`, `error_dialog.rs`, `save_discard` dialog, `status_popup.rs`, and any other modal — confirm each one's top/bottom inset.
+- [ ] Define the canonical dialog vertical layout (leading spacer + content + spacer + action row + trailing spacer) once — a shared helper in `jackin-tui` if the dialogs can share it, otherwise the identical constraint shape applied to each.
+- [ ] Fix `ConfirmDialog`: add the leading spacer row so the prompt no longer touches the top border. (Confirmed offender: the `Git repository detected` confirm — content flush to top, bottom spacer present, top spacer missing — is the same `render_confirm_dialog` path.)
+- [ ] Fix `ErrorDialog`: add the trailing spacer row so the `OK` button sits one row above the bottom border.
+- [ ] Fix `SaveDiscardDialog`: collapse the **two** trailing spacer rows to exactly one.
+- [ ] Fix `StatusPopup`: add the trailing spacer so the `Please wait` row moves up one row off the bottom border (and confirm it has exactly one leading spacer + one content spacer like the rest).
+- [ ] Fix the `Mount destination` choice dialog: it has **neither** a leading nor a trailing spacer (content flush to top, buttons flush to bottom) — add both.
+- [ ] Apply the same symmetric inset to every other dialog found in the scan — fix the whole class in one pass, not just the screenshotted dialogs.
+- [ ] Record the dialog symmetric-vertical-padding rule in [TUI Design Decisions](/reference/tui/dialogs/) so new dialogs inherit it.
+- [ ] Regenerate SVGs and confirm symmetric top/bottom spacing across every dialog preview.
+
+---
+
+## Defect 6 — one shared cross-screen debug-info dialog, full-screen on open, additive content per surface
+
+**Symptom:** clicking the run-id chip must hide the **whole** screen and show **only** a debug-info dialog. That dialog must be **one shared dialog used across every surface** — console, capsule, launch, and any other screen — with the **same style and the same base content everywhere**. Content is **additive**, never subtractive: the base is Run ID + where to find the log + the run log contents; on surfaces that know more (capsule/launch know the container ID and what was just started), the dialog shows that **additional** information too — but it is never drawn differently or with less.
+
+**Root cause:** today there is no single cross-screen debug dialog. The console builds a static two-row `ContainerInfoState` (Run ID + Run log *path*) via `debug_run_info_state` (<RepoFile path="crates/jackin-console/src/tui/components/container_info.rs" />) with no log contents and no scroll; the capsule has its own `container_info_dialog` (<RepoFile path="crates/jackin-capsule/src/tui/components/container_info_dialog.rs" />); the launch surface has yet another. They are separate implementations that drift in style and content. `ContainerInfoState` (<RepoFile path="crates/jackin-tui/src/components/container_info.rs" />) has no scroll offset and `render_container_info` draws no scrollbar.
+
+**Canonical pattern to converge on:** **one** debug-info dialog component in `jackin-tui`, opened from the run-id chip on every surface. On open it paints the full-screen opaque backdrop (Defect 10) so only the dialog is visible. Its content is a shared additive model:
+- **Base (every surface):** Run ID value, run log path, run log contents (scrollable per Defect 8 — bottom-border thumb on overflow, none when it fits).
+- **Additive (where known):** container ID and the just-started container details on capsule/launch; future fields append here.
+
+Same component, same style, same base rows everywhere; surfaces only *add* rows. The dialog will keep gaining fields over time — the shared model must make adding a field a one-place change that every surface inherits.
+
+**Tasks:**
+- [ ] Introduce (or promote) one shared debug-info dialog in `jackin-tui` with an additive content model (base rows always; optional container/extra rows when the surface supplies them). Replace the console `debug_run_info_state` two-row state and the capsule's separate `container_info_dialog` with this one component (DRY — no per-surface dialog).
+- [ ] On open, paint the full-screen backdrop (Defect 10) so the dialog supersedes the entire screen — nothing else visible.
+- [ ] Base content on every surface: Run ID value, run log path, and the run log **contents** (read from the active run's `.jsonl`), in a scrollable body (Defect 8: `jackin_tui::scroll` + bottom-border `full_cell_thumb`, no scrollbar when it fits, `↑↓`/`J`/`K`/wheel).
+- [ ] Additive content: on capsule and launch, include the container ID and the started-container details; design the model so new fields are added in one place and inherited everywhere, never removed per surface.
+- [ ] Wire the run-id chip → this dialog on **every** surface that shows the chip (console, launch, capsule): `rg -n "status_footer_right_chip_rect|debug_bar_chip_area|last_debug_chip_area" crates/*/src`.
+- [ ] Record the cross-screen debug-info-dialog contract (shared component, full-screen on open, additive content, scrollable, same style everywhere) in [TUI Design Decisions](/reference/tui/chrome/).
+
+---
+
+## Defect 7 — dialogs keep a stable preferred size on resize; shrink only when the screen is too small
+
+**Symptom:** resizing the terminal resizes the dialog **immediately and proportionally** — shrinking the screen shrinks the dialog and truncates its content (e.g. the Container info dialog truncates the Run log path to `/Users/donbeave/.jackin-pr-523/data` even though the full path would fit at the dialog's natural width). The dialog should hold a consistent preferred size and only begin shrinking once the terminal is genuinely too small to contain that preferred size.
+
+**Root cause:** `centered_rect_fixed` in <RepoFile path="crates/jackin-console/src/tui/layout.rs" /> computes width as `outer.width * pct_w / 100` — a pure percentage of the terminal, so the dialog rescales continuously with every resize. Every modal routed through `modal_rect` / `modal_rect_for_mode` in <RepoFile path="crates/jackin-console/src/tui/components/modal_rects.rs" /> (ConfirmSave, ErrorPopup, ContainerInfo, AuthForm) inherits this, as do the launch-surface dialogs (<RepoFile path="crates/jackin-launch/src/tui/components/failure_dialog.rs" />, <RepoFile path="crates/jackin-launch/src/tui/components/container_info_dialog.rs" />, <RepoFile path="crates/jackin-launch/src/tui/components/prompts.rs" />) and any capsule dialog using the same idiom.
+
+**Canonical pattern to converge on:** dialog width is a **content-derived preferred width, capped at a maximum**, taken as `preferred.min(outer.width - margin)` — constant while the terminal is at least that wide, shrinking only when the terminal is narrower. Same idea for height (already `rows.min(outer.height)` in places — confirm it does not over-shrink).
+
+**Tasks:**
+- [ ] Scan repo-wide for percentage-based dialog sizing: `rg -n "centered_rect_fixed|outer.width \* |width \* pct|Percentage" crates/*/src`. Enumerate every modal that scales with the screen.
+- [ ] Replace the percentage width with a preferred-width-capped-at-max model in `centered_rect_fixed` (or a new shared helper): `width = preferred.min(outer.width.saturating_sub(margin))`, where `preferred` is content-derived (or a per-dialog constant) and stays stable until the terminal is narrower than it.
+- [ ] Route every dialog (`modal_rects.rs` modes, launch dialogs, capsule dialogs) through the stable-preferred-size helper so none rescales proportionally on resize. Fix the whole class.
+- [ ] Verify the Container info / Run info dialog holds its width (no path truncation) until the terminal is genuinely too narrow, then degrades gracefully.
+- [ ] Record the modal-sizing rule (preferred size, shrink-only-when-too-small) in [TUI Design Decisions](/reference/tui/dialogs/).
+
+---
+
+## Defect 8 — every dialog is scrollable (horizontal + vertical) when content exceeds the dialog area
+
+**Symptom:** once a dialog has shrunk to the screen limit (Defect 7) and its content still does not fit — too many rows, or a line wider than the dialog — the content is clipped/truncated with no way to reach the rest. This must never happen: **any** jackin' dialog, of any kind, must become scrollable in whichever axis overflows, following the same scroll approach used everywhere else in the TUI.
+
+**Root cause:** dialogs render their bodies with fixed `Paragraph`/`Layout` widgets and no scroll state or scrollbar. There is no shared "dialog body scroll" path, so each dialog clips independently. The canonical scroll machinery already exists (`jackin_tui::scroll`, `render_scrollable_block`, `render_vertical_scrollbar` / `render_horizontal_scrollbar`, `full_cell_thumb`, `cursor_follow_offset`) but dialogs do not use it.
+
+**Canonical pattern to converge on (universal dialog rule):** every dialog body routes through the shared scroll machinery. When content height exceeds the body viewport, a vertical scrollbar thumb appears on the right/bottom border and `↑↓`/`J`/`K`/`PageUp`/`PageDown`/wheel scroll it; when a line is wider than the body, a horizontal scrollbar appears and `←→` scroll it. When content fits in either axis, that axis shows no scrollbar. This is the same rule as `render_scrollable_block` — dialogs are not exempt.
+
+**Tasks:**
+- [ ] Enumerate every dialog in the workspace: `rg -ln "modal_block|render_confirm_dialog|render_error_dialog|render_save_discard|render_status_popup|render_container_info|failure_dialog|ConfirmSave|ErrorPopup|AuthForm|op_picker" crates/*/src`. Build the full dialog inventory (console + launch + capsule + jackin-tui shared).
+- [ ] Define one shared dialog-body scroll path in `jackin-tui` (a helper or a state mixin) that wraps a dialog body in the canonical H/V scroll machinery — scrollbar-on-overflow, none-when-fits, standard key + wheel bindings — so every dialog inherits identical behavior.
+- [ ] Route every dialog through it: Confirm, Error, SaveDiscard, StatusPopup, Container/Run info, AuthForm, op-picker, launch failure/prompt dialogs, capsule dialogs, and the **filter/selection pickers** (`Select Role`, `Unfinished jackin instances`, etc.). Confirmed offender: the `Unfinished jackin instances` picker has a row (`Recover other role with hardline 3bekkf7b status:failed_setup agent:claude role:the-architect upd…`) far wider than the dialog — it must scroll horizontally (and vertically when rows overflow) instead of clipping. Fix the whole class in one pass — no dialog left clipping — by reusing **one** shared scrollable-dialog component (DRY; never a second implementation).
+- [ ] Compose with Defect 7: a dialog first holds its preferred size, shrinks only when the screen is too small, and **then** (if content still overflows the shrunk body) becomes scrollable. The two behaviors must work together, not fight.
+- [ ] Compose with Defect 5: the symmetric vertical padding (leading/trailing spacer) is part of the body that scrolls — confirm the spacers stay correct under scroll.
+- [ ] Record the universal dialog-scroll rule in [TUI Design Decisions](/reference/tui/dialogs/): "every dialog scrolls H/V when its content exceeds the dialog area, using the shared scroll machinery; no scrollbar when content fits."
+- [ ] Regenerate lookbook SVGs and add/adjust stories that exercise an overflowing dialog so the scroll affordance is visible and regression-covered.
+
+---
+
+## Defect 9 — when dialogs stack, only the top dialog shows the bright (focused) border
+
+**Symptom:** when one dialog opens over another (e.g. an `Exit jackin'?` confirm over the Container info dialog), **both** dialogs render the bright PHOSPHOR_GREEN border simultaneously. This violates the documented hard rule — "exactly one PHOSPHOR_GREEN border visible per surface layer at any time" ([Focus-visible border](/reference/tui/chrome/)) — and makes it ambiguous which dialog owns keyboard focus.
+
+**Root cause:** `modal_block()` in <RepoFile path="crates/jackin-tui/src/components/panel.rs" /> is hard-coded to the focused (green) border style — "modals are by definition the active container while they are open." That assumption breaks when modals stack: the background modal is no longer the active container but still renders through `modal_block()` → green. There is no notion of an *inactive/background* modal border. The capsule maintains a real `dialog_stack: Vec<Dialog>` (<RepoFile path="crates/jackin-capsule/src/daemon.rs" />) and the console stacks modals too, so the defect spans surfaces.
+
+**Canonical pattern to converge on:** exactly one bright border per surface layer. The **topmost** dialog in any stack owns the green border; every dialog beneath it renders a dark (`PanelFocus::Unfocused`) border — or is hidden behind the backdrop per the modal-backdrop rule. The already-documented rule is correct; the code must obey it.
+
+**Tasks:**
+- [ ] Enumerate every surface that can show more than one dialog at once: the capsule `dialog_stack` (<RepoFile path="crates/jackin-capsule/src/daemon/dialog_mgmt.rs" />), the console modal stacking, and the launch surface. Confirm how each renders stacked modals. Confirmed offender: the file-browser picker with a `Git repository detected` child dialog opened over it renders **both** borders bright — the child (top) must be bright and the file-browser parent dimmed.
+- [ ] Add an inactive/background modal border path: either a `modal_block_unfocused()` (dark border) helper in `jackin-tui`, or a focus parameter on the dialog render helpers so a background dialog renders dark. Do not leave `modal_block()` as the only option.
+- [ ] Route every stacked-dialog renderer so only the top-of-stack dialog uses the green border; all dialogs beneath render dark (or are fully obscured by the backdrop). Fix the whole class — capsule, console, launch.
+- [ ] Verify the inverse: when the top dialog closes, the now-top dialog regains the green border in the same frame.
+- [ ] The rule is already in [TUI Design Decisions](/reference/tui/chrome/); reconcile the slightly conflicting line "Dialogs and modals always have PHOSPHOR_GREEN borders" so it explicitly carves out background dialogs in a stack (only the active/top modal is green).
+
+---
+
+## Defect 10 — the exit/quit confirm paints a full-screen backdrop and shows only itself
+
+**Symptom:** opening the `Exit jackin'?` confirm while another dialog (e.g. Container info) is open renders **both** dialogs at once. The exit confirm should instead hide everything behind an opaque dark backdrop and display only the exit dialog — there is no reason to show a stack of dialogs in this case.
+
+**Root cause:** in <RepoFile path="crates/jackin/src/console/tui/run.rs" /> the redraw path calls `render(frame, main_area, …)` (which itself paints `render_modal_backdrop` + the open `list_modal` such as Container info, per <RepoFile path="crates/jackin/src/console/tui/view/frame.rs" />) and *then* draws the quit confirm on top **without** first repainting a fresh full-screen backdrop. So the underlying Container info dialog remains visible behind the exit confirm. This violates the documented rule "Modals hide the full surface behind them" ([modal backdrop](/reference/tui/chrome/)) — opening a modal must paint an opaque backdrop over the whole terminal *before* drawing the modal, so everything behind (including other dialogs) disappears.
+
+**Canonical pattern to converge on:** a top-level modal (the quit/exit confirm, and any modal that supersedes the current surface) paints the opaque full-screen `ModalBackdrop` over the entire area first, hiding the base UI *and* any already-open dialog, then draws only itself. No two dialogs visible at once for this class.
+
+**Tasks:**
+- [ ] Fix the quit-confirm render path in `run.rs`: when `quit_confirm` is active, paint `render_modal_backdrop` (or the surface's opaque fill) across the **full** area — over both the manager UI and any open `list_modal` — before drawing the exit confirm, so only the exit dialog is visible.
+- [ ] Audit every other place a modal can open while another dialog is already on screen (console `list_modal` + quit, capsule `dialog_stack`, launch). Confirm each repaints the opaque backdrop so the superseding modal hides everything beneath it rather than stacking visibly.
+- [ ] Reconcile with Defect 9: where genuine modal *stacking* is intended (child modal over parent), apply the one-bright-border rule; where it is a *supersede* (exit confirm), apply the full-backdrop hide-everything rule. Document which dialogs are stack vs supersede.
+- [ ] Confirm the existing rule text "Opening a modal must paint an opaque backdrop over the whole terminal before drawing the modal" in [TUI Design Decisions](/reference/tui/chrome/) covers the dialog-over-dialog case explicitly; tighten if needed.
+
+---
+
+## Defect 11 — clicking outside any dialog dismisses it (= Esc); clicking inside with no target is a no-op
+
+**Symptom:** clicking outside the Container info dialog (on the backdrop) does nothing — the operator expects the dialog to close, exactly as pressing `Esc`. Clicking *on* the dialog itself, where there is no clickable element, should do nothing (not dismiss). This must hold for **every** dialog in jackin'.
+
+**Root cause:** the rule is documented for dialogs ("Mouse-click outside the box: pops one frame, matching Esc" — [TUI Dialogs](/reference/tui/dialogs/)) and the capsule honors it (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> dismisses on Esc/q/click-outside), but the **console** dialogs (Container info / Run info via `list_modal`, and the quit confirm) do not implement backdrop-click dismissal. The console mouse handler in <RepoFile path="crates/jackin/src/console/tui/run.rs" /> hit-tests the chip and forwards into the manager, but has no "click landed outside the open modal's rect → close it" branch. Launch dialogs must be checked too.
+
+**Canonical pattern to converge on:** for every open dialog, a mouse-down whose coordinates are **outside** the dialog's rect dismisses it identically to `Esc`; a mouse-down **inside** the rect that does not hit a clickable element is swallowed (no dismiss, no effect). One shared hit-test/dispatch rule, applied to every dialog.
+
+**Tasks:**
+- [ ] Enumerate every dialog-bearing surface and its open-modal rect source: console `list_modal` (`modal_outer_rect`), console `quit_confirm` (`quit_confirm_area`), launch dialogs, capsule `dialog_stack` (already compliant — use as the reference).
+- [ ] Add the backdrop-click-dismiss branch to the console mouse handler: when a modal is open and a mouse-down lands outside its rect, close it (same path as `Esc`); when inside the rect but not on a clickable target, swallow the event.
+- [ ] Apply the same to the launch surface dialogs and any other non-compliant dialog. Fix the whole class — model the behavior on the capsule's existing implementation rather than inventing a second one.
+- [ ] Confirm the rule covers stacked/superseding modals correctly: a click outside the **top** dialog dismisses only the top one (per Defect 9/10 stack-vs-supersede distinction).
+- [ ] Verify the rule text in [TUI Dialogs](/reference/tui/dialogs/) states it applies to **all** surfaces (console, launch, capsule), not just the multiplexer; generalize if it reads capsule-specific.
+
+---
+
+## Defect 12 — the debug status bar is shown on every screen in debug mode, with a clickable run-id chip
+
+**Symptom:** in `--debug` mode the white status bar with the red run-id chip must appear on **every** jackin' screen (console manager, workspace editor, settings, launch, capsule), not just some — the operator must always be able to see and click the run id to reach the debug logs. Today the bar's presence and styling vary by surface (the launch cockpit renders the run id in amber via `StatusFooter`, the console renders a separate red `render_debug_bar` chip), so it is neither universal nor consistent.
+
+**Root cause:** the debug bar is rendered ad hoc per surface. The console draws it in its run loop (`render_debug_bar` / `split_debug_area` in <RepoFile path="crates/jackin-console/src/tui/run.rs" />), the launch surface bakes the run id into `StatusFooter` with a different color, and the capsule has its own status bar. There is no single cross-screen "debug run-id bar" guaranteed on every surface with one style.
+
+**Canonical pattern to converge on:** one shared debug status bar — white band, red run-id chip, chip bottom-right and clickable (opens the Run info dialog, Defect 6) — rendered on every screen whenever `JACKIN_DEBUG` is on. Same component, same style, same click behavior, everywhere. (This is the styling half of Defect 3 plus the always-on cross-screen guarantee.)
+
+**Tasks:**
+- [ ] Inventory every top-level surface and confirm whether it renders the debug bar in debug mode: console manager, workspace editor, settings, launch cockpit, capsule. `rg -n "render_debug_bar|split_debug_area|is_debug_mode|JACKIN_DEBUG" crates/*/src`.
+- [ ] Define/route one shared debug-bar render path (white band + red run-id chip) used by every surface; remove the per-surface variants (amber run id, separate chip) so the style cannot drift.
+- [ ] Guarantee the bar appears on **every** screen under `--debug` — including sub-screens (editor, settings) and the launch/capsule surfaces — not only the console manager.
+- [ ] Keep the chip clickable on every screen (feeds Defect 6's Run info dialog) and the styling exact: white bar, red chip only.
+- [ ] Record the cross-screen debug-bar rule in [TUI Design Decisions](/reference/tui/chrome/).
+
+---
+
+## Defect 13 — every clickable element shows the hand pointer and a hover color change (W3C affordance), repo-wide
+
+**Symptom:** clickable elements do not consistently signal that they are clickable. The run-id/debug chip is clickable but does not change the mouse cursor to a hand on hover and does not change color on hover. The rule — "Clickable targets must look clickable (hover + hand pointer)" ([TUI Navigation](/reference/tui/navigation/)) — is implemented for some elements (tabs, status-footer activity, launch build-log button) but not others. Every clickable thing in jackin' must do both: switch the terminal cursor to the OSC 22 hand pointer on hover, and shift its color/background on hover.
+
+**Root cause:** the affordance is built per element rather than shared. The OSC 22 escapes exist (`POINTER_HAND` / `POINTER_DEFAULT` in <RepoFile path="crates/jackin-tui/src/lib.rs" />) but are only emitted in a few sites (`rg -l "POINTER_HAND" crates/*/src` → runtime/progress, console run, lib). Hover state is wired into some components (`tab_strip`, `status_footer`) but not others (the debug chip's `render_debug_bar` takes no hover param and emits no pointer; list rows, buttons, links, mount rows vary). There is no single "this rect is clickable → on hover, lift color + emit hand pointer" helper that every clickable routes through.
+
+**Canonical pattern to converge on:** one shared clickable-affordance mechanism. Any element registered as clickable (a) emits the OSC 22 hand pointer while the mouse is over its rect and `POINTER_DEFAULT` when it leaves, and (b) renders a hover style (color/background lift) while hovered — both driven by the same hover hit-test, so the cursor and the color never disagree. DRY: no element hand-rolls its own pointer/hover logic.
+
+**Tasks:**
+- [ ] Inventory every clickable element across all surfaces: run-id/debug chip, `ButtonStrip` buttons, tab strips, list rows (workspace list, pickers, file browser), dialog buttons (Yes/No/OK/Save/Discard/Cancel), copyable/hyperlink rows in Container/Run info, mount rows, the launch build-log activity button, capsule clickable chrome. `rg -n "MouseEventKind::Down|on_click|clickable|hovered|POINTER_HAND" crates/*/src`.
+- [ ] Define a shared hover-affordance helper in `jackin-tui` (e.g. a hovered-rect registry or a per-frame "hovered target" + a `clickable_style(hovered)` + pointer-emit helper) so every clickable routes through one path for both cursor and color.
+- [ ] Add hover color + hand pointer to every clickable that lacks it — starting with the debug chip (`render_debug_bar` must take hover state, lift the chip color, and emit `POINTER_HAND`), then every other element from the inventory. Fix the whole class in one pass.
+- [ ] Ensure `POINTER_HAND` is emitted on hover-enter and `POINTER_DEFAULT` on hover-leave consistently, so the cursor never sticks as a hand after leaving a target.
+- [ ] DRY: remove any per-element duplicated hover/pointer logic in favor of the shared helper (hard DRY rule in <RepoFile path="AGENTS.md" />).
+- [ ] Confirm/extend the rule in [TUI Navigation](/reference/tui/navigation/): every clickable element, on every surface, shows both the hand pointer and a hover color change — no exceptions.
+- [ ] Add/adjust lookbook stories + interactors so the hover affordance (color shift) is visible and regression-covered for the shared clickable components.
+
+---
+
+## Defect 14 — the bottom hint bar always has one blank spacer row above it, on every screen
+
+**Symptom:** the bottom hint row (`↑↓ · ↵ launch   N new · S settings   Q quit`) must always be separated from the screen body by exactly one blank line — a spacer row, then the hints. Some screens render the hints flush against the body with no spacer, which reads as cramped. This must be uniform across every jackin' screen.
+
+**Root cause:** the leading spacer is a per-screen layout decision, not baked into the shared footer, so screens drift. `footer_height` / `render_footer` in <RepoFile path="crates/jackin-console/src/tui/view.rs" /> return only the wrapped hint height (no spacer), and each screen's vertical `Layout` is responsible for reserving the blank row above it. The lookbook is a clear offender: <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> lays out `brand(2) | main | hint(1)` with no spacer row before the hint. Other screens may match or miss it independently.
+
+**Canonical pattern to converge on:** every screen reserves exactly one blank spacer row directly above the hint bar. Prefer baking the spacer into the shared footer height/render (so `footer_height` accounts for `spacer + hints` and `render_footer` paints into that area) — then no screen can forget it — rather than relying on each screen's layout to add it.
+
+**Tasks:**
+- [ ] Inventory every screen's bottom-hint layout: console manager, workspace editor, settings, launch cockpit, capsule, lookbook. `rg -n "render_hint_bar|render_footer|render_wrapped_hint_bar|footer_height|hint_area" crates/*/src`. For each, determine whether a blank spacer row precedes the hints.
+- [ ] Decide the enforcement point: bake the leading spacer into the shared footer (`footer_height` returns `1 + hint_height`; `render_footer` renders the hints in the lower portion leaving the top row blank) so every caller inherits it. Apply repo-wide.
+- [ ] Fix the lookbook layout in `main.rs` to include the spacer.
+- [ ] Fix every other screen found in the inventory that lacks the spacer. Fix the whole class in one pass. Confirmed offender: the **create-workspace / workspace editor** screen renders the hint row directly under the content box with no blank spacer above it.
+- [ ] Record the "one blank spacer row above the hint bar, every screen" rule in [TUI Design Decisions](/reference/tui/navigation/) (hint/footer section).
+
+---
+
+## Defect 15 — the status bar is always reserved; no modal or border may draw over it
+
+**Symptom:** shrinking the terminal pushes a modal (e.g. the file-browser `┌ ~ ┐` picker) down until its bottom border lands on the status-bar row, colliding with the run-id chip (`└──────── jk-run-589192`). The status bar must be inviolable: it is always reserved at the bottom, and nothing — no modal, border, or content — may draw onto its row(s).
+
+**Root cause:** the modal rect is centered/clamped against an area that still includes the reserved status/hint rows (the height clamp `rows.min(outer.height)` in `centered_rect_fixed` uses an `outer` that is not the content area with the status + hint bar subtracted). At small heights the modal therefore extends into the status bar instead of stopping above it. The reservation is inconsistent: `split_debug_area` carves out the debug bar, but the hint row and the run-id chip row are not uniformly excluded from the modal layout area across screens.
+
+**Canonical pattern to converge on:** compute one "content area" per screen = full terminal minus the always-reserved bottom rows (hint bar + its leading spacer from Defect 14, and the debug/run-id bar from Defect 12). Every modal, picker, and dialog is centered and clamped within that content area only. The reserved bottom rows are painted last and never overlapped.
+
+**Tasks:**
+- [ ] Trace, for each surface, the exact `outer` rect passed to modal-rect computation (`modal_outer_rect` / `centered_rect_fixed` / `modal_rect_for_mode`) and confirm whether it excludes the hint bar + debug/run-id bar. `rg -n "centered_rect_fixed|modal_outer_rect|split_debug_area|main_area" crates/*/src`.
+- [ ] Establish a single "content area" helper that subtracts all reserved bottom rows (debug/run-id bar + hint spacer + hint row), and route every modal/picker/dialog layout through it so none can extend into the reserved rows.
+- [ ] Clamp modal height to the content area, not the full terminal, so a too-tall modal shrinks (composing with Defect 7) and then scrolls (Defect 8) instead of overrunning the status bar.
+- [ ] Fix the file-browser/workdir picker specifically (the screenshotted case) and every other modal that shares the layout path. Fix the whole class.
+- [ ] Record the "status bar is always reserved; modals never draw over it" rule in [TUI Design Decisions](/reference/tui/chrome/).
+
+---
+
+## Defect 16 — selection highlight spans the full row width everywhere, matching the workspace sidebar
+
+**Symptom:** in the file-browser picker (and similar lists, including those inside dialogs) the selected row's highlight covers only the text, not the full available width. The canonical look is the **workspace sidebar** on the console screen: the selected row's background fills the entire row width. Every selectable list must match that — full-width selection bar — including lists rendered inside dialogs.
+
+**Root cause:** two different list-rendering paths with different highlight behavior. The workspace sidebar uses ratatui `List` + `highlight_style(bg(PHOSPHOR_GREEN))` (<RepoFile path="crates/jackin-console/src/tui/screens/workspaces/view.rs" />), which paints the highlight across the **full row width**. The shared `render_select_list` / `render_selected_lines` path (<RepoFile path="crates/jackin-tui/src/components/select_list.rs" />) renders a `Paragraph` with per-line spans, so the selected-row background only spans the text, not the full width. The file browser, workdir/role/github pickers, and other list-bearing components use the narrow-highlight path.
+
+**Canonical pattern to converge on:** one selection-highlight style — a full-row-width background bar (PHOSPHOR_GREEN bg, black fg, `▸ ` cursor) identical to the workspace sidebar — used by every selectable list on every surface, including lists inside dialogs.
+
+**Tasks:**
+- [ ] Inventory every selectable-list renderer: workspace sidebar (canonical), `select_list.rs`, file browser, workdir/role/github pickers, op-picker lists, the lookbook stories sidebar (Defect 1), and any list in a dialog. `rg -n "highlight_style|render_select_list|render_selected_lines|highlight_symbol|ListItem::new" crates/*/src`.
+- [ ] Make the shared list component paint a **full-width** selection background (extend `render_selected_lines` to pad the selected line to `area.width`, or route these lists through the ratatui `List` highlight path) so the highlight fills the row.
+- [ ] Converge every list — including the in-dialog file browser and the pickers — on the shared full-width-selection style. Fix the whole class; do not leave the sidebar as the only full-width one.
+- [ ] Keep it consistent with Defects 1 & 16 interplay: the full-width highlight coexists with the scrollbar (Defect 1) and the focus border (Defect 9) without visual conflict.
+- [ ] Record the "selection highlight is always full row width" rule in [TUI Design Decisions](/reference/tui/navigation/) (or visual-design), referencing the workspace sidebar as the canonical example.
+- [ ] Regenerate lookbook SVGs for `SelectList` so the full-width selection is visible and regression-covered.
+
+---
+
+## Defect 17 — clicking a tab content block transfers focus to it (settings + editor), even when it does not overflow
+
+**Symptom:** on the settings screen, clicking the content block of any tab (General, Mounts, Environments, Auth, Trust) does nothing — focus does not move into the block. The same is true in the workspace editor. The operator expects clicking the content block to focus it (equivalent to `⇥`/`↓ enter content`), per the click-to-focus rule.
+
+**Root cause:** the console mouse handler routes content-block clicks through `update_scroll_focus` in <RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" />, which only transfers focus to a block that is **scrollable** (content overflows its viewport). The settings tab panels (e.g. General with two toggles) do not overflow, so the scroll-focus path declines to focus them and the click is a no-op. But the documented rule is explicit that interactive containers are focusable because they accept keys, **not** because they overflow ("forms, dialogs, pickers, tab panels, and other interactive containers are focusable because they accept keys, not because they overflow" — [Focus-visible border](/reference/tui/chrome/)). The click-to-enter-content path for interactive tab panels is missing.
+
+**Canonical pattern to converge on:** clicking an interactive tab content block transfers interaction focus into it (same end state as `⇥`/`↓ enter content`) regardless of whether it overflows; the block gets the bright border, the hint bar updates, and the tab bar yields focus. Scroll-focus (overflow) remains one *additional* way to focus a block, not the only way.
+
+**Tasks:**
+- [ ] Trace the click-to-focus path for the editor and settings stages in `update_scroll_focus` (and its `*_scroll_focus_plan` helpers) in <RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" /> and <RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" /> / `screens/settings/update.rs`. Confirm focus only transfers on overflow.
+- [ ] Add click-to-enter-content for interactive tab panels: a left-click inside a tab content block transfers interaction focus to it (the same state `⇥`/`↓` produces), independent of overflow, for **every** tab in settings (General, Mounts, Environments, Auth, Trust) and the workspace editor tabs.
+- [ ] Keep the focus signals coupled (border + `▸`/cursor + hint bar) per the existing hard rule — clicking must update all of them together.
+- [ ] Scan for any other tabbed/interactive container with the same overflow-gated focus bug and fix it too (fix the whole class). `rg -n "scroll_focus|scroll_focused|enter content|tab_content" crates/*/src`.
+- [ ] Confirm the rule text in [TUI Design Decisions](/reference/tui/chrome/) already covers "interactive panels are focusable by click regardless of overflow"; tighten if the implementation guidance is ambiguous.
+
+---
+
+## Defect 18 — the `▸` selection cursor shows whenever a selectable block is focused, and hides when it is not
+
+**Symptom:** when a block with selectable items gains focus, the `▸` cursor must appear on the selected row so the operator can see what is selected; when focus leaves the block (to another block or the tab bar), `▸` must disappear. Many blocks have lost this — the block is focused but shows no `▸`, so it is unclear what is selected. (The settings General tab now shows `▸` correctly when focused; the operator reports many other places where it is missing.)
+
+**Root cause:** the `▸`-and-green-border-are-inseparable rule ([Focus-visible border](/reference/tui/chrome/)) requires the cursor and border to be controlled by **identical** expressions (`focused = …` and `show_cursor = …` must match). In practice `show_cursor` is threaded per-view (`screens/settings/view.rs`, `screens/workspaces/view.rs`, `screens/editor/view.rs`, `auth_panel.rs`, capsule `dialog.rs`) and is computed inconsistently — some call sites pass `false`, omit it, or derive it from a different condition than the block's focus state, so the cursor and the border disagree.
+
+**Canonical pattern to converge on:** every selectable block derives `▸` visibility from exactly the same focus expression that drives its green border — focused block ⇒ `▸` on the selected row; unfocused ⇒ no `▸`. One source of truth per block; no independent `show_cursor` that can drift.
+
+**Tasks:**
+- [ ] Inventory every place a `▸` cursor / `highlight_symbol` / `show_cursor` flag is used or should be: `rg -n "▸|highlight_symbol|show_cursor|SELECT_MARK" crates/*/src`. For each, confirm the `▸` is gated on the block's focus state and matches the green-border expression exactly.
+- [ ] Fix every block where `▸` is missing while focused or present while unfocused. Confirmed-missing examples (all five settings tabs, focused): **General** (now correct), **Mounts** (`+ Add mount` row), **Environments** (op rows + `+ Add environment variable`), **Auth** (agent rows), **Trust** (role rows). Also workspace editor tabs, pickers, file browser, capsule dialogs, and the lookbook lists. Fix the whole class.
+- [ ] Header rows are not selectable: where a tab has a column-header row (Mounts, Environments, Trust show `Destination…`, `Role  Trust  Git`, etc.), the `▸` must appear on the selected **data** row, never on the header. Confirm the cursor never lands on a header/non-selectable row.
+- [ ] Where `show_cursor` is computed independently of focus, refactor so a single focus value drives both the border and `▸` (enforce the "identical expressions" rule structurally, e.g. derive both from one `focused` bool).
+- [ ] (Observation to verify) the settings hint bar in the focused state reads `↑↓ navigate   ↑↓ navigate · ␣ toggle   ⇧Tab tab bar` — `↑↓ navigate` appears twice. Confirm whether the focused-content hint is duplicated and fix if so.
+- [ ] Confirm the rule in [TUI Design Decisions](/reference/tui/chrome/) ("`▸` and green border are inseparable") is honored everywhere after the sweep.
+
+---
+
+## Defect 19 — the tab strip and the tab content must never both show the focus color
+
+**Symptom:** on the create-workspace / editor Mounts tab, clicking the content block leaves **both** the tab strip (green underline) **and** the content block (green border) showing the focus color at once — two focus owners. When the content block owns focus, the tab strip must drop to the normal **white** underline; only one of (tab strip, content block) is green at any time. (The `▸` cursor was also absent — Defect 18 — and the hint bar still showed the tab-bar hints, indicating the click painted a border without actually transferring focus.)
+
+**Root cause:** the editor/settings screens track a `tab_bar_focused` bool (<RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" />, `screens/settings/update.rs`) that is supposed to make tab-strip-focus and content-focus mutually exclusive, but the click-to-focus path (Defect 17) paints the content block's green border without clearing `tab_bar_focused`, so the tab strip stays green. The tab strip's focus color and the content block's focus border are not driven by one mutually-exclusive owner value.
+
+**Canonical pattern to converge on:** exactly one focus owner among (tab strip, content block) (the existing one-bright-border rule). `tab_bar_focused == true` ⇒ tab strip green underline, content border dark, no `▸`. `tab_bar_focused == false` (content focused) ⇒ tab strip **white** underline, content green border + `▸` on the selected row. The two states are exhaustive and exclusive.
+
+**Tasks:**
+- [ ] Make the tab strip render its focus cue from `tab_bar_focused`: green underline only when the tab bar owns focus; white/normal underline when content owns focus. Check `render_editor_tab_strip` / `render_settings_tab_strip` and the `TabStrip` `focused(..)` call.
+- [ ] Ensure the click-to-focus path (Defect 17) sets `tab_bar_focused = false` when it transfers focus into content, so the tab strip stops being green in the same frame.
+- [ ] Couple this with Defect 18: when content gains focus, `▸` appears; when the tab bar regains focus, `▸` disappears and the content border goes dark.
+- [ ] Scan every tabbed screen (workspace editor, create-workspace, settings) for the dual-focus bug and fix all of them (fix the whole class). Confirmed trigger: switching tabs left/right and returning to the **Mounts** tab leaves the Mounts content block with a green border while the tab bar still owns focus — the content border must be dark whenever `tab_bar_focused` is true, regardless of tab-switch history. Audit per-tab focus state that is not reset when the tab bar owns focus.
+- [ ] Record the tab-strip-vs-content mutual-exclusion rule explicitly in [TUI Design Decisions](/reference/tui/navigation/) (W3C Tabs section).
+
+---
+
+## Defect 20 — `↓` from a focused tab bar enters the content block, on every tabbed screen
+
+**Symptom:** with the tab bar focused (hint shows `⇥/↓ enter content`), pressing `↓` should move focus down into the content block. On some tabs it does nothing — not intuitive. The behavior must be consistent on every tabbed screen.
+
+**Root cause:** the `↓`-enters-content transition is wired per tab/screen rather than uniformly. Where the key handler does not map `↓` (while `tab_bar_focused`) to the same focus transfer as `⇥`, the keypress is dropped. The editor/settings `*_tab_bar_focus_plan` / key dispatch in <RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" /> and `screens/settings/update.rs` must treat `↓` and `⇥` identically when the tab bar owns focus.
+
+**Canonical pattern to converge on:** while the tab bar owns focus, both `⇥` and `↓` transfer focus into the content block (set `tab_bar_focused = false`, focus the content, show `▸`); `⇧Tab`/`↑` (or `Esc`) return focus to the tab bar — identically on every tabbed screen. This matches the W3C Tabs pattern already documented.
+
+**Tasks:**
+- [ ] Audit the key handling for every tabbed screen (workspace editor, create-workspace, settings) and confirm `↓` while `tab_bar_focused` enters content exactly as `⇥` does. `rg -n "tab_bar_focused|KeyCode::Down|KeyCode::Tab|enter content" crates/jackin-console/src/tui/screens`.
+- [ ] Fix every screen where `↓` does not enter content; route both `⇥` and `↓` through one shared transition so they cannot diverge (DRY).
+- [ ] Confirm the reverse (`↑`/`⇧Tab` from the top content row returns to the tab bar) is equally consistent.
+- [ ] Compose with Defects 17/18/19: entering content sets `tab_bar_focused = false`, shows `▸`, greens the content border, and whitens the tab underline — all in one transition.
+- [ ] Record the `↓`/`⇥` enter-content equivalence in [TUI Design Decisions](/reference/tui/navigation/).
+
+---
+
+## Defect 21 — action rows (`+ Add …` / `+ Override …`) share one style and carry no redundant description
+
+**Symptom:** on the per-agent Auth tab (e.g. the `Claude Code` panel: `Mode  sync (inherited)`, `+ Override for a role   (all roles overridden)`), the `+ Override for a role` row (1) carries a redundant trailing description `(all roles overridden)` that should not be there, and (2) is styled differently from the env-variable `+ Add environment variable` row. All `+ Add …` / `+ Override …` action rows must look identical (same colors) and must not append extra descriptions.
+
+**Root cause:** the env add-rows use a shared `action_row_style(selected)` (<RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />), but the auth-override row in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs" /> uses `label_style` and appends a `(all roles overridden)` suffix (around `editor/view.rs:720`/`781`/`788`). The two add-action rows are styled by different code paths, so they diverge.
+
+**Canonical pattern to converge on (universal rule):** any row that begins with `+ ` is an add/create action and must always render through one shared action-row style — the same `+` glyph, the same colors — on every screen, tab, and dialog in jackin', with no trailing parenthetical description. There is exactly one styling for `+ …` rows app-wide; no surface hand-rolls its own.
+
+**Tasks:**
+- [ ] Remove the `(all roles overridden)` suffix (and any equivalent trailing description) from the `+ Override for a role` add-row.
+- [ ] Route the auth-override add-row (and any other `+ …` action row) through the same `action_row_style` the env add-rows use, so colors match exactly. `rg -n "action_row_style|Override for a role|Add environment variable|Add mount|\\+ " crates/jackin-console/src/tui/screens`.
+- [ ] Audit **every** `+ …` row anywhere in the app (env, auth, mounts, roles, settings, create-workspace, editor, pickers, dialogs) — `rg -n '"\\+ |+ Add|+ Override|\+ "' crates/*/src` — and converge them all on the one shared action-row style/component. Fix the whole class; no `+ …` row uses a bespoke style.
+- [ ] Per the mandatory per-item analysis rule, re-scan for any other action/sentinel row that diverges in color or carries a redundant description, and fix those too.
+- [ ] Record the "one action-row style, no redundant descriptions" rule in [TUI Design Decisions](/reference/tui/visual-design/).
+
+---
+
+## Defect 22 — when a modal is open it owns all mouse input; chrome clicks never leak into it (single-consumer routing)
+
+**Symptom:** with the `Select Role` picker open, clicking the run-id chip corrupts the picker — the run-id/path leaks into the filter/selected row (`▸ agent-/Users/donbeave/.jackin-pr-52…`). One mouse-down is consumed by two handlers: the debug-chip handler *and* the picker's input.
+
+**Root cause:** the console mouse loop in <RepoFile path="crates/jackin/src/console/tui/run.rs" /> runs the debug-chip hit-test unconditionally (no guard for an open modal), and the same event then also falls through to `handle_mouse_with_config`, which feeds the picker. There is no single-consumer precedence: chrome-level handlers (debug chip, tabs) fire even while a modal owns the screen, and the event is not consumed exclusively by the top input owner.
+
+**Canonical pattern to converge on:** exactly one consumer per mouse event, by precedence. When a modal/picker is open, **it** owns all mouse input: clicks inside route only to the modal, clicks outside dismiss it (Defect 11), and chrome handlers (debug chip, tab strip, list rows behind the modal) do **not** fire. No event is ever processed by two handlers.
+
+**Tasks:**
+- [ ] Gate the debug-chip click handler (and every other chrome-level click handler) on "no modal open" — when a modal/picker owns the screen, skip chrome handlers entirely.
+- [ ] Establish single-consumer precedence in the console mouse loop: modal/picker input first (consume + return), else chrome (chip/tabs), else base surface. An event consumed at one level must not fall through.
+- [ ] Compose with Defect 11: a click outside the open modal dismisses it instead of hitting the chip or the base surface.
+- [ ] Per the per-item analysis rule, scan every surface's mouse loop (console, launch, capsule) for events that fall through to a second handler, and fix the routing class-wide. `rg -n "MouseEventKind::Down|handle_mouse|last_debug_chip_area|try_select_.*_tab" crates/*/src`.
+- [ ] Add a regression test that a chip click while a modal is open does not mutate the modal's state.
+
+---
+
+## Defect 23 — the inline provider picker owns the focus border while active (it is hardcoded unfocused)
+
+**Symptom:** in the workspace-list launch flow (select workspace → agent → provider), the inline `provider` picker shows `▸ Anthropic` selected but its block border is **not** green — it lost focus, even though the operator is actively selecting in it. Selecting a provider should keep the picker focused.
+
+**Root cause:** in <RepoFile path="crates/jackin/src/console/tui/components/workspace_list.rs" /> the provider picker is rendered with `render_picker_sidebar(frame, area, &title, labels, Some(selected), false)` — the `focused` argument is **hardcoded `false`**. The sibling role and agent picker renderers (`render_role_picker_sidebar`, `render_agent_picker_sidebar`) correctly thread the real `focused` state through. So the provider picker can never show the green border, which also violates the `▸`-and-green-border-inseparable rule (Defect 18): the cursor shows but the border is dark.
+
+**Canonical pattern to converge on:** every inline launch picker (role, agent, provider, and the launch-provider picker) passes its real focus state to `render_picker_sidebar`; the active picker owns the green border + `▸` together, exactly like the role/agent pickers.
+
+**Tasks:**
+- [ ] Fix `render_provider_picker_sidebar` to accept and pass the real `focused` state instead of `false`; thread the focus flag from the picker's active state at the call site.
+- [ ] Audit every `render_picker_sidebar` caller for a hardcoded `false` (or omitted) focus argument: `rg -n "render_picker_sidebar" crates/*/src`. Fix all inline pickers (role, agent, provider, launch-provider) so the active one is focused.
+- [ ] Compose with Defect 18: the focused picker shows `▸` and the green border together; the inactive ones show neither.
+- [ ] Per the per-item analysis rule, check the inline-picker focus-state plumbing end-to-end (which picker is "active" → that one renders focused) and confirm exactly one is focused at a time.
+- [ ] Confirm via the workspace-list launch flow that role, agent, and provider pickers each show the green border while active.
+
+---
+
+## Defect 24 — horizontal scrollbars render in production, not just the lookbook
+
+**Symptom:** lists/tables that overflow horizontally show an `H/L scroll` hint but no actual horizontal scrollbar (e.g. the Mounts table, the role/instance pickers). The vertical scrollbar renders in production; the horizontal one does not.
+
+**Root cause:** `render_horizontal_scrollbar` exists in <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" /> but is only called from the lookbook demo story — `render_scrollable_block` renders the vertical thumb and not the horizontal one, and the console screens that track `scroll_x` (`workspace_mounts_scroll_x`, `list_names_scroll_x`, `term_width_scroll_plan`) never draw a horizontal thumb. Horizontal scroll state is tracked but never visualized.
+
+**Canonical pattern to converge on:** any block/list/dialog whose content is wider than its viewport renders the shared horizontal scrollbar thumb on its bottom border (mirroring the vertical thumb on the right), wherever `scroll_x` is tracked — driven from the same scroll module as the vertical one.
+
+**Tasks:**
+- [ ] Integrate `render_horizontal_scrollbar` into `render_scrollable_block`/`render_scrollable_block_at` so any horizontally-overflowing content shows the thumb (no scrollbar when it fits).
+- [ ] Wire it into every production surface that tracks `scroll_x`: Mounts table, list-names, settings env/trust tables, pickers. `rg -n "scroll_x|render_horizontal_scrollbar|ScrollLeft|H/L scroll|term_width_scroll" crates/*/src`.
+- [ ] Ensure the `H/L scroll` hint only appears when horizontal scrolling is actually possible (overflow), consistent with the vertical rule.
+- [ ] Record the "horizontal scrollbar renders whenever content overflows horizontally" rule in [TUI Design Decisions](/reference/tui/navigation/).
+
+---
+
+## Defect 25 — `Panel::title` normalizes title spacing so `┌ Title ┐` is automatic
+
+**Symptom:** titled panels disagree on title padding (`┌Workspace` vs `┌ Confirm `) because spacing is a caller convention, not enforced (see Defect 4). This is the structural enforcement half of Defect 4.
+
+**Root cause:** `Panel::title()` in <RepoFile path="crates/jackin-tui/src/components/panel.rs" /> stores the title verbatim; ~30 callers pass `" X "` and a few pass bare `"X"`, so the convention drifts. Dialog titles use `format!(" {} ", state.title)` independently.
+
+**Canonical pattern to converge on:** one enforcement point. Either `Panel::title()` normalizes internally to `" {} "` (and all callers pass bare titles), or a single shared title-formatting helper is the only way titles are set. No per-call manual spacing.
+
+**Tasks:**
+- [ ] Decide normalize-in-`Panel::title` vs shared helper; implement once.
+- [ ] Update every `.title(...)` site to the chosen convention (strip now-redundant manual spaces, or fix bare ones). `rg -n "\.title\(" crates/*/src`.
+- [ ] Fold the dialog `format!(" {} ", title)` sites into the same helper so titles cannot drift.
+- [ ] This composes with Defect 4 (body inset) — land both together so titled panels are consistent in one pass.
+
+---
+
+## Build-first shared primitives (do these before the per-defect sweeps)
+
+Most defects above converge on a handful of shared building blocks. Building these **first** turns each defect into "route every site through the primitive" instead of N independent patches, and is the DRY-correct order. The gap analysis confirmed none of these exist yet as shared infrastructure.
+
+- [ ] **`HoverTracker` (shared hover state + routing).** Today hover is scattered (`hovered_tab`, `hovered_mount_row`, `menu_hovered`, …) across editor/settings/workspaces/capsule models, each wired to `MouseEventKind::Moved` ad hoc. Build one shared hover-tracking primitive in `jackin-tui` (register clickable rects → current hovered target) that drives both the hover color and the OSC 22 pointer (Defect 13). Route every surface's `Moved` handling through it. Removes the scattered `hovered_*` bools.
+- [ ] **`DialogBodyLayout` (shared dialog inner layout).** Every dialog hand-rolls `Layout::vertical([...])` with its own spacers/inset (confirm, error, save_discard, status_popup, container_info, capsule dialogs). Build one helper that yields the canonical layout — leading spacer + content + spacer + action row + trailing spacer (Defect 5), with consistent horizontal inset — and route every dialog through it. This is the single primitive that fixes Defects 5, and underpins 7/8.
+- [ ] **Shared scrollable-dialog component.** Combine `DialogBodyLayout` with the scroll machinery so a dialog body scrolls H/V on overflow (Defect 8), holds preferred size and shrinks only when the screen is too small (Defect 7), then scrolls. One component reused by every dialog and every filter/selection picker (`Select Role`, `Unfinished jackin instances`). DRY — never a second dialog-scroll implementation.
+- [ ] **`FocusOwner` per-screen model.** Replace the scattered focus bools (`tab_bar_focused`, `*_scroll_focused`, `tab_content_scroll_focused`, `list_names_focused`, picker `focused`) with one value per screen naming the single focus owner, so "exactly one bright border" and "`▸` iff focused" (Defects 9, 17, 18, 19, 23) are structurally guaranteed, not maintained by hand. The render derives border + `▸` + hint scope from this one value.
+- [ ] **Shared action-row component (`+ …`).** One component/style for every `+ Add…/+ Override…` row app-wide (Defect 21).
+- [ ] **Modal input/lifecycle helper.** One place that owns: full-screen backdrop on open (Defects 10), single-consumer mouse routing while open (Defect 22), click-outside-dismiss (Defect 11), and one-bright-border for stacks (Defect 9). Every surface's modal handling routes through it rather than re-implementing backdrop/dismiss/precedence.
+
+---
+
+## Capsule TUI parity audit
+
+The capsule (`crates/jackin-capsule/src/tui`) reimplements several things at the ANSI level instead of reusing `jackin-tui` (status bar/tab strip in `status_bar.rs`, custom dialog layout in `dialog.rs`, custom focus borders in `pane.rs`, separate hover fields). For each defect that names "console + launch + capsule," explicitly verify the capsule path:
+
+- [ ] Status bar / tab strip: converge the capsule's hand-rolled ANSI bar onto the shared `StatusFooter` / `TabStrip` representation where feasible (Defects 3, 12), or document why the vt100/ANSI layer must differ — but keep style + content identical.
+- [ ] Dialogs: route capsule dialogs through the shared `DialogBodyLayout` + scrollable-dialog component (Defects 5, 8) and the debug-info dialog (Defect 6).
+- [ ] Focus borders + `▸` + hover: use the shared `FocusOwner` / `HoverTracker` primitives so the capsule cannot drift from the console (Defects 13, 18).
+- [ ] Where the vt100 pane genuinely cannot reuse a ratatui primitive, record the exception with a one-line reason (per the DRY-exception rule in <RepoFile path="AGENTS.md" />).
+
+---
+
+## Lookbook coverage — every component and every state has a story
+
+The lookbook is the regression surface; many components/states are unexercised, so these defects could regress invisibly. Add stories so every shared component and every state variant is visible and SVG-checked.
+
+- [ ] Add missing component stories: `ContainerInfo` / debug-info dialog (incl. overflowing→scrollable), `ModalBackdrop` (full-screen), and any other `jackin-tui/src/components/` file with no story.
+- [ ] Add missing **state** variants: `Panel` Unfocused / Focused / FocusedScrollable; `ButtonStrip` all-disabled; `ConfirmDialog` focus=Yes; `SaveDiscardDialog` focus=Save/Discard; `SelectList` no-selection **and** full-width selection (Defect 16); `ScrollablePanel` actively scrolled (H and V) with visible thumbs (Defects 8, 24); hover states for buttons/tabs/chips (Defect 13); stacked dialogs showing one-bright-border (Defect 9).
+- [ ] Make the lookbook stories sidebar itself the reference for Defects 1, 14, 16 (scrollbar + spacer + full-width selection) once fixed.
+- [ ] Regenerate SVGs (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) and verify no drift (`--check`).
+
+---
+
+## Testing & regression coverage
+
+- [ ] Unit-test the focus-owner exclusivity (`FocusOwner` can only name one owner; border + `▸` derive from it) so Defects 9/18/19 cannot regress.
+- [ ] Snapshot/format tests for dialog vertical layout (Defect 5) — assert leading spacer, single trailing spacer, button row position — across every dialog.
+- [ ] Tests for modal input routing (Defect 22): a chip click while a modal is open does not mutate the modal; a click outside dismisses (Defect 11); a click inside with no target is swallowed.
+- [ ] Tests for `↓`/`⇥` enter-content equivalence (Defect 20) and click-to-focus content (Defect 17).
+- [ ] Lookbook `--check` SVG drift gate wired into the existing docs/CI checks.
+
+---
+
+## Cross-cutting design-decision updates (one PR-per-area, in the same PR as the fix)
+
+Each defect names a rule to record. Consolidate so the canonical TUI doc stays the single source of truth:
+
+- [ ] [TUI Navigation](/reference/tui/navigation/): full-width selection (16), `▸`-iff-focused (18), `↓`/`⇥` enter content (20), tab-strip-vs-content exclusion (19), hint-bar leading spacer (14), horizontal scrollbar on overflow (24), universal hover affordance (13).
+- [ ] [TUI Chrome](/reference/tui/chrome/): cross-screen debug bar (12), status-bar reserved/no-overdraw (15), debug-info dialog contract (6), one-bright-border + stack-vs-supersede (9, 10).
+- [ ] [TUI Dialogs](/reference/tui/dialogs/): symmetric vertical padding (5), preferred-size-on-resize (7), scroll-on-overflow (8), click-outside-dismiss all surfaces (11).
+- [ ] [TUI Visual Design](/reference/tui/visual-design/): one action-row style (21), title-spacing + body inset (4, 25), uniform dark preview card (2).
+- [ ] Reconcile the conflicting "dialogs always have green borders" line (9) and confirm the click-outside rule reads cross-surface (11).
+- [ ] Run the docs gate after edits: `bun run build`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bunx tsc --noEmit`, `bun test` from `docs/`.
+
+---
+
+## Program acceptance gates
+
+The program is done when:
+
+- [ ] **Dialog audit:** every dialog (console + launch + capsule + pickers) routes through the shared `DialogBodyLayout` + scrollable-dialog + modal-lifecycle primitives — symmetric padding, preferred sizing, H/V scroll, backdrop, one-bright-border, click-outside-dismiss — verified one by one.
+- [ ] **Focus audit:** every screen uses the `FocusOwner` model; exactly one bright border at all times; `▸` shows iff the block is focused; click-to-focus + `↓`/`⇥` enter content work on every tabbed screen.
+- [ ] **List audit:** every list shows vertical (and horizontal where applicable) scrollbars on overflow + wheel, with full-width selection highlight, matching the workspace sidebar.
+- [ ] **Affordance audit:** every clickable element shows the hand pointer + hover color via the shared `HoverTracker`.
+- [ ] **Debug surface audit:** the white status bar + red run-id chip appears on every screen under `--debug`; the chip opens the one shared cross-screen debug-info dialog (full-screen, additive content, scrollable).
+- [ ] **Lookbook audit:** every shared component + state variant has a story; SVGs regenerated and `--check` clean.
+- [ ] `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, full test suite, and the docs gate are all green.
+
+---
+
+## Defect 26 — capsule resize is reactive: full erase + reflow, no stale or duplicated content
+
+**Symptom:** resizing the terminal while attached to the capsule leaves the screen not properly refreshed — stale/duplicated content remains (e.g. the bottom PR status line renders twice). The mux does not reactively repaint the whole surface on resize.
+
+**Root cause:** the SIGWINCH path sends a `Resize` frame (<RepoFile path="crates/jackin-capsule/src/tui/run.rs" />) → `mux.resize` (<RepoFile path="crates/jackin-capsule/src/daemon/pane_layout.rs" />), which calls `ratatui_terminal.clear()` whose `SocketBackend::clear()` **deliberately does not emit a screen erase** ("so the next frame is a full repaint without a blank flash"). That bet fails on shrink/reflow: cells from the previous, differently-sized frame (and on the attach client's outer terminal) are never erased, so old rows persist and overlap the new layout — the duplicated status line. The dirty-row renderer also assumes prior-buffer geometry that the resize invalidated.
+
+**Canonical pattern to converge on:** a resize is a reactive full-repaint event — the mux marks the entire surface dirty and the renderer (and the attach client's outer terminal) performs a real clear + full reflow so no stale or duplicated cells survive. Resizing never shows doubled or leftover content; the next frame after a resize is authoritative for every cell.
+
+**Tasks:**
+- [ ] Reproduce and instrument the resize path with `cdebug!` (per the repo's debug-telemetry rule) to capture the frame geometry before/after resize and confirm where stale cells originate (daemon double-buffer vs attach-client terminal).
+- [ ] On resize, force a full repaint: mark all rows/panes dirty and emit a real erase for the new geometry (reconcile `SocketBackend::clear()`'s no-erase optimization with correctness — erase on resize even if not on steady-state frames), so shrink/grow/reflow leaves no leftover cells.
+- [ ] Ensure the attach client's **outer** terminal is also cleared/repainted on resize so duplicated chrome (the doubled PR/status line) cannot persist.
+- [ ] Invalidate any cached geometry on resize: `pane_body_caches`, dirty-row state, `reconcile_content_rows`, status-bar/tab-strip caches.
+- [ ] Compose with Defect 15 (status bar reserved) and Defect 7 (dialog sizing) so a resize re-lays-out chrome + modals within the new content area without overdraw.
+- [ ] Add a resize regression test (shrink then grow) asserting the rendered buffer has no duplicated status/chrome rows.
+- [ ] Record any capsule-specific resize/redraw rule in [TUI Design Decisions](/reference/tui/) and the capsule architecture reference.
+
+---
+
+## Further defects
+
+Additional defects the operator reports get appended here, each following the same shape: symptom → root cause against the current tree → canonical pattern → repo-wide scan + fix-all tasks.
