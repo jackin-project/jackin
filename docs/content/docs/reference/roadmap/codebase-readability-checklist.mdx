@@ -6,6 +6,70 @@ Detailed implementation checklist for the [codebase readability program](/refere
 
 **Legend:** `[x]` shipped to branch · `[ ]` not yet done · `[~]` partial
 
+All metrics below were **re-measured against the working tree on 2026-06-03**. Where a number disagrees with the roadmap page or an earlier revision of this checklist, the measured number wins and the discrepancy is flagged **(was: …)**. The roadmap prose still carries several stale claims (cycles it says were cut that are still live, type-move legs that already shipped); those are tracked under [Roadmap-page corrections](#roadmap-page-corrections) so the planning docs and the code converge in the same PRs.
+
+---
+
+## Prerequisite decisions (operator sign-off)
+
+Three judgment calls gate the rest of Stage 1 / Stage 4. Each ripples across many files, so decide once before any code moves. None should be resolved silently by an agent.
+
+- [ ] **Core error-type policy.** `DockerApi` (16 methods) and `CommandRunner` (3 methods) return `anyhow::Result<…>` today. `jackin-core` currently carries only `serde` + `thiserror`. Choose: **(a)** add `anyhow` to `jackin-core` and move the traits as-is (low friction, ~50-file ripple is zero), or **(b)** introduce typed `thiserror` errors in core (`DockerError`, `RunnerError`) and rewrite the 29 + 21 consumer sites. This is the single biggest Stage 1 blocker — it gates both trait moves. Recommendation in the research: (a), because the typed-error rewrite touches the bollard impl's error conversions too.
+- [ ] **`JackinPaths` purity vs ergonomics.** `JackinPaths::detect()` needs `directories` + `anyhow`; `ensure_base_dirs()` does `std::fs::create_dir_all` (forbidden in a "fs-free" core regardless). Choose: **(a)** add `directories` + `anyhow` to core, move `detect()` in, keep only `ensure_base_dirs()` as a binary free fn (preserves method-call ergonomics across 73 consumer files; only the handful of `ensure_base_dirs` sites change), or **(b)** keep core fs/`directories`-free — move only the struct + pure constructors (`resolve_with_env`, `for_tests`), keep `detect`/`ensure_base_dirs` as binary-side free fns / an extension trait (more call-site churn). The roadmap line "add `directories` to core" assumes (a) but cannot move `ensure_base_dirs` either way.
+- [ ] **Selector prefix source.** `is_reserved_builtin_role_name` / `is_valid_container_name` use `CONTAINER_PREFIX_DASH` (`"jk-"`), which actually lives in `jackin-protocol` (re-exported via `instance/naming/mod.rs:9-11`), **not** `instance/naming` directly. Choose: **(a)** add `jackin-protocol = { path = "../jackin-protocol" }` to `jackin-core` and re-export `CONTAINER_PREFIX` / `CONTAINER_PREFIX_DASH` (no literal drift; `jackin-protocol` is serde-only and acyclic with core), or **(b)** hardcode `"jk-"` in core with a source-of-truth comment pointing at `jackin_protocol::CONTAINER_PREFIX_DASH`. The earlier checklist line said "hardcode the `jk-` prefix" — that is option (b).
+
+---
+
+## Target repository structure (end state)
+
+The program is finished when the workspace is a **tiered DAG**: a small, stable, dependency-light vocabulary at the bottom; the heavy machinery that reads/writes/orchestrates it in the middle; a thin binary on top. Cargo forbids cycles between crates, so every Stage-4 extraction is converging on this shape. Dependencies point **only downward** — a higher tier may name a lower tier, never the reverse.
+
+```text
+Tier 5  jackin (binary)            cli/ · app/ · main.rs — thin CLI dispatch only
+        ───────────────────────────────────────────────────────────────────────
+Tier 4  jackin-runtime            runtime/ instance/ isolation/ derived_image/
+        + TUI surface crates:     + BollardDockerClient + ShellRunner (concrete I/O)
+        jackin-console (host TUI) · jackin-launch · jackin-capsule
+        ───────────────────────────────────────────────────────────────────────
+Tier 3  jackin-env               operator_env / 1Password reference resolution
+        ───────────────────────────────────────────────────────────────────────
+Tier 2  jackin-config            AppConfig · WorkspaceConfig · ConfigEditor ·
+                                  migrations · planner · mount/workspace validation
+        ───────────────────────────────────────────────────────────────────────
+Tier 1  jackin-tui               shared ratatui widgets + named theme/style constants
+        ───────────────────────────────────────────────────────────────────────
+Tier 0  jackin-core              Agent · MountIsolation · AuthForwardMode ·
+        jackin-protocol          EnvValue/OpRef/FieldTarget · RoleManifest types ·
+        (parallel leaves)        Selector · JackinPaths · DockerApi/CommandRunner
+                                  traits + data types · constants
+                                  ──  NO tokio · NO docker · NO filesystem  ──
+
+Dev/build-only crates outside the tiers: jackin-build-meta, jackin-tui-lookbook.
+```
+
+### Per-crate ownership contract
+
+| Crate | Owns (end state) | May depend on | Must **not** depend on | Heavy deps (tokio/docker/fs)? |
+|---|---|---|---|---|
+| `jackin-core` | universal vocabulary: `Agent`, `MountIsolation`, `AuthForwardMode`, `EnvValue`/`OpRef`/`FieldTarget`, `RoleManifest` + manifest types, `Selector`/`RoleSelector`, `JackinPaths`, `DockerApi`/`CommandRunner` **traits** + their data types, constants | `serde`, `thiserror`, (decision) `directories`/`anyhow`/`jackin-protocol` | any other workspace crate | **No** |
+| `jackin-protocol` | capsule↔client wire protocol, `CONTAINER_PREFIX*` | `serde`, `serde_json` | any other workspace crate | No |
+| `jackin-tui` | shared ratatui widgets, `theme.rs` style constants, `scroll` primitive | `jackin-core`, `ratatui` | config/env/runtime | No |
+| `jackin-config` | `AppConfig`, `WorkspaceConfig`, `MountConfig`, `*Config`, `ConfigEditor`, migration chain + engine, planner, `validate_mounts`, workspace resolution, `resolve_mode*` | `jackin-core`, `toml`/`toml_edit`/`fs2` | env, runtime, instance, isolation | fs only (config read/write) |
+| `jackin-env` | `operator_env`: `OpCli`, `OpRunner`/`OpStructRunner`/`OpWriteRunner`, `EnvLayer`, `resolve_operator_env`, `validate_reserved_names`, launch diagnostics | `jackin-core`, `jackin-config`, `serde_json` | **`jackin-console`** (see cleanup below), runtime, instance | subprocess (`op` CLI) |
+| `jackin-runtime` | `runtime/`, `instance/`, `isolation/`, `derived_image/`, `detect_workspace_edit_drift`, concrete `BollardDockerClient` + `ShellRunner` | `jackin-core`, `jackin-config`, `jackin-env` | the binary crate | **Yes** — the only place tokio + bollard + privileged docker live |
+| `jackin-console` / `jackin-launch` / `jackin-capsule` | host / launch / in-container TUI surfaces under one Elm Architecture boundary | `jackin-core`, `jackin-tui`, `jackin-protocol`, (console) config/runtime | — | TUI + (console) runtime |
+| `jackin` (binary) | `cli/` arg structs, `app/` dispatch, `main.rs`, `bin/role.rs` | all of the above | — | thin glue only |
+
+### DAG invariants — final verification checklist
+- [ ] The full inter-crate graph is acyclic — `cargo build --workspace` succeeds with no `cyclic package dependency` error; spot-check with a dependency-graph tool
+- [ ] `jackin-core` carries no `tokio`, no `bollard`/docker, no `std::fs` write path, no `*Config` type — `cargo tree -p jackin-core` shows only the sanctioned leaf deps
+- [ ] `jackin-config` does not name `jackin-env`, `jackin-runtime`, `instance`, or `isolation` — `cargo check -p jackin-config` passes with no binary-crate dep
+- [ ] `jackin-env` does not name `jackin-runtime` — `cargo check -p jackin-env` passes standalone
+- [ ] `jackin-runtime` is the **only** crate depending on `bollard` and the privileged-docker code paths
+- [ ] The root binary contains only `cli/`, `app/`, `main.rs`, `bin/` glue — every domain `use` resolves to `jackin_{core,config,env,runtime}`
+- [ ] **Layering cleanup — break the `jackin-env → jackin-console` edge:** `OpCli` imports the 1Password data aliases (`OpAccount`, `OpVault`, `OpItem`, `OpField`, `OpCache`) from `jackin_console::tui::components::op_picker`. A non-visual logic crate depending on a TUI crate inverts the tier order. Move those plain data types **down** to `jackin-core` (or `jackin-config`) and have both `jackin-env` and `jackin-console` import them from there, so `jackin-env`'s dependencies are exactly `core` + `config`
+- [ ] Every new crate uses the self-named Rust 2024 layout (`foo.rs` + `foo/`, no `mod.rs`) and enforces `clippy::mod_module_files = "deny"`
+
 ---
 
 ## Stage 0 — Safety net and honest map
@@ -17,277 +81,434 @@ Detailed implementation checklist for the [codebase readability program](/refere
 
 ### Module dependency graph
 - [x] Generate the real module dependency graph — cycles identified and documented in the roadmap
-- [x] Verify `config ↔ workspace` cycle exists — confirmed 47 + 50 refs
-- [x] Verify `config → isolation → workspace → config` three-node cycle — confirmed
-- [x] Verify `agent → config` cycle — confirmed, now broken by Stage 1
+- [x] Verify `config ↔ workspace` cycle exists — confirmed; production refs `config → workspace` 20, `workspace → config` 19 (of which only **6 are genuine root-`config` symbols**; the other ~10 `*AuthConfig` refs already resolve to the `jackin-config` crate scaffold via re-export). Total-with-tests is 47 + 50 — the headline roadmap number.
+- [x] Verify `config → isolation → workspace → config` three-node cycle — confirmed, but the live leg is `config/workspaces/mod.rs:9 → isolation::state::{IsolationRecord, list_records_for_workspace}`, **not** the `MountIsolation` enum the roadmap names (that enum already moved to `jackin-core`)
+- [x] Verify `agent → config` cycle — confirmed broken; `agent/mod.rs` is a 17-line pure re-export of `jackin_core::Agent` with zero `crate::` edges
+- [ ] **Re-verify graph after re-measure — the roadmap is stale in four places:** (1) `config → runtime::list_role_names` was claimed cut in Stage 1 but is **still live** (`config/workspaces/mod.rs:46`); (2) a `config ↔ operator_env` cycle exists and is **unlisted**; (3) `manifest → agent` / `manifest → config` are clean one-directional downward edges, not bidirectional pulls; (4) `DockerApi` is still defined in `docker_client/mod.rs:109`, not in `jackin-core`. See [The cycles, re-measured](#the-cycles-re-measured).
 
 ### Regression net
-- [x] Add 4 `insta` snapshot tests over largest composite panes (<RepoFile path="src/console/tui/view/snapshot_tests.rs" />)
-- [ ] Extend snapshot net: global mounts render, auth tab render, PR context render (tracked in [snapshot-tests-tui](/reference/roadmap/snapshot-tests-tui/))
+- [x] Add 4 `insta` snapshot tests over largest composite panes (<RepoFile path="src/console/tui/view/snapshot_tests.rs" />) — the 4 real `insta::assert_snapshot!` calls are `list_empty_80x24`, `settings_general_90x20`, `editor_general_90x20`, `editor_mounts_tab_90x20` (the many `cases.push(...)` lines in that file are a separate green-border-cluster-count assertion family, not snapshots)
+- [ ] Extend snapshot net — **global mounts render**: add an `insta` snapshot for `render_global_mount_rows_section` (`console/tui/components/workspace_list.rs:445`); the `"current dir global mounts focus"` cluster case (`snapshot_tests.rs:366`) is a ready seed
+- [ ] Extend snapshot net — **auth tab render**: add an `insta` snapshot for `render_auth_tab` (`console/tui/components/editor.rs:102` and/or `console/tui/components/settings.rs:88`); `auth_form_modal()` + the `"editor auth form"` case (`snapshot_tests.rs:197/643`) are ready seeds
+- [ ] Extend snapshot net — **PR context render**: this lives in the **capsule crate**, not the host console — target `render_branch_context_bar` (`jackin-capsule/src/tui/components/branch_context_bar.rs:27`, data from `jackin-capsule/src/pr_context.rs`). `jackin-capsule` currently has **0** `insta` tests, so this is a new snapshot harness in that crate, not an addition to `snapshot_tests.rs`. Tracked in [snapshot-tests-tui](/reference/roadmap/snapshot-tests-tui/).
 
 ### Module contracts (`//!` docs)
-- [x] Add `//!` orientation blocks to all `src/` production files (155 files)
-- [x] Add `//!` orientation blocks to all `crates/` production files (193 files)
+- [x] Add `//!` orientation blocks to all `src/` production files
+- [x] Add `//!` orientation blocks to all `crates/` production files
 - [x] Verify: `grep -rL '^//!' src/ crates/ --include='*.rs' | grep -v 'tests/'` returns zero results
+- [ ] Fix the stale `//!` header on `runtime/launch/mod.rs` — it names entry points `load_agent` / `load_agent_with`; the actual symbols are `load_role` / `load_role_with`
 
 ---
 
 ## Stage 1 — Build `jackin-core`, break the cycles
 
 ### Create leaf crate
-- [x] Create `crates/jackin-core/` with the workspace Cargo.toml (deps: `serde`, `thiserror` only)
-- [x] Add `jackin-core` to workspace `[members]` in root the workspace Cargo.toml
-- [x] Add `jackin-core = { path = "crates/jackin-core" }` to main `jackin` crate deps
+- [x] Create `crates/jackin-core/` with the workspace Cargo.toml (deps: `serde`, `thiserror`; dev: `serde_json`; `unsafe_code = "forbid"`, `async_fn_in_trait = "allow"`)
+- [x] Add `jackin-core` to workspace `[members]`
+- [x] Add `jackin-core = { path = "crates/jackin-core" }` to the main `jackin` crate deps
 - [x] Verify `cargo build -p jackin-core` compiles standalone with no jackin dependencies
 
-### Types moved to `jackin-core`
-- [x] `Agent` enum + `ParseAgentError` (`agent/mod.rs`)
-  - [x] All methods: `slug`, `label`, `install_block`, `required_env_var`, `supported_modes`
-  - [x] `Display`, `FromStr`, serde derives
-  - [x] 16 behavioral tests ported to `jackin-core/src/agent.rs`
-- [x] `MountIsolation` enum + `ParseMountIsolationError` (`isolation/mod.rs`)
-  - [x] `is_shared`, `as_str`, `Display`, `FromStr` (typed error, not anyhow)
-- [x] `AuthForwardMode` enum (`config/mod.rs`)
-  - [x] `Display`, `FromStr`, serde derives, `Default`
-- [x] `EnvValue` enum (`operator_env/mod.rs`)
-  - [x] `as_persisted_str`, `as_display_str` (const fn)
-  - [x] `From<String>`, `From<&str>`
-  - [x] serde untagged derive
-- [x] `OpRef` struct (`operator_env/mod.rs`)
-  - [x] `op`, `path`, `account` fields
-  - [x] serde `deny_unknown_fields`
-- [x] `FieldTarget` enum (`operator_env/mod.rs`)
-  - [x] `id()`, `label()` methods
-- [x] Constants: `MANIFEST_FILENAME`, `DOCKERFILE_NAME`, `CLAUDE_OAUTH_TOKEN_ENV`
+### Types already moved to `jackin-core`
+- [x] `Agent` enum + `ParseAgentError` — `jackin-core/src/agent.rs`; methods `slug`, `label`, `install_block`, `required_env_var`, `supported_modes`; `Display`, `FromStr`, serde; 16 behavioral tests ported
+- [x] `MountIsolation` enum + `ParseMountIsolationError` — `jackin-core/src/isolation.rs`; `is_shared`, `as_str`, `Display`, `FromStr` (typed error)
+- [x] `AuthForwardMode` enum — `jackin-core/src/auth.rs`; `Display`, `FromStr`, serde, `Default`
+- [x] `EnvValue` enum — `jackin-core/src/env_value.rs`; `as_persisted_str`, `as_display_str` (const), `From<String>`/`From<&str>`, serde untagged
+- [x] `OpRef` struct — `jackin-core/src/env_value.rs`; `op`/`path`/`account` fields, `deny_unknown_fields`
+- [x] `FieldTarget` enum — `jackin-core/src/env_value.rs`; `id()`, `label()`
+- [x] Constants `MANIFEST_FILENAME`, `DOCKERFILE_NAME`, `CLAUDE_OAUTH_TOKEN_ENV` — `jackin-core/src/constants.rs`
 
 ### Re-exports in binary crate (backward-compat)
-- [x] `src/agent/`: `pub use jackin_core::{Agent, ParseAgentError};`
-- [x] `src/isolation/`: `pub use jackin_core::{MountIsolation, ParseMountIsolationError};`
-- [x] `src/config/`: `pub use jackin_core::AuthForwardMode;`
-- [x] `src/operator_env/`: `pub use jackin_core::{EnvValue, FieldTarget, OpRef};`
-- [x] `src/repo_contract.rs`: `pub use jackin_core::constants::{MANIFEST_FILENAME, DOCKERFILE_NAME};`
+- [x] `agent/mod.rs`: `pub use jackin_core::{Agent, ParseAgentError};`
+- [x] `isolation/mod.rs`: `pub use jackin_core::{MountIsolation, ParseMountIsolationError};`
+- [x] `config/mod.rs`: `pub use jackin_core::AuthForwardMode;`
+- [x] `operator_env/mod.rs`: `pub use jackin_core::{EnvValue, FieldTarget, OpRef};`
+- [x] `repo_contract/mod.rs`: `pub use jackin_core::constants::{MANIFEST_FILENAME, DOCKERFILE_NAME};`
 
 ### Orphan-rule fixes (trait impls for jackin-core types)
-- [x] `AgentChoice for Agent` — moved to `jackin-console/src/tui/components/agent_choice.rs`
-- [x] `AuthCredentialRef for OpRef` — moved to `jackin-console/src/tui/components/auth_panel.rs`
-- [x] `AuthCredential for EnvValue` — moved to `jackin-console/src/tui/components/auth_panel.rs`
+- [x] `AgentChoice for Agent` → `jackin-console/src/tui/components/agent_choice.rs`
+- [x] `AuthCredentialRef for OpRef` → `jackin-console/src/tui/components/auth_panel.rs`
+- [x] `AuthCredential for EnvValue` → `jackin-console/src/tui/components/auth_panel.rs`
 
-### Cycle breaking — verified
-- [x] `agent → config` cycle broken: `Agent` uses `jackin_core::AuthForwardMode`, not `crate::config::AuthForwardMode`
-- [ ] `config ↔ workspace` cycle: will dissolve when both move to `jackin-config` (Stage 4 step 5)
-- [ ] `config → isolation → workspace → config` cycle: will dissolve when isolation moves to `jackin-runtime`
+### Remaining Stage 1 — move the last vocabulary into `jackin-core`
 
-### Remaining Stage 1 items
-- [ ] Move `RoleManifest` + manifest types to `jackin-core` — `RoleManifest` uses serde only; types: `ClaudeConfig`, `CodexConfig`, `AmpConfig`, `KimiConfig`, `OpencodeConfig`, `HooksConfig`, `HookEntry`, `IdentityConfig`, `EnvVarDecl`, `ManifestWarning`
-- [ ] Move `RoleSelector`, `Selector`, `SelectorError` to `jackin-core` — blocked by `is_reserved_builtin_role_name` using `CONTAINER_PREFIX_DASH`; fix: hardcode the `jk-` prefix in core
-- [ ] Move `DockerApi` trait + associated types to `jackin-core` — I/O seam; needs careful interface design
-- [ ] Move `CommandRunner` trait to `jackin-core` — sibling of `DockerApi`
-- [ ] Move `JackinPaths` struct to `jackin-core` — add `directories` crate to jackin-core deps
-- [ ] Cut `config → runtime::list_role_names` upward edge — move `list_role_names` down to `instance/` or invert via a trait
+Each move follows the same shape: a **type/trait definition** moves down to `jackin-core`; the **behavior that uses it** (anyhow / fs / tokio / toml) stays in the binary and references `jackin_core::…`; the original module keeps a `pub use jackin_core::…` re-export so consumer sites compile unchanged. Inherent methods cannot be added to a foreign-crate type, so pure methods move *with* the type and impure ones become free functions or an extension trait.
+
+**Manifest types** (gated by: nothing; cuts the `env_model ↔ manifest` cycle as a side effect)
+- [ ] Add `CURRENT_MANIFEST_VERSION` const + serde-default fn to `jackin_core::constants`; re-export it from `manifest/migrations/mod.rs:13` so there is one source of truth
+- [ ] Create `jackin-core/src/manifest.rs`; move type defs: `RoleManifest` (`manifest/mod.rs:24`), `ClaudeConfig` (`:176`), `ClaudeMarketplaceConfig` (`:168`), `CodexConfig` (`:60`), `AmpConfig` (`:74`), `KimiConfig` (`:82`), `OpencodeConfig` (`:94`), `EnvVarDecl` (`:101`), `HooksConfig` (`:117`, + `entries()` `:137`), `HookEntry` (`:130`), `IdentityConfig` (`:162`), `ManifestWarning` (`:188`, + `new()` `:192`). Change the `agents` field (`:41`) to `Option<Vec<jackin_core::Agent>>`
+- [ ] Move pure methods `RoleManifest::display_name` + `supported_agents` into the core `impl`; convert `load` (`:211`) and `validate` to binary-side free functions (inherent impls can't cross crates)
+- [ ] Keep behind in `src/manifest/`: `RoleManifest::load` (anyhow/toml_edit/fs), `validate_feature_versions` (`:257`, needs `config::migrations::SchemaVersion`), `validate_agent_consistency` (`manifest/validate/mod.rs:48`, needs `env_model`)
+- [ ] Repoint `env_model/mod.rs:194` `topological_env_order` param to `jackin_core::manifest::EnvVarDecl` — **cuts the `env_model ↔ manifest` cycle** (unlisted in the roadmap)
+- [ ] Add `pub mod manifest;` + re-exports to `jackin-core/src/lib.rs`; add `pub use jackin_core::manifest::{…}` to `manifest/mod.rs` (13 consumer files compile unchanged)
+- [ ] **Versioned-schema check:** confirm the serde representation is byte-identical (relocation only) → no `CURRENT_MANIFEST_VERSION` bump, no migration step, no fixture re-bake required (AGENTS.md's five-artifact rule triggers on serde-shape changes, not file moves)
+
+**Selector** (gated by: prefix decision; cuts the selector→TUI coupling)
+- [ ] Expose `CONTAINER_PREFIX` / `CONTAINER_PREFIX_DASH` from `jackin_core::constants` per the prefix decision
+- [ ] Create `jackin-core/src/selector.rs`; move `Selector` (`selector/mod.rs:12`), `RoleSelector` (`:18`, + `Display`, `new`/`parse`/`key`, `TryFrom<&str>` `:95`), `SelectorError` (`:35`, thiserror), and free fns `is_valid_role_segment` (`:131`), `is_valid_container_name` (`:138`), `is_reserved_builtin_role_name` (`:149`); repoint prefix refs (`:140`, `:150`)
+- [ ] Move `impl RoleChoice for RoleSelector` (`selector/mod.rs:86`) out into `jackin-console/src/tui/components/` (mirror `agent_choice.rs`) — resolves the orphan rule and the TUI dependency
+- [ ] Keep the `RolePickerState` alias (`selector/mod.rs:92`) in the binary; add `pub use jackin_core::{Selector, RoleSelector, SelectorError};` (96 consumer sites unchanged)
+- [ ] Add `pub mod selector;` + re-exports to `jackin-core/src/lib.rs`
+
+**DockerApi trait** (gated by: core error-type decision)
+- [ ] Create `jackin-core/src/docker.rs`; move the pure data types + their methods: `ContainerState` (`docker_client/mod.rs:27`, + `short_label`/`inspect_label`/`is_present`), `ContainerRow` (`:78`), `NetworkRow` (`:84`), `RemoveImageOutcome` (`:90`), `ContainerSpec` (`:96`). All are pure std (verified: lines 27-141 reference no bollard/tokio)
+- [ ] Move the `DockerApi` trait (`docker_client/mod.rs:109`, 16 methods incl. the `inspect_image_label` default body) to core; apply the chosen error type
+- [ ] Keep `BollardDockerClient` (`:143`, impl `:433`) + `FakeDockerClient` (`:794`) + all bollard/tokio glue in `docker_client/mod.rs`; add `pub use jackin_core::docker::{…}` (29 consumer files unchanged). The concrete impl moves to `jackin-runtime` in Stage 4, not here
+- [ ] Add `pub mod docker;` + re-exports to `jackin-core/src/lib.rs`
+
+**CommandRunner trait** (gated by: core error-type decision — do it in the same PR as DockerApi for one consistent error type)
+- [ ] Create `jackin-core/src/runner.rs`; move `RunOptions` (`docker/mod.rs:17`, + `Default` `:36`) and the `CommandRunner` trait (`:51`, 3 methods); apply the chosen error type; rephrase the `jackin_launch::build_log` doc-link off the core struct
+- [ ] Keep `ShellRunner` (`docker/mod.rs:77`, impl `:220`) + `FakeRunner` + tokio glue behind; add `pub use jackin_core::runner::{CommandRunner, RunOptions};` (21 consumer files unchanged)
+- [ ] Add `pub mod runner;` + re-exports to `jackin-core/src/lib.rs`
+
+**JackinPaths struct** (gated by: paths purity decision)
+- [ ] Create `jackin-core/src/paths.rs`; move the `JackinPaths` struct (`paths.rs:15`) + pure `resolve_with_env` (`:42`) + `for_tests` (`:63`)
+- [ ] Per the purity decision: either move `detect()` (`:27`) into core (add `directories` + `anyhow`) keeping `ensure_base_dirs()` (`:79`) as a binary free fn, or keep both `detect`/`ensure_base_dirs` binary-side
+- [ ] Add `pub mod paths; pub use paths::JackinPaths;` to `jackin-core/src/lib.rs`; add `pub use jackin_core::JackinPaths;` to `paths.rs`; update any changed `detect`/`ensure_base_dirs` call sites (73 consumers)
+
+**Cut the remaining upward edges**
+- [ ] **`config → runtime::list_role_names` (still live — roadmap wrongly claims Stage 1 cut it):** relocate `detect_workspace_edit_drift` (`config/workspaces/mod.rs:36`, calls `list_role_names` at `:46`) out of the config module to a runtime-side module. It already takes `&impl DockerApi` and pulls `isolation::state` + `runtime` + `workspace` — it is runtime/isolation drift logic mis-placed under `config/`. No trait inversion needed; both sides land in `jackin-runtime`
+- [ ] **`config → instance::naming` (test-only):** repoint `config/workspaces/tests.rs:345` from `crate::instance::naming::CONTAINER_PREFIX_DASH` to `jackin_core::constants::CONTAINER_PREFIX_DASH` (there is no production `config → instance::naming` edge)
+- [ ] **`config ↔ operator_env` (unlisted cycle):** move `validate_reserved_names(&AppConfig)` (`operator_env/mod.rs:1364`) out of the config load/save path — its only two `config`-side callers are `config/persist/mod.rs:318` and `config/editor/mod.rs:690`. After this, `operator_env`'s only real edge is the legal `→ config::AppConfig` direction. See [The cycles, re-measured](#the-cycles-re-measured)
+
+### Cycle-breaking status
+- [x] `agent → config` broken (Agent uses `jackin_core::AuthForwardMode`)
+- [~] `config ↔ workspace`: the `*AuthConfig` data half already pre-extracted to the `jackin-config` scaffold; **residual is genuine logic coupling** (`token_setup → ConfigEditor/AppConfig`, `resolve → AppConfig`, version constants). Dissolves only when config + workspace become one `jackin-config` crate (Stage 4)
+- [~] `config → isolation::state → workspace → config`: the `MountIsolation` leg already dissolved (enum in core); the live leg is `config/workspaces → isolation::state`. Dissolves when `isolation` → `jackin-runtime`
+- [ ] `config ↔ operator_env`: cut by the `validate_reserved_names` relocation above
+- [ ] `env_model ↔ manifest`: cut by moving `EnvVarDecl` to core (above)
 
 ---
 
 ## Stage 2 — DRY pass
 
-### String constants (already in `jackin-core`)
-- [x] `MANIFEST_FILENAME = "jackin.role.toml"` — in `jackin_core::constants`
-- [x] `DOCKERFILE_NAME = "Dockerfile"` — in `jackin_core::constants`
-- [x] `CLAUDE_OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"` — in `jackin_core::constants`
-- [x] `TEST_DOCKERFILE_FROM` / `TEST_MANIFEST_TOML` — in `runtime/test_support.rs`
-- [ ] Replace remaining `"jackin.role.toml"` literal sites — 3 production sites replaced; ~140 test sites remain
-- [ ] Replace remaining `"Dockerfile"` literal sites — 3 production sites replaced; ~230 test sites remain
+### String constants
+- [x] `MANIFEST_FILENAME = "jackin.role.toml"` — `jackin_core::constants`
+- [x] `DOCKERFILE_NAME = "Dockerfile"` — `jackin_core::constants`
+- [x] `CLAUDE_OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"` — `jackin_core::constants`
+- [x] `TEST_DOCKERFILE_FROM` / `TEST_MANIFEST_TOML` — `runtime/test_support.rs`
+- [x] **`"jackin.role.toml"` production literals: already zero.** All 156 remaining sites are test files (`launch/tests.rs` 48, `validate/tests.rs` 36, `manifest/tests.rs` 32, …). Optional: route the one test-infra site `runtime/test_support.rs:132` through `MANIFEST_FILENAME` **(was: "3 production sites replaced; ~140 test sites remain")**
+- [ ] `"Dockerfile"` production literals: **1 remaining** — `role_authoring/mod.rs:158` (inside an emitted TOML template string; debatable since it is output text, not a Rust path). The other 232 sites are tests/definition **(was: "~230 test sites remain")**
+- [ ] **Add a base-FROM constant** (no `BASE_DOCKERFILE_FROM` exists yet; compose from the existing `CONSTRUCT_REGISTRY_IMAGE` + tag in `repo_contract/mod.rs:20-25`) and replace 3 production literals: `role_authoring/mod.rs:171` (`dockerfile_contents()` hardcodes `"FROM projectjackin/construct:0.1-trixie\n"`), `role_authoring/mod.rs:212` (Renovate match), `runtime/test_support.rs:115` (`TEST_DOCKERFILE_FROM` duplicate of the same string)
 
-### Named style constants (in `jackin-tui/theme.rs`)
-- [x] `BOLD_WHITE: Style` — `Style::new().fg(WHITE).add_modifier(BOLD)`
-- [x] `BOLD_GREEN: Style` — `Style::new().fg(PHOSPHOR_GREEN).add_modifier(BOLD)`
-- [x] `DIM: Style` — `Style::new().fg(PHOSPHOR_DIM)`
-- [x] `GREEN: Style` — `Style::new().fg(PHOSPHOR_GREEN)`
-- [x] `BORDER: Style` — `Style::new().fg(BORDER_GRAY)`
-- [x] `DANGER: Style` — `Style::new().fg(DANGER_RED).add_modifier(BOLD)`
-- [ ] Replace 33 `Style::default().fg(WHITE).add_modifier(BOLD)` call sites with `BOLD_WHITE`
-- [ ] Replace 33 `Style::default().fg(PHOSPHOR_DIM)` call sites with `DIM`
-- [ ] Replace 32 `Style::default().fg(PHOSPHOR_GREEN)` call sites with `GREEN`
-- [ ] Replace 5 `Style::default().fg(DANGER_RED).add_modifier(BOLD)` call sites with `DANGER`
+### Named style constants
+The six constants exist in `jackin-tui/src/theme.rs:50-55` but are barely used. **351 total `Style::default()` constructions; 161 are collapsible to a named constant; ~190 are genuinely unique.** Two literal forms appear (short `Style::default().fg(WHITE)…` and fully-qualified `…fg(jackin_tui::theme::WHITE)…`) — both must be matched.
+- [x] `BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `GREEN`, `BORDER`, `DANGER` defined in `theme.rs`
+- [ ] Replace **51** `Style::default().fg(WHITE).add_modifier(BOLD)` (39 single-line + 12 multiline) → `theme::BOLD_WHITE` (top files: `jackin-tui-lookbook/src/stories.rs` 6, `jackin-capsule/.../dialog_widgets.rs` 5, `jackin-console/.../auth_panel.rs` 5, `jackin-console/.../op_picker.rs` 5, `jackin-console/.../editor/view.rs` 4, `jackin-tui/.../confirm_dialog.rs` 4) **(was: 33)**
+- [ ] Replace **48** `Style::default().fg(PHOSPHOR_DIM)` → `theme::DIM` (top: `jackin-console/.../workspaces/view.rs` 11, `op_picker.rs` 9, `editor/view.rs` 6, `mount_rows.rs` 5) **(was: 33)**
+- [ ] Replace **28** `Style::default().fg(PHOSPHOR_GREEN)` (no bold) → `theme::GREEN` (top: `workspaces/view.rs` 10, `op_picker.rs` 6, `stories.rs` 5) **(was: 32)**
+- [ ] Replace **27** `Style::default().fg(PHOSPHOR_GREEN).add_modifier(BOLD)` → `theme::BOLD_GREEN` (top: `op_picker.rs` 7, `editor/view.rs` 3, `settings/view.rs` 3)
+- [ ] Replace **6** `Style::default().fg(DANGER_RED).add_modifier(BOLD)` → `theme::DANGER` (`auth_panel.rs` 2, + `error_dialog`, `progress_rail`, `failure_dialog`, `file_browser/render` ×1) **(was: 5)**
+- [ ] Replace **1** `Style::default().fg(BORDER_GRAY)` → `theme::BORDER` (`jackin-tui-lookbook/src/main.rs`)
+- [ ] Verify ~190 of 351 remain genuinely unique and are correctly left alone (don't force-collapse one-off fg/modifier combos)
 
-### Auth provisioning DRY
-- [x] `provision_single_file_credential(target, host_path, mode, label, agent_name)` — extracted, used by `Amp` and `OpenCode`
-- [ ] Consolidate `Codex` provisioning into same helper (slightly different: no empty-whitespace check)
-- [ ] Add `provision_kimi_dir_credential` helper (Kimi syncs a directory, not a single file)
+### Auth provisioning DRY (`instance/auth/mod.rs`)
+Shared helper `provision_single_file_credential` (`:695`) is used by 2 of 6 agents.
+- [x] `provision_single_file_credential(target, host_path, mode, label, agent_name)` — used by `provision_amp_auth` (`:509`) and `provision_opencode_auth` (`:670`)
+- [ ] **Fold `Codex` in** — `provision_codex_auth` (`:51`) is structurally identical to the helper with exactly two deltas: the helper's `Sync` arm has an empty/whitespace guard (`:724-734`) Codex omits, and Codex's `OAuthToken` arm is silent vs the helper's parser-bypass warning. Add `treat_empty_as_missing: bool` + `warn_on_oauth: bool` params (Codex passes `false, false`), then `provision_codex_auth` becomes a wrapper like Amp/OpenCode
+- [ ] **Add `provision_kimi_dir_credential`** — `provision_kimi_auth` (`:554`) syncs a *directory tree* (`~/.kimi-code/`: `config.toml`, `device_id`, recursive `credentials/`) and returns `(outcome, bool)`. The single-file helper cannot absorb it; write a directory analogue `provision_kimi_dir_credential(kimi_dir, host_dir, mode, sync_files: &[&str], label, agent_name) -> (AuthProvisionOutcome, bool)` that factors out the 4-mode match + symlink-reject + forward-auth derivation, leaving Kimi a wrapper
+- [ ] No change to `provision_github_auth` (`:155`, different mode enum `GithubAuthMode` + `gh` CLI / `hosts.yml` YAML resolution) and `provision_claude_auth` (`:427`, two files + Keychain fallback + skeleton write) — genuinely divergent, leave separate
 
 ### Docker resource naming DRY
-- [x] `DockerResources::from_container_name(container_name)` — eliminates inline `format!("{name}-dind")` etc.
-- [x] Use `dind_container_name()` / `role_network_name()` from `runtime/naming.rs` in launch.rs
-- [ ] Extract `run_dind_sidecar` shared helper between `launch.rs` and `attach.rs`
-- [ ] Use `DockerResources::from_container_name` at remaining call sites in launch/image/cleanup
+The `-dind` / `-net` / `-dind-certs` suffix conventions are derived in **three** independent places — the exact drift risk the DRY rule blocks.
+- [x] `DockerResources::from_container_name(container_name)` exists (`instance/manifest/mod.rs:105`)
+- [x] `dind_container_name()` / `role_network_name()` used from `runtime/naming.rs` in `launch.rs`
+- [ ] Make `DockerResources::from_container_name` (`instance/manifest/mod.rs:111-113`) call the canonical `runtime/naming/mod.rs:106/110/114` helpers instead of its own inline `format!` (its doc-comment already admits it must stay "consistent with the naming registry")
+- [ ] Replace inline `format!("{container_name}-dind")` / `-net` / `dind_certs_volume(...)` at `runtime/attach/mod.rs:631/635/639` with one `DockerResources::from_container_name(container_name)` call (the `--inspect` manifest-absent branch)
+- [ ] Build `DockerResources` via `from_container_name` at `runtime/launch/mod.rs:2017-2022` instead of field-by-field from separate locals (`:2001-2003`)
+- [ ] **`run_dind_sidecar` helper — corrected premise:** `wait_for_dind` is **already shared** (`runtime/attach/mod.rs:772`, imported by launch at `:33`), and attach does **not** recreate the sidecar (its `--inspect` path only *inspects* existing resources). Only `launch_role_runtime` (`runtime/launch/mod.rs:638`) creates the network + DinD sidecar (`:679-742`). So this is a single-file readability extraction (pull `:679-742` into `run_dind_sidecar`), **not** a launch/attach de-duplication. It is the prerequisite for the `launch_dind.rs` Stage 3 split **(was: "shared between launch.rs and attach.rs")**
 
 ### Mode resolution DRY
-- [x] `resolve_mode_with_trace(cfg, agent, workspace, role)` — extracted to `config/roles.rs`
-- [x] `build_mode_resolution` in `launch.rs` simplified to call `resolve_mode_with_trace`
+- [x] `resolve_mode_with_trace(cfg, agent, workspace, role)` extracted to `config/roles/mod.rs`
+- [x] `build_mode_resolution` in `launch.rs` calls `resolve_mode_with_trace`
 
 ### Test infrastructure DRY
-- [x] `seed_valid_role_repo`, `first_temp_role_repo` — consolidated into `runtime/test_support.rs`
-- [x] `TEST_DOCKERFILE_FROM`, `TEST_MANIFEST_TOML` — in `runtime/test_support.rs`
-- [ ] Consolidate `FakeDockerClient` / `FakeRunner` test helpers — currently duplicated across `runtime/` and `isolation/` test files
+- [x] `seed_valid_role_repo`, `first_temp_role_repo` consolidated into `runtime/test_support.rs`
+- [x] `TEST_DOCKERFILE_FROM`, `TEST_MANIFEST_TOML` in `runtime/test_support.rs`
+- [ ] **Consolidate the two shared test doubles into one support module — corrected:** there is no duplication; exactly one `FakeDockerClient` (`docker_client/mod.rs:794`, the only `DockerApi` impl besides `BollardDockerClient`, reused by 15 test files) and one `FakeRunner` (`runtime/test_support.rs:10`, the only `CommandRunner` impl besides `ShellRunner`, reused by 12 files). The issue is *location split* (two different non-test modules), not parallel copies — move both into one shared `test_support` location. Leave the 1Password `Op*Runner` stubs (`StubRunner`, `CounterRunner`, `FakeOpWriter`, `TestOpRunner`, …) alone — different trait family **(was: "duplicated across runtime/ and isolation/ test files")**
 
-### Agent dispatch (tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/))
-- [ ] Design `AgentRuntime` sealed trait — one impl per agent variant
-- [ ] Replace 8-file `Agent::Claude => …` match arms with trait dispatch:
-  - [ ] `config/roles/` — agent auth config access
-  - [ ] `src/instance/` — instance prepare
-  - [ ] `src/runtime/launch/` — launch binary, env var selection
-  - [ ] `src/runtime/image/` — image build install block
-  - [ ] `src/derived_image/` — Dockerfile generation
-  - [ ] `src/agent_binary/` — binary download URL
-  - [ ] `src/version_check/` — cached version path
-  - [ ] `src/manifest/validate/` — manifest consistency check
+### Agent dispatch → trait (tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/))
+
+Adding an agent currently edits 8 files with `Agent::Claude => …` arms. The replacement is **two** traits, because the dispatch sites pull in types `jackin-core` cannot see (`JackinPaths`, `RoleManifest`, `AppConfig`, async HTTP, fs): a pure-data `AgentRuntime` trait in `jackin-core`, and a behavior `AgentRuntimeOps` supertrait in the root crate. Both sealed (private `sealed::Sealed` supertrait) to keep "only the five built-ins implement it" a compile-time guarantee — the roadmap's non-goal explicitly rejects a downstream runtime marketplace.
+
+The 8 dispatch sites (verified line numbers):
+
+| File:line | What it computes | Replaces with |
+|---|---|---|
+| `manifest/validate/mod.rs:60-86`, `:95-124` | manifest table present? + orphan warnings | `manifest_table_present(m)` over `Agent::ALL` |
+| `config/roles/mod.rs:43-67` | 3× byte-symmetric `auth_forward` (global/workspace/role) | `auth_forward_global/workspace/role` |
+| `runtime/launch/mod.rs:608-624` | `manifest.<agent>.model` | `manifest_model(m)` |
+| `runtime/launch/mod.rs:2137` | `agent != Codex` token-expiry guard | `uses_oauth_token_expiry()` |
+| `runtime/launch/mod.rs:3402-3408` | display title | **delete — call `Agent::label()`** (pure duplicate) |
+| `runtime/image/mod.rs:455-481` | `(display, parse_fn, store_fn)` tuple | `label()` + `parse_version()` + `store_version()` |
+| `derived_image/mod.rs:128-134`, `:144` | install-block sort key + Claude plugin block | `install_order()` + `has_plugin_install_block()` |
+| `version_check/mod.rs:108-114` | cached version path read | `stored_version(paths, image)` |
+| `instance/mod.rs:427-458`, `:464-478` | provision auth slot + `AgentRuntimeState` | `provision_slot(&mut auth, …)` + `runtime_state(m)` |
+| `agent_binary/mod.rs:196-305` | per-vendor release resolution | `resolve_latest_release().await` (bodies stay per-adapter) |
+
+- [ ] **PR 1 — data trait in `jackin-core`, no callers changed:** add `jackin-core/src/agent/runtime.rs` with sealed `AgentRuntime` (methods `slug`, `label`, `install_block`, `required_env_var`, `supported_modes`, `install_order`, `uses_oauth_token_expiry`, `has_plugin_install_block`, `parse_version`); add five ZST adapters (`ClaudeRuntime` … `OpencodeRuntime`); make the existing `Agent::{slug,label,…}` two-line delegators; add `Agent::runtime() -> &'static dyn AgentRuntime`. Confirm `agent.rs` snapshot tests pass byte-for-byte
+- [ ] **PR 2 — behavior trait + retire data-only sites:** add `src/runtime/adapter.rs` with `AgentRuntimeOps: AgentRuntime`; migrate `config/roles/mod.rs:43-67` (collapses the 3× block), `manifest/validate/mod.rs:60-124`, `runtime/launch/mod.rs:608-624` / `:2137`, **delete** `:3402-3408`, `derived_image/mod.rs:128-134` / `:144`
+- [ ] **PR 3 — retire fs/version behavior sites:** `version_check/mod.rs:108-114`, `runtime/image/mod.rs:455-481` (delete the fn-pointer tuple), `instance/mod.rs:464-478`
+- [ ] **PR 4 — retire heaviest behavior:** `instance/mod.rs:427-458` (`provision_slot(&mut ProvisionedAuth, …)` — note the side-effect signature, each impl writes its own typed field), `agent_binary/mod.rs:196-305` (`resolve_latest_release().await`, relocate each `resolve_*` body into its adapter module — these stay structurally per-adapter)
+- [ ] Keep `Agent::ALL` + exhaustive test matches (roadmap non-goal: the exhaustivity gate stays)
+- [ ] Update `agent-runtime-trait.mdx` `**Status**` per PR; it references stale paths `agent/mod.rs` / `instance/auth/mod.rs` (the `Agent` enum is now in `jackin-core/src/agent.rs`; the dispatch is inlined in `instance/mod.rs`)
 
 ---
 
 ## Stage 3 — Split and document the monoliths
 
-### `runtime/launch.rs` split (9,465L total)
-- [x] Test split: `launch/tests.rs` (5,703L) separated from `launch/mod.rs` (3,759L)
-- [ ] Pre-split DRY: `resolve_mode_with_trace` ✅, `DockerResources::from_container_name` ✅, `run_dind_sidecar` not yet done
-- [ ] Per-function split per [split-runtime-launch](/reference/roadmap/split-runtime-launch/) plan:
-  - [ ] Extract `launch_pipeline.rs` — `load_role_with` (the pipeline body)
-  - [ ] Extract `trust.rs` — trust confirmation closure
-  - [ ] Extract `launch_slot.rs` — `verify_token_env_present`, `claim_container_name`, error types
-  - [ ] Extract `launch_dind.rs` — DinD sidecar + network creation (shared with `attach.rs`)
+### `too_many_lines` suppressions — corrected count
+**54 production fn-attached suppressions (59 total: 54 prod-fn + 4 file-level + 1 test-fn).** 2 of the 54 are already `#[expect(reason=…)]`. **(was: "53 → 49")**
+- [~] Count corrected to 54 production suppressions
+- [ ] **Delete 6 dead/stale `#[allow(too_many_lines)]`** — the functions are now small delegators (under 30L): `runtime/launch/mod.rs:1436` `load_role` (~21L), `console/tui/input/auth/mod.rs:175` `current_mode_and_credential` (~27L), `console/tui/input/save/mod.rs:217` `commit_editor_save` (~15L), `console/tui/components/save_preview.rs:9` `build_confirm_save_lines` (~12L), `console/tui/components/footer/editor.rs:46` `contextual_row_items` (~8L), `console/tui/components/footer/settings.rs:51` `contextual_row_items` (~4L)
+- [ ] Reduce the remaining ~46 to zero — each is an extraction target; the largest (>200L) listed under the per-file splits below
+- [ ] For each remaining suppression: split the function, or convert `#[allow]` → `#[expect(reason="…")]` so it fails loudly when stale
 
-### `console/tui/input/editor.rs` split (4,178L total)
-- [x] Test split: `editor/tests.rs` (2,392L) separated, `auth_cursor_step_tests.rs` (82L) kept inline
-- [x] Per-tab sub-modules: `agents.rs`, `secrets.rs`, `mounts.rs`, `general.rs` extracted
-- [x] Paired `view/editor.rs` split — 7 per-tab render test files extracted
+Largest offenders (real extraction targets): `load_role_with` 1003L, `workspace_cmd::handle` 567L, `launch_role_runtime` 478L, `run_console` 468L, `handle_editor_modal` 441L, `handle_editor_key` 428L, `handle_key` (dispatch) 316L, `config_cmd::handle` 314L (already `#[expect]`), `build_agent_image` 271L, `materialize_one` 251L, `workspace_save_lines` 232L, `assess_cleanup` 217L (already `#[expect]`), `materialize_clone` 204L.
 
-### `operator_env.rs` split (4,209L total)
-- [x] Test split: `operator_env/tests.rs` (2,188L) separated from `operator_env/mod.rs` (2,018L)
-- [ ] Production code split per [split-operator-env](/reference/roadmap/split-operator-env/) plan:
-  - [ ] Extract `operator_env/cli.rs` — `OpCli` struct + subprocess helpers (resolve dependency on parent types first)
-  - [ ] Extract `operator_env/resolve.rs` — `EnvLayer`, `merge_layers`, `validate_reserved_names`, `resolve_operator_env`, diagnostics
-  - [ ] Extract `operator_env/picker.rs` — `OpStructRunner`, `OpWriteRunner`, picker metadata types
+### `runtime/launch/mod.rs` split — 3,761L prod **(was: 3,759)**
+Per [split-runtime-launch](/reference/roadmap/split-runtime-launch/). Note the plan's symbol names drifted: `load_role_with` (not `load_agent_with`), `verify_credential_env_present` (not `verify_token_env_present`).
+- [x] Test split: `launch/tests.rs` (5,703L) separated from `launch/mod.rs`
+- [ ] Pre-split DRY: extract DinD + network out of `launch_role_runtime` (`:638`, 478L) into `run_dind_sidecar` (Stage 2 above; prerequisite for `launch_dind.rs`)
+- [ ] Extract `launch_pipeline.rs` ← `load_role_with` (`:1507`, **1003L**) + `load_role` (`:1436`, 21L wrapper)
+- [ ] Extract `launch_slot.rs` ← `claim_container_name` (`:3083`, 84L) + `try_acquire_name_lock` (`:3213`, 126L) + `NameLockError` (`:3208`) + `verify_credential_env_present` (`:3532`) + `verify_github_token_present` (`:3444`) + `resolve_github_env_map` (`:3470`)
+- [ ] Extract `trust.rs` ← the inline trust gate inside `load_role_with` (~`:1651-1740`) + `seed_codex_project_trust` (`:517`, 81L) + `workspace_trusted_project_paths` (`:463`) + `workspace_mise_trusted_config_paths` (`:478`)
+- [ ] Extract `launch_dind.rs` ← the extracted `run_dind_sidecar` + network creation
 
-### `app/mod.rs` split (1,589L production remaining)
-- [x] `workspace_cmd.rs` extracted (WorkspaceCommand dispatch — 559L)
-- [x] `config_cmd.rs` extracted (ConfigCommand dispatch — 290L)
-- [x] `load_cmd.rs` extracted (Load/Console/Hardline/Eject/Exile — 491L)
-- [x] `prune_cmd.rs` extracted (Purge/Prune — 80L)
-- [x] `auth_set_tests.rs`, `resolve_role_tests.rs` extracted from test module
-- [ ] Extract remaining shared helpers to `app/helpers.rs` — `mount_display`, `render_workspace_show`, `resolve_instance_reference`, `resolve_role_to_container` (currently ~600L in mod.rs)
+### `console/tui/input/editor.rs` split — 1,569L prod remaining
+- [x] Test split: `editor/tests.rs` (2,392L) separated; `auth_cursor_step_tests.rs` (82L) kept inline
+- [x] Per-tab sub-modules `agents.rs`, `secrets.rs`, `mounts.rs`, `general.rs` extracted
+- [x] Paired `view/editor.rs` split — 7 per-tab render test files
+- [ ] **Not actually done — two giants remain:** `handle_editor_key` (`editor/mod.rs:45`, **428L**) and `handle_editor_modal` (`:542`, **441L**) still carry `too_many_lines`. Split these per-modal / per-key-group before calling the editor split complete
 
-### Other large file splits (all files > 2000L in src/)
-- [x] `instance/auth.rs` (3,263L) → 5 per-agent named test modules separated
-- [x] `console/tui/input/global_mounts.rs` (2,881L) → `global_mounts/mod.rs` (1,913L) + `tests.rs`
-- [x] `console/tui/state.rs` (2,716L) → `state/mod.rs` (1,820L) + `tests.rs`
-- [x] `console/tui/input/mouse.rs` (2,676L) → `mouse/mod.rs` (1,334L) + `mouse_drag_tests.rs`
-- [x] `isolation/materialize.rs` (2,453L) → `materialize/mod.rs` (1,117L) + `tests.rs`
-- [x] `config/editor.rs` (2,434L) → `editor/mod.rs` (807L) + `tests.rs`
-- [x] `workspace/token_setup.rs` (2,388L) → `token_setup/mod.rs` (1,103L) + `tests.rs`
-- [x] `isolation/finalize.rs` (2,144L) → `finalize/mod.rs` (644L) + `tests.rs`
-- [x] `console/tui/input/save.rs` (1,798L) → `save/mod.rs` (349L) + `tests.rs`
+### `operator_env.rs` split — 1,893L prod **(was: 2,018)**
+Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`OpRef`/`FieldTarget` now re-exported from `jackin-core` (`:108`).
+- [x] Test split: `operator_env/tests.rs` (2,188L) separated
+- [ ] Extract `operator_env/cli.rs` (~820L) ← `OpCli` (`:133`) + subprocess helpers (`format_exit_status` `:215`, `truncate_stderr` `:224`, `drain_bounded_stderr` `:237`, `spawn_wait_thread` `:261`, `spawn_op_with_retry` `:296`, `run_op_with_timeout` `:585`, `run_op_json` `:656`, …) + the 3 trait impls (`OpRunner` `:322`, `OpStructRunner` `:684`, `OpWriteRunner` `:968` incl. `item_create` 145L)
+- [ ] Extract `operator_env/picker.rs` (~360L) ← `trait OpStructRunner` (`:445`), `trait OpWriteRunner` (`:749`), `OpItemCreateParams` (`:820`), the `Raw*` deserialize structs (`:488-540`), `op_section_id` (`:869`), `apply_field_edit` (`:901`), `resolve_edited_field_ref` (`:1261`)
+- [ ] Extract `operator_env/resolve.rs` (~570L) ← `EnvLayer` (`:1324`) + `Display`, `merge_layers` (`:1346`), `validate_reserved_names` (`:1364`), `resolve_op_uri_to_ref` (`:1425`, 177L), `resolve_operator_env`(`:1683`)/`_with`(`:1698`), `build_attributed_layers` (`:1617`), `lookup_operator_env_raw` (`:1660`), diagnostics (`print_launch_diagnostic` `:1747`, `emit/write_launch_diagnostic`, `ValueKind`, `classify_env_value`)
+
+### `app/mod.rs` split — 1,593L prod **(was: 1,589)**
+- [x] `workspace_cmd.rs` (559L), `config_cmd.rs` (290L), `load_cmd.rs` (491L), `prune_cmd.rs` (80L) extracted
+- [x] `auth_set_tests.rs`, `resolve_role_tests.rs` extracted
+- [ ] Extract `app/helpers.rs` ← `mount_display` (`:1581`, 13L), `mount_mode` (`:1577`, 4L), `render_workspace_show` (`:1429`, **147L**), `resolve_instance_reference` (`:1091`, 23L), `resolve_role_to_container` (`:1074`, 17L) — **~200L total (was: "~600L")**
+- [ ] **Untracked — the real ~600L bulk:** extract `app/token_cmd.rs` ← the Claude-token cluster (`:186-793`): `handle_claude_token` (`:186`, 189L), `delete_prior_op_item*` (`:383/392`), `print_token_setup_report` (`:463`), `prompt_interactive_token_store` (`:576`, 120L), `prompt_existing_item_section_and_field` (`:696`, 105L)
+- [ ] **Untracked:** extract `app/restore.rs` ← the hardline/restore + moved-path-browser cluster (`:874-1405`, ~430L): `ConsoleInPlaceHandler` impl (`:874`), `handle_console_instance_action` (`:961`, 113L), restore helpers (`:1114-1405`)
+- [ ] `run` (`:70`, ~64L) — verify under threshold and remove its near-stale `#[allow]`
+
+### Other large src/ files
+- [x] `instance/auth/mod.rs` (1,017L prod) — 5 per-agent test modules separated
+- [x] `console/tui/input/global_mounts.rs` → `global_mounts/mod.rs` (1,915L) + `tests.rs`
+- [x] `console/tui/state.rs` → `state/mod.rs` (1,822L) + `tests.rs`
+- [x] `console/tui/input/mouse.rs` → `mouse/mod.rs` (1,336L) + `mouse_drag_tests.rs`
+- [x] `isolation/materialize.rs` → `materialize/mod.rs` (1,119L) + `tests.rs`
+- [x] `config/editor.rs` → `editor/mod.rs` (809L) + `tests.rs`
+- [x] `workspace/token_setup.rs` → `token_setup/mod.rs` (1,105L) + `tests.rs`
+- [x] `isolation/finalize.rs` → `finalize/mod.rs` (646L) + `tests.rs`
+- [x] `console/tui/input/save.rs` → `save/mod.rs` + `tests.rs`
+- [ ] **Production split still needed (test-split alone did not resolve the monolith):**
+  - [ ] `console/tui/input/global_mounts/mod.rs` (1,915L) — 5 modal handlers 112-189L each (`handle_settings_auth_modal` `:484`, `handle_settings_env_modal` `:1216`, `handle_settings_confirm_modal` `:1060`, `handle_settings_key_with_effects` `:62`, `handle_global_mounts_key` `:180`) → per-modal split
+  - [ ] `console/tui/run.rs` — `run_console` (`:183`, 468L)
+  - [ ] `isolation/materialize/mod.rs` (1,119L) — `materialize_one` (`:650`, 251L) + `materialize_clone` (`:903`, 204L)
+  - [ ] `console/effects.rs` (1,227L) — prod monolith by accumulation, no single mega-fn; split by concern if pursued
+  - [ ] `docker_client/mod.rs` (1,054L) — prod monolith by accumulation; will largely relocate in Stage 1 (DockerApi → core) + Stage 4 (BollardDockerClient → runtime)
+- [ ] **Re-classified — not a prod split:** `console/tui/view/list.rs` (1,833L) is **97% inline test code** (1,792L of `mod *tests {}` under a file-level `#![allow(too_many_lines)]`); only ~41 prod lines. Externalize the inline test modules — it is a test bucket, not a monolith
 
 ### Crate-side file splits
-- [x] `jackin-capsule/src/daemon.rs` (3,910L) → `daemon.rs` (983L) + `daemon/tests.rs` (2,927L)
-- [x] `jackin-capsule/src/tui/components/dialog.rs` → `dialog.rs` + `dialog/tests.rs`
-- [x] `jackin-console/src/tui/components/op_picker.rs` → `op_picker.rs` + `op_picker/tests.rs`
-
-### Mega-function suppressions
-- [~] `#[allow(clippy::too_many_lines)]` count: 53 → 49 (4 removed by DRY extractions)
-- [ ] Reduce remaining 49 suppressions to zero — each is a refactor target
-- [ ] For each suppression: either split the function or add `#[expect]` with reason
+- [x] `jackin-capsule/src/daemon.rs` → `daemon.rs` (982L) + `daemon/tests.rs`
+- [x] `jackin-capsule/.../dialog.rs` **tests** split → `dialog.rs` + `dialog/tests.rs`
+- [x] `jackin-console/.../op_picker.rs` **tests** split → `op_picker.rs` + `op_picker/tests.rs`
+- [ ] **Production splits still pending (the test-split items above resolved tests only, not the prod files):**
+  - [ ] `jackin-capsule/src/tui/components/dialog.rs` (**2,413L prod**) — giant `impl Dialog` (`handle_key` ~287L, `handle_click` ~205L, `render_with_hover`) + many `Dialog::new_*` constructors → split types / input / view
+  - [ ] `jackin-console/src/tui/components/op_picker.rs` (**1,702L prod**) → split
+  - [ ] **Untracked:** `jackin-capsule/src/session.rs` (**1,739L prod**) — VTE scroll-region tracking + OSC policy + capture; real prod split candidate, not in any prior list
 
 ---
 
 ## Stage 4 — Extract the crates bottom-up
 
-### `jackin-core` (leaf — done)
+**The roadmap's stated order (core → config → env → runtime → binary) is wrong in two ways:** `config` and `operator_env` form a mutual cycle that must be cut first, and a supporting tier of modules the roadmap never lists (`paths`, `selector`, `env_model`, `manifest` types, the `DockerApi`/`CommandRunner` traits, the migration engine) must move before `jackin-config` can compile standalone. The real sequence is below. `cargo` builds on the dev box should pass `-j 1` to avoid a link-time OOM observed during research.
+
+### Extraction order (dependency-gated PR sequence)
+- [ ] **PR 0 — cut the `config ↔ operator_env` cycle (no crate move).** Relocate `validate_reserved_names(&AppConfig)` out of the config load/save path (its only config-side callers are `config/persist/mod.rs:318` + `config/editor/mod.rs:690`). Gate: none
+- [ ] **PR 1 — supporting-tier moves into `jackin-core` (Stage 1 remaining):** `JackinPaths`, `DockerApi` + `CommandRunner` traits, `selector`, `manifest` types, the migration engine (resolve whether it lands in core or config — `manifest/migrations` reuses `config::migrations::{MigrationStep, migrate_file_if_needed, parse_version, SchemaVersion, doc_version, noop_migration, LEGACY_VERSION}`), and `env_model::is_reserved` + reserved-name consts. Gate: PR 0 + the three prerequisite decisions
+- [ ] **PR 2 — `jackin-config`.** Gate: PR 0, PR 1
+- [ ] **PR 3 — `jackin-env`.** Gate: PR 2 (env functions take `&AppConfig`), PR 1 (`env_model::is_reserved`)
+- [ ] **PR 4 — relocate `token_setup`.** `workspace/token_setup` is **not** pure config — it depends on `jackin-env` (`OpCli`, `OpWriteRunner`, `parse_op_reference`, `FieldTarget`) **and** `host_claude`. Move it above both (binary or runtime). Gate: PR 3
+- [ ] **PR 5 — concrete I/O impls + remaining supporting modules:** `BollardDockerClient` (`docker_client/mod.rs:143`), `ShellRunner` (`docker/mod.rs:77`), `repo`, `repo_contract`, `host_claude`, `net`, `diagnostics`, `version_check`, `agent_binary`, the `debug_log!` macro. Gate: PR 1 (traits)
+- [ ] **PR 6 — `jackin-runtime`.** Gate: PR 2, 3, 4, 5
+- [ ] **PR 7 — binary collapse.** Gate: all above
+
+### Versioned-schema review gate (every config/workspace/manifest extraction PR)
+- [ ] Confirm the serde representation is **byte-identical** across the move → a pure relocation needs **no** `CURRENT_*_VERSION` bump, no migration step, no fixture re-bake (AGENTS.md's five-artifact rule triggers on serde-shape changes only)
+- [ ] Keep binary-crate re-exports (`pub use jackin_config::…` etc.) so `tests/migration_fixtures.rs` paths (`jackin::config::AppConfig`, `jackin::workspace::WorkspaceConfig`, `jackin::manifest::RoleManifest`, `jackin::config::migrate_{config,workspace}_file_if_needed`, `jackin::manifest::migrations::migrate_manifest_file`, lines 33-133) still resolve — or update those imports in the same PR. The fixture harness must stay green
+
+### `jackin-core` (leaf)
 - [x] Crate exists, standalone compile
-- [x] `clippy::mod_module_files = "deny"` enforced
-- [x] All vocabulary types present: `Agent`, `MountIsolation`, `AuthForwardMode`, `EnvValue`, `OpRef`, `FieldTarget`, constants
-- [ ] `RoleManifest` types (see Stage 1 remaining)
-- [ ] `RoleSelector`, `Selector` (see Stage 1 remaining)
-- [ ] `DockerApi`, `CommandRunner` traits (see Stage 1 remaining)
-- [ ] `JackinPaths` (see Stage 1 remaining)
+- [x] All current vocabulary types present (`Agent`, `MountIsolation`, `AuthForwardMode`, `EnvValue`, `OpRef`, `FieldTarget`, constants)
+- [ ] **Add `clippy::mod_module_files = "deny"` — currently missing** (only `jackin-config`/`-env`/`-runtime` have it; this is a gap if "all 4 new crates" was the intent)
+- [ ] `RoleManifest` + manifest types (Stage 1 remaining)
+- [ ] `Selector`, `RoleSelector`, `SelectorError` (Stage 1 remaining)
+- [ ] `DockerApi`, `CommandRunner` traits + data types (Stage 1 remaining)
+- [ ] `JackinPaths` (Stage 1 remaining)
 
 ### `jackin-config` (→ core)
-- [x] Crate exists, standalone compile
-- [x] `clippy::mod_module_files = "deny"` enforced
-- [x] Phase 1 types: `AgentAuthConfig`, `GithubAuthMode`, `GithubAuthConfig` (with `EnvValue`), auth newtypes
-- [x] Re-exports `AuthForwardMode`, `EnvValue`, `OpRef` from `jackin-core`
-- [ ] Move `RoleSource` struct to `jackin-config`
-- [ ] Move `DockerConfig` + `DockerMounts` + `GlobalMountConfig` to `jackin-config`
-- [ ] Move `GitConfig` to `jackin-config`
-- [ ] Move `AppConfig` struct (fields only, no filesystem methods) to `jackin-config`
-- [ ] Move `WorkspaceConfig` struct to `jackin-config` (resolves `config ↔ workspace` cycle)
-- [ ] Move `MountConfig`, `WorkspaceRoleOverride`, `KeepAwakeConfig` to `jackin-config`
-- [ ] Move `CURRENT_CONFIG_VERSION`, `CURRENT_WORKSPACE_VERSION` to `jackin-config`
-- [ ] Move `ConfigEditor` + TOML read/write to `jackin-config` (add `toml_edit`, `fs2` deps)
-- [ ] Move migration chain to `jackin-config` (add `toml_edit` dep)
-- [ ] Move `planner` (plan_collapse, plan_create, plan_edit) to `jackin-config`
-- [ ] Move `validate_mounts`, `validate_mount_paths` to `jackin-config`
-- [ ] Move workspace resolution (`resolve_load_workspace`, `current_dir_workspace`) to `jackin-config`
-- [ ] Verify: `cargo check --package jackin-config` with no deps on binary crate
+- [x] Crate exists, standalone compile; `mod_module_files = "deny"` enforced
+- [x] Phase-1 types: `AgentAuthConfig`, `GithubAuthMode`, `GithubAuthConfig` (`env: EnvValue`), auth newtypes; re-exports `AuthForwardMode`/`EnvValue`/`OpRef` from core
+- [ ] Move `RoleSource` (`config/mod.rs:55`), `DockerConfig` (`:67`), `GitConfig` (`:74`), `AppConfig` (`:88`)
+- [ ] Move `DockerMounts` + `GlobalMountConfig` + `MountEntry` + global-mount-row types (`config/mounts/mod.rs:21/47`)
+- [ ] Move `MountConfig` (`workspace/mod.rs:40`), `WorkspaceConfig` (`:55`), `WorkspaceRoleOverride` (`:199`), `KeepAwakeConfig` (`:171`), `WorkspaceEdit` (`:232`) — moves the `jackin_console` trait impls (`WorkspaceRoleAccess`, `WorkdirMount`) with them (console is below config in the tier, so this is fine). **Resolves the `config ↔ workspace` cycle** by merging both into one crate
+- [ ] Move `CURRENT_CONFIG_VERSION` / `CURRENT_WORKSPACE_VERSION` + `CONFIG_MIGRATIONS` / `WORKSPACE_MIGRATIONS` + the migration engine (resolve manifest-engine sharing — see PR 1)
+- [ ] Move `ConfigEditor` + `EnvScope` (`config/editor/mod.rs:42/17`) — drop the `validate_reserved_names` call (done in PR 0); add `toml_edit`/`fs2` deps (already present: `toml_edit`)
+- [ ] Move `AppConfig::load_or_init` + `atomic_write` (`config/persist/mod.rs`) — drop the `validate_reserved_names` call (PR 0)
+- [ ] Move `plan_create` / `plan_edit` / `plan_collapse` (`workspace/planner/mod.rs:48/66/201`)
+- [ ] Move `validate_mounts` / `validate_mount_paths` (`workspace/mounts/mod.rs:78/67`)
+- [ ] Move `resolve_load_workspace` / `current_dir_workspace` / `ResolvedWorkspace` (`workspace/resolve/mod.rs:91/14`)
+- [ ] Move `resolve_mode` / `resolve_mode_with_trace` / `resolve_github_mode` / `build_github_env_layers` / `BUILTIN_ROLES` (`config/roles/mod.rs`)
+- [ ] **Leave behind:** `detect_workspace_edit_drift` (`config/workspaces/mod.rs:36` — needs `runtime::list_role_names` + `DockerApi` + `isolation::state`; goes to runtime) and `token_setup` (PR 4)
+- [ ] Verify `cargo check -p jackin-config` with no dep on the binary crate
 
 ### `jackin-env` (→ core, config)
-- [x] Crate exists, standalone compile
-- [x] `clippy::mod_module_files = "deny"` enforced
-- [ ] Move `OpRunner` trait to `jackin-env`
-- [ ] Move `resolve_env_value` function to `jackin-env`
-- [ ] Move `OpCli` struct + subprocess helpers to `jackin-env` (add `serde_json` dep for JSON parsing)
-- [ ] Move `OpStructRunner` + `OpWriteRunner` traits to `jackin-env`
-- [ ] Move `EnvLayer` enum + `merge_layers` + `validate_reserved_names` to `jackin-env`
-- [ ] Move `resolve_operator_env` + related functions to `jackin-env`
-- [ ] Move `print_launch_diagnostic` to `jackin-env`
-- [ ] Update all `use crate::operator_env::*` sites to `use jackin_env::*`
+- [x] Crate exists, standalone compile; `mod_module_files = "deny"` enforced
+- [ ] Move `OpRunner` (`operator_env/mod.rs:5`), `resolve_env_value` (`:40`)
+- [ ] Move `OpCli` (`:133`) + subprocess helpers (add `serde_json` dep — confirmed needed for `op` JSON output, ~20 parse sites)
+- [ ] Move `OpStructRunner` (`:445`), `OpWriteRunner` (`:749`)
+- [ ] Move `EnvLayer` (`:1324`) + `merge_layers` (`:1346`)
+- [ ] Move `validate_reserved_names` (`:1364`), `resolve_operator_env`(`:1683`)/`_with`(`:1698`), `build_attributed_layers` (`:1617`), `lookup_operator_env_raw` (`:1660`)
+- [ ] Move `print_launch_diagnostic` (`:1747`) + `emit/write_launch_diagnostic`
+- [ ] Add deps: `jackin-config`, `jackin-console` (the `OpCli` picker type aliases `OpAccount`/`OpVault`/`OpItem`/`OpField`/`OpCache` at `:465-482` come from `jackin_console::tui::components::op_picker`), `serde_json`
+- [ ] Resolve reachability of `env_model::is_reserved`, `diagnostics::active_run`, `tui::rich_terminal_owned` (move or pass via param)
+- [ ] Update all ~54 `use crate::operator_env::*` sites → `use jackin_env::*`
 
 ### `jackin-runtime` (→ core, config, env)
-- [x] Crate exists, standalone compile
-- [x] `clippy::mod_module_files = "deny"` enforced
-- [ ] Move `runtime/naming.rs` to `jackin-runtime` (simple naming functions, no heavy deps)
-- [ ] Move `runtime/image.rs` to `jackin-runtime` (docker build pipeline)
-- [ ] Move `runtime/identity.rs` to `jackin-runtime` (git identity + UID/GID)
-- [ ] Move `runtime/discovery.rs` to `jackin-runtime` (list containers)
-- [ ] Move `runtime/attach.rs` to `jackin-runtime` (session management)
-- [ ] Move `runtime/cleanup.rs` to `jackin-runtime` (teardown)
-- [ ] Move `runtime/launch/mod.rs` to `jackin-runtime` (load pipeline)
-- [ ] Move `instance/` modules to `jackin-runtime`
-- [ ] Move `isolation/` modules to `jackin-runtime`
-- [ ] Move `derived_image/` to `jackin-runtime`
-- [ ] Add `BollardDockerClient` (concrete `DockerApi` impl) to `jackin-runtime`
-- [ ] Add `ShellRunner` (concrete `CommandRunner` impl) to `jackin-runtime`
-- [ ] Verify: `cargo check --package jackin-runtime` with no deps on binary crate
+- [x] Crate exists, standalone compile; `mod_module_files = "deny"` enforced
+- [ ] Move `runtime/{naming,image,identity,discovery,attach,cleanup,launch,caffeinate,repo_cache,universe,progress,snapshot,logs,exit_summary}`
+- [ ] Move `instance/*` (`auth`, `manifest`, `naming`, `mod`)
+- [ ] Move `isolation/{materialize,finalize,cleanup,state,branch}` (the `MountIsolation` enum already lives in core)
+- [ ] Move `derived_image/`
+- [ ] Move `detect_workspace_edit_drift` here (carries `list_role_names` + `DockerApi` + `isolation::state`)
+- [ ] Add `BollardDockerClient` (concrete `DockerApi`, `docker_client/mod.rs:143/433`)
+- [ ] Add `ShellRunner` (concrete `CommandRunner`, `docker/mod.rs:77/220`)
+- [ ] Resolve `debug_log!` macro + `tui::rich_terminal_owned` availability across the crate boundary
+- [ ] Verify `cargo check -p jackin-runtime` with no dep on the binary crate
 
 ### Binary crate collapse
-- [ ] After crate extractions: root `src/` contains only `app/`, `cli/`, `console/`, `tui/`, `selector/` binding layer
-- [ ] Enable `clippy::mod_module_files = "deny"` on root binary crate
-- [ ] Run `cargo check --package jackin` — verify all imports are from `jackin_{config,env,runtime,core}`
-- [ ] Update the binary crate lib.rs to only re-export what `bin/role.rs` needs
+- [ ] After extractions: root `src/` contains only `app/`, `cli/`, `console/`, `tui/`, `selector` re-export, and the thin glue
+- [ ] Enable `clippy::mod_module_files = "deny"` on the root binary crate (after the 85 `mod.rs` files migrate — see tooling)
+- [ ] `cargo check -p jackin` — verify all imports come from `jackin_{config,env,runtime,core}`
+- [ ] Trim `lib.rs` to only re-export what `bin/role.rs` and `tests/` need
+
+---
+
+## Rust best-practices acceptance gates (every PR under this program)
+
+These are the per-diff checks a reviewer verifies, drawn from the roadmap's "Conventions every refactor follows" and the repo rules in <RepoFile path="AGENTS.md" />. They are written as pass/fail gates, not aspirations — a PR that fails one is incomplete. They compose with, and do not replace, the structural tasks above.
+
+### Crate boundaries (Stages 1 & 4)
+- [ ] Public API is deliberate: `pub(crate)` by default, `pub` only on what the next crate up imports
+- [ ] Struct fields stay private unless the representation is part of a stable contract (the serde `*Config` structs expose fields intentionally; most other types do not)
+- [ ] `jackin-core` stays types + traits only — no `tokio`, no subprocess, no filesystem; the I/O seam is the `DockerApi` / `CommandRunner` traits (dependency inversion), concrete impls in `jackin-runtime`
+- [ ] Invariants encoded in types — newtypes and enums over `bool` / `String` / bare primitives, so each higher crate inherits the constraint instead of re-checking it
+- [ ] Standard traits derived where they make semantic sense on the `jackin-core` vocabulary — `Debug`, `Clone`, `PartialEq`/`Eq`, `Hash`, `Default` for data; `Display` + `std::error::Error` for errors; `From` / `TryFrom` for conversions
+- [ ] `derive(Serialize, Deserialize)`, public re-exports, and public dependencies treated as intentional compatibility commitments — present only where the serialized shape or the re-export is part of the contract
+- [ ] Sealed trait used where a downstream `impl` would block future evolution (the `AgentRuntime` trait — private `sealed::Sealed` supertrait)
+
+### Shared extractions (Stage 2)
+- [ ] Extracted in a shape future callers reuse — a parameter or small enum on the existing function beats a second near-copy
+- [ ] Borrowed parameters when ownership is not required: `&str` over `String`, `&[T]` over `Vec<T>`, `&Path` over `PathBuf`, `Option<&T>` over `&Option<T>`
+- [ ] `.clone()` is a deliberate design decision with a reason, never a borrow-checker appeasement; no needless intermediate `Vec` / `String` allocations
+- [ ] Any new third-party dependency is justified in the PR (internal crate splits are free; an external crate carries compile, supply-chain, and API cost)
+
+### File splits & functions (Stage 3)
+- [ ] First-time-reader order: entry-point items first, important types before helpers, implementation near its use
+- [ ] Control flow stays local and visible; preconditions expressed in types or adjacent checks, not a distant helper; clear branching over a clever combinator chain that hides errors/ownership/side effects
+- [ ] Boring, searchable names over abbreviations (short names only for `ctx`, `idx`, `res`, `db`-style conventions)
+- [ ] Every newly split module gets a `//!` contract stating the non-obvious why (invariants, ordering, race windows), not a restatement of the code
+
+### Errors
+- [ ] `Result<T, E>` for expected failure; `Option<T>` only when absence carries no useful detail
+- [ ] **Typed errors (`enum` + `thiserror`) at crate boundaries** — the new `jackin-core` / `-config` / `-env` / `-runtime` library crates return typed errors; `anyhow`-style context only at the binary / CLI / app edge
+- [ ] `?` for propagation, with context added at the I/O, parse, network, and user-facing boundaries
+- [ ] `unwrap` / `expect` reserved for tests, unreachable invariants, and programmer errors with precise messages; any production `unwrap` touched is converted to `expect("why")` or a typed error — no new ones added
+- [ ] Public library functions document failure with a rustdoc `# Errors` section (and `# Panics` where a panic is reachable, `# Safety` for any `unsafe`)
+
+### Tests & docs (Stages 0 & 3)
+- [ ] Tests exercise a crate's **stable public boundary**, not the incidental private helpers about to move (a test that freezes a private signature blocks the very refactor this program performs)
+- [ ] `insta` snapshots kept deterministic and redacted, so a structure-only refactor produces an empty diff
+- [ ] Public-API doc-test examples propagate with `?`, not `unwrap`, so the example documents the error path too
+- [ ] The failure path is covered, not only the success path
+
+### Lints & validation
+- [ ] A Clippy warning is fixed before it is suppressed; a justified suppression uses `#[expect(clippy::lint_name, reason = "…")]` so it fails loudly when stale; a new `#[allow(clippy::too_many_lines)]` is a request to extract, not annotate
+- [ ] The new library crates carry no crate-level `#![deny(warnings)]` and do not switch on `pedantic` / `restriction` / `nursery` wholesale — strict lints applied selectively, by name
+- [ ] Each PR runs `cargo fmt --check`, `cargo clippy --all-targets --all-features --locked -- -D warnings`, and the test suite before it is marked ready
 
 ---
 
 ## Conventions and tooling
 
 ### Rust 2024 module layout
-- [x] Create `crates/AGENTS.md` — module layout rule + naming convention
-- [x] Create `crates/CLAUDE.md` — links to AGENTS.md
-- [x] Migrate 95 `mod.rs` files in `crates/` to self-named layout (`foo.rs` + `foo/`)
+- [x] Create `crates/AGENTS.md` + `crates/CLAUDE.md` (module layout rule)
+- [x] `crates/` fully migrated to self-named layout — **0 `mod.rs` files** confirmed across all of `crates/`
 - [x] `clippy::mod_module_files = "deny"` in `jackin-config`, `jackin-env`, `jackin-runtime`
-- [ ] Migrate root `src/` `mod.rs` files to self-named layout as each module extracts
-- [ ] Enable `clippy::mod_module_files = "deny"` workspace-wide
+- [ ] **Add `mod_module_files = "deny"` to `jackin-core` (missing — the 4th new crate)**
+- [ ] Migrate the **85 `mod.rs` files in root `src/`** to self-named layout (the migration is barely started, not near-done) — done per-module as each extracts in Stage 4 **(was framed as nearly complete)**
+- [ ] Enable `mod_module_files = "deny"` workspace-wide once `src/` reaches 0 `mod.rs`
 
 ### Visibility pass (tracked in [pub-crate-visibility](/reference/roadmap/pub-crate-visibility/))
-- [~] 8 low-hanging-fruit `pub` → `pub(crate)` / `pub(super)` items narrowed
-- [ ] `RUSTFLAGS='-W unreachable-pub' cargo check` — address remaining ~100 warnings before adding to `[lints.rust]`
-- [ ] Add `unreachable_pub = "warn"` to the workspace Cargo.toml after warnings are reduced
+- [~] 8 low-hanging `pub` → `pub(crate)` / `pub(super)` items narrowed
+- [ ] Resolve the **108** `unreachable_pub` warnings in `src/` **(was: "~100")** — measured pool: 391 `pub fn` vs 203 `pub(crate) fn` vs 85 `pub(super) fn`. Gotcha: a *cached* `cargo check` only prints the `generated N warnings` summary, so `grep -c unreachable_pub` returns 0 on a warm cache — force a rebuild (`touch src/main.rs`) and read the summary
+- [ ] After the count hits 0, add `unreachable_pub = "warn"` (then `"deny"`) to the root `[lints.rust]` and delete the explanatory comment at root `Cargo.toml:116-119`
 
 ### CI / validation
-- [x] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` passes
-- [x] `cargo fmt --check --all` passes
-- [x] `cargo nextest run --workspace` — 3199 passing, 2 pre-existing failures
-- [ ] Fix pre-existing 2 failures (`secrets_edit_value_saves_to_disk`, `secrets_delete_key_saves_to_disk`)
+- [x] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — **clean (0 warnings/errors)** under the configured lint levels (does not include the intentionally-excluded `unreachable_pub` advisory)
+- [x] `cargo fmt --check --all` — clean
+- [ ] **Fix the 2 pre-existing failures** (`secrets_edit_value_saves_to_disk` `tests/manager_flow.rs:239`, `secrets_delete_key_saves_to_disk` `:315`) — both confirmed still failing. Root cause: the ConfirmSave → `ConfigEditor::save()` path does **not** persist workspace-level `env` edits/deletes to disk for an existing workspace; the in-memory `EditorState.pending.env` mutation is already correct (the in-memory asserts at `:274`/`:341` pass, the on-disk asserts at `:302`/`:362` fail). Re-run `cargo test --test manager_flow secrets_ -j 1` to confirm `9 passed`
+- [ ] Note for the dev box: run heavy `cargo` with `-j 1` (`CARGO_BUILD_JOBS=1`) — full `--all-targets` link OOM'd at ~8 GiB free
+
+---
+
+## Roadmap-page corrections
+
+The roadmap page (`/reference/roadmap/codebase-readability/`) and the `agent-runtime-trait` item carry claims the re-measure disproved. Fix these in the PRs that touch the relevant code (AGENTS.md roadmap-freshness rule):
+- [ ] Roadmap "Stage 1 … Cut the two trivial upward edges (`config → runtime::list_role_names`, `config → instance::naming`)" — neither was cut; `list_role_names` is live production, `instance::naming` is test-only. Update once PR 1 actually cuts them
+- [ ] Roadmap omits the `config ↔ operator_env` cycle and the `env_model ↔ manifest` cycle — add both to the cycle list
+- [ ] Roadmap frames `manifest → agent` / `manifest → config` as bidirectional pulls — they are clean one-directional downward edges
+- [ ] Roadmap "Where the codebase stands" table and the Stage-3 file-size list are stale (launch 3,761 not 9,482-era / 3,759; `too_many_lines` 54 not 53; `operator_env` 1,893; `Style::default()` 351 total with 161 collapsible) — refresh the metrics table
+- [ ] Roadmap Stage 4 step order (core → config → env → runtime) — correct to the dependency-gated PR 0-7 sequence (env depends on config; supporting tier first)
+- [ ] `agent-runtime-trait.mdx` references stale paths `agent/mod.rs` and `instance/auth/mod.rs` — the `Agent` enum is now in `jackin-core/src/agent.rs` and the dispatch is inlined in `instance/mod.rs`
+
+---
+
+## The cycles, re-measured
+
+Production adjacency (excludes `*tests.rs`), with the genuine root-crate cross-module reference counts:
+
+| Module | Depends on (prod refs) |
+|---|---|
+| `config` | `workspace` 20, `operator_env` 8, `isolation` 4, `agent` 4, `runtime` 1, `docker_client` 1 |
+| `workspace` | `config` 19 (6 genuine), `operator_env` 12, `isolation` 7, `agent` 9 |
+| `isolation` | `workspace` 3, `runtime` 6, `instance` 3, `docker_client` 2 |
+| `agent` | — none (pure re-export of `jackin_core::Agent`) |
+| `manifest` | `config` 17 (all `config::migrations::*`), `agent` 6 |
+| `instance` | `agent` 13, `config` 5, `manifest` 1 |
+| `runtime` | `docker_client` 26, `agent` 32, `isolation` 31, `config` 23, `instance` 22, `operator_env` 13, `workspace` 14, `manifest` 3, `derived_image` 1 |
+| `operator_env` | `config` 8 |
+| `derived_image` | `agent` 12, `manifest` 3 |
+| `docker_client` | — none (clean leaf) |
+
+Confirmed cycles and how each dissolves:
+- **`config ↔ workspace`** (real): residual is logic coupling; dissolves by merging both into `jackin-config`.
+- **`config → isolation::state → workspace → config`** (real): `MountIsolation` leg already gone; live leg `config/workspaces → isolation::state` dissolves when `isolation` → `jackin-runtime`.
+- **`config ↔ operator_env`** (real, roadmap-missed): cut by relocating `validate_reserved_names` out of the config path (PR 0).
+- **`config ↔ runtime`** via `list_role_names` (real, roadmap claimed cut): cut by relocating `detect_workspace_edit_drift` to runtime.
+- **`env_model ↔ manifest`** (real, roadmap-missed): cut by moving `EnvVarDecl` to `jackin-core`.
+- **`isolation ↔ runtime`**, `isolation → instance`, `runtime → instance` (real but benign): all collapse inside `jackin-runtime`.
+- **`agent → config`**: already broken.
+- `manifest → config`/`agent`, `derived_image`, `docker_client`: clean downward / leaf — no action.
 
 ---
 
 ## Deferred
 
 - [ ] Rustdoc JSON → Fumadocs pipeline (deferred until `//!` coverage mature and crate APIs stable)
-- [ ] Agent dispatch trait — full design required before implementation (tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/))
+- [ ] Agent dispatch trait — full design above; sealed two-trait split (data in core, behavior in root). Tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/)
