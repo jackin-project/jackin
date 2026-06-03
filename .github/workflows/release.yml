@@ -24,7 +24,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Require main for manual releases
         if: github.event_name == 'workflow_dispatch'
@@ -54,12 +54,20 @@ jobs:
     needs: check-version
     runs-on: ubuntu-latest
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           install_args: "rust cargo:cargo-nextest"
@@ -96,12 +104,20 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           install_args: "rust"
@@ -156,8 +172,7 @@ jobs:
     needs: [check-version, test]
     runs-on: ubuntu-latest
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     strategy:
       matrix:
@@ -167,8 +182,17 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           install_args: "rust zig cargo:cargo-zigbuild"
@@ -221,7 +245,7 @@ jobs:
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -267,7 +291,7 @@ jobs:
     needs: [check-version, release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           repository: jackin-project/homebrew-tap
           ref: main

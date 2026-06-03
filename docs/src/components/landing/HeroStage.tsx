@@ -1,6 +1,5 @@
 // docs/components/landing/HeroStage.tsx
 import { DigitalRain } from './DigitalRain';
-import { EarlyDevelopmentNotice } from './EarlyDevelopmentNotice';
 import { HeroContent } from './HeroContent';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -28,7 +27,6 @@ export function HeroStage() {
       </nav>
       <div className="landing-shell">
         <div className="landing-hero">
-          <EarlyDevelopmentNotice />
           <HeroContent />
         </div>
       </div>

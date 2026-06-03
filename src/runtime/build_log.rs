@@ -16,6 +16,8 @@ const MAX_LINES: usize = 5000;
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static LINES: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+#[cfg(test)]
+pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Start a fresh capture: drop any prior lines and mark the sink active so the
 /// command runner tees build output here.
@@ -71,6 +73,7 @@ mod tests {
     // assertions into parallel tests would race on the shared state.
     #[test]
     fn buffer_caps_and_clears() {
+        let _guard = TEST_LOCK.lock().unwrap();
         begin();
         for i in 0..(MAX_LINES + 10) {
             push_line(&format!("line {i}"));

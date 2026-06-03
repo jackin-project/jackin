@@ -21,7 +21,7 @@ Rules in one line each:
 - No mechanical CI-shaped checks (sidebar diffs, link audits). Those belong in CI.
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
   copy-paste block — AGENTS.md requires docs authors run it before merge.
-- Verify-locally URLs use http://localhost:4321/... only — never deployed.
+- Verify-locally URLs use http://localhost:3000/... only — never deployed.
 - Each verify-locally docs page: bolded URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
 - Drop the headings you don't need. "Related pull requests" is only when the PR
@@ -85,6 +85,7 @@ cd jackin
 mise trust
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
+mise trust
 mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
@@ -211,14 +212,14 @@ export JACKIN_PREFIX=C-b
 )
 ```
 
-Astro serves at `http://localhost:4321/`. Pages to walk:
+Vite serves at `http://localhost:3000/`. Pages to walk:
 
-**http://localhost:4321/<path>/**  
+**http://localhost:3000/<path>/**  
 <NEW page | UPDATED ...>. <One-sentence description of what to look at on this
 page. Include the sidebar group and surrounding entries when adding or moving
 sidebar items.>
 
-**http://localhost:4321/<path>/**  
+**http://localhost:3000/<path>/**  
 <Same shape — bold URL line, soft-break, description on next line, blank line
 between blocks.>
 

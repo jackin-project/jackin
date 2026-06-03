@@ -30,6 +30,23 @@ pub enum ConsoleOutcome {
         container: String,
         action: ConsoleInstanceAction,
     },
+    /// Operator selected an agent AND a provider in the console picker.
+    /// The chosen `Provider` drives the env redirection (e.g. Z.AI's
+    /// Anthropic-compatible endpoint) and the tab-name suffix.
+    NewSessionWithProvider {
+        container: String,
+        agent: crate::agent::Agent,
+        provider: jackin_protocol::Provider,
+    },
+    /// Initial launch with a provider selected in the console before the
+    /// container is created. The provider flows into the capsule's initial
+    /// attach so the first session uses the chosen provider.
+    LaunchWithProvider {
+        selector: RoleSelector,
+        workspace: ResolvedWorkspace,
+        agent: crate::agent::Agent,
+        provider: jackin_protocol::Provider,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +236,7 @@ const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> 
         Modal::GithubPicker { .. } => "GithubPicker",
         Modal::ConfirmSave { .. } => "ConfirmSave",
         Modal::ErrorPopup { .. } => "ErrorPopup",
+        Modal::StatusPopup { .. } => "StatusPopup",
         Modal::OpPicker { .. } => "OpPicker",
         Modal::RolePicker { .. } => "RolePicker",
         Modal::RoleOverridePicker { .. } => "RoleOverridePicker",
@@ -734,6 +752,28 @@ where
     }
 }
 
+fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
+    crate::operator_env::lookup_operator_env_raw(
+        config,
+        Some(role_selector),
+        Some(workspace_name),
+        "ZAI_API_KEY",
+    )
+    .is_some()
+}
+
+pub(in crate::console) fn providers_for_launch(
+    config: &AppConfig,
+    workspace_name: &str,
+    role_selector: &str,
+    agent: crate::agent::Agent,
+) -> Vec<jackin_protocol::Provider> {
+    jackin_protocol::Provider::available_for(
+        agent.slug(),
+        zai_key_present(config, workspace_name, role_selector),
+    )
+}
+
 fn launch_with_committed_agent(
     state: &mut ConsoleState,
     config: &AppConfig,
@@ -750,7 +790,22 @@ fn launch_with_committed_agent(
         return Ok(None);
     };
     let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
-    Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))))
+
+    let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
+    if providers.is_empty() {
+        return Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))));
+    }
+
+    if let ConsoleStage::Manager(ms) = &mut state.stage {
+        ms.launch_provider_picker = Some(crate::console::manager::state::ProviderPickerState::new(
+            role.clone(),
+            agent,
+            providers,
+        ));
+    }
+    state.pending_launch = Some(input);
+    state.pending_launch_role = Some(role);
+    Ok(None)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -910,7 +965,7 @@ pub async fn run_console(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            ms.poll_picker_loads();
+            manager::input::poll_background_loads(ms, &mut config, paths);
             ms.refresh_instances(paths);
         }
 
@@ -1039,6 +1094,48 @@ pub async fn run_console(
                             {
                                 break 'main Ok(Some(outcome));
                             }
+                        }
+                        manager::InputOutcome::NewSessionWithProvider {
+                            container,
+                            agent,
+                            provider,
+                        } => {
+                            break 'main Ok(Some(ConsoleOutcome::NewSessionWithProvider {
+                                container,
+                                agent,
+                                provider,
+                            }));
+                        }
+                        manager::InputOutcome::LaunchWithProvider {
+                            selector,
+                            agent,
+                            provider,
+                        } => {
+                            // Propagate resolution errors rather than mapping
+                            // them to a silent no-op: an operator who confirmed
+                            // a provider must see why the launch could not
+                            // resolve. A genuinely absent pending input / choice
+                            // is the only Ok(None) path.
+                            let workspace = match state.pending_launch.take() {
+                                Some(input) => {
+                                    match build_workspace_choice(&config, cwd, &input)? {
+                                        Some(choice) => Some(preview::resolve_selected_workspace(
+                                            &config, cwd, &choice, &selector,
+                                        )?),
+                                        None => None,
+                                    }
+                                }
+                                None => None,
+                            };
+                            let Some(workspace) = workspace else {
+                                break 'main Ok(None);
+                            };
+                            break 'main Ok(Some(ConsoleOutcome::LaunchWithProvider {
+                                selector,
+                                workspace,
+                                agent,
+                                provider,
+                            }));
                         }
                         manager::InputOutcome::InstanceAction { container, action } => {
                             if action.runs_in_place() {
@@ -1295,6 +1392,112 @@ mod quit_confirm_tests {
             body.contains("network is unreachable"),
             "popup must surface the underlying error: {body}"
         );
+    }
+
+    #[test]
+    fn providers_for_launch_include_all_zai_env_layers() {
+        let mut config = AppConfig::default();
+        config.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("global-key".into()),
+        );
+        config.workspaces.insert(
+            "global-demo".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        assert_eq!(
+            super::providers_for_launch(
+                &config,
+                "global-demo",
+                "the-architect",
+                crate::agent::Agent::Claude,
+            )
+            .len(),
+            2
+        );
+        config.env.clear();
+
+        let mut workspace = crate::workspace::WorkspaceConfig::default();
+        workspace.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("workspace-key".into()),
+        );
+        config.workspaces.insert("workspace-demo".into(), workspace);
+        assert_eq!(
+            super::providers_for_launch(
+                &config,
+                "workspace-demo",
+                "the-architect",
+                crate::agent::Agent::Claude,
+            )
+            .len(),
+            2
+        );
+
+        config.workspaces.remove("workspace-demo");
+        let mut role = crate::config::RoleSource::default();
+        role.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("role-key".into()),
+        );
+        config.roles.insert("the-architect".into(), role);
+        config.workspaces.insert(
+            "role-demo".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        assert_eq!(
+            super::providers_for_launch(
+                &config,
+                "role-demo",
+                "the-architect",
+                crate::agent::Agent::Claude,
+            )
+            .len(),
+            2
+        );
+
+        config.roles.clear();
+        let mut workspace_role = crate::workspace::WorkspaceConfig::default();
+        let mut role_override = crate::workspace::WorkspaceRoleOverride::default();
+        role_override.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("workspace-role-key".into()),
+        );
+        workspace_role
+            .roles
+            .insert("the-architect".into(), role_override);
+        config
+            .workspaces
+            .insert("workspace-role-demo".into(), workspace_role);
+        let providers = super::providers_for_launch(
+            &config,
+            "workspace-role-demo",
+            "the-architect",
+            crate::agent::Agent::Claude,
+        );
+        assert_eq!(providers.len(), 2);
+        assert_eq!(providers[1], jackin_protocol::Provider::Zai);
+    }
+
+    #[test]
+    fn providers_for_launch_rejects_non_claude_agents() {
+        let mut config = AppConfig::default();
+        config.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("global-key".into()),
+        );
+        config
+            .workspaces
+            .insert("demo".into(), crate::workspace::WorkspaceConfig::default());
+
+        let providers = super::providers_for_launch(
+            &config,
+            "demo",
+            "the-architect",
+            crate::agent::Agent::Codex,
+        );
+
+        assert!(providers.is_empty());
     }
 
     fn unresolved_workspace() -> ResolvedWorkspace {

@@ -2,7 +2,7 @@ use owo_colors::OwoColorize;
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;
 
-use super::{DEBUG_MODE, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb, rich_surface_active};
+use super::{DEBUG_MODE, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb, rich_terminal_owned};
 
 // ── Interactive prompt ───────────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ where
     // A full-screen rich surface (the launch cockpit) owns the terminal —
     // its own waiting animation conveys progress, so the spinner must stay
     // silent or it streams over the alternate screen.
-    let suppressed = rich_surface_active();
+    let suppressed = rich_terminal_owned();
     for _attempt in 0..max_attempts {
         if debug && !suppressed {
             eprint!("\r\x1b[2K");

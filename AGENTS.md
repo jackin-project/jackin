@@ -25,6 +25,8 @@ jackin' has exactly one human contributor — the operator. There is no second r
 - Multi-agent review (running `code-reviewer` / `comment-analyzer` / `silent-failure-hunter` / etc. in parallel before requesting merge) is the substitute for the missing second human. Treat those review passes as load-bearing rather than optional polish.
 - For irreversible or high-blast-radius changes, prefer asking the operator to confirm one more time over assuming the green CI run is sufficient. The cost of pausing 30 seconds is much lower than the cost of a bad merge that an absent second reviewer would have caught.
 
+Practices designed for multi-developer teams (CODEOWNERS, mandatory second-human review, pair programming conventions, team-oriented workflow tooling) should not be proposed without a concrete plan for how a second human will participate. Until the project gains additional human contributors, the solo-maintainer constraint means team-oriented tooling adds maintenance burden without corresponding benefit.
+
 This rule retires when the project gains additional human reviewers.
 
 ## Project status: pre-release (agent-only)
@@ -37,7 +39,7 @@ jackin' has no released version — it is a proof-of-concept. **Breaking changes
 2. A migration step in the corresponding registry (`CONFIG_MIGRATIONS`, `WORKSPACE_MIGRATIONS`, `MANIFEST_MIGRATIONS`).
 3. A new fixture directory under `tests/fixtures/migrations/<file-kind>/from-<predecessor-version>/` containing `meta.toml`, `before.toml`, and `after.toml`. The fixture harness in `tests/migration_fixtures.rs` walks every supported `from_version` on every CI run and asserts that the migrated output (a) parses successfully against the current serde schema, (b) carries the declared `target_version` stamp, and (c) that `after.toml` itself parses and carries the same stamp. This guarantees a delayed operator landing on the current version after several bumps can still load their config — the chain is the regression guard.
 4. Re-bake of every existing fixture's `after.toml` so it walks through the new step too. The fixture for the oldest supported `from_version` is the load-bearing test for users delayed by months — its diff is the proof the new chain is composable.
-5. A new entry at the top of the **Timeline** section in `docs/src/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
+5. A new entry at the top of the **Timeline** section in `docs/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
 
 A non-additive change (renamed field, removed field, type change, added enum variant, restructured table) without these five artifacts is incomplete; reviewers block merge until they appear or the change is reshaped to be additive (new optional field with a serde default). Operator config and per-workspace files migrate automatically during `AppConfig::load_or_init` at startup; role authors migrate local manifests on a desktop with `jackin role migrate <role-repo-path>`, while CI and Renovate-style automation migrate manifests with the small standalone `jackin-role migrate <role-repo-path>` binary.
 
@@ -57,7 +59,7 @@ This is non-negotiable across schemas, design proposals, roadmap items, runtime 
 - Running `gh auth setup-git` on the host as part of a `jackin` command. The container can run it; the host stays untouched.
 - Editing `~/.gitconfig`, `~/.ssh/config`, or any user dotfile during a launch, refresh, or "fix it for me" path. Suggest the change in the launch summary; do not apply it.
 - Force-pushing, fetching, pulling, or pruning on the host's git repo as a side effect of provisioning. The only host-side git commands the CLI runs today are the ones the operator explicitly opted into (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), and those stay scoped to the workspace's mounted repos.
-- Writing the host's `~/.config/gh/hosts.yml` from the container's in-session `gh auth login`. In-container token rotation must not flow back to the host without an explicit operator-controlled bidirectional-sync opt-in (tracked under the [GitHub CLI auth strategy](docs/src/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
+- Writing the host's `~/.config/gh/hosts.yml` from the container's in-session `gh auth login`. In-container token rotation must not flow back to the host without an explicit operator-controlled bidirectional-sync opt-in (tracked under the [GitHub CLI auth strategy](docs/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
 
 **Read paths against the host are fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up the host's git user.email — all read-only. The forbidden direction is host-side *writes* triggered by jackin' without explicit operator opt-in.
 
@@ -136,10 +138,6 @@ When the current logs are insufficient to explain a complex or inconsistent beha
 
 The reason: operators can rarely reproduce on demand. When they hit something weird, they need to be able to paste a log that already has the answer — without rebuilding, without enabling extra instrumentation we forgot to ship, and without an extra round of "now please run it again with this added line". The host's `--debug` flag is the single switch that turns the firehose on; everything downstream honours it.
 
-**Debug output never reaches a rich full-screen TUI (hard rule).** When a rich alternate-screen surface owns the terminal — the launch/loading cockpit, the workspace console, the in-container multiplexer — `--debug` must not print a single line over it. The firehose is written **only** to the diagnostics run file under `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`, and external-command output is captured (never streamed to the screen) for the duration. The screen stays the clean rich experience; the evidence lands in the file. The mechanism is the `rich_surface_active` flag plus the active diagnostics run: `emit_debug_line` / `active_debug` route to the run file, and the command runner suppresses live streaming whenever `--debug` is on or a rich surface is active. Streaming child output straight to `stdout`/`stderr` while a rich surface is up is a bug; route it through the diagnostics run instead.
-
-So the operator can retrieve that file, a `--debug` invocation surfaces the **run id on the plain CLI before anything else runs** (`[jackin] debug mode — save this run id…`), identically for every command — CLI or TUI — and on an interactive terminal gates entry behind an `Enter` press so the operator saves the id before the normal flow (rich or CLI, per terminal capability) takes over. The gate is always plain CLI, never a rich surface. Only the run id is shown; it is the handle the operator hands back so an agent can locate and read the run file. Never trade the clean rich surface for inline debug spew: when you need more evidence, add `cdebug!` / diagnostics sites that write to the run file, not prints to the screen.
-
 ## Reuse before writing — DRY (hard rule)
 
 **Before writing new code, check whether something close enough already exists. If yes, extend, parameterise, or wrap it instead of writing a parallel copy. If no, write the new thing in a shape future callers can reuse.**
@@ -176,7 +174,7 @@ When the first release is being cut, the operator will explicitly ask for the ch
 
 ## Roadmap freshness (agent-only)
 
-Before marking any PR ready to land, and again whenever the operator asks to merge a PR, check whether the change ships, advances, defers, or invalidates anything under `docs/src/content/docs/reference/roadmap/`. If yes, update the roadmap item's `**Status**`, related files, and implementation notes in the same PR, then update `docs/src/content/docs/reference/roadmap.mdx` so the item appears only in the correct overview section.
+Before marking any PR ready to land, and again whenever the operator asks to merge a PR, check whether the change ships, advances, defers, or invalidates anything under `docs/content/docs/reference/roadmap/`. If yes, update the roadmap item's `**Status**`, related files, and implementation notes in the same PR, then update `docs/content/docs/reference/roadmap/index.mdx` so the item appears only in the correct overview section.
 
 Do this check even when the PR is mostly code, tests, CI, or rule changes. The roadmap is an operator-facing source of truth, not a retrospective cleanup task. A feature that lands without moving its roadmap item leaves stale planning docs behind and should be treated as an incomplete PR. If a merge request reveals stale roadmap state, stop before merging, update the roadmap and PR description, and only then continue with normal merge verification.
 
@@ -302,7 +300,7 @@ This rule applies to inline `//` comments, multi-line `/// `/// `//!` doc commen
 
 When walking the operator through manual validation of a jackin' feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
 
-The `--debug` flag captures every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their output, plus the `[jackin debug ...]` instrumentation, into the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) — never onto a rich TUI (see the telemetry hard rule above). At the start of a `--debug` run the CLI prints the run id (plain CLI, identical for every command) and gates on Enter on an interactive terminal, before anything else runs. This makes the run triage-able by the agent: when something doesn't behave as expected, the operator shares the run id and the agent reads the structured JSONL at `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` to localize the issue without guessing. Ask the operator for the run id printed at start, not for a pasted terminal scrollback.
+The `--debug` flag captures every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their output, plus the `[jackin debug ...]` instrumentation, into the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`). The CLI prints a run id the operator can share. This makes the run triage-able by the agent: when something doesn't behave as expected, the operator shares the run id and the agent reads the structured JSONL at `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` to localize the issue without guessing. Ask the operator for the run id, not for a pasted terminal scrollback.
 
 Do not list `git diff --check` as PR verification. It is not a meaningful
 acceptance check for jackin' PRs; prefer targeted commands that exercise the
@@ -339,7 +337,7 @@ All rules for the `jackin-capsule` smoke-test mandate — the eval one-shot buil
 
 ## TUI design decisions (agent-only)
 
-All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/src/content/docs/reference/tui-design-decisions.mdx`](docs/src/content/docs/reference/tui-design-decisions.mdx).
+All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, visible progress/status for long-running work, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/content/docs/reference/tui-design-decisions.mdx`](docs/content/docs/reference/tui-design-decisions.mdx).
 
 **Read that document before implementing any TUI change.** When a new decision is made (operator explains what should change and why), add it there immediately, not here.
 

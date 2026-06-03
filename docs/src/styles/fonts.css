@@ -1,8 +1,7 @@
 /* Self-hosted fonts via fontsource. Avoids third-party DNS + TLS hop
    and the FOUT that Google Fonts caused (display=swap → visible text
-   reflow as Inter arrived). Astro bundles the woff2 files under
-   /_astro/ and serves them same-origin, so first-paint uses the real
-   fonts nearly always. */
+   reflow as Inter arrived). Vite bundles the woff2 files and serves
+   them same-origin, so first-paint uses the real fonts nearly always. */
 
 @import '@fontsource-variable/inter/index.css';
 @import '@fontsource-variable/jetbrains-mono/index.css';
@@ -11,7 +10,7 @@
 @import '@fontsource/fraunces/700.css';
 
 /* Static Inter 900 for the brand wordmark — landing footer, top-nav
-   logo, and the Starlight chrome site title. The variable Inter
+   logo, and the docs chrome site title. The variable Inter
    interpolates weight 900 from the wght axis and reads thinner than
    the hand-drawn static Black. Declared under a unique family name so
    selectors can unambiguously pick the static face without competing

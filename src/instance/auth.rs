@@ -586,18 +586,21 @@ impl RoleState {
 }
 
 impl RoleState {
-    /// Provision Kimi's host-side `~/.kimi` directory per the chosen mode.
+    /// Provision Kimi Code's host-side `~/.kimi-code` directory per the chosen mode.
     ///
-    /// Sync copies only launch-essential host files into the role-state
-    /// directory so it can be bind-mounted into the container. Kimi stores
-    /// OAuth tokens under `credentials/`, but `config.toml` carries the
-    /// OAuth-backed provider/model references created by login.
+    /// Sync copies only auth-essential host files into the role-state
+    /// directory so it can be bind-mounted into the container. Kimi Code stores
+    /// OAuth tokens under `credentials/` (including the `credentials/mcp/`
+    /// subtree), `config.toml` carries the OAuth-backed provider/model
+    /// references created by login, and `device_id` is the host-bound identity
+    /// Kimi sends in OAuth/device headers.
     /// `ApiKey` / `Ignore` wipe any prior role-state directory.
     ///
-    ///   * **Sync** + `~/.kimi` present → copy `config.toml`, each file
-    ///     under `credentials/` (binary-safe), and `device_id` at `0600`
-    ///     perms; return `(Synced, true)`.
-    ///   * **Sync** + `~/.kimi` absent → return `(HostMissing, true)`.
+    ///   * **Sync** + `~/.kimi-code` present → copy `config.toml`, the full
+    ///     `credentials/` tree (binary-safe, recursive, symlink-safe), and
+    ///     `device_id`. Files land at `0600`, directories at `0700`. Return
+    ///     `(Synced, true)`.
+    ///   * **Sync** + `~/.kimi-code` absent → return `(HostMissing, true)`.
     ///     Unlike Codex and Amp, no prior role-state files are preserved;
     ///     the role-state dir is still created so the bind-mount exists for
     ///     in-container login state to accumulate.
@@ -619,7 +622,7 @@ impl RoleState {
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
         reject_symlink(kimi_dir)?;
 
-        let host_kimi = host_home.join(".kimi");
+        let host_kimi = host_home.join(".kimi-code");
 
         let outcome = match mode {
             AuthForwardMode::OAuthToken => {
@@ -644,46 +647,20 @@ impl RoleState {
                 std::fs::create_dir_all(kimi_dir)?;
 
                 if host_kimi.exists() {
-                    let host_config = host_kimi.join("config.toml");
-                    if host_config.exists() {
-                        let content = std::fs::read_to_string(&host_config)
-                            .with_context(|| format!("reading {}", host_config.display()))?;
-                        write_private_file(&kimi_dir.join("config.toml"), &content)?;
+                    for name in KIMI_SYNC_FILES {
+                        let host_file = host_kimi.join(name);
+                        if host_file.exists() {
+                            let content = std::fs::read_to_string(&host_file)
+                                .with_context(|| format!("reading {}", host_file.display()))?;
+                            write_private_file(&kimi_dir.join(name), &content)?;
+                        }
                     }
 
                     let host_creds = host_kimi.join("credentials");
                     if host_creds.exists() {
                         let dest_creds = kimi_dir.join("credentials");
-                        std::fs::create_dir_all(&dest_creds)?;
-                        for entry in std::fs::read_dir(&host_creds)? {
-                            let entry = entry?;
-                            let ft = entry.file_type()?;
-                            if ft.is_file() {
-                                let path = entry.path();
-                                let bytes = std::fs::read(&path)
-                                    .with_context(|| format!("reading {}", path.display()))?;
-                                write_private_bytes(&dest_creds.join(entry.file_name()), &bytes)?;
-                            } else if ft.is_dir() {
-                                eprintln!(
-                                    "[jackin] warning: skipping subdirectory {} under \
-                                     ~/.kimi/credentials/ — only top-level files are synced",
-                                    entry.file_name().to_string_lossy()
-                                );
-                            } else if ft.is_symlink() {
-                                eprintln!(
-                                    "[jackin] warning: skipping symlink {} under \
-                                     ~/.kimi/credentials/ — only regular files are synced",
-                                    entry.file_name().to_string_lossy()
-                                );
-                            }
-                        }
-                    }
-
-                    let host_device_id = host_kimi.join("device_id");
-                    if host_device_id.exists() {
-                        let content = std::fs::read_to_string(&host_device_id)
-                            .with_context(|| format!("reading {}", host_device_id.display()))?;
-                        write_private_file(&kimi_dir.join("device_id"), &content)?;
+                        copy_kimi_credentials_tree(&host_creds, &dest_creds)
+                            .with_context(|| format!("copying {}", host_creds.display()))?;
                     }
 
                     AuthProvisionOutcome::Synced
@@ -699,6 +676,51 @@ impl RoleState {
         );
         Ok((outcome, forward_auth))
     }
+}
+
+/// Single-file host artifacts forwarded into the role-state directory under
+/// `Sync` mode. Listed once so a future addition (or removal) only has to be
+/// made here, not threaded through three near-identical copy blocks.
+const KIMI_SYNC_FILES: &[&str] = &["config.toml", "device_id"];
+
+/// Recursively copy a Kimi Code credentials tree. Symlinks are skipped with
+/// a warning (never followed). Files land at `0o600`, directories at `0o700`.
+fn copy_kimi_credentials_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    std::fs::create_dir_all(dst).with_context(|| format!("creating {}", dst.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dst, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("chmod 0700 {}", dst.display()))?;
+    }
+    for entry in std::fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if ft.is_symlink() {
+            // Route via the TUI-safe channel: the rich loading cockpit owns
+            // the terminal while this runs (credentials stage). A bare
+            // `eprintln!` would corrupt the cockpit. `emit_compact_line`
+            // lands in the diagnostics run jsonl and only prints to stderr
+            // when no rich surface is active.
+            crate::tui::emit_compact_line(
+                "kimi-auth",
+                &format!(
+                    "skipping symlink {} under ~/.kimi-code/credentials/ — symlinks are not synced",
+                    entry.file_name().to_string_lossy()
+                ),
+            );
+        } else if ft.is_dir() {
+            copy_kimi_credentials_tree(&src_path, &dst_path)?;
+        } else if ft.is_file() {
+            let bytes = std::fs::read(&src_path)
+                .with_context(|| format!("reading {}", src_path.display()))?;
+            write_private_bytes(&dst_path, &bytes)?;
+        }
+    }
+    Ok(())
 }
 
 impl RoleState {
@@ -2826,10 +2848,11 @@ mod kimi_auth_tests {
         temp: &tempfile::TempDir,
         config_content: Option<&str>,
         cred_files: &[(&str, &str)],
+        mcp_json: Option<&str>,
         device_id: Option<&str>,
     ) -> std::path::PathBuf {
         let host_home = temp.path().join("host_home");
-        let kimi_dir = host_home.join(".kimi");
+        let kimi_dir = host_home.join(".kimi-code");
         std::fs::create_dir_all(&kimi_dir).unwrap();
         if let Some(content) = config_content {
             std::fs::write(kimi_dir.join("config.toml"), content).unwrap();
@@ -2841,6 +2864,9 @@ mod kimi_auth_tests {
                 std::fs::write(creds_dir.join(name), content).unwrap();
             }
         }
+        if let Some(content) = mcp_json {
+            std::fs::write(kimi_dir.join("mcp.json"), content).unwrap();
+        }
         if let Some(content) = device_id {
             std::fs::write(kimi_dir.join("device_id"), content).unwrap();
         }
@@ -2851,7 +2877,8 @@ mod kimi_auth_tests {
     fn sync_copies_config_toml_when_present() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname = \"test\""), &[], None);
+        let host_home =
+            stage_host_kimi_dir(&temp, Some("[profile]\nname = \"test\""), &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2868,7 +2895,8 @@ mod kimi_auth_tests {
     fn sync_copies_credentials_files_when_present() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[("token_main", "tok_abc123")], None);
+        let host_home =
+            stage_host_kimi_dir(&temp, None, &[("token_main", "tok_abc123")], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2882,10 +2910,32 @@ mod kimi_auth_tests {
     }
 
     #[test]
+    fn sync_does_not_forward_mcp_json() {
+        // `mcp.json` is operator-preference MCP server config, not auth
+        // state. Forwarding it would leak host paths/binaries into the
+        // sealed container and bypass the role-author model for declaring
+        // in-container MCP servers. Regression guard for that decision:
+        // even with the host file present, Sync must not copy it.
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, None, &[], Some(r#"{"servers":{}}"#), None);
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert!(
+            !kimi_dir.join("mcp.json").exists(),
+            "mcp.json must not be forwarded into the role state"
+        );
+    }
+
+    #[test]
     fn sync_copies_device_id_when_present() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[], Some("device-xyz-9999"));
+        let host_home = stage_host_kimi_dir(&temp, None, &[], None, Some("device-abc123\n"));
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2894,7 +2944,7 @@ mod kimi_auth_tests {
         assert!(forward_auth);
         assert_eq!(
             std::fs::read_to_string(kimi_dir.join("device_id")).unwrap(),
-            "device-xyz-9999"
+            "device-abc123\n"
         );
     }
 
@@ -2902,7 +2952,7 @@ mod kimi_auth_tests {
     fn sync_with_empty_kimi_dir_creates_role_state_dir() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[], None);
+        let host_home = stage_host_kimi_dir(&temp, None, &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2945,7 +2995,8 @@ mod kimi_auth_tests {
         let kimi_dir = temp.path().join("kimi_state");
         std::fs::create_dir_all(&kimi_dir).unwrap();
         std::fs::write(kimi_dir.join("config.toml"), "stale").unwrap();
-        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"test\""), &[], None);
+        let host_home =
+            stage_host_kimi_dir(&temp, Some("[profile]\nname=\"test\""), &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::ApiKey, &host_home).unwrap();
@@ -2960,7 +3011,7 @@ mod kimi_auth_tests {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
         std::fs::create_dir_all(&kimi_dir).unwrap();
-        std::fs::write(kimi_dir.join("device_id"), "old_device").unwrap();
+        std::fs::write(kimi_dir.join("config.toml"), "old_config").unwrap();
 
         let (outcome, forward_auth) = RoleState::provision_kimi_auth(
             &kimi_dir,
@@ -3003,7 +3054,7 @@ mod kimi_auth_tests {
     fn forward_auth_true_for_synced() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, Some("[x]"), &[], None);
+        let host_home = stage_host_kimi_dir(&temp, Some("[x]"), &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -3090,7 +3141,8 @@ mod kimi_auth_tests {
             &temp,
             Some("[profile]"),
             &[("access_token", "tok_secret_xyz")],
-            Some("dev-001"),
+            None,
+            Some("device-secret"),
         );
 
         RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -3107,18 +3159,18 @@ mod kimi_auth_tests {
     }
 
     #[test]
-    fn credentials_subdir_skips_directory_entries() {
-        // A subdirectory inside credentials/ must be skipped; only plain
-        // files are forwarded so a nested dir cannot corrupt the sync.
+    fn credentials_subdir_copies_recursively() {
+        // Kimi Code stores MCP OAuth credentials under credentials/mcp/, so
+        // subdirectories must be copied recursively.
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
         let host_home = temp.path().join("host_home");
-        let host_creds = host_home.join(".kimi/credentials");
+        let host_creds = host_home.join(".kimi-code/credentials");
         std::fs::create_dir_all(&host_creds).unwrap();
         std::fs::write(host_creds.join("real_token"), "real_tok_value").unwrap();
         let nested = host_creds.join("nested_subdir");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(nested.join("inner_file"), "should_not_copy").unwrap();
+        std::fs::write(nested.join("inner_file"), "should_copy").unwrap();
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -3130,8 +3182,14 @@ mod kimi_auth_tests {
             "real_token must be copied"
         );
         assert!(
-            !kimi_dir.join("credentials/nested_subdir").exists(),
-            "nested subdir must be skipped"
+            kimi_dir
+                .join("credentials/nested_subdir/inner_file")
+                .exists(),
+            "nested subdir must be copied recursively"
+        );
+        assert_eq!(
+            std::fs::read_to_string(kimi_dir.join("credentials/nested_subdir/inner_file")).unwrap(),
+            "should_copy"
         );
     }
 
@@ -3141,9 +3199,9 @@ mod kimi_auth_tests {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[("access_token", "secret")], None);
+        let host_home = stage_host_kimi_dir(&temp, None, &[("access_token", "secret")], None, None);
 
-        let cred = host_home.join(".kimi/credentials/access_token");
+        let cred = host_home.join(".kimi-code/credentials/access_token");
         std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o000)).unwrap();
 
         let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
@@ -3164,9 +3222,9 @@ mod kimi_auth_tests {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"x\""), &[], None);
+        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"x\""), &[], None, None);
 
-        let cfg = host_home.join(".kimi/config.toml");
+        let cfg = host_home.join(".kimi-code/config.toml");
         std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o000)).unwrap();
 
         let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
@@ -3183,24 +3241,62 @@ mod kimi_auth_tests {
 
     #[cfg(unix)]
     #[test]
-    fn surfaces_unreadable_device_id_as_error() {
+    fn credentials_nested_symlink_is_skipped_not_followed() {
+        // A symlink planted under `credentials/mcp/` (e.g. by a hostile or
+        // misconfigured host) must NOT be copied or dereferenced into the
+        // sealed container. Real files in the same subtree must still copy.
+        use std::os::unix::fs::symlink;
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = temp.path().join("host_home");
+        let host_creds = host_home.join(".kimi-code/credentials");
+        std::fs::create_dir_all(host_creds.join("mcp")).unwrap();
+        std::fs::write(host_creds.join("mcp").join("real_token"), "real").unwrap();
+        let decoy = temp.path().join("decoy_outside_tree");
+        std::fs::write(&decoy, "must_not_leak").unwrap();
+        symlink(&decoy, host_creds.join("mcp").join("evil")).unwrap();
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert!(
+            kimi_dir.join("credentials/mcp/real_token").exists(),
+            "real nested file must still be copied"
+        );
+        assert!(
+            !kimi_dir.join("credentials/mcp/evil").exists(),
+            "nested symlink must not appear in role state"
+        );
+        // The decoy on the host must remain untouched: no write through the
+        // skipped symlink, no read into the role state.
+        assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "must_not_leak");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn credentials_directories_are_chmodded_0700() {
+        // Every copied credentials directory (root + nested) must be 0o700 so
+        // the OAuth token subtree is not group/other-readable inside the
+        // role-state bind mount.
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[], Some("dev-abc-123"));
+        let host_home = temp.path().join("host_home");
+        let host_mcp = host_home.join(".kimi-code/credentials/mcp");
+        std::fs::create_dir_all(&host_mcp).unwrap();
+        std::fs::write(host_mcp.join("token"), "tok").unwrap();
 
-        let dev = host_home.join(".kimi/device_id");
-        std::fs::set_permissions(&dev, std::fs::Permissions::from_mode(0o000)).unwrap();
+        RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
 
-        let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
-
-        let _ = std::fs::set_permissions(&dev, std::fs::Permissions::from_mode(0o600));
-
-        let err = result.expect_err("unreadable device_id must surface as error");
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("device_id"),
-            "error must name the unreadable file: {msg}"
-        );
+        for rel in &["credentials", "credentials/mcp"] {
+            let mode = std::fs::metadata(kimi_dir.join(rel))
+                .unwrap_or_else(|e| panic!("missing credentials dir {rel}: {e}"))
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o700, "{rel} must be 0o700, got 0o{mode:o}");
+        }
     }
 }

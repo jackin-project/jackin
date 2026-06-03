@@ -543,8 +543,8 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(KimiAuth, AuthProvisionOutcome)> {
-        let kimi_dir = root.join("kimi");
-        let kimi_home_dir = home_dir.join(".kimi");
+        let kimi_dir = root.join("kimi-code");
+        let kimi_home_dir = home_dir.join(".kimi-code");
         std::fs::create_dir_all(&kimi_dir)?;
         std::fs::create_dir_all(&kimi_home_dir)?;
         let (outcome, forward_auth) = Self::provision_kimi_auth(&kimi_dir, mode, host_home)?;

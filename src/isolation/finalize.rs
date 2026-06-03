@@ -14,6 +14,8 @@ use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use crate::runtime::attach::JACKIN_STATUS_CMD;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,30 +75,71 @@ pub trait FinalizerPrompt {
     ) -> anyhow::Result<usize>;
 }
 
-pub struct StdinPrompt;
-impl FinalizerPrompt for StdinPrompt {
+pub struct RichCleanupPrompt;
+impl FinalizerPrompt for RichCleanupPrompt {
     fn ask_unsafe_cleanup(
         &mut self,
         container: &str,
         worktree_path: &str,
         reason: PreservedReason,
     ) -> anyhow::Result<usize> {
-        let msg = match reason {
-            PreservedReason::Dirty => format!(
-                "Isolated worktree for {container} has uncommitted changes:\n  {worktree_path}\n\nWhat do you want to do?"
-            ),
-            PreservedReason::Unpushed => format!(
-                "Isolated worktree for {container} has unpushed commits on a local branch:\n  {worktree_path}\n\nWhat do you want to do?"
-            ),
-        };
-        crate::tui::prompt::prompt_choice(
-            &msg,
-            &[
-                "Return to role to address it",
-                "Preserve worktree and exit",
-                "Force delete worktree and discard changes",
-            ],
-        )
+        Ok(rich_cleanup_prompt(container, worktree_path, reason))
+    }
+}
+
+/// Forced-choice worktree-cleanup picker, rendered through the shared launch
+/// dialog vocabulary (`standalone_select_with_context`) so it inherits the
+/// same backdrop, centering, hints, and key handling as every other launch
+/// dialog. Returns the option index: 0 = return to role, 1 = preserve,
+/// 2 = force-delete.
+fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedReason) -> usize {
+    use crate::console::widgets::{LINK_BLUE, PHOSPHOR_DIM, WHITE};
+
+    let reason_line = match reason {
+        PreservedReason::Dirty => "has uncommitted changes",
+        PreservedReason::Unpushed => "has unpushed commits on a local branch",
+    };
+    let context = vec![
+        Line::from(Span::styled(
+            format!("Container {container} {reason_line}."),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            worktree_path.to_string(),
+            Style::default().fg(LINK_BLUE),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Choose how jackin' should handle this worktree.",
+            Style::default().fg(PHOSPHOR_DIM),
+        )),
+    ];
+    let options = vec![
+        "Return to role to address it".to_string(),
+        "Preserve worktree and exit".to_string(),
+        "Force delete worktree and discard changes".to_string(),
+    ];
+    match crate::runtime::progress::standalone_select_with_context(
+        "Isolated Worktree",
+        &context,
+        options,
+    ) {
+        Ok(choice) => choice,
+        Err(err) => {
+            let reason_str = match reason {
+                PreservedReason::Dirty => "uncommitted changes",
+                PreservedReason::Unpushed => "unpushed commits on a local branch",
+            };
+            let message = format!(
+                "Container {container} {reason_str}.\n\n{worktree_path}\n\nCould not render the cleanup dialog:\n{err:#}\n\nThe worktree will be preserved."
+            );
+            let _ = crate::runtime::progress::standalone_error_popup(
+                "Isolated Worktree Error",
+                &message,
+            );
+            1
+        }
     }
 }
 
@@ -616,6 +659,23 @@ mod tests {
         ) -> anyhow::Result<usize> {
             panic!("prompt should not be called in this test");
         }
+    }
+
+    #[test]
+    fn rich_cleanup_prompt_preserves_when_rich_dialog_is_unavailable() {
+        let mut prompt = RichCleanupPrompt;
+        let choice = prompt
+            .ask_unsafe_cleanup(
+                "jk-test",
+                "/tmp/jackin-preserved-worktree",
+                PreservedReason::Dirty,
+            )
+            .unwrap();
+
+        assert_eq!(
+            choice, 1,
+            "without a rich dialog, cleanup must preserve instead of falling back to a numbered CLI prompt"
+        );
     }
 
     use crate::runtime::test_support::FakeRunner;

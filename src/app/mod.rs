@@ -22,7 +22,8 @@ use crate::workspace::{
 
 use self::context::{
     TargetKind, classify_target, prompt_agent_choice_if_needed, remember_last_agent,
-    resolve_agent_from_context, resolve_running_container_from_context, resolve_target_name,
+    resolve_agent_from_context_with_choice, resolve_running_container_from_context,
+    resolve_target_name_with_choice,
 };
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
@@ -34,6 +35,14 @@ fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<config::AuthFor
 fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
     raw.parse()
         .map_err(|_| anyhow::anyhow!("unknown agent {raw:?}; expected one of: claude, codex, amp"))
+}
+
+fn rich_prelaunch_choice(title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+    runtime::progress::prelaunch_select_choice(
+        std::env::var_os("JACKIN_NO_MOTION").is_some(),
+        title,
+        items,
+    )
 }
 
 async fn play_construct_intro_if_needed(
@@ -101,13 +110,18 @@ pub async fn run(cli: Cli) -> Result<()> {
                     None => LoadWorkspaceInput::CurrentDir,
                     Some(t) => match classify_target(&t) {
                         TargetKind::Path { src, dst } => LoadWorkspaceInput::Path { src, dst },
-                        TargetKind::Name(name) => resolve_target_name(&name, &config, &cwd)?,
+                        TargetKind::Name(name) => resolve_target_name_with_choice(
+                            &name,
+                            &config,
+                            &cwd,
+                            rich_prelaunch_choice,
+                        )?,
                     },
                 };
                 (class, input)
             } else {
                 // No selector — resolve role from workspace context
-                resolve_agent_from_context(&config, &cwd)?
+                resolve_agent_from_context_with_choice(&config, &cwd, rich_prelaunch_choice)?
             };
 
             let saved_workspace_name = if let LoadWorkspaceInput::Saved(ref name) = workspace_input
@@ -130,19 +144,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 &ad_hoc_mounts,
             )?;
 
-            let sensitive = crate::workspace::find_sensitive_mounts(&resolved_workspace.mounts);
-            if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
-                anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-            }
-
             let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
             opts.force = force;
-            opts.agent = match agent {
-                Some(explicit) => Some(explicit),
-                None => {
-                    prompt_agent_choice_if_needed(&paths, &class, resolved_workspace.default_agent)?
-                }
-            };
+            opts.agent = agent;
             opts.role_branch = role_branch;
             if let Err(err) = crate::daemon::ensure_started(&paths) {
                 eprintln!("[jackin] daemon unavailable: {err:#}");
@@ -229,32 +233,77 @@ pub async fn run(cli: Cli) -> Result<()> {
                     )
                     .await;
                 }
-            };
-
-            // The sensitive-mount confirm and agent-choice prompts are
-            // line-buffered (dialoguer) and rare; run them on the cooked screen
-            // and restore the full-screen session afterward. The common path
-            // (agent pre-picked, no sensitive mounts) never suspends.
-            let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
-            let default_agent = workspace.default_agent;
-            let agent = if sensitive.is_empty() && selected_agent.is_some() {
-                selected_agent
-            } else {
-                screen.suspend(|| -> anyhow::Result<Option<crate::agent::Agent>> {
-                    if !sensitive.is_empty()
-                        && !crate::workspace::confirm_sensitive_mounts(&sensitive)?
-                    {
-                        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-                    }
-                    selected_agent.map_or_else(
-                        || prompt_agent_choice_if_needed(&paths, &class, default_agent),
-                        |agent| Ok(Some(agent)),
+                console::ConsoleOutcome::NewSessionWithProvider {
+                    container,
+                    agent,
+                    provider,
+                } => {
+                    let manifest =
+                        instance::InstanceManifest::read(&paths.data_dir.join(&container))
+                            .with_context(|| {
+                                format!(
+                                    "cannot start a new agent session in `{container}` because its instance manifest is missing"
+                                )
+                            })?;
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    // The token is backfilled inside the container by the
+                    // daemon from `ZAI_API_KEY`, so pass overrides without it.
+                    let result = runtime::spawn_agent_session(
+                        &paths,
+                        &container,
+                        Some(&manifest),
+                        agent,
+                        Some(provider.label()),
+                        &provider.env_overrides(None),
+                        config.git.coauthor_trailer,
+                        config.git.dco,
+                        &docker,
+                        &mut runner,
                     )
-                })??
+                    .await;
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    if let Some((docker, claim)) = &console_entry {
+                        runtime::release_entry_if_idle(&paths, docker, claim).await;
+                    }
+                    return result;
+                }
+                console::ConsoleOutcome::LaunchWithProvider {
+                    selector,
+                    workspace,
+                    agent,
+                    provider,
+                } => {
+                    let mut opts = runtime::LoadOptions::for_launch(debug);
+                    opts.agent = Some(agent);
+                    opts.provider = Some(provider);
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    let result = runtime::load_role(
+                        &paths,
+                        &mut config,
+                        &selector,
+                        &workspace,
+                        &docker,
+                        &mut runner,
+                        &opts,
+                    )
+                    .await;
+                    remember_last_agent(
+                        &paths,
+                        &mut config,
+                        Some(&workspace.label),
+                        &selector,
+                        &result,
+                    );
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    if let Some((docker, claim)) = &console_entry {
+                        runtime::release_entry_if_idle(&paths, docker, claim).await;
+                    }
+                    return result;
+                }
             };
 
             let mut opts = runtime::LoadOptions::for_launch(debug);
-            opts.agent = agent;
+            opts.agent = selected_agent;
             let entry_claim = if let Some((_entry_docker, claim)) = console_entry.take() {
                 claim
             } else {
@@ -348,6 +397,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                     &container,
                     Some(&manifest),
                     selected_agent,
+                    None,
+                    &[],
                     config.git.coauthor_trailer,
                     config.git.dco,
                     &docker,
@@ -2384,6 +2435,8 @@ async fn handle_console_instance_action(
                 &container,
                 Some(&manifest),
                 selected_agent,
+                None,
+                &[],
                 config.git.coauthor_trailer,
                 config.git.dco,
                 docker,
@@ -2531,11 +2584,6 @@ async fn restore_hardline_instance(
         let input = resolve_ad_hoc_restore_input(manifest, &cwd)?;
         workspace::resolve_load_workspace(config, &class, &cwd, input, &[])?
     };
-
-    let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
-    if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
-        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-    }
 
     let opts = runtime::LoadOptions {
         agent: Some(manifest.agent()?),

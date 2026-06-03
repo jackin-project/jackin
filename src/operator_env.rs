@@ -1860,6 +1860,20 @@ fn build_attributed_layers(
     attributed
 }
 
+/// Look up the raw (unresolved) declaration value for `key` in the
+/// operator env config layers, using the same precedence as
+/// `resolve_operator_env` (global < role < workspace < workspace-role).
+pub fn lookup_operator_env_raw(
+    config: &crate::config::AppConfig,
+    role_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    key: &str,
+) -> Option<String> {
+    build_attributed_layers(config, role_selector, workspace_name)
+        .remove(key)
+        .map(|(_, value)| value.as_display_str().to_string())
+}
+
 /// Env var Claude Code reads for the long-lived OAuth token.
 ///
 /// Centralised so [`crate::workspace::token_setup`], the launch
@@ -1964,7 +1978,7 @@ fn emit_launch_diagnostic<W: std::io::Write>(rendered: &str, debug: bool, stderr
     if let Some(run) = crate::diagnostics::active_run() {
         run.compact("operator_env", rendered.trim_end());
     }
-    if debug || crate::tui::rich_surface_active() {
+    if debug || crate::tui::rich_terminal_owned() {
         return;
     }
     let _ = stderr.write_all(rendered.as_bytes());

@@ -44,7 +44,7 @@ jobs:
             echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
@@ -133,8 +133,7 @@ jobs:
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     strategy:
       matrix:
@@ -152,10 +151,19 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
-      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           install_args: "rust zig cargo:cargo-zigbuild"
@@ -217,8 +225,8 @@ jobs:
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
     strategy:
       matrix:
         include:
@@ -229,15 +237,34 @@ jobs:
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
             arch: amd64
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
-      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           install_args: "rust zig cargo:cargo-zigbuild"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: rustup target add ${{ matrix.target }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
@@ -275,7 +302,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
           fetch-depth: 0
@@ -398,7 +425,7 @@ jobs:
           echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
           echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           repository: jackin-project/homebrew-tap
           ref: main

@@ -46,6 +46,18 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
+    // Per-tab provider injection — Z.AI and future Anthropic-compatible backends.
+    // Listed here so env_for_spawn's allowlist accepts them as overrides when the
+    // operator picks an alternative provider in the AgentPicker flow.
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    // Z.AI model mapping so Claude Code maps its internal model tiers to GLM names.
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    // Z.AI operational env vars.
+    "API_TIMEOUT_MS",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
 ];
 
 /// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile
@@ -582,9 +594,20 @@ impl Callbacks for OscCapture {
     }
 }
 
+/// Resolved provider a session was spawned with. Label and env overrides
+/// travel together (both derived from one `jackin_protocol::Provider` at
+/// spawn time) so a split can faithfully inherit the source pane's provider
+/// without the label drifting from its redirect env.
+#[derive(Debug, Clone)]
+pub struct SessionProvider {
+    pub label: String,
+    pub env_overrides: Vec<(String, String)>,
+}
+
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
+    pub provider: Option<SessionProvider>,
     pub state: AgentState,
     pub parser: vt100::Parser<OscCapture>,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -633,15 +656,155 @@ pub enum SessionEvent {
     Exited {
         session_id: u64,
     },
+    GitBranchContextRefreshRequested,
     GitBranchContextLoaded {
         request_id: u64,
-        branch: Option<String>,
+        context: GitContext,
     },
     PullRequestContextLoaded {
         request_id: u64,
-        branch: Option<String>,
+        branch: Option<BranchName>,
+        /// HEAD captured at spawn so the cache entry is keyed on what
+        /// the worker actually queried, not on mux state at apply time.
+        head: Option<Oid>,
         outcome: PullRequestLookupOutcome,
     },
+}
+
+/// Resolved git state for the workspace workdir. Three meaningful
+/// variants — `Absent` (no readable git metadata), `Branch` (on a
+/// named branch, head resolves when the tip exists), `Detached`
+/// (HEAD points directly at an OID with no branch ref). The old
+/// `{branch: Option<String>, head: Option<String>}` shape allowed a
+/// fourth nonsense state (`branch=None, head=Some` with no detached
+/// context); the sum type removes it at the type level.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum GitContext {
+    #[default]
+    Absent,
+    Detached {
+        head: Oid,
+    },
+    Branch {
+        name: BranchName,
+        /// `None` while the branch ref hasn't resolved (unborn HEAD on
+        /// a fresh `git init`, or a packed-refs miss before the next
+        /// poll). The PR-context cache treats `None` and `Some` as
+        /// distinct cache keys so cache busts on first-tip arrival.
+        head: Option<Oid>,
+    },
+}
+
+impl GitContext {
+    pub fn branch_name(&self) -> Option<&BranchName> {
+        match self {
+            Self::Branch { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+
+    pub fn head(&self) -> Option<&Oid> {
+        match self {
+            Self::Detached { head } => Some(head),
+            Self::Branch {
+                head: Some(head), ..
+            } => Some(head),
+            _ => None,
+        }
+    }
+
+    pub fn is_present(&self) -> bool {
+        !matches!(self, Self::Absent)
+    }
+}
+
+/// Validated git object id. Constructed via `Oid::parse`, which
+/// accepts the two on-disk hex lengths git uses today (40 = SHA-1,
+/// 64 = SHA-256 via `git init --object-format=sha256`, opt-in since
+/// git 2.29). All hex digits must be ASCII case-insensitive.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Oid(String);
+
+impl Oid {
+    pub fn parse(value: &str) -> Option<Self> {
+        if matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
+            Some(Self(value.to_string()))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for Oid {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for Oid {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Oid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Validated short branch name (no `refs/heads/` prefix, no
+/// whitespace, non-empty). Constructed via `BranchName::parse`,
+/// which strips a leading `refs/heads/` if present so callers can
+/// pass either the symref target or the short name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BranchName(String);
+
+impl BranchName {
+    pub fn parse(value: &str) -> Option<Self> {
+        let stripped = value.strip_prefix("refs/heads/").unwrap_or(value);
+        if stripped.is_empty() || stripped.chars().any(char::is_whitespace) {
+            None
+        } else {
+            Some(Self(stripped.to_string()))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for BranchName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for BranchName {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for BranchName {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for BranchName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// Outcome of a background `gh pr` lookup. The `Resolved` variant carries
@@ -772,6 +935,7 @@ impl Session {
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
+        provider: Option<SessionProvider>,
         cmd: CommandBuilder,
         rows: u16,
         cols: u16,
@@ -965,6 +1129,7 @@ impl Session {
             Session {
                 label: label.into(),
                 agent,
+                provider,
                 state: AgentState::Working,
                 parser: vt100::Parser::new_with_callbacks(
                     rows,
@@ -995,15 +1160,10 @@ impl Session {
     /// count, so subsequent down-scrolls must chew through the
     /// phantom distance before the visible view moves.
     pub fn scroll_by(&mut self, delta: i32) {
-        let new = if delta > 0 {
-            let filled = self.scrollback_filled();
-            self.scrollback_offset
-                .saturating_add(delta as usize)
-                .min(filled)
-        } else {
-            self.scrollback_offset.saturating_sub((-delta) as usize)
-        };
-        self.scrollback_offset = new;
+        let filled = self.scrollback_filled();
+        let mut tail = jackin_tui::scroll::TailScroll::new(self.scrollback_offset);
+        tail.scroll_by(filled, delta as isize);
+        self.scrollback_offset = tail.offset();
         self.apply_scrollback_offset();
     }
 
@@ -1060,6 +1220,13 @@ impl Session {
         self.parser
             .screen_mut()
             .set_scrollback(self.scrollback_offset.min(vt_filled));
+    }
+
+    fn clamp_scrollback_offset(&mut self) {
+        let filled = self.scrollback_filled();
+        let mut tail = jackin_tui::scroll::TailScroll::new(self.scrollback_offset);
+        tail.clamp(filled);
+        self.scrollback_offset = tail.offset();
     }
 
     /// Inline scrollback rows that should be prepended above the
@@ -1183,7 +1350,7 @@ impl Session {
             self.clear_transient_keyboard_modes();
         }
         if was_scrolled {
-            self.scrollback_offset = self.scrollback_offset.min(self.scrollback_filled());
+            self.clamp_scrollback_offset();
             self.apply_scrollback_offset();
         } else {
             self.scroll_to_live();
@@ -1508,7 +1675,7 @@ impl Session {
         }
         self.parser.screen_mut().set_size(rows, cols);
         self.inline_scroll_region_tracker.resize(rows);
-        self.scrollback_offset = self.scrollback_offset.min(self.scrollback_filled());
+        self.clamp_scrollback_offset();
         self.apply_scrollback_offset();
     }
 
@@ -1526,9 +1693,11 @@ impl Session {
 
 #[cfg(test)]
 impl Session {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,
+        provider: Option<SessionProvider>,
         size: (u16, u16),
         scrollback_len: usize,
         input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -1538,6 +1707,7 @@ impl Session {
         Self {
             label,
             agent,
+            provider,
             state: AgentState::Working,
             parser: vt100::Parser::new_with_callbacks(
                 size.0,
@@ -1655,9 +1825,12 @@ pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path) -> 
 /// reported per attach through the Capsule protocol; pane PTYs keep a
 /// conservative baseline so a running session can be reattached from Ghostty,
 /// Kitty, iTerm, Warp, or any other xterm-compatible client without retaining
-/// assumptions from the terminal that launched the container.
+/// assumptions from the terminal that launched the container. `COLORTERM`
+/// intentionally advertises jackin's 24-bit color path without tying the pane
+/// to a host-specific terminfo entry.
 fn apply_terminal_env(cmd: &mut CommandBuilder) {
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
     for key in ["LANG", "LC_ALL"] {
         if let Ok(value) = std::env::var(key) {
             cmd.env(key, value);
@@ -1753,6 +1926,28 @@ mod tests {
         assert_eq!(
             cmd.get_env("TERM").and_then(|value| value.to_str()),
             Some("xterm-256color")
+        );
+    }
+
+    #[test]
+    fn build_agent_command_advertises_truecolor() {
+        let env = vec![("COLORTERM".to_string(), "24bit".to_string())];
+        let cmd = build_agent_command("claude", None, &env, Path::new("/workspace"));
+
+        assert_eq!(
+            cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
+            Some("truecolor")
+        );
+    }
+
+    #[test]
+    fn build_shell_command_advertises_truecolor() {
+        let env = vec![("COLORTERM".to_string(), "false".to_string())];
+        let cmd = build_shell_command(&env, Path::new("/workspace"));
+
+        assert_eq!(
+            cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
+            Some("truecolor")
         );
     }
 

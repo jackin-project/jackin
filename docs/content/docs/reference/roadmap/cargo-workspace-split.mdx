@@ -1,0 +1,59 @@
+---
+title: "Cargo Workspace Split"
+---
+
+**Status**: Deferred — Phase 3 (trigger not yet met, but architecture is ready)
+
+## When to do this
+
+`jackin` today is **~93K lines of production Rust** (119 files in `src/`, re-baked 2026-05-17) — still below the ~150K threshold where a multi-crate Cargo workspace outweighs its overhead, but growing fast (was ~50K at original analysis — 88% growth). This item is not ready to execute. The trigger conditions are:
+
+- LOC exceeds ~150K, **or**
+- A sub-component needs external consumers for third-party agent manifest tooling, **or**
+- Compile times on the CI `check` job exceed 5 minutes cold cache
+
+<Aside type="caution">
+**The original claim "`console/` has zero imports from `runtime/` in production code" is FALSE.** The re-analysis found 2 production-code dependencies: `crate::runtime::register_agent_repo` and `crate::runtime::RepoError` in `console/manager/input/editor.rs`. The Cargo workspace split will need these 2 sites addressed first — either through a trait abstraction or by moving the shared function to a common module.
+</Aside>
+
+## Target 6-crate structure
+
+Follows matklad's virtual manifest + flat `crates/` pattern:
+
+```
+jackin/
+├── Cargo.toml             ← virtual workspace manifest (no [package])
+├── crates/
+│   ├── jackin-core/       ← Tier 0: workspace types, manifest, selector, paths, docker trait
+│   ├── jackin-config/     ← Tier 1: TOML persistence (AppConfig, ConfigEditor)
+│   ├── jackin-tui/        ← Tier 1: terminal output, animation, prompts
+│   ├── jackin-runtime/    ← Tier 2: container bootstrap pipeline
+│   ├── jackin-console/    ← Tier 3: workspace manager TUI + operator_env
+│   └── jackin-shell/      ← ShellRunner (concrete subprocess impl)
+├── src/                   ← thin binary (CLI dispatch)
+└── validate/              ← jackin-role binary
+```
+
+## Dependency tiers (verified)
+
+- **Tier 0** (no cross-module deps): `workspace/`, `manifest/`, `docker.rs`, `paths.rs`, `selector.rs`
+- **Tier 1**: `config/`, `tui/`, `instance/`, `env_resolver/`
+- **Tier 2**: `operator_env/`, `runtime/`, `repo/`
+- **Tier 3**: `console/` — **almost** no import from `runtime/` (2 call sites need fixing first)
+
+## Visibility is the real blocker
+
+The LOC-based triggers above are useful heuristics, but the actual blocker for a meaningful workspace split is visibility discipline. Today 89% of functions are `pub` (423 `pub fn` vs 55 `pub(crate) fn`), so an external consumer importing `jackin::*` would be coupled to internals immediately. Any crate boundary drawn under the current visibility surface would either expose too much (defeating the purpose of the split) or require a sweeping `pub` → `pub(crate)` pass that touches nearly every module. The visibility pass — already roadmap'd as [the `pub(crate)` visibility item](/reference/roadmap/pub-crate-visibility/) — is the real prerequisite: it makes each crate's public API a deliberate, auditable surface rather than an accidental one.
+
+## Prerequisites before this phase
+
+1. **Visibility pass** — complete the `pub(crate)` migration ([`pub-crate-visibility`](/reference/roadmap/pub-crate-visibility/)) so crate boundaries are enforceable
+2. **Phase 2 file splits** — establish clean internal module boundaries
+3. **Phase 1.5 DRY extractions** — reduce duplication that would otherwise be frozen into crate APIs
+4. **Fix the 2 console→runtime dependencies** — `register_agent_repo` and `RepoError` must move to a shared module or through a trait
+
+## Related files
+
+- <RepoFile path="Cargo.toml" /> — target: convert to virtual workspace manifest
+- <RepoFile path="src/console/manager/input/editor.rs" /> — contains the 2 runtime dependencies that must be resolved
+- <RepoFile path="src/runtime/launch.rs" /> — the runtime entry point (7575L)

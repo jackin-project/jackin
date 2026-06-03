@@ -106,7 +106,25 @@ pub(super) fn render_list_body(
         }
     }
 
-    if let Some((container, picker)) = state.inline_new_session_picker.as_ref() {
+    if let Some(picker) = state.inline_provider_picker.as_ref() {
+        let short_id = crate::instance::naming::instance_id_from_container_base(&picker.context)
+            .unwrap_or(picker.context.as_str());
+        render_provider_picker_sidebar(
+            frame,
+            list_area,
+            Some(short_id),
+            picker.providers(),
+            picker.selected(),
+        );
+    } else if let Some(picker) = state.launch_provider_picker.as_ref() {
+        render_provider_picker_sidebar(
+            frame,
+            list_area,
+            None,
+            picker.providers(),
+            picker.selected(),
+        );
+    } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());
         render_agent_picker_sidebar(frame, list_area, short_id, picker);
@@ -118,18 +136,9 @@ pub(super) fn render_list_body(
             .map_or("Current directory", |summary| summary.name.as_str());
         render_role_picker_sidebar(frame, list_area, title, picker);
     } else {
-        let list_lines = list_name_lines(state, super::scroll_viewport_width(list_area));
-
-        let mut scroll_y = 0u16;
-        super::render_scrollable_block(
-            frame,
-            list_area,
-            list_lines,
-            &mut state.list_names_scroll_x,
-            &mut scroll_y,
-            state.list_names_focused,
-            None,
-        );
+        let (list_lines, content_width) =
+            list_name_lines(state, super::scroll_viewport_width(list_area));
+        render_list_names_block(frame, list_area, list_lines, content_width, state);
     }
 }
 
@@ -137,10 +146,10 @@ pub(in crate::console::manager) fn list_names_content_width(
     state: &ManagerState<'_>,
     viewport: usize,
 ) -> usize {
-    super::max_line_width(&list_name_lines(state, viewport))
+    list_name_lines(state, viewport).1
 }
 
-fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'static>> {
+fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'static>>, usize) {
     let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
     let mut max_w = viewport;
@@ -206,8 +215,12 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
         }
     }
 
-    // Extend the selected row's highlight to fill the viewport width.
-    let content_w = max_w;
+    // Compute scroll range before selected/hover background fill pads rows to
+    // the viewport. Highlight padding is visual only; it must not make a
+    // content-fitting list become horizontally scrollable.
+    let content_w = super::max_line_width(&lines).max(max_w);
+
+    // Extend the selected row's highlight to fill the content width.
     if let Some(line) = lines.get_mut(visual_selected) {
         let current_w = super::line_width(line);
         if current_w < content_w {
@@ -250,7 +263,59 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
         }
     }
 
-    lines
+    (lines, content_w)
+}
+
+fn render_list_names_block(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    content_width: usize,
+    state: &mut ManagerState<'_>,
+) {
+    let content_height = lines.len();
+    let viewport_w = super::scroll_viewport_width(area);
+    let viewport_h = super::scroll_viewport_height(area);
+    let scrollable = super::is_scrollable(content_width, viewport_w);
+    let border_color = if state.list_names_focused && scrollable {
+        PHOSPHOR_GREEN
+    } else {
+        PHOSPHOR_DARK
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    super::clamp_scroll_x(content_width, viewport_w, &mut state.list_names_scroll_x);
+    let visible_rows = usize::from(inner.height).min(content_height);
+    for (row_idx, line) in lines.into_iter().take(visible_rows).enumerate() {
+        render_list_name_line(
+            frame,
+            inner,
+            row_idx as u16,
+            line,
+            usize::from(state.list_names_scroll_x),
+        );
+    }
+    if scrollable {
+        super::render_horizontal_scrollbar(frame, area, content_width, state.list_names_scroll_x);
+    }
+    if super::is_scrollable(content_height, viewport_h) {
+        super::render_vertical_scrollbar(frame, area, content_height, 0);
+    }
+}
+
+fn render_list_name_line(
+    frame: &mut Frame,
+    area: Rect,
+    row: u16,
+    line: Line<'static>,
+    scroll_x: usize,
+) {
+    const PREFIX_COLS: usize = 3;
+    super::render_line_with_fixed_prefix_scroll(frame, area, row, line, PREFIX_COLS, scroll_x);
 }
 
 /// Workspace / sentinel row. Shows `▶`/`▼` disclosure arrow only when the
@@ -269,7 +334,7 @@ fn push_tree_workspace_line(
     // correctly for the ▶/▼ glyphs (same approach as the editor render).
     let line = if has_instances {
         let arrow = if expanded { "▼" } else { "▶" };
-        let text_w = 1 + 1 + 1 + name.chars().count(); // cursor + arrow + space + name
+        let text_w = 1 + 1 + 1 + jackin_tui::display_cols(name);
         *max_w = (*max_w).max(text_w);
         if selected {
             Line::from(vec![
@@ -289,7 +354,7 @@ fn push_tree_workspace_line(
         }
     } else {
         // Two-space placeholder aligns name column with arrow-rows (cursor+arrow+space = 3).
-        let text_w = 3 + name.chars().count(); // cursor + 2 spaces + name
+        let text_w = 3 + jackin_tui::display_cols(name);
         *max_w = (*max_w).max(text_w);
         if selected {
             Line::from(Span::styled(
@@ -316,7 +381,7 @@ fn push_tree_instance_line(
 ) {
     let cursor = if selected { "▸" } else { " " };
     let label = format!("{}  {}", entry.instance_id, entry.role_key);
-    let text_w = 1 + 4 + label.chars().count(); // cursor + "    " indent + label
+    let text_w = 1 + 4 + jackin_tui::display_cols(&label);
     *max_w = (*max_w).max(text_w);
 
     let line = if selected {
@@ -333,6 +398,56 @@ fn push_tree_instance_line(
         ])
     };
     lines.push(line);
+}
+
+fn render_provider_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    container_id: Option<&str>,
+    providers: &[jackin_protocol::Provider],
+    selected: usize,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            provider_picker_title(container_id),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let items: Vec<ListItem> = providers
+        .iter()
+        .map(|provider| ListItem::new(Line::from(provider.label())))
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN))
+        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected));
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn provider_picker_title(container_id: Option<&str>) -> String {
+    container_id.map_or_else(
+        || " provider ".to_string(),
+        |container_id| format!(" {container_id} — provider "),
+    )
+}
+
+#[cfg(test)]
+mod provider_picker_tests {
+    use super::provider_picker_title;
+
+    #[test]
+    fn launch_provider_picker_uses_single_word_title() {
+        assert_eq!(provider_picker_title(None), " provider ");
+    }
+
+    #[test]
+    fn inline_provider_picker_keeps_instance_context() {
+        assert_eq!(provider_picker_title(Some("abc123")), " abc123 — provider ");
+    }
 }
 
 fn render_role_picker_sidebar(
@@ -597,6 +712,20 @@ pub(in crate::console::manager) struct SidebarLayout {
     pub roles: Option<Rect>,
 }
 
+#[derive(Clone, Copy)]
+pub(in crate::console::manager) struct SidebarScrollArea {
+    pub area: Rect,
+    pub content_width: usize,
+    pub content_height: usize,
+}
+
+pub(in crate::console::manager) struct SidebarScrollAreas {
+    pub workspace: SidebarScrollArea,
+    pub global: SidebarScrollArea,
+    pub role_global: Option<SidebarScrollArea>,
+    pub roles: Option<SidebarScrollArea>,
+}
+
 pub(in crate::console::manager) fn compute_sidebar_layout(
     area: Rect,
     inputs: &SidebarInputs<'_>,
@@ -650,6 +779,43 @@ pub(in crate::console::manager) fn compute_sidebar_layout(
         role_global: show_role_global.then(|| iter.next().expect("role-global slot")),
         env: inputs.show_envs.then(|| iter.next().expect("env slot")),
         roles: show_roles.then(|| iter.next().expect("roles slot")),
+    }
+}
+
+pub(in crate::console::manager) fn compute_sidebar_scroll_areas(
+    area: Rect,
+    inputs: &SidebarInputs<'_>,
+    config: &AppConfig,
+) -> SidebarScrollAreas {
+    let layout = compute_sidebar_layout(area, inputs);
+    let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+
+    SidebarScrollAreas {
+        workspace: SidebarScrollArea {
+            area: layout.mounts,
+            content_width: workspace_mounts_content_width(inputs.mounts),
+            content_height: workspace_mounts_content_height(inputs.mounts),
+        },
+        global: SidebarScrollArea {
+            area: layout.global.unwrap_or(Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 0,
+            }),
+            content_width: global_mounts_content_width_from_rows(&global_rows),
+            content_height: global_mounts_content_height_from_rows(&global_rows),
+        },
+        role_global: layout.role_global.map(|area| SidebarScrollArea {
+            area,
+            content_width: global_mounts_content_width_from_rows(&role_global_rows),
+            content_height: global_mounts_content_height_from_rows(&role_global_rows),
+        }),
+        roles: layout.roles.map(|area| SidebarScrollArea {
+            area,
+            content_width: agents_block_content_width(inputs.ws_config, config),
+            content_height: 2 + agents_block_agent_count(inputs.ws_config, config),
+        }),
     }
 }
 
@@ -850,13 +1016,7 @@ pub(in crate::console::manager) fn global_mounts_content_height(
     }
 }
 
-pub(in crate::console::manager) fn global_mounts_block_height(
-    mounts: &[crate::workspace::MountConfig],
-) -> u16 {
-    (global_mounts_content_height(mounts) + 2).min(12) as u16
-}
-
-pub(in crate::console::manager) fn split_global_mount_rows_pub(
+fn split_global_mount_rows(
     rows: &[crate::config::GlobalMountRow],
 ) -> (
     Vec<&crate::config::GlobalMountRow>,
@@ -865,13 +1025,16 @@ pub(in crate::console::manager) fn split_global_mount_rows_pub(
     rows.iter().partition(|row| row.scope.is_none())
 }
 
-fn split_global_mount_rows(
-    rows: &[crate::config::GlobalMountRow],
-) -> (
-    Vec<&crate::config::GlobalMountRow>,
-    Vec<&crate::config::GlobalMountRow>,
-) {
-    split_global_mount_rows_pub(rows)
+fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    global_mounts_content_width(&mounts)
+}
+
+fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    global_mounts_content_height(&mounts)
 }
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
@@ -1521,9 +1684,11 @@ fn render_agents_subpanel_scrollable(
 
 #[cfg(test)]
 mod list_name_scroll_tests {
-    use super::{list_names_content_width, render_list_body};
+    use super::{
+        PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, list_names_content_width, render_list_body,
+    };
     use crate::config::AppConfig;
-    use crate::console::manager::state::ManagerState;
+    use crate::console::manager::state::{ManagerListRow, ManagerState};
     use crate::console::widgets::scrollable::max_offset;
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
@@ -1536,6 +1701,34 @@ mod list_name_scroll_tests {
             "chainargos-blockchain-nodes".into(),
             WorkspaceConfig::default(),
         );
+        config
+    }
+
+    fn config_with_short_selected_and_long_sibling() -> AppConfig {
+        let mut config = AppConfig::default();
+        config
+            .workspaces
+            .insert("jackin".into(), WorkspaceConfig::default());
+        config.workspaces.insert(
+            "chainargos-blockchain-nodes".into(),
+            WorkspaceConfig::default(),
+        );
+        config
+    }
+
+    fn config_with_sidebar_names_that_fit_wide_pane() -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in [
+            "chainargos",
+            "chainargos-blockchain-nodes",
+            "jackin",
+            "parallax",
+            "scentbird",
+        ] {
+            config
+                .workspaces
+                .insert(name.into(), WorkspaceConfig::default());
+        }
         config
     }
 
@@ -1577,6 +1770,133 @@ mod list_name_scroll_tests {
             .unwrap();
 
         assert_eq!(state.list_names_scroll_x, 14);
+    }
+
+    #[test]
+    fn list_name_horizontal_scroll_keeps_selected_prefix_visible() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 1;
+        state.list_names_scroll_x = 8;
+        state.list_names_focused = true;
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 70, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(1, 2)].symbol(), "▸");
+        assert_eq!(buffer[(1, 2)].bg, PHOSPHOR_GREEN);
+        assert_eq!(buffer[(2, 2)].bg, PHOSPHOR_GREEN);
+        assert_eq!(buffer[(3, 2)].bg, PHOSPHOR_GREEN);
+        for x in 1..20 {
+            assert_eq!(buffer[(x, 2)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
+    }
+
+    #[test]
+    fn list_name_horizontal_scroll_keeps_hover_background_full_width() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 0;
+        state.hovered_list_row = Some(ManagerListRow::SavedWorkspace(0));
+        state.list_names_scroll_x = 8;
+        state.list_names_focused = true;
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 70, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        for x in 1..20 {
+            assert_eq!(buffer[(x, 2)].bg, TAB_BG_INACTIVE_HOVER, "x={x}");
+        }
+    }
+
+    #[test]
+    fn hovered_fitting_list_name_does_not_make_sidebar_horizontally_scrollable() {
+        let config = config_with_sidebar_names_that_fit_wide_pane();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.hovered_list_row = Some(ManagerListRow::SavedWorkspace(0));
+
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 120, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        for x in 1..35 {
+            assert!(
+                !["━", "·"].contains(&buffer[(x, 23)].symbol()),
+                "unexpected horizontal scrollbar at x={x}"
+            );
+        }
+    }
+
+    #[test]
+    fn list_name_horizontal_scroll_keeps_short_selected_background_full_width() {
+        let config = config_with_short_selected_and_long_sibling();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 2;
+        state.list_names_scroll_x = 12;
+        state.list_names_focused = true;
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 70, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(1, 3)].symbol(), "▸");
+        for x in 1..20 {
+            assert_eq!(buffer[(x, 3)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
     }
 }
 
@@ -1794,7 +2114,7 @@ mod mount_block_height_tests {
     //! against the "phantom empty row" regression where a fixed
     //! `Constraint::Length(5)` over-allocated by 1 for a single-mount
     //! current-directory workspace.
-    use super::{global_mounts_block_height, global_mounts_content_height, mount_block_height};
+    use super::{global_mounts_content_height, mount_block_height};
     use crate::workspace::MountConfig;
 
     fn mount(path: &str) -> MountConfig {
@@ -1847,7 +2167,7 @@ mod mount_block_height_tests {
 
         assert_eq!(global_mounts_content_height(&[same_path]), 2);
         assert_eq!(global_mounts_content_height(&[split_path]), 3);
-        assert_eq!(global_mounts_block_height(&[]), 3);
+        assert_eq!((global_mounts_content_height(&[]) + 2).min(12), 3);
     }
 }
 

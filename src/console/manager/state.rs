@@ -71,6 +71,65 @@ impl ManagerListRow {
     }
 }
 
+/// Provider picker bound to its follow-up context.
+///
+/// The context is whatever the next step needs: the target `container`
+/// (existing-instance "new session" flow) or the `RoleSelector` (initial
+/// workspace launch). Carries the resolved `Provider` list so a selection
+/// cannot reference a provider/env pair that drifted from its label; the
+/// index is clamped by `move_up` / `move_down` and read back through
+/// `selected_provider`.
+#[derive(Debug, Clone)]
+pub struct ProviderPickerState<C> {
+    pub context: C,
+    pub agent: crate::agent::Agent,
+    // Private so the `selected < providers.len()` invariant holds: `selected`
+    // is only ever moved by the clamping `move_up`/`move_down`, and `providers`
+    // is set once at construction. External code reads them via the accessors.
+    providers: Vec<jackin_protocol::Provider>,
+    selected: usize,
+}
+
+impl<C> ProviderPickerState<C> {
+    pub const fn new(
+        context: C,
+        agent: crate::agent::Agent,
+        providers: Vec<jackin_protocol::Provider>,
+    ) -> Self {
+        Self {
+            context,
+            agent,
+            providers,
+            selected: 0,
+        }
+    }
+
+    pub const fn move_up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    pub const fn move_down(&mut self) {
+        if self.selected + 1 < self.providers.len() {
+            self.selected += 1;
+        }
+    }
+
+    #[must_use]
+    pub fn providers(&self) -> &[jackin_protocol::Provider] {
+        &self.providers
+    }
+
+    #[must_use]
+    pub const fn selected(&self) -> usize {
+        self.selected
+    }
+
+    #[must_use]
+    pub fn selected_provider(&self) -> Option<jackin_protocol::Provider> {
+        self.providers.get(self.selected).copied()
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
 pub struct ManagerState<'a> {
@@ -93,11 +152,26 @@ pub struct ManagerState<'a> {
     )>,
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
-    /// `container_base` so the commit can dispatch the right action.
+    /// `container_base`, the agent picker, and a provider list. The list is
+    /// currently always empty: host config cannot prove which `ZAI_API_KEY`
+    /// the already-running daemon captured, so provider choice for a running
+    /// container is made in the multiplexer (daemon-owned), not here. The
+    /// field stays so a future daemon-queried list can populate it.
+    #[allow(clippy::type_complexity)]
     pub inline_new_session_picker: Option<(
         String,
         crate::console::widgets::agent_choice::AgentChoiceState,
+        Vec<jackin_protocol::Provider>,
     )>,
+    /// Provider picker shown after the agent is committed in
+    /// `inline_new_session_picker` when its provider list has 2+ entries.
+    /// Dormant while that list is always empty (see above); kept wired for
+    /// the future daemon-queried flow. Context is the target `container`.
+    pub inline_provider_picker: Option<ProviderPickerState<String>>,
+    /// Provider picker for the initial workspace launch (before the container
+    /// exists). Shown after the operator commits an agent choice and
+    /// `ZAI_API_KEY` is configured. Context is the `RoleSelector`.
+    pub launch_provider_picker: Option<ProviderPickerState<crate::selector::RoleSelector>>,
     pub list_mounts_scroll_x: u16,
     pub list_mounts_scroll_y: u16,
     pub list_global_mounts_scroll_x: u16,
@@ -648,10 +722,11 @@ pub struct EditorState<'a> {
     /// Whether the non-Mounts tab content block has keyboard/click focus
     /// (green border). Updated each click via `update_scroll_focus`.
     pub tab_content_scroll_focused: bool,
-    /// Last rendered line count for the active non-Mounts tab content block.
-    /// Written by the render function; read by `update_scroll_focus` to
-    /// determine whether the block is actually scrollable.
+    /// Last rendered content width for the active non-Mounts tab content block.
     pub tab_content_width: usize,
+    /// Last rendered line count for the active editor tab content block.
+    /// Written by the render function; read by scroll input so wheel and
+    /// scrollbar-drag routing use the same content height the renderer used.
     pub tab_content_height: usize,
     /// Set when the auth-form "generate token" action launches the
     /// `op_picker` in Create mode, so the `op_picker` commit knows the
@@ -661,10 +736,31 @@ pub struct EditorState<'a> {
     /// Set by the `op_picker` commit when `generating_token_target` was
     /// present; drained by the `run_console` loop to run the mint.
     pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Role repository registration kicked off from the Roles tab. Drained by
+    /// the outer console loop so the editor can keep rendering a loading
+    /// dialog instead of blocking the TUI while git works.
+    pub pending_role_load: Option<PendingRoleLoad>,
     /// Footer height (rows) the renderer last laid out, cached so mouse
     /// hit-testing subtracts the same dynamic footer the frame drew rather than
     /// a stale constant — otherwise clicks near the bottom mis-map.
     pub cached_footer_h: u16,
+}
+
+pub struct PendingRoleLoad {
+    pub raw: String,
+    pub key: String,
+    pub source: crate::config::RoleSource,
+    pub rx: std::sync::mpsc::Receiver<anyhow::Result<()>>,
+}
+
+impl std::fmt::Debug for PendingRoleLoad {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingRoleLoad")
+            .field("raw", &self.raw)
+            .field("key", &self.key)
+            .field("source", &self.source)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -849,6 +945,13 @@ impl SettingsState<'_> {
     ) -> anyhow::Result<AppConfig> {
         AppConfig::validate_global_mount_rows(&self.mounts.pending)?;
         validate_settings_env(&self.env.pending, &self.trust.pending)?;
+        for row in &self.auth.pending {
+            if row.kind == crate::console::manager::auth_kind::AuthKind::Zai
+                && row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
+            {
+                self.env.pending.env.remove("ZAI_API_KEY");
+            }
+        }
         let mut editor = crate::config::ConfigEditor::open(paths)?;
 
         for row in &self.mounts.original {
@@ -907,6 +1010,11 @@ impl SettingsState<'_> {
                         );
                     };
                     editor.set_global_github_auth_forward(mode);
+                }
+                crate::console::manager::auth_kind::AuthKind::Zai => {
+                    // Z.AI auth is env-only; the credential lives in env_vars and
+                    // is written via the env block path above — no auth_forward
+                    // config block to commit here.
                 }
             }
         }
@@ -1051,6 +1159,7 @@ impl SettingsAuthState {
             crate::console::manager::auth_kind::AuthKind::Kimi,
             crate::console::manager::auth_kind::AuthKind::Opencode,
             crate::console::manager::auth_kind::AuthKind::Github,
+            crate::console::manager::auth_kind::AuthKind::Zai,
         ]
         .into_iter()
         .map(|kind| SettingsAuthRow {
@@ -1072,6 +1181,13 @@ impl SettingsAuthState {
                     crate::console::manager::auth_kind::AuthMode::from_github(
                         crate::config::resolve_github_mode(config, "", ""),
                     )
+                }
+                crate::console::manager::auth_kind::AuthKind::Zai => {
+                    if config.env.contains_key("ZAI_API_KEY") {
+                        crate::console::manager::auth_kind::AuthMode::ApiKey
+                    } else {
+                        crate::console::manager::auth_kind::AuthMode::Ignore
+                    }
                 }
             },
         })
@@ -1280,6 +1396,9 @@ pub enum Modal<'a> {
     },
     ErrorPopup {
         state: ErrorPopupState,
+    },
+    StatusPopup {
+        state: crate::console::widgets::status_popup::StatusPopupState,
     },
     /// Boxed because the picker's `Vec`s + runner + channel are
     /// substantially larger than other variants.
@@ -1577,6 +1696,8 @@ impl ManagerState<'_> {
             inline_role_picker: None,
             inline_agent_picker: None,
             inline_new_session_picker: None,
+            inline_provider_picker: None,
+            launch_provider_picker: None,
             list_mounts_scroll_x: 0,
             list_mounts_scroll_y: 0,
             list_global_mounts_scroll_x: 0,
@@ -2229,6 +2350,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            pending_role_load: None,
             cached_footer_h: 1,
         }
     }
@@ -2266,6 +2388,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            pending_role_load: None,
             cached_footer_h: 1,
         }
     }
@@ -3105,6 +3228,35 @@ mod tests {
         let raw = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(raw.contains("[docker.mounts.\"chainargos/*\"]"), "{raw}");
         assert!(!raw.contains("remove-me"), "{raw}");
+    }
+
+    #[test]
+    fn settings_save_zai_ignore_removes_global_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+ZAI_API_KEY = "secret"
+"#,
+        )
+        .unwrap();
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        let mut state = SettingsState::from_config(&config);
+        let row = state
+            .auth
+            .pending
+            .iter_mut()
+            .find(|row| row.kind == crate::console::manager::auth_kind::AuthKind::Zai)
+            .expect("settings auth rows include Z.AI");
+        row.mode = crate::console::manager::auth_kind::AuthMode::Ignore;
+
+        let saved = state.save_to_config(&paths).unwrap();
+
+        assert!(!saved.env.contains_key("ZAI_API_KEY"));
+        let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!raw.contains("ZAI_API_KEY"), "{raw}");
     }
 
     // ── cycle_isolation_for_selected_mount ─────────────────────────────

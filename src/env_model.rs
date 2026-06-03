@@ -83,6 +83,10 @@ pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 // the launcher, the auth-panel, the launch summary, and tests all
 // reference the same identifiers instead of repeating the literals.
 
+/// Z.AI (GLM Coding Plan) API key env var. Carries the credential for the
+/// `AuthKind::Zai` env-only auth kind and gates the Z.AI provider picker.
+pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
+
 /// Primary GitHub token env var. `gh` reads this preferentially.
 pub const GH_TOKEN_ENV_NAME: &str = "GH_TOKEN";
 
@@ -189,7 +193,7 @@ pub(crate) fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 pub(crate) fn topological_env_order(
     declarations: &std::collections::BTreeMap<String, crate::manifest::EnvVarDecl>,
 ) -> anyhow::Result<Vec<String>> {
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::{BTreeSet, HashMap};
 
     let mut in_degree: HashMap<&str, usize> = HashMap::new();
     let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -208,7 +212,7 @@ pub(crate) fn topological_env_order(
         }
     }
 
-    let mut queue: VecDeque<&str> = in_degree
+    let mut ready: BTreeSet<&str> = in_degree
         .iter()
         .filter(|&(_, &deg)| deg == 0)
         .map(|(&name, _)| name)
@@ -216,14 +220,14 @@ pub(crate) fn topological_env_order(
 
     let mut result = Vec::new();
 
-    while let Some(node) = queue.pop_front() {
+    while let Some(node) = ready.pop_first() {
         result.push(node.to_string());
         if let Some(neighbors) = adjacency.get(node) {
             for &neighbor in neighbors {
                 if let Some(deg) = in_degree.get_mut(neighbor) {
                     *deg -= 1;
                     if *deg == 0 {
-                        queue.push_back(neighbor);
+                        ready.insert(neighbor);
                     }
                 }
             }
@@ -340,5 +344,30 @@ mod tests {
     #[test]
     fn extract_interpolation_refs_handles_unclosed_brace() {
         assert!(extract_interpolation_refs("${env.OPEN").is_empty());
+    }
+
+    #[test]
+    fn topological_env_order_is_deterministic_for_independent_prompts() {
+        fn decl(depends_on: &[&str]) -> crate::manifest::EnvVarDecl {
+            crate::manifest::EnvVarDecl {
+                default_value: None,
+                interactive: true,
+                skippable: false,
+                prompt: None,
+                options: Vec::new(),
+                depends_on: depends_on.iter().map(|dep| (*dep).to_string()).collect(),
+            }
+        }
+
+        let declarations = std::collections::BTreeMap::from([
+            ("BRANCH".to_string(), decl(&["env.SELECT_PROJECT"])),
+            ("FREE_TEXT".to_string(), decl(&[])),
+            ("SELECT_PROJECT".to_string(), decl(&[])),
+        ]);
+
+        assert_eq!(
+            topological_env_order(&declarations).unwrap(),
+            ["FREE_TEXT", "SELECT_PROJECT", "BRANCH"]
+        );
     }
 }

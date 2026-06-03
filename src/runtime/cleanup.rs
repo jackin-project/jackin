@@ -2,6 +2,7 @@ use crate::docker::CommandRunner;
 use crate::docker_client::{DockerApi, RemoveImageOutcome};
 use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
+use crate::prune_output;
 use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
 
@@ -316,34 +317,59 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
 }
 
 pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
-    let names = list_managed_role_names(docker).await?;
-    futures_util::future::try_join_all(names.iter().map(|name| eject_role(paths, name, docker)))
-        .await?;
+    let names = prune_output::start("Finding", "managed containers")
+        .complete(list_managed_role_names(docker).await, |error| {
+            format!("could not list containers: {error}")
+        })?;
+
+    for name in &names {
+        prune_output::start("Stopping", name)
+            .complete(eject_role(paths, name, docker).await, |error| {
+                format!("could not remove Docker resources: {error}")
+            })?;
+    }
     Ok(())
 }
 
 // ── Prune ────────────────────────────────────────────────────────────────────
 
-fn prune_dir(path: &std::path::Path, label: &str) -> anyhow::Result<()> {
-    match std::fs::remove_dir_all(path) {
-        Ok(()) => println!("Removed {label} ({}).", path.display()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            println!("{label} already empty.");
-        }
-        Err(error) => {
-            return Err(anyhow::Error::from(error)
-                .context(format!("failed to remove {label} at {}", path.display())));
-        }
-    }
-    Ok(())
+fn prune_dir(
+    path: &std::path::Path,
+    section_label: &str,
+    section_detail: &str,
+    target_label: &str,
+) -> anyhow::Result<()> {
+    prune_output::section(section_label, section_detail);
+    let row = prune_output::start("Deleting", target_label);
+    let result: anyhow::Result<()> = match std::fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(anyhow::Error::from(error).context(format!(
+            "failed to remove {target_label} at {}",
+            path.display()
+        ))),
+    };
+    row.complete(result, |error| {
+        format!("could not remove {target_label}: {error}")
+    })
 }
 
 pub fn prune_roles(paths: &JackinPaths) -> anyhow::Result<()> {
-    prune_dir(&paths.roles_dir, "role cache")
+    prune_dir(
+        &paths.roles_dir,
+        "Role Cache",
+        "removing cached role repositories",
+        "role cache",
+    )
 }
 
 pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
-    prune_dir(&paths.cache_dir, "shared cache")
+    prune_dir(
+        &paths.cache_dir,
+        "Shared Cache",
+        "removing rebuildable shared cache",
+        "shared cache",
+    )
 }
 
 pub fn prune_diagnostics(paths: &JackinPaths) -> anyhow::Result<()> {
@@ -351,16 +377,13 @@ pub fn prune_diagnostics(paths: &JackinPaths) -> anyhow::Result<()> {
 }
 
 pub fn prune_jackin_home(paths: &JackinPaths) {
+    prune_output::section("Runtime Home", "removing remaining runtime state");
+    let row = prune_output::start("Deleting", "runtime home");
     match std::fs::remove_dir_all(&paths.jackin_home) {
-        Ok(()) => println!("Removed jackin home ({}).", paths.jackin_home.display()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => {
-            eprintln!(
-                "  {} could not remove {}: {err}",
-                "warning:".yellow().bold(),
-                paths.jackin_home.display()
-            );
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+            row.failed(format!("could not remove runtime home: {err}"));
         }
+        _ => row.ok(),
     }
 }
 
@@ -369,14 +392,21 @@ pub fn prune_jackin_home(paths: &JackinPaths) {
 /// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
 /// propagate. The initial `docker images` and `docker ps` enumeration calls do propagate.
 pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
-    let all_images = docker.list_image_tags("jk_*").await?;
+    prune_output::section("Images", "scanning jackin-managed Docker images");
+    let all_images = prune_output::start("Finding", "jackin-managed Docker images")
+        .complete(docker.list_image_tags("jk_*").await, |error| {
+            format!("could not list images: {error}")
+        })?;
 
     if all_images.is_empty() {
-        println!("No jackin-managed images found.");
+        prune_output::ok("no jackin-managed images found");
         return Ok(());
     }
 
-    let role_rows = docker.list_containers(&[LABEL_KIND_ROLE], true).await?;
+    let role_rows = prune_output::start("Checking", "image usage by role containers").complete(
+        docker.list_containers(&[LABEL_KIND_ROLE], true).await,
+        |error| format!("could not list role containers: {error}"),
+    )?;
     let in_use: std::collections::HashSet<String> = role_rows
         .iter()
         .filter_map(|row| {
@@ -398,18 +428,27 @@ pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
     let mut failed = 0usize;
 
     for image in &all_images {
+        let row = prune_output::start("Deleting", image);
         if in_use.contains(image) {
+            row.skip("still used by a role container");
             skipped += 1;
             continue;
         }
         match docker.remove_image(image).await {
-            Ok(RemoveImageOutcome::Removed) => removed += 1,
-            Ok(RemoveImageOutcome::InUse | RemoveImageOutcome::NotFound) => skipped += 1,
+            Ok(RemoveImageOutcome::Removed) => {
+                row.ok();
+                removed += 1;
+            }
+            Ok(RemoveImageOutcome::InUse) => {
+                row.skip("still in use");
+                skipped += 1;
+            }
+            Ok(RemoveImageOutcome::NotFound) => {
+                row.skip("already gone");
+                skipped += 1;
+            }
             Err(error) => {
-                eprintln!(
-                    "  {} could not remove {image}: {error}",
-                    "error:".red().bold()
-                );
+                row.failed(format!("could not remove: {error}"));
                 failed += 1;
             }
         }
@@ -417,14 +456,16 @@ pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
 
     if removed == 0 && failed == 0 {
         if skipped > 0 {
-            println!("No images removed ({skipped} skipped).");
+            prune_output::ok(format!("no images removed ({skipped} skipped)"));
         } else {
-            println!("No unused jackin-managed images to remove.");
+            prune_output::ok("no unused jackin-managed images to remove");
         }
     } else if failed == 0 {
-        println!("Removed {removed} image(s), skipped {skipped}.");
+        prune_output::ok(format!("removed {removed} image(s), skipped {skipped}"));
     } else {
-        eprintln!("Removed {removed} image(s), skipped {skipped}, failed {failed}.");
+        prune_output::failed(format!(
+            "removed {removed} image(s), skipped {skipped}, failed {failed}"
+        ));
     }
     Ok(())
 }
@@ -443,7 +484,11 @@ pub async fn prune_instances(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    prune_output::section("Instances", "scanning terminal instance state");
+    let index = prune_output::start("Reading", "instance index")
+        .complete(InstanceIndex::read_or_rebuild(&paths.data_dir), |error| {
+            format!("could not read instance index: {error}")
+        })?;
 
     let prunable = [
         InstanceStatus::CleanExited,
@@ -460,7 +505,7 @@ pub async fn prune_instances(
         .collect();
 
     if candidates.is_empty() {
-        println!("No instances to prune.");
+        prune_output::ok("no instances to prune");
         return Ok(());
     }
 
@@ -468,9 +513,16 @@ pub async fn prune_instances(
     let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
 
     for container_base in candidates {
+        let row = prune_output::start("Deleting", &container_base);
         match purge_container_filesystem(paths, &container_base, docker, runner).await {
-            Ok(()) => removed.push(container_base),
-            Err(error) => skipped.push((container_base, error)),
+            Ok(()) => {
+                row.ok();
+                removed.push(container_base);
+            }
+            Err(error) => {
+                row.skip("Docker resources still present");
+                skipped.push((container_base, error));
+            }
         }
     }
 
@@ -487,23 +539,20 @@ pub async fn prune_instances(
             }
         };
         if index_updated {
-            println!("Pruned {} instance(s):", removed.len());
+            prune_output::ok(format!("pruned {} instance(s)", removed.len()));
         } else {
-            println!(
-                "Removed state for {} instance(s) (index not updated):",
+            prune_output::ok(format!(
+                "removed state for {} instance(s); index not updated",
                 removed.len()
-            );
-        }
-        for name in &removed {
-            println!("  {name}");
+            ));
         }
     }
 
     if !skipped.is_empty() {
-        eprintln!(
-            "Skipped {} instance(s) — Docker resources still present:",
+        prune_output::skip(format!(
+            "skipped {} instance(s); Docker resources still present",
             skipped.len()
-        );
+        ));
         for (name, error) in &skipped {
             eprintln!("  {name}: {error}");
         }
@@ -523,13 +572,20 @@ pub async fn prune_all_instances(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    prune_output::section(
+        "Instances",
+        "stopping managed containers and removing all state",
+    );
     exile_all(paths, docker).await?;
 
     super::caffeinate::reconcile(paths, docker, runner).await;
 
-    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    let index = prune_output::start("Reading", "instance index")
+        .complete(InstanceIndex::read_or_rebuild(&paths.data_dir), |error| {
+            format!("could not read instance index: {error}")
+        })?;
     if index.instances.is_empty() {
-        println!("No instances to prune.");
+        prune_output::ok("no instances to prune");
     } else {
         let containers: Vec<String> = index
             .instances
@@ -537,25 +593,32 @@ pub async fn prune_all_instances(
             .map(|e| e.container_base.clone())
             .collect();
 
-        println!("Pruned {} instance(s):", containers.len());
-        for name in &containers {
-            println!("  {name}");
-        }
+        let mut cleanup_failures = 0usize;
         for container_base in &containers {
+            let row = prune_output::start("Deleting", container_base);
             if let Err(err) =
                 purge_container_filesystem(paths, container_base, docker, runner).await
             {
-                eprintln!(
-                    "  {} isolation cleanup for {container_base} failed: {err}",
-                    "warning:".yellow().bold()
-                );
+                cleanup_failures += 1;
+                row.failed(format!("isolation cleanup failed: {err}"));
+            } else {
+                row.ok();
             }
+        }
+        if cleanup_failures == 0 {
+            prune_output::ok(format!("pruned {} instance(s)", containers.len()));
+        } else {
+            prune_output::failed(format!(
+                "pruned {} instance(s), cleanup failed for {cleanup_failures}",
+                containers.len()
+            ));
         }
     }
 
     if let Err(err) = std::fs::remove_dir_all(&paths.data_dir)
         && err.kind() != std::io::ErrorKind::NotFound
     {
+        prune_output::failed("could not remove instance data");
         return Err(anyhow::Error::from(err).context(format!(
             "failed to remove instance data at {}",
             paths.data_dir.display()
@@ -1231,7 +1294,7 @@ mod tests {
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("file.txt"), b"data").unwrap();
 
-        prune_dir(&target, "cache").unwrap();
+        prune_dir(&target, "Cache", "removing cache", "cache").unwrap();
 
         assert!(!target.exists());
     }
@@ -1241,7 +1304,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let target = temp.path().join("cache");
 
-        prune_dir(&target, "cache").unwrap();
+        prune_dir(&target, "Cache", "removing cache", "cache").unwrap();
     }
 
     // ── prune_instances ──────────────────────────────────────────────────────
@@ -1619,7 +1682,8 @@ mod tests {
         std::fs::write(&blocker, b"").unwrap();
         let target = blocker.join("child"); // child of a file — cannot exist
 
-        let err = prune_dir(&target, "test label").unwrap_err();
+        let err =
+            prune_dir(&target, "Test Label", "removing test label", "test label").unwrap_err();
 
         let msg = err.to_string();
         assert!(msg.contains("failed to remove test label"), "got: {msg}");

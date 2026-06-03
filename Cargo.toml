@@ -34,7 +34,7 @@ path = "src/bin/build_jackin_capsule.rs"
 
 [dependencies]
 anyhow = "1.0"
-anstyle-parse = "0.2"
+anstyle-parse = "1.0"
 jackin-tui = { path = "crates/jackin-tui" }
 jackin-protocol = { path = "crates/jackin-protocol" }
 clap = { version = "4.5", features = ["derive", "color", "env"] }
@@ -54,7 +54,7 @@ nix = { version = "0.31", features = ["term"] }
 ratatui-textarea = "0.9"
 tui-widget-list = "0.15"
 dialoguer = "0.12"
-tabled = "0.20.0"
+tabled = "0.21.0"
 open = "5.3.4"
 clap_mangen = "0.3"
 serde_yaml_ng = "0.10.0"
@@ -65,15 +65,23 @@ flate2 = "1.1"
 tar = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rand = "0.10"
-tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time"] }
-bollard = "0.21"
+tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+# `aws-lc-rs` enables bollard TLS (rustls protocol + the native AWS-LC crypto
+# backend) so connect_with_defaults honors a TLS DOCKER_HOST (DOCKER_TLS_VERIFY
+# + DOCKER_CERT_PATH) — every DinD/remote daemon on :2376. Without a TLS backend
+# bollard speaks plain HTTP to the TLS socket and 400s. bollard 0.21 has no
+# OpenSSL/native-tls feature; aws-lc-rs is its native-crypto provider.
+bollard = { version = "0.21", features = ["aws-lc-rs"] }
 futures-util = "0.3"
+fast-down = { version = "5.0", features = ["fast-puller", "file", "reqwest-tls"] }
+reqwest = { version = "0.13", default-features = false }
 
 [build-dependencies]
 jackin-build-meta = { path = "crates/jackin-build-meta" }
 
 [dev-dependencies]
 assert_cmd = "=2.2.2"
+filetime = "=0.2.29"
 predicates = "=3.1.4"
 tokio = { version = "=1.52.3", features = ["test-util"] }
 

@@ -32,6 +32,31 @@ pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(
     tui_palette::PHOSPHOR_DARK.g,
     tui_palette::PHOSPHOR_DARK.b,
 );
+pub(crate) const INPUT_BG_DIM: Color = Color::Rgb(
+    tui_palette::INPUT_BG_DIM.r,
+    tui_palette::INPUT_BG_DIM.g,
+    tui_palette::INPUT_BG_DIM.b,
+);
+pub(crate) const DIALOG_BACKDROP: Color = Color::Rgb(
+    tui_palette::DIALOG_BACKDROP.r,
+    tui_palette::DIALOG_BACKDROP.g,
+    tui_palette::DIALOG_BACKDROP.b,
+);
+pub(crate) const DIALOG_SURFACE: Color = Color::Rgb(
+    tui_palette::DIALOG_SURFACE.r,
+    tui_palette::DIALOG_SURFACE.g,
+    tui_palette::DIALOG_SURFACE.b,
+);
+pub(crate) const DIALOG_SCROLL_THUMB: Color = Color::Rgb(
+    tui_palette::DIALOG_SCROLL_THUMB.r,
+    tui_palette::DIALOG_SCROLL_THUMB.g,
+    tui_palette::DIALOG_SCROLL_THUMB.b,
+);
+pub(crate) const DIALOG_SCROLL_TRACK: Color = Color::Rgb(
+    tui_palette::DIALOG_SCROLL_TRACK.r,
+    tui_palette::DIALOG_SCROLL_TRACK.g,
+    tui_palette::DIALOG_SCROLL_TRACK.b,
+);
 pub(crate) const WHITE: Color = Color::Rgb(
     tui_palette::WHITE.r,
     tui_palette::WHITE.g,
@@ -371,12 +396,12 @@ mod consistency_tests {
         use super::confirm_save::{ConfirmSaveState, render};
         use ratatui::text::Line;
         let area = Rect::new(0, 0, 70, 10);
-        let state = ConfirmSaveState::new(vec![
+        let mut state = ConfirmSaveState::new(vec![
             Line::from("Create workspace: demo"),
             Line::from(""),
             Line::from("Working directory: /home/user/demo"),
         ]);
-        let buf = draw(area.width, area.height, |f| render(f, area, &state));
+        let buf = draw(area.width, area.height, |f| render(f, area, &mut state));
         (buf, area)
     }
 

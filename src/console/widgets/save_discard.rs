@@ -71,17 +71,15 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
-    let phosphor = Color::Rgb(0, 255, 65);
-    let phosphor_dark = Color::Rgb(0, 80, 18);
-    let white = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
+pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(phosphor_dark))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             " Unsaved changes ",
-            Style::default().fg(white).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -100,7 +98,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             state.prompt.clone(),
-            Style::default().fg(white).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
         chunks[0],
@@ -109,10 +107,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     // Buttons — focused row highlights on white; unfocused stays flush
     // with the modal background so only the focused choice pops.
     let focused_style = Style::default()
-        .bg(white)
+        .bg(WHITE)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default().fg(phosphor).add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
 
     let save_style = if state.focus == SaveDiscardFocus::Save {
         focused_style

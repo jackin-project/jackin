@@ -19,6 +19,17 @@ use crate::paths::JackinPaths;
 
 pub use mouse::{clickable_at, handle_mouse, handle_mouse_with_config};
 
+pub fn poll_background_loads(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+) {
+    state.poll_picker_loads();
+    if let ManagerStage::Editor(editor) = &mut state.stage {
+        editor::poll_role_load(editor, config, paths);
+    }
+}
+
 // Re-exported for the `run_console` token-generate loop, which re-mounts
 // the settings auth form after a mint (the `global_mounts` module is
 // `pub(super)`, so the loop reaches the helpers through this seam).
@@ -52,6 +63,19 @@ pub enum InputOutcome {
         container: String,
         action: crate::console::ConsoleInstanceAction,
     },
+    /// Operator selected an agent AND provider in the inline provider picker.
+    /// Bypasses `ConsoleInstanceAction` (which is `Copy`).
+    NewSessionWithProvider {
+        container: String,
+        agent: crate::agent::Agent,
+        provider: jackin_protocol::Provider,
+    },
+    /// Operator selected a provider for the initial workspace launch.
+    LaunchWithProvider {
+        selector: crate::selector::RoleSelector,
+        agent: crate::agent::Agent,
+        provider: jackin_protocol::Provider,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -73,6 +97,12 @@ pub fn handle_key(
     }
     if state.inline_new_session_picker.is_some() {
         return Ok(list::handle_new_session_picker(state, key));
+    }
+    if state.inline_provider_picker.is_some() {
+        return Ok(list::handle_inline_provider_picker(state, key));
+    }
+    if state.launch_provider_picker.is_some() {
+        return Ok(list::handle_launch_provider_picker(state, key));
     }
     if state.inline_agent_picker.is_some() {
         return Ok(list::handle_inline_agent_picker(state, key));
