@@ -127,18 +127,36 @@ There is no shared dialog body-layout helper enforcing symmetric top/bottom inse
 
 **Root cause:** today there is no single cross-screen debug dialog. The console builds a static two-row `ContainerInfoState` (Run ID + Run log *path*) via `debug_run_info_state` (<RepoFile path="crates/jackin-console/src/tui/components/container_info.rs" />) with no log contents and no scroll; the capsule has its own `container_info_dialog` (<RepoFile path="crates/jackin-capsule/src/tui/components/container_info_dialog.rs" />); the launch surface has yet another. They are separate implementations that drift in style and content. `ContainerInfoState` (<RepoFile path="crates/jackin-tui/src/components/container_info.rs" />) has no scroll offset and `render_container_info` draws no scrollbar.
 
-**Canonical pattern to converge on:** **one** debug-info dialog component in `jackin-tui`, opened from the run-id chip on every surface. On open it paints the full-screen opaque backdrop (Defect 10) so only the dialog is visible. Its content is a shared additive model:
-- **Base (every surface):** Run ID value, run log path, run log contents (scrollable per Defect 8 — bottom-border thumb on overflow, none when it fits).
-- **Additive (where known):** container ID and the just-started container details on capsule/launch; future fields append here.
+**Canonical pattern to converge on:** **one** shared "Container info" / debug-info dialog component in `jackin-tui`, opened from the container-ID chip and/or the run-id chip on every surface. On open it paints the full-screen opaque backdrop (Defect 10) so only the dialog is visible. Same component, same style everywhere. Its content is additive along **two axes**:
 
-Same component, same style, same base rows everywhere; surfaces only *add* rows. The dialog will keep gaining fields over time — the shared model must make adding a field a one-place change that every surface inherits.
+1. **Surface axis** — the fields a surface can supply. Where a container exists (capsule/launch) the dialog shows: Container ID, Role, Agent, Workdir, `jackin` version, `jackin-capsule` version. The console (no container) omits the container-only rows.
+2. **Debug axis** — `--debug` makes the dialog a richer **superset**: non-debug shows the simpler base; debug **adds** the diagnostics rows (Run ID, Run log path, run log contents, Docker build log location, and other debug pointers so the operator knows where to look). Debug never *removes* a field — it only adds.
+
+Reference layout (capsule, debug):
+```text
+┌ Container info ──────────────────────────────┐
+│                                              │  ← leading spacer (Defect 5)
+│  Container ID  : jk-sk76zdat-thearchitect    │
+│  Role          : the-architect               │
+│  Agent         : claude                      │
+│  Workdir       : /…/jackin                   │
+│  jackin        : 0.6.0-dev                    │
+│  jackin-capsule: 0.6.0-dev+444004b           │
+│  Run ID        : jk-run-cc5ff2               │  ← debug-only rows
+│  Run log       : ~/.jackin/…/jk-run-cc5ff2.jsonl │
+│                                              │  ← trailing spacer
+└──────────────────────────────────────────────┘
+```
+
+Same component, same style, same row formatting everywhere; surfaces and debug-mode only *add* rows. Adding a field later is a one-place change every surface inherits.
 
 **Tasks:**
-- [ ] Introduce (or promote) one shared debug-info dialog in `jackin-tui` with an additive content model (base rows always; optional container/extra rows when the surface supplies them). Replace the console `debug_run_info_state` two-row state and the capsule's separate `container_info_dialog` with this one component (DRY — no per-surface dialog).
+- [ ] Introduce (or promote) one shared "Container info" / debug-info dialog in `jackin-tui` with the two-axis additive content model (surface fields + debug-mode superset). Replace the console `debug_run_info_state` two-row state and the capsule's separate `container_info_dialog` with this one component (DRY — no per-surface dialog).
+- [ ] Implement the debug gate: non-debug shows the simpler container rows; `--debug` adds the diagnostics rows (Run ID, Run log path + contents, Docker build log pointer, …) as a superset — never fewer rows in debug.
 - [ ] On open, paint the full-screen backdrop (Defect 10) so the dialog supersedes the entire screen — nothing else visible.
 - [ ] Base content on every surface: Run ID value, run log path, and the run log **contents** (read from the active run's `.jsonl`), in a scrollable body (Defect 8: `jackin_tui::scroll` + bottom-border `full_cell_thumb`, no scrollbar when it fits, `↑↓`/`J`/`K`/wheel).
 - [ ] Additive content: on capsule and launch, include the container ID and the started-container details; design the model so new fields are added in one place and inherited everywhere, never removed per surface.
-- [ ] Wire the run-id chip → this dialog on **every** surface that shows the chip (console, launch, capsule): `rg -n "status_footer_right_chip_rect|debug_bar_chip_area|last_debug_chip_area" crates/*/src`.
+- [ ] Wire the run-id chip → this dialog on **every** surface that shows the chip (console, launch, capsule): `rg -n "status_footer_right_chip_rect|debug_bar_chip_area|last_debug_chip_area" crates/*/src`. In the capsule, **both** the container-ID chip and the (restored, Defect 12) red run-id chip open this same dialog.
 - [ ] Record the cross-screen debug-info-dialog contract (shared component, full-screen on open, additive content, scrollable, same style everywhere) in [TUI Design Decisions](/reference/tui/chrome/).
 
 ---
@@ -242,6 +260,7 @@ Same component, same style, same base rows everywhere; surfaces only *add* rows.
 - [ ] Define/route one shared debug-bar render path (white band + red run-id chip) used by every surface; remove the per-surface variants (amber run id, separate chip) so the style cannot drift.
 - [ ] Guarantee the bar appears on **every** screen under `--debug` — including sub-screens (editor, settings) and the launch/capsule surfaces — not only the console manager.
 - [ ] Keep the chip clickable on every screen (feeds Defect 6's Run info dialog) and the styling exact: white bar, red chip only.
+- [ ] **Capsule specifically:** the red run-id chip is currently **missing** inside the capsule. Restore it in the capsule status bar (<RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" />) next to the container-ID chip; **both** the container-ID chip and the red run-id chip must be clickable and open the **same** shared debug-info dialog (Defect 6). The console shows the bar correctly under `--debug` (white bar, red `jk-run-…` chip bottom-right); the capsule must match.
 - [ ] Record the cross-screen debug-bar rule in [TUI Design Decisions](/reference/tui/chrome/).
 
 ---
@@ -557,6 +576,26 @@ The program is done when:
 - [ ] Compose with Defect 15 (status bar reserved) and Defect 7 (dialog sizing) so a resize re-lays-out chrome + modals within the new content area without overdraw.
 - [ ] Add a resize regression test (shrink then grow) asserting the rendered buffer has no duplicated status/chrome rows.
 - [ ] Record any capsule-specific resize/redraw rule in [TUI Design Decisions](/reference/tui/) and the capsule architecture reference.
+
+---
+
+## Defect 27 — rapid resizing must never crash the capsule (exit 101 panic)
+
+**Symptom:** doing a lot of resizing quickly crashes the container: `container jk-…-thearchitect exited during session (exit 101) and produced no log output`. Exit code 101 is a Rust panic. A resize storm (many `SIGWINCH` in quick succession) panics the `jackin-capsule` process, and the crash produces **no diagnostics log** — so it is currently un-triageable. Resizing must never crash anything.
+
+**Root cause (to confirm — requires runtime triage):** a SIGWINCH burst drives many back-to-back `mux.resize` / re-render cycles (<RepoFile path="crates/jackin-capsule/src/daemon/pane_layout.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/run.rs" />). Candidate panic sources to check: unsaturated `u16` subtraction in render/layout geometry that underflows when dimensions shrink fast; out-of-bounds buffer/cell indexing when the ratatui/`SocketBackend` buffer and the new geometry disagree mid-resize (related to Defect 26's no-erase clear); a `RwLock`/`Mutex` poisoned by a panic in the PTY-reader or render task then re-locked elsewhere; or an `unwrap()`/`expect()` on a PTY/`bollard` resize call that errors under load. The "no log output" means the panic path bypasses the diagnostics writer and/or no panic hook routes the backtrace to the run log.
+
+**Canonical pattern to converge on:** resize is panic-free and self-throttling. Geometry math saturates (no underflow), buffer access is bounds-checked against the *current* geometry, locks are not held across a panic-prone render, and a SIGWINCH burst is coalesced to the latest size rather than processed one-per-event. Any panic that does occur is captured to the diagnostics run log with a backtrace.
+
+**Tasks:**
+- [ ] **Install a panic hook in the capsule** that writes the panic message + backtrace to the diagnostics run log (and stderr) before exit, so "produced no log output" becomes a captured backtrace. This is the prerequisite for triage (per the debug-telemetry rule in <RepoFile path="AGENTS.md" />).
+- [ ] Reproduce with a SIGWINCH storm and capture the backtrace; identify the exact panic site.
+- [ ] Audit the resize/render geometry for unsaturated subtraction and out-of-bounds indexing: `rg -n " - |\\[[a-z_]+\\]|unwrap\\(\\)|expect\\(|as usize\\]" crates/jackin-capsule/src/daemon/pane_layout.rs crates/jackin-capsule/src/tui/socket_backend.rs crates/jackin-capsule/src/daemon.rs`. Convert to saturating/bounds-checked math.
+- [ ] Coalesce SIGWINCH bursts: handle only the latest size (debounce/drain pending resize events) so a storm produces one reflow, not hundreds — composes with Defect 26.
+- [ ] Audit lock usage in the resize/render/PTY-reader paths for poison-on-panic; ensure no panic-prone work happens while a lock is held that another task re-acquires.
+- [ ] Investigate the runaway blank-line flood to the outer terminal during the resize storm (the screenshot shows thousands of blank lines) — likely the no-erase clear + repeated full repaints (Defect 26); ensure resize output is bounded.
+- [ ] Add a regression test / stress test: a rapid sequence of resizes (including shrink-to-floor and zero) does not panic and leaves a consistent buffer.
+- [ ] Record any resize-robustness rule in the capsule architecture reference.
 
 ---
 
