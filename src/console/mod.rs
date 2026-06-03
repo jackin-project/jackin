@@ -775,6 +775,7 @@ pub(in crate::console) fn providers_for_launch(
 ) -> Vec<jackin_protocol::Provider> {
     jackin_protocol::Provider::available_for(
         agent.slug(),
+        env_key_present(config, workspace_name, role_selector, "ANTHROPIC_API_KEY"),
         env_key_present(config, workspace_name, role_selector, "ZAI_API_KEY"),
         env_key_present(config, workspace_name, role_selector, "MINIMAX_API_KEY"),
         env_key_present(config, workspace_name, role_selector, "KIMI_CODE_API_KEY"),
@@ -1420,7 +1421,7 @@ mod quit_confirm_tests {
                 crate::agent::Agent::Claude,
             )
             .len(),
-            1
+            2
         );
         config.env.clear();
 
@@ -1438,7 +1439,7 @@ mod quit_confirm_tests {
                 crate::agent::Agent::Claude,
             )
             .len(),
-            1
+            2
         );
 
         config.workspaces.remove("workspace-demo");
@@ -1460,7 +1461,7 @@ mod quit_confirm_tests {
                 crate::agent::Agent::Claude,
             )
             .len(),
-            1
+            2
         );
 
         config.roles.clear();
@@ -1482,8 +1483,8 @@ mod quit_confirm_tests {
             "the-architect",
             crate::agent::Agent::Claude,
         );
-        assert_eq!(providers.len(), 1);
-        assert_eq!(providers[0], jackin_protocol::Provider::Zai);
+        assert_eq!(providers.len(), 2);
+        assert_eq!(providers[1], jackin_protocol::Provider::Zai);
     }
 
     #[test]

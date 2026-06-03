@@ -171,6 +171,11 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
+    /// Resolved Anthropic API key (`ANTHROPIC_API_KEY`) from the operator env.
+    /// Drives Anthropic as a selectable provider for non-Claude agents (e.g.
+    /// OpenCode) that cannot use the Claude subscription and require an explicit
+    /// key. For Claude Code, Anthropic is always available via subscription.
+    anthropic_api_key: Option<String>,
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
@@ -586,6 +591,9 @@ impl Multiplexer {
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS);
         let agents = launch_config.supported_agents();
+        let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
         let zai_key = std::env::var("ZAI_API_KEY")
             .ok()
             .filter(|value| !value.is_empty());
@@ -654,6 +662,7 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
+            anthropic_api_key,
             zai_key,
             minimax_key,
             kimi_key,
@@ -1553,6 +1562,7 @@ impl Multiplexer {
     fn providers_for_agent(&self, agent: Option<&str>) -> Vec<jackin_protocol::Provider> {
         jackin_protocol::Provider::available_for(
             agent.unwrap_or_default(),
+            self.anthropic_api_key.is_some(),
             self.zai_key.is_some(),
             self.minimax_key.is_some(),
             self.kimi_key.is_some(),
@@ -1561,7 +1571,7 @@ impl Multiplexer {
 
     fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
         match provider {
-            jackin_protocol::Provider::Anthropic => None,
+            jackin_protocol::Provider::Anthropic => self.anthropic_api_key.as_deref(),
             jackin_protocol::Provider::Zai => self.zai_key.as_deref(),
             jackin_protocol::Provider::Minimax => self.minimax_key.as_deref(),
             jackin_protocol::Provider::Kimi => self.kimi_key.as_deref(),

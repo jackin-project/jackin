@@ -194,25 +194,44 @@ impl Provider {
     }
 
     /// Providers selectable for `(agent_slug, present keys)`. Returns an
-    /// empty list when only Anthropic is reachable — callers read that as
-    /// "no picker step". A non-empty list always has 2+ entries.
+    /// empty list when no picker is needed (single implicit provider).
     ///
-    /// Claude and OpenCode accept all three alt providers; Codex accepts
-    /// MiniMax only (GLM and Kimi expose Chat Completions only, which
-    /// current Codex no longer accepts — deferred until upstream ships a
-    /// Responses-compatible endpoint).
+    /// - `claude`: Anthropic is always included — the subscription works
+    ///   without an explicit API key. Alt providers added when their key is
+    ///   present. Picker shown whenever at least one alt provider is available.
+    /// - `opencode`: Anthropic included only when `anthropic_api_key` is
+    ///   true — the subscription does not extend to OpenCode. Alt providers
+    ///   added when their key is present.
+    /// - `codex`: MiniMax only (GLM and Kimi expose Chat Completions only,
+    ///   blocked until upstream ships a Responses-compatible endpoint).
     #[must_use]
     pub fn available_for(
         agent_slug: &str,
+        anthropic_api_key: bool,
         zai_key: bool,
         minimax_key: bool,
         kimi_key: bool,
     ) -> Vec<Provider> {
-        // Only alternative providers — Anthropic is the default and never
-        // needs explicit selection. An empty list means no picker is shown.
         let mut providers = vec![];
         match agent_slug {
-            "claude" | "opencode" => {
+            "claude" => {
+                // Subscription auth — Anthropic always available, no key needed.
+                providers.push(Provider::Anthropic);
+                if zai_key {
+                    providers.push(Provider::Zai);
+                }
+                if minimax_key {
+                    providers.push(Provider::Minimax);
+                }
+                if kimi_key {
+                    providers.push(Provider::Kimi);
+                }
+            }
+            "opencode" => {
+                // Subscription does not extend to OpenCode — require explicit key.
+                if anthropic_api_key {
+                    providers.push(Provider::Anthropic);
+                }
                 if zai_key {
                     providers.push(Provider::Zai);
                 }
@@ -229,7 +248,12 @@ impl Provider {
             }
             _ => {}
         }
-        providers
+        // Single entry means no real choice — skip the picker.
+        if providers.len() <= 1 {
+            Vec::new()
+        } else {
+            providers
+        }
     }
 
     /// Model string in `provider/model` format for OpenCode's `-m` flag.
@@ -354,43 +378,54 @@ mod provider_tests {
 
     #[test]
     fn available_for_provider_matrix() {
-        // Anthropic is the default — never in the returned list.
-        // Claude: alt providers only when keys present.
+        // Claude: Anthropic always included (subscription auth, no key needed).
         assert_eq!(
-            Provider::available_for("claude", true, false, false),
-            vec![Provider::Zai]
+            Provider::available_for("claude", false, true, false, false),
+            vec![Provider::Anthropic, Provider::Zai]
         );
         assert_eq!(
-            Provider::available_for("claude", false, true, false),
+            Provider::available_for("claude", false, false, true, false),
+            vec![Provider::Anthropic, Provider::Minimax]
+        );
+        assert_eq!(
+            Provider::available_for("claude", false, false, false, true),
+            vec![Provider::Anthropic, Provider::Kimi]
+        );
+        assert_eq!(
+            Provider::available_for("claude", false, true, true, true),
+            vec![
+                Provider::Anthropic,
+                Provider::Zai,
+                Provider::Minimax,
+                Provider::Kimi
+            ]
+        );
+        // No alt providers → no picker (Anthropic alone = single entry → empty).
+        assert!(Provider::available_for("claude", false, false, false, false).is_empty());
+
+        // Codex: MiniMax only (GLM/Kimi deferred). anthropic_api_key unused for codex.
+        assert_eq!(
+            Provider::available_for("codex", false, false, true, false),
             vec![Provider::Minimax]
         );
-        assert_eq!(
-            Provider::available_for("claude", false, false, true),
-            vec![Provider::Kimi]
-        );
-        assert_eq!(
-            Provider::available_for("claude", true, true, true),
-            vec![Provider::Zai, Provider::Minimax, Provider::Kimi]
-        );
-        assert!(Provider::available_for("claude", false, false, false).is_empty());
+        assert!(Provider::available_for("codex", false, true, false, false).is_empty());
+        assert!(Provider::available_for("codex", false, false, false, true).is_empty());
 
-        // Codex: MiniMax only (GLM/Kimi deferred).
+        // OpenCode: Anthropic only when ANTHROPIC_API_KEY is set (subscription not available).
         assert_eq!(
-            Provider::available_for("codex", false, true, false),
-            vec![Provider::Minimax]
+            Provider::available_for("opencode", true, true, true, false),
+            vec![Provider::Anthropic, Provider::Zai, Provider::Minimax]
         );
-        assert!(Provider::available_for("codex", true, false, false).is_empty());
-        assert!(Provider::available_for("codex", false, false, true).is_empty());
-
-        // OpenCode: same matrix as Claude.
         assert_eq!(
-            Provider::available_for("opencode", true, true, false),
+            Provider::available_for("opencode", false, true, true, false),
             vec![Provider::Zai, Provider::Minimax]
         );
-        assert!(Provider::available_for("opencode", false, false, false).is_empty());
+        assert!(Provider::available_for("opencode", false, false, false, false).is_empty());
+        // Only ANTHROPIC_API_KEY, no alts → single entry → no picker.
+        assert!(Provider::available_for("opencode", true, false, false, false).is_empty());
 
         // Unknown agent: always empty.
-        assert!(Provider::available_for("amp", true, true, true).is_empty());
+        assert!(Provider::available_for("amp", true, true, true, true).is_empty());
     }
 
     #[test]
