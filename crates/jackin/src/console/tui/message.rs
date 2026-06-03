@@ -333,6 +333,18 @@ const fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool)
         return;
     };
     settings.tab_bar_focused = settings_tab_bar_focus_plan(focused);
+    // When entering content (focused = false), activate scroll focus for the
+    // active tab so the ▸ cursor and focused border appear together.
+    if !focused {
+        use jackin_console::tui::screens::settings::model::SettingsTab;
+        match settings.active_tab {
+            SettingsTab::Mounts => settings.mounts.scroll_focused = true,
+            SettingsTab::Environments => settings.env.scroll_focused = true,
+            SettingsTab::Auth => settings.auth.scroll_focused = true,
+            SettingsTab::Trust => settings.trust.scroll_focused = true,
+            SettingsTab::General => {} // General uses !tab_bar_focused directly
+        }
+    }
 }
 
 const fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
