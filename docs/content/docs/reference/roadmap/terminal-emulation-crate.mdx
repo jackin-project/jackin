@@ -26,7 +26,7 @@ Non-Rust emulators (libvterm, Ghostty) appear in this document **only as idea so
 - Its model is shaped for **re-emission**, not pixels. The signature API is `Screen::contents_diff(prev)` / `contents_formatted()`: given two screen states it emits the **minimal escape byte sequence** that turns one into the other. That is precisely what a tmux/Zellij-style multiplexer needs, and it is unusual — most terminal libraries model a grid for a GPU to draw, not a grid to *re-serialize back into escape sequences*.
 - It ships a `Callbacks` trait (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`, …) that lets us intercept OSC and unhandled-CSI traffic for passthrough.
 
-So the capsule's entire render path — <RepoFile path="crates/jackin-capsule/src/tui/render/mod.rs" /> and the `OscCapture` callback impl in <RepoFile path="crates/jackin-capsule/src/session/mod.rs" /> — is built directly on `vt100`'s `Screen` + `Callbacks` shape. It works, and it is a good fit for the job.
+So the capsule's entire render path — <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> and the `OscCapture` callback impl in <RepoFile path="crates/jackin-capsule/src/session.rs" /> — is built directly on `vt100`'s `Screen` + `Callbacks` shape. It works, and it is a good fit for the job.
 
 ### The problem with `vt100` and our current implementation
 
@@ -44,7 +44,7 @@ vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715..." }
 <RepoFile path="TODO.md" /> historically framed this fork as *"temporary — waiting for OSC/CSI callbacks to land upstream."* **That framing was wrong, and the truth is worse.** The June 2026 research established:
 
 - The four callbacks the TODO named **already shipped** in canonical [`vt100` 0.16.2](https://docs.rs/vt100/latest/vt100/trait.Callbacks.html) (January 2025). They are not what the fork adds.
-- The fork's **real** delta over upstream is a single additive method, `Screen::clear_scrollback()`, used by `clear_scrollback_and_request_screen_clear` in <RepoFile path="crates/jackin-capsule/src/session/mod.rs" /> and the focused-pane handler in <RepoFile path="crates/jackin-capsule/src/daemon/mod.rs" />.
+- The fork's **real** delta over upstream is a single additive method, `Screen::clear_scrollback()`, used by `clear_scrollback_and_request_screen_clear` in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and the focused-pane handler in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />.
 - **That exact patch is already submitted upstream as `doy/vt100-rust` PR #31 ("Support clearing scrollback", May 22 2026) — and it is not merged.**
 
 And the upstream is not moving:
@@ -171,7 +171,7 @@ Ghostty is **not a candidate dependency** — it is Zig, and the pure-Rust const
 2. **`RefCountedSet` style interning.** Cells store a small style **id**; the actual style lives once in a per-page refcounted set, released on cell overwrite with lazy id reuse. Exactly the "packed cell + interned style" goal, with a proven shape. Hyperlinks use the same set.
 3. **Grapheme side-map.** A `grapheme_map` from cell offset to a codepoint slice keeps the common single-codepoint case in the cell and spills only complex clusters to a grapheme allocator — our grapheme-interning idea, concretely.
 4. **Offset-addressed memory (`OffsetBuf`).** Everything inside a page is stored as an offset into the page arena, not a pointer, so pages are relocatable and copyable. This is what makes the multi-session arena and cheap session teardown realistic.
-5. **Serial numbers + pins for invalidation.** Monotonic page serials detect stale references without requiring pointer stability, and a `PinSet` keeps cursor/scrollback anchors correct across mutations. This is the principled replacement for the capsule's current ad-hoc `scrollback_offset` + `inline_scrollback` bookkeeping in <RepoFile path="crates/jackin-capsule/src/session/mod.rs" />.
+5. **Serial numbers + pins for invalidation.** Monotonic page serials detect stale references without requiring pointer stability, and a `PinSet` keeps cursor/scrollback anchors correct across mutations. This is the principled replacement for the capsule's current ad-hoc `scrollback_offset` + `inline_scrollback` bookkeeping in <RepoFile path="crates/jackin-capsule/src/session.rs" />.
 
 What Ghostty does **not** give us is the one thing that matters most — the wire-emit stage — which reconfirms the survey's central finding: the memory model is borrowable from the best in the field, but the diff-to-escape present stage is ours to write no matter which engine we study.
 
@@ -242,7 +242,7 @@ Independent of this whole question: rebase the fork onto a tag, get `clear_scrol
 
 **Goal:** find out whether the capsule has *any* per-frame wall, and if so, in which stage.
 
-**Instrumentation:** add `cdebug!`-gated timers around the three stages, in <RepoFile path="crates/jackin-capsule/src/session/mod.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/render/mod.rs" />:
+**Instrumentation:** add `cdebug!`-gated timers around the three stages, in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />:
 
 - `t_parse` — `Parser::process(bytes)` per PTY read.
 - `t_diff` — `Screen` diff / `contents_formatted` per rendered frame.
@@ -329,9 +329,9 @@ None. This item is entirely in-container / in-binary terminal modeling and emits
 ## Related files
 
 - <RepoFile path="crates/jackin-capsule/Cargo.toml" /> — the pinned `vt100` git fork line.
-- <RepoFile path="crates/jackin-capsule/src/session/mod.rs" /> — `OscCapture` (the `vt100::Callbacks` impl), the scrollback model, and `clear_scrollback_and_request_screen_clear`; **the home of the Experiment 1 `t_parse`/`t_diff` instrumentation.**
-- <RepoFile path="crates/jackin-capsule/src/tui/render/mod.rs" /> — the `vt100::Screen` → host-terminal present path; **the home of the Experiment 1 `t_write` instrumentation.**
-- <RepoFile path="crates/jackin-capsule/src/daemon/mod.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
+- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `OscCapture` (the `vt100::Callbacks` impl), the scrollback model, and `clear_scrollback_and_request_screen_clear`; **the home of the Experiment 1 `t_parse`/`t_diff` instrumentation.**
+- <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> — the `vt100::Screen` → host-terminal present path; **the home of the Experiment 1 `t_write` instrumentation.**
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
 
 ## Open questions the verification must answer
 

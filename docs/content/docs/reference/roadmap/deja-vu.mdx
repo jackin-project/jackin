@@ -188,10 +188,10 @@ Per-provider parsers normalize whichever source is used into one record shape, s
 
 jackin' owns the in-container PTY multiplexer (`jackin-capsule`), which gives it a capture vector SpecStory and the file-readers do not have: the rendered terminal itself. This is genuinely useful as a **last resort** — e.g. an Amp session started outside Déjà Vu's stream capture, or any agent whose session file is missing — but it is deliberately ranked below every structured vector, and the source confirms exactly why.
 
-What the multiplexer can actually see (validated in <RepoFile path="crates/jackin-capsule/src/session/mod.rs" />):
+What the multiplexer can actually see (validated in <RepoFile path="crates/jackin-capsule/src/session.rs" />):
 
 - Capsule keeps one `vt100::Parser` per session; its `Screen` is the source of truth, exposed via `screen()`. Raw PTY bytes are read in a blocking reader loop and fed to the parser byte-by-byte, then **dropped** — there is no raw-byte or asciicast log retained by default.
-- It retains **`SCROLLBACK_LEN = 10_000`** lines of native `vt100` scrollback per session (the comment cites exactly this use case: "Operators need scrollback to read Codex / Claude responses that exceed one viewport"), plus a separate `inline_scrollback` buffer for Codex-style top-anchored scroll regions that `vt100` does not record as scrollback. The dirty-row renderer in <RepoFile path="crates/jackin-capsule/src/tui/render/mod.rs" /> already reads cells from the `Screen`.
+- It retains **`SCROLLBACK_LEN = 10_000`** lines of native `vt100` scrollback per session (the comment cites exactly this use case: "Operators need scrollback to read Codex / Claude responses that exceed one viewport"), plus a separate `inline_scrollback` buffer for Codex-style top-anchored scroll regions that `vt100` does not record as scrollback. The dirty-row renderer in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> already reads cells from the `Screen`.
 
 So jackin' can scrape the conversation as **rendered cells across ~10k lines of scrollback**, not just the 24-row viewport. But the caveats are real and disqualify it as a primary vector:
 

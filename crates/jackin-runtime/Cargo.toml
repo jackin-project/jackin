@@ -24,6 +24,7 @@ unsafe_code = "forbid"
 async_fn_in_trait = "allow"
 
 [lints.clippy]
+mod_module_files = "deny"
 correctness = { level = "deny", priority = -1 }
 suspicious = { level = "deny", priority = -1 }
 complexity = { level = "warn", priority = -1 }
