@@ -242,3 +242,38 @@ fn visible_branch_suppresses_default_branch_only() {
     );
     assert_eq!(visible_branch(None, false), None);
 }
+
+#[test]
+fn snapshot_render_branch_context_bar_with_pr_120x24() {
+    let pr = pull_request_fixture(434);
+    let mut buf = Vec::new();
+    render_branch_context_bar(
+        &mut buf,
+        24,
+        120,
+        Some("feature/tui-architecture"),
+        Some(&pr),
+        false,
+        "jk-test-container",
+        None,
+    );
+    let rendered = String::from_utf8_lossy(&buf);
+    insta::assert_snapshot!("branch_context_bar_with_pr_120x24", rendered);
+}
+
+#[test]
+fn snapshot_render_branch_context_bar_no_pr_80x24() {
+    let mut buf = Vec::new();
+    render_branch_context_bar(
+        &mut buf,
+        24,
+        80,
+        Some("feature/tui-architecture"),
+        None,
+        false,
+        "jk-test-container",
+        None,
+    );
+    let rendered = String::from_utf8_lossy(&buf);
+    insta::assert_snapshot!("branch_context_bar_no_pr_80x24", rendered);
+}

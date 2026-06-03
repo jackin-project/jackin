@@ -11,6 +11,8 @@ pub(crate) mod migrations;
 mod mounts;
 pub(crate) mod persist;
 mod roles;
+#[cfg(test)]
+mod tests;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};

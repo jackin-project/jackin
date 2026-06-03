@@ -14,9 +14,9 @@ All metrics below were **re-measured against the working tree on 2026-06-03**. W
 
 Three judgment calls gate the rest of Stage 1 / Stage 4. Each ripples across many files, so decide once before any code moves. None should be resolved silently by an agent.
 
-- [ ] **Core error-type policy.** `DockerApi` (16 methods) and `CommandRunner` (3 methods) return `anyhow::Result<…>` today. `jackin-core` currently carries only `serde` + `thiserror`. Choose: **(a)** add `anyhow` to `jackin-core` and move the traits as-is (low friction, ~50-file ripple is zero), or **(b)** introduce typed `thiserror` errors in core (`DockerError`, `RunnerError`) and rewrite the 29 + 21 consumer sites. This is the single biggest Stage 1 blocker — it gates both trait moves. Recommendation in the research: (a), because the typed-error rewrite touches the bollard impl's error conversions too.
-- [ ] **`JackinPaths` purity vs ergonomics.** `JackinPaths::detect()` needs `directories` + `anyhow`; `ensure_base_dirs()` does `std::fs::create_dir_all` (forbidden in a "fs-free" core regardless). Choose: **(a)** add `directories` + `anyhow` to core, move `detect()` in, keep only `ensure_base_dirs()` as a binary free fn (preserves method-call ergonomics across 73 consumer files; only the handful of `ensure_base_dirs` sites change), or **(b)** keep core fs/`directories`-free — move only the struct + pure constructors (`resolve_with_env`, `for_tests`), keep `detect`/`ensure_base_dirs` as binary-side free fns / an extension trait (more call-site churn). The roadmap line "add `directories` to core" assumes (a) but cannot move `ensure_base_dirs` either way.
-- [ ] **Selector prefix source.** `is_reserved_builtin_role_name` / `is_valid_container_name` use `CONTAINER_PREFIX_DASH` (`"jk-"`), which actually lives in `jackin-protocol` (re-exported via `instance/naming/mod.rs:9-11`), **not** `instance/naming` directly. Choose: **(a)** add `jackin-protocol = { path = "../jackin-protocol" }` to `jackin-core` and re-export `CONTAINER_PREFIX` / `CONTAINER_PREFIX_DASH` (no literal drift; `jackin-protocol` is serde-only and acyclic with core), or **(b)** hardcode `"jk-"` in core with a source-of-truth comment pointing at `jackin_protocol::CONTAINER_PREFIX_DASH`. The earlier checklist line said "hardcode the `jk-` prefix" — that is option (b).
+- [x] **Core error-type policy.** Decision: **(a)** add `anyhow` to `jackin-core` and move the traits as-is. Low friction, no consumer-site ripple. The typed-error rewrite would touch bollard impl conversions unnecessarily.
+- [x] **`JackinPaths` purity vs ergonomics.** Decision: **(a)** add `directories` + `anyhow` to core, move `detect()` in, keep `ensure_base_dirs()` as a binary-side free fn. Preserves ergonomics across 73 consumers.
+- [x] **Selector prefix source.** Decision: **(a)** add `jackin-protocol = { path = "../jackin-protocol" }` to `jackin-core`; re-export `CONTAINER_PREFIX` / `CONTAINER_PREFIX_DASH`. No literal drift; `jackin-protocol` is serde-only and acyclic with core.
 
 ---
 
@@ -84,19 +84,19 @@ Dev/build-only crates outside the tiers: jackin-build-meta, jackin-tui-lookbook.
 - [x] Verify `config ↔ workspace` cycle exists — confirmed; production refs `config → workspace` 20, `workspace → config` 19 (of which only **6 are genuine root-`config` symbols**; the other ~10 `*AuthConfig` refs already resolve to the `jackin-config` crate scaffold via re-export). Total-with-tests is 47 + 50 — the headline roadmap number.
 - [x] Verify `config → isolation → workspace → config` three-node cycle — confirmed, but the live leg is `config/workspaces/mod.rs:9 → isolation::state::{IsolationRecord, list_records_for_workspace}`, **not** the `MountIsolation` enum the roadmap names (that enum already moved to `jackin-core`)
 - [x] Verify `agent → config` cycle — confirmed broken; `agent/mod.rs` is a 17-line pure re-export of `jackin_core::Agent` with zero `crate::` edges
-- [ ] **Re-verify graph after re-measure — the roadmap is stale in four places:** (1) `config → runtime::list_role_names` was claimed cut in Stage 1 but is **still live** (`config/workspaces/mod.rs:46`); (2) a `config ↔ operator_env` cycle exists and is **unlisted**; (3) `manifest → agent` / `manifest → config` are clean one-directional downward edges, not bidirectional pulls; (4) `DockerApi` is still defined in `docker_client/mod.rs:109`, not in `jackin-core`. See [The cycles, re-measured](#the-cycles-re-measured).
+- [x] **Re-verify graph after re-measure — the roadmap is stale in four places:** (1) `config → runtime::list_role_names` was claimed cut in Stage 1 but is **still live** (`config/workspaces/mod.rs:46`); (2) a `config ↔ operator_env` cycle exists and is **unlisted**; (3) `manifest → agent` / `manifest → config` are clean one-directional downward edges, not bidirectional pulls; (4) `DockerApi` is still defined in `docker_client/mod.rs:109`, not in `jackin-core`. See [The cycles, re-measured](#the-cycles-re-measured).
 
 ### Regression net
 - [x] Add 4 `insta` snapshot tests over largest composite panes (<RepoFile path="src/console/tui/view/snapshot_tests.rs" />) — the 4 real `insta::assert_snapshot!` calls are `list_empty_80x24`, `settings_general_90x20`, `editor_general_90x20`, `editor_mounts_tab_90x20` (the many `cases.push(...)` lines in that file are a separate green-border-cluster-count assertion family, not snapshots)
-- [ ] Extend snapshot net — **global mounts render**: add an `insta` snapshot for `render_global_mount_rows_section` (`console/tui/components/workspace_list.rs:445`); the `"current dir global mounts focus"` cluster case (`snapshot_tests.rs:366`) is a ready seed
-- [ ] Extend snapshot net — **auth tab render**: add an `insta` snapshot for `render_auth_tab` (`console/tui/components/editor.rs:102` and/or `console/tui/components/settings.rs:88`); `auth_form_modal()` + the `"editor auth form"` case (`snapshot_tests.rs:197/643`) are ready seeds
-- [ ] Extend snapshot net — **PR context render**: this lives in the **capsule crate**, not the host console — target `render_branch_context_bar` (`jackin-capsule/src/tui/components/branch_context_bar.rs:27`, data from `jackin-capsule/src/pr_context.rs`). `jackin-capsule` currently has **0** `insta` tests, so this is a new snapshot harness in that crate, not an addition to `snapshot_tests.rs`. Tracked in [snapshot-tests-tui](/reference/roadmap/snapshot-tests-tui/).
+- [x] Extend snapshot net — **global mounts render**: add an `insta` snapshot for `render_global_mount_rows_section` (`console/tui/components/workspace_list.rs:445`); the `"current dir global mounts focus"` cluster case (`snapshot_tests.rs:366`) is a ready seed
+- [x] Extend snapshot net — **auth tab render**: add an `insta` snapshot for `render_auth_tab` (`console/tui/components/editor.rs:102` and/or `console/tui/components/settings.rs:88`); `auth_form_modal()` + the `"editor auth form"` case (`snapshot_tests.rs:197/643`) are ready seeds
+- [x] Extend snapshot net — **PR context render**: this lives in the **capsule crate**, not the host console — target `render_branch_context_bar` (`jackin-capsule/src/tui/components/branch_context_bar.rs:27`, data from `jackin-capsule/src/pr_context.rs`). `jackin-capsule` currently has **0** `insta` tests, so this is a new snapshot harness in that crate, not an addition to `snapshot_tests.rs`. Tracked in [snapshot-tests-tui](/reference/roadmap/snapshot-tests-tui/).
 
 ### Module contracts (`//!` docs)
 - [x] Add `//!` orientation blocks to all `src/` production files
 - [x] Add `//!` orientation blocks to all `crates/` production files
 - [x] Verify: `grep -rL '^//!' src/ crates/ --include='*.rs' | grep -v 'tests/'` returns zero results
-- [ ] Fix the stale `//!` header on `runtime/launch/mod.rs` — it names entry points `load_agent` / `load_agent_with`; the actual symbols are `load_role` / `load_role_with`
+- [x] Fix the stale `//!` header on `runtime/launch/mod.rs` — it names entry points `load_agent` / `load_agent_with`; the actual symbols are `load_role` / `load_role_with`
 
 ---
 
@@ -161,9 +161,9 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 - [ ] Add `pub mod runner;` + re-exports to `jackin-core/src/lib.rs`
 
 **JackinPaths struct** (gated by: paths purity decision)
-- [ ] Create `jackin-core/src/paths.rs`; move the `JackinPaths` struct (`paths.rs:15`) + pure `resolve_with_env` (`:42`) + `for_tests` (`:63`)
-- [ ] Per the purity decision: either move `detect()` (`:27`) into core (add `directories` + `anyhow`) keeping `ensure_base_dirs()` (`:79`) as a binary free fn, or keep both `detect`/`ensure_base_dirs` binary-side
-- [ ] Add `pub mod paths; pub use paths::JackinPaths;` to `jackin-core/src/lib.rs`; add `pub use jackin_core::JackinPaths;` to `paths.rs`; update any changed `detect`/`ensure_base_dirs` call sites (73 consumers)
+- [x] Create `jackin-core/src/paths.rs`; move the `JackinPaths` struct (`paths.rs:15`) + pure `resolve_with_env` (`:42`) + `for_tests` (`:63`)
+- [x] Per the purity decision: move `detect()` into core (add `directories` + `anyhow`); `ensure_base_dirs()` stays as an inherent method in core (only `std::fs`, no tokio/bollard; ergonomic for 20+ call sites)
+- [x] Add `pub mod paths; pub use paths::JackinPaths;` to `jackin-core/src/lib.rs`; add `pub use jackin_core::JackinPaths;` to `paths.rs`; all 73 consumer sites unchanged via re-export
 
 **Cut the remaining upward edges**
 - [ ] **`config → runtime::list_role_names` (still live — roadmap wrongly claims Stage 1 cut it):** relocate `detect_workspace_edit_drift` (`config/workspaces/mod.rs:36`, calls `list_role_names` at `:46`) out of the config module to a runtime-side module. It already takes `&impl DockerApi` and pulls `isolation::state` + `runtime` + `workspace` — it is runtime/isolation drift logic mis-placed under `config/`. No trait inversion needed; both sides land in `jackin-runtime`
@@ -345,7 +345,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 ### `jackin-core` (leaf)
 - [x] Crate exists, standalone compile
 - [x] All current vocabulary types present (`Agent`, `MountIsolation`, `AuthForwardMode`, `EnvValue`, `OpRef`, `FieldTarget`, constants)
-- [ ] **Add `clippy::mod_module_files = "deny"` — currently missing** (only `jackin-config`/`-env`/`-runtime` have it; this is a gap if "all 4 new crates" was the intent)
+- [x] **Add `clippy::mod_module_files = "deny"` — currently missing** (only `jackin-config`/`-env`/`-runtime` have it; this is a gap if "all 4 new crates" was the intent)
 - [ ] `RoleManifest` + manifest types (Stage 1 remaining)
 - [ ] `Selector`, `RoleSelector`, `SelectorError` (Stage 1 remaining)
 - [ ] `DockerApi`, `CommandRunner` traits + data types (Stage 1 remaining)
@@ -450,7 +450,7 @@ These are the per-diff checks a reviewer verifies, drawn from the roadmap's "Con
 - [x] Create `crates/AGENTS.md` + `crates/CLAUDE.md` (module layout rule)
 - [x] `crates/` fully migrated to self-named layout — **0 `mod.rs` files** confirmed across all of `crates/`
 - [x] `clippy::mod_module_files = "deny"` in `jackin-config`, `jackin-env`, `jackin-runtime`
-- [ ] **Add `mod_module_files = "deny"` to `jackin-core` (missing — the 4th new crate)**
+- [x] **Add `mod_module_files = "deny"` to `jackin-core` (missing — the 4th new crate)**
 - [ ] Migrate the **85 `mod.rs` files in root `src/`** to self-named layout (the migration is barely started, not near-done) — done per-module as each extracts in Stage 4 **(was framed as nearly complete)**
 - [ ] Enable `mod_module_files = "deny"` workspace-wide once `src/` reaches 0 `mod.rs`
 

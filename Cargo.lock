@@ -1730,6 +1730,7 @@ dependencies = [
  "chrono",
  "criterion",
  "crossterm",
+ "insta",
  "jackin-build-meta",
  "jackin-protocol",
  "jackin-tui",
@@ -1752,8 +1753,10 @@ name = "jackin-config"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "fs2",
  "jackin-core",
  "serde",
+ "tempfile",
  "thiserror 2.0.18",
  "toml",
  "toml_edit",
@@ -1780,8 +1783,11 @@ dependencies = [
 name = "jackin-core"
 version = "0.6.0-dev"
 dependencies = [
+ "anyhow",
+ "directories",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
