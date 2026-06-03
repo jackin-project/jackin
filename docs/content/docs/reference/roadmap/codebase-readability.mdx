@@ -2,7 +2,7 @@
 title: "Codebase readability & restructuring"
 ---
 
-**Status**: Open — active program. Stages 0, 1, and 2 substantially complete. Stage 3 complete: all production modules separated from test code — every file over 500L with a `mod tests { }` block split into `mod.rs` (production) + `tests.rs` (tests). Re-baked 2026-06-03. Stage 4 (crate extraction) is next.
+**Status**: Open — active program. Stages 0, 1, 2, and 3 complete. Stage 4 substantially underway (2026-06-03): `jackin-core` ships all universal types; `jackin-config` ships the workspace/config schema breaking the config↔workspace cycle; `jackin-env` and `jackin-runtime` scaffolded. Remaining: AppConfig extraction (blocked by JackinPaths), operator_env → jackin-env, runtime stack → jackin-runtime.
 
 ## Goal
 
