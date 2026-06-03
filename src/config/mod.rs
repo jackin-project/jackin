@@ -18,8 +18,7 @@ mod workspaces;
 pub use crate::runtime::drift::{DriftDetection, detect_workspace_edit_drift};
 pub use editor::{ConfigEditor, EnvScope};
 pub use migrations::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
-pub(crate) use mounts::MountEntry;
-pub use mounts::{DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows};
+pub use mounts::{GlobalMountRow, WorkspaceGlobalMountRows};
 pub use roles::{
     build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
 };
@@ -31,13 +30,12 @@ pub use jackin_core::AuthForwardMode;
 /// `AppConfig` stays in this crate until `JackinPaths` is also extractable.
 pub use jackin_config::{
     AgentAuthConfig, AmpAuthConfig, CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION,
-    CodexAuthConfig, GitConfig, GithubAuthConfig, GithubAuthMode, GlobalMountConfig,
-    KeepAwakeConfig, KimiAuthConfig, MountConfig, MountIsolation, OpencodeAuthConfig, RoleSource,
-    WorkspaceConfig, WorkspaceRoleOverride,
+    CodexAuthConfig, DockerConfig, DockerMounts, GitConfig, GithubAuthConfig, GithubAuthMode,
+    GlobalMountConfig, KeepAwakeConfig, KimiAuthConfig, MountConfig, MountEntry, MountIsolation,
+    OpencodeAuthConfig, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride,
 };
 
-/// `WorkspaceEdit` lives in the binary crate (mutation helper, not schema).
-pub use crate::workspace::{WorkspaceEdit, validate_workspace_config};
+pub use crate::workspace::validate_workspace_config;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -94,12 +92,4 @@ impl Default for AppConfig {
     }
 }
 
-/// Docker/mount configuration block.
-///
-/// Note: `DockerMounts` (the complex nested structure used by the TUI)
-/// stays in `config/mounts/` while `DockerConfig` is a thin wrapper.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DockerConfig {
-    #[serde(default)]
-    pub mounts: DockerMounts,
-}
+// DockerConfig is now defined in jackin-config/schema.rs and re-exported above.

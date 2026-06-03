@@ -354,8 +354,8 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 ### `jackin-config` (→ core)
 - [x] Crate exists, standalone compile; `mod_module_files = "deny"` enforced
 - [x] Phase-1 types: `AgentAuthConfig`, `GithubAuthMode`, `GithubAuthConfig` (`env: EnvValue`), auth newtypes; re-exports `AuthForwardMode`/`EnvValue`/`OpRef` from core
-- [ ] Move `RoleSource` (`config/mod.rs:55`), `DockerConfig` (`:67`), `GitConfig` (`:74`), `AppConfig` (`:88`)
-- [ ] Move `DockerMounts` + `GlobalMountConfig` + `MountEntry` + global-mount-row types (`config/mounts/mod.rs:21/47`)
+- [x] Move `RoleSource`, `GitConfig` (already in jackin-config); `DockerConfig` now moved; `AppConfig` deferred (has binary-only impl blocks)
+- [x] Move `DockerMounts`, `GlobalMountConfig` (already in jackin-config), `MountEntry` — all now in `jackin-config/schema.rs`; `From<GlobalMountConfig> for MountConfig` impl also moved
 - [x] Move `MountConfig`, `WorkspaceConfig`, `WorkspaceRoleOverride`, `KeepAwakeConfig` (all already in `jackin-config/schema.rs`); `WorkspaceEdit` now moved to `jackin-config` in this session. `WorkspaceRoleAccess`/`WorkdirMount` trait impls deferred
 - [ ] Move `CURRENT_CONFIG_VERSION` / `CURRENT_WORKSPACE_VERSION` + `CONFIG_MIGRATIONS` / `WORKSPACE_MIGRATIONS` + the migration engine (resolve manifest-engine sharing — see PR 1)
 - [ ] Move `ConfigEditor` + `EnvScope` (`config/editor/mod.rs:42/17`) — drop the `validate_reserved_names` call (done in PR 0); add `toml_edit`/`fs2` deps (already present: `toml_edit`)

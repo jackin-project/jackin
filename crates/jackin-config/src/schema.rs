@@ -182,8 +182,59 @@ pub struct GlobalMountConfig {
     pub readonly: bool,
 }
 
-// `DockerConfig` stays in the binary crate — it wraps `DockerMounts` which
-// is a complex nested structure tightly coupled to the binary crate's TUI.
+impl From<GlobalMountConfig> for MountConfig {
+    fn from(g: GlobalMountConfig) -> Self {
+        Self {
+            src: g.src,
+            dst: g.dst,
+            readonly: g.readonly,
+            isolation: MountIsolation::Shared,
+        }
+    }
+}
+
+// ─── Docker mount entries ─────────────────────────────────────────────────────
+
+/// Serde-untagged mount entry: either a single `GlobalMountConfig` or a
+/// scope-keyed map.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MountEntry {
+    Mount(GlobalMountConfig),
+    Scoped(BTreeMap<String, GlobalMountConfig>),
+}
+
+/// The `[docker.mounts]` section in `config.toml`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DockerMounts(BTreeMap<String, MountEntry>);
+
+impl DockerMounts {
+    pub fn get(&self, key: &str) -> Option<&MountEntry> {
+        self.0.get(key)
+    }
+
+    pub fn insert(&mut self, key: String, value: MountEntry) -> Option<MountEntry> {
+        self.0.insert(key, value)
+    }
+
+    pub fn entry(
+        &mut self,
+        key: String,
+    ) -> std::collections::btree_map::Entry<'_, String, MountEntry> {
+        self.0.entry(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &MountEntry)> {
+        self.0.iter()
+    }
+}
+
+/// Top-level `[docker]` block in `config.toml`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DockerConfig {
+    #[serde(default)]
+    pub mounts: DockerMounts,
+}
 
 // ─── Workspace edit ──────────────────────────────────────────────────────────
 

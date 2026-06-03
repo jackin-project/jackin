@@ -8,64 +8,10 @@ use super::{AppConfig, MountConfig};
 use crate::selector::RoleSelector;
 use crate::workspace::expand_tilde;
 use anyhow::Context as _;
-use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Wire format for `[[mounts]]` / `[mounts.<scope>]` entries. Lacks
-/// the `isolation` field (workspace-only) and rejects unknown fields so
-/// setting `isolation` here fails deserialization with the generic
-/// `MountEntry` untagged-enum error.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct GlobalMountConfig {
-    pub src: String,
-    pub dst: String,
-    #[serde(default)]
-    pub readonly: bool,
-}
-
-impl From<GlobalMountConfig> for MountConfig {
-    fn from(g: GlobalMountConfig) -> Self {
-        Self {
-            src: g.src,
-            dst: g.dst,
-            readonly: g.readonly,
-            isolation: crate::isolation::MountIsolation::Shared,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum MountEntry {
-    Mount(GlobalMountConfig),
-    Scoped(BTreeMap<String, GlobalMountConfig>),
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DockerMounts(BTreeMap<String, MountEntry>);
-
-impl DockerMounts {
-    pub(crate) fn get(&self, key: &str) -> Option<&MountEntry> {
-        self.0.get(key)
-    }
-
-    pub(crate) fn insert(&mut self, key: String, value: MountEntry) -> Option<MountEntry> {
-        self.0.insert(key, value)
-    }
-
-    pub(crate) fn entry(
-        &mut self,
-        key: String,
-    ) -> std::collections::btree_map::Entry<'_, String, MountEntry> {
-        self.0.entry(key)
-    }
-
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &MountEntry)> {
-        self.0.iter()
-    }
-}
+pub(crate) use jackin_config::{GlobalMountConfig, MountEntry};
 
 impl AppConfig {
     /// Determine which role drives role-scoped global mounts for this

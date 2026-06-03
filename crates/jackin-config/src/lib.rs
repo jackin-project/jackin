@@ -20,8 +20,8 @@ pub use auth::{
 };
 pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, MountIsolation, OpRef};
 pub use schema::{
-    GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig, RoleSource, WorkspaceConfig,
-    WorkspaceEdit, WorkspaceRoleOverride,
+    DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig,
+    MountEntry, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride,
 };
 pub use versions::{
     CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, current_config_version,
