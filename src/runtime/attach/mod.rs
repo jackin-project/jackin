@@ -58,8 +58,6 @@ pub use crate::docker_client::ContainerState;
 use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
 
-use super::naming::dind_certs_volume;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSession {
     pub name: String,
@@ -627,16 +625,17 @@ pub async fn inspect_hardline_instance(
     let manifest_result: Result<Option<InstanceManifest>, String> =
         InstanceManifest::read_optional(&state_dir).map_err(|e| e.to_string());
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);
+    let resources = crate::instance::DockerResources::from_container_name(container_name);
     let dind_name = manifest.map_or_else(
-        || format!("{container_name}-dind"),
+        || resources.dind_container.clone(),
         |manifest| manifest.docker.dind_container.clone(),
     );
     let network_name = manifest.as_ref().map_or_else(
-        || format!("{container_name}-net"),
+        || resources.network.clone(),
         |manifest| manifest.docker.network.clone(),
     );
     let certs_volume = manifest.as_ref().map_or_else(
-        || dind_certs_volume(container_name),
+        || resources.certs_volume.clone(),
         |manifest| manifest.docker.certs_volume.clone(),
     );
 

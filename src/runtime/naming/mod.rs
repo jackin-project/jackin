@@ -102,15 +102,15 @@ pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> St
 
 /// Docker volume name for the TLS client certificates shared between the
 /// `DinD` sidecar (writer) and the role container (reader).
-pub(super) fn dind_certs_volume(container_name: &str) -> String {
+pub(crate) fn dind_certs_volume(container_name: &str) -> String {
     format!("{container_name}-dind-certs")
 }
 
-pub(super) fn dind_container_name(container_name: &str) -> String {
+pub(crate) fn dind_container_name(container_name: &str) -> String {
     format!("{container_name}-dind")
 }
 
-pub(super) fn role_network_name(container_name: &str) -> String {
+pub(crate) fn role_network_name(container_name: &str) -> String {
     format!("{container_name}-net")
 }
 

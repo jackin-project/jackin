@@ -18,7 +18,7 @@ mod identity;
 mod image;
 mod launch;
 pub mod logs;
-mod naming;
+pub(crate) mod naming;
 pub mod progress;
 mod repo_cache;
 pub mod snapshot;

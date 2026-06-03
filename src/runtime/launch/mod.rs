@@ -41,7 +41,7 @@ use super::identity::{GitIdentity, load_git_identity, load_host_identity};
 use super::image::{build_agent_image, prepare_runtime_binaries};
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
-    dind_container_name, image_name, image_name_for_branch, role_network_name,
+    image_name, image_name_for_branch,
 };
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 use super::universe::ExitClaim;
@@ -1998,9 +1998,10 @@ async fn load_role_with(
         };
 
         let container_state = paths.data_dir.join(&container_name);
-        let network = role_network_name(&container_name);
-        let dind = dind_container_name(&container_name);
-        let certs_volume = dind_certs_volume(&container_name);
+        let resources = crate::instance::DockerResources::from_container_name(&container_name);
+        let network = resources.network.clone();
+        let dind = resources.dind_container.clone();
+        let certs_volume = resources.certs_volume.clone();
         let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
             container_base: &container_name,

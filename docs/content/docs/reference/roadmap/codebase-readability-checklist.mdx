@@ -212,9 +212,9 @@ Shared helper `provision_single_file_credential` (`:695`) is used by 2 of 6 agen
 The `-dind` / `-net` / `-dind-certs` suffix conventions are derived in **three** independent places — the exact drift risk the DRY rule blocks.
 - [x] `DockerResources::from_container_name(container_name)` exists (`instance/manifest/mod.rs:105`)
 - [x] `dind_container_name()` / `role_network_name()` used from `runtime/naming.rs` in `launch.rs`
-- [ ] Make `DockerResources::from_container_name` (`instance/manifest/mod.rs:111-113`) call the canonical `runtime/naming/mod.rs:106/110/114` helpers instead of its own inline `format!` (its doc-comment already admits it must stay "consistent with the naming registry")
-- [ ] Replace inline `format!("{container_name}-dind")` / `-net` / `dind_certs_volume(...)` at `runtime/attach/mod.rs:631/635/639` with one `DockerResources::from_container_name(container_name)` call (the `--inspect` manifest-absent branch)
-- [ ] Build `DockerResources` via `from_container_name` at `runtime/launch/mod.rs:2017-2022` instead of field-by-field from separate locals (`:2001-2003`)
+- [x] Make `DockerResources::from_container_name` (`instance/manifest/mod.rs:111-113`) call the canonical `runtime/naming/mod.rs:106/110/114` helpers instead of its own inline `format!`; exposed naming helpers as `pub(crate)`
+- [x] Replace inline `format!("{container_name}-dind")` / `-net` / `dind_certs_volume(...)` at `runtime/attach/mod.rs:631/635/639` with `DockerResources::from_container_name(container_name)` (the `--inspect` manifest-absent branch)
+- [x] Build `DockerResources` via `from_container_name` at `runtime/launch/mod.rs:2017-2022` instead of field-by-field from separate locals
 - [ ] **`run_dind_sidecar` helper — corrected premise:** `wait_for_dind` is **already shared** (`runtime/attach/mod.rs:772`, imported by launch at `:33`), and attach does **not** recreate the sidecar (its `--inspect` path only *inspects* existing resources). Only `launch_role_runtime` (`runtime/launch/mod.rs:638`) creates the network + DinD sidecar (`:679-742`). So this is a single-file readability extraction (pull `:679-742` into `run_dind_sidecar`), **not** a launch/attach de-duplication. It is the prerequisite for the `launch_dind.rs` Stage 3 split **(was: "shared between launch.rs and attach.rs")**
 
 ### Mode resolution DRY

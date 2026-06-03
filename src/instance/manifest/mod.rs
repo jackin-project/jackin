@@ -108,9 +108,9 @@ impl DockerResources {
     pub fn from_container_name(container_name: &str) -> Self {
         Self {
             role_container: container_name.to_string(),
-            dind_container: format!("{container_name}-dind"),
-            network: format!("{container_name}-net"),
-            certs_volume: format!("{container_name}-dind-certs"),
+            dind_container: crate::runtime::naming::dind_container_name(container_name),
+            network: crate::runtime::naming::role_network_name(container_name),
+            certs_volume: crate::runtime::naming::dind_certs_volume(container_name),
         }
     }
 }
