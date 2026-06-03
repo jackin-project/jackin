@@ -291,7 +291,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [x] `workspace_cmd.rs` (559L), `config_cmd.rs` (290L), `load_cmd.rs` (491L), `prune_cmd.rs` (80L) extracted
 - [x] `auth_set_tests.rs`, `resolve_role_tests.rs` extracted
 - [x] Extract `app/helpers.rs` ← `mount_display`, `mount_mode`, `render_workspace_show`, `resolve_instance_reference`, `resolve_role_to_container` — ~200L extracted
-- [ ] **Untracked — the real ~600L bulk:** extract `app/token_cmd.rs` ← the Claude-token cluster (`:186-793`): `handle_claude_token` (`:186`, 189L), `delete_prior_op_item*` (`:383/392`), `print_token_setup_report` (`:463`), `prompt_interactive_token_store` (`:576`, 120L), `prompt_existing_item_section_and_field` (`:696`, 105L)
+- [x] **Untracked — the real ~600L bulk:** extracted `app/token_cmd.rs` — Claude-token cluster including `handle_claude_token`, `delete_prior_op_item*`, `print_token_setup_report`, `prompt_interactive_token_store`, `prompt_existing_item_section_and_field`
 - [ ] **Untracked:** extract `app/restore.rs` ← the hardline/restore + moved-path-browser cluster (`:874-1405`, ~430L): `ConsoleInPlaceHandler` impl (`:874`), `handle_console_instance_action` (`:961`, 113L), restore helpers (`:1114-1405`)
 - [x] `run` (`:70`, ~64L) — verified under threshold; removed stale `#[allow(clippy::large_stack_frames)]` annotation (function no longer triggers the lint)
 
