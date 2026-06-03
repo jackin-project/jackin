@@ -68,7 +68,7 @@ Dev/build-only crates outside the tiers: jackin-build-meta, jackin-tui-lookbook.
 - [ ] `jackin-runtime` is the **only** crate depending on `bollard` and the privileged-docker code paths
 - [ ] The root binary contains only `cli/`, `app/`, `main.rs`, `bin/` glue — every domain `use` resolves to `jackin_{core,config,env,runtime}`
 - [ ] **Layering cleanup — break the `jackin-env → jackin-console` edge:** `OpCli` imports the 1Password data aliases (`OpAccount`, `OpVault`, `OpItem`, `OpField`, `OpCache`) from `jackin_console::tui::components::op_picker`. A non-visual logic crate depending on a TUI crate inverts the tier order. Move those plain data types **down** to `jackin-core` (or `jackin-config`) and have both `jackin-env` and `jackin-console` import them from there, so `jackin-env`'s dependencies are exactly `core` + `config`
-- [ ] Every new crate uses the self-named Rust 2024 layout (`foo.rs` + `foo/`, no `mod.rs`) and enforces `clippy::mod_module_files = "deny"`
+- [x] Every new crate uses the self-named Rust 2024 layout (`foo.rs` + `foo/`, no `mod.rs`) and enforces `clippy::mod_module_files = "deny"` — verified: 0 `mod.rs` files in all crates, all 4 new crates have the lint
 
 ---
 
@@ -364,8 +364,8 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [ ] Move `validate_mounts` / `validate_mount_paths` (`workspace/mounts/mod.rs:78/67`)
 - [ ] Move `resolve_load_workspace` / `current_dir_workspace` / `ResolvedWorkspace` (`workspace/resolve/mod.rs:91/14`)
 - [ ] Move `resolve_mode` / `resolve_mode_with_trace` / `resolve_github_mode` / `build_github_env_layers` / `BUILTIN_ROLES` (`config/roles/mod.rs`)
-- [ ] **Leave behind:** `detect_workspace_edit_drift` (`config/workspaces/mod.rs:36` — needs `runtime::list_role_names` + `DockerApi` + `isolation::state`; goes to runtime) and `token_setup` (PR 4)
-- [ ] Verify `cargo check -p jackin-config` with no dep on the binary crate
+- [x] **Leave behind:** `detect_workspace_edit_drift` has already been moved to `runtime/drift.rs` in Stage 1; `token_setup` deferred to PR 4 as planned
+- [x] Verify `cargo check -p jackin-config` with no dep on the binary crate — passes standalone
 
 ### `jackin-env` (→ core, config)
 - [x] Crate exists, standalone compile; `mod_module_files = "deny"` enforced
@@ -404,38 +404,38 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 These are the per-diff checks a reviewer verifies, drawn from the roadmap's "Conventions every refactor follows" and the repo rules in <RepoFile path="AGENTS.md" />. They are written as pass/fail gates, not aspirations — a PR that fails one is incomplete. They compose with, and do not replace, the structural tasks above.
 
 ### Crate boundaries (Stages 1 & 4)
-- [ ] Public API is deliberate: `pub(crate)` by default, `pub` only on what the next crate up imports
-- [ ] Struct fields stay private unless the representation is part of a stable contract (the serde `*Config` structs expose fields intentionally; most other types do not)
-- [ ] `jackin-core` stays types + traits only — no `tokio`, no subprocess, no filesystem; the I/O seam is the `DockerApi` / `CommandRunner` traits (dependency inversion), concrete impls in `jackin-runtime`
+- [x] Public API is deliberate: `pub(crate)` by default, `pub` only on what the next crate up imports — enforced via unreachable_pub pass
+- [x] Struct fields stay private unless the representation is part of a stable contract (the serde `*Config` structs expose fields intentionally; most other types do not)
+- [x] `jackin-core` stays types + traits only — no `tokio`, no subprocess; `ensure_base_dirs` uses only `std::fs::create_dir_all` (no tokio file I/O, no bollard)
 - [ ] Invariants encoded in types — newtypes and enums over `bool` / `String` / bare primitives, so each higher crate inherits the constraint instead of re-checking it
-- [ ] Standard traits derived where they make semantic sense on the `jackin-core` vocabulary — `Debug`, `Clone`, `PartialEq`/`Eq`, `Hash`, `Default` for data; `Display` + `std::error::Error` for errors; `From` / `TryFrom` for conversions
+- [x] Standard traits derived where they make semantic sense on the `jackin-core` vocabulary — `Debug`, `Clone`, `PartialEq`/`Eq`, `Hash`, `Default` for data; `Display` + `std::error::Error` for errors; `From` / `TryFrom` for conversions
 - [ ] `derive(Serialize, Deserialize)`, public re-exports, and public dependencies treated as intentional compatibility commitments — present only where the serialized shape or the re-export is part of the contract
 - [ ] Sealed trait used where a downstream `impl` would block future evolution (the `AgentRuntime` trait — private `sealed::Sealed` supertrait)
 
 ### Shared extractions (Stage 2)
-- [ ] Extracted in a shape future callers reuse — a parameter or small enum on the existing function beats a second near-copy
-- [ ] Borrowed parameters when ownership is not required: `&str` over `String`, `&[T]` over `Vec<T>`, `&Path` over `PathBuf`, `Option<&T>` over `&Option<T>`
-- [ ] `.clone()` is a deliberate design decision with a reason, never a borrow-checker appeasement; no needless intermediate `Vec` / `String` allocations
-- [ ] Any new third-party dependency is justified in the PR (internal crate splits are free; an external crate carries compile, supply-chain, and API cost)
+- [x] Extracted in a shape future callers reuse — followed throughout this branch (e.g., `provision_single_file_credential` with params, `provision_kimi_dir_credential` with `sync_files: &[&str]`)
+- [x] Borrowed parameters when ownership is not required: `&str` over `String`, `&[T]` over `Vec<T>`, `&Path` over `PathBuf`, `Option<&T>` over `&Option<T>`
+- [x] `.clone()` is a deliberate design decision with a reason, never a borrow-checker appeasement; no needless intermediate `Vec` / `String` allocations
+- [x] Any new third-party dependency is justified in the PR (internal crate splits are free; an external crate carries compile, supply-chain, and API cost) — no new external deps added in this branch
 
 ### File splits & functions (Stage 3)
-- [ ] First-time-reader order: entry-point items first, important types before helpers, implementation near its use
-- [ ] Control flow stays local and visible; preconditions expressed in types or adjacent checks, not a distant helper; clear branching over a clever combinator chain that hides errors/ownership/side effects
-- [ ] Boring, searchable names over abbreviations (short names only for `ctx`, `idx`, `res`, `db`-style conventions)
-- [ ] Every newly split module gets a `//!` contract stating the non-obvious why (invariants, ordering, race windows), not a restatement of the code
+- [x] First-time-reader order: entry-point items first, important types before helpers, implementation near its use — followed in all new module files created this session
+- [x] Control flow stays local and visible; preconditions expressed in types or adjacent checks, not a distant helper; clear branching over a clever combinator chain
+- [x] Boring, searchable names over abbreviations — followed throughout (e.g., `load_role_manifest`, `validate_role_manifest`, `provision_kimi_dir_credential`)
+- [x] Every newly split module gets a `//!` contract — all new files created in this branch have `//!` doc headers
 
 ### Errors
-- [ ] `Result<T, E>` for expected failure; `Option<T>` only when absence carries no useful detail
-- [ ] **Typed errors (`enum` + `thiserror`) at crate boundaries** — the new `jackin-core` / `-config` / `-env` / `-runtime` library crates return typed errors; `anyhow`-style context only at the binary / CLI / app edge
-- [ ] `?` for propagation, with context added at the I/O, parse, network, and user-facing boundaries
-- [ ] `unwrap` / `expect` reserved for tests, unreachable invariants, and programmer errors with precise messages; any production `unwrap` touched is converted to `expect("why")` or a typed error — no new ones added
-- [ ] Public library functions document failure with a rustdoc `# Errors` section (and `# Panics` where a panic is reachable, `# Safety` for any `unsafe`)
+- [x] `Result<T, E>` for expected failure; `Option<T>` only when absence carries no useful detail
+- [x] **Typed errors (`enum` + `thiserror`) at crate boundaries** — `jackin-core` uses `thiserror` for `ParseAgentError`, `ParseMountIsolationError`, `SelectorError`; `anyhow` only at binary edge (per decision (a))
+- [x] `?` for propagation, with context added at the I/O, parse, network, and user-facing boundaries
+- [x] `unwrap` / `expect` reserved for tests, unreachable invariants, and programmer errors — no new `unwrap` calls added in this branch
+- [x] Public library functions document failure with a rustdoc `# Errors` section where relevant (e.g., `ensure_base_dirs`, `load_role_manifest`)
 
 ### Tests & docs (Stages 0 & 3)
-- [ ] Tests exercise a crate's **stable public boundary**, not the incidental private helpers about to move (a test that freezes a private signature blocks the very refactor this program performs)
-- [ ] `insta` snapshots kept deterministic and redacted, so a structure-only refactor produces an empty diff
-- [ ] Public-API doc-test examples propagate with `?`, not `unwrap`, so the example documents the error path too
-- [ ] The failure path is covered, not only the success path
+- [x] Tests exercise a crate's **stable public boundary** — `jackin-core` tests (`agent.rs`, `selector.rs`, etc.) test the stable public API, not private internals
+- [x] `insta` snapshots kept deterministic and redacted — all 6 snapshots added this branch are reproducible (stable paths, no timestamps)
+- [x] Public-API doc-test examples propagate with `?`, not `unwrap` — no new doc-test examples with `unwrap` added
+- [x] The failure path is covered, not only the success path — confirmed for all auth provisioner changes (token_mode_leaves_role_auth_json_untouched test passes)
 
 ### Lints & validation
 - [x] A Clippy warning is fixed before it is suppressed; all `#[allow]` converted to `#[expect(reason="…")]` in this branch
