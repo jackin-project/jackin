@@ -34,22 +34,7 @@ pub enum LoadWorkspaceInput {
     Saved(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedWorkspace {
-    pub label: String,
-    pub workdir: String,
-    pub mounts: Vec<MountConfig>,
-    /// Whether this workspace opted into the keep-awake reconciler.
-    /// Carried through to `launch_role_runtime` so the container can
-    /// be tagged with `jackin.keep_awake=true` without a config
-    /// re-lookup.
-    pub keep_awake_enabled: bool,
-    /// Workspace-level default agent (None for ad-hoc / current-dir
-    /// workspaces). The launch flow combines this with any CLI override
-    /// in `runtime::launch::resolve_agent`.
-    pub default_agent: Option<crate::agent::Agent>,
-    pub git_pull_on_entry: bool,
-}
+pub use jackin_config::ResolvedWorkspace;
 
 fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
     let expanded = expand_tilde(path);

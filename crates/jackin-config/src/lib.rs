@@ -26,8 +26,8 @@ pub use planner::{
 };
 pub use schema::{
     DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig,
-    MountEntry, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride,
-    validate_mount_paths, validate_mount_specs, validate_mounts,
+    MountEntry, ResolvedWorkspace, RoleSource, WorkspaceConfig, WorkspaceEdit,
+    WorkspaceRoleOverride, validate_mount_paths, validate_mount_specs, validate_mounts,
 };
 pub use versions::{
     CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, current_config_version,

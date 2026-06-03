@@ -362,7 +362,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [ ] Move `AppConfig::load_or_init` + `atomic_write` (`config/persist/mod.rs`) — drop the `validate_reserved_names` call (PR 0)
 - [x] Move `plan_create` / `plan_edit` / `plan_collapse` + supporting types (`CollapsePlan`, `Removal`, `CollapseError`, `WorkspaceCreatePlan`, `WorkspaceEditPlan`, `apply_isolation_overrides`, `covers`) to `jackin-config/src/planner.rs`
 - [x] Move `validate_mounts` / `validate_mount_paths` / `validate_mount_specs` to `jackin-config/schema.rs`; `workspace/mod.rs` re-exports them
-- [ ] Move `resolve_load_workspace` / `current_dir_workspace` / `ResolvedWorkspace` (`workspace/resolve/mod.rs:91/14`)
+- [x] Move `ResolvedWorkspace` struct to `jackin-config/schema.rs`; `resolve_load_workspace` and `current_dir_workspace` deferred (depend on `AppConfig` methods still in binary)
 - [ ] Move `resolve_mode` / `resolve_mode_with_trace` / `resolve_github_mode` / `build_github_env_layers` / `BUILTIN_ROLES` (`config/roles/mod.rs`)
 - [x] **Leave behind:** `detect_workspace_edit_drift` has already been moved to `runtime/drift.rs` in Stage 1; `token_setup` deferred to PR 4 as planned
 - [x] Verify `cargo check -p jackin-config` with no dep on the binary crate — passes standalone

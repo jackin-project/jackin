@@ -236,6 +236,25 @@ pub struct DockerConfig {
     pub mounts: DockerMounts,
 }
 
+// ─── Resolved workspace ──────────────────────────────────────────────────────
+
+/// A workspace with its global mounts already resolved and merged.
+///
+/// This is the runtime view of a workspace: mounts expanded from named
+/// global mount sets, workdir validated, and keep-awake flag determined.
+/// The binary's `workspace::resolve` builds it from an `AppConfig`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedWorkspace {
+    pub label: String,
+    pub workdir: String,
+    pub mounts: Vec<MountConfig>,
+    /// Whether the keep-awake reconciler is active for this workspace.
+    pub keep_awake_enabled: bool,
+    /// Workspace-level default agent (`None` for ad-hoc / current-dir workspaces).
+    pub default_agent: Option<jackin_core::Agent>,
+    pub git_pull_on_entry: bool,
+}
+
 // AppConfig stays in the binary crate — it has many inherent impl blocks
 // (load_or_init, edit_workspace, sync_builtin_agents, etc.) that depend on
 // binary-only types (ConfigEditor, fs2, JackinPaths). Moving AppConfig would
