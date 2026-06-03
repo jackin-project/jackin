@@ -59,7 +59,10 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     handle_settings_key_with_effects(state, key);
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
@@ -177,7 +180,10 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let _dirty = update_manager(state, message);
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     // S is handled here, before `global` borrows `settings.mounts`, so
     // `open_settings_save_preview` can receive all of `settings`.
@@ -481,7 +487,10 @@ pub fn settings_auth_can_generate_token(
     )
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub(super) fn handle_settings_auth_modal(
     auth: &mut crate::console::tui::state::SettingsAuthState,
     env: &mut crate::console::tui::state::SettingsEnvState<'_>,
@@ -1057,7 +1066,10 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub(super) fn handle_settings_confirm_modal(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     key: KeyEvent,
@@ -1213,7 +1225,10 @@ pub(super) fn handle_settings_confirm_modal(
     outcome
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub(super) fn handle_settings_env_modal(
     env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     key: KeyEvent,

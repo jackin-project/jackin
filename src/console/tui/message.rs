@@ -74,7 +74,10 @@ pub(crate) type ManagerBackgroundEvent = jackin_console::tui::message::Backgroun
 
 pub(crate) type ManagerUpdate = jackin_console::tui::update::ConsoleUpdate<ManagerEffect>;
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub(crate) fn update_manager(
     state: &mut ManagerState<'_>,
     message: ManagerMessage,

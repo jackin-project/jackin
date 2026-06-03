@@ -150,7 +150,10 @@ pub struct TrustPreviewRow {
 }
 
 #[must_use]
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
         .fg(jackin_tui::theme::WHITE)
@@ -392,7 +395,10 @@ fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
 }
 
 #[must_use]
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
         .fg(jackin_tui::theme::WHITE)

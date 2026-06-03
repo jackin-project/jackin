@@ -966,7 +966,10 @@ fn apply_field_edit(
 }
 
 impl OpWriteRunner for OpCli {
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending extraction — tracked in codebase-readability roadmap"
+    )]
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef> {
         use std::io::Write;
         use std::process::{Command, Stdio};
@@ -1421,7 +1424,10 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
 /// `None` when the call has no account context (e.g. ambient
 /// `op://...` resolution where the operator has not pinned an
 /// account).
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub fn resolve_op_uri_to_ref(
     input: &str,
     op: &dyn OpStructRunner,

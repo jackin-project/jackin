@@ -23,7 +23,10 @@ use std::path::Path;
 /// (`git worktree list` showing stale paths) and orphan branches with no
 /// jackin-side reference, which can only be reclaimed by manually running
 /// `git worktree prune` and `git branch -D` on the host repo.
-#[allow(clippy::too_many_lines)] // verify-and-bail flow has lots of small steps; splitting hurts readability
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)] // verify-and-bail flow has lots of small steps; splitting hurts readability
 pub async fn force_cleanup_isolated(
     record: &IsolationRecord,
     container_state_dir: &Path,

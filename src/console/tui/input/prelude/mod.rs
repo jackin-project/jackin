@@ -66,7 +66,10 @@ fn prelude_advance_to_workdir_pick(
     });
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub(super) fn handle_prelude_modal(
     prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
     key: KeyEvent,

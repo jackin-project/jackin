@@ -180,7 +180,10 @@ where
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub async fn run_console<H: InstanceActionHandler>(
     mut config: AppConfig,
     paths: &JackinPaths,

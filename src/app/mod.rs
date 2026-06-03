@@ -65,7 +65,6 @@ async fn play_construct_intro_if_needed(
     claim
 }
 
-#[allow(clippy::too_many_lines)]
 #[allow(clippy::large_stack_frames)]
 pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
@@ -182,7 +181,10 @@ fn workspace_env_scope(workspace: String, role: Option<String>) -> config::EnvSc
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 fn handle_claude_token(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -1425,7 +1427,10 @@ fn render_auth_show(config: &AppConfig) -> String {
 /// trailing mounts table with one row per mount. The mounts table renders the
 /// canonical lowercase isolation name (`shared`/`worktree`/`clone`) so the output
 /// matches TOML/CLI input verbatim.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceConfig) -> String {
     use std::fmt::Write as _;
     use tabled::settings::Style;

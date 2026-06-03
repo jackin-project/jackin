@@ -297,7 +297,10 @@ impl OpPickerState {
 
     /// Public so the outer console event loop can drain pending
     /// results every tick; keeps the picker responsive without keystrokes.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending extraction — tracked in codebase-readability roadmap"
+    )]
     pub fn poll_load(&mut self) -> bool {
         let Some(rx) = self.rx.as_mut() else {
             return false;

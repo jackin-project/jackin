@@ -64,7 +64,10 @@ fn handle_mouse(
     handle_mouse_with_config(state, mouse, term_size, None)
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub fn handle_mouse_with_config(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -956,7 +959,10 @@ fn try_drag_vertical_scrollbar(
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 fn scroll_active_panel(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -1093,7 +1099,10 @@ fn scroll_active_panel(
 /// Horizontal-only blocks (List view mounts) are silently ignored here —
 /// their scroll is only driven by left/right events via `scroll_active_panel`.
 #[allow(clippy::missing_const_for_fn)]
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 fn scroll_active_panel_vertical(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,

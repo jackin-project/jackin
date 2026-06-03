@@ -408,7 +408,10 @@ readonly = false
     }
 
     #[test]
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "pending extraction — tracked in codebase-readability roadmap"
+    )]
     fn host_console_modal_states_have_one_green_border_cluster() {
         let config = AppConfig::default();
         let cwd = test_cwd();

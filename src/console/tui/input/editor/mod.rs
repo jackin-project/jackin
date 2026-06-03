@@ -42,7 +42,10 @@ use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub(super) fn handle_editor_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,

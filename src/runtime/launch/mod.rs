@@ -636,7 +636,10 @@ fn capsule_config(
 }
 
 /// Create the Docker network, start `DinD`, and launch the role container.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 async fn launch_role_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,
@@ -1503,7 +1506,11 @@ pub async fn resolve_supported_agents_for_console(
     Ok(validated_repo.manifest.supported_agents())
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 async fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -2668,7 +2675,7 @@ enum RestoreResolution {
     RebuildRelatedRole(Box<InstanceManifest>),
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,

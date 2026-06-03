@@ -980,7 +980,6 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
 }
 
 /// Build the config-editor patch for a workspace edit from original/pending UI state.
-#[allow(clippy::too_many_lines)]
 pub(crate) fn build_workspace_edit(
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,

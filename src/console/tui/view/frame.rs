@@ -25,7 +25,6 @@ use jackin_tui::HintSpan;
 
 use super::{editor, settings};
 
-#[allow(clippy::too_many_lines)]
 pub fn render(
     frame: &mut Frame,
     area: Rect,

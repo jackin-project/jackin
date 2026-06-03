@@ -10,7 +10,6 @@ use jackin_console::tui::components::footer_hints::{
     pick_list_confirm_footer_label, pick_list_select_footer_label,
 };
 
-#[allow(clippy::too_many_lines)]
 pub(crate) fn modal_footer_items(
     modal: &Modal<'_>,
     can_generate_token: bool,

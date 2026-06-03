@@ -116,7 +116,7 @@ pub fn continue_save_after_isolation_cleanup(
 /// route to `EditorSaveFlow::Error` and the shared `ErrorPopup`, same
 /// as phase-2 commit errors. The plan is stashed on the modal so
 /// commit doesn't re-run `plan_edit`/`plan_create`.
-#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
+#[allow(clippy::unnecessary_wraps)]
 pub(super) fn begin_editor_save(
     state: &mut ManagerState<'_>,
     config: &AppConfig,

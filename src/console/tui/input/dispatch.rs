@@ -15,7 +15,10 @@ use jackin_console::tui::screens::workspaces::update::{
     DestructiveConfirmPlan, destructive_confirm_plan,
 };
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
 pub fn handle_key(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,

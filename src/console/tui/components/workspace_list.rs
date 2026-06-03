@@ -25,7 +25,6 @@ use jackin_console::tui::screens::workspaces::view::{
     role_global_mounts_title, workspace_instance_list_label, workspace_instance_pane_agent_label,
 };
 
-#[allow(clippy::too_many_lines)]
 pub(crate) fn render_list_body(
     frame: &mut Frame,
     area: Rect,
