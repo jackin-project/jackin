@@ -11,7 +11,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use jackin_tui::components::{Panel, PanelFocus};
-use jackin_tui::theme::PHOSPHOR_GREEN;
 
 pub trait AgentChoice: Copy + Eq + 'static {
     const ALL: &'static [Self];
@@ -87,7 +86,7 @@ impl<A: AgentChoice> Default for AgentChoiceState<A> {
 
 pub fn render<A: AgentChoice>(frame: &mut Frame, area: Rect, state: &AgentChoiceState<A>) {
     let bold = Style::default().add_modifier(Modifier::BOLD);
-    let phosphor = Style::default().fg(PHOSPHOR_GREEN);
+    let phosphor = jackin_tui::theme::GREEN;
     let make_row = |agent: A, label: &str| {
         let prefix = if state.focused == agent { "▸ " } else { "  " };
         Line::from(vec![

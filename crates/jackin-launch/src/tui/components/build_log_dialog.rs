@@ -4,7 +4,7 @@ use jackin_tui::HintSpan;
 use jackin_tui::components::{
     render_hint_bar, render_scrollable_block, viewport_height, viewport_width,
 };
-use jackin_tui::theme::{DIALOG_SURFACE, PHOSPHOR_DIM};
+use jackin_tui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -64,7 +64,7 @@ pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchV
     let lines: Vec<Line<'_>> = if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
-            Style::default().fg(PHOSPHOR_DIM),
+            jackin_tui::theme::DIM,
         ))]
     } else {
         wrap_build_log_lines(raw, viewport_w)
@@ -170,7 +170,7 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                Style::default().fg(PHOSPHOR_DIM).bg(DIALOG_SURFACE),
+                jackin_tui::theme::DIM.bg(DIALOG_SURFACE),
             ),
         );
     }

@@ -276,7 +276,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            jackin_tui::theme::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         rows[0],

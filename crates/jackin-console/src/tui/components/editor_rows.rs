@@ -7,7 +7,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_GREEN, WHITE};
 
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
@@ -116,11 +116,11 @@ pub fn render_secret_key_line(
     const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let label_style = if selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+        jackin_tui::theme::BOLD_WHITE
     } else {
         Style::default().fg(WHITE)
     };
-    let dim = Style::default().fg(PHOSPHOR_DIM);
+    let dim = jackin_tui::theme::DIM;
     let op_breadcrumb = match value {
         SecretValueDisplay::OpRefPath(path) => {
             crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
@@ -152,13 +152,13 @@ pub fn render_secret_key_line(
     };
 
     let value_style = if masked {
-        Style::default().fg(PHOSPHOR_DIM)
+        jackin_tui::theme::DIM
     } else if selected {
         Style::default()
             .fg(PHOSPHOR_GREEN)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(PHOSPHOR_GREEN)
+        jackin_tui::theme::GREEN
     };
 
     let rendered_value: String = if masked {

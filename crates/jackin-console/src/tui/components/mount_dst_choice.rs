@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use jackin_tui::components::{Panel, PanelFocus};
-use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
+use jackin_tui::theme::PHOSPHOR_DIM;
 use jackin_tui::{ModalOutcome, shorten_home};
 
 /// Outcome of the mount-destination modal.
@@ -109,7 +109,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            jackin_tui::theme::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
         chunks[0],

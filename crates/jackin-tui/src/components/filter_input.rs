@@ -6,7 +6,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
+use crate::theme::{PHOSPHOR_DARK, WHITE};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FilterInput<'a> {
@@ -30,12 +30,12 @@ impl Widget for FilterInput<'_> {
 pub fn filter_input_line(filter: &str) -> Line<'static> {
     if filter.is_empty() {
         Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled("Filter: ", crate::theme::DIM),
             Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
         ])
     } else {
         Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled("Filter: ", crate::theme::DIM),
             Span::styled(filter.to_string(), Style::default().fg(WHITE)),
             Span::styled(
                 "\u{2588}",

@@ -55,10 +55,7 @@ impl Widget for ErrorDialog<'_> {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(DANGER_RED))
-            .title(Span::styled(
-                title,
-                Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
-            ));
+            .title(Span::styled(title, crate::theme::DANGER));
         let inner = block.inner(area);
         Clear.render(area, buf);
         block.render(area, buf);

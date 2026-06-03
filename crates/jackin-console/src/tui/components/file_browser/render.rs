@@ -10,7 +10,7 @@ use ratatui::{
 
 use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
-use super::{DANGER_RED, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_GREEN, WHITE};
 use jackin_tui::components::{Panel, PanelFocus};
 
 /// Vertical-layout constraints used by `render` and by the geometry-only
@@ -59,7 +59,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
-                Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
+                jackin_tui::theme::DANGER,
             ))
             .alignment(Alignment::Center),
             chunks[0],

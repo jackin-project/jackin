@@ -303,10 +303,7 @@ impl Widget for TextInput<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
 
-        let title = Span::styled(
-            format!(" {} ", self.state.label),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        );
+        let title = Span::styled(format!(" {} ", self.state.label), crate::theme::BOLD_WHITE);
         let border_color = match self.state.border_style() {
             BorderStyle::Error => DANGER_RED,
             BorderStyle::Default => PHOSPHOR_GREEN,
@@ -365,7 +362,7 @@ fn render_input_value(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) 
     let value = state.field.value();
     let cursor = state.field.cursor().min(value.len());
     let (before, after) = value.split_at(cursor);
-    let base_style = Style::default().fg(PHOSPHOR_GREEN).bg(INPUT_BG_DIM);
+    let base_style = crate::theme::GREEN.bg(INPUT_BG_DIM);
     let cursor_style = Style::default()
         .bg(WHITE)
         .fg(Color::Black)

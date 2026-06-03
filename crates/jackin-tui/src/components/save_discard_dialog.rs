@@ -4,12 +4,11 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
     text::Span,
     widgets::Paragraph,
 };
 
-use crate::{ModalOutcome, theme::WHITE};
+use crate::ModalOutcome;
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
 use super::panel::modal_block;
@@ -75,10 +74,7 @@ impl SaveDiscardState {
 }
 
 pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &SaveDiscardState) {
-    let block = modal_block().title(Span::styled(
-        " Unsaved changes ",
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    ));
+    let block = modal_block().title(Span::styled(" Unsaved changes ", crate::theme::BOLD_WHITE));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
@@ -93,11 +89,8 @@ pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &Sav
         .split(inner);
 
     frame.render_widget(
-        Paragraph::new(Span::styled(
-            state.prompt.clone(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ))
-        .alignment(Alignment::Center),
+        Paragraph::new(Span::styled(state.prompt.clone(), crate::theme::BOLD_WHITE))
+            .alignment(Alignment::Center),
         chunks[0],
     );
 

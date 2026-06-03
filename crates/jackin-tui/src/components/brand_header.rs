@@ -6,7 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN};
+use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
 
 #[derive(Debug, Clone, Copy)]
 pub struct BrandHeader<'a> {
@@ -39,7 +39,7 @@ pub fn brand_header_line(label: &str) -> Line<'static> {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
-        Span::styled(label.to_string(), Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(label.to_string(), crate::theme::DIM),
     ])
 }
 

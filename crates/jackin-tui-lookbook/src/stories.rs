@@ -13,12 +13,10 @@ use jackin_tui::{
         render_select_list, render_status_footer, render_status_popup, render_text_input,
         render_wrapped_hint_bar,
     },
-    theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
 };
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -241,38 +239,23 @@ fn story_panel_focused(frame: &mut Frame<'_>, area: Rect) {
     frame.render_widget(
         Paragraph::new(vec![
             Line::from(vec![
-                Span::styled(
-                    "Name: ",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("jackin-core", Style::default().fg(PHOSPHOR_GREEN)),
+                Span::styled("Name: ", jackin_tui::theme::BOLD_WHITE),
+                Span::styled("jackin-core", jackin_tui::theme::GREEN),
             ]),
             Line::from(vec![
-                Span::styled(
-                    "Role: ",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("Role: ", jackin_tui::theme::BOLD_WHITE),
                 Span::styled(
                     "github.com/jackin-project/roles/rust",
-                    Style::default().fg(PHOSPHOR_GREEN),
+                    jackin_tui::theme::GREEN,
                 ),
             ]),
             Line::from(vec![
-                Span::styled(
-                    "Agent: ",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("codex", Style::default().fg(PHOSPHOR_GREEN)),
+                Span::styled("Agent: ", jackin_tui::theme::BOLD_WHITE),
+                Span::styled("codex", jackin_tui::theme::GREEN),
             ]),
             Line::from(vec![
-                Span::styled(
-                    "Mounts: ",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "repo rw, ~/.config/gh ro",
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
+                Span::styled("Mounts: ", jackin_tui::theme::BOLD_WHITE),
+                Span::styled("repo rw, ~/.config/gh ro", jackin_tui::theme::DIM),
             ]),
         ]),
         inner,
@@ -395,18 +378,12 @@ fn story_select_list_agent_picker(frame: &mut Frame<'_>, area: Rect) {
     state.select_index(1);
     let context = [
         Line::from(vec![
-            Span::styled(
-                "Workspace: ",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("jackin-core", Style::default().fg(PHOSPHOR_GREEN)),
+            Span::styled("Workspace: ", jackin_tui::theme::BOLD_WHITE),
+            Span::styled("jackin-core", jackin_tui::theme::GREEN),
         ]),
         Line::from(vec![
-            Span::styled(
-                "Role: ",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("rust", Style::default().fg(PHOSPHOR_GREEN)),
+            Span::styled("Role: ", jackin_tui::theme::BOLD_WHITE),
+            Span::styled("rust", jackin_tui::theme::GREEN),
         ]),
     ];
     render_select_list(frame, area, &state, "Choose agent", &context);

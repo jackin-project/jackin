@@ -16,7 +16,7 @@ use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
 use jackin_tui::components::{Panel, PanelFocus, TextInputState};
-use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub trait AuthCredentialRef: Clone + std::fmt::Debug + PartialEq + Eq {
     fn path(&self) -> &str;
@@ -364,7 +364,7 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
             label_style(),
         ),
         Span::raw(" "),
-        Span::styled(mode_text.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(mode_text.to_string(), jackin_tui::theme::GREEN),
     ])));
 
     if form.shows_credential_block()
@@ -392,7 +392,7 @@ fn credential_env_line<R: AuthCredentialRef>(
     selected: bool,
 ) -> Line<'static> {
     let label_style = if selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+        jackin_tui::theme::BOLD_WHITE
     } else {
         Style::default().fg(WHITE)
     };
@@ -408,7 +408,7 @@ fn credential_env_line<R: AuthCredentialRef>(
         CredentialInput::None => {
             spans.push(Span::styled(
                 "required".to_string(),
-                Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
+                jackin_tui::theme::DANGER,
             ));
         }
         CredentialInput::Literal(value) => {
@@ -418,9 +418,9 @@ fn credential_env_line<R: AuthCredentialRef>(
                 "●".repeat(value.chars().count().clamp(1, 12))
             };
             let style = if value.is_empty() {
-                Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD)
+                jackin_tui::theme::DANGER
             } else {
-                Style::default().fg(PHOSPHOR_GREEN)
+                jackin_tui::theme::GREEN
             };
             spans.push(Span::styled(masked, style));
         }
@@ -451,33 +451,27 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
             "  Cancel  ".to_string(),
             selected_button_style(
                 focus == AuthFormFocus::Cancel,
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                jackin_tui::theme::BOLD_WHITE,
             ),
         ),
         Span::raw("    "),
         Span::styled(
             "  Reset  ".to_string(),
-            selected_button_style(
-                focus == AuthFormFocus::Reset,
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
+            selected_button_style(focus == AuthFormFocus::Reset, jackin_tui::theme::BOLD_WHITE),
         ),
     ])
 }
 
 fn cursor_span(selected: bool) -> Span<'static> {
     if selected {
-        Span::styled(
-            "▸ ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        )
+        Span::styled("▸ ", jackin_tui::theme::BOLD_WHITE)
     } else {
         Span::raw("  ")
     }
 }
 
 fn label_style() -> Style {
-    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    jackin_tui::theme::BOLD_WHITE
 }
 
 const fn selected_button_style(selected: bool, style: Style) -> Style {

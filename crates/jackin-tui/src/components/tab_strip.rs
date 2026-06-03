@@ -10,10 +10,7 @@ use ratatui::{
 
 use crate::{
     TabCell, lay_out_tabs,
-    theme::{
-        PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER,
-        WHITE,
-    },
+    theme::{TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -99,7 +96,7 @@ pub fn tab_underline_line(cells: &[TabCell<'_>], focused: bool) -> Line<'static>
             spans.push(Span::styled(
                 bar_text,
                 if cell.active {
-                    Style::default().fg(PHOSPHOR_GREEN)
+                    crate::theme::GREEN
                 } else {
                     Style::default()
                 },

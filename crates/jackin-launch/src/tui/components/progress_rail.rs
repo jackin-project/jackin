@@ -1,6 +1,6 @@
 //! Launch stage progress rail and label animation.
 
-use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -150,8 +150,8 @@ pub fn label_strip(
 fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Style {
     if active {
         return match status {
-            StageStatus::Failed => Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
-            _ if bright => Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            StageStatus::Failed => jackin_tui::theme::DANGER,
+            _ if bright => jackin_tui::theme::BOLD_WHITE,
             _ => Style::default()
                 .fg(PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
@@ -159,9 +159,9 @@ fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Sty
     }
 
     match status {
-        StageStatus::Done | StageStatus::Skipped => Style::default().fg(PHOSPHOR_DIM),
+        StageStatus::Done | StageStatus::Skipped => jackin_tui::theme::DIM,
         StageStatus::Failed => Style::default().fg(DANGER_RED),
-        StageStatus::Running | StageStatus::Blocked => Style::default().fg(PHOSPHOR_GREEN),
+        StageStatus::Running | StageStatus::Blocked => jackin_tui::theme::GREEN,
         StageStatus::Queued => Style::default().fg(PHOSPHOR_DARK),
     }
 }

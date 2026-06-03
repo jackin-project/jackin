@@ -2,12 +2,10 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::HintSpan;
-use crate::theme::{BORDER_GRAY, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy)]
 pub struct HintBar<'a> {
@@ -87,10 +85,10 @@ pub fn render_wrapped_hint_bar(frame: &mut ratatui::Frame<'_>, area: Rect, spans
 
 #[must_use]
 pub fn line(spans: &[HintSpan<'_>]) -> Line<'static> {
-    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(PHOSPHOR_GREEN);
-    let dim = Style::default().fg(PHOSPHOR_DIM);
-    let sep = Style::default().fg(BORDER_GRAY);
+    let key = crate::theme::BOLD_WHITE;
+    let text = crate::theme::GREEN;
+    let dim = crate::theme::DIM;
+    let sep = crate::theme::BORDER;
     let mut out: Vec<Span<'static>> = Vec::with_capacity(spans.len());
     for span in spans {
         match span {
@@ -121,10 +119,10 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
         sep: SepKind,
     }
 
-    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(PHOSPHOR_GREEN);
-    let dim = Style::default().fg(PHOSPHOR_DIM);
-    let sep_style = Style::default().fg(BORDER_GRAY);
+    let key = crate::theme::BOLD_WHITE;
+    let text = crate::theme::GREEN;
+    let dim = crate::theme::DIM;
+    let sep_style = crate::theme::BORDER;
 
     let mut chunks: Vec<Chunk> = Vec::new();
     let mut cur: Vec<Span<'static>> = Vec::new();

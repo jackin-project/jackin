@@ -1,5 +1,6 @@
 //! Tests for `hint_bar`.
 use super::*;
+use ratatui::style::Modifier;
 use ratatui::{Terminal, backend::TestBackend};
 
 #[test]

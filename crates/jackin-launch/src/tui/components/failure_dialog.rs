@@ -1,9 +1,7 @@
 //! Launch failure popup rendering and hit-testing.
 
 use jackin_tui::components::render_hint_bar;
-use jackin_tui::theme::{
-    DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
-};
+use jackin_tui::theme::{DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 use jackin_tui::{HintSpan, centered_rect};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
@@ -253,12 +251,12 @@ fn render_failure_popup_lines(
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
 ) -> Vec<Line<'static>> {
-    let label = Style::default().fg(PHOSPHOR_DIM);
+    let label = jackin_tui::theme::DIM;
     let value_style = match row.copy_target {
         Some(target) if hovered == Some(target) => Style::default()
             .fg(LINK_BLUE)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-        Some(_) => Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        Some(_) => jackin_tui::theme::BOLD_WHITE,
         None => Style::default().fg(WHITE),
     };
     let label_width = FAILURE_POPUP_LABEL_WIDTH;
@@ -309,10 +307,7 @@ pub fn render_failure_popup(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(DANGER_RED))
-        .title(Span::styled(
-            title,
-            Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
-        ));
+        .title(Span::styled(title, jackin_tui::theme::DANGER));
     let inner = block.inner(rect);
     frame.render_widget(Clear, rect);
     frame.render_widget(block, rect);

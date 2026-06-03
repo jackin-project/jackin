@@ -7,13 +7,13 @@ use ratatui::{
 
 use crate::tui::op_breadcrumb::parse_path_breadcrumb;
 
-use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 /// Render an `OpRef.path` as `vault / item [subtitle] / section -> field ?query`.
 pub fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
-    let dim = Style::default().fg(PHOSPHOR_DIM);
+    let dim = jackin_tui::theme::DIM;
     let white_style = Style::default().fg(WHITE);
-    let green = Style::default().fg(PHOSPHOR_GREEN);
+    let green = jackin_tui::theme::GREEN;
     let green_bold = Style::default()
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);

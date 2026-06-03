@@ -239,7 +239,7 @@ fn render_selected_lines(
         let x = area.x + area.width.saturating_sub(1);
         for row in 0..area.height {
             let style = if row >= thumb.start && row < thumb.start.saturating_add(thumb.len) {
-                Style::default().fg(PHOSPHOR_GREEN)
+                crate::theme::GREEN
             } else {
                 Style::default().fg(PHOSPHOR_DARK)
             };

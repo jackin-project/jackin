@@ -31,7 +31,7 @@ use jackin_tui::{
         render_brand_header,
         scrollable_panel::{apply_scroll_delta, max_offset},
     },
-    theme::{BORDER_GRAY, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
+    theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN},
 };
 use ratatui::{
     Terminal,
@@ -166,11 +166,8 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 .iter()
                 .map(|s| {
                     ListItem::new(vec![
-                        Line::from(Span::styled(
-                            s.component,
-                            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                        )),
-                        Line::from(Span::styled(s.id, Style::default().fg(PHOSPHOR_DIM))),
+                        Line::from(Span::styled(s.component, jackin_tui::theme::BOLD_WHITE)),
+                        Line::from(Span::styled(s.id, jackin_tui::theme::DIM)),
                     ])
                 })
                 .collect();
@@ -206,10 +203,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
-                    Span::styled(
-                        story.title,
-                        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(story.title, jackin_tui::theme::BOLD_WHITE),
                     Span::styled("  ", Style::default()),
                     Span::styled(
                         story.component,
@@ -218,13 +212,13 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                             .add_modifier(Modifier::DIM),
                     ),
                     Span::styled("  ", Style::default()),
-                    Span::styled(story.id, Style::default().fg(PHOSPHOR_DIM)),
+                    Span::styled(story.id, jackin_tui::theme::DIM),
                 ])),
                 title_row,
             );
             frame.render_widget(
                 Paragraph::new(story.description)
-                    .style(Style::default().fg(BORDER_GRAY))
+                    .style(jackin_tui::theme::BORDER)
                     .wrap(Wrap { trim: false }),
                 desc_row,
             );

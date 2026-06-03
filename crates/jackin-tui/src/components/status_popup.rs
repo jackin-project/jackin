@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-use crate::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct StatusPopupState {
@@ -32,7 +32,7 @@ pub fn render_status_popup(frame: &mut Frame<'_>, area: Rect, state: &StatusPopu
     }
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
+        .border_style(crate::theme::GREEN)
         .title(Span::styled(
             format!(" {} ", state.title),
             Style::default()
@@ -61,7 +61,7 @@ pub fn render_status_popup(frame: &mut Frame<'_>, area: Rect, state: &StatusPopu
     );
     frame.render_widget(
         Paragraph::new("Please wait")
-            .style(Style::default().fg(PHOSPHOR_DIM))
+            .style(crate::theme::DIM)
             .alignment(Alignment::Center),
         chunks[2],
     );

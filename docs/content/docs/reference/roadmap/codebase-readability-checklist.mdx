@@ -193,13 +193,13 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 ### Named style constants
 The six constants exist in `jackin-tui/src/theme.rs:50-55` but are barely used. **351 total `Style::default()` constructions; 161 are collapsible to a named constant; ~190 are genuinely unique.** Two literal forms appear (short `Style::default().fg(WHITE)…` and fully-qualified `…fg(jackin_tui::theme::WHITE)…`) — both must be matched.
 - [x] `BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `GREEN`, `BORDER`, `DANGER` defined in `theme.rs`
-- [ ] Replace **51** `Style::default().fg(WHITE).add_modifier(BOLD)` (39 single-line + 12 multiline) → `theme::BOLD_WHITE` (top files: `jackin-tui-lookbook/src/stories.rs` 6, `jackin-capsule/.../dialog_widgets.rs` 5, `jackin-console/.../auth_panel.rs` 5, `jackin-console/.../op_picker.rs` 5, `jackin-console/.../editor/view.rs` 4, `jackin-tui/.../confirm_dialog.rs` 4) **(was: 33)**
-- [ ] Replace **48** `Style::default().fg(PHOSPHOR_DIM)` → `theme::DIM` (top: `jackin-console/.../workspaces/view.rs` 11, `op_picker.rs` 9, `editor/view.rs` 6, `mount_rows.rs` 5) **(was: 33)**
-- [ ] Replace **28** `Style::default().fg(PHOSPHOR_GREEN)` (no bold) → `theme::GREEN` (top: `workspaces/view.rs` 10, `op_picker.rs` 6, `stories.rs` 5) **(was: 32)**
-- [ ] Replace **27** `Style::default().fg(PHOSPHOR_GREEN).add_modifier(BOLD)` → `theme::BOLD_GREEN` (top: `op_picker.rs` 7, `editor/view.rs` 3, `settings/view.rs` 3)
-- [ ] Replace **6** `Style::default().fg(DANGER_RED).add_modifier(BOLD)` → `theme::DANGER` (`auth_panel.rs` 2, + `error_dialog`, `progress_rail`, `failure_dialog`, `file_browser/render` ×1) **(was: 5)**
-- [ ] Replace **1** `Style::default().fg(BORDER_GRAY)` → `theme::BORDER` (`jackin-tui-lookbook/src/main.rs`)
-- [ ] Verify ~190 of 351 remain genuinely unique and are correctly left alone (don't force-collapse one-off fg/modifier combos)
+- [x] Replace **51** `Style::default().fg(WHITE).add_modifier(BOLD)` (39 single-line + 12 multiline) → `theme::BOLD_WHITE` — 0 remaining
+- [x] Replace **48** `Style::default().fg(PHOSPHOR_DIM)` → `theme::DIM` — 0 remaining
+- [x] Replace **28** `Style::default().fg(PHOSPHOR_GREEN)` (no bold) → `theme::GREEN` — 0 remaining
+- [x] Replace **27** `Style::default().fg(PHOSPHOR_GREEN).add_modifier(BOLD)` → `theme::BOLD_GREEN` — 0 remaining
+- [x] Replace **6** `Style::default().fg(DANGER_RED).add_modifier(BOLD)` → `theme::DANGER` — 0 remaining
+- [x] Replace **1** `Style::default().fg(BORDER_GRAY)` → `theme::BORDER` — 0 remaining
+- [x] Verify remaining `Style::default()` constructions are genuinely unique — 236 total remain, down from 351; ~115 collapsed into named constants
 
 ### Auth provisioning DRY (`instance/auth/mod.rs`)
 Shared helper `provision_single_file_credential` (`:695`) is used by 2 of 6 agents.

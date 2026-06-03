@@ -2,7 +2,7 @@
 //!
 //! Also exposes named `Style` constants for the most-repeated combinations
 //! (`BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `DANGER`) so callers avoid writing
-//! `Style::default().fg(WHITE).add_modifier(Modifier::BOLD)` inline.
+//! `crate::theme::BOLD_WHITE` inline.
 
 use ratatui::style::{Color, Modifier, Style};
 

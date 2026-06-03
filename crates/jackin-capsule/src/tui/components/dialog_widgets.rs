@@ -17,7 +17,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
-use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 use ratatui::style::Color;
 
 use crate::pull_request::PullRequestInfo;
@@ -389,7 +389,7 @@ fn render_filter_picker(
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             format!(" {title} "),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            jackin_tui::theme::BOLD_WHITE,
         ));
     let inner = block.inner(area);
     Clear.render(area, frame.buffer_mut());
@@ -418,10 +418,9 @@ fn render_filter_picker(
         .iter()
         .enumerate()
         .map(|(i, item)| match item {
-            PickerItem::Section(label) => Line::from(Span::styled(
-                format!(" {label}"),
-                Style::default().fg(PHOSPHOR_DIM),
-            )),
+            PickerItem::Section(label) => {
+                Line::from(Span::styled(format!(" {label}"), jackin_tui::theme::DIM))
+            }
             PickerItem::Item(label) => {
                 let is_selected = i == selected;
                 let prefix = if is_selected { "\u{25b8} " } else { "  " };
@@ -453,7 +452,7 @@ fn render_text_input_dialog(
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             format!(" {dialog_title} "),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            jackin_tui::theme::BOLD_WHITE,
         ));
     let inner = block.inner(area);
     Clear.render(area, frame.buffer_mut());
@@ -467,7 +466,7 @@ fn render_text_input_dialog(
     frame.render_widget(
         Paragraph::new(Span::styled(
             format!("{label}: "),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            jackin_tui::theme::BOLD_WHITE,
         )),
         label_area,
     );
@@ -491,7 +490,7 @@ fn render_text_input_dialog(
     };
 
     let spans = vec![
-        Span::styled(before, Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(before, jackin_tui::theme::GREEN),
         Span::styled(
             at_cursor,
             Style::default()
@@ -499,7 +498,7 @@ fn render_text_input_dialog(
                 .bg(PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(after, Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(after, jackin_tui::theme::DIM),
     ];
     frame.render_widget(Paragraph::new(Line::from(spans)), input_area);
 }
@@ -517,7 +516,7 @@ fn render_info_rows_dialog(
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             format!(" {dialog_title} "),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            jackin_tui::theme::BOLD_WHITE,
         ));
     let inner = block.inner(area);
     Clear.render(area, frame.buffer_mut());
@@ -549,21 +548,12 @@ fn render_info_rows_dialog(
         let padded_label = format!("{label:<width$}", width = label_width);
         let line = if is_copy_row {
             Line::from(vec![
-                Span::styled(
-                    format!("{padded_label}: "),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
-                Span::styled(
-                    format!("{value}{suffix}"),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
+                Span::styled(format!("{value}{suffix}"), jackin_tui::theme::BOLD_WHITE),
             ])
         } else {
             Line::from(vec![
-                Span::styled(
-                    format!("{padded_label}: "),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
+                Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
                 Span::styled(value.as_str(), Style::default().fg(WHITE)),
             ])
         };

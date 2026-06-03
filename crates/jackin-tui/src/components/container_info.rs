@@ -12,7 +12,7 @@ use ratatui::{
 use crate::ModalOutcome;
 use crate::ansi;
 use crate::components::{Panel, PanelFocus};
-use crate::theme::{LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct ContainerInfoRow {
@@ -245,7 +245,7 @@ fn value_rects(area: Rect, state: &ContainerInfoState) -> Vec<(usize, Rect)> {
 }
 
 fn container_info_line(row: &ContainerInfoRow, label_width: usize, copied: bool) -> Line<'static> {
-    let label_style = Style::default().fg(PHOSPHOR_DIM);
+    let label_style = crate::theme::DIM;
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
     let mut value_style = Style::default().fg(if row.href.is_some() {
         LINK_BLUE

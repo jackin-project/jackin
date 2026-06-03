@@ -15,7 +15,7 @@ pub use crate::tui::components::list_helpers::matches_filter;
 use crate::tui::components::spinner::SPINNER_FRAMES;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus, TextInputState};
-use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 pub fn item_name_input_state<'a>(item_default: impl Into<String>) -> TextInputState<'a> {
     TextInputState::new("Item name", item_default)
@@ -993,11 +993,8 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) 
     {
         let truncated: String = message.chars().take(120).collect();
         let line = Line::from(vec![
-            Span::styled(
-                "Error: ",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled("Error: ", jackin_tui::theme::BOLD_WHITE),
+            Span::styled(truncated, jackin_tui::theme::DIM),
         ]);
         frame.render_widget(Paragraph::new(line), rows[0]);
     }
@@ -1017,7 +1014,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) 
     if list_lines.is_empty() {
         let para = Paragraph::new(Line::from(Span::styled(
             "(no matches)",
-            Style::default().fg(PHOSPHOR_DIM),
+            jackin_tui::theme::DIM,
         )))
         .alignment(Alignment::Center);
         frame.render_widget(para, rows[3]);
@@ -1059,9 +1056,9 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderStat
         .split(inner);
 
     let body = Line::from(vec![
-        Span::styled(glyph.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(glyph.to_string(), jackin_tui::theme::GREEN),
         Span::raw("  "),
-        Span::styled(descriptor, Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(descriptor, jackin_tui::theme::DIM),
     ]);
     frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
 }
@@ -1362,7 +1359,7 @@ pub fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
             .fg(PHOSPHOR_GREEN)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(PHOSPHOR_DIM)
+        jackin_tui::theme::DIM
     };
     Line::from(Span::styled(format!("{prefix}{text}"), style))
 }
@@ -1387,10 +1384,7 @@ pub fn account_lines<'a>(
             Line::from(vec![
                 Span::styled(format!("{prefix}{}", account.email), label_style),
                 Span::raw("  "),
-                Span::styled(
-                    format!("({})", account.url),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
+                Span::styled(format!("({})", account.url), jackin_tui::theme::DIM),
             ])
         })
         .collect()
@@ -1443,7 +1437,7 @@ pub fn item_choice_lines<'a>(
                         Span::styled(item.name.to_string(), title_style),
                     ];
                     if !item.subtitle.is_empty() {
-                        let dim = Style::default().fg(PHOSPHOR_DIM);
+                        let dim = jackin_tui::theme::DIM;
                         spans.push(Span::styled(" (", dim));
                         spans.push(Span::styled(item.subtitle.to_string(), dim));
                         spans.push(Span::styled(")", dim));
@@ -1539,7 +1533,7 @@ fn section_header_line(
             .fg(PHOSPHOR_GREEN)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(PHOSPHOR_DIM)
+        jackin_tui::theme::DIM
     };
     let count_label = format!(
         "({} {})",
@@ -1550,7 +1544,7 @@ fn section_header_line(
         Span::styled(prefix, style),
         Span::styled(arrow, style),
         Span::styled(format!(" {name}  "), style),
-        Span::styled(count_label, Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(count_label, jackin_tui::theme::DIM),
     ])
 }
 
@@ -1577,7 +1571,7 @@ fn field_line(
     Line::from(vec![
         Span::styled(format!("{prefix}{label}"), label_style),
         Span::raw(format!("{}  ", " ".repeat(pad))),
-        Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(annotation, jackin_tui::theme::DIM),
     ])
 }
 
@@ -1636,52 +1630,52 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
         OpPickerFatalState::NotInstalled => vec![
             Line::from(Span::styled(
                 "1Password CLI not found.",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                jackin_tui::theme::BOLD_WHITE,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Install: brew install 1password-cli (macOS)",
-                Style::default().fg(PHOSPHOR_GREEN),
+                jackin_tui::theme::GREEN,
             )),
             Line::from(Span::styled(
                 "or visit 1password.com/downloads/command-line/",
-                Style::default().fg(PHOSPHOR_GREEN),
+                jackin_tui::theme::GREEN,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "After install, run `op signin`, then press P to retry.",
-                Style::default().fg(PHOSPHOR_DIM),
+                jackin_tui::theme::DIM,
             )),
         ],
         OpPickerFatalState::NotSignedIn => vec![
             Line::from(Span::styled(
                 "1Password CLI is not signed in.",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                jackin_tui::theme::BOLD_WHITE,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Run `op signin` in your shell, then retry.",
-                Style::default().fg(PHOSPHOR_GREEN),
+                jackin_tui::theme::GREEN,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "jackin' uses your existing op session — there is no separate jackin' auth.",
-                Style::default().fg(PHOSPHOR_DIM),
+                jackin_tui::theme::DIM,
             )),
         ],
         OpPickerFatalState::NoVaults => vec![
             Line::from(Span::styled(
                 "No vaults available.",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                jackin_tui::theme::BOLD_WHITE,
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Check 1Password's app integration settings:",
-                Style::default().fg(PHOSPHOR_GREEN),
+                jackin_tui::theme::GREEN,
             )),
             Line::from(Span::styled(
                 "Settings \u{2192} Developer \u{2192} CLI integration.",
-                Style::default().fg(PHOSPHOR_GREEN),
+                jackin_tui::theme::GREEN,
             )),
         ],
         OpPickerFatalState::GenericFatal { message } => {
@@ -1689,10 +1683,10 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
             vec![
                 Line::from(Span::styled(
                     "1Password CLI error.",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                    jackin_tui::theme::BOLD_WHITE,
                 )),
                 Line::from(""),
-                Line::from(Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM))),
+                Line::from(Span::styled(truncated, jackin_tui::theme::DIM)),
             ]
         }
     }

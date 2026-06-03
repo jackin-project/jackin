@@ -13,10 +13,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::{
-    ModalOutcome,
-    theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
-};
+use crate::{ModalOutcome, theme::PHOSPHOR_GREEN};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
 use super::panel::modal_block;
@@ -166,10 +163,7 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
 
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
     let title = format!(" {} ", state.title);
-    let block = modal_block().title(Span::styled(
-        title,
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    ));
+    let block = modal_block().title(Span::styled(title, crate::theme::BOLD_WHITE));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
@@ -198,12 +192,7 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
 
     let prompt_lines_vec: Vec<Line<'_>> = prompt
         .lines()
-        .map(|l| {
-            Line::from(Span::styled(
-                l.to_string(),
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ))
-        })
+        .map(|l| Line::from(Span::styled(l.to_string(), crate::theme::BOLD_WHITE)))
         .collect();
     frame.render_widget(
         Paragraph::new(prompt_lines_vec).alignment(Alignment::Center),
@@ -236,16 +225,16 @@ fn render_details(
         ])
         .split(inner);
 
-    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let key = crate::theme::BOLD_WHITE;
     let value = Style::default()
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
-    let note = Style::default().fg(PHOSPHOR_DIM);
+    let note = crate::theme::DIM;
 
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             prompt.to_owned(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            crate::theme::BOLD_WHITE,
         ))),
         inset(rows[0], 3),
     );

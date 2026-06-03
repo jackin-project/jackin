@@ -9,14 +9,10 @@ use jackin_tui::components::{
     TabStrip, TextInput, TextInputState, render_confirm_dialog, render_save_discard_dialog,
     render_scrollable_block,
 };
-use jackin_tui::{
-    lay_out_tabs,
-    theme::{PHOSPHOR_GREEN, WHITE},
-};
+use jackin_tui::lay_out_tabs;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
     text::{Line, Span},
 };
 
@@ -168,18 +164,12 @@ impl SelectListInteractor {
         state.select_index(1);
         let context = vec![
             Line::from(vec![
-                Span::styled(
-                    "Workspace: ",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("jackin-core", Style::default().fg(PHOSPHOR_GREEN)),
+                Span::styled("Workspace: ", jackin_tui::theme::BOLD_WHITE),
+                Span::styled("jackin-core", jackin_tui::theme::GREEN),
             ]),
             Line::from(vec![
-                Span::styled(
-                    "Role: ",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("rust", Style::default().fg(PHOSPHOR_GREEN)),
+                Span::styled("Role: ", jackin_tui::theme::BOLD_WHITE),
+                Span::styled("rust", jackin_tui::theme::GREEN),
             ]),
         ];
         Self { state, context }

@@ -12,7 +12,7 @@ use ratatui::{
 use crate::{
     display_cols, fixed_prefix_scroll_segments, leading_space_cols, padded_line_display_cols,
     scroll,
-    theme::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_GREEN},
+    theme::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK},
 };
 
 use super::{Panel, PanelFocus};
@@ -406,7 +406,7 @@ pub fn render_scrollable_block_at(
     frame.render_widget(
         Paragraph::new(add_trailing_padding(lines))
             .block(panel.block())
-            .style(Style::default().fg(PHOSPHOR_GREEN))
+            .style(crate::theme::GREEN)
             .scroll((eff_y, eff_x)),
         area,
     );
