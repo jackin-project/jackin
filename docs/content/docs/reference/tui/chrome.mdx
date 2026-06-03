@@ -111,7 +111,8 @@ No other mechanism may transfer or clear focus. In particular: navigation keys (
 - **Scroll = focusable** for passive detail blocks: a block is only focusable if its content overflows its viewport in at least one axis (the scrollbar appears). A block whose content fits entirely is not focusable and must not show the green border.
 - **Hint bar is focus-scoped**: the bottom hint bar recalculates on every focus change and shows only the actions relevant to the currently focused container. Switching focus is never silent — the hint bar visually confirms which container owns the keyboard.
 - Pressing `Esc` or committing a modal returns focus to the container that was focused before the modal opened.
-- Dialogs and modals always have `PHOSPHOR_GREEN` borders — they are always the active container when visible.
+- **Dialogs and modals always have `PHOSPHOR_GREEN` borders — they are always the active container when visible.** Exception: when dialogs are *stacked* (a child dialog opens over a parent), only the *topmost* dialog uses the bright border; every dialog beneath uses `PHOSPHOR_DARK` via `modal_block_inactive()`. The rule is "exactly one bright border per surface layer" — a stack of two green borders is a violation.
+- **Single-consumer mouse routing.** When any modal or dialog is open, it owns *all* mouse input. Chrome-level click handlers (debug chip, tabs, list rows behind the modal) must not fire while a modal is the active container. The debug chip, tab-strip clicks, and list-selection events are all gated on "no modal open."
 
 #### Focus principle
 
@@ -130,9 +131,11 @@ This rule is broader than scroll focus. Scrollable blocks still use the overflow
 **Enforcement — use the canonical helpers, never inline border colors:** The correct border style is encoded in two reusable primitives in <RepoFile path="crates/jackin-tui/src/components/panel.rs" />:
 
 - `Panel::new().title("…").focus(PanelFocus::Focused).block()` — titled active container (modal, picker, form, tab panel).
-- `modal_block()` — untitled active container (dialog without a title bar).
+- `modal_block()` — untitled active container (dialog without a title bar) — always `PHOSPHOR_GREEN` border.
+- `modal_block_inactive()` — untitled background dialog in a stack — `PHOSPHOR_DARK` border; use for every dialog that is NOT the topmost in a stack.
 - `Panel::new().focus(PanelFocus::Unfocused).block()` / `unfocused_block()` — background container.
 - `render_scrollable_block(…, focused, …)` — passive scroll block; the helper applies the correct focus state automatically.
+- `panel_body_area(&block, area)` — returns `block.inner(area)` inset by 1 cell horizontally so content never touches the left/right border; use in place of `block.inner(area)` when rendering text content into a titled panel.
 
 Never construct `Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK))` for a modal — that silently produces a wrong (invisible) focus indicator. The focus-visible tests in `panel.rs` catch color regressions: `modal_block_uses_phosphor_green`, `panel_focused_uses_phosphor_green`, `unfocused_block_uses_phosphor_dark`.
 

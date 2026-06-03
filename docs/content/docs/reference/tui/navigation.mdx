@@ -99,6 +99,24 @@ Summary:
 - Cycle among options in a slot (auth mode): `Space` (radio-button pattern per W3C).
 - Re-open a picker for an already-set value (1Password op-ref, source): `Enter` (action). `P` is also supported as a shortcut where op_available is true, but `Enter` must always work.
 
+### Selection highlight is always full row width
+
+Every selectable list — workspace sidebar, pickers, file browser, settings tables, capsule dialogs, lookbook sidebar — paints the selected row's background across the **full available width**, not only across the text. The canonical example is the workspace sidebar: the selected row background fills the entire row using `highlight_style(bg(PHOSPHOR_GREEN) fg(PHOSPHOR_DARK))` on the ratatui `List` widget. The `▸ ` cursor prefix is always reserved via `highlight_spacing(HighlightSpacing::Always)` so unselected rows align.
+
+A narrow text-only highlight (background stops after the last character) is a design-decision violation. Route every selectable list through the shared `SelectList` component or the same `List + highlight_style` pattern the workspace sidebar uses.
+
+### Hint bar always has one blank spacer row above it
+
+Every screen (workspace list, workspace editor, settings, launch cockpit, lookbook) must reserve exactly one blank spacer row **directly above** the hint bar. This breathing room separates the screen body from the hints so the layout reads as two distinct layers.
+
+**Enforcement:** `footer_height()` in `jackin-console` returns `hint_height + 1` (spacer + hints). `render_footer()` renders hints in the bottom `hint_height` rows and leaves the top row blank. Callers that pass their own footer-height must account for the spacer: `footer_h = footer_height(&items, width)` already includes it.
+
+A hint row flush against the body content with no blank row above is a design-decision violation.
+
+### `↓` and `⇥` are equivalent for entering tab content
+
+On every tabbed screen, while the tab bar owns focus, both `⇥` (Tab) and `↓` transfer focus into the tab content block — same end state, same transition. Both keys must route through the same `FocusEditorContent` / `FocusSettingsContent` dispatch so they cannot diverge. This is the W3C Tabs pattern's "enter content" step; neither key alone is sufficient.
+
 ### Hints: footer only, never inside dialogs
 
 All keyboard hint text belongs in the footer bar at the bottom of the screen. Dialogs, modals, and overlays **must not** render their own internal hint line. When a modal is open, the main footer must show the modal's available keys instead of the keys for the content behind it.

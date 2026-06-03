@@ -15,6 +15,40 @@ Modals use `centered_rect_fixed(outer, pct_w, rows)`. `rows` is the **total oute
 
 Never add excess padding rows to modals. The outer rect must be exactly tight enough to render the widget's layout constraints without blank overflow rows.
 
+### Stable preferred dialog size — resize does not rescale
+
+Dialog width is a **stable preferred size** derived from `pct_w% of a 160-column reference terminal`, capped at `outer.width - 4` margin. The dialog holds that width whenever the terminal is at least that wide and only shrinks when the terminal is genuinely too narrow.
+
+`centered_rect_fixed(outer, pct_w, rows)` already implements this. Never compute `outer.width * pct_w / 100` directly — that rescales proportionally on every resize.
+
+### Status bar always reserved — modals never draw over it
+
+The reserved status/hint rows at the bottom of every screen are inviolable: no modal, dialog, or border may draw onto them. All modal rects are computed against the **content area** (full terminal minus footer height), not the full terminal area.
+
+`prepare_visible_modal()` subtracts `footer_height` before centering modals. Every new modal computation must use the content area, not the raw terminal size.
+
+### Symmetric vertical padding for every dialog
+
+Every dialog uses the canonical **symmetric inner layout**:
+
+```
+┌ Title ──────────────────────────────┐
+│                                      │  ← 1 leading spacer row
+│           content                    │  ← 1+ content rows
+│                                      │  ← 1 spacer row
+│    Save  ·  Discard  ·  Cancel       │  ← action/button row
+│                                      │  ← 1 trailing spacer row
+└──────────────────────────────────────┘
+```
+
+**Rules:**
+- Exactly one blank leading spacer row between the top border and the first content row.
+- Exactly one blank spacer row between the last content row and the action/button row.
+- Exactly one blank trailing spacer row between the action row and the bottom border.
+- No two trailing blank rows, no missing leading blank row.
+
+This applies to `ConfirmDialog`, `ErrorDialog`, `SaveDiscardDialog`, `StatusPopup`, and any other modal that contains content + action rows. `required_height()` for each dialog must account for all five layers (border×2 + leading + spacer + trailing = 5 overhead rows beyond content + action).
+
 ### Filter rows sit directly under the top border
 
 For every modal that has a `Filter:` input (the host role picker, the host op picker, the in-multiplexer Menu / SplitDirectionPicker / AgentPicker), the filter input row must render **immediately below the top border** — no leading blank pad row between the border and the filter. The interior layout, top-to-bottom, is:

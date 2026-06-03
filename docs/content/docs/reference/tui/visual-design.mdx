@@ -7,12 +7,26 @@ description: "PHOSPHOR color palette, border color semantics, left sidebar conve
 
 The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path="crates/jackin-tui/src/lib.rs" />) so the host TUI and the in-container multiplexer cannot drift; <RepoFile path="crates/jackin-tui/src/theme.rs" /> adapts them into ratatui `Color` constants that the rest of the host TUI imports. Never define local color constants.
 
+**All colors come from named theme tokens; no inline `Color::Rgb(...)` literals outside `theme.rs`.** Every new color must be added as a named constant in `lib.rs` and re-exported from `theme.rs` as a ratatui `Color`. Inline RGB literals are a design-decision violation.
+
 | Constant | Value | Usage |
 |---|---|---|
 | `PHOSPHOR_GREEN` | `Rgb(0, 255, 65)` | Active/focused elements, selected text |
 | `PHOSPHOR_DIM` | `Rgb(0, 140, 30)` | Inactive text, scrollbar thumbs |
 | `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Borders (unfocused), separators |
 | `WHITE` | `Rgb(255, 255, 255)` | Labels, keys, headings |
+| `WARNING_YELLOW` | `Rgb(255, 216, 94)` | Warning notes in confirmation dialogs |
+| `PREVIEW_CARD` | `Rgb(28, 28, 28)` | Lookbook preview canvas background |
+| `CAPSULE_PANE_FOCUSED` | `Rgb(180, 180, 180)` | Capsule pane focused border |
+
+## Action Rows (`+ Add …` / `+ Override …`)
+
+Every row that begins with `+` is an add/create action and must render through the one shared `action_row_style(selected)` function in `jackin-console`. Rules:
+
+- Same `ACTION_ACCENT` foreground on every `+ …` row app-wide, on every screen and tab.
+- Bold when selected, normal weight when not.
+- No trailing parenthetical description (no `(all roles overridden)`, no `(0 remaining)`, no any-other-parenthetical). The action label alone is sufficient.
+- One shared style function for all `+ …` rows; no surface hand-rolls its own style.
 
 ---
 

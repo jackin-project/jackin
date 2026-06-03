@@ -40,8 +40,8 @@ Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run th
 
 **Tasks:**
 - [ ] Scan repo-wide for raw list rendering that bypasses the canonical helper: `rg -l "ListState|widgets::List|List::new" crates/*/src --glob '!**/select_list.rs' --glob '!**/tests.rs'`. For each hit, determine whether it (a) renders a scrollbar when content overflows and (b) accepts the wheel. Enumerate every offender.
-- [ ] Fix the lookbook `stories` sidebar in `main.rs`: render the two-row-per-story list through a scrollbar-bearing helper (either `render_scrollable_block` with pre-built `Vec<Line>` + a tracked `sidebar_scroll` offset, or a 2-line-capable list helper added to `jackin-tui`). The selected story must stay visible via `cursor_follow_offset`; a thumb must appear when stories overflow the sidebar height.
-- [ ] Add mouse-wheel handling for the sidebar region in the `Event::Mouse` arm of `run_terminal`: `ScrollUp`/`ScrollDown` over `last_sidebar_inner_area` scrolls the sidebar offset, mirroring the existing preview-scroll affordance.
+- [x] Fix the lookbook `stories` sidebar in `main.rs`: render the two-row-per-story list through a scrollbar-bearing helper (either `render_scrollable_block` with pre-built `Vec<Line>` + a tracked `sidebar_scroll` offset, or a 2-line-capable list helper added to `jackin-tui`). The selected story must stay visible via `cursor_follow_offset`; a thumb must appear when stories overflow the sidebar height.
+- [x] Add mouse-wheel handling for the sidebar region in the `Event::Mouse` arm of `run_terminal`: `ScrollUp`/`ScrollDown` over `last_sidebar_inner_area` scrolls the sidebar offset, mirroring the existing preview-scroll affordance.
 - [ ] Resolve the long-id truncation: either widen the sidebar to fit the longest id, wrap the id, or horizontally scroll the focused row — pick the option already used elsewhere in the repo for the same situation and apply it.
 - [ ] If a 2-row scrollable list helper is the right shape and `jackin-tui` lacks it, add it to `jackin-tui` (not lookbook-local) and route the sidebar through it (lookbook public-API rule).
 - [ ] Audit and fix every other offender found in the first task so no list in the workspace overflows without a scrollbar + wheel.
@@ -91,11 +91,11 @@ Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run th
 **Canonical pattern to converge on:** every titled panel shows a space-padded title (`┌ Title ┐`) and insets its body content off the border with a consistent margin. Pick one enforcement point — ideally normalize in the shared `Panel` API so callers cannot get it wrong — and route every site through it.
 
 **Tasks:**
-- [ ] Decide the enforcement point for **title spacing**: either (a) make `Panel::title()` normalize to `" {} "` internally and strip the now-redundant manual spaces from all `" X "` call sites, or (b) keep the caller convention and fix only the bare-title offenders. Whichever is chosen, apply it to **every** `.title(...)` site — scan with `rg "\.title\(" crates/*/src` and converge all of them.
-- [ ] Decide the enforcement point for **body inset**: define a shared inner-padding helper/margin (or a `Panel` method) and apply it to every titled-panel body so content never touches the border. Scan for panel bodies rendered into `block.inner(...)` without a margin and fix each.
-- [ ] Fix the lookbook `about` block and `Panel` story (`main.rs` + `stories.rs`) as part of the same pass — they are instances of this class, not special cases.
-- [ ] Record the title-spacing + body-inset rule in [TUI Design Decisions](/reference/tui/) so new panels inherit it.
-- [ ] Regenerate SVGs and confirm padded titles + inset bodies across every titled-panel preview.
+- [x] Decide the enforcement point for **title spacing**: either (a) make `Panel::title()` normalize to `" {} "` internally and strip the now-redundant manual spaces from all `" X "` call sites, or (b) keep the caller convention and fix only the bare-title offenders. Whichever is chosen, apply it to **every** `.title(...)` site — scan with `rg "\.title\(" crates/*/src` and converge all of them.
+- [x] Decide the enforcement point for **body inset**: define a shared inner-padding helper/margin (or a `Panel` method) and apply it to every titled-panel body so content never touches the border. Scan for panel bodies rendered into `block.inner(...)` without a margin and fix each.
+- [x] Fix the lookbook `about` block and `Panel` story (`main.rs` + `stories.rs`) as part of the same pass — they are instances of this class, not special cases.
+- [x] Record the title-spacing + body-inset rule in [TUI Design Decisions](/reference/tui/) so new panels inherit it.
+- [x] Regenerate SVGs and confirm padded titles + inset bodies across every titled-panel preview.
 
 ---
 
@@ -127,11 +127,11 @@ There is no shared dialog body-layout helper enforcing symmetric top/bottom inse
 
 **Tasks:**
 - [ ] Scan repo-wide for every modal dialog renderer: `rg -l "modal_block|render_confirm_dialog|render_error_dialog|render_save_discard|render_status_popup|Clear.render" crates/jackin-tui/src/components`. Enumerate `confirm_dialog.rs`, `error_dialog.rs`, `save_discard` dialog, `status_popup.rs`, and any other modal — confirm each one's top/bottom inset.
-- [ ] Define the canonical dialog vertical layout (leading spacer + content + spacer + action row + trailing spacer) once — a shared helper in `jackin-tui` if the dialogs can share it, otherwise the identical constraint shape applied to each.
-- [ ] Fix `ConfirmDialog`: add the leading spacer row so the prompt no longer touches the top border. (Confirmed offender: the `Git repository detected` confirm — content flush to top, bottom spacer present, top spacer missing — is the same `render_confirm_dialog` path.)
-- [ ] Fix `ErrorDialog`: add the trailing spacer row so the `OK` button sits one row above the bottom border.
-- [ ] Fix `SaveDiscardDialog`: collapse the **two** trailing spacer rows to exactly one.
-- [ ] Fix `StatusPopup`: add the trailing spacer so the `Please wait` row moves up one row off the bottom border (and confirm it has exactly one leading spacer + one content spacer like the rest).
+- [x] Define the canonical dialog vertical layout (leading spacer + content + spacer + action row + trailing spacer) once — a shared helper in `jackin-tui` if the dialogs can share it, otherwise the identical constraint shape applied to each.
+- [x] Fix `ConfirmDialog`: add the leading spacer row so the prompt no longer touches the top border. (Confirmed offender: the `Git repository detected` confirm — content flush to top, bottom spacer present, top spacer missing — is the same `render_confirm_dialog` path.)
+- [x] Fix `ErrorDialog`: add the trailing spacer row so the `OK` button sits one row above the bottom border.
+- [x] Fix `SaveDiscardDialog`: collapse the **two** trailing spacer rows to exactly one.
+- [x] Fix `StatusPopup`: add the trailing spacer so the `Please wait` row moves up one row off the bottom border (and confirm it has exactly one leading spacer + one content spacer like the rest).
 - [ ] Fix the `Mount destination` choice dialog: it has **neither** a leading nor a trailing spacer (content flush to top, buttons flush to bottom) — add both.
 - [ ] Apply the same symmetric inset to every other dialog found in the scan — fix the whole class in one pass, not just the screenshotted dialogs.
 - [ ] Record the dialog symmetric-vertical-padding rule in [TUI Design Decisions](/reference/tui/dialogs/) so new dialogs inherit it.
@@ -188,9 +188,9 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** dialog width is a **content-derived preferred width, capped at a maximum**, taken as `preferred.min(outer.width - margin)` — constant while the terminal is at least that wide, shrinking only when the terminal is narrower. Same idea for height (already `rows.min(outer.height)` in places — confirm it does not over-shrink).
 
 **Tasks:**
-- [ ] Scan repo-wide for percentage-based dialog sizing: `rg -n "centered_rect_fixed|outer.width \* |width \* pct|Percentage" crates/*/src`. Enumerate every modal that scales with the screen.
-- [ ] Replace the percentage width with a preferred-width-capped-at-max model in `centered_rect_fixed` (or a new shared helper): `width = preferred.min(outer.width.saturating_sub(margin))`, where `preferred` is content-derived (or a per-dialog constant) and stays stable until the terminal is narrower than it.
-- [ ] Route every dialog (`modal_rects.rs` modes, launch dialogs, capsule dialogs) through the stable-preferred-size helper so none rescales proportionally on resize. Fix the whole class.
+- [x] Scan repo-wide for percentage-based dialog sizing: `rg -n "centered_rect_fixed|outer.width \* |width \* pct|Percentage" crates/*/src`. Enumerate every modal that scales with the screen.
+- [x] Replace the percentage width with a preferred-width-capped-at-max model in `centered_rect_fixed` (or a new shared helper): `width = preferred.min(outer.width.saturating_sub(margin))`, where `preferred` is content-derived (or a per-dialog constant) and stays stable until the terminal is narrower than it.
+- [x] Route every dialog (`modal_rects.rs` modes, launch dialogs, capsule dialogs) through the stable-preferred-size helper so none rescales proportionally on resize. Fix the whole class.
 - [ ] Verify the Container info / Run info dialog holds its width (no path truncation) until the terminal is genuinely too narrow, then degrades gracefully.
 - [ ] Record the modal-sizing rule (preferred size, shrink-only-when-too-small) in [TUI Design Decisions](/reference/tui/dialogs/).
 
@@ -225,7 +225,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [ ] Enumerate every surface that can show more than one dialog at once: the capsule `dialog_stack` (<RepoFile path="crates/jackin-capsule/src/daemon/dialog_mgmt.rs" />), the console modal stacking, and the launch surface. Confirm how each renders stacked modals. Confirmed offender: the file-browser picker with a `Git repository detected` child dialog opened over it renders **both** borders bright — the child (top) must be bright and the file-browser parent dimmed.
-- [ ] Add an inactive/background modal border path: either a `modal_block_unfocused()` (dark border) helper in `jackin-tui`, or a focus parameter on the dialog render helpers so a background dialog renders dark. Do not leave `modal_block()` as the only option.
+- [x] Add an inactive/background modal border path: either a `modal_block_unfocused()` (dark border) helper in `jackin-tui`, or a focus parameter on the dialog render helpers so a background dialog renders dark. Do not leave `modal_block()` as the only option.
 - [ ] Route every stacked-dialog renderer so only the top-of-stack dialog uses the green border; all dialogs beneath render dark (or are fully obscured by the backdrop). Fix the whole class — capsule, console, launch.
 - [ ] Verify the inverse: when the top dialog closes, the now-top dialog regains the green border in the same frame.
 - [ ] The rule is already in [TUI Design Decisions](/reference/tui/chrome/); reconcile the slightly conflicting line "Dialogs and modals always have PHOSPHOR_GREEN borders" so it explicitly carves out background dialogs in a stack (only the active/top modal is green).
@@ -312,8 +312,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [ ] Inventory every screen's bottom-hint layout: console manager, workspace editor, settings, launch cockpit, capsule, lookbook. `rg -n "render_hint_bar|render_footer|render_wrapped_hint_bar|footer_height|hint_area" crates/*/src`. For each, determine whether a blank spacer row precedes the hints.
-- [ ] Decide the enforcement point: bake the leading spacer into the shared footer (`footer_height` returns `1 + hint_height`; `render_footer` renders the hints in the lower portion leaving the top row blank) so every caller inherits it. Apply repo-wide.
-- [ ] Fix the lookbook layout in `main.rs` to include the spacer.
+- [x] Decide the enforcement point: bake the leading spacer into the shared footer (`footer_height` returns `1 + hint_height`; `render_footer` renders the hints in the lower portion leaving the top row blank) so every caller inherits it. Apply repo-wide.
+- [x] Fix the lookbook layout in `main.rs` to include the spacer.
 - [ ] Fix every other screen found in the inventory that lacks the spacer. Fix the whole class in one pass. Confirmed offender: the **create-workspace / workspace editor** screen renders the hint row directly under the content box with no blank spacer above it.
 - [ ] Record the "one blank spacer row above the hint bar, every screen" rule in [TUI Design Decisions](/reference/tui/navigation/) (hint/footer section).
 
@@ -329,8 +329,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [ ] Trace, for each surface, the exact `outer` rect passed to modal-rect computation (`modal_outer_rect` / `centered_rect_fixed` / `modal_rect_for_mode`) and confirm whether it excludes the hint bar + debug/run-id bar. `rg -n "centered_rect_fixed|modal_outer_rect|split_debug_area|main_area" crates/*/src`.
-- [ ] Establish a single "content area" helper that subtracts all reserved bottom rows (debug/run-id bar + hint spacer + hint row), and route every modal/picker/dialog layout through it so none can extend into the reserved rows.
-- [ ] Clamp modal height to the content area, not the full terminal, so a too-tall modal shrinks (composing with Defect 7) and then scrolls (Defect 8) instead of overrunning the status bar.
+- [x] Establish a single "content area" helper that subtracts all reserved bottom rows (debug/run-id bar + hint spacer + hint row), and route every modal/picker/dialog layout through it so none can extend into the reserved rows.
+- [x] Clamp modal height to the content area, not the full terminal, so a too-tall modal shrinks (composing with Defect 7) and then scrolls (Defect 8) instead of overrunning the status bar.
 - [ ] Fix the file-browser/workdir picker specifically (the screenshotted case) and every other modal that shares the layout path. Fix the whole class.
 - [ ] Record the "status bar is always reserved; modals never draw over it" rule in [TUI Design Decisions](/reference/tui/chrome/).
 
@@ -346,8 +346,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [ ] Inventory every selectable-list renderer: workspace sidebar (canonical), `select_list.rs`, file browser, workdir/role/github pickers, op-picker lists, the lookbook stories sidebar (Defect 1), and any list in a dialog. `rg -n "highlight_style|render_select_list|render_selected_lines|highlight_symbol|ListItem::new" crates/*/src`.
-- [ ] Make the shared list component paint a **full-width** selection background (extend `render_selected_lines` to pad the selected line to `area.width`, or route these lists through the ratatui `List` highlight path) so the highlight fills the row.
-- [ ] Converge every list — including the in-dialog file browser and the pickers — on the shared full-width-selection style. Fix the whole class; do not leave the sidebar as the only full-width one.
+- [x] Make the shared list component paint a **full-width** selection background (extend `render_selected_lines` to pad the selected line to `area.width`, or route these lists through the ratatui `List` highlight path) so the highlight fills the row.
+- [x] Converge every list — including the in-dialog file browser and the pickers — on the shared full-width-selection style. Fix the whole class; do not leave the sidebar as the only full-width one.
 - [ ] Keep it consistent with Defects 1 & 16 interplay: the full-width highlight coexists with the scrollbar (Defect 1) and the focus border (Defect 9) without visual conflict.
 - [ ] Record the "selection highlight is always full row width" rule in [TUI Design Decisions](/reference/tui/navigation/) (or visual-design), referencing the workspace sidebar as the canonical example.
 - [ ] Regenerate lookbook SVGs for `SelectList` so the full-width selection is visible and regression-covered.
@@ -432,8 +432,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on (universal rule):** any row that begins with `+ ` is an add/create action and must always render through one shared action-row style — the same `+` glyph, the same colors — on every screen, tab, and dialog in jackin', with no trailing parenthetical description. There is exactly one styling for `+ …` rows app-wide; no surface hand-rolls its own.
 
 **Tasks:**
-- [ ] Remove the `(all roles overridden)` suffix (and any equivalent trailing description) from the `+ Override for a role` add-row.
-- [ ] Route the auth-override add-row (and any other `+ …` action row) through the same `action_row_style` the env add-rows use, so colors match exactly. `rg -n "action_row_style|Override for a role|Add environment variable|Add mount|\\+ " crates/jackin-console/src/tui/screens`.
+- [x] Remove the `(all roles overridden)` suffix (and any equivalent trailing description) from the `+ Override for a role` add-row.
+- [x] Route the auth-override add-row (and any other `+ …` action row) through the same `action_row_style` the env add-rows use, so colors match exactly. `rg -n "action_row_style|Override for a role|Add environment variable|Add mount|\\+ " crates/jackin-console/src/tui/screens`.
 - [ ] Audit **every** `+ …` row anywhere in the app (env, auth, mounts, roles, settings, create-workspace, editor, pickers, dialogs) — `rg -n '"\\+ |+ Add|+ Override|\+ "' crates/*/src` — and converge them all on the one shared action-row style/component. Fix the whole class; no `+ …` row uses a bespoke style.
 - [ ] Per the mandatory per-item analysis rule, re-scan for any other action/sentinel row that diverges in color or carries a redundant description, and fix those too.
 - [ ] Record the "one action-row style, no redundant descriptions" rule in [TUI Design Decisions](/reference/tui/visual-design/).
@@ -449,7 +449,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** exactly one consumer per mouse event, by precedence. When a modal/picker is open, **it** owns all mouse input: clicks inside route only to the modal, clicks outside dismiss it (Defect 11), and chrome handlers (debug chip, tab strip, list rows behind the modal) do **not** fire. No event is ever processed by two handlers.
 
 **Tasks:**
-- [ ] Gate the debug-chip click handler (and every other chrome-level click handler) on "no modal open" — when a modal/picker owns the screen, skip chrome handlers entirely.
+- [x] Gate the debug-chip click handler (and every other chrome-level click handler) on "no modal open" — when a modal/picker owns the screen, skip chrome handlers entirely.
 - [ ] Establish single-consumer precedence in the console mouse loop: modal/picker input first (consume + return), else chrome (chip/tabs), else base surface. An event consumed at one level must not fall through.
 - [ ] Compose with Defect 11: a click outside the open modal dismisses it instead of hitting the chip or the base surface.
 - [ ] Per the per-item analysis rule, scan every surface's mouse loop (console, launch, capsule) for events that fall through to a second handler, and fix the routing class-wide. `rg -n "MouseEventKind::Down|handle_mouse|last_debug_chip_area|try_select_.*_tab" crates/*/src`.
@@ -466,8 +466,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** every inline launch picker (role, agent, provider, and the launch-provider picker) passes its real focus state to `render_picker_sidebar`; the active picker owns the green border + `▸` together, exactly like the role/agent pickers.
 
 **Tasks:**
-- [ ] Fix `render_provider_picker_sidebar` to accept and pass the real `focused` state instead of `false`; thread the focus flag from the picker's active state at the call site.
-- [ ] Audit every `render_picker_sidebar` caller for a hardcoded `false` (or omitted) focus argument: `rg -n "render_picker_sidebar" crates/*/src`. Fix all inline pickers (role, agent, provider, launch-provider) so the active one is focused.
+- [x] Fix `render_provider_picker_sidebar` to accept and pass the real `focused` state instead of `false`; thread the focus flag from the picker's active state at the call site.
+- [x] Audit every `render_picker_sidebar` caller for a hardcoded `false` (or omitted) focus argument: `rg -n "render_picker_sidebar" crates/*/src`. Fix all inline pickers (role, agent, provider, launch-provider) so the active one is focused.
 - [ ] Compose with Defect 18: the focused picker shows `▸` and the green border together; the inactive ones show neither.
 - [ ] Per the per-item analysis rule, check the inline-picker focus-state plumbing end-to-end (which picker is "active" → that one renders focused) and confirm exactly one is focused at a time.
 - [ ] Confirm via the workspace-list launch flow that role, agent, and provider pickers each show the green border while active.
@@ -499,10 +499,10 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** one enforcement point. Either `Panel::title()` normalizes internally to `" {} "` (and all callers pass bare titles), or a single shared title-formatting helper is the only way titles are set. No per-call manual spacing.
 
 **Tasks:**
-- [ ] Decide normalize-in-`Panel::title` vs shared helper; implement once.
-- [ ] Update every `.title(...)` site to the chosen convention (strip now-redundant manual spaces, or fix bare ones). `rg -n "\.title\(" crates/*/src`.
-- [ ] Fold the dialog `format!(" {} ", title)` sites into the same helper so titles cannot drift.
-- [ ] This composes with Defect 4 (body inset) — land both together so titled panels are consistent in one pass.
+- [x] Decide normalize-in-`Panel::title` vs shared helper; implement once.
+- [x] Update every `.title(...)` site to the chosen convention (strip now-redundant manual spaces, or fix bare ones). `rg -n "\.title\(" crates/*/src`.
+- [x] Fold the dialog `format!(" {} ", title)` sites into the same helper so titles cannot drift.
+- [x] This composes with Defect 4 (body inset) — land both together so titled panels are consistent in one pass.
 
 ---
 
@@ -698,8 +698,8 @@ The program is done when:
 **Canonical pattern to converge on:** every color comes from a named theme token; no raw RGB literal anywhere outside `theme.rs`. New shared colors (e.g. the preview-card charcoal) are added as named tokens.
 
 **Tasks:**
-- [ ] Enumerate ad-hoc color literals: `rg -n "Color::Rgb|Rgb\(" crates/*/src --glob '!**/theme.rs' --glob '!**/tests*'`. For each, add or reuse a named theme token and replace the literal.
-- [ ] Promote the lookbook preview-card charcoal (Defect 2) and the debug-bar colors (Defect 12) into named theme tokens.
+- [x] Enumerate ad-hoc color literals: `rg -n "Color::Rgb|Rgb\(" crates/*/src --glob '!**/theme.rs' --glob '!**/tests*'`. For each, add or reuse a named theme token and replace the literal.
+- [x] Promote the lookbook preview-card charcoal (Defect 2) and the debug-bar colors (Defect 12) into named theme tokens.
 - [ ] Per the per-item analysis rule, scan for non-`theme` color construction generally (owo_colors `Rgb`, ratatui `Style::fg/bg` with literals) and route through tokens.
 - [ ] Record "all colors come from `theme.rs` tokens; no inline RGB" in [TUI Visual Design](/reference/tui/visual-design/).
 
@@ -714,9 +714,9 @@ The program is done when:
 **Canonical pattern to converge on:** every list/picker, when it has no rows (empty or filtered-to-nothing), renders one centered dim placeholder line (e.g. `no matches` / `no roles yet`) through a shared helper, so empty is always legible and consistent.
 
 **Tasks:**
-- [ ] Add a shared empty-state render (dim, centered placeholder) to the list/select component and route every list through it.
+- [x] Add a shared empty-state render (dim, centered placeholder) to the list/select component and route every list through it.
+- [x] Audit every list/picker (workspace list, role/agent/provider pickers, file browser, settings tables, capsule pickers, lookbook lists) for the missing empty state; fix the whole class.
 - [ ] Distinguish "genuinely empty" vs "filtered to nothing" copy where useful.
-- [ ] Audit every list/picker (workspace list, role/agent/provider pickers, file browser, settings tables, capsule pickers, lookbook lists) for the missing empty state; fix the whole class.
 - [ ] Add a lookbook story for the empty + filtered-empty states.
 
 ---
@@ -730,7 +730,7 @@ The program is done when:
 **Canonical pattern to converge on:** the hint bar for any focus state is derived once from that container's active key bindings — exhaustive (every key that does something is listed), deduplicated, focus-scoped (recomputed on focus change), per the existing [navigation hints](/reference/tui/navigation/) rule.
 
 **Tasks:**
-- [ ] Find and fix the duplicated `↑↓ navigate` in the settings focused-content hint; audit editor/workspaces/capsule/launch hint assembly for other dupes or omissions. `rg -n "HintSpan|render_hint_bar|render_footer|navigate" crates/*/src`.
+- [x] Find and fix the duplicated `↑↓ navigate` in the settings focused-content hint; audit editor/workspaces/capsule/launch hint assembly for other dupes or omissions. `rg -n "HintSpan|render_hint_bar|render_footer|navigate" crates/*/src`.
 - [ ] Ensure every clickable/keyable action (incl. the ones gaining hover/click in Defects 13/17/20) is represented in the relevant hint set — keyboard/mouse parity.
 - [ ] Recompute hints on every focus change (couples with the `FocusOwner` model, Defect 18/19).
 - [ ] Add coverage so a screen's hint set has no duplicate spans.
