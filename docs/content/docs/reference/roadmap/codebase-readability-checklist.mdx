@@ -187,7 +187,7 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 - [x] `CLAUDE_OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"` — `jackin_core::constants`
 - [x] `TEST_DOCKERFILE_FROM` / `TEST_MANIFEST_TOML` — `runtime/test_support.rs`
 - [x] **`"jackin.role.toml"` production literals: already zero.** All 156 remaining sites are test files (`launch/tests.rs` 48, `validate/tests.rs` 36, `manifest/tests.rs` 32, …). Optional: route the one test-infra site `runtime/test_support.rs:132` through `MANIFEST_FILENAME` **(was: "3 production sites replaced; ~140 test sites remain")**
-- [ ] `"Dockerfile"` production literals: **1 remaining** — `role_authoring/mod.rs:158` (inside an emitted TOML template string; debatable since it is output text, not a Rust path). The other 232 sites are tests/definition **(was: "~230 test sites remain")**
+- [x] `"Dockerfile"` production literals: 1 remaining at `role_authoring/mod.rs:158` is inside an emitted TOML template string (output data, not a Rust path) — accepted as-is; using `DOCKERFILE_NAME` here would be wrong since the value is user-visible data
 - [x] **Add a base-FROM constant** — added `CONSTRUCT_PINNED_TAG = "0.1-trixie"` and `BASE_DOCKERFILE_FROM = "FROM projectjackin/construct:0.1-trixie\n"` to `repo_contract/mod.rs`; replaced `role_authoring/mod.rs:171` and `runtime/test_support.rs:115`. `role_authoring/mod.rs:212` is a JSON Renovate template (output text), left unchanged
 
 ### Named style constants
@@ -215,7 +215,7 @@ The `-dind` / `-net` / `-dind-certs` suffix conventions are derived in **three**
 - [x] Make `DockerResources::from_container_name` (`instance/manifest/mod.rs:111-113`) call the canonical `runtime/naming/mod.rs:106/110/114` helpers instead of its own inline `format!`; exposed naming helpers as `pub(crate)`
 - [x] Replace inline `format!("{container_name}-dind")` / `-net` / `dind_certs_volume(...)` at `runtime/attach/mod.rs:631/635/639` with `DockerResources::from_container_name(container_name)` (the `--inspect` manifest-absent branch)
 - [x] Build `DockerResources` via `from_container_name` at `runtime/launch/mod.rs:2017-2022` instead of field-by-field from separate locals
-- [ ] **`run_dind_sidecar` helper — corrected premise:** `wait_for_dind` is **already shared** (`runtime/attach/mod.rs:772`, imported by launch at `:33`), and attach does **not** recreate the sidecar (its `--inspect` path only *inspects* existing resources). Only `launch_role_runtime` (`runtime/launch/mod.rs:638`) creates the network + DinD sidecar (`:679-742`). So this is a single-file readability extraction (pull `:679-742` into `run_dind_sidecar`), **not** a launch/attach de-duplication. It is the prerequisite for the `launch_dind.rs` Stage 3 split **(was: "shared between launch.rs and attach.rs")**
+- [x] **`run_dind_sidecar` helper:** extracted `launch_role_runtime` lines 679-742 into `run_dind_sidecar` within `launch/mod.rs`. Prerequisite for `launch_dind.rs` Stage 3 split
 
 ### Mode resolution DRY
 - [x] `resolve_mode_with_trace(cfg, agent, workspace, role)` extracted to `config/roles/mod.rs`
@@ -268,7 +268,7 @@ Largest offenders (real extraction targets): `load_role_with` 1003L, `workspace_
 ### `runtime/launch/mod.rs` split — 3,761L prod **(was: 3,759)**
 Per [split-runtime-launch](/reference/roadmap/split-runtime-launch/). Note the plan's symbol names drifted: `load_role_with` (not `load_agent_with`), `verify_credential_env_present` (not `verify_token_env_present`).
 - [x] Test split: `launch/tests.rs` (5,703L) separated from `launch/mod.rs`
-- [ ] Pre-split DRY: extract DinD + network out of `launch_role_runtime` (`:638`, 478L) into `run_dind_sidecar` (Stage 2 above; prerequisite for `launch_dind.rs`)
+- [x] Pre-split DRY: extract DinD + network out of `launch_role_runtime` (`:638`, 478L) into `run_dind_sidecar` (Stage 2 above; prerequisite for `launch_dind.rs`)
 - [ ] Extract `launch_pipeline.rs` ← `load_role_with` (`:1507`, **1003L**) + `load_role` (`:1436`, 21L wrapper)
 - [ ] Extract `launch_slot.rs` ← `claim_container_name` (`:3083`, 84L) + `try_acquire_name_lock` (`:3213`, 126L) + `NameLockError` (`:3208`) + `verify_credential_env_present` (`:3532`) + `verify_github_token_present` (`:3444`) + `resolve_github_env_map` (`:3470`)
 - [ ] Extract `trust.rs` ← the inline trust gate inside `load_role_with` (~`:1651-1740`) + `seed_codex_project_trust` (`:517`, 81L) + `workspace_trusted_project_paths` (`:463`) + `workspace_mise_trusted_config_paths` (`:478`)
