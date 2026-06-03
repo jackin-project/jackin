@@ -2,7 +2,7 @@
 title: "Agent runtime trait — replace the closed Agent enum with per-runtime modules"
 ---
 
-**Status**: Open — design proposal (Phase 1.5 follow-up under the [Codebase readability program](/reference/roadmap/codebase-readability/))
+**Status**: Open — design proposal (follow-up to the completed codebase readability & restructuring program)
 
 ## Problem
 
@@ -38,7 +38,7 @@ let agent_at_global = match agent {
 // …and the same shape repeated for `agent_at_workspace` and `agent_at_ws_role`.
 ```
 
-[Phase 1.5 of the readability program](/reference/roadmap/codebase-readability/#3-auth-provisioning--agent-dispatch-deduplication) names this — "7+ agent match-arm dispatch blocks" — and proposes "a macro or trait dispatch" as the fix, but stops at that two-word framing. This item commits to the trait shape, defines the per-runtime module layout, and sequences the migration so it can land incrementally on top of the existing Phase 1.5 work without forcing a big-bang rewrite of all 31 dispatch sites at once.
+The codebase readability program identified "7+ agent match-arm dispatch blocks" and proposed "a macro or trait dispatch" as the fix, but stopped at that two-word framing. This item commits to the trait shape, defines the per-runtime module layout, and sequences the migration so it can land incrementally without forcing a big-bang rewrite of all 31 dispatch sites at once.
 
 ## Why this is the highest-leverage DRY target
 
@@ -125,7 +125,7 @@ The 31-file fan-out is exactly why a big-bang rewrite is wrong. Land in four sma
 3. **PR 3 — Collapse per-agent serde newtypes.** Replace `CodexAuthConfig` / `AmpAuthConfig` / `KimiAuthConfig` / `OpencodeAuthConfig` with a single `AgentAuthConfig` plus an adapter-driven validator. This is a schema-versioned change ([per the AGENTS.md schema-versioning rule](/reference/runtime/schema-versions/)): bump `CURRENT_CONFIG_VERSION` and `CURRENT_WORKSPACE_VERSION`, add a migration step that re-keys the parallel `[claude]` / `[codex]` / … tables under a single shape if the storage layout changes (it likely doesn't — the *parser* changes, not the on-disk format), and re-bake all existing migration fixtures.
 4. **PR 4 — Collapse the parallel struct fields where it pays.** `AppConfig.claude` / `.codex` / `.amp` / `.kimi` / `.opencode` become `AppConfig.agents: BTreeMap<Agent, AgentAuthConfig>` *if and only if* the resulting call sites read more clearly than the named fields. This is a judgement PR — not every collapse is a win, and BTreeMap access at every call site can be worse than five named fields. The criterion is: if the next runtime would need to add a sixth named field to *N* structs in three modules, the map shape pays for itself; otherwise keep the named fields. Run the call-site read and make the call in the PR.
 
-Each PR has a clear stop point. The work is parallelisable with the [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) and [Split `instance/auth.rs`](/reference/roadmap/codebase-readability/#tier-a--files-over-2000-lines-14-files-highest-priority) plans — in fact, retiring the dispatch fan-out from `launch.rs` and `auth.rs` is a prerequisite that makes those splits *smaller*, because much of what looks like "logic to relocate" is actually "match arm to delete." Sequencing recommendation: land PR 1 and PR 2 of *this* item before the file-split work starts.
+Each PR has a clear stop point. The work is parallelisable with the [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) and Split `instance/auth.rs` plans — in fact, retiring the dispatch fan-out from `launch.rs` and `auth.rs` is a prerequisite that makes those splits *smaller*, because much of what looks like "logic to relocate" is actually "match arm to delete." Sequencing recommendation: land PR 1 and PR 2 of *this* item before the file-split work starts.
 
 ## Non-goals
 
@@ -158,8 +158,8 @@ Each PR has a clear stop point. The work is parallelisable with the [Split `runt
 
 ## Cross-references
 
-- [Codebase readability program](/reference/roadmap/codebase-readability/) — Phase 1.5 §3 names the "Agent match-arm macro or trait dispatch" extraction at a two-word level; this item commits the shape.
+- [Codebase map](/reference/getting-oriented/codebase-map/) — workspace crate structure and per-crate ownership contracts.
 - [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the trait is the precondition that lets us add Codex/Amp/Kimi/OpenCode parity work without each addition multiplying the dispatch fan-out.
-- [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) and [Split `instance/auth.rs` (Tier A)](/reference/roadmap/codebase-readability/#tier-a--files-over-2000-lines-14-files-highest-priority) — much of what those plans treat as "logic to relocate" is dispatch boilerplate this item deletes outright; landing PRs 1–2 of this item shrinks the splits.
+- [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) — much of what that plan treats as "logic to relocate" is dispatch boilerplate this item deletes outright; landing PRs 1–2 of this item shrinks the split.
 - [Behavioral spec: runtime/launch.rs](/reference/roadmap/behavioral-spec-runtime-launch/) — the trait surface is the natural contract to specify against, replacing "for each agent, …" enumeration.
 - [Config versioning and migration framework](/reference/roadmap/config-versioning-migration/) — the PR 3 serde collapse follows the standard fixture-and-chain rules if it requires a version bump.

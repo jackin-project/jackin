@@ -188,4 +188,4 @@ PRs 1–4 add only `tracing` + `tracing-subscriber` + `tracing-appender` (small,
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — wants structured per-stage / per-session state this instrumentation produces
 - [TUI Design](/reference/tui/) — the background-I/O-off-the-draw-thread principle aligns with the non-blocking writer requirement
 - [Token cost telemetry](/reference/roadmap/token-cost-telemetry/) — a future metrics consumer that benefits from a real counter/histogram surface
-- [Codebase readability & restructuring](/reference/roadmap/codebase-readability/) — a shared `observability` module is a natural early crate boundary in the tiered core-crate split
+- [Codebase map](/reference/getting-oriented/codebase-map/) — a shared `observability` module fits naturally in the tiered crate DAG as a Tier 1 crate below config and runtime

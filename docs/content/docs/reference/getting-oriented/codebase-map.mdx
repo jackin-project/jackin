@@ -30,6 +30,41 @@ sends readers here for the actual module-level detail.
 | `.github/workflows/` | CI for jackin', the construct image, and the docs site |
 | `tests/` | End-to-end and integration tests |
 
+## Workspace crate structure
+
+The Cargo workspace is a tiered DAG — dependencies point only downward. A higher tier may name a lower tier; never the reverse.
+
+```text
+Tier 0  jackin-core        vocabulary + traits + manifest types + JackinPaths +
+                           env_model (reserved-name policy) + op_types + constants
+        jackin-protocol    capsule↔client wire protocol
+        ──  no tokio · no docker · no filesystem (except std::fs in paths)  ──
+
+Tier 1  jackin-tui         ratatui widgets + theme + ansi_text + prune_output formatting → core
+        jackin-diagnostics RunDiagnostics JSONL + debug_log! macro +
+                           terminal-ownership state                 → core, tui
+        jackin-docker      BollardDockerClient + ShellRunner + net  → core, diagnostics
+
+Tier 2  jackin-config      AppConfig · WorkspaceConfig · ConfigEditor · migration engine ·
+                           planner · mount/workspace validation + resolution  → core
+
+Tier 3  jackin-manifest    manifest validation + migrations + repo_contract + repo → core, config, diagnostics
+        jackin-env         operator_env + env_resolver + host_claude + token_setup → core, config, diagnostics
+
+Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
+                           binary_artifact + version_check  → core, config, manifest, docker, diagnostics
+        jackin-runtime     runtime + instance + isolation  → core, config, env, manifest, docker, image, diagnostics
+        jackin-console     generic console UI + effects-as-data   → core, config, tui, diagnostics
+        jackin-launch      launch progress UI                     → protocol, tui
+        jackin-capsule     in-container TUI (its own binary)      → core, tui, protocol
+
+Tier 5  jackin (binary)    cli/ + app/ + the console host effect-runner / services / run-loop +
+                           role_authoring + host tui/ + main.rs + bin/role.rs
+                           → all of the above. THE ONLY BINARY. No root src/.
+```
+
+**Ownership rules per tier:** `jackin-core` is types + traits only — no tokio, no subprocess, no docker. `pub(crate)` by default; `pub` only on what the next crate up imports. Heavy dependencies (tokio, bollard) live only in the tiers annotated above.
+
 ## Where to start reading
 
 Different contribution shapes have different natural entry points.

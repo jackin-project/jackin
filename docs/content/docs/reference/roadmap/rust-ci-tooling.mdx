@@ -106,7 +106,7 @@ The `sources.allow-git` entry is what makes the `vt100` fork an explicit, review
 
 `cargo-llvm-cov` wraps rustc's LLVM source-based instrumentation to produce precise line/region coverage. It is the **only** coverage tool the official nextest docs document, and it integrates natively via `cargo llvm-cov nextest` — so it reuses jackin's existing test runner rather than introducing a parallel one. It runs on **stable** (branch coverage and doc-test coverage need nightly and stay off), is maintained by `taiki-e` (v0.8.7, May 2026, same author as the `install-action` already idiomatic in Rust CI), and emits LCOV / JSON / Cobertura / Codecov formats.
 
-For jackin' specifically, coverage is the instrument that surfaces the untested branches in exactly the auth / Docker / TUI code where <RepoFile path="AGENTS.md" /> already flags pervasive duplication — the places a missing call site in one of two near-identical paths hides. It is the natural instrument for the test-coverage work the [codebase readability program](/reference/roadmap/codebase-readability/) tracks.
+For jackin' specifically, coverage is the instrument that surfaces the untested branches in exactly the auth / Docker / TUI code where <RepoFile path="AGENTS.md" /> already flags pervasive duplication — the places a missing call site in one of two near-identical paths hides.
 
 **Run it informational, not as a gate.** A hard coverage-percentage threshold on a solo, pre-release project buys merge friction and threshold bikeshedding, not safety. The recommended shape is `cargo llvm-cov nextest --lcov` uploaded to Codecov as a PR comment (or kept as a CI artifact), with no pass/fail bar. Codecov upload requires a CI token and sends coverage data to an external service — opt-in, and the only part of this item with an external-service dependency.
 
@@ -114,7 +114,7 @@ For jackin' specifically, coverage is the instrument that surfaces the untested 
 
 `cargo-insta` (the `insta` crate plus its `cargo insta` review CLI) asserts values against stored reference snapshots instead of hand-written expectations — the right tool when the asserted value is large or changes often. Rendered TUI / CLI output is the textbook case. It is heavily adopted (65M+ downloads) and actively maintained (v1.47.2, March 2026) by `mitsuhiko`.
 
-jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The TUI architecture work (see [TUI Design Decisions](/reference/tui//)) and codebase-readability items both already call for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
+jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The TUI architecture work (see [TUI Design Decisions](/reference/tui//)) already calls for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
 
 ### Spell-check: `typos`
 

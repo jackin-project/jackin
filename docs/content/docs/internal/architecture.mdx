@@ -2,16 +2,8 @@
 title: "Architecture"
 ---
 
-High-level module architecture for the jackin' codebase. This page is a stub — content will grow as the codebase-readability program extracts crate boundaries and the [Codebase Map](/reference/getting-oriented/codebase-map/) is updated.
+High-level module architecture for the jackin' codebase. This page is a stub — content will grow as the [Codebase Map](/reference/getting-oriented/codebase-map/) is expanded.
 
 ## Current structure
 
-The codebase is split into two halves:
-
-**Root `src/` binary crate** (~108K lines) — runtime, config, instance, isolation, app-dispatch, manifest, and CLI code. This is the subject of the codebase-readability restructuring program.
-
-**`crates/` workspace** (~62K lines) — seven crates: `jackin-tui` (shared components), `jackin-console` (workspace manager TUI), `jackin-launch` (loading cockpit TUI), `jackin-capsule` (in-container daemon + host client), `jackin-protocol` (shared wire types), `jackin-build-meta` (build metadata), `jackin-tui-lookbook` (component development tool).
-
-## Target: tiered core-crate workspace
-
-See the [Codebase readability program](/reference/roadmap/codebase-readability/) for the planned tier structure: `jackin-core` → `jackin-config` → `jackin-env` → `jackin-runtime` → thin binary.
+The codebase is a tiered Cargo workspace. Every production module lives in a single-responsibility crate under `crates/`; the only binary is `crates/jackin/`. See the [Codebase Map](/reference/getting-oriented/codebase-map/#workspace-crate-structure) for the full tiered DAG and per-crate ownership contracts.
