@@ -4,8 +4,6 @@
 //! or isolation type selection — only the CLI `src[:dst][:ro]` grammar and
 //! path expansion.
 
-use std::path::Path;
-
 use crate::workspace::MountConfig;
 use crate::workspace::paths::{expand_tilde, resolve_path};
 
@@ -42,43 +40,8 @@ fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
     }
 }
 
-/// Structural validation: absolute paths, no duplicate destinations.
-/// Safe to call at config-save time — does not touch the filesystem.
-pub fn validate_mount_specs(mounts: &[MountConfig]) -> anyhow::Result<()> {
-    let mut seen_dst = std::collections::HashSet::new();
-
-    for mount in mounts {
-        if !Path::new(&mount.src).is_absolute() {
-            anyhow::bail!("mount source must be absolute: {}", mount.src);
-        }
-        if !mount.dst.starts_with('/') {
-            anyhow::bail!("mount destination must be an absolute path: {}", mount.dst);
-        }
-        if !seen_dst.insert(mount.dst.clone()) {
-            anyhow::bail!("duplicate mount destination: {}", mount.dst);
-        }
-    }
-
-    Ok(())
-}
-
-/// Filesystem validation: checks that mount sources exist on disk.
-/// Call at load/resolve time, not at config-save time.
-pub fn validate_mount_paths(mounts: &[MountConfig]) -> anyhow::Result<()> {
-    for mount in mounts {
-        if !Path::new(&mount.src).exists() {
-            anyhow::bail!("mount source does not exist: {}", mount.src);
-        }
-    }
-
-    Ok(())
-}
-
-/// Full validation: structural + filesystem checks combined.
-pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
-    validate_mount_specs(mounts)?;
-    validate_mount_paths(mounts)
-}
+// validate_mount_specs, validate_mount_paths, validate_mounts moved to
+// jackin-config/schema.rs — re-exported from workspace/mod.rs.
 
 // ── Rule-C covering predicate ───────────────────────────────────────────
 

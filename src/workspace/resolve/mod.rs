@@ -7,9 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::workspace::mounts::validate_mount_paths;
 use crate::workspace::paths::expand_tilde;
 use crate::workspace::{MountConfig, WorkspaceConfig, validate_workspace_config};
+use jackin_config::validate_mount_paths;
 
 pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
     let cwd = cwd.canonicalize()?;
