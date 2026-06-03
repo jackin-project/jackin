@@ -8,10 +8,10 @@ use jackin_tui::{
     components::{
         ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, Panel, PanelFocus,
         SaveDiscardFocus, SaveDiscardState, SelectListState, StatusFooterHover, TabStrip,
-        TextInputState, render_brand_header, render_confirm_dialog, render_error_dialog,
-        render_filter_input, render_save_discard_dialog, render_scrollable_block,
-        render_select_list, render_status_footer, render_status_popup, render_text_input,
-        render_wrapped_hint_bar,
+        TextInputState, panel_body_area, render_brand_header, render_confirm_dialog,
+        render_error_dialog, render_filter_input, render_save_discard_dialog,
+        render_scrollable_block, render_select_list, render_status_footer, render_status_popup,
+        render_text_input, render_wrapped_hint_bar,
     },
 };
 use ratatui::{
@@ -234,7 +234,7 @@ fn story_panel_focused(frame: &mut Frame<'_>, area: Rect) {
         .title("Workspace")
         .focus(PanelFocus::FocusedScrollable)
         .block();
-    let inner = block.inner(area);
+    let content_area = panel_body_area(&block, area);
     frame.render_widget(block, area);
     frame.render_widget(
         Paragraph::new(vec![
@@ -258,7 +258,7 @@ fn story_panel_focused(frame: &mut Frame<'_>, area: Rect) {
                 Span::styled("repo rw, ~/.config/gh ro", jackin_tui::theme::DIM),
             ]),
         ]),
-        inner,
+        content_area,
     );
 }
 

@@ -128,6 +128,18 @@ impl Default for Panel<'_> {
     }
 }
 
+/// Return the content area inside a panel border with a 1-cell horizontal inset so text
+/// never touches the left or right border. Use in place of `block.inner(area)` when
+/// rendering non-scrollable text content into a titled panel.
+#[must_use]
+pub fn panel_body_area(block: &Block<'_>, area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    use ratatui::layout::Margin;
+    block.inner(area).inner(Margin {
+        horizontal: 1,
+        vertical: 0,
+    })
+}
+
 /// A bordered `Block` for **modal overlays** — pickers, dialogs, and any
 /// container that is the active interaction target when visible.
 ///

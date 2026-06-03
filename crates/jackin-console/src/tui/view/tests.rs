@@ -16,15 +16,21 @@ fn workspace_header_title_is_view_owned() {
 }
 
 #[test]
-fn modal_areas_keep_existing_sizes() {
-    let area = Rect::new(0, 0, 100, 40);
+fn modal_areas_stable_preferred_size() {
+    // On a wide terminal (300 cols) each dialog holds its preferred width
+    // (pct_w% of the 160-col reference), not a fraction of the terminal.
+    let wide = Rect::new(0, 0, 300, 40);
+    assert_eq!(delete_confirm_area(wide).width, 96); // 60% of 160 = 96
+    assert_eq!(delete_confirm_area(wide).height, 7);
+    assert_eq!(purge_confirm_area(wide).width, 112); // 70% of 160 = 112
+    assert_eq!(purge_confirm_area(wide).height, 9);
+    assert_eq!(status_overlay_area(wide).width, 80); // 50% of 160 = 80
+    assert_eq!(status_overlay_area(wide).height, 7);
 
-    assert_eq!(delete_confirm_area(area).width, 60);
-    assert_eq!(delete_confirm_area(area).height, 7);
-    assert_eq!(purge_confirm_area(area).width, 70);
-    assert_eq!(purge_confirm_area(area).height, 9);
-    assert_eq!(status_overlay_area(area).width, 50);
-    assert_eq!(status_overlay_area(area).height, 7);
+    // On a narrow terminal (50 cols), dialogs shrink to terminal_width - 4 margin.
+    let narrow = Rect::new(0, 0, 50, 40);
+    assert_eq!(delete_confirm_area(narrow).width, 46); // min(96, 50-4) = 46
+    assert_eq!(status_overlay_area(narrow).width, 46); // min(80, 46) = 46
 }
 
 #[test]

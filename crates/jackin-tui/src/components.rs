@@ -36,7 +36,10 @@ pub use hint_bar::{
     HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
 };
 pub use modal_backdrop::ModalBackdrop;
-pub use panel::{FocusPalette, Panel, PanelFocus, modal_block, modal_block_inactive, unfocused_block};
+pub use panel::{
+    FocusPalette, Panel, PanelFocus, modal_block, modal_block_inactive, panel_body_area,
+    unfocused_block,
+};
 pub use save_discard_dialog::{
     SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState, render_save_discard_dialog,
 };

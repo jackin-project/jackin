@@ -219,14 +219,31 @@ pub const fn is_horizontally_scrollable(area: ratatui::layout::Rect, content_wid
     )
 }
 
-/// Like a centered percent-width rect, but takes a fixed row height.
+/// Center a dialog at a stable preferred width derived from `pct_w` of a 160-col
+/// reference terminal. The dialog holds that width when the outer area is at least
+/// that wide, and shrinks gracefully (min-margin 4) only when the terminal is too
+/// narrow. This prevents dialogs from rescaling proportionally on every resize.
 #[must_use]
 pub fn centered_rect_fixed(
     outer: ratatui::layout::Rect,
     pct_w: u16,
     rows: u16,
 ) -> ratatui::layout::Rect {
-    let w = outer.width * pct_w / 100;
+    // Preferred = pct_w% of a 160-col reference — stable on any terminal ≥ that.
+    const REFERENCE_COLS: u16 = 160;
+    let preferred = REFERENCE_COLS.saturating_mul(pct_w) / 100;
+    centered_rect_preferred(outer, preferred, rows)
+}
+
+/// Center a dialog at `preferred_w` columns, shrinking only when the outer area is
+/// too narrow to fit `preferred_w` with a 4-column side margin.
+#[must_use]
+pub fn centered_rect_preferred(
+    outer: ratatui::layout::Rect,
+    preferred_w: u16,
+    rows: u16,
+) -> ratatui::layout::Rect {
+    let w = preferred_w.min(outer.width.saturating_sub(4));
     let h = rows.min(outer.height);
     ratatui::layout::Rect {
         x: outer.x + outer.width.saturating_sub(w) / 2,

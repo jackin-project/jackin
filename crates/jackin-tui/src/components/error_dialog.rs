@@ -65,11 +65,11 @@ impl Widget for ErrorDialog<'_> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),        // leading spacer
+                Constraint::Length(1),         // leading spacer
                 Constraint::Length(body_rows), // message body
-                Constraint::Length(1),        // spacer
-                Constraint::Length(1),        // OK button
-                Constraint::Length(1),        // trailing spacer
+                Constraint::Length(1),         // spacer
+                Constraint::Length(1),         // OK button
+                Constraint::Length(1),         // trailing spacer
             ])
             .split(inner);
 

@@ -27,7 +27,7 @@ use jackin_tui::{
     HintSpan,
     components::{
         hint_bar::render_hint_bar,
-        panel::{Panel, PanelFocus},
+        panel::{Panel, PanelFocus, panel_body_area},
         render_brand_header,
         scrollable_panel::{apply_scroll_delta, max_offset},
     },
@@ -191,7 +191,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 .title(" about ")
                 .focus(PanelFocus::Unfocused)
                 .block();
-            let desc_inner = desc_block.inner(desc_area);
+            let desc_inner = panel_body_area(&desc_block, desc_area);
             frame.render_widget(desc_block, desc_area);
 
             let [title_row, spacer_row, desc_row] = Layout::vertical([

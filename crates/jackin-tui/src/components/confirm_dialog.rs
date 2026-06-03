@@ -13,7 +13,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::{ModalOutcome, theme::{PHOSPHOR_GREEN, WARNING_YELLOW}};
+use crate::{
+    ModalOutcome,
+    theme::{PHOSPHOR_GREEN, WARNING_YELLOW},
+};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
 use super::panel::modal_block;
@@ -136,15 +139,15 @@ pub fn required_height(state: &ConfirmState) -> u16 {
     match &state.kind {
         ConfirmKind::Details { rows, notes, .. } => {
             // 2 borders + 1 leading + prompt + sep + detail_rows + sep + note_rows + spacer + buttons + 1 trailing
-            let content_rows = 1usize       // leading spacer
-                .saturating_add(1)          // prompt
-                .saturating_add(1)          // separator
+            let content_rows = 1usize // leading spacer
+                .saturating_add(1) // prompt
+                .saturating_add(1) // separator
                 .saturating_add(rows.len()) // detail rows
-                .saturating_add(1)          // separator
+                .saturating_add(1) // separator
                 .saturating_add(notes.len()) // note rows
-                .saturating_add(1)          // spacer before buttons
-                .saturating_add(1)          // buttons
-                .saturating_add(1);         // trailing spacer
+                .saturating_add(1) // spacer before buttons
+                .saturating_add(1) // buttons
+                .saturating_add(1); // trailing spacer
             u16::try_from(content_rows.saturating_add(2)).unwrap_or(u16::MAX)
         }
         ConfirmKind::Default { prompt } => {
