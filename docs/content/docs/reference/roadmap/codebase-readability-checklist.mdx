@@ -269,7 +269,7 @@ Largest offenders (real extraction targets): `load_role_with` 1003L, `workspace_
 Per [split-runtime-launch](/reference/roadmap/split-runtime-launch/). Note the plan's symbol names drifted: `load_role_with` (not `load_agent_with`), `verify_credential_env_present` (not `verify_token_env_present`).
 - [x] Test split: `launch/tests.rs` (5,703L) separated from `launch/mod.rs`
 - [x] Pre-split DRY: extract DinD + network out of `launch_role_runtime` (`:638`, 478L) into `run_dind_sidecar` (Stage 2 above; prerequisite for `launch_dind.rs`)
-- [ ] Extract `launch_pipeline.rs` ← `load_role_with` (`:1507`, **1003L**) + `load_role` (`:1436`, 21L wrapper)
+- [x] Extract `launch_pipeline.rs` ← `load_role_with` (~1003L), `load_role`, `resolve_supported_agents_for_console` moved to `launch/launch_pipeline.rs`
 - [x] Extract `launch_slot.rs` ← `claim_container_name`, `claim_known_container_name`, `try_acquire_name_lock`, `NameLockError`, `verify_credential_env_present`, `verify_github_token_present`, `resolve_github_env_map` extracted to `launch/launch_slot.rs`
 - [x] Extract `trust.rs` ← `seed_codex_project_trust`, `workspace_trusted_project_paths`, `workspace_mise_trusted_config_paths`, `inject_workspace_mise_env`, `ensure_table` extracted to `launch/trust.rs`; inline trust gate in `load_role_with` deferred
 - [x] Extract `launch_dind.rs` ← `run_dind_sidecar` + network creation extracted to `runtime/launch/launch_dind.rs`

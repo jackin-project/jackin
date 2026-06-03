@@ -20,42 +20,39 @@ mod launch_dind;
 use launch_dind::run_dind_sidecar;
 
 mod launch_slot;
-use launch_slot::{
-    claim_container_name, claim_known_container_name, resolve_github_env_map,
-    verify_credential_env_present, verify_github_token_present,
+#[cfg(test)]
+pub(crate) use launch_slot::{
+    claim_container_name, resolve_github_env_map, verify_credential_env_present,
+    verify_github_token_present,
 };
 
 mod trust;
 #[cfg(test)]
-pub(crate) use trust::{MISE_TRUSTED_CONFIG_PATHS_ENV, workspace_mise_trusted_config_paths};
-use trust::{inject_workspace_mise_env, seed_codex_project_trust};
+pub(crate) use trust::{
+    MISE_TRUSTED_CONFIG_PATHS_ENV, inject_workspace_mise_env, seed_codex_project_trust,
+    workspace_mise_trusted_config_paths,
+};
+
+mod launch_pipeline;
+#[cfg(test)]
+pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
+#[cfg(test)]
+pub(crate) use launch_pipeline::load_role_with;
+pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
 
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
-use crate::instance::{
-    DockerResources, InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus,
-    NewInstanceManifest, RoleState,
-};
+use crate::instance::{InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus, RoleState};
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::tui;
-use crate::version_check;
 use anyhow::Context;
 use std::path::PathBuf;
 
-use super::attach::{
-    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
-    reconnect_or_create_session_with_focus, start_or_reconnect_capsule_client,
-};
-use super::cleanup::gc_orphaned_resources;
+use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
 use super::discovery::list_running_agent_names;
-use super::identity::{GitIdentity, load_git_identity, load_host_identity};
-use super::image::{build_agent_image, prepare_runtime_binaries};
-use super::naming::{
-    LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume, image_name,
-    image_name_for_branch,
-};
-use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
+use super::identity::GitIdentity;
+use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume};
 use super::universe::ExitClaim;
 use crate::docker_client::DockerApi;
 
@@ -130,7 +127,7 @@ impl LoadOptions {
         }
     }
 }
-fn validate_agent_supported(
+pub(super) fn validate_agent_supported(
     selector: &RoleSelector,
     manifest: &crate::manifest::RoleManifest,
     agent: crate::agent::Agent,
@@ -153,7 +150,7 @@ fn validate_agent_supported(
     );
 }
 
-struct StepCounter {
+pub(super) struct StepCounter {
     current: u32,
     role_name: String,
     current_stage: Option<super::progress::LaunchStage>,
@@ -208,7 +205,7 @@ impl StepCounter {
     }
 }
 
-struct LaunchEnvPrompter<'a> {
+pub(super) struct LaunchEnvPrompter<'a> {
     progress: Option<std::cell::RefCell<&'a mut super::progress::LaunchProgress>>,
 }
 
@@ -249,7 +246,7 @@ impl crate::env_resolver::EnvPrompter for LaunchEnvPrompter<'_> {
     }
 }
 
-fn sensitive_mount_prompt(sensitive: &[crate::workspace::SensitiveMount]) -> String {
+pub(super) fn sensitive_mount_prompt(sensitive: &[crate::workspace::SensitiveMount]) -> String {
     let mut lines = vec![
         "Sensitive host paths are mounted into this role container.".to_string(),
         "Continue only if this role should see these credentials.".to_string(),
@@ -292,7 +289,9 @@ const fn completion_label(stage: super::progress::LaunchStage) -> &'static str {
     }
 }
 
-const fn launch_target_kind(workspace_name: Option<&str>) -> super::progress::LaunchTargetKind {
+pub(super) const fn launch_target_kind(
+    workspace_name: Option<&str>,
+) -> super::progress::LaunchTargetKind {
     if workspace_name.is_some() {
         super::progress::LaunchTargetKind::Workspace
     } else {
@@ -300,7 +299,7 @@ const fn launch_target_kind(workspace_name: Option<&str>) -> super::progress::La
     }
 }
 
-fn launch_target_label(
+pub(super) fn launch_target_label(
     workspace_name: Option<&str>,
     workspace: &crate::workspace::ResolvedWorkspace,
 ) -> String {
@@ -311,7 +310,7 @@ fn launch_target_label(
 /// container destination. Same-path mounts (the current-directory launch
 /// case) carry no information for the operator and are omitted entirely, so
 /// a directory launch shows no mount line at all.
-fn launch_mount_lines(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
+pub(super) fn launch_mount_lines(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
     workspace
         .mounts
         .iter()
@@ -470,7 +469,7 @@ fn build_workspace_mount_strings(
     out
 }
 
-struct LaunchContext<'a> {
+pub(super) struct LaunchContext<'a> {
     container_name: &'a str,
     image: &'a str,
     network: &'a str,
@@ -502,7 +501,7 @@ struct LaunchContext<'a> {
     paths: &'a JackinPaths,
 }
 
-fn capsule_config(
+pub(super) fn capsule_config(
     selector: &RoleSelector,
     workdir: &str,
     manifest: &crate::manifest::RoleManifest,
@@ -547,7 +546,7 @@ fn capsule_config(
     clippy::too_many_lines,
     reason = "pending extraction — tracked in codebase-readability roadmap"
 )]
-async fn launch_role_runtime(
+pub(super) async fn launch_role_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,
     docker: &impl DockerApi,
@@ -1138,7 +1137,7 @@ pub(super) async fn inspect_attach_outcome(
     })
 }
 
-enum GitPullResult {
+pub(super) enum GitPullResult {
     Success { src: String, stdout: String },
     Failure { src: String, stderr: String },
     SpawnError { src: String, error: std::io::Error },
@@ -1154,7 +1153,7 @@ fn pull_workspace_repos_with_git(
     pull_git_sources_with_git(git_pull_sources(workspace), debug, git_program, true)
 }
 
-fn git_pull_sources(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
+pub(super) fn git_pull_sources(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
     let mut sources = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for mount in &workspace.mounts {
@@ -1166,7 +1165,7 @@ fn git_pull_sources(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<Stri
     sources
 }
 
-fn pull_git_sources_with_git(
+pub(super) fn pull_git_sources_with_git(
     sources: Vec<String>,
     debug: bool,
     git_program: &std::path::Path,
@@ -1214,7 +1213,7 @@ fn pull_git_sources_with_git(
         .collect()
 }
 
-fn print_git_pull_results(results: &[GitPullResult]) {
+pub(super) fn print_git_pull_results(results: &[GitPullResult]) {
     for result in results {
         match result {
             GitPullResult::Success { stdout, .. } => {
@@ -1240,7 +1239,7 @@ fn print_git_pull_stdout(stdout: &str) {
     }
 }
 
-fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
+pub(super) fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
     let mut ok = 0;
     let mut failed = 0;
     for result in results {
@@ -1282,1089 +1281,7 @@ fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
     (ok, failed)
 }
 
-// Boxed future required: load_role calls itself recursively via
-// RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
-pub fn load_role<'a>(
-    paths: &'a JackinPaths,
-    config: &'a mut AppConfig,
-    selector: &'a RoleSelector,
-    workspace: &'a crate::workspace::ResolvedWorkspace,
-    docker: &'a impl DockerApi,
-    runner: &'a mut impl CommandRunner,
-    opts: &'a LoadOptions,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + 'a>> {
-    Box::pin(load_role_with(
-        paths,
-        config,
-        selector,
-        workspace,
-        docker,
-        runner,
-        opts,
-        |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
-        |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
-    ))
-}
-
-pub async fn resolve_supported_agents_for_console(
-    paths: &JackinPaths,
-    config: &AppConfig,
-    selector: &RoleSelector,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<Vec<crate::agent::Agent>> {
-    // Lookup-only: the actual launch path uses
-    // `AppConfig::resolve_role_source` which synthesizes + inserts a
-    // RoleSource for unregistered namespaced selectors. That mutation
-    // is for the launch (which persists trust), not for a transient
-    // agent-list query that discards the config.
-    let source = config
-        .roles
-        .get(&selector.key())
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("unknown role selector {}", selector.key()))?;
-    // Cached manifest is sufficient because the supported-agent set
-    // rarely changes between fetches; the real launch re-fetches and
-    // re-validates. Saves a git round trip per role-row Enter.
-    let cached = crate::repo::CachedRepo::new(paths, selector);
-    if cached.repo_dir.join(".git").is_dir() {
-        match crate::manifest::load_role_manifest(&cached.repo_dir) {
-            Ok(manifest) => return Ok(manifest.supported_agents()),
-            Err(error) => crate::debug_log!(
-                "console",
-                "cached manifest for {} present but failed to parse ({error:#}); refetching",
-                selector.key()
-            ),
-        }
-    } else {
-        crate::debug_log!(
-            "console",
-            "no cached repo for {}; falling back to git fetch",
-            selector.key()
-        );
-    }
-    let (_, validated_repo, _repo_lock) = super::repo_cache::resolve_agent_repo_with(
-        paths,
-        selector,
-        &source.git,
-        runner,
-        super::repo_cache::RepoResolveOptions::non_interactive(),
-        || Ok(false),
-    )
-    .await?;
-    Ok(validated_repo.manifest.supported_agents())
-}
-
-#[expect(
-    clippy::too_many_lines,
-    clippy::too_many_arguments,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
-async fn load_role_with(
-    paths: &JackinPaths,
-    config: &mut AppConfig,
-    selector: &RoleSelector,
-    workspace: &crate::workspace::ResolvedWorkspace,
-    docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
-    opts: &LoadOptions,
-    confirm_trust_for_test: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
-    confirm_branch_for_test: impl FnOnce(
-        &RoleSelector,
-        &crate::config::RoleSource,
-        &str,
-    ) -> anyhow::Result<()>,
-) -> anyhow::Result<()> {
-    // Pre-launch garbage collection is independent from host identity probes.
-    let ((), (git, host)) = tokio::join!(gc_orphaned_resources(docker), async {
-        let git = load_git_identity(runner).await;
-        let host = load_host_identity(runner).await;
-        (git, host)
-    });
-
-    // `app::run` claims the first-entry boundary immediately before a real
-    // launch so the two-screen intro only plays from an empty construct. Direct
-    // test/internal callers still need the elapsed-time marker for the last-exit
-    // outro, so this idempotently writes one if the app layer did not.
-    super::universe::mark_start(paths, super::universe::StartKind::ResumeExisting);
-
-    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
-    // not a name. Recover the name by matching workdir, mirroring the
-    // identification rule used by `jackin workspace show`.
-    let workspace_name = config
-        .workspaces
-        .iter()
-        .find(|(_, w)| w.workdir == workspace.workdir)
-        .map(|(name, _)| name.clone());
-
-    let mut steps = StepCounter::new(&selector.name);
-    if let Some(run) = crate::diagnostics::active_run() {
-        let mut progress = super::progress::LaunchProgress::new(
-            run,
-            std::env::var_os("JACKIN_NO_MOTION").is_some(),
-            super::progress::host_terminal(),
-            env!("JACKIN_VERSION"),
-        )?;
-        progress.started(super::progress::LaunchIdentity {
-            role: selector.name.clone(),
-            agent: opts
-                .agent
-                .or(workspace.default_agent)
-                .map_or_else(|| "resolving".to_string(), |agent| agent.slug().to_string()),
-            target_kind: launch_target_kind(workspace_name.as_deref()),
-            target_label: launch_target_label(workspace_name.as_deref(), workspace),
-            mounts: launch_mount_lines(workspace),
-            image: None,
-            container: None,
-        });
-        progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
-        steps.start_progress(progress);
-    }
-
-    let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
-    if !sensitive.is_empty() {
-        let prompt = sensitive_mount_prompt(&sensitive);
-        let confirmed = if let Some(progress) = steps.progress_mut() {
-            progress.confirm_prompt(prompt)?
-        } else {
-            anyhow::bail!("sensitive mount confirmation requires the rich launch dialog")
-        };
-        if !confirmed {
-            anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-        }
-    }
-
-    if workspace.git_pull_on_entry {
-        let sources = git_pull_sources(workspace);
-        if let Some(progress) = steps.progress_mut() {
-            if sources.is_empty() {
-                progress.stage_skipped(
-                    super::progress::LaunchStage::Workspace,
-                    "no mounted git repositories",
-                );
-            } else {
-                progress.stage_started(
-                    super::progress::LaunchStage::Workspace,
-                    format!("polling {} workspace repositories", sources.len()),
-                );
-                let debug = opts.debug;
-                let git_program = std::path::PathBuf::from("git");
-                let pull = tokio::task::spawn_blocking(move || {
-                    pull_git_sources_with_git(sources, debug, &git_program, false)
-                });
-                let results = progress
-                    .while_waiting(async move {
-                        pull.await
-                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
-                    })
-                    .await?;
-                let (ok, failed) = record_git_pull_results(&results);
-                let detail = if failed == 0 {
-                    format!("{ok} repositories current")
-                } else {
-                    format!("{ok} repositories current; {failed} failed")
-                };
-                progress.stage_done(super::progress::LaunchStage::Workspace, detail);
-            }
-        } else if !sources.is_empty() {
-            // Run the blocking git pulls on a blocking-pool thread so the
-            // single-threaded executor is never parked on the join.
-            let debug = opts.debug;
-            let git_program = std::path::PathBuf::from("git");
-            let results = tokio::task::spawn_blocking(move || {
-                pull_git_sources_with_git(sources, debug, &git_program, true)
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
-            print_git_pull_results(&results);
-        }
-    }
-
-    let (source, is_new, restore_source_override) =
-        resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
-
-    // Step 1: Resolve role identity (clone or update repo)
-    steps.next("Resolving role identity").await;
-
-    let mut confirm_repo_removal = || {
-        if let Some(progress) = steps.progress_mut() {
-            return progress
-                .confirm_prompt("Remove the cached repo and re-clone from the configured source?");
-        }
-        anyhow::bail!("cached repo recovery prompt requires the rich launch dialog")
-    };
-    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
-        paths,
-        selector,
-        &source.git,
-        runner,
-        RepoResolveOptions::interactive(opts.debug).with_branch(opts.role_branch.as_deref()),
-        &mut confirm_repo_removal,
-    )
-    .await?;
-
-    // Trust gate: prompt the operator before running an untrusted third-party role
-    let newly_trusted = if source.trusted {
-        false
-    } else {
-        let confirmed = if let Some(progress) = steps.progress_mut() {
-            progress.confirm_role_trust(selector.key(), source.git.clone())?
-        } else {
-            confirm_trust_for_test(selector, &source)?;
-            true
-        };
-        if !confirmed {
-            anyhow::bail!(
-                "role source \"{selector}\" not trusted — aborting.\n\
-                 To trust it later, run `jackin config trust grant {selector}` or try loading again."
-            );
-        }
-        // Mutate the in-memory copy so callers downstream see the trust
-        // without a reload; persist via editor below.
-        if let Some(entry) = config.roles.get_mut(&selector.key()) {
-            entry.trusted = true;
-        }
-        true
-    };
-
-    if !restore_source_override && (is_new || newly_trusted) {
-        let mut editor = crate::config::ConfigEditor::open(paths)?;
-        if let Some(role_source) = config.roles.get(&selector.key()) {
-            editor.upsert_agent_source(&selector.key(), role_source);
-        }
-        editor.set_agent_trust(&selector.key(), true);
-        *config = editor.save()?;
-    }
-
-    let agent_display_name = validated_repo.manifest.display_name(&selector.name);
-    steps.role_name.clone_from(&agent_display_name);
-
-    let supported_agents = validated_repo.manifest.supported_agents();
-    let agent = match opts.agent.or(workspace.default_agent) {
-        Some(a) => a,
-        None if supported_agents.len() == 1 => supported_agents[0],
-        None if supported_agents.len() >= 2 => {
-            let labels: Vec<String> = supported_agents
-                .iter()
-                .map(|a| a.slug().to_string())
-                .collect();
-            if let Some(progress) = steps.progress_mut() {
-                let selection = progress.select_choice("Choose launch agent", labels)?;
-                supported_agents[selection]
-            } else {
-                anyhow::bail!(
-                    "role \"{}\" supports multiple agents ({:?}); load requires the rich launch dialog for agent selection, or pass --agent / set workspace `default_agent`",
-                    selector.key(),
-                    supported_agents
-                        .iter()
-                        .map(|a| a.slug())
-                        .collect::<Vec<_>>()
-                )
-            }
-        }
-        None if supported_agents.is_empty() => anyhow::bail!(
-            "role \"{}\" declares no supported agents in its manifest",
-            selector.key()
-        ),
-        None => anyhow::bail!(
-            "role \"{}\" supports multiple agents ({:?}); pass --agent, set workspace `default_agent`, or use the rich launch dialog",
-            selector.key(),
-            supported_agents
-                .iter()
-                .map(|a| a.slug())
-                .collect::<Vec<_>>()
-        ),
-    };
-    validate_agent_supported(selector, &validated_repo.manifest, agent)?;
-
-    // Branch trust gate: fires even for already-trusted roles because the
-    // operator trusted the default branch, not this unreviewed PR branch.
-    if let Some(branch) = opts.role_branch.as_deref() {
-        let prompt = format!(
-            "Role `{selector}` is being loaded from unmerged branch `{branch}`.\n\
-             Its Dockerfile and scripts may differ from the trusted main branch.\n\
-             Have you reviewed the branch diff and verified it is safe to build?"
-        );
-        let confirmed = if let Some(progress) = steps.progress_mut() {
-            progress.confirm_prompt(prompt)?
-        } else {
-            confirm_branch_for_test(selector, &source, branch)?;
-            true
-        };
-        if !confirmed {
-            anyhow::bail!(
-                "branch \"{branch}\" not confirmed — aborting.\n\
-                 Review the Dockerfile and scripts on that branch before loading it."
-            );
-        }
-    }
-
-    let role_key = selector.key();
-    let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
-        Some(container.clone())
-    } else {
-        match resolve_restore_candidate(
-            paths,
-            workspace_name.as_deref(),
-            workspace.label.as_str(),
-            &workspace.workdir,
-            &role_key,
-            agent,
-            docker,
-            steps.progress_mut(),
-        )
-        .await?
-        {
-            RestoreResolution::StartFresh => None,
-            RestoreResolution::RestoreCurrentRole(container) => Some(container),
-            RestoreResolution::RecoverRelatedRole(container) => {
-                steps.finish_progress();
-                let load_result = hardline_agent(paths, &container, docker, runner)
-                    .await
-                    .map(|()| container);
-                match load_result {
-                    Ok(_) => {
-                        render_exit(paths, docker).await;
-                        return Ok(());
-                    }
-                    Err(error) => {
-                        render_exit(paths, docker).await;
-                        return Err(error);
-                    }
-                }
-            }
-            RestoreResolution::RebuildRelatedRole(manifest) => {
-                steps.finish_progress();
-                let selector = RoleSelector::parse(&manifest.role_key)?;
-                let related_opts = related_restore_load_options(opts, &manifest)?;
-                let load_result = load_role(
-                    paths,
-                    config,
-                    &selector,
-                    workspace,
-                    docker,
-                    runner,
-                    &related_opts,
-                )
-                .await
-                .map(|()| manifest.container_base);
-                match load_result {
-                    Ok(_) => {
-                        render_exit(paths, docker).await;
-                        return Ok(());
-                    }
-                    Err(error) => {
-                        render_exit(paths, docker).await;
-                        return Err(error);
-                    }
-                }
-            }
-        }
-    };
-    let restoring = restore_container.is_some();
-    let (container_name, _name_lock) = if let Some(container_name) = restore_container {
-        claim_known_container_name(paths, &container_name, docker).await?
-    } else {
-        claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
-    };
-
-    let image_tag = opts.role_branch.as_deref().map_or_else(
-        || image_name(selector),
-        |b| image_name_for_branch(selector, b),
-    );
-    if let Some(progress) = steps.progress_mut() {
-        progress.update_identity(super::progress::LaunchIdentity {
-            role: agent_display_name.clone(),
-            agent: agent.slug().to_string(),
-            target_kind: launch_target_kind(workspace_name.as_deref()),
-            target_label: launch_target_label(workspace_name.as_deref(), workspace),
-            mounts: launch_mount_lines(workspace),
-            image: Some(image_tag.clone()),
-            container: Some(container_name.clone()),
-        });
-        progress.stage_done(super::progress::LaunchStage::Role, "trusted source");
-    }
-
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            super::progress::LaunchStage::Credentials,
-            "resolving launch credentials",
-        );
-    }
-
-    // Resolve operator env layers (global / role / workspace /
-    // workspace × role) before manifest env. Operator-provided values
-    // preseed matching manifest variables, so a configured value does
-    // not ask the operator the same question again.
-    //
-    // The operator env resolver takes two injection seams:
-    //   * `op_runner`  — resolves `op://...` references (production:
-    //     `OpCli::new()`; tests: a mock `OpRunner` constructed directly).
-    //   * `host_env`   — resolves `$NAME` / `${NAME}` references
-    //     (production: `|name| std::env::var(name).ok()`; tests: a
-    //     closure over a `BTreeMap` seeded by the test).
-    //
-    // Both seams are carried on `LoadOptions` as optional fields. When
-    // unset (the production default), `resolve_operator_env` is called,
-    // which wires in the real `OpCli` and the real host env. When set
-    // (tests only), `resolve_operator_env_with` is called with the
-    // supplied seams, so tests never need to mutate `std::env` and the
-    // crate-level `unsafe_code = "forbid"` lint stays intact.
-    let operator_env = if opts.op_runner.is_none() && opts.host_env.is_none() {
-        crate::operator_env::resolve_operator_env(
-            config,
-            Some(&selector.key()),
-            workspace_name.as_deref(),
-        )?
-    } else {
-        let default_runner = crate::operator_env::OpCli::new();
-        let runner: &dyn crate::operator_env::OpRunner =
-            opts.op_runner.as_deref().unwrap_or(&default_runner);
-        let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
-            opts.host_env.as_ref().map_or_else(
-                || std::env::var(name),
-                |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
-            )
-        };
-        crate::operator_env::resolve_operator_env_with(
-            config,
-            Some(&selector.key()),
-            workspace_name.as_deref(),
-            runner,
-            host_env_fn,
-        )?
-    };
-
-    // Resolve env vars (interactive prompts happen here, before build)
-    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
-        crate::env_resolver::ResolvedEnv { vars: vec![] }
-    } else {
-        let prompter = LaunchEnvPrompter::new(steps.progress_mut());
-        crate::env_resolver::resolve_env_with_overrides(
-            &validated_repo.manifest.env,
-            &prompter,
-            &operator_env,
-        )?
-    };
-
-    // Overlay the operator env map on top of the manifest env: operator
-    // wins on conflicts (so a workspace-scoped `OPERATOR_TOKEN` overrides
-    // a manifest default, which is the whole point of letting operators
-    // supply env at launch time). Reserved names are filtered out in
-    // the docker-run construction below.
-    let mut merged_vars: Vec<(String, String)> = manifest_resolved.vars;
-    for (k, v) in &operator_env {
-        if let Some(slot) = merged_vars.iter_mut().find(|(mk, _)| mk == k) {
-            slot.1.clone_from(v);
-        } else {
-            merged_vars.push((k.clone(), v.clone()));
-        }
-    }
-    inject_workspace_mise_env(&mut merged_vars, workspace);
-    let resolved_env = crate::env_resolver::ResolvedEnv { vars: merged_vars };
-
-    // Launch-time diagnostic: emit a single compact line summarising
-    // the operator env that will be injected. In normal mode we show
-    // counts only ("3 refs resolved"); in --debug mode we show each
-    // key → layer/reference kind ("OPERATOR_TOKEN: op://Personal/...
-    // from workspace \"big-monorepo\"") — never values.
-    if !operator_env.is_empty() {
-        crate::operator_env::print_launch_diagnostic(
-            config,
-            Some(&selector.key()),
-            workspace_name.as_deref(),
-            &operator_env,
-            opts.debug,
-        );
-    }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(super::progress::LaunchStage::Credentials, "resolved");
-    }
-
-    let load_result: anyhow::Result<String> = async {
-        // Step 2: Prepare runtime assets and build the derived image.
-        let rebuild = opts.rebuild;
-        let agent_update = !rebuild && {
-            let img = image_name(selector);
-            let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
-            if needs_update {
-                let name = agent.slug();
-                if let Some(progress) = steps.progress_mut() {
-                    progress.stage_progress(
-                        super::progress::LaunchStage::DerivedImage,
-                        format!("{name} update available; refreshing agent layer"),
-                    );
-                }
-            }
-            needs_update
-        };
-        if let Some(progress) = steps.progress_mut() {
-            progress.stage_started(
-                super::progress::LaunchStage::Construct,
-                "verifying construct",
-            );
-            progress.stage_done(super::progress::LaunchStage::Construct, "online");
-        }
-        steps.next("Preparing runtime binaries").await;
-        let runtime_binaries = if let Some(progress) = steps.progress_mut() {
-            prepare_runtime_binaries(paths, &validated_repo, Some(progress)).await?
-        } else {
-            prepare_runtime_binaries(paths, &validated_repo, None).await?
-        };
-        steps.next("Preparing derived image").await;
-        let image = if let Some(progress) = steps.progress_mut() {
-            build_agent_image(
-                paths,
-                selector,
-                &cached_repo,
-                &validated_repo,
-                &host,
-                agent,
-                runtime_binaries,
-                rebuild,
-                agent_update,
-                opts.debug,
-                opts.role_branch.as_deref(),
-                docker,
-                runner,
-                repo_lock,
-                Some(progress),
-            )
-            .await?
-        } else {
-            build_agent_image(
-                paths,
-                selector,
-                &cached_repo,
-                &validated_repo,
-                &host,
-                agent,
-                runtime_binaries,
-                rebuild,
-                agent_update,
-                opts.debug,
-                opts.role_branch.as_deref(),
-                docker,
-                runner,
-                repo_lock,
-                None,
-            )
-            .await?
-        };
-
-        let container_state = paths.data_dir.join(&container_name);
-        let resources = crate::instance::DockerResources::from_container_name(&container_name);
-        let network = resources.network.clone();
-        let dind = resources.dind_container.clone();
-        let certs_volume = resources.certs_volume.clone();
-        let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
-        let new_manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: &container_name,
-            workspace_name: workspace_name.as_deref(),
-            workspace_label: workspace.label.as_str(),
-            workdir: &workspace.workdir,
-            host_workdir_fingerprint: &host_workdir_fingerprint,
-            role_key: &role_key,
-            role_display_name: &agent_display_name,
-            agent_runtime: agent,
-            role_source_git: &source.git,
-            role_source_ref: opts.role_branch.as_deref(),
-            image_tag: &image,
-            docker: DockerResources {
-                role_container: container_name.clone(),
-                dind_container: dind.clone(),
-                network: network.clone(),
-                certs_volume: certs_volume.clone(),
-            },
-        });
-        // `read_optional` already separates "manifest absent" (fall back
-        // to `new_manifest` and re-record the recovered identity) from
-        // "manifest unreadable" (must surface — the operator either
-        // repairs the file or purges the recorded state).
-        let mut instance_manifest = if restoring {
-            InstanceManifest::read_optional(&container_state)
-                .with_context(|| {
-                    format!(
-                        "restoring container `{container_name}`: existing manifest is unreadable; \
-                         repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
-                    )
-                })?
-                .unwrap_or(new_manifest)
-        } else {
-            new_manifest
-        };
-        write_instance_status(
-            paths,
-            &container_state,
-            &mut instance_manifest,
-            InstanceStatus::Active,
-        )?;
-
-        let auth_mode = crate::config::resolve_mode(
-            config,
-            agent,
-            workspace_name.as_deref().unwrap_or(""),
-            &role_key,
-        );
-
-        // Modes that inject a credential require the well-known env
-        // var to resolve to a non-empty value; fail fast with an
-        // actionable structured error so the operator sees the
-        // problem before we spend time starting the network and DinD
-        // sidecar. Sync / Ignore short-circuit inside the helper.
-        //
-        // Build the per-layer mode-resolution and env-layer traces
-        // here (in the caller) so the structured error carries the
-        // full picture. The helpers mirror the layers walked by
-        // `crate::config::resolve_mode` and
-        // `operator_env::build_attributed_layers` respectively.
-        let workspace_name_str = workspace_name.as_deref().unwrap_or("");
-        let mode_resolution = build_mode_resolution(config, agent, workspace_name_str, &role_key);
-        let env_layers = agent
-            .required_env_var(auth_mode)
-            .map_or_else(Vec::new, |env_var| {
-                build_env_layer_states(config, workspace_name_str, &role_key, env_var)
-            });
-        verify_credential_env_present(
-            agent,
-            auth_mode,
-            &operator_env,
-            &mode_resolution,
-            &env_layers,
-            workspace_name_str,
-            &role_key,
-        )?;
-
-        // Resolve the GitHub-auth axis. Layered like the per-agent
-        // resolver but with no agent dimension — `.config/gh/` is
-        // shared by every agent in the container.
-        let github_mode = crate::config::resolve_github_mode(config, workspace_name_str, &role_key);
-        let github_env_decls =
-            crate::config::build_github_env_layers(config, workspace_name_str, &role_key);
-        // Resolve `[…github.env]` only under modes that consume it.
-        // `Sync` and `Token` both seed `GH_TOKEN` / `GH_HOST` /
-        // `GH_ENTERPRISE_TOKEN` from the resolved map (Token also
-        // pre-flight-checks `GH_TOKEN`). `Ignore` exports nothing, so
-        // we skip the resolve to avoid unnecessary `op://` shellouts
-        // — note this also defers `op://` validation errors under
-        // Ignore until the operator flips back to a non-Ignore mode.
-        //
-        // Failures are aggregated and surfaced as a structured error
-        // so a missing op-CLI doesn't produce N parallel anyhows.
-        let github_resolved_env = if matches!(github_mode, crate::config::GithubAuthMode::Ignore) {
-            std::collections::BTreeMap::new()
-        } else {
-            resolve_github_env_map(&github_env_decls, opts)?
-        };
-        let github_ctx = crate::instance::GithubAuthContext {
-            mode: github_mode,
-            token: github_resolved_env
-                .get(crate::env_model::GH_TOKEN_ENV_NAME)
-                .cloned(),
-        };
-
-        // Token-mode pre-flight: GH_TOKEN must resolve to a non-empty
-        // value before we spend time starting DinD.
-        verify_github_token_present(
-            github_mode,
-            github_ctx.token.as_deref(),
-            workspace_name_str,
-            role_key.as_str(),
-        )?;
-
-        // Per-supported-agent mode resolution — each agent in
-        // `manifest.supported_agents()` honors its own configured
-        // `auth_forward`. Passing the selected agent's mode would wipe
-        // sibling agents' durable state when modes diverge.
-        let resolve_supported_mode = |a: crate::agent::Agent| {
-            crate::config::resolve_mode(config, a, workspace_name_str, &role_key)
-        };
-        let (state, _auth_outcome) = RoleState::prepare(
-            paths,
-            &container_name,
-            &validated_repo.manifest,
-            &resolve_supported_mode,
-            &github_ctx,
-            &paths.home_dir,
-            agent,
-        )?;
-        seed_codex_project_trust(&state, workspace)?;
-
-        if agent != crate::agent::Agent::Codex {
-            let _expiry_days = workspace_name
-                .as_deref()
-                .filter(|_| auth_mode == crate::config::AuthForwardMode::OAuthToken)
-                .and_then(|ws| {
-                    match crate::workspace::token_setup::expiry_days_for_launch(paths, ws) {
-                        Ok(days) => days,
-                        Err(e) => {
-                            let message = format!(
-                                "[jackin] note: token expiry cache for workspace {ws:?} \
-                                 is unreadable ({e}); re-run \
-                                 `jackin workspace claude-token setup {ws}` to refresh."
-                            );
-                            if let Some(run) = crate::diagnostics::active_run() {
-                                run.compact("auth", &message);
-                            }
-                            None
-                        }
-                    }
-                });
-        }
-        if let Some(run) = crate::diagnostics::active_run() {
-            run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
-        }
-
-        // GitHub auth summary line — agent-neutral. The breadcrumb walks
-        // the [github.env] layers (NOT the regular operator-env tree)
-        // because the proposal documents [github.env] as the canonical
-        // place for GH_TOKEN. Falling back to lookup_operator_env_raw
-        // would render bare "GH_TOKEN" when the operator follows the
-        // docs.
-        {
-            let gh_token_key = crate::env_model::GH_TOKEN_ENV_NAME;
-            let token_breadcrumb = github_env_decls.get(gh_token_key).map_or_else(
-                || gh_token_key.to_string(),
-                |value| auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
-            );
-            if let Some(run) = crate::diagnostics::active_run() {
-                run.compact(
-                    "github_auth",
-                    &format!("resolved GitHub auth from {token_breadcrumb}"),
-                );
-            }
-        }
-
-        // Materialize workspace mounts: shared mounts pass through;
-        // worktree-isolated mounts get a per-container `git worktree`
-        // staged on the host. Must run AFTER `RoleState::prepare` (so the
-        // per-container state directory exists) and BEFORE the docker run
-        // command is assembled (so the docker `-v` flags reflect the
-        // per-mount bind sources).
-        let interactive = true;
-        let workspace_label = workspace.label.as_str();
-        crate::debug_log!(
-            "isolation",
-            "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
-            force = opts.force,
-        );
-        if let Some(progress) = steps.progress_mut() {
-            progress.stage_started(
-                super::progress::LaunchStage::Workspace,
-                "materializing workspace",
-            );
-        }
-        let materialize_preflight = crate::isolation::materialize::PreflightContext {
-            workspace_name: workspace_label.to_string(),
-            force: opts.force,
-            interactive,
-        };
-        let materialize = crate::isolation::materialize::materialize_workspace(
-            workspace,
-            &container_state,
-            &role_key,
-            &container_name,
-            workspace_label,
-            &materialize_preflight,
-            runner,
-        );
-        let materialized = if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(materialize).await?
-        } else {
-            materialize.await?
-        };
-        if let Some(progress) = steps.progress_mut() {
-            progress.stage_done(super::progress::LaunchStage::Workspace, "materialized");
-        }
-
-        // Step 3: Create network and start Docker-in-Docker
-        steps.next("Starting Docker-in-Docker").await;
-
-        let launch_config = capsule_config(
-            selector,
-            &workspace.workdir,
-            &validated_repo.manifest,
-            opts.initial_provider(),
-        );
-        let ctx = LaunchContext {
-            container_name: &container_name,
-            image: &image,
-            network: &network,
-            dind: &dind,
-            selector,
-            agent_display_name: &agent_display_name,
-            workspace: &materialized,
-            state: &state,
-            git: &git,
-            debug: opts.debug,
-            git_coauthor_trailer: config.git.coauthor_trailer,
-            git_dco: config.git.dco,
-            agent,
-            capsule_config: &launch_config,
-            resolved_env: &resolved_env,
-            github_env: &github_resolved_env,
-            paths,
-        };
-        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-        let mut cleanup = LoadCleanup::new(
-            container_name.clone(),
-            dind.clone(),
-            certs_volume,
-            network.clone(),
-            socket_dir,
-        );
-        let launch_result = launch_role_runtime(&ctx, &mut steps, docker, runner).await;
-        if launch_result.is_err() {
-            // FailedSetup write error must not abort cleanup; surface to stderr
-            // so the operator sees the on-disk status is stale (Active) and
-            // that `jackin inspect` / `hardline` may report misleading state.
-            if let Err(status_err) = write_instance_status(
-                paths,
-                &container_state,
-                &mut instance_manifest,
-                InstanceStatus::FailedSetup,
-            ) {
-                let message = format!(
-                    "jackin: warning: failed to mark FailedSetup for {container_name} \
-                     after launch error: {status_err:#}; on-disk status may be stale"
-                );
-                if let Some(run) = crate::diagnostics::active_run() {
-                    run.compact("status", &message);
-                }
-            }
-            cleanup.run(docker).await;
-        }
-        launch_result?;
-        // Launch succeeded. From here on the cleanup struct is reused
-        // to tear down docker resources at session end (clean exit,
-        // crash, NotFound, etc.); the host-side socket dir + Capsule
-        // launch config stay behind for operator inspection and get
-        // swept by the next explicit `jackin eject` / Purge.
-        cleanup.keep_socket_dir();
-        write_instance_status(
-            paths,
-            &container_state,
-            &mut instance_manifest,
-            InstanceStatus::Running,
-        )?;
-
-        // Finalize per-mount isolation worktrees BEFORE the container teardown
-        // decision below: clean exits without dirty/unpushed state get their
-        // worktrees swept; dirty state is preserved through the rich cleanup
-        // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
-        // exactly once so the operator can address the dirty state inside the
-        // role, then the safe cleanup is retried.
-        let interactive_finalize = true;
-        let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
-        let outcome = inspect_attach_outcome(docker, &container_name).await?;
-        write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
-        let mut decision = crate::isolation::finalize::finalize_foreground_session(
-            &container_name,
-            &paths.data_dir.join(&container_name),
-            outcome,
-            interactive_finalize,
-            &mut prompt,
-            docker,
-            runner,
-        ).await?;
-        write_preserved_status_if_applicable(
-            decision,
-            paths,
-            &container_state,
-            &mut instance_manifest,
-        )?;
-        if matches!(
-            decision,
-            crate::isolation::finalize::FinalizeDecision::ReturnToAgent
-        ) {
-            // Restart detached, then attach through the jackin-capsule client
-            // socket. Attaching `docker start -ai` to PID 1 would only show
-            // daemon logs, not the multiplexer UI the operator needs to fix
-            // the preserved worktree. We do not loop further: if the operator
-            // still leaves dirty state, the second pass will fall back to
-            // Preserved and exit normally.
-            start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
-            let outcome2 = inspect_attach_outcome(docker, &container_name).await?;
-            write_instance_attach_outcome(
-                paths,
-                &container_state,
-                &mut instance_manifest,
-                outcome2,
-            )?;
-            decision = crate::isolation::finalize::finalize_foreground_session(
-                &container_name,
-                &paths.data_dir.join(&container_name),
-                outcome2,
-                interactive_finalize,
-                &mut prompt,
-                docker,
-                runner,
-            ).await?;
-            write_preserved_status_if_applicable(
-                decision,
-                paths,
-                &container_state,
-                &mut instance_manifest,
-            )?;
-        }
-
-        // Classify how the interactive session ended and tear down DinD/network
-        // unless the container is still running with active sessions (detach):
-        //  - Running + active sessions → user detached (Ctrl-B D). Keep DinD so
-        //                               `jackin hardline` can reconnect.
-        //  - Running + no sessions → agent exited; Capsule cleanup lag or stale socket.
-        //                            Tear down same as Stopped/0 regardless of
-        //                            preserved isolation state — worktrees live on
-        //                            the host and are accessible without DinD.
-        //  - Stopped / 0 → user exited cleanly. Tear down.
-        //  - Stopped / ≠0 or OOM-killed → crash. Tear down; DinD is no longer
-        //                                  needed once the container has exited.
-        //  - NotFound + Preserved → removed externally during finalization.
-        //                           Tear down DinD/network; status on disk stands.
-        //  - NotFound → removed externally. Tear down.
-        //  - InspectUnavailable → Docker unreachable; keep everything alive.
-        let is_preserved = matches!(
-            decision,
-            crate::isolation::finalize::FinalizeDecision::Preserved
-        );
-        #[allow(clippy::match_same_arms)]
-        match docker.inspect_container_state(&container_name).await {
-            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                if is_preserved {
-                    // Finalize saw sessions at check-time (detach). Re-check: sessions
-                    // may have ended in the interval between finalize and this inspect.
-                    let sessions =
-                        inspect_agent_sessions(docker, &container_name, &ContainerState::Running).await;
-                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
-                        crate::debug_log!(
-                            "instance",
-                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
-                             treating conservatively as sessions-present (container preserved)",
-                        );
-                    }
-                    let no_sessions =
-                        matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
-                    if no_sessions {
-                        write_instance_status(
-                            paths,
-                            &container_state,
-                            &mut instance_manifest,
-                            InstanceStatus::CleanExited,
-                        )?;
-                        cleanup.run(docker).await;
-                    } else {
-                        cleanup.disarm();
-                    }
-                } else {
-                    // Finalize already confirmed no sessions (Capsule still running after
-                    // clean exit). Skip the redundant re-query and tear down.
-                    write_instance_status(
-                        paths,
-                        &container_state,
-                        &mut instance_manifest,
-                        InstanceStatus::CleanExited,
-                    )?;
-                    cleanup.run(docker).await;
-                }
-            }
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            } if is_preserved => {
-                cleanup.run(docker).await;
-            }
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            } => {
-                write_instance_status(
-                    paths,
-                    &container_state,
-                    &mut instance_manifest,
-                    InstanceStatus::CleanExited,
-                )?;
-                cleanup.run(docker).await;
-            }
-            ContainerState::Stopped { .. }
-            | ContainerState::Created
-            | ContainerState::Removing
-            | ContainerState::Dead => {
-                write_instance_status(
-                    paths,
-                    &container_state,
-                    &mut instance_manifest,
-                    InstanceStatus::Crashed,
-                )?;
-                cleanup.run(docker).await;
-            }
-            ContainerState::InspectUnavailable(reason) => {
-                cleanup.disarm();
-                anyhow::bail!(
-                    "{}",
-                    super::attach::docker_unavailable_msg(
-                        &format!("inspect container `{container_name}` after the session"),
-                        &reason,
-                    )
-                );
-            }
-            ContainerState::NotFound if is_preserved => {
-                crate::debug_log!(
-                    "instance",
-                    "container {container_name} not found after session with Preserved decision; \
-                     removed externally during finalization — tearing down DinD/network, \
-                     preserved status on disk stands",
-                );
-                cleanup.run(docker).await;
-            }
-            ContainerState::NotFound => {
-                write_instance_status(
-                    paths,
-                    &container_state,
-                    &mut instance_manifest,
-                    InstanceStatus::CleanExited,
-                )?;
-                cleanup.run(docker).await;
-            }
-        }
-
-        Ok(container_name)
-    }.await;
-
-    match load_result {
-        Ok(_) => {
-            render_exit(paths, docker).await;
-            Ok(())
-        }
-        Err(error) => {
-            let failed_stage = steps
-                .current_stage
-                .unwrap_or(super::progress::LaunchStage::Capsule);
-            let run = crate::diagnostics::active_run();
-            let final_error = launch_failure_cli_error(failed_stage, &error, run.as_deref());
-            if let Some(progress) = steps.progress_mut() {
-                progress
-                    .stage_failed(super::progress::LaunchFailure {
-                        title: launch_failure_title(failed_stage, &error, run.as_deref()),
-                        summary: short_launch_diagnosis(failed_stage, &error, run.as_deref()),
-                        detail: Some(format!("{error:#}")),
-                        next_step: None,
-                        stage: failed_stage,
-                        diagnostics_path: None,
-                        command_output_path: None,
-                    })
-                    .await;
-            }
-            // Stop the cockpit render task and release the rich surface before
-            // the exit warp writes to the terminal. A pre-attach failure returns
-            // before the success path's pre-handoff teardown runs, so without
-            // this the background task keeps drawing frames over the warp.
-            steps.finish_progress();
-            render_exit(paths, docker).await;
-            Err(final_error)
-        }
-    }
-}
-
-fn launch_failure_title(
+pub(super) fn launch_failure_title(
     stage: super::progress::LaunchStage,
     error: &anyhow::Error,
     run: Option<&crate::diagnostics::RunDiagnostics>,
@@ -2384,7 +1301,7 @@ fn launch_failure_title(
     }
 }
 
-fn short_launch_diagnosis(
+pub(super) fn short_launch_diagnosis(
     stage: super::progress::LaunchStage,
     error: &anyhow::Error,
     run: Option<&crate::diagnostics::RunDiagnostics>,
@@ -2405,7 +1322,7 @@ fn docker_build_output_artifact(run: &crate::diagnostics::RunDiagnostics) -> Opt
     docker_output.exists().then_some(docker_output)
 }
 
-fn launch_failure_cli_error(
+pub(super) fn launch_failure_cli_error(
     stage: super::progress::LaunchStage,
     error: &anyhow::Error,
     run: Option<&crate::diagnostics::RunDiagnostics>,
@@ -2436,7 +1353,7 @@ fn launch_failure_cli_error(
     anyhow::anyhow!("{report}")
 }
 
-fn resolve_launch_role_source(
+pub(super) fn resolve_launch_role_source(
     config: &mut AppConfig,
     selector: &RoleSelector,
     restore_role_source_git: Option<&str>,
@@ -2455,7 +1372,7 @@ fn resolve_launch_role_source(
     Ok((source, is_new, false))
 }
 
-async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
+pub(super) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
     let force_outro = super::universe::force_boundary_outro_enabled();
     let running = match list_running_agent_names(docker).await {
         Ok(names) => names,
@@ -2516,7 +1433,7 @@ async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum RestoreResolution {
+pub(super) enum RestoreResolution {
     StartFresh,
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
@@ -2524,7 +1441,7 @@ enum RestoreResolution {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn resolve_restore_candidate(
+pub(super) async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     workspace_label: &str,
@@ -2728,7 +1645,7 @@ fn recover_related_restore_candidate(
     }
 }
 
-fn related_restore_load_options(
+pub(super) fn related_restore_load_options(
     current: &LoadOptions,
     manifest: &InstanceManifest,
 ) -> anyhow::Result<LoadOptions> {
@@ -2818,7 +1735,7 @@ pub(super) fn write_instance_status(
     Ok(())
 }
 
-fn write_instance_attach_outcome(
+pub(super) fn write_instance_attach_outcome(
     paths: &JackinPaths,
     state_dir: &std::path::Path,
     manifest: &mut InstanceManifest,
@@ -2868,7 +1785,7 @@ fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> 
 /// both the first finalize pass and the post-restart retry pass call
 /// this so a future field added under the `Preserved` arm cannot drift
 /// between them.
-fn write_preserved_status_if_applicable(
+pub(super) fn write_preserved_status_if_applicable(
     decision: crate::isolation::finalize::FinalizeDecision,
     paths: &JackinPaths,
     state_dir: &std::path::Path,
@@ -2905,7 +1822,9 @@ pub(super) fn preserved_instance_status(
     Ok(InstanceStatus::RestoreAvailable)
 }
 
-fn manifest_host_workdir_fingerprint(workspace: &crate::workspace::ResolvedWorkspace) -> String {
+pub(super) fn manifest_host_workdir_fingerprint(
+    workspace: &crate::workspace::ResolvedWorkspace,
+) -> String {
     workspace
         .mounts
         .iter()
@@ -3131,7 +2050,7 @@ fn render_auth_credential_missing(
 /// the same layers as [`crate::config::resolve_mode`] but records each
 /// layer's value (or `None` when silent) so the operator can see at a
 /// glance which TOML layer wins.
-fn build_mode_resolution(
+pub(super) fn build_mode_resolution(
     cfg: &AppConfig,
     agent: crate::agent::Agent,
     workspace: &str,
@@ -3146,7 +2065,7 @@ fn build_mode_resolution(
 /// `[workspaces.<ws>.roles.<role>.env]`. Each entry records whether the
 /// layer declared the var as a literal, an `op://...` reference, or
 /// not at all.
-fn build_env_layer_states(
+pub(super) fn build_env_layer_states(
     cfg: &AppConfig,
     workspace: &str,
     role: &str,
@@ -3238,14 +2157,14 @@ fn append_no_proxy_host(value: &str, host: &str) -> String {
 /// `"Private/Claude/security/auth token"` or `"$CLAUDE_CODE_OAUTH_TOKEN"`).
 /// Produces the `"KEY ← value"` form; falls back to the bare env-var name
 /// when `raw` is `None` or empty.
-fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
+pub(super) fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     match raw {
         None | Some("") => env_var.to_string(),
         Some(value) => format!("{env_var} \u{2190} {value}"),
     }
 }
 
-struct LoadCleanup {
+pub(super) struct LoadCleanup {
     container_name: String,
     dind: String,
     certs_volume: String,

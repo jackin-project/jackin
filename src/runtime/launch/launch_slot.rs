@@ -17,7 +17,7 @@ const CLAIM_MAX_ATTEMPTS: u32 = 64;
 /// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
 /// Random IDs avoid deterministic role slots; the lock still protects the
 /// vanishingly small random-collision window and concurrent launch races.
-pub(super) async fn claim_container_name(
+pub(crate) async fn claim_container_name(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     selector: &RoleSelector,
@@ -98,7 +98,7 @@ pub(super) async fn claim_container_name(
     );
 }
 
-pub(super) async fn claim_known_container_name(
+pub(crate) async fn claim_known_container_name(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
@@ -171,7 +171,7 @@ fn try_acquire_name_lock(
 /// Extracted from `load_role_with` so the bail-message shape and
 /// trigger condition can be unit-pinned without orchestrating the
 /// full launch flow.
-pub(super) fn verify_github_token_present(
+pub(crate) fn verify_github_token_present(
     github_mode: crate::config::GithubAuthMode,
     resolved_token: Option<&str>,
     workspace: &str,
@@ -197,7 +197,7 @@ pub(super) fn verify_github_token_present(
 /// `op://` + host-env dispatch as regular operator env. Honors the
 /// `op_runner` / `host_env` test seams on `LoadOptions` so tests stay
 /// hermetic.
-pub(super) fn resolve_github_env_map(
+pub(crate) fn resolve_github_env_map(
     declarations: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     opts: &super::LoadOptions,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
@@ -259,7 +259,7 @@ pub(super) fn resolve_github_env_map(
 /// panel. The caller (`load_role_with`, see `build_mode_resolution` /
 /// `build_env_layer_states`) owns trace derivation; this helper only
 /// looks up the env var and constructs the error.
-pub(super) fn verify_credential_env_present(
+pub(crate) fn verify_credential_env_present(
     agent: crate::agent::Agent,
     mode: crate::config::AuthForwardMode,
     merged_env: &std::collections::BTreeMap<String, String>,

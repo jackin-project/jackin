@@ -26,7 +26,7 @@ pub(crate) fn workspace_mise_trusted_config_paths(
     (!paths.is_empty()).then(|| paths.into_iter().collect::<Vec<_>>().join(":"))
 }
 
-pub(super) fn inject_workspace_mise_env(
+pub(crate) fn inject_workspace_mise_env(
     vars: &mut Vec<(String, String)>,
     workspace: &crate::workspace::ResolvedWorkspace,
 ) {
@@ -58,7 +58,7 @@ fn ensure_table<'a>(table: &'a mut toml_edit::Table, key: &str) -> &'a mut toml_
 /// Codex's per-folder trust prompt is separate from approval/sandbox bypass,
 /// so the launch flag alone does not suppress it — each workspace path is
 /// marked `trusted` in the container's `config.toml`.
-pub(super) fn seed_codex_project_trust(
+pub(crate) fn seed_codex_project_trust(
     state: &crate::instance::RoleState,
     workspace: &crate::workspace::ResolvedWorkspace,
 ) -> anyhow::Result<()> {
