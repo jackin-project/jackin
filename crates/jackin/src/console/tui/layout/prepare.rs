@@ -41,25 +41,37 @@ pub fn prepare_for_render(
 }
 
 fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
+    // Modals must never overlap the reserved status/hint bar at the bottom.
+    // Compute the content area (full terminal minus the footer rows) and
+    // center/clamp all modals within it.
+    let list_footer_h = workspace_frame_areas(area).footer.height;
+    let content_for_modal = |footer_h: u16| Rect {
+        height: area.height.saturating_sub(footer_h),
+        ..area
+    };
+
     if let Some(modal) = &mut state.list_modal {
-        prepare_modal(area, modal);
+        prepare_modal(content_for_modal(list_footer_h), modal);
     }
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
+            let content = content_for_modal(editor.cached_footer_h);
             if let Some(modal) = &mut editor.modal {
-                prepare_modal(area, modal);
+                prepare_modal(content, modal);
             }
         }
         ManagerStage::CreatePrelude(prelude) => {
             if let Some(modal) = &mut prelude.modal {
-                prepare_modal(area, modal);
+                prepare_modal(content_for_modal(list_footer_h), modal);
             }
         }
         ManagerStage::Settings(settings) => {
+            let content = content_for_modal(settings.cached_footer_h);
             if let Some(GlobalMountModal::PreviewSave { state }) = &mut settings.mounts.modal {
                 use jackin_console::tui::components::confirm_save;
-                let height = confirm_save::required_height(state).min(area.height);
-                let modal_area = jackin_console::tui::layout::centered_rect_fixed(area, 80, height);
+                let height = confirm_save::required_height(state).min(content.height);
+                let modal_area =
+                    jackin_console::tui::layout::centered_rect_fixed(content, 80, height);
                 confirm_save::prepare_for_render(modal_area, state);
             }
         }
