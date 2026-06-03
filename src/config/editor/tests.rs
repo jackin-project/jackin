@@ -499,11 +499,11 @@ fn save_rejects_invalid_candidate_and_preserves_on_disk_config() {
     // Inject `[roles.ghost.env]` without the required
     // `[roles.ghost].git` — fails serde parsing.
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let agents_table = table_path_mut(
-        &mut editor.doc,
+    editor.insert_at_path(
         &["roles".to_string(), "ghost".to_string(), "env".to_string()],
+        "LOG_LEVEL",
+        "debug",
     );
-    agents_table.insert("LOG_LEVEL", toml_edit::value("debug"));
 
     let err = editor.save().unwrap_err();
     let msg = format!("{err:#}");

@@ -55,13 +55,7 @@ fn workspace_summary_from_config(
 pub(crate) type MountDiff<'a> =
     jackin_console::mount_diff::MountDiff<'a, crate::workspace::MountConfig>;
 
-// MountDiffItem and MountSource impls for MountConfig now live in jackin-console.
-
-impl jackin_console::mount_info_cache::MountSource for crate::config::GlobalMountRow {
-    fn mount_src(&self) -> &str {
-        &self.mount.src
-    }
-}
+// MountDiffItem and MountSource impls for MountConfig and GlobalMountRow now live in jackin-console.
 
 /// Provider picker bound to its follow-up context.
 ///
@@ -555,7 +549,7 @@ pub(crate) type PendingMountInfoRefresh = jackin_console::tui::message::PendingM
 pub(crate) type MountInfoRefreshTarget = jackin_console::tui::message::MountInfoRefreshTarget;
 
 pub type PendingDriftCheck = jackin_console::tui::subscriptions::PendingDriftCheck<
-    crate::config::DriftDetection,
+    crate::runtime::drift::DriftDetection,
     PendingSaveCommit,
 >;
 
@@ -1381,7 +1375,7 @@ impl ManagerState<'_> {
         &mut self,
     ) -> Option<(
         PendingDriftCheck,
-        anyhow::Result<crate::config::DriftDetection>,
+        anyhow::Result<crate::runtime::drift::DriftDetection>,
     )> {
         let ManagerStage::Editor(editor) = &mut self.stage else {
             return None;

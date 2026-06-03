@@ -1150,7 +1150,7 @@ async fn save_blocks_with_error_popup_when_running_container_has_drifted_state()
         ManagerStage::Editor(e) => e.pending.mounts.clone(),
         _ => panic!("editor stage expected"),
     };
-    let detection = crate::config::detect_workspace_edit_drift(
+    let detection = crate::runtime::drift::detect_workspace_edit_drift(
         &paths,
         "driftws",
         &prospective_mounts,
@@ -1225,7 +1225,7 @@ async fn save_opens_confirm_modal_when_stopped_container_has_drifted_state() {
         ManagerStage::Editor(e) => e.pending.mounts.clone(),
         _ => panic!("editor stage expected"),
     };
-    let detection = crate::config::detect_workspace_edit_drift(
+    let detection = crate::runtime::drift::detect_workspace_edit_drift(
         &paths,
         "driftws2",
         &prospective_mounts,

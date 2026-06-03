@@ -68,7 +68,7 @@ pub(crate) type ManagerBackgroundEvent = jackin_console::tui::message::Backgroun
     ManagerMessage,
     PendingRoleLoad,
     PendingDriftCheck,
-    crate::config::DriftDetection,
+    crate::runtime::drift::DriftDetection,
     PendingIsolationCleanup,
 >;
 

@@ -850,7 +850,7 @@ pub(crate) fn execute_workspace_save_effect(
                         state,
                         config,
                         check,
-                        Ok(crate::config::DriftDetection::default()),
+                        Ok(crate::runtime::drift::DriftDetection::default()),
                     )
                 {
                     execute_workspace_save_effect(state, config, paths, cwd, effect);

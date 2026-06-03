@@ -7,12 +7,12 @@ pub(crate) fn start_drift_check(
     paths: crate::paths::JackinPaths,
     workspace_name: String,
     prospective_mounts: Vec<crate::workspace::MountConfig>,
-) -> BlockingSubscription<anyhow::Result<crate::config::DriftDetection>> {
+) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let result = async {
             let docker = crate::docker_client::BollardDockerClient::connect()?;
-            crate::config::detect_workspace_edit_drift(
+            crate::runtime::drift::detect_workspace_edit_drift(
                 &paths,
                 &workspace_name,
                 &prospective_mounts,

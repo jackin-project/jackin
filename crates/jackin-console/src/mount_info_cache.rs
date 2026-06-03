@@ -69,3 +69,10 @@ impl MountSource for jackin_config::MountConfig {
         &self.src
     }
 }
+
+/// `MountSource` impl for `jackin_config::GlobalMountRow`.
+impl MountSource for jackin_config::GlobalMountRow {
+    fn mount_src(&self) -> &str {
+        &self.mount.src
+    }
+}

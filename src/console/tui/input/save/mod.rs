@@ -32,7 +32,7 @@ pub(crate) fn continue_save_after_drift_check(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     drift_check: PendingDriftCheck,
-    detection: anyhow::Result<crate::config::DriftDetection>,
+    detection: anyhow::Result<crate::runtime::drift::DriftDetection>,
 ) -> anyhow::Result<Option<WorkspaceSaveEffect>> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(None);
