@@ -52,12 +52,12 @@ impl AuthKind {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
             Self::Amp => "Amp",
-            Self::Kimi => "Kimi",
+            Self::Kimi => "Kimi Code",
             Self::Opencode => "OpenCode",
             Self::Github => "GitHub CLI",
             Self::Zai => "Z.AI",
             Self::Minimax => "MiniMax",
-            Self::KimiCode => "Kimi Code",
+            Self::KimiCode => "Kimi",
         }
     }
 
@@ -244,7 +244,7 @@ mod tests {
         assert_eq!(AuthKind::Claude.label(), "Claude Code");
         assert_eq!(AuthKind::Codex.label(), "Codex");
         assert_eq!(AuthKind::Amp.label(), "Amp");
-        assert_eq!(AuthKind::Kimi.label(), "Kimi");
+        assert_eq!(AuthKind::Kimi.label(), "Kimi Code");
         assert_eq!(AuthKind::Opencode.label(), "OpenCode");
         assert_eq!(AuthKind::Github.label(), "GitHub CLI");
     }
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn kimi_code_label_and_env_var() {
-        assert_eq!(AuthKind::KimiCode.label(), "Kimi Code");
+        assert_eq!(AuthKind::KimiCode.label(), "Kimi");
         assert_eq!(
             AuthKind::KimiCode.required_env_var(AuthMode::ApiKey),
             Some(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
