@@ -24,6 +24,21 @@ All three providers sell a coding-oriented subscription whose activation surface
 
 The MiniMax **Subscription Key (sk-cp)** is explicitly scoped to "Token Plan / credits calls" and "cannot be used for pay-as-you-go" — it is the subscription key, distinct from a pay-as-you-go platform key. Kimi Code's coding endpoint (`api.kimi.com/coding`) is likewise distinct from the general Moonshot platform endpoint (`api.moonshot.ai/v1`); the subscription benefit is the coding endpoint, and its key is managed in the Kimi Code Console, not the Moonshot platform.
 
+## Authentication model — key-only
+
+**The only credential mode for an alternative provider is "provide the API key."** There is no `sync` and no `oauth_token` mode for these providers, and that is deliberate, not a first-cut shortcut.
+
+jackin's existing agent auth axis (documented in [Agent Authentication](/guides/authentication/agents/)) offers `sync` / `api_key` / `oauth_token` / `ignore` for an agent's **own** account — the host's Claude login, the host's Codex login — where there is a host-side session jackin' can forward. An alternative provider is a different axis: it is not the agent's own account but a redirect that points an agent at a third-party backend. For that axis there is nothing on the host to sync — these providers ship no first-class local CLI whose credentials jackin' could copy in. MiniMax has no "MiniMax Code" agent at all (which is exactly why an operator routes the MiniMax model *through* Claude Code or Codex); and the Kimi *provider* is distinct from the `kimi` *agent runtime*, so "syncing Kimi" already means the runtime, not the backend redirect. The single credential each provider hands a subscriber is the API key from the console pages above.
+
+So the alternative-provider auth axis collapses to two states:
+
+- **key provided** — the provider appears in the launch picker for every agent it can serve;
+- **key absent** — the provider is ignored and never offered.
+
+This is the same "provide the key" approach jackin' already implements for the `api_key` mode of supported agents, reused verbatim: the key is stored in the jackin' `config.toml` `[env]` map (literal value or `op://` reference), follows the standard per-(workspace × role) > per-workspace > global scope resolution, and is injected only into the selected agent process at spawn. The shipped Z.AI **Auth**-tab row (mode fixed to **API Key**) is the exact UI this item replicates for MiniMax and Kimi — one row per provider, one field, key in or `Ignore`.
+
+The scope of this umbrella item is therefore: **add key-only authentication for all three subscriptions, wired into every supported client a given provider can actually serve.** Where a provider cannot serve a client (the deferred Codex cells below), that cell is simply omitted — the operator still gets that provider on Claude Code and OpenCode. No provider is dropped wholesale just because one client is out of reach.
+
 ## Endpoints
 
 Each provider exposes both an Anthropic-compatible surface (for Claude Code) and an OpenAI-compatible surface (for Codex and OpenCode):
