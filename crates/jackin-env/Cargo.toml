@@ -15,9 +15,23 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { path = "../jackin-core" }
+jackin-config = { path = "../jackin-config" }
+jackin-diagnostics = { path = "../jackin-diagnostics" }
+jackin-console = { path = "../jackin-console" }
+jackin-launch = { path = "../jackin-launch" }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 thiserror = "2.0"
 anyhow = "1.0"
+secrecy = "0.10"
+portable-pty = "0.9"
+sha2 = "0.11"
+crossterm = "0.29"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[dev-dependencies]
+tempfile = "3"
+toml = "0.8"
 
 [lints.rust]
 unsafe_code = "forbid"
