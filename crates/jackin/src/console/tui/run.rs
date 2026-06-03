@@ -294,6 +294,10 @@ pub async fn run_console<H: InstanceActionHandler>(
             terminal.draw(|frame| {
                 crate::console::tui::render(frame, main_area, ms, &config, cwd);
                 if let Some(confirm) = confirm_state {
+                    // Paint a full-screen opaque backdrop over the entire surface —
+                    // including any already-open modal — so only the exit dialog is
+                    // visible. This is the modal-supersede pattern per the backdrop rule.
+                    jackin_console::tui::view::render_modal_backdrop(frame, main_area);
                     let area = quit_confirm_area(main_area, confirm);
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
                 }
@@ -617,6 +621,49 @@ pub async fn run_console<H: InstanceActionHandler>(
                             );
                         }
                     }
+                    // Defect 10/11 — click outside any open dialog dismisses it.
+                    // Check quit_confirm first (supersedes everything): click anywhere
+                    // outside the confirm rect closes it, same as Esc.
+                    if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
+                        if let Some(confirm) = &state.quit_confirm {
+                            let full_area: ratatui::layout::Rect = term_size;
+                            let (main_area, _) =
+                                split_debug_area(full_area, crate::tui::is_debug_mode());
+                            let confirm_rect = quit_confirm_area(main_area, confirm);
+                            let col = mouse.column;
+                            let row = mouse.row;
+                            let inside = col >= confirm_rect.x
+                                && col < confirm_rect.x + confirm_rect.width
+                                && row >= confirm_rect.y
+                                && row < confirm_rect.y + confirm_rect.height;
+                            if !inside {
+                                state.quit_confirm = None;
+                            }
+                        } else if let ConsoleStage::Manager(ms) = &mut state.stage
+                            && let Some(modal) = &ms.list_modal
+                        {
+                            let full_area: ratatui::layout::Rect = term_size;
+                            let (main_area, _) =
+                                split_debug_area(full_area, crate::tui::is_debug_mode());
+                            let modal_rect =
+                                crate::console::tui::components::modal_layout::modal_outer_rect(
+                                    modal, main_area,
+                                );
+                            let col = mouse.column;
+                            let row = mouse.row;
+                            let inside = col >= modal_rect.x
+                                && col < modal_rect.x + modal_rect.width
+                                && row >= modal_rect.y
+                                && row < modal_rect.y + modal_rect.height;
+                            if !inside {
+                                let _ = crate::console::tui::update_manager(
+                                    ms,
+                                    crate::console::tui::ManagerMessage::DismissListModal,
+                                );
+                            }
+                        }
+                    }
+
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         let _outcome = crate::console::tui::input::handle_mouse_with_config(
                             ms,
