@@ -7,6 +7,7 @@ members = [
     "crates/jackin-core",
     "crates/jackin-diagnostics",
     "crates/jackin-env",
+    "crates/jackin-manifest",
     "crates/jackin-protocol",
     "crates/jackin-launch",
     "crates/jackin-runtime",
@@ -45,6 +46,7 @@ anyhow = "1.0"
 anstyle-parse = "1.0"
 jackin-config = { path = "crates/jackin-config" }
 jackin-core = { path = "crates/jackin-core" }
+jackin-manifest = { path = "crates/jackin-manifest" }
 jackin-diagnostics = { path = "crates/jackin-diagnostics" }
 jackin-env = { path = "crates/jackin-env" }
 jackin-runtime = { path = "crates/jackin-runtime" }

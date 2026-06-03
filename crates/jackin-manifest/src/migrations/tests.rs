@@ -1,7 +1,6 @@
-//! Tests for `migrations` — delegates to `jackin-manifest`.
+//! Tests for `migrations`.
 use super::*;
 use tempfile::tempdir;
-use toml_edit::DocumentMut;
 
 #[test]
 fn migrates_missing_manifest_version() {
@@ -85,4 +84,13 @@ fn validate_manifest_version_rejects_newer() {
     let err = validate_manifest_version(&doc).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("only understands up to v1alpha4"), "{msg}");
+}
+
+#[test]
+fn manifest_migrations_chain_reaches_current() {
+    // Production registry must form a contiguous chain from `legacy` to
+    // CURRENT_MANIFEST_VERSION. The shared helper catches typos,
+    // missing middle steps, backward steps, cycles, and duplicate
+    // `from` forks on every CI run.
+    jackin_config::migrations::assert_registry_chain(MANIFEST_MIGRATIONS, CURRENT_MANIFEST_VERSION);
 }
