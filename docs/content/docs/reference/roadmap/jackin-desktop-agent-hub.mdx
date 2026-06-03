@@ -2,24 +2,32 @@
 title: "jackin' Desktop Agent Hub"
 ---
 
-**Status**: Open — design reset. The native macOS app is being rebuilt around an embedded [libghostty](https://github.com/ghostty-org/ghostty) terminal and a [CMUX](https://github.com/manaflow-ai/cmux)-style window: a left sidebar that groups sessions by workspace, and per-space tabs across the top. The earlier consolidated host-daemon plus menu-bar prototype was removed; v1 drives everything through the `jackin` CLI, and the daemon returns later as a pure enrichment plane.
+**Status**: Open — design reset, building incrementally. The native macOS app is being rebuilt around an embedded [libghostty](https://github.com/ghostty-org/ghostty) terminal and a [CMUX](https://github.com/manaflow-ai/cmux)-style window: a left sidebar that groups sessions by workspace, and per-space tabs across the top. The earlier consolidated host-daemon plus menu-bar prototype was removed; v1 drives everything through the `jackin` CLI, and the daemon returns later as a pure enrichment plane. **Current point:** milestone 1 (a SwiftUI window that launches) is scaffolded under `desktop/macos/`, awaiting operator preview on macOS. The live milestone checklist is in [Implementation plan](#implementation-plan) below — that section is the resume anchor for this work.
 
 ## Problem
 
-An operator running jackin' usually has several isolated agents going at once across different projects. Today each agent lives in its own terminal tab that the operator juggles by hand — there is no single native surface that shows what is running, lets the operator switch between sessions, and starts new ones without leaving the app. jackin' already owns the hard part (isolated, reconnectable container sessions); the missing piece is a Mac-native window that makes many simultaneous sessions legible in one place.
+jackin' is already the control plane for isolated developer agents: workspaces define project boundaries, roles define runtime shape, and `jackin load` gives every agent its own isolated, reconnectable container session. The missing piece is a native macOS **operator surface** that answers, without forcing the operator to keep every terminal tab in view:
 
-The app is not a replacement for Claude Code, Codex, or Amp — the agent UI stays the agent's own TUI. jackin' Desktop is the native shell *around* those agents: pick a workspace, start a session, and work inside an embedded terminal that looks and feels exactly like a first-class macOS terminal, with the agent running isolated in a container underneath.
+- **What is running** right now, across every project?
+- **What needs review** — which agent has a PR ready or is waiting on me?
+- **What accounts are near exhaustion** — is any built-in runtime about to hit a quota wall?
 
-## Direction reset
+The app is not a replacement for Claude Code, Codex, or Amp — the agent UI stays the agent's own TUI. jackin' Desktop is the native shell *around* those agents: pick a workspace, start a session, see active containers, jump to pull requests, monitor account state, and get an attention prompt when an agent is blocked or finished. That full control-surface goal is unchanged from the original proposal; the [Direction reset](#direction-reset) below changes only how it is built.
 
-This roadmap previously described a menu-bar-first hub backed by a long-running host daemon that launched agents into **external** Ghostty windows via `open -na Ghostty`. That shape was built ahead of the product and has been removed (`src/daemon.rs`, the daemon CLI, the daemon-client menu-bar Swift app, and the `jackin-notify` bridge). The removed implementation stays recoverable from git history and returns when the enrichment plane below is actually needed.
+## Direction reset — same goal, new foundation
 
-The current direction:
+The destination above is the original Desktop Agent Hub goal. What changed is the **foundation** the goal is built on, not the goal itself.
 
-- **Window-first, not menu-bar-first.** The product is a full window modeled on CMUX, not a status-item popover.
+The original proposal assumed a **menu-bar-first** hub, backed by a long-running **host daemon**, that launched agents into **external** Ghostty windows via `open -na Ghostty`. It was, in effect, all control-surface chrome with **no terminal of its own** — the operator still ended up in a separate terminal app to actually watch or drive an agent. That daemon-plus-menu-bar prototype was built ahead of the product and has been removed (`src/daemon.rs`, the daemon CLI, the daemon-client menu-bar Swift app, and the `jackin-notify` bridge); it stays recoverable from git history.
+
+[CMUX](https://github.com/manaflow-ai/cmux) reframed the foundation: the control surface should *be* the terminal host. If the app already embeds the terminal, then "what's running / what needs review / which account is low" stop being a separate dashboard and become annotations on the sessions the operator is already looking at. So the new foundation is:
+
+- **Window-first, not menu-bar-first.** The product is a full window modeled on CMUX, not a status-item popover. (A menu-bar glance can come back later as a convenience, not the primary surface.)
 - **Embedded terminal, not external Ghostty.** The app embeds **libghostty** and renders terminal surfaces *inside* its own window. Ghostty itself is built on libghostty, and CMUX embeds the same library, so the surface matches Ghostty's look and feel exactly.
 - **CLI-only for v1.** Each terminal surface runs the `jackin` CLI directly (`jackin load`). The app needs no daemon, no `jackin-protocol`, and no Capsule wiring of its own — jackin' already owns the container launch and attach.
-- **Daemon deferred.** Reactive enrichment (PR inbox, account/quota status, session discovery, notifications, attention routing) re-enters later as a separate plane the app reads when present.
+- **Daemon deferred, not dropped.** The original control-surface features (what's running, PR inbox, account/quota state, attention routing) re-enter as the [enrichment plane](#deferred--the-daemon-enrichment-plane) once the terminal foundation exists — now wrapped around real embedded sessions instead of pointing at external Ghostty windows.
+
+In short: the original idea is the destination; the terminal window is the foundation the original idea was missing. Build the foundation first, then grow the original surfaces on top of it.
 
 ## Primary reference — CMUX
 
@@ -78,7 +86,7 @@ The app must stay optional: installing the `jackin` CLI must not require the app
 
 ## Deferred — the daemon enrichment plane
 
-The removed host daemon was a real, tested control plane. It returns later as an **enrichment** layer the app reads when it is present, never a v1 dependency. The reactive features that belong to it:
+This is where the original control-surface goal lands. The removed host daemon was a real, tested control plane; it returns later as an **enrichment** layer the app reads when present, never a v1 dependency. These are exactly the "what's running / what needs review / which account is low / who is waiting" surfaces from the [Problem](#problem) — now drawn on top of the embedded sessions the operator is already looking at, rather than as a standalone dashboard:
 
 - GitHub PR surfaces — "my open PRs", project inbox, and per-session branch→PR correlation with GitHub and DiffsHub review links.
 - Account status — built-in-runtime (Claude, Codex, Amp, Kimi, OpenCode) credential-source presence, and later quota/reset/usage.
@@ -113,24 +121,31 @@ Apple references:
 
 ## Open questions
 
-- **libghostty embedding contract.** What is the stable surface of libghostty's C API for embedding a terminal view and feeding it a PTY, and how fast is it moving? CMUX is the working proof that it can be done; the bindings and update cadence need pinning.
+- **libghostty embedding contract.** The C API exists in `include/ghostty.h`: `ghostty_init`, `ghostty_app_new`, `ghostty_surface_new`, and a `ghostty_surface_config_s` that carries `command`, `working_directory`, `env_vars`, and a `platform.macos.nsview` handle — enough to embed a surface in an NSView and run `jackin load` as its command. The header explicitly warns it "isn't meant to be a general purpose embedding API (yet)", so it is experimental and will churn; CMUX is the working proof it is usable today. The bindings, the pinned libghostty/Zig version, and the update cadence need deciding at the libghostty spike (milestone 5).
 - **Build and CI.** libghostty pulls in a Zig toolchain, and the Swift app only builds on macOS. CI on Linux cannot build or test the app — verification for the app is operator-side on macOS. Decide how the app is built, pinned, and smoke-tested outside Linux CI.
 - **Launch-screen data.** The exact `jackin` CLI JSON shape the launch screen reads for the saved workspace list (and the command surface for "new session").
 - **Tab / space model.** How spaces are grouped under workspaces, whether top tabs persist across relaunch, and how the browser surface is scoped (WKWebView only for v1; cookie import and scripting later).
 - **Daemon re-entry.** When and how the enrichment plane re-attaches without becoming a hard dependency of the terminal window.
 
-## Implementation plan (v1)
+## Implementation plan
 
-Single focused effort, CLI-only, built and verified on a macOS host:
+The app is built in small, independently previewable milestones. Each one is a single buildable step the operator runs on macOS (`cd desktop/macos && swift run JackinDesktop`) before the next begins — the agent runs on Linux and cannot build Swift/libghostty, so visual verification is operator-side. This checklist is the resume anchor for the work: the box marked in progress is where to pick up.
 
-- `Jackin.app` skeleton: Swift package, app entry, `NavigationSplitView` window shell.
-- libghostty integration: C-API bindings and a SwiftUI terminal-surface view backed by a libghostty surface.
-- Sidebar: workspaces from the `jackin` CLI, grouping app-owned sessions.
-- Launch flow: native launch screen → new libghostty surface running `jackin load <workspace>`.
-- Top tabs: terminal and browser (WKWebView) surface types within a space.
-- Keep workspace creation/editing in `jackin console`; the app launches and observes, it does not edit config in v1.
+The app is a SwiftPM executable (Swift 6, macOS 14+) under `desktop/macos/`, CLI-only for v1. Workspace creation/editing stays in `jackin console`; the app launches and observes, it does not edit config.
 
-Because the app cannot build on Linux CI, the implementation must document the macOS build/run path and the strongest practical local verification the operator can run.
+| # | Milestone | Build | Preview | State |
+|---|---|---|---|---|
+| 1 | SwiftUI window that launches (`@main App`, activation delegate) | `swift run` | a window titled `jackin'` comes forward | **done — awaiting operator preview** |
+| 2 | `NavigationSplitView` shell — left sidebar + empty detail | `swift run` | sidebar + detail panes render | next |
+| 3 | Sidebar lists real **workspaces** | needs `jackin workspace list --json` (small Rust add, buildable on the Linux agent — dispatch is in <RepoFile path="src/app/mod.rs" />, no `--json` exists yet) | saved workspace names appear | — |
+| 4 | Per-space **top-tab bar** in the detail area (empty tabs + new-tab button) | `swift run` | tabs switch | — |
+| 5 | **libghostty spike** — one embedded surface running a shell | libghostty FFI + Zig toolchain; pin version here | a real terminal renders in-window | — |
+| 6 | "New session" → surface runs `jackin load <workspace>` | `swift run` + `jackin` on PATH | an agent runs isolated inside a tab | — |
+| 7 | **Browser** surface type (WKWebView) as a tab | `swift run` | a browser tab beside the terminal | — |
+
+Milestone 5 (libghostty) is the highest-risk step because the embedding API is experimental; isolate it so churn there does not block the shell milestones. Milestone 3 is the only step that needs a jackin' CLI change, and that change is verifiable on Linux CI.
+
+Once the foundation (milestones 1–7) is solid, the [enrichment plane](#deferred--the-daemon-enrichment-plane) layers the original control-surface features (running state, PR inbox, accounts, attention rings) on top.
 
 ## Related work
 
