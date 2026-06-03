@@ -462,7 +462,7 @@ These are the per-diff checks a reviewer verifies, drawn from the roadmap's "Con
 ### CI / validation
 - [x] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — **clean (0 warnings/errors)** under the configured lint levels (does not include the intentionally-excluded `unreachable_pub` advisory)
 - [x] `cargo fmt --check --all` — clean
-- [ ] **Fix the 2 pre-existing failures** (`secrets_edit_value_saves_to_disk` `tests/manager_flow.rs:239`, `secrets_delete_key_saves_to_disk` `:315`) — both confirmed still failing. Root cause: the ConfirmSave → `ConfigEditor::save()` path does **not** persist workspace-level `env` edits/deletes to disk for an existing workspace; the in-memory `EditorState.pending.env` mutation is already correct (the in-memory asserts at `:274`/`:341` pass, the on-disk asserts at `:302`/`:362` fail). Re-run `cargo test --test manager_flow secrets_ -j 1` to confirm `9 passed`
+- [x] **Fix the 2 pre-existing failures** — root cause was test omission: the tests didn't call `execute_pending_workspace_save_commit` after the Enter key on ConfirmSave (the TUI run loop normally does this; dispatch_tests.rs did it correctly). Added the call to both tests. `cargo test --test manager_flow secrets_` now passes `9 passed`
 - [ ] Note for the dev box: run heavy `cargo` with `-j 1` (`CARGO_BUILD_JOBS=1`) — full `--all-targets` link OOM'd at ~8 GiB free
 
 ---

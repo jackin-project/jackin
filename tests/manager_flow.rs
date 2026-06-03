@@ -293,6 +293,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
 
     let reloaded = AppConfig::load_or_init(&paths)?;
     let ws = reloaded
@@ -353,6 +354,7 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
 
     let reloaded = AppConfig::load_or_init(&paths)?;
     let ws = reloaded
