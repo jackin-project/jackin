@@ -372,7 +372,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [x] Move `OpRunner`, `resolve_env_value` — moved to `jackin-env/src/op_runner.rs`; `operator_env/mod.rs` re-exports
 - [ ] Move `OpCli` (`:133`) + subprocess helpers (add `serde_json` dep — confirmed needed for `op` JSON output, ~20 parse sites)
 - [ ] Move `OpStructRunner` (`:445`), `OpWriteRunner` (`:749`)
-- [ ] Move `EnvLayer` (`:1324`) + `merge_layers` (`:1346`)
+- [x] Move `EnvLayer` + `merge_layers` to `jackin-env/src/env_layer.rs`; `operator_env/resolve.rs` re-exports
 - [ ] Move `validate_reserved_names` (`:1364`), `resolve_operator_env`(`:1683`)/`_with`(`:1698`), `build_attributed_layers` (`:1617`), `lookup_operator_env_raw` (`:1660`)
 - [ ] Move `print_launch_diagnostic` (`:1747`) + `emit/write_launch_diagnostic`
 - [x] Add deps note updated: `OpAccount`/`OpVault`/`OpItem`/`OpField` moved to `jackin-core` (no longer `jackin-console` dep for these); `OpCache` still uses `jackin-console::op_cache`; `serde_json` needed for `op` JSON output; `jackin-config` needed when `AppConfig` moves

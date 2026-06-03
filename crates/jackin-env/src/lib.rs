@@ -6,6 +6,8 @@
 //!
 //! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env`
 
+pub mod env_layer;
 pub mod op_runner;
 
+pub use env_layer::{EnvLayer, merge_layers};
 pub use op_runner::{OpRunner, resolve_env_value};

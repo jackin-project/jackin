@@ -5,45 +5,8 @@ use super::{
     resolve_env_value,
 };
 
-/// Source layer of an env value, attached to error messages and
-/// launch diagnostics so the operator can locate the offending entry.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EnvLayer {
-    Global,
-    Role(String),
-    Workspace(String),
-    WorkspaceRole { workspace: String, role: String },
-}
-
-impl std::fmt::Display for EnvLayer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Global => write!(f, "global [env]"),
-            Self::Role(name) => write!(f, "role {name:?} [env]"),
-            Self::Workspace(name) => write!(f, "workspace {name:?} [env]"),
-            Self::WorkspaceRole { workspace, role } => {
-                write!(f, "workspace {workspace:?} → role {role:?} [env]")
-            }
-        }
-    }
-}
-
-/// Later-wins merge. Order, low → high priority:
-/// global → role → workspace → workspace-role.
-pub fn merge_layers(
-    global: &std::collections::BTreeMap<String, EnvValue>,
-    role: &std::collections::BTreeMap<String, EnvValue>,
-    workspace: &std::collections::BTreeMap<String, EnvValue>,
-    workspace_role: &std::collections::BTreeMap<String, EnvValue>,
-) -> std::collections::BTreeMap<String, EnvValue> {
-    let mut merged = std::collections::BTreeMap::new();
-    for layer in [global, role, workspace, workspace_role] {
-        for (k, v) in layer {
-            merged.insert(k.clone(), v.clone());
-        }
-    }
-    merged
-}
+/// Re-exported from `jackin-env` — canonical definitions live there.
+pub use jackin_env::{EnvLayer, merge_layers};
 
 /// Reject operator env maps that declare any reserved runtime name.
 /// Runs at config-load time so misconfigurations fail before launch.
