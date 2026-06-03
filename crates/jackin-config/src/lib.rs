@@ -11,8 +11,10 @@
 //! migration lands in Phase 2 after `operator_env` is extracted to `jackin-env`.
 
 pub mod auth;
+pub mod migrations;
 pub mod mounts;
 pub mod paths;
+pub mod persist;
 pub mod planner;
 pub mod schema;
 pub mod sensitive;
@@ -37,7 +39,15 @@ pub use schema::{
     MountEntry, ResolvedWorkspace, RoleSource, WorkspaceConfig, WorkspaceEdit,
     WorkspaceRoleOverride, validate_mount_paths, validate_mount_specs, validate_mounts,
 };
+pub use migrations::{
+    Channel, Migration, MigrationStep, SchemaVersion,
+    apply_migrations, doc_version, migrate_config_file_if_needed,
+    migrate_file_if_needed, migrate_workspace_file_if_needed,
+    migrate_workspace_op_account_to_refs, noop_migration, parse_registry_version,
+    parse_version, set_doc_version,
+};
+pub use persist::{atomic_write, validate_workspace_file_stem};
 pub use versions::{
-    CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, current_config_version,
+    CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_VERSION, current_config_version,
     current_workspace_version,
 };
