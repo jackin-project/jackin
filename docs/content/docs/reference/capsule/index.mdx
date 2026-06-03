@@ -84,7 +84,7 @@ Two protocols share the same socket. The first byte sent by a client selects whi
 
 Both channels cap a single payload at 4 MiB. The control channel rejects malformed JSON and unknown structural shapes. Unknown tagged message variants decode as `Unknown` so a newer peer can fail fast instead of hanging on a read. The attach channel rejects unknown tags, truncated payloads, and oversized lengths.
 
-The authoritative control-channel wire types live in <RepoFile path="crates/jackin-protocol/src/control.rs" /> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/jackin-capsule/src/protocol/attach.rs" /> because it is only used by interactive Capsule clients.
+The authoritative control-channel wire types live in <RepoFile path="crates/jackin-protocol/src/control/mod.rs" /> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/jackin-capsule/src/protocol/attach/mod.rs" /> because it is only used by interactive Capsule clients.
 
 Current control messages:
 
@@ -93,7 +93,7 @@ Current control messages:
 | `{"type":"status"}` | `{"type":"session_list","sessions":[...]}` | `jackin-capsule status`, host session inventory, `hardline --inspect` |
 | `{"type":"snapshot"}` | `{"type":"snapshot","tabs":[...],"active_tab":N}` | `jackin console` live preview and pane picker |
 
-`SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, and state. The public states are `working`, `blocked`, `done`, and `idle`; today they are derived inside `crates/jackin-capsule/src/session.rs`, with the fuller state authority tracked in [Agent runtime status authority](/reference/roadmap/agent-runtime-status/).
+`SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, and state. The public states are `working`, `blocked`, `done`, and `idle`; today they are derived inside `crates/jackin-capsule/src/session/mod.rs`, with the fuller state authority tracked in [Agent runtime status authority](/reference/roadmap/agent-runtime-status/).
 
 Current attach frames:
 
@@ -191,7 +191,7 @@ host:
   -> render console preview / pane picker
 ```
 
-On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="src/runtime/snapshot.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
+On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="src/runtime/snapshot/mod.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
 
 ### Failure and Security Boundaries
 
@@ -237,7 +237,7 @@ Each pane owns one PTY and one `vt100::Parser<OscCapture>`. The parser maintains
 
 ### Dirty-output renderer
 
-`jackin-capsule` uses an internal dirty-row layer in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> rather than replacing `vt100` with a larger terminal engine. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
+`jackin-capsule` uses an internal dirty-row layer in <RepoFile path="crates/jackin-capsule/src/tui/render/mod.rs" /> rather than replacing `vt100` with a larger terminal engine. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
 
 The crate options were evaluated as follows:
 
@@ -334,7 +334,7 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ### How jackin' acquires the binary
 
-`ensure_available` in <RepoFile path="src/capsule_binary.rs" /> resolves the binary in priority order:
+`ensure_available` in <RepoFile path="src/capsule_binary/mod.rs" /> resolves the binary in priority order:
 
 1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin' uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin' validates only that the file exists and is executable.
 
@@ -384,19 +384,19 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 ### Derived image build
 
-<RepoFile path="src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
+<RepoFile path="src/derived_image/mod.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
 
 ## Relationship to the rest of jackin'
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="src/capsule_binary/mod.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
 | <RepoFile path="src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
-| <RepoFile path="src/derived_image.rs" /> | Copies binary into derived image build context |
-| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
+| <RepoFile path="src/derived_image/mod.rs" /> | Copies binary into derived image build context |
+| <RepoFile path="crates/jackin-capsule/src/runtime_setup/mod.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
 | <RepoFile path="src/runtime/launch/mod.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
-| <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
-| <RepoFile path="src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
+| <RepoFile path="src/runtime/attach/mod.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
+| <RepoFile path="src/isolation/finalize/mod.rs" /> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |
 | [jackin' daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |

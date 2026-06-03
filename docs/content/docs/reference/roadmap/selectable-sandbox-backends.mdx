@@ -133,7 +133,7 @@ Every backend must eventually implement the same high-level jackin' operations:
 
 ## Backend-Neutral Instance Registry
 
-Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="src/instance/manifest.rs" /> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
+Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="src/instance/manifest/mod.rs" /> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
 
 ```text
 instance_id
@@ -295,7 +295,7 @@ The decision rule is simple: do not add a backend until jackin' can state what o
 ## Related Files
 
 - <RepoFile path="src/runtime/launch/mod.rs" /> - current backend-specific launch orchestration.
-- <RepoFile path="src/runtime/image.rs" /> - role image build path that should stay reusable across backends.
-- <RepoFile path="src/docker_client.rs" /> - Docker backend API boundary.
-- <RepoFile path="src/instance/manifest.rs" /> - instance metadata that needs to become backend-neutral.
+- <RepoFile path="src/runtime/image/mod.rs" /> - role image build path that should stay reusable across backends.
+- <RepoFile path="src/docker_client/mod.rs" /> - Docker backend API boundary.
+- <RepoFile path="src/instance/manifest/mod.rs" /> - instance metadata that needs to become backend-neutral.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule runtime contract that every backend must preserve or intentionally replace.

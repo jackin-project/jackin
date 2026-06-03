@@ -411,7 +411,7 @@ This backend introduces these versioned-config additions; each lands with a `CUR
 | `[workspaces.X.runtime] backend = "orbstack-isolated"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`. |
 | `[runtime.docker] requires_inner_engine = false` (shared with hardening contract) | `jackin.role.toml` | `RoleManifest` | bump `CURRENT_MANIFEST_VERSION`. |
 
-All three are additive. The instance manifest at <RepoFile path="src/instance/manifest.rs" /> also needs a `backend_kind`/`provider_kind` axis split, which is per-instance metadata (not a versioned schema in the AGENTS.md sense) but still needs a forward-compatible default for existing Docker-only instances.
+All three are additive. The instance manifest at <RepoFile path="src/instance/manifest/mod.rs" /> also needs a `backend_kind`/`provider_kind` axis split, which is per-instance metadata (not a versioned schema in the AGENTS.md sense) but still needs a forward-compatible default for existing Docker-only instances.
 
 ## Decided In This Pass
 
@@ -449,9 +449,9 @@ These need answers before Phase 1 code work begins. Several can be resolved in u
 ## Related Files
 
 - <RepoFile path="src/runtime/launch/mod.rs" /> - launch orchestration that needs a backend split.
-- <RepoFile path="src/runtime/image.rs" /> - role image build path.
-- <RepoFile path="src/docker_client.rs" /> - current Docker lifecycle boundary.
-- <RepoFile path="src/instance/manifest.rs" /> - instance metadata that needs backend/provider fields.
+- <RepoFile path="src/runtime/image/mod.rs" /> - role image build path.
+- <RepoFile path="src/docker_client/mod.rs" /> - current Docker lifecycle boundary.
+- <RepoFile path="src/instance/manifest/mod.rs" /> - instance metadata that needs backend/provider fields.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule startup inside the role container.
 - <RepoFile path="docker/construct/Dockerfile" /> - role base image that should remain reusable.
 

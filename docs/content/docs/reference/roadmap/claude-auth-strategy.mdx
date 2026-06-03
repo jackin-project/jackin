@@ -242,9 +242,9 @@ At minimum, this design would touch:
 
 - <RepoFile path="src/config/roles.rs" /> — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
 - <RepoFile path="src/config/mod.rs" /> — `AuthForwardMode` enum, persistence types
-- <RepoFile path="src/cli/config.rs" /> — `config auth` subcommand help text and examples
+- <RepoFile path="src/cli/config/mod.rs" /> — `config auth` subcommand help text and examples
 - <RepoFile path="src/app/mod.rs" /> — `config auth` command dispatch
-- <RepoFile path="src/instance/auth.rs" /> — auth provisioning semantics for the new mode
+- <RepoFile path="src/instance/auth/mod.rs" /> — auth provisioning semantics for the new mode
 - <RepoFile path="src/runtime/launch/mod.rs" /> — runtime env injection and launch-time warnings
 - [Agent authentication](/guides/authentication/agents/) — explain concurrent-session tradeoffs and token mode
 - [config command](/commands/config/) — document setup and mode selection
@@ -275,9 +275,9 @@ copy-paste flow. A follow-up design proposal addresses that:
 
 - <RepoFile path="src/config/mod.rs" /> — `AuthForwardMode` enum, persistence types
 - <RepoFile path="src/config/roles.rs" /> — auth mode resolution
-- <RepoFile path="src/cli/config.rs" /> — `jackin config auth` help text
+- <RepoFile path="src/cli/config/mod.rs" /> — `jackin config auth` help text
 - <RepoFile path="src/app/mod.rs" /> — auth config command handlers
-- <RepoFile path="src/instance/auth.rs" /> — credential forwarding and state preparation
+- <RepoFile path="src/instance/auth/mod.rs" /> — credential forwarding and state preparation
 - <RepoFile path="src/runtime/launch/mod.rs" /> — launch-time env injection and notices
 - [Agent authentication](/guides/authentication/agents/) — current forwarding model and troubleshooting
 - [config command](/commands/config/) — current operator auth commands

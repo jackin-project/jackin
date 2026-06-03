@@ -69,7 +69,7 @@ Source: <RepoFile path="docker/construct/Dockerfile" />
 
 ### jackin runtime
 
-Source: <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> and <RepoFile path="docker/runtime/entrypoint.sh" />
+Source: <RepoFile path="crates/jackin-capsule/src/runtime_setup/mod.rs" /> and <RepoFile path="docker/runtime/entrypoint.sh" />
 
 - `jackin-capsule runtime-setup` performs git identity / GitHub setup, per-agent durable-home seeding, auth handoff refreshes, and Claude `tirith` / `shellfirm` MCP registration.
 - The shell entrypoint dispatches on `JACKIN_AGENT`, runs optional runtime hooks under `/jackin/runtime/hooks/` (`setup-once.sh`, `source.sh`, `preflight.sh`), and then `exec`s the selected agent.
@@ -282,10 +282,10 @@ extensions list becomes an obvious payload for it.
 
 - <RepoFile path="docker/construct/Dockerfile" /> — base image, user creation, shell setup
 - <RepoFile path="docker/construct/zshrc" /> — shell hooks (touched by Finding 4)
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — in-container Rust runtime setup (touched by Finding 1)
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup/mod.rs" /> — in-container Rust runtime setup (touched by Finding 1)
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — shell-native runtime hook sourcing and final agent exec (touched by Finding 1)
-- <RepoFile path="src/derived_image.rs" /> — derived image generation and Claude plugin install commands
+- <RepoFile path="src/derived_image/mod.rs" /> — derived image generation and Claude plugin install commands
 - <RepoFile path="src/runtime/launch/mod.rs" /> — mount and capability wiring (touched by Findings 1 and 4)
-- <RepoFile path="src/derived_image.rs" /> — derived Dockerfile generation (touched by Finding 2)
+- <RepoFile path="src/derived_image/mod.rs" /> — derived Dockerfile generation (touched by Finding 2)
 - [Security model](/guides/security-model/) — security posture (touched by Findings 1 and 3)
 - Upstream reference: [`anthropics/claude-code/.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer)

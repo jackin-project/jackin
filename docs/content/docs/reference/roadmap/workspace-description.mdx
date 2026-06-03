@@ -75,7 +75,7 @@ jackin workspace list        # renders a Description column (truncated)
 ```
 
 The `--clear-description` flag matches the existing `--clear-default-role`
-shape in <RepoFile path="src/cli/workspace.rs" />.
+shape in <RepoFile path="src/cli/workspace/mod.rs" />.
 
 ### Console
 
@@ -119,9 +119,9 @@ line; Esc-to-collapse if it ever overflows).
 ## Related Files
 
 - <RepoFile path="src/workspace/mod.rs" /> — `WorkspaceConfig` gains the field
-- <RepoFile path="src/cli/workspace.rs" /> — CLI flag plumbing
-- <RepoFile path="src/config/workspaces.rs" /> — `workspace show` renderer
-- <RepoFile path="src/console/tui/state.rs" /> — workspace picker
+- <RepoFile path="src/cli/workspace/mod.rs" /> — CLI flag plumbing
+- <RepoFile path="src/config/workspaces/mod.rs" /> — `workspace show` renderer
+- <RepoFile path="src/console/tui/state/mod.rs" /> — workspace picker
   rendering
 
 ## See Also

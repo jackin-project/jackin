@@ -22,7 +22,7 @@ Evidence from the codebase:
 - <RepoFile path="src/main.rs" /> shows three sites where anyhow chains are rendered via `tui::fatal(&format!("{error:#}"))`. No structured failure-to-friendly-message mapping exists.
 - <RepoFile path="src/runtime/launch/mod.rs" /> — Docker reachability is implicit in the first `bollard` call, not a separate up-front check. The launch pipeline does resolution + execution in one pass (~750 LOC starting at line 1479). `LoadOptions` has `debug`, `rebuild`, `force` — no `dry_run`.
 - No `Cli::Doctor`, `Cli::Status`, `Cli::Init`, or `Cli::Ps` variant in <RepoFile path="src/cli/mod.rs" />.
-- Searched `src/cli/` and `src/app/`; no `status`, `ps`, or top-level `list` subcommand. Instance discovery code exists in <RepoFile path="src/runtime/discovery.rs" /> and <RepoFile path="src/instance/mod.rs" />, fully consumable.
+- Searched `src/cli/` and `src/app/`; no `status`, `ps`, or top-level `list` subcommand. Instance discovery code exists in <RepoFile path="src/runtime/discovery/mod.rs" /> and <RepoFile path="src/instance/mod.rs" />, fully consumable.
 - `thiserror::Error` derive count is 6 files total. Almost every public-facing function returns `anyhow::Result<_>`.
 - Only the diagnostics JSONL writer uses JSON externally. No `serde_json::to_string` / `println!.*json` patterns outside test code.
 
@@ -71,7 +71,7 @@ One workspace can run multiple agents, so the agent column may list several. Whe
 
 Supports `--format json` (see item 3 below), `--filter workspace=myproj`, `--filter agent=claude`, `--state running`.
 
-Reuses the instance discovery logic the console already uses (<RepoFile path="src/runtime/discovery.rs" />). CPU/MEM via `docker stats --no-stream --format json`.
+Reuses the instance discovery logic the console already uses (<RepoFile path="src/runtime/discovery/mod.rs" />). CPU/MEM via `docker stats --no-stream --format json`.
 
 ### 3. `--format json` for every list-style subcommand + stable JSON schema
 
@@ -179,7 +179,7 @@ This needs brainstorming on UX. Key questions to research:
 
 - Add `Command::Status(StatusArgs)` and `Command::Ps` alias to <RepoFile path="src/cli/mod.rs" />.
 - Create `src/cli/format.rs` with `enum OutputFormat { Human, Json }` and `OutputEnvelope<T>`.
-- Reuse instance discovery from <RepoFile path="src/runtime/discovery.rs" />. CPU/MEM via Docker stats.
+- Reuse instance discovery from <RepoFile path="src/runtime/discovery/mod.rs" />. CPU/MEM via Docker stats.
 - Sweep subcommands for `--format json` support, starting with `workspace list`.
 
 ### Phase 3 — `jackin load --dry-run`
@@ -215,9 +215,9 @@ This needs brainstorming on UX. Key questions to research:
 - <RepoFile path="src/main.rs" /> — top-level error rendering
 - <RepoFile path="src/cli/mod.rs" /> — CLI command definitions
 - <RepoFile path="src/runtime/launch/mod.rs" /> — launch pipeline, dry-run insertion point
-- <RepoFile path="src/runtime/discovery.rs" /> — instance discovery for `status`
-- <RepoFile path="src/instance/auth.rs" /> — auth checks that doctor should surface
-- <RepoFile path="src/capsule_binary.rs" /> — capsule download verification
+- <RepoFile path="src/runtime/discovery/mod.rs" /> — instance discovery for `status`
+- <RepoFile path="src/instance/auth/mod.rs" /> — auth checks that doctor should surface
+- <RepoFile path="src/capsule_binary/mod.rs" /> — capsule download verification
 
 ## Cross-references
 

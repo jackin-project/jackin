@@ -8,9 +8,9 @@ title: "Security Threat Model & Signed Releases"
 
 jackin' has two credibility gaps that this roadmap item addresses together.
 
-**Gap 1 — undocumented security implementation.** jackin' markets itself on isolation and security, but the security implementation is undocumented. Real security engineering — symlink rejection in <RepoFile path="src/instance/auth.rs" />, `shellfirm` and `tirith` in the construct image, the YOLO flag contract in <RepoFile path="docker/runtime/entrypoint.sh" /> — is hidden in code and invisible to operators, role authors, and contributors who need to reason about the trust boundary.
+**Gap 1 — undocumented security implementation.** jackin' markets itself on isolation and security, but the security implementation is undocumented. Real security engineering — symlink rejection in <RepoFile path="src/instance/auth/mod.rs" />, `shellfirm` and `tirith` in the construct image, the YOLO flag contract in <RepoFile path="docker/runtime/entrypoint.sh" /> — is hidden in code and invisible to operators, role authors, and contributors who need to reason about the trust boundary.
 
-**Gap 2 — unsigned capsule binary.** The `jackin-capsule` binary is downloaded into every operator's container at runtime (<RepoFile path="src/capsule_binary.rs" />), verified by SHA256 only. There is no cryptographic signing, no SLSA provenance, and no SBOM. A compromised release artifact that matches the expected SHA256 would go undetected.
+**Gap 2 — unsigned capsule binary.** The `jackin-capsule` binary is downloaded into every operator's container at runtime (<RepoFile path="src/capsule_binary/mod.rs" />), verified by SHA256 only. There is no cryptographic signing, no SLSA provenance, and no SBOM. A compromised release artifact that matches the expected SHA256 would go undetected.
 
 ## Part 1 — Security threat model & implementation document
 
@@ -20,11 +20,11 @@ A contributor-facing internals doc at `docs/content/docs/reference/security-impl
 
 | Threat | Defended? | Where in code | Residual risk |
 |---|---|---|---|
-| Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="src/workspace/mounts.rs" /> | Explicitly mounted rw paths |
-| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="src/instance/auth.rs" /> | TOCTOU window between symlink check and file use |
+| Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="src/workspace/mounts/mod.rs" /> | Explicitly mounted rw paths |
+| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="src/instance/auth/mod.rs" /> | TOCTOU window between symlink check and file use |
 | Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/reference/roadmap/smolvm-backend-research/) | Shared kernel; future microVM work addresses this |
 | Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/reference/roadmap/network-egress-policy/) | Open egress by default today |
-| Supply chain (capsule binary) | SHA256 only | <RepoFile path="src/capsule_binary.rs" /> | No signing, no provenance — Part 2 below |
+| Supply chain (capsule binary) | SHA256 only | <RepoFile path="src/capsule_binary/mod.rs" /> | No signing, no provenance — Part 2 below |
 
 ### 2. Implementation walk
 
@@ -60,7 +60,7 @@ When `--dangerously-skip-permissions` (YOLO) flags are active:
 2. **Cosign signing** — `cosign sign-blob` with keyless OIDC signing for every release artifact, so operators can verify the binary came from the jackin' CI without pre-sharing a public key
 3. **SBOM generation** — `syft scan` to produce a CycloneDX SBOM for each binary, uploaded as a release asset alongside the binary itself
 4. **Operator verification docs** — document verification steps (`cosign verify-blob`, `slsa-verifier`) in a new page at `docs/content/docs/getting-started/verifying-releases.mdx`
-5. **Runtime verifier upgrade** — upgrade the capsule binary download in <RepoFile path="src/capsule_binary.rs" /> `ensure_available` to verify against a signed manifest instead of downloading and checking SHA256 alone
+5. **Runtime verifier upgrade** — upgrade the capsule binary download in <RepoFile path="src/capsule_binary/mod.rs" /> `ensure_available` to verify against a signed manifest instead of downloading and checking SHA256 alone
 
 ### Affected workflows
 
@@ -93,15 +93,15 @@ Write the verification guide at `docs/content/docs/getting-started/verifying-rel
 
 ### Phase 5 — Capsule binary signed manifest
 
-Upgrade `ensure_available` in <RepoFile path="src/capsule_binary.rs" /> to verify against a signed manifest (signature over the SHA256 digest + version tag) instead of bare checksum comparison. The manifest is produced and signed in the same CI step that publishes the binary. Estimated ~1 day.
+Upgrade `ensure_available` in <RepoFile path="src/capsule_binary/mod.rs" /> to verify against a signed manifest (signature over the SHA256 digest + version tag) instead of bare checksum comparison. The manifest is produced and signed in the same CI step that publishes the binary. Estimated ~1 day.
 
 ## Related files
 
-- <RepoFile path="src/instance/auth.rs" /> — symlink rejection, credential safety
-- <RepoFile path="src/workspace/mounts.rs" /> — mount scoping
+- <RepoFile path="src/instance/auth/mod.rs" /> — symlink rejection, credential safety
+- <RepoFile path="src/workspace/mounts/mod.rs" /> — mount scoping
 - <RepoFile path="docker/construct/Dockerfile" /> — shellfirm, tirith installation
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — YOLO flag handling
-- <RepoFile path="src/capsule_binary.rs" /> — capsule binary download verification
+- <RepoFile path="src/capsule_binary/mod.rs" /> — capsule binary download verification
 - <RepoFile path=".github/workflows/preview.yml" /> — publish workflow
 - <RepoFile path=".github/workflows/release.yml" /> — release workflow
 

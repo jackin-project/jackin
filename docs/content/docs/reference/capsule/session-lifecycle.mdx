@@ -37,7 +37,7 @@ Implementation: <RepoFile path="src/runtime/launch/mod.rs" /> (`launch_role_runt
 - **Container is stopped with crash state**: restore the required DinD sidecar, network, and certs when needed, restart the role container, then attach.
 - **Container is gone but indexed recoverable state exists**: rebuild the runtime around jackin-managed local state.
 
-Implementation: <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
+Implementation: <RepoFile path="src/runtime/attach/mod.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
 ## Session Inventory
 
@@ -49,7 +49,7 @@ jackin' queries the daemon through its socket by executing:
 
 The command opens the Capsule control channel, sends a typed `Status` request, and prints a line-oriented summary that older host paths parse into `AgentSession` records. Host console previews use the same control channel with a JSON `Snapshot` request: same-kernel Docker hosts connect directly to the bind-mounted socket, while Docker Desktop hosts fall back to `docker exec ... /jackin/runtime/jackin-capsule snapshot` because the host cannot connect to a Linux VM Unix socket directly. If the container is not running, inventory is reported as `sessions:not_running` without contacting Docker.
 
-Implementation: <RepoFile path="src/runtime/attach.rs" /> (`inspect_agent_sessions`) and <RepoFile path="crates/jackin-capsule/src/client.rs" /> (`run_status`).
+Implementation: <RepoFile path="src/runtime/attach/mod.rs" /> (`inspect_agent_sessions`) and <RepoFile path="crates/jackin-capsule/src/client.rs" /> (`run_status`).
 
 ## Container Shutdown
 

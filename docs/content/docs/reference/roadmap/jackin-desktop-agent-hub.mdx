@@ -36,11 +36,11 @@ routing. The phased plan below is the review strategy, not a reduced scope.
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
 - The daemon draft also proves the minimal container-to-host notification path
   over JSON Lines through `jackin-notify`.
-- <RepoFile path="src/console/tui/state.rs" /> is the current TUI workspace
+- <RepoFile path="src/console/tui/state/mod.rs" /> is the current TUI workspace
   manager model. It exposes the same concepts the desktop app needs: workspace
   list, General / Mounts / Roles / Secrets / Auth tabs, dirty-save flow, modal
   pickers, and per-workspace summaries.
-- <RepoFile path="src/config/workspaces.rs" /> and <RepoFile path="src/config/mod.rs" />
+- <RepoFile path="src/config/workspaces/mod.rs" /> and <RepoFile path="src/config/mod.rs" />
   are the correct source of truth for workspace CRUD. Desktop should get
   workspace data through daemon endpoints that reuse these modules, with CLI or
   library calls reserved for fallback/bootstrap paths. It must not parse TOML

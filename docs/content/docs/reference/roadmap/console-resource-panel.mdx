@@ -63,7 +63,7 @@ Two distinct concerns plumbed through the same console panel:
 
 ### Per-agent sampling
 
-Use the Docker stats API (`docker stats --no-stream` or, via the `DockerApi` trait in <RepoFile path="src/docker_client.rs" />, the typed `ContainerStats` endpoint). Sample every 2 seconds while the console is open; pause sampling when the panel is collapsed.
+Use the Docker stats API (`docker stats --no-stream` or, via the `DockerApi` trait in <RepoFile path="src/docker_client/mod.rs" />, the typed `ContainerStats` endpoint). Sample every 2 seconds while the console is open; pause sampling when the panel is collapsed.
 
 Fields per agent:
 
@@ -134,7 +134,7 @@ per-agent table includes a status column to its left.
 
 - New module (e.g. `src/console/panels/resources.rs`) —
   panel rendering + sampling loop
-- <RepoFile path="src/console/tui/state.rs" /> — keybinding wiring
+- <RepoFile path="src/console/tui/state/mod.rs" /> — keybinding wiring
 - <RepoFile path="src/runtime/launch/mod.rs" /> — sampling adapter trait
   starts here, moves into per-backend modules over time
 

@@ -449,7 +449,7 @@ Resolve and record memory briefs for manual runs before full automation. This ph
 
 ### Phase 2 — Capsule session control API
 
-Add the missing control calls the workflow runner needs: create session, send prompt/input, read visible/recent output for debugging, wait for status, focus/attach by session, and cancel. These should extend <RepoFile path="crates/jackin-protocol/src/control.rs" /> and the Capsule daemon rather than shelling into terminal sessions.
+Add the missing control calls the workflow runner needs: create session, send prompt/input, read visible/recent output for debugging, wait for status, focus/attach by session, and cancel. These should extend <RepoFile path="crates/jackin-protocol/src/control/mod.rs" /> and the Capsule daemon rather than shelling into terminal sessions.
 
 ### Phase 3 — Hardcoded `roadmap-to-pr`
 
