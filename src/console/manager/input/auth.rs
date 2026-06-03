@@ -927,10 +927,10 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
     match target {
         AuthFormTarget::Workspace { kind } => {
             set_workspace_mode(&mut editor.pending, *kind, Some(outcome.mode));
-            if outcome.mode == AuthMode::Ignore {
-                if let Some(env_key) = kind.required_env_var(AuthMode::ApiKey) {
-                    editor.pending.env.remove(env_key);
-                }
+            if outcome.mode == AuthMode::Ignore
+                && let Some(env_key) = kind.required_env_var(AuthMode::ApiKey)
+            {
+                editor.pending.env.remove(env_key);
             }
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {
@@ -953,10 +953,10 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let entry = editor.pending.roles.entry(role.clone()).or_default();
             set_role_mode(entry, *kind, Some(outcome.mode));
-            if outcome.mode == AuthMode::Ignore {
-                if let Some(env_key) = kind.required_env_var(AuthMode::ApiKey) {
-                    entry.env.remove(env_key);
-                }
+            if outcome.mode == AuthMode::Ignore
+                && let Some(env_key) = kind.required_env_var(AuthMode::ApiKey)
+            {
+                entry.env.remove(env_key);
             }
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {

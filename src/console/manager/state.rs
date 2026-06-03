@@ -946,13 +946,12 @@ impl SettingsState<'_> {
         AppConfig::validate_global_mount_rows(&self.mounts.pending)?;
         validate_settings_env(&self.env.pending, &self.trust.pending)?;
         for row in &self.auth.pending {
-            if row.mode == crate::console::manager::auth_kind::AuthMode::Ignore {
-                if let Some(env_key) = row
+            if row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
+                && let Some(env_key) = row
                     .kind
                     .required_env_var(crate::console::manager::auth_kind::AuthMode::ApiKey)
-                {
-                    self.env.pending.env.remove(env_key);
-                }
+            {
+                self.env.pending.env.remove(env_key);
             }
         }
         let mut editor = crate::config::ConfigEditor::open(paths)?;

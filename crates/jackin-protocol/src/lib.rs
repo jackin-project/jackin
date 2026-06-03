@@ -222,10 +222,8 @@ impl Provider {
                 }
             }
             // GLM and Kimi deferred: Chat-Completions-only, blocked on Codex Responses API.
-            "codex" => {
-                if minimax_key {
-                    providers.push(Provider::Minimax);
-                }
+            "codex" if minimax_key => {
+                providers.push(Provider::Minimax);
             }
             _ => {}
         }
