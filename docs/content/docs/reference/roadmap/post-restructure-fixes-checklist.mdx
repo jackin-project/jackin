@@ -618,6 +618,40 @@ The program is done when:
 
 ---
 
+## Defect 29 — layout-changing events (tab/pane close) force a full repaint, no transient garble
+
+**Symptom:** closing a tab makes the whole screen go weird for a while, then it eventually repaints normally on its own. Any layout-changing event must repaint cleanly and immediately — no transient garbled state that self-heals later.
+
+**Root cause:** the same class as Defect 26 but a different trigger. `resize` forces `ratatui_terminal.clear()` (double-buffer reset) so the next frame is a full repaint; the **tab/pane close** path (`close_focused_pane` in <RepoFile path="crates/jackin-capsule/src/daemon/pane_layout.rs" />) and other layout mutations do **not** force that full invalidate. So after a close, the diff only repaints changed panes while stale cells from the removed pane/tab linger until some later event (another keypress/tick) happens to trigger a fuller redraw. The renderer tracks `pending_full_redraw` / `dirty_panes` (<RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs" />) but layout mutations don't set `pending_full_redraw`.
+
+**Canonical pattern to converge on:** every layout-changing event — tab close/open/switch, pane close/split/zoom, dialog open/close — marks `pending_full_redraw` (full invalidate) so the very next frame fully repaints, exactly like resize. One shared "layout changed → request full redraw" path; no event that mutates layout skips it.
+
+**Tasks:**
+- [ ] Enumerate every layout-mutating operation: `close_focused_pane`, tab close/open/switch, split/zoom, dialog open/close, `reconcile_content_rows`. `rg -n "close_focused_pane|close_tab|switch_tab|split|zoom|pending_full_redraw|dirty_panes" crates/jackin-capsule/src/daemon`.
+- [ ] Make each layout mutation request a full redraw (set `pending_full_redraw`) + invalidate the relevant caches (`pane_body_caches`, dirty state), mirroring what `resize` does — via one shared helper so none is missed (DRY).
+- [ ] Confirm the next frame after a close fully repaints (no stale cells from the removed pane/tab); compose with Defects 26/28 (same render-correctness cluster, one shared invalidate path).
+- [ ] Add a regression test: closing a pane/tab sets the full-redraw flag and the next rendered buffer contains no cells from the removed pane.
+
+---
+
+## Defect 30 — exiting the container is clean: no panic, no broken capsule state, panic captured
+
+**Symptom:** normal exit from the container now errors with `container … exited during session (exit 101) and produced no log output` (a Rust panic on exit), and a subsequent attach fails outright with `error: command failed: docker exec … /jackin/runtime/jackin-capsule`. So the teardown path panics, leaves no diagnostics, and can leave the container's capsule unusable for the next `docker exec`.
+
+**Root cause (to confirm — requires runtime triage):** the capsule exit/teardown path panics (exit 101) — likely the same render/lock/geometry fragility as Defects 26/27 firing during shutdown (e.g. a final render or a lock poisoned by an earlier panic), and the panic is not captured to the diagnostics log (telemetry gap). The follow-on `docker exec … jackin-capsule` failure indicates the in-container capsule daemon/socket is left in a broken state (crashed PID 1 child, stale socket at `/jackin/run/jackin.sock`, or a non-zero capsule startup), so re-attach cannot start a session.
+
+**Canonical pattern to converge on:** container exit is graceful and idempotent — the capsule tears down (sessions reaped, socket cleaned, alt-screen restored) without panicking; any panic is captured to the diagnostics run log via the panic hook (Defect 27); and a crashed/closed capsule never leaves the container in a state where the next `docker exec … jackin-capsule` fails (stale socket is reclaimed or the daemon restarts cleanly).
+
+**Tasks:**
+- [ ] Land the capsule panic hook (Defect 27) first so this exit-time panic is captured with a backtrace instead of "no log output".
+- [ ] Reproduce a normal exit, capture the backtrace, and root-cause the exit-101 panic (final render? lock poison? socket teardown?).
+- [ ] Make teardown panic-free and ordered: stop sessions, reap children, remove `/jackin/run/jackin.sock`, restore the terminal (leave alt-screen, disable raw mode/mouse) — no `unwrap`/`expect` on shutdown paths.
+- [ ] Fix the re-attach failure: a prior crash/exit must not block the next `docker exec … /jackin/runtime/jackin-capsule` — reclaim a stale socket or restart the daemon cleanly; surface a clear error (not a bare non-zero exit) if the container is genuinely gone.
+- [ ] Investigate the recurring blank-line flood + `press Enter to continue` artifact on the host when the capsule exits abnormally (bounded output on teardown; compose with Defects 26/27).
+- [ ] Add a test: clean exit returns 0, removes the socket, restores the terminal; a second attach to the same container succeeds.
+
+---
+
 ## Further defects
 
 Additional defects the operator reports get appended here, each following the same shape: symptom → root cause against the current tree → canonical pattern → repo-wide scan + fix-all tasks.
