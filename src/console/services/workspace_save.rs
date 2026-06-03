@@ -3,7 +3,7 @@
 use jackin_tui::runtime::BlockingSubscription;
 
 /// Start the Docker-backed drift check for an edited workspace.
-pub fn start_drift_check(
+pub(crate) fn start_drift_check(
     paths: crate::paths::JackinPaths,
     workspace_name: String,
     prospective_mounts: Vec<crate::workspace::MountConfig>,
@@ -27,7 +27,7 @@ pub fn start_drift_check(
 }
 
 /// Start cleanup for isolated mount records removed by a workspace save.
-pub fn start_isolation_cleanup(
+pub(crate) fn start_isolation_cleanup(
     paths: crate::paths::JackinPaths,
     records: Vec<crate::isolation::state::IsolationRecord>,
 ) -> BlockingSubscription<anyhow::Result<()>> {

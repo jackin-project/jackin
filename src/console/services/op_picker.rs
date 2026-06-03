@@ -7,11 +7,11 @@ use jackin_tui::runtime::BlockingSubscription;
 
 use crate::operator_env::{OpAccount, OpField, OpItem, OpStructRunner, OpVault};
 
-pub type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
+pub(crate) type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
 
 /// Return a ready or background subscription for a typed picker load request.
 #[allow(clippy::option_if_let_else, clippy::needless_pass_by_value)]
-pub fn start_load(
+pub(crate) fn start_load(
     cached: Option<LoadResult>,
     request: OpPickerLoadRequest,
     runner: Arc<dyn OpStructRunner + Send + Sync>,
@@ -24,7 +24,7 @@ pub fn start_load(
 
 /// Execute one typed picker metadata request against the configured `op` runner.
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute_load_request(
+pub(crate) fn execute_load_request(
     runner: Arc<dyn OpStructRunner + Send + Sync>,
     request: OpPickerLoadRequest,
 ) -> LoadResult {

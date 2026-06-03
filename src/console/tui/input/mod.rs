@@ -2,17 +2,17 @@
 //! if a modal is open, events go to the modal handler; otherwise they
 //! go to the active stage's handler.
 
-pub mod auth;
+pub(crate) mod auth;
 mod dispatch;
 pub(crate) mod editor;
 pub(crate) mod global_mounts;
 pub(crate) mod list;
 pub(crate) mod mouse;
 pub(crate) mod prelude;
-pub mod save;
+pub(crate) mod save;
 
 pub use dispatch::handle_key;
-pub use mouse::{clickable_at, handle_mouse_with_config};
+pub(crate) use mouse::{clickable_at, handle_mouse_with_config};
 
 // Re-exported for the `run_console` token-generate loop, which re-mounts
 // the settings auth form after a mint (the `global_mounts` module is
@@ -39,7 +39,7 @@ pub(super) mod test_support {
     use crate::workspace::MountConfig;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-    pub fn key(code: KeyCode) -> KeyEvent {
+    pub(crate) fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {
             code,
             modifiers: KeyModifiers::NONE,
@@ -48,7 +48,7 @@ pub(super) mod test_support {
         }
     }
 
-    pub fn mount(src: &str, dst: &str) -> MountConfig {
+    pub(crate) fn mount(src: &str, dst: &str) -> MountConfig {
         MountConfig {
             src: src.into(),
             dst: dst.into(),

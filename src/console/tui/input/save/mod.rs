@@ -28,7 +28,7 @@ use jackin_console::tui::screens::editor::view::{
 /// `commit_editor_save_with_runner`, then continues to the actual workspace
 /// write (or shows an error / deletion-confirm modal) without blocking the
 /// reactor.
-pub fn continue_save_after_drift_check(
+pub(crate) fn continue_save_after_drift_check(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     drift_check: PendingDriftCheck,
@@ -91,7 +91,7 @@ pub fn continue_save_after_drift_check(
     commit_editor_save_with_runner(state, config, plan, drift_check.exit_on_success)
 }
 
-pub fn continue_save_after_isolation_cleanup(
+pub(crate) fn continue_save_after_isolation_cleanup(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     cleanup: PendingIsolationCleanup,

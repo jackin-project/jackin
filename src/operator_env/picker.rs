@@ -1,5 +1,5 @@
 use super::cli::OpCli;
-pub use jackin_core::FieldTarget;
+pub(super) use jackin_core::FieldTarget;
 use jackin_core::OpRef;
 
 /// Structural `op` queries used by the picker.

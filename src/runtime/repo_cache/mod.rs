@@ -24,7 +24,7 @@ use super::identity::try_capture;
 /// new variants here together with their `friendly_role_resolution_error`
 /// arm in `console::tui::input::editor`.
 #[derive(Debug, thiserror::Error)]
-pub enum RepoError {
+pub(crate) enum RepoError {
     /// `git clone` failed for any reason — host unreachable, auth required,
     /// repo missing, server-side error. The original anyhow chain is kept
     /// as the `#[source]` so `--debug` still surfaces it.

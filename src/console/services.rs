@@ -1,12 +1,12 @@
 //! Console side-effect adapters.
 
-pub mod agents;
-pub mod browser;
-pub mod config;
+pub(super) mod agents;
+pub(super) mod browser;
+pub(super) mod config;
 pub(crate) mod file_browser;
-pub mod instances;
-pub mod op;
-pub mod op_picker;
-pub mod role_load;
-pub mod token_setup;
-pub mod workspace_save;
+pub(super) mod instances;
+pub(super) mod op;
+pub(super) mod op_picker;
+pub(super) mod role_load;
+pub(super) mod token_setup;
+pub(super) mod workspace_save;

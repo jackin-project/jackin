@@ -113,10 +113,7 @@ unsafe_code = "forbid"
 # DockerApi and CommandRunner are internal traits; auto-trait bounds (Send/Sync)
 # are not a concern with the current_thread tokio runtime.
 async_fn_in_trait = "allow"
-# unreachable_pub is intentionally kept out of [lints.rust] because
-# cargo clippy -- -D warnings promotes it to error via -D warnings,
-# which breaks CI before all remaining ~100 items are resolved.
-# Run `RUSTFLAGS='-W unreachable-pub' cargo check` for the advisory pass.
+unreachable_pub = "warn"
 
 [lints.clippy]
 # Lint groups — bugs are errors, style is advisory

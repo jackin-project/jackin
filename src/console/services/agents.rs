@@ -1,6 +1,6 @@
 //! Non-TUI agent resolution services.
 
-pub async fn resolve_supported_for_console(
+pub(crate) async fn resolve_supported_for_console(
     paths: &crate::paths::JackinPaths,
     config: &crate::config::AppConfig,
     role: &crate::selector::RoleSelector,
@@ -9,7 +9,7 @@ pub async fn resolve_supported_for_console(
     crate::runtime::resolve_supported_agents_for_console(paths, config, role, runner).await
 }
 
-pub async fn load_inline_picker_choices(
+pub(crate) async fn load_inline_picker_choices(
     paths: &crate::paths::JackinPaths,
     config: &crate::config::AppConfig,
     role: &crate::selector::RoleSelector,

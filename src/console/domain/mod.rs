@@ -20,7 +20,7 @@ use jackin_console::tui::auth::{AuthKind, AuthMode};
 // WorkspaceMounts impl for WorkspaceConfig now lives in jackin-console (orphan rule).
 
 #[must_use]
-pub const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
+pub(super) const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
     match kind {
         AuthKind::Claude => Some(Agent::Claude),
         AuthKind::Codex => Some(Agent::Codex),
@@ -32,7 +32,7 @@ pub const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
 }
 
 #[must_use]
-pub fn role_override_present(kind: AuthKind, ro: &WorkspaceRoleOverride) -> bool {
+pub(super) fn role_override_present(kind: AuthKind, ro: &WorkspaceRoleOverride) -> bool {
     match kind {
         AuthKind::Claude => ro.claude.is_some(),
         AuthKind::Codex => ro.codex.is_some(),
@@ -45,7 +45,7 @@ pub fn role_override_present(kind: AuthKind, ro: &WorkspaceRoleOverride) -> bool
 }
 
 #[must_use]
-pub const fn auth_mode_to_auth_forward(mode: AuthMode) -> Option<AuthForwardMode> {
+pub(super) const fn auth_mode_to_auth_forward(mode: AuthMode) -> Option<AuthForwardMode> {
     match mode {
         AuthMode::Sync => Some(AuthForwardMode::Sync),
         AuthMode::ApiKey => Some(AuthForwardMode::ApiKey),
@@ -56,7 +56,7 @@ pub const fn auth_mode_to_auth_forward(mode: AuthMode) -> Option<AuthForwardMode
 }
 
 #[must_use]
-pub const fn auth_mode_to_github(mode: AuthMode) -> Option<GithubAuthMode> {
+pub(super) const fn auth_mode_to_github(mode: AuthMode) -> Option<GithubAuthMode> {
     match mode {
         AuthMode::Sync => Some(GithubAuthMode::Sync),
         AuthMode::Token => Some(GithubAuthMode::Token),
@@ -66,7 +66,7 @@ pub const fn auth_mode_to_github(mode: AuthMode) -> Option<GithubAuthMode> {
 }
 
 #[must_use]
-pub fn github_auth_config_with_preserved_env(
+pub(super) fn github_auth_config_with_preserved_env(
     mode: Option<AuthMode>,
     existing: Option<&GithubAuthConfig>,
 ) -> Option<GithubAuthConfig> {
@@ -79,11 +79,15 @@ pub fn github_auth_config_with_preserved_env(
         })
 }
 
-pub fn set_workspace_auth_mode(ws: &mut WorkspaceConfig, kind: AuthKind, mode: Option<AuthMode>) {
+pub(super) fn set_workspace_auth_mode(
+    ws: &mut WorkspaceConfig,
+    kind: AuthKind,
+    mode: Option<AuthMode>,
+) {
     set_auth_mode(ws, kind, mode);
 }
 
-pub fn set_role_auth_mode(
+pub(super) fn set_role_auth_mode(
     role: &mut WorkspaceRoleOverride,
     kind: AuthKind,
     mode: Option<AuthMode>,
@@ -203,7 +207,7 @@ fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<Aut
     }
 }
 
-pub fn apply_workspace_auth_commit(
+pub(super) fn apply_workspace_auth_commit(
     ws: &mut WorkspaceConfig,
     kind: AuthKind,
     mode: AuthMode,
@@ -223,7 +227,7 @@ pub fn apply_workspace_auth_commit(
     );
 }
 
-pub fn apply_role_auth_commit(
+pub(super) fn apply_role_auth_commit(
     role: &mut WorkspaceRoleOverride,
     kind: AuthKind,
     mode: AuthMode,
@@ -243,15 +247,15 @@ pub fn apply_role_auth_commit(
     );
 }
 
-pub fn clear_workspace_auth_layer(ws: &mut WorkspaceConfig, kind: AuthKind) {
+pub(super) fn clear_workspace_auth_layer(ws: &mut WorkspaceConfig, kind: AuthKind) {
     set_workspace_auth_mode(ws, kind, None);
 }
 
-pub fn clear_role_auth_layer(role: &mut WorkspaceRoleOverride, kind: AuthKind) {
+pub(super) fn clear_role_auth_layer(role: &mut WorkspaceRoleOverride, kind: AuthKind) {
     set_role_auth_mode(role, kind, None);
 }
 
-pub fn apply_settings_auth_env_commit(
+pub(super) fn apply_settings_auth_env_commit(
     kind: AuthKind,
     env_var_name: Option<&str>,
     env_value: Option<crate::operator_env::EnvValue>,
@@ -264,7 +268,7 @@ pub fn apply_settings_auth_env_commit(
     settings_auth_env_map_mut(kind, github_env, agent_env).insert(name.to_string(), value);
 }
 
-pub fn clear_settings_auth_env_values(
+pub(super) fn clear_settings_auth_env_values(
     kind: AuthKind,
     github_env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
     agent_env: &mut BTreeMap<String, crate::operator_env::EnvValue>,
@@ -321,7 +325,7 @@ fn apply_auth_env_value(
 }
 
 #[must_use]
-pub fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, crate::operator_env::EnvValue> {
+pub(super) fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, crate::operator_env::EnvValue> {
     cfg.github
         .as_ref()
         .map(|github| github.env.clone())
@@ -329,7 +333,7 @@ pub fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, crate::operator_env::
 }
 
 #[must_use]
-pub fn panel_mode_requires_credential(
+pub(super) fn panel_mode_requires_credential(
     cfg: &AppConfig,
     workspace: &str,
     role: &str,
@@ -342,7 +346,7 @@ pub fn panel_mode_requires_credential(
 /// Roles already carrying an override stay eligible: operators may add
 /// more keys to an existing override.
 #[must_use]
-pub fn eligible_role_keys_for_override(
+pub(super) fn eligible_role_keys_for_override(
     cfg: &AppConfig,
     workspace: &WorkspaceConfig,
 ) -> Vec<String> {
@@ -354,7 +358,7 @@ pub fn eligible_role_keys_for_override(
 }
 
 #[must_use]
-pub fn settings_auth_env_value<'a>(
+pub(super) fn settings_auth_env_value<'a>(
     kind: AuthKind,
     mode: AuthMode,
     github_env: &'a BTreeMap<String, crate::operator_env::EnvValue>,
@@ -369,7 +373,7 @@ pub fn settings_auth_env_value<'a>(
 }
 
 #[must_use]
-pub fn workspace_auth_mode_and_credential(
+pub(super) fn workspace_auth_mode_and_credential(
     workspace: &WorkspaceConfig,
     kind: AuthKind,
 ) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
@@ -419,7 +423,7 @@ pub fn workspace_auth_mode_and_credential(
 }
 
 #[must_use]
-pub fn explicit_workspace_auth_mode(
+pub(super) fn explicit_workspace_auth_mode(
     workspace: &WorkspaceConfig,
     kind: AuthKind,
 ) -> Option<AuthMode> {
@@ -427,7 +431,7 @@ pub fn explicit_workspace_auth_mode(
 }
 
 #[must_use]
-pub fn panel_auth_source_value<'a>(
+pub(super) fn panel_auth_source_value<'a>(
     cfg: &'a AppConfig,
     workspace: &str,
     role: &str,
@@ -505,7 +509,7 @@ fn github_panel_source_value<'a>(
 }
 
 #[must_use]
-pub fn role_auth_mode_and_credential(
+pub(super) fn role_auth_mode_and_credential(
     role: Option<&WorkspaceRoleOverride>,
     kind: AuthKind,
 ) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
@@ -589,7 +593,7 @@ fn zai_mode_and_credential(
 }
 
 #[must_use]
-pub const fn auth_mode_from_auth_forward(mode: AuthForwardMode) -> AuthMode {
+pub(super) const fn auth_mode_from_auth_forward(mode: AuthForwardMode) -> AuthMode {
     match mode {
         AuthForwardMode::Sync => AuthMode::Sync,
         AuthForwardMode::ApiKey => AuthMode::ApiKey,
@@ -599,7 +603,7 @@ pub const fn auth_mode_from_auth_forward(mode: AuthForwardMode) -> AuthMode {
 }
 
 #[must_use]
-pub const fn auth_mode_from_github(mode: GithubAuthMode) -> AuthMode {
+pub(super) const fn auth_mode_from_github(mode: GithubAuthMode) -> AuthMode {
     match mode {
         GithubAuthMode::Sync => AuthMode::Sync,
         GithubAuthMode::Token => AuthMode::Token,
@@ -670,7 +674,7 @@ pub struct WorkspaceChoice {
 }
 
 /// Resolve the role source the console should load for an operator-entered selector.
-pub fn candidate_role_source(
+pub(super) fn candidate_role_source(
     config: &AppConfig,
     selector: &RoleSelector,
 ) -> anyhow::Result<RoleSource> {

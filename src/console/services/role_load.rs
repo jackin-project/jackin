@@ -3,7 +3,7 @@
 use futures_util::FutureExt as _;
 use jackin_tui::runtime::BlockingSubscription;
 
-pub fn start_role_registration(
+pub(crate) fn start_role_registration(
     paths: crate::paths::JackinPaths,
     selector: crate::selector::RoleSelector,
     git_url: String,

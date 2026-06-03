@@ -12,14 +12,14 @@ use std::path::Path;
 use anyhow::{Context, bail};
 use toml_edit::DocumentMut;
 
-pub const CURRENT_CONFIG_VERSION: &str = "v1alpha5";
-pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha5";
-pub const LEGACY_VERSION: &str = "legacy";
+pub(crate) const CURRENT_CONFIG_VERSION: &str = "v1alpha5";
+pub(crate) const CURRENT_WORKSPACE_VERSION: &str = "v1alpha5";
+pub(crate) const LEGACY_VERSION: &str = "legacy";
 
-pub type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
+pub(crate) type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
 
 #[derive(Clone, Copy)]
-pub struct MigrationStep {
+pub(crate) struct MigrationStep {
     pub from: &'static str,
     pub to: &'static str,
     pub migrate: Migration,
@@ -94,7 +94,7 @@ const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
 /// `persist.rs` can reuse this exact transform: the typed-struct round-trip
 /// there drops the legacy `op_account` before the version-driven migration
 /// would see it, so the split re-injects it and calls this directly.
-pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result<()> {
+pub(crate) fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result<()> {
     // Absent op_account is a legitimate no-op (single-account / never-set
     // workspace). A present-but-non-string value is operator data we must
     // not silently drop: bail loudly so the standard startup parser error
@@ -161,7 +161,7 @@ fn stamp_account_in_env_table(env: Option<&mut toml_edit::Item>, acct: &str) {
 /// walker treat a missing `version` field as the lowest possible value
 /// without sprinkling `Option`-handling across call sites.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SchemaVersion {
+pub(crate) enum SchemaVersion {
     /// File predates versioning (no `version` key in the document).
     Legacy,
     Kubernetes(KubernetesVersion),
@@ -171,7 +171,7 @@ pub enum SchemaVersion {
 /// `channel`, which gives the expected `v1alpha1 < v1beta1 < v1 < v2alpha1`
 /// ordering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct KubernetesVersion {
+pub(crate) struct KubernetesVersion {
     major: NonZeroU32,
     channel: Channel,
 }
@@ -180,7 +180,7 @@ pub struct KubernetesVersion {
 /// `Alpha < Beta < Stable` is required by the derived `Ord` and pinned by
 /// `channel_order_is_alpha_beta_stable` in this module's tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Channel {
+pub(crate) enum Channel {
     Alpha(NonZeroU32),
     Beta(NonZeroU32),
     Stable,
@@ -205,7 +205,7 @@ impl std::fmt::Display for KubernetesVersion {
     }
 }
 
-pub fn current_config_version() -> String {
+pub(crate) fn current_config_version() -> String {
     CURRENT_CONFIG_VERSION.to_string()
 }
 
@@ -234,7 +234,7 @@ pub fn migrate_workspace_file_if_needed(path: &Path) -> anyhow::Result<bool> {
 /// (e.g. `manifest::migrations::migrate_manifest_file`) project the
 /// `SchemaVersion` into display strings for callers that need to print
 /// both ends.
-pub fn migrate_file_if_needed(
+pub(crate) fn migrate_file_if_needed(
     path: &Path,
     label: &str,
     current_raw: &str,
@@ -268,7 +268,7 @@ pub fn migrate_file_if_needed(
 /// `doc` in place. After each step, the framework stamps `step.to` into the
 /// document — migration functions transform content; they must not write
 /// `version` themselves.
-pub fn apply_migrations(
+pub(crate) fn apply_migrations(
     doc: &mut DocumentMut,
     old_version: &SchemaVersion,
     current_version: &SchemaVersion,
@@ -313,14 +313,14 @@ fn find_step<'a>(
     Ok(None)
 }
 
-pub fn parse_registry_version(version: &str) -> anyhow::Result<SchemaVersion> {
+pub(crate) fn parse_registry_version(version: &str) -> anyhow::Result<SchemaVersion> {
     if version == LEGACY_VERSION {
         return Ok(SchemaVersion::Legacy);
     }
     parse_version(version)
 }
 
-pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersion> {
+pub(crate) fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersion> {
     let Some(item) = doc.get("version") else {
         return Ok(SchemaVersion::Legacy);
     };
@@ -335,7 +335,7 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersi
 // `kube`/`k8s_openapi` are heavy and pull a runtime, and the grammar here is
 // small enough that adding a dependency is overkill (per AGENTS.md
 // "Prefer libraries over hand-rolled parsers" carve-out).
-pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
+pub(crate) fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
     let rest = version
         .strip_prefix('v')
         .ok_or_else(|| anyhow::anyhow!("version must start with `v`"))?;
@@ -389,7 +389,7 @@ fn split_first_nondigit(s: &str) -> Option<(&str, &str)> {
     Some(s.split_at(split))
 }
 
-pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
+pub(crate) fn set_doc_version(doc: &mut DocumentMut, version: &str) {
     doc["version"] = toml_edit::value(version);
     doc.as_table_mut().sort_values_by(|left, _, right, _| {
         match (left.get() == "version", right.get() == "version") {
@@ -405,7 +405,7 @@ pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
 // these migrations are pure no-ops; content-changing migrations replace
 // this with their own fn.
 #[allow(clippy::unnecessary_wraps)]
-pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
+pub(crate) const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
     Ok(())
 }
 
@@ -416,7 +416,7 @@ pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
 /// this from a `#[test]` so a registry mistake fails CI rather than
 /// surfacing on an operator's machine.
 #[cfg(test)]
-pub fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
+pub(crate) fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
     let mut seen_froms = std::collections::BTreeSet::new();
     for step in migrations {
         let from = parse_registry_version(step.from)

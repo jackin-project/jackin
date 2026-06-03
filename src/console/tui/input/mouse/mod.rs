@@ -68,7 +68,7 @@ fn handle_mouse(
     clippy::too_many_lines,
     reason = "pending extraction — tracked in codebase-readability roadmap"
 )]
-pub fn handle_mouse_with_config(
+pub(crate) fn handle_mouse_with_config(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
@@ -246,7 +246,7 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 /// the pointer cue and the click action can never disagree. The seam column is
 /// a resize affordance, not a click target, so it is excluded here.
 #[must_use]
-pub fn clickable_at(
+pub(crate) fn clickable_at(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,

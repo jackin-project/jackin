@@ -1,6 +1,6 @@
 //! Non-TUI Claude token setup services.
 
-pub fn mint_token_value(
+pub(crate) fn mint_token_value(
     paths: &crate::paths::JackinPaths,
     config: &crate::config::AppConfig,
     scope: &crate::workspace::token_setup::TokenSetupScope,

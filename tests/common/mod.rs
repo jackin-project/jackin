@@ -1,4 +1,7 @@
 //! Shared test helpers for launch integration tests.
+// pub items in a private test-helper module are intentionally unreachable
+// from outside this crate; they exist for code organisation, not export.
+#![allow(unreachable_pub)]
 
 use jackin::docker::{CommandRunner, RunOptions};
 use jackin::docker_client::{

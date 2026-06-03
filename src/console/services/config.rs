@@ -11,7 +11,7 @@ use crate::workspace::WorkspaceConfig;
 use jackin_console::tui::auth::AuthKind;
 
 /// Upsert one role source into the operator config and reload the saved model.
-pub fn upsert_role_source(
+pub(crate) fn upsert_role_source(
     config: &mut AppConfig,
     paths: &JackinPaths,
     key: &str,
@@ -24,7 +24,7 @@ pub fn upsert_role_source(
 }
 
 /// Remove one saved workspace from operator config and reload the saved model.
-pub fn remove_workspace(
+pub(crate) fn remove_workspace(
     config: &mut AppConfig,
     paths: &JackinPaths,
     name: &str,
@@ -37,7 +37,7 @@ pub fn remove_workspace(
 
 /// Save the global mount table and return the reloaded config model.
 #[cfg(test)]
-pub fn save_global_mounts(
+pub(crate) fn save_global_mounts(
     paths: &JackinPaths,
     original: &[GlobalMountRow],
     pending: &[GlobalMountRow],
@@ -53,7 +53,7 @@ pub fn save_global_mounts(
     editor_doc.save()
 }
 
-pub struct SettingsSaveInput<'a> {
+pub(crate) struct SettingsSaveInput<'a> {
     pub mounts_original: &'a [GlobalMountRow],
     pub mounts_pending: &'a [GlobalMountRow],
     pub env_original: &'a SettingsEnvConfig,
@@ -68,7 +68,7 @@ pub struct SettingsSaveInput<'a> {
 
 /// Save all settings tabs and return the reloaded config model.
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
-pub fn save_settings(
+pub(crate) fn save_settings(
     paths: &JackinPaths,
     input: SettingsSaveInput<'_>,
 ) -> anyhow::Result<AppConfig> {
@@ -149,7 +149,7 @@ pub fn save_settings(
     editor_doc.save()
 }
 
-pub enum WorkspaceSaveMode {
+pub(crate) enum WorkspaceSaveMode {
     Edit {
         original_name: String,
         pending_name: Option<String>,
@@ -160,13 +160,13 @@ pub enum WorkspaceSaveMode {
     },
 }
 
-pub struct WorkspaceSaveInput<'a> {
+pub(crate) struct WorkspaceSaveInput<'a> {
     pub mode: WorkspaceSaveMode,
     pub original: &'a WorkspaceConfig,
     pub pending: &'a WorkspaceConfig,
 }
 
-pub struct WorkspaceSaveResult {
+pub(crate) struct WorkspaceSaveResult {
     pub config: AppConfig,
     pub current_name: String,
     pub pending_rename: Option<String>,
@@ -174,7 +174,7 @@ pub struct WorkspaceSaveResult {
 
 /// Persist a workspace create/edit and return the reloaded config model.
 #[allow(clippy::useless_let_if_seq)]
-pub fn save_workspace(
+pub(crate) fn save_workspace(
     paths: &JackinPaths,
     input: WorkspaceSaveInput<'_>,
 ) -> anyhow::Result<WorkspaceSaveResult> {

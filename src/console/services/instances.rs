@@ -64,7 +64,7 @@ pub(crate) fn load_instance_refresh_snapshot(
 }
 
 /// Return running role container names from the local Docker CLI.
-pub fn running_role_containers() -> anyhow::Result<Vec<String>> {
+pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {
     let output = std::process::Command::new("docker")
         .args([
             "ps",

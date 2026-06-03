@@ -477,7 +477,7 @@ fn open_settings_auth_form(
 /// generate trigger: an `AuthForm` showing the global Claude
 /// `oauth_token` slot. Settings generate is always global Claude, so —
 /// unlike the workspace editor — there is no per-target gate.
-pub fn settings_auth_can_generate_token(
+pub(crate) fn settings_auth_can_generate_token(
     auth: &crate::console::tui::state::SettingsAuthState,
 ) -> bool {
     matches!(

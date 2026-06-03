@@ -19,7 +19,7 @@ use toml_edit::DocumentMut;
 // `<name>.tmp` workspace file.
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
     if name.is_empty() {
         anyhow::bail!("workspace name cannot be empty");
     }
@@ -48,11 +48,11 @@ pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn workspace_file_path(paths: &JackinPaths, name: &str) -> PathBuf {
+pub(crate) fn workspace_file_path(paths: &JackinPaths, name: &str) -> PathBuf {
     paths.workspaces_dir.join(format!("{name}.toml"))
 }
 
-pub fn load_split_config(
+pub(crate) fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
 ) -> anyhow::Result<AppConfig> {
@@ -84,7 +84,7 @@ pub fn load_split_config(
     Ok(config)
 }
 
-pub fn load_workspace_files(
+pub(crate) fn load_workspace_files(
     workspaces_dir: &Path,
 ) -> anyhow::Result<BTreeMap<String, crate::workspace::WorkspaceConfig>> {
     let mut workspaces = BTreeMap::new();
@@ -231,7 +231,7 @@ fn migrate_legacy_workspaces(
     Ok(())
 }
 
-pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
+pub(crate) fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory {}", parent.display()))?;

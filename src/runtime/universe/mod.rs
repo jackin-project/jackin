@@ -58,18 +58,18 @@ fn force_boundary_rituals_enabled() -> bool {
 }
 
 #[must_use]
-pub fn force_boundary_intro_enabled() -> bool {
+pub(crate) fn force_boundary_intro_enabled() -> bool {
     force_boundary_rituals_enabled() || env_flag_enabled(std::env::var_os(FORCE_BOUNDARY_INTRO_ENV))
 }
 
 #[must_use]
-pub fn force_boundary_outro_enabled() -> bool {
+pub(super) fn force_boundary_outro_enabled() -> bool {
     force_boundary_rituals_enabled() || env_flag_enabled(std::env::var_os(FORCE_BOUNDARY_OUTRO_ENV))
 }
 
 /// Whether a launch enters an empty construct or joins one already running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StartKind {
+pub(crate) enum StartKind {
     /// No containers were running before this launch — (re)write the marker so
     /// the span starts now.
     FreshConstruct,
@@ -83,20 +83,20 @@ pub enum StartKind {
 /// prevent concurrent launches from both playing the two-screen intro, and let
 /// an early failed launch release only its own pending entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EntryClaim {
+pub(crate) struct EntryClaim {
     kind: StartKind,
     token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExitClaim {
+pub(super) enum ExitClaim {
     Missing,
     Claimed { elapsed: Option<Duration> },
 }
 
 impl EntryClaim {
     #[must_use]
-    pub const fn start_kind(&self) -> StartKind {
+    pub(crate) const fn start_kind(&self) -> StartKind {
         self.kind
     }
 
@@ -125,7 +125,7 @@ impl EntryClaim {
 ///
 /// A fresh launch is one where Docker reports no running role containers and
 /// no pending claim exists for an already-starting launch.
-pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryClaim {
+pub(crate) async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryClaim {
     let Ok(names) = super::discovery::list_running_agent_names(docker).await else {
         return EntryClaim::none(StartKind::ResumeExisting);
     };
@@ -152,7 +152,7 @@ pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryC
 /// Record the construct's start instant. A `FreshConstruct` launch (re)writes
 /// the marker to now; a `ResumeExisting` launch only writes it if absent, so an
 /// ongoing session keeps its original start.
-pub fn mark_start(paths: &JackinPaths, kind: StartKind) {
+pub(super) fn mark_start(paths: &JackinPaths, kind: StartKind) {
     let file = marker_path(paths);
     if kind == StartKind::ResumeExisting && file.exists() {
         return;
@@ -160,7 +160,7 @@ pub fn mark_start(paths: &JackinPaths, kind: StartKind) {
     let _ = std::fs::write(&file, now_millis().to_string());
 }
 
-pub async fn release_entry_if_idle(
+pub(crate) async fn release_entry_if_idle(
     paths: &JackinPaths,
     docker: &impl DockerApi,
     claim: &EntryClaim,
@@ -200,7 +200,7 @@ fn remove_empty_pending_dir(paths: &JackinPaths) {
 /// it is the one that may render the rich outro. A malformed marker still
 /// grants the claim, but omits the elapsed line from the caption.
 #[must_use]
-pub fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
+pub(super) fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
     let file = marker_path(paths);
     // The rename is the claim, not the read: `rename` is atomic on POSIX, so
     // when parallel exits race only one can move the marker away — the losers

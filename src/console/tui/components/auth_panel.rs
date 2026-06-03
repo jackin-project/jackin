@@ -18,11 +18,11 @@ use jackin_console::tui::screens::settings::view::{
     SettingsAuthLineRow, auth_lines as settings_auth_lines,
 };
 
-pub type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvValue>;
+pub(crate) type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvValue>;
 
 pub(crate) use jackin_console::tui::components::auth_panel::mode_str;
-pub use jackin_console::tui::components::auth_panel::render_form;
-pub use jackin_console::tui::components::auth_panel::required_height;
+pub(crate) use jackin_console::tui::components::auth_panel::render_form;
+pub(crate) use jackin_console::tui::components::auth_panel::required_height;
 
 pub(crate) fn editor_auth_display_row(
     row: &AuthRow,

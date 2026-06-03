@@ -13,7 +13,7 @@ fn flush_stdout() {
     let _ = std::io::stdout().flush();
 }
 
-pub fn section(label: &str, detail: impl std::fmt::Display) {
+pub(crate) fn section(label: &str, detail: impl std::fmt::Display) {
     println!();
     println!("  {} {}", label.bold(), detail.dimmed());
     flush_stdout();
@@ -26,11 +26,11 @@ pub fn section(label: &str, detail: impl std::fmt::Display) {
 /// error: it would leave the dotted prefix without a status word. The Drop
 /// guard catches the leak by closing the row with `FAILED row not finalized`.
 #[must_use = "PendingRow leaves the dotted prefix open until finalized"]
-pub struct PendingRow {
+pub(crate) struct PendingRow {
     finalized: bool,
 }
 
-pub fn start(action: &str, target: impl std::fmt::Display) -> PendingRow {
+pub(crate) fn start(action: &str, target: impl std::fmt::Display) -> PendingRow {
     let (prefix, dots) = pending_parts(action, target);
     print!("    {} {}", prefix.bold(), dots.dimmed());
     flush_stdout();
@@ -63,33 +63,33 @@ fn fit_prefix(prefix: String) -> (String, usize) {
     (prefix, total)
 }
 
-pub fn ok(detail: impl std::fmt::Display) {
+pub(crate) fn ok(detail: impl std::fmt::Display) {
     println!("    {} {detail}", "OK".green().bold());
 }
 
-pub fn skip(detail: impl std::fmt::Display) {
+pub(crate) fn skip(detail: impl std::fmt::Display) {
     println!("    {}", "SKIP".yellow().bold());
     println!("      {detail}");
 }
 
-pub fn failed(detail: impl std::fmt::Display) {
+pub(crate) fn failed(detail: impl std::fmt::Display) {
     eprintln!("    {}", "FAILED".red().bold());
     eprintln!("      {detail}");
 }
 
 impl PendingRow {
-    pub fn ok(mut self) {
+    pub(crate) fn ok(mut self) {
         self.finalized = true;
         println!(" {}", "OK".green().bold());
     }
 
-    pub fn skip(mut self, reason: impl std::fmt::Display) {
+    pub(crate) fn skip(mut self, reason: impl std::fmt::Display) {
         self.finalized = true;
         println!(" {}", "SKIP".yellow().bold());
         println!("      {reason}");
     }
 
-    pub fn failed(mut self, reason: impl std::fmt::Display) {
+    pub(crate) fn failed(mut self, reason: impl std::fmt::Display) {
         self.finalized = true;
         // Status word goes to stdout to close the dotted prefix line; detail
         // stays on stdout too so a redirected log keeps the row context.
@@ -99,7 +99,7 @@ impl PendingRow {
 
     /// Finalize the row from a `Result`: print `OK` and return the value, or
     /// print `FAILED` with the formatted message and propagate the error.
-    pub fn complete<T, E, F>(self, result: Result<T, E>, message: F) -> Result<T, E>
+    pub(crate) fn complete<T, E, F>(self, result: Result<T, E>, message: F) -> Result<T, E>
     where
         F: FnOnce(&E) -> String,
     {
