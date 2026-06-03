@@ -283,8 +283,8 @@ Per [split-runtime-launch](/reference/roadmap/split-runtime-launch/). Note the p
 ### `operator_env.rs` split — 1,893L prod **(was: 2,018)**
 Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`OpRef`/`FieldTarget` now re-exported from `jackin-core` (`:108`).
 - [x] Test split: `operator_env/tests.rs` (2,188L) separated
-- [ ] Extract `operator_env/cli.rs` (~820L) ← `OpCli` (`:133`) + subprocess helpers (`format_exit_status` `:215`, `truncate_stderr` `:224`, `drain_bounded_stderr` `:237`, `spawn_wait_thread` `:261`, `spawn_op_with_retry` `:296`, `run_op_with_timeout` `:585`, `run_op_json` `:656`, …) + the 3 trait impls (`OpRunner` `:322`, `OpStructRunner` `:684`, `OpWriteRunner` `:968` incl. `item_create` 145L)
-- [ ] Extract `operator_env/picker.rs` (~360L) ← `trait OpStructRunner` (`:445`), `trait OpWriteRunner` (`:749`), `OpItemCreateParams` (`:820`), the `Raw*` deserialize structs (`:488-540`), `op_section_id` (`:869`), `apply_field_edit` (`:901`), `resolve_edited_field_ref` (`:1261`)
+- [x] Extract `operator_env/cli.rs` (~820L) — `OpCli`, subprocess helpers, 3 trait impls (`OpRunner`, `OpStructRunner`, `OpWriteRunner`)
+- [x] Extract `operator_env/picker.rs` (~360L) — trait definitions (`OpStructRunner`, `OpWriteRunner`), type aliases, `Raw*` structs, `op_section_id`, `apply_field_edit`, `resolve_edited_field_ref`
 - [x] Extract `operator_env/resolve.rs` (~570L) — `EnvLayer`, `merge_layers`, `validate_reserved_names`, `resolve_op_uri_to_ref`, `resolve_operator_env`, `build_attributed_layers`, `lookup_operator_env_raw`, diagnostics cluster
 
 ### `app/mod.rs` split — 1,593L prod **(was: 1,589)**
