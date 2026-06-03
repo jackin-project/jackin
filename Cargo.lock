@@ -1693,6 +1693,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-docker",
  "jackin-env",
+ "jackin-image",
  "jackin-launch",
  "jackin-manifest",
  "jackin-protocol",
@@ -1850,6 +1851,27 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "jackin-image"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "filetime",
+ "flate2",
+ "jackin-build-meta",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-manifest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

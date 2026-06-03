@@ -192,9 +192,9 @@ These five forks were resolved during planning. Each is recorded with its ration
 
 **Gate:** Phase 2 (manifest — `repo`/`repo_contract` live there) and Phase 4 (docker — `net`).
 
-- [ ] Create `crates/jackin-image/` (deps: `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-docker`, `jackin-diagnostics`, `sha2`, `tar`, `flate2`; `mod_module_files = "deny"`). Add to members.
-- [ ] Move `derived_image/` (`DerivedBuildContext`, `render_derived_dockerfile`, `shell_quote`, `create_derived_build_context` — generates Dockerfile **text only**, no docker build), `agent_binary/`, `capsule_binary/`, `binary_artifact/` (pure — zero `crate::` deps), `version_check/`. Repoint: `repo::ValidatedRoleRepo` + `repo_contract::CONSTRUCT_*` → `jackin_manifest::*`; `net::*` → `jackin_docker::net`; `manifest::{HooksConfig,ClaudeConfig}` → `jackin_core::manifest`; `crate::debug_log!`/`diagnostics::active_run`/`tui::emit_compact_line` → `jackin_diagnostics::*`.
-- [ ] Note: image modules have **zero external consumers** outside the runtime tier (only `runtime/image` uses them), so repointing is trivial. `cargo check -p jackin-image` standalone.
+- [x] Create `crates/jackin-image/` (deps: `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-docker`, `jackin-diagnostics`, `sha2`, `tar`, `flate2`; `mod_module_files = "deny"`). Add to members.
+- [x] Move `derived_image/` (`DerivedBuildContext`, `render_derived_dockerfile`, `shell_quote`, `create_derived_build_context` — generates Dockerfile **text only**, no docker build), `agent_binary/`, `capsule_binary/`, `binary_artifact/` (pure — zero `crate::` deps), `version_check/`. Repoint: `repo::ValidatedRoleRepo` + `repo_contract::CONSTRUCT_*` → `jackin_manifest::*`; `net::*` → `jackin_docker::net`; `manifest::{HooksConfig,ClaudeConfig}` → `jackin_core::manifest`; `crate::debug_log!`/`diagnostics::active_run`/`tui::emit_compact_line` → `jackin_diagnostics::*`.
+- [x] Note: image modules have **zero external consumers** outside the runtime tier (only `runtime/image` uses them), so repointing is trivial. `cargo check -p jackin-image` standalone.
 
 ---
 

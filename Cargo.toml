@@ -8,6 +8,7 @@ members = [
     "crates/jackin-diagnostics",
     "crates/jackin-docker",
     "crates/jackin-env",
+    "crates/jackin-image",
     "crates/jackin-manifest",
     "crates/jackin-protocol",
     "crates/jackin-launch",
@@ -51,6 +52,7 @@ jackin-docker = { path = "crates/jackin-docker" }
 jackin-manifest = { path = "crates/jackin-manifest" }
 jackin-diagnostics = { path = "crates/jackin-diagnostics" }
 jackin-env = { path = "crates/jackin-env" }
+jackin-image = { path = "crates/jackin-image" }
 jackin-runtime = { path = "crates/jackin-runtime" }
 jackin-tui = { path = "crates/jackin-tui" }
 jackin-launch = { path = "crates/jackin-launch" }
