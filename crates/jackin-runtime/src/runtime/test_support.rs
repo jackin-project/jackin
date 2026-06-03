@@ -126,7 +126,7 @@ plugins = []
 ///
 /// Creates `.git/`, `Dockerfile`, and `jackin.role.toml`. All three are
 /// required for `validate_role_repo` to succeed.
-pub(crate) fn seed_valid_role_repo(repo_dir: &std::path::Path) {
+pub fn seed_valid_role_repo(repo_dir: &std::path::Path) {
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
     std::fs::write(repo_dir.join("Dockerfile"), TEST_DOCKERFILE_FROM).unwrap();
     std::fs::write(repo_dir.join("jackin.role.toml"), TEST_MANIFEST_TOML).unwrap();
@@ -134,7 +134,7 @@ pub(crate) fn seed_valid_role_repo(repo_dir: &std::path::Path) {
 
 /// Find the `repo` subdir under the first `role-resolve-*` temp dir that
 /// `register_agent_repo` creates inside `data_dir`.
-pub(crate) fn first_temp_role_repo(data_dir: &std::path::Path) -> std::path::PathBuf {
+pub fn first_temp_role_repo(data_dir: &std::path::Path) -> std::path::PathBuf {
     std::fs::read_dir(data_dir)
         .unwrap()
         .filter_map(Result::ok)
@@ -150,36 +150,36 @@ pub(crate) fn first_temp_role_repo(data_dir: &std::path::Path) -> std::path::Pat
         .join("repo")
 }
 
-#[cfg(test)]
-pub(crate) use fake_docker::FakeDockerClient;
+#[cfg(any(test, feature = "test-support"))]
+pub use fake_docker::FakeDockerClient;
 
-#[cfg(test)]
-mod fake_docker {
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake_docker {
     use std::collections::HashMap;
 
     use jackin_core::{
         ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
     };
 
-    pub(crate) struct FakeDockerClient {
-        pub(crate) recorded: std::cell::RefCell<Vec<String>>,
-        pub(crate) inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
-        pub(crate) list_containers_queue:
+    pub struct FakeDockerClient {
+        pub recorded: std::cell::RefCell<Vec<String>>,
+        pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
+        pub list_containers_queue:
             std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
-        pub(crate) list_networks_queue:
+        pub list_networks_queue:
             std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
-        pub(crate) list_image_tags_queue:
+        pub list_image_tags_queue:
             std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
-        pub(crate) remove_image_queue:
+        pub remove_image_queue:
             std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
-        pub(crate) exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
-        pub(crate) inspect_image_labels_queue:
+        pub exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
+        pub inspect_image_labels_queue:
             std::cell::RefCell<std::collections::VecDeque<HashMap<String, String>>>,
-        pub(crate) inspect_network_queue:
+        pub inspect_network_queue:
             std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
-        pub(crate) fail_with: Vec<(String, String)>,
-        pub(crate) created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
-        pub(crate) created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
+        pub fail_with: Vec<(String, String)>,
+        pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
+        pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
     }
 
     impl Default for FakeDockerClient {

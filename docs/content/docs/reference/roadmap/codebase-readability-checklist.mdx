@@ -202,12 +202,12 @@ These five forks were resolved during planning. Each is recorded with its ration
 
 **Gate:** Phases 1 (config), 3 (env), 2 (manifest), 4 (docker), 5 (image), 0.3 (diagnostics).
 
-- [ ] Expand `crates/jackin-runtime/Cargo.toml` deps to: `jackin-core`, `jackin-config`, `jackin-env`, `jackin-manifest`, `jackin-docker`, `jackin-image`, `jackin-diagnostics`, `jackin-launch`, `jackin-protocol`, `jackin-tui`, plus tokio/bollard/anyhow/etc.
-- [ ] Move the mutually-recursive cluster as one unit (no internal sub-ordering is possible — `runtime ↔ instance ↔ isolation` reference each other): `runtime/{launch,attach,cleanup,repo_cache,image,caffeinate,logs,universe,snapshot,progress,naming,identity,discovery,exit_summary,drift}`, `instance/{mod,auth,manifest,naming}`, `isolation/{mod,branch,cleanup,finalize,materialize,state}`. Each `mod.rs` → self-named file.
-- [ ] **Resolve the one upward edge:** `runtime/logs.rs:20` imports `crate::cli::LogsArgs`. Change `runtime::logs::run` to take plain fields (the clap `LogsArgs` struct stays in `cli/`), or move `LogsArgs` down.
-- [ ] `detect_workspace_edit_drift` + `DriftDetection` (`runtime/drift.rs`) land here; repoint the consumers de-referenced in Phase 1.3 to `jackin_runtime::drift::*`.
-- [ ] On-disk schemas `isolation.json` (`IsolationRecord`, `CURRENT_VERSION = 1`) and `instances.json` (`INSTANCE_INDEX_VERSION`/`INSTANCE_MANIFEST_VERSION = 1`) move serde-byte-identical — not migrated families, no ritual.
-- [ ] Leave binary shims. Repoint consumers: `crate::runtime::` (config 2, console 8, operator_env 1), `crate::instance::` (console 10), `crate::isolation::` (app 5, cli 1, config 5, console 21, operator_env 1, workspace 6). `cargo check -p jackin-runtime` standalone — **must not name** the binary crate.
+- [x] Expand `crates/jackin-runtime/Cargo.toml` deps to: `jackin-core`, `jackin-config`, `jackin-env`, `jackin-manifest`, `jackin-docker`, `jackin-image`, `jackin-diagnostics`, `jackin-launch`, `jackin-protocol`, `jackin-tui`, plus tokio/bollard/anyhow/etc.
+- [x] Move the mutually-recursive cluster as one unit (no internal sub-ordering is possible — `runtime ↔ instance ↔ isolation` reference each other): `runtime/{launch,attach,cleanup,repo_cache,image,caffeinate,logs,universe,snapshot,progress,naming,identity,discovery,exit_summary,drift}`, `instance/{mod,auth,manifest,naming}`, `isolation/{mod,branch,cleanup,finalize,materialize,state}`. Each `mod.rs` → self-named file.
+- [x] **Resolve the one upward edge:** `runtime/logs.rs:20` imports `crate::cli::LogsArgs`. Changed to take plain fields; binary dispatch destructures `LogsArgs`.
+- [x] `detect_workspace_edit_drift` + `DriftDetection` (`runtime/drift.rs`) land in jackin-runtime. Binary shim re-exports them.
+- [x] On-disk schemas `isolation.json` (`IsolationRecord`, `CURRENT_VERSION = 1`) and `instances.json` (`INSTANCE_INDEX_VERSION`/`INSTANCE_MANIFEST_VERSION = 1`) moved serde-byte-identical.
+- [x] Leave binary shims. `cargo check -p jackin-runtime` standalone — confirms no upward binary edge.
 
 ---
 

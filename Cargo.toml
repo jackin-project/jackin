@@ -101,6 +101,7 @@ jackin-build-meta = { path = "crates/jackin-build-meta" }
 
 [dev-dependencies]
 assert_cmd = "=2.2.2"
+jackin-runtime = { path = "crates/jackin-runtime", features = ["test-support"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 filetime = "=0.2.29"
 insta = { version = "1", features = ["filters"] }

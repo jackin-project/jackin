@@ -7,7 +7,7 @@ pub use jackin_docker::docker_client::{
 };
 
 #[cfg(test)]
-pub(crate) use crate::runtime::test_support::FakeDockerClient;
+pub use jackin_runtime::runtime::test_support::FakeDockerClient;
 
 #[cfg(test)]
 mod tests;

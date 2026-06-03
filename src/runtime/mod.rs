@@ -41,13 +41,12 @@ pub use jackin_runtime::runtime::{
     eject_role, exile_all, prune_all_instances, prune_cache, prune_diagnostics, prune_images,
     prune_instances, prune_jackin_home, prune_roles, purge_class_data, purge_container_state,
 };
-pub(crate) use jackin_runtime::runtime::list_role_names;
 pub use jackin_runtime::runtime::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
 pub use jackin_runtime::runtime::{LoadOptions, load_role};
 pub use jackin_runtime::runtime::matching_family;
-pub(crate) use jackin_runtime::runtime::{RepoError, normalize_github_url};
+pub(crate) use jackin_runtime::runtime::RepoError;
 pub(crate) use jackin_runtime::runtime::{
     EntryClaim, StartKind, claim_construct_entry, force_boundary_intro_enabled,
     release_entry_if_idle,

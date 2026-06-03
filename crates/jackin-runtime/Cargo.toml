@@ -67,3 +67,6 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 must_use_candidate = "allow"
 module_name_repetitions = "allow"
+
+[features]
+test-support = []

@@ -568,8 +568,8 @@ impl InstanceIndex {
     }
 
     /// Errors if the file is missing or unreadable.
-    #[cfg(test)]
-    pub(crate) fn read(data_dir: &Path) -> anyhow::Result<Self> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn read(data_dir: &Path) -> anyhow::Result<Self> {
         Self::read_optional(data_dir)?
             .ok_or_else(|| anyhow::anyhow!("instance index missing at {}", data_dir.display()))
     }

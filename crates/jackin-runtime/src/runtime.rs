@@ -19,10 +19,10 @@ pub mod repo_cache;
 pub mod snapshot;
 pub mod universe;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub use self::test_support::FakeRunner;
 
 pub use self::attach::docker_unavailable_msg;
