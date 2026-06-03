@@ -157,23 +157,23 @@ These five forks were resolved during planning. Each is recorded with its ration
 **Gate:** Phase 1 (AppConfig + ConfigEditor in jackin-config), Phase 0.1 (env_model), Phase 0.3 (diagnostics). The AppConfig-free pieces (3.1, 3.2) can begin after Phase 0; the AppConfig-bound pieces (3.3, 3.5) need Phase 1.
 
 ### 3.1 `host_claude` → `jackin-env` (leaf, no blockers)
-- [ ] Move `host_claude/mod.rs` (448 L, zero `crate::`/`jackin_*` deps — cleanest move). Add `jackin-env` deps `crossterm`, `portable-pty`, `secrecy` (anyhow present). Leave binary shim. Consumers: `workspace/token_setup`, `instance/auth`, `lib.rs`. **Host safety note:** spawns the host `claude` binary under a PTY for `setup-token`; reads operator stdin; writes redacted progress to stderr — no host-file writes. Keep that contract.
+- [x] Move `host_claude/mod.rs` (448 L, zero `crate::`/`jackin_*` deps — cleanest move). Add `jackin-env` deps `crossterm`, `portable-pty`, `secrecy` (anyhow present). Leave binary shim. Consumers: `workspace/token_setup`, `instance/auth`, `lib.rs`. **Host safety note:** spawns the host `claude` binary under a PTY for `setup-token`; reads operator stdin; writes redacted progress to stderr — no host-file writes. Keep that contract.
 
 ### 3.2 `operator_env` AppConfig-free half → `jackin-env`
-- [ ] Add `jackin-env` deps: `serde_json`, and `jackin-console` (D4 — for `OpCache`/`parse_op_reference`).
-- [ ] Move `OpCli` + all its trait impls + subprocess helpers (`operator_env/cli.rs`), the picker layer (`operator_env/picker.rs`: `default_op_struct_runner`, `OpCache` alias, `Raw*` structs + `From` impls, `op_section_id`, `apply_field_edit`, `resolve_edited_field_ref`), `resolve_op_uri_to_ref` (`operator_env/resolve.rs`), and `parse_host_ref` + `is_valid_env_name` (`operator_env/mod.rs`).
-- [ ] Repoint `operator_env/{mod,cli,picker,resolve}.rs` to shim from `jackin_env`. `cargo check -p jackin-env`.
+- [x] Add `jackin-env` deps: `serde_json`, and `jackin-console` (D4 — for `OpCache`/`parse_op_reference`).
+- [x] Move `OpCli` + all its trait impls + subprocess helpers (`operator_env/cli.rs`), the picker layer (`operator_env/picker.rs`: `default_op_struct_runner`, `OpCache` alias, `Raw*` structs + `From` impls, `op_section_id`, `apply_field_edit`, `resolve_edited_field_ref`), `resolve_op_uri_to_ref` (`operator_env/resolve.rs`), and `parse_host_ref` + `is_valid_env_name` (`operator_env/mod.rs`).
+- [x] Repoint `operator_env/{mod,cli,picker,resolve}.rs` to shim from `jackin_env`. `cargo check -p jackin-env`.
 
 ### 3.3 `operator_env` AppConfig-bound half → `jackin-env`
-- [ ] Move `resolve_operator_env` + `resolve_operator_env_with` + `validate_reserved_names` + `lookup_operator_env_raw` + `print_launch_diagnostic` + `build_attributed_layers` + `record_layer` + `write_launch_diagnostic` + `emit_launch_diagnostic` + `classify_env_value` + `ValueKind` (`operator_env/resolve.rs`). These take `jackin_config::AppConfig`; `emit_launch_diagnostic` uses `jackin_diagnostics::{active_run, active_debug}` + `jackin_diagnostics::rich_terminal_owned` (Phase 0.3).
-- [ ] Repoint `validate_reserved_names`'s `is_reserved` to `jackin_core::env_model::is_reserved`.
+- [x] Move `resolve_operator_env` + `resolve_operator_env_with` + `validate_reserved_names` + `lookup_operator_env_raw` + `print_launch_diagnostic` + `build_attributed_layers` + `record_layer` + `write_launch_diagnostic` + `emit_launch_diagnostic` + `classify_env_value` + `ValueKind` (`operator_env/resolve.rs`). These take `jackin_config::AppConfig`; `emit_launch_diagnostic` uses `jackin_diagnostics::{active_run, active_debug}` + `jackin_diagnostics::rich_terminal_owned` (Phase 0.3).
+- [x] Repoint `validate_reserved_names`'s `is_reserved` to `jackin_core::env_model::is_reserved`.
 
 ### 3.4 `env_resolver` → `jackin-env`
-- [ ] Move `env_resolver/mod.rs` (`ResolvedEnv`, `EnvPrompter`, `resolve_env`, `resolve_env_with_overrides`, `interpolate`). Add `jackin-launch` dep (`PromptResult`). Repoint `crate::manifest::EnvVarDecl` → `jackin_core::manifest::EnvVarDecl` and `crate::env_model::topological_env_order` → `jackin_core::env_model::topological_env_order`. Consumers: `runtime/launch*`, `manifest/validate`, `lib.rs`.
+- [x] Move `env_resolver/mod.rs` (`ResolvedEnv`, `EnvPrompter`, `resolve_env`, `resolve_env_with_overrides`, `interpolate`). Add `jackin-launch` dep (`PromptResult`). Repoint `crate::manifest::EnvVarDecl` → `jackin_core::manifest::EnvVarDecl` and `crate::env_model::topological_env_order` → `jackin_core::env_model::topological_env_order`. Consumers: `runtime/launch*`, `manifest/validate`, `lib.rs`.
 
 ### 3.5 `token_setup` → `jackin-env`
-- [ ] Move `workspace/token_setup/mod.rs` (1105 L) — last in this phase; needs `jackin_config::{AppConfig, ConfigEditor, EnvScope}` (Phase 1), `OpCli`/`OpWriteRunner`/`parse_op_reference` (3.2), `host_claude` (3.1). Add `jackin-env` deps `sha2`, `secrecy`. Repoint `Agent`/`JackinPaths` to `jackin_core`. Relocate `token_setup/tests.rs` (1278 L).
-- [ ] Repoint the ~53 `crate::operator_env::` consumer files (337 references; `console` 38 files, `app` 4, `runtime` 4, `workspace` 2, `config` 5) — most symbols (`EnvValue` 182, `OpRef` 62, `OpItem`/etc, `FieldTarget` 10) already resolve to jackin-core/console; only the `OpCli` + `resolve_*` + `validate_reserved_names` + `lookup_operator_env_raw` cluster is net-new from jackin-env. `cargo check -p jackin-env` standalone (may name core, config, console, diagnostics, launch — **not** runtime/instance/isolation).
+- [x] Move `workspace/token_setup/mod.rs` (1105 L) — last in this phase; needs `jackin_config::{AppConfig, ConfigEditor, EnvScope}` (Phase 1), `OpCli`/`OpWriteRunner`/`parse_op_reference` (3.2), `host_claude` (3.1). Add `jackin-env` deps `sha2`, `secrecy`. Repoint `Agent`/`JackinPaths` to `jackin_core`. Relocate `token_setup/tests.rs` (1278 L).
+- [x] Repoint the ~53 `crate::operator_env::` consumer files (337 references; `console` 38 files, `app` 4, `runtime` 4, `workspace` 2, `config` 5) — most symbols (`EnvValue` 182, `OpRef` 62, `OpItem`/etc, `FieldTarget` 10) already resolve to jackin-core/console; only the `OpCli` + `resolve_*` + `validate_reserved_names` + `lookup_operator_env_raw` cluster is net-new from jackin-env. `cargo check -p jackin-env` standalone (may name core, config, console, diagnostics, launch — **not** runtime/instance/isolation).
 
 ---
 
