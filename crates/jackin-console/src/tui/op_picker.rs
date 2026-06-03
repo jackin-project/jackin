@@ -14,11 +14,10 @@ pub use state::{LoadResult, OpPickerState};
 
 /// Concrete selection type for the picker: all five type parameters are bound
 /// to `jackin-core` types already available in this crate.
-pub type OpPickerSelection =
-    crate::tui::components::op_picker::OpPickerSelection<
-        jackin_core::OpRef,
-        jackin_core::op_types::OpAccount,
-        jackin_core::op_types::OpVault,
-        jackin_core::op_types::OpItem,
-        jackin_core::FieldTarget,
-    >;
+pub type OpPickerSelection = crate::tui::components::op_picker::OpPickerSelection<
+    jackin_core::OpRef,
+    jackin_core::op_types::OpAccount,
+    jackin_core::op_types::OpVault,
+    jackin_core::op_types::OpItem,
+    jackin_core::FieldTarget,
+>;

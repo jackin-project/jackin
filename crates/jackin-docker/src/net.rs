@@ -32,11 +32,12 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
 /// Parallel chunk connections per download.
 const DOWNLOAD_CONCURRENCY: usize = 8;
 
-/// `User-Agent` sent on every HTTP request. GitHub's API rejects UA-less
-/// requests at the edge with HTTP 403 ("Request forbidden by administrative
-/// rules") before any auth or rate-limit logic runs — reqwest does not set a
-/// default UA — so leaving this off silently breaks Codex/Opencode release
-/// metadata even when a valid `gh` token is attached.
+/// `User-Agent` sent on every HTTP request.
+///
+/// GitHub's API rejects UA-less requests at the edge with HTTP 403 ("Request
+/// forbidden by administrative rules") before any auth or rate-limit logic
+/// runs — reqwest does not set a default UA — so leaving this off silently
+/// breaks Codex/Opencode release metadata even when a valid `gh` token is attached.
 pub const USER_AGENT: &str = concat!("jackin/", env!("JACKIN_VERSION"));
 
 /// Build a reqwest client carrying `headers` as defaults.

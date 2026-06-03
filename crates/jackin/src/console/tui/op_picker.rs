@@ -26,16 +26,16 @@ pub(crate) use jackin_console::tui::op_picker::{OpPickerSelection, OpPickerState
 // Used by tests.rs via `use super::*`.
 #[cfg(test)]
 use jackin_console::tui::components::op_picker::{
-    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerCache, OpPickerError,
-    OpPickerFatalState, OpPickerField, OpPickerItem, OpPickerMode, OpPickerStage, OpPickerVault,
+    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerCache, OpPickerError,
+    OpPickerFatalState, OpPickerStage,
 };
 #[cfg(test)]
 use jackin_console::tui::op_picker::LoadResult;
 
-/// Test-runner thread-local: stores the injected runner so
-/// `execute_pending_load_for_test` can pass it to `start_load` without
-/// storing it in `OpPickerState` (which would create a circular dep via the
-/// `OpStructRunner` trait bound in `jackin-env`).
+// Test-runner thread-local: stores the injected runner so
+// `execute_pending_load_for_test` can pass it to `start_load` without
+// storing it in `OpPickerState` (which would create a circular dep via the
+// `OpStructRunner` trait bound in `jackin-env`).
 #[cfg(test)]
 thread_local! {
     pub(super) static TEST_RUNNER: std::cell::RefCell<

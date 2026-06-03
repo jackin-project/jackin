@@ -44,9 +44,10 @@ fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
 
 // ── Rule-C covering predicate ───────────────────────────────────────────
 
-/// Returns true iff `parent` strictly covers `child` under rule C:
-/// `parent.src` is a proper ancestor of `child.src`, AND the path suffix
-/// `child.src - parent.src` equals the path suffix `child.dst - parent.dst`.
+/// Returns true iff `parent` strictly covers `child` under rule C.
+///
+/// Rule C: `parent.src` is a proper ancestor of `child.src`, AND the path
+/// suffix `child.src - parent.src` equals `child.dst - parent.dst`.
 ///
 /// Equivalently: `child` projects the same host subtree to the same container
 /// location that `parent` would already expose it at.

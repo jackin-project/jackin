@@ -440,6 +440,7 @@ pub(crate) fn emit_launch_diagnostic<W: std::io::Write>(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn format_launch_diagnostic_for_test(
     config: &AppConfig,
     role_selector: Option<&str>,

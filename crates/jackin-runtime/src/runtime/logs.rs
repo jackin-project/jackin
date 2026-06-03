@@ -30,7 +30,6 @@ pub fn run(
     follow: bool,
     bundle: Option<std::path::PathBuf>,
 ) -> Result<()> {
-
     match selector {
         None => list_all(paths),
         Some(sel) => {

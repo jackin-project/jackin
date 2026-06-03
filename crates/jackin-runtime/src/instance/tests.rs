@@ -1,7 +1,7 @@
 //! Tests for `instance`.
 use super::*;
-use jackin_manifest::load_role_manifest;
 use jackin_core::paths::JackinPaths;
+use jackin_manifest::load_role_manifest;
 use tempfile::tempdir;
 
 fn simple_manifest(temp: &tempfile::TempDir) -> jackin_manifest::RoleManifest {
@@ -173,9 +173,9 @@ plugins = []
     let auth_modes = |agent: jackin_core::agent::Agent| match agent {
         jackin_core::agent::Agent::Claude => AuthForwardMode::Sync,
         jackin_core::agent::Agent::Codex => AuthForwardMode::ApiKey,
-        jackin_core::agent::Agent::Amp | jackin_core::agent::Agent::Kimi | jackin_core::agent::Agent::Opencode => {
-            AuthForwardMode::Ignore
-        }
+        jackin_core::agent::Agent::Amp
+        | jackin_core::agent::Agent::Kimi
+        | jackin_core::agent::Agent::Opencode => AuthForwardMode::Ignore,
     };
 
     let (state, selected_outcome) = RoleState::prepare(

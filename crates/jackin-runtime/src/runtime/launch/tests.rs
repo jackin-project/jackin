@@ -178,8 +178,8 @@ model = "zai/glm"
 }
 #[tokio::test]
 async fn diagnose_premature_exit_returns_none_when_container_running() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::runtime::test_support::FakeDockerClient;
+    use jackin_docker::docker_client::ContainerState;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             ContainerState::Running,
@@ -202,8 +202,8 @@ async fn diagnose_premature_exit_returns_none_when_container_running() {
 
 #[tokio::test]
 async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::runtime::test_support::FakeDockerClient;
+    use jackin_docker::docker_client::ContainerState;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             ContainerState::Stopped {
@@ -245,8 +245,8 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
 
 #[tokio::test]
 async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::runtime::test_support::FakeDockerClient;
+    use jackin_docker::docker_client::ContainerState;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             ContainerState::Stopped {
@@ -298,8 +298,8 @@ async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
     // the last live session → container shut itself down with
     // exit 0. The container-lifecycle policy treats this as the
     // happy path; the host CLI must not surface it as an error.
-    use jackin_docker::docker_client::ContainerState;
     use crate::runtime::test_support::FakeDockerClient;
+    use jackin_docker::docker_client::ContainerState;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             ContainerState::Stopped {
@@ -332,8 +332,8 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
     // Post-attach exit with a non-zero code still indicates a
     // problem inside the multiplexer / agent — operator wants the
     // logs surfaced even though the container is gone now.
-    use jackin_docker::docker_client::ContainerState;
     use crate::runtime::test_support::FakeDockerClient;
+    use jackin_docker::docker_client::ContainerState;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             ContainerState::Stopped {
@@ -370,8 +370,8 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
     // without doing anything, most likely a bad image or missing
     // entrypoint. Operator wants the heads-up even though the
     // exit code looks clean.
-    use jackin_docker::docker_client::ContainerState;
     use crate::runtime::test_support::FakeDockerClient;
+    use jackin_docker::docker_client::ContainerState;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             ContainerState::Stopped {
@@ -403,8 +403,8 @@ async fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() 
     // Ignore mode must still mount durable Claude home state so
     // conversations/plugins survive a Docker delete, but auth handoff
     // files under /jackin/claude/ must not flow into the container.
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -463,8 +463,8 @@ async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
     // Sync mode + host auth present → both account.json and
     // credentials.json flow under /jackin/claude/. Plugins are baked
     // into the image and do not need a runtime mount.
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -533,8 +533,8 @@ async fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
     // run its login wizard) and removes credentials.json. The
     // launcher must mount the skeleton AND must not mount any
     // stale credentials.json that survived the provision step.
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -585,8 +585,8 @@ plugins = []
 
 #[tokio::test]
 async fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() {
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -636,8 +636,8 @@ agents = ["codex"]
 
 #[tokio::test]
 async fn agent_mounts_for_codex_synced_includes_auth_json() {
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -694,8 +694,8 @@ agents = ["codex"]
 
 #[tokio::test]
 async fn agent_mounts_for_codex_host_missing_omits_auth_json() {
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -741,8 +741,8 @@ agents = ["codex"]
 
 #[tokio::test]
 async fn agent_mounts_for_amp_synced_includes_secrets_json() {
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -800,8 +800,8 @@ agents = ["amp"]
 
 #[tokio::test]
 async fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
-    use jackin_core::agent::Agent;
     use crate::instance::RoleState;
+    use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1117,10 +1117,7 @@ async fn workspace_mise_env_does_not_override_operator_value() {
 /// paths `seed_codex_project_trust` should mark trusted.
 fn codex_trust_fixture(
     root: &std::path::Path,
-) -> (
-    crate::instance::RoleState,
-    jackin_config::ResolvedWorkspace,
-) {
+) -> (crate::instance::RoleState, jackin_config::ResolvedWorkspace) {
     let state = crate::instance::RoleState {
         root: root.to_path_buf(),
         gh_config_dir: root.join("gh"),
@@ -1388,8 +1385,8 @@ plugins = []
     let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
 
-    let err =
-        validate_agent_supported(&selector, &manifest, jackin_core::agent::Agent::Codex).unwrap_err();
+    let err = validate_agent_supported(&selector, &manifest, jackin_core::agent::Agent::Codex)
+        .unwrap_err();
     let message = err.to_string();
     assert!(message.contains("role \"agent-smith\""));
     assert!(message.contains("agent \"codex\""));
@@ -2191,7 +2188,10 @@ async fn console_agent_resolution_fast_paths_cached_manifest() {
 
     assert_eq!(
         agents,
-        vec![jackin_core::agent::Agent::Claude, jackin_core::agent::Agent::Codex]
+        vec![
+            jackin_core::agent::Agent::Claude,
+            jackin_core::agent::Agent::Codex
+        ]
     );
     assert!(
         f.runner.recorded.is_empty(),
@@ -2270,7 +2270,10 @@ async fn console_agent_resolution_falls_through_to_git_when_uncached() {
 
     assert_eq!(
         agents,
-        vec![jackin_core::agent::Agent::Claude, jackin_core::agent::Agent::Codex]
+        vec![
+            jackin_core::agent::Agent::Claude,
+            jackin_core::agent::Agent::Codex
+        ]
     );
     assert!(
         f.runner
@@ -4426,9 +4429,9 @@ plugins = []
     // as a direct argument, so the `unsafe_code = "forbid"`
     // crate-level lint stays intact and sibling tests running in
     // parallel via cargo-nextest cannot race on any shared env var.
-    let op_runner: Box<dyn jackin_env::OpRunner> = Box::new(
-        jackin_env::OpCli::with_binary(bin_path.to_string_lossy().to_string()),
-    );
+    let op_runner: Box<dyn jackin_env::OpRunner> = Box::new(jackin_env::OpCli::with_binary(
+        bin_path.to_string_lossy().to_string(),
+    ));
     let opts = LoadOptions {
         op_runner: Some(op_runner),
         ..LoadOptions::default()
@@ -5033,8 +5036,8 @@ async fn format_attach_outcome_names_running_exit_and_oom() {
 
 #[tokio::test]
 async fn verify_credential_sync_returns_ok_regardless() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -5051,8 +5054,8 @@ async fn verify_credential_sync_returns_ok_regardless() {
 
 #[tokio::test]
 async fn verify_credential_ignore_returns_ok_regardless() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -5069,8 +5072,8 @@ async fn verify_credential_ignore_returns_ok_regardless() {
 
 #[tokio::test]
 async fn verify_credential_api_key_present_ok() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     let mut merged = std::collections::BTreeMap::new();
     merged.insert("ANTHROPIC_API_KEY".into(), "sk-ant-xxx".into());
     let layers: Vec<(String, EnvLayerState)> = vec![];
@@ -5088,8 +5091,8 @@ async fn verify_credential_api_key_present_ok() {
 
 #[tokio::test]
 async fn verify_credential_api_key_missing_returns_structured_error() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     let mut merged = std::collections::BTreeMap::new();
     merged.insert("ANTHROPIC_API_KEY".into(), String::new());
     let layers = vec![
@@ -5145,8 +5148,8 @@ async fn verify_credential_api_key_missing_returns_structured_error() {
 
 #[tokio::test]
 async fn verify_credential_api_key_unset_returns_structured_error() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     // ANTHROPIC_API_KEY not in map at all.
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
@@ -5164,8 +5167,8 @@ async fn verify_credential_api_key_unset_returns_structured_error() {
 
 #[tokio::test]
 async fn verify_credential_oauth_token_missing_for_claude() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers = vec![("[env]".into(), EnvLayerState::Unset)];
     let r = verify_credential_env_present(
@@ -5187,8 +5190,8 @@ async fn verify_credential_oauth_token_missing_for_claude() {
 
 #[tokio::test]
 async fn verify_credential_codex_api_key_missing() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -5211,8 +5214,8 @@ async fn verify_credential_codex_api_key_missing() {
 
 #[tokio::test]
 async fn verify_credential_amp_api_key_missing() {
-    use jackin_core::agent::Agent;
     use jackin_config::AuthForwardMode;
+    use jackin_core::agent::Agent;
     let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
@@ -5235,9 +5238,9 @@ async fn verify_credential_amp_api_key_missing() {
 
 #[tokio::test]
 async fn build_mode_resolution_populates_all_3_layers() {
-    use jackin_core::agent::Agent;
-    use jackin_config::{AgentAuthConfig, AuthForwardMode};
     use jackin_config::WorkspaceConfig;
+    use jackin_config::{AgentAuthConfig, AuthForwardMode};
+    use jackin_core::agent::Agent;
 
     let ws = WorkspaceConfig {
         claude: Some(AgentAuthConfig {
@@ -5267,9 +5270,9 @@ async fn build_mode_resolution_populates_all_3_layers() {
 
 #[tokio::test]
 async fn build_mode_resolution_role_override_wins() {
-    use jackin_core::agent::Agent;
     use jackin_config::{AgentAuthConfig, AuthForwardMode};
     use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_core::agent::Agent;
 
     let ro = WorkspaceRoleOverride {
         claude: Some(AgentAuthConfig {
@@ -5290,8 +5293,8 @@ async fn build_mode_resolution_role_override_wins() {
 
 #[tokio::test]
 async fn build_env_layer_states_classifies_present_vs_absent() {
-    use jackin_core::{EnvValue, OpRef};
     use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_core::{EnvValue, OpRef};
 
     let mut ro = WorkspaceRoleOverride::default();
     ro.env.insert(
@@ -5345,8 +5348,8 @@ async fn inspect_attach_outcome_capture_failure_returns_still_running() {
     // Docker unavailable or container removed mid-inspect must NOT route
     // through finalize_clean_exit's auto-cleanup path — still_running
     // keeps records preserved for `jackin hardline` to recover.
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     for state in [
         ContainerState::NotFound,
         ContainerState::InspectUnavailable("daemon down".into()),
@@ -5373,8 +5376,8 @@ fn inspect_docker(
 /// which is the documented happy path for clean container exits.
 #[tokio::test]
 async fn inspect_attach_outcome_exited_zero_returns_stopped() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     let docker = inspect_docker(ContainerState::Stopped {
         exit_code: 0,
         oom_killed: false,
@@ -5386,8 +5389,8 @@ async fn inspect_attach_outcome_exited_zero_returns_stopped() {
 /// `Stopped { exit_code: 137 }` → stopped(137) → preserved by finalize.
 #[tokio::test]
 async fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     let docker = inspect_docker(ContainerState::Stopped {
         exit_code: 137,
         oom_killed: false,
@@ -5399,8 +5402,8 @@ async fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
 /// `Stopped { oom_killed: true }` → `oom_killed`.
 #[tokio::test]
 async fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     let docker = inspect_docker(ContainerState::Stopped {
         exit_code: 137,
         oom_killed: true,
@@ -5412,8 +5415,8 @@ async fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
 /// `Running` → `still_running`. The basic happy detach case.
 #[tokio::test]
 async fn inspect_attach_outcome_running_returns_still_running() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     let docker = inspect_docker(ContainerState::Running);
     let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
     assert_eq!(outcome, AttachOutcome::still_running());
@@ -5424,8 +5427,8 @@ async fn inspect_attach_outcome_running_returns_still_running() {
 /// worktrees while the container is paused but recoverable.
 #[tokio::test]
 async fn inspect_attach_outcome_paused_returns_still_running() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     let docker = inspect_docker(ContainerState::Paused);
     let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
     assert_eq!(
@@ -5439,8 +5442,8 @@ async fn inspect_attach_outcome_paused_returns_still_running() {
 /// reason as `Paused`: not exited, no real exit code to act on.
 #[tokio::test]
 async fn inspect_attach_outcome_transient_states_return_still_running() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     for state in [
         ContainerState::Restarting,
         ContainerState::Removing,
@@ -5460,8 +5463,8 @@ async fn inspect_attach_outcome_transient_states_return_still_running() {
 /// deinitialize; records preserved for inspection).
 #[tokio::test]
 async fn inspect_attach_outcome_dead_returns_still_running() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     let docker = inspect_docker(ContainerState::Dead);
     let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
     assert_eq!(outcome, AttachOutcome::still_running());
@@ -5471,8 +5474,8 @@ async fn inspect_attach_outcome_dead_returns_still_running() {
 /// daemon error never accidentally triggers data deletion.
 #[tokio::test]
 async fn inspect_attach_outcome_unknown_status_returns_still_running() {
-    use jackin_docker::docker_client::ContainerState;
     use crate::isolation::finalize::AttachOutcome;
+    use jackin_docker::docker_client::ContainerState;
     let docker = inspect_docker(ContainerState::InspectUnavailable("unexpected".into()));
     let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
     assert_eq!(outcome, AttachOutcome::still_running());

@@ -61,7 +61,10 @@ impl FakeOpWriter {
 }
 
 impl crate::op_struct::OpWriteRunner for FakeOpWriter {
-    fn item_create(&self, params: crate::op_struct::OpItemCreateParams<'_>) -> anyhow::Result<OpRef> {
+    fn item_create(
+        &self,
+        params: crate::op_struct::OpItemCreateParams<'_>,
+    ) -> anyhow::Result<OpRef> {
         if self.fail_create {
             anyhow::bail!("simulated item_create failure");
         }

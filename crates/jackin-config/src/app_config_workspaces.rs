@@ -195,4 +195,3 @@ impl AppConfig {
         Ok(())
     }
 }
-

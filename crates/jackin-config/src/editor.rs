@@ -130,8 +130,8 @@ impl ConfigEditor {
         key: &str,
         value: EnvValue,
     ) -> anyhow::Result<()> {
-        use toml_edit::{InlineTable, Item, Value, value as toml_value};
         use jackin_core::EnvValue;
+        use toml_edit::{InlineTable, Item, Value, value as toml_value};
 
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
         let table = table_path_mut(doc, &path);
@@ -279,11 +279,7 @@ impl ConfigEditor {
         table.insert("auth_forward", toml_edit::value(github_mode_str(mode)));
     }
 
-    pub fn set_global_github_env_var(
-        &mut self,
-        key: &str,
-        value: EnvValue,
-    ) -> anyhow::Result<()> {
+    pub fn set_global_github_env_var(&mut self, key: &str, value: EnvValue) -> anyhow::Result<()> {
         self.set_env_var(&EnvScope::GlobalGithub, key, value)
     }
 
@@ -504,11 +500,7 @@ impl ConfigEditor {
         Ok(())
     }
 
-    pub fn create_workspace(
-        &mut self,
-        name: &str,
-        ws: WorkspaceConfig,
-    ) -> anyhow::Result<()> {
+    pub fn create_workspace(&mut self, name: &str, ws: WorkspaceConfig) -> anyhow::Result<()> {
         // Delegate to AppConfig::create_workspace's validated logic
         // (collision check, workdir / mount-destination relationship,
         // plan-collapse sanity) so the editor path behaves identically
@@ -533,11 +525,7 @@ impl ConfigEditor {
         Ok(())
     }
 
-    pub fn edit_workspace(
-        &mut self,
-        name: &str,
-        edit: WorkspaceEdit,
-    ) -> anyhow::Result<()> {
+    pub fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
         // Snapshot current on-disk state into an AppConfig.
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace edit")?;

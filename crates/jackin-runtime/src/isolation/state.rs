@@ -4,9 +4,9 @@
 //! `cleanup.rs`. The file is the sole authority on whether a container has
 //! active isolation that must be preserved before purge.
 
-use jackin_diagnostics::debug_log;
 use crate::isolation::MountIsolation;
 use anyhow::Context;
+use jackin_diagnostics::debug_log;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 

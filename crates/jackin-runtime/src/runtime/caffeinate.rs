@@ -41,8 +41,8 @@ use anyhow::Context;
 use fs2::FileExt;
 
 use jackin_core::CommandRunner;
-use jackin_docker::docker_client::DockerApi;
 use jackin_core::paths::JackinPaths;
+use jackin_docker::docker_client::DockerApi;
 
 const PID_FILENAME: &str = "caffeinate.pid";
 const LOCK_FILENAME: &str = "caffeinate.lock";

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use super::super::test_support::FakeRunner;
 use super::*;
+use crate::runtime::test_support::FakeDockerClient;
 use jackin_docker::docker_client::ContainerRow;
-    use crate::runtime::test_support::FakeDockerClient;
 use tempfile::tempdir;
 
 #[tokio::test]

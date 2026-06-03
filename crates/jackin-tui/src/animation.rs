@@ -10,8 +10,8 @@
 use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
-use crate::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, Rgb};
 use crate::output::clear_screen;
+use crate::{PHOSPHOR_DIM, PHOSPHOR_GREEN, Rgb, WHITE};
 
 fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
     owo_colors::Rgb(rgb.r, rgb.g, rgb.b)
@@ -239,7 +239,13 @@ fn intro_phrases(host_screen_owned: bool) {
     if type_centered("Stand up, operator...", WHITE, 60, 950, host_screen_owned) {
         return;
     }
-    if type_centered("They're already inside...", WHITE, 55, 950, host_screen_owned) {
+    if type_centered(
+        "They're already inside...",
+        WHITE,
+        55,
+        950,
+        host_screen_owned,
+    ) {
         return;
     }
     if type_centered("Follow the green.", WHITE, 50, 850, host_screen_owned) {
@@ -430,7 +436,10 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
         }
         eprint!("{out}");
         let _ = io::stderr().flush();
-        if skippable_sleep(std::time::Duration::from_millis(frame_ms), host_screen_owned) {
+        if skippable_sleep(
+            std::time::Duration::from_millis(frame_ms),
+            host_screen_owned,
+        ) {
             break;
         }
     }

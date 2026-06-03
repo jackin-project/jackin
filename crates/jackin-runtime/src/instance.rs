@@ -10,8 +10,8 @@
 //! (`runtime/`), or mount materialization (`isolation/materialize.rs`).
 
 use jackin_config::{AuthForwardMode, GithubAuthMode};
-use jackin_manifest::RoleManifest;
 use jackin_core::paths::JackinPaths;
+use jackin_manifest::RoleManifest;
 use std::path::{Path, PathBuf};
 
 mod auth;

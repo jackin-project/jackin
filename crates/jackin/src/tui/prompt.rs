@@ -10,7 +10,7 @@ use std::io::{self, Write};
 
 use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};
 
-fn rgb(c: (u8, u8, u8)) -> owo_colors::Rgb {
+const fn rgb(c: (u8, u8, u8)) -> owo_colors::Rgb {
     owo_colors::Rgb(c.0, c.1, c.2)
 }
 

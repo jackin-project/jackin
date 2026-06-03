@@ -56,6 +56,9 @@ pub async fn register_agent_repo(
     git_url: &str,
     runner: &mut impl jackin_core::CommandRunner,
     debug: bool,
-) -> anyhow::Result<(jackin_manifest::repo::CachedRepo, jackin_manifest::repo::ValidatedRoleRepo)> {
+) -> anyhow::Result<(
+    jackin_manifest::repo::CachedRepo,
+    jackin_manifest::repo::ValidatedRoleRepo,
+)> {
     self::repo_cache::register_agent_repo(paths, selector, git_url, runner, debug).await
 }

@@ -4,11 +4,11 @@
 //! is already shared with `attach`; this module is the single-file
 //! counterpart that creates the network and starts the sidecar.
 
-use jackin_core::{CommandRunner, RunOptions};
-use jackin_docker::docker_client::DockerApi;
 use crate::runtime::attach::wait_for_dind;
 use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_MANAGED};
 use crate::runtime::progress::LaunchStage;
+use jackin_core::{CommandRunner, RunOptions};
+use jackin_docker::docker_client::DockerApi;
 
 use super::StepCounter;
 

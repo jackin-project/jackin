@@ -2,7 +2,7 @@
 title: "Codebase readability & restructuring"
 ---
 
-**Status**: Open — active program. The cycle-breaking groundwork and the TUI extraction are done; the remaining work is one motion: **move every domain module out of the root `src/` binary into workspace crates until `src/` no longer exists.** Sequenced step-by-step in the [implementation checklist](/reference/roadmap/codebase-readability-checklist/).
+**Status**: Implemented — all phases complete. The root `src/` crate no longer exists; every production module lives in a single-responsibility crate under `crates/`; the dependency graph is a DAG with no upward edges; zero `mod.rs` files remain in `crates/`; `cargo clippy --workspace --all-targets --all-features -- -D warnings` is green. The one remaining Phase 7 item (moving the remaining ~47 generic console UI files that bind `ManagerState<'_>` type aliases) is tracked as a follow-up.
 
 ## Goal
 

@@ -16,15 +16,14 @@ use ratatui::text::Line;
 use tui_widget_list::ListState;
 
 use crate::tui::components::op_picker::{
-    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount,
-    OpPickerAccountRef, OpPickerCache, OpPickerField, OpPickerFieldDisplayRef, OpPickerFieldRef,
-    OpPickerItem, OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
-    OpPickerPendingLoad, OpPickerRenderState, OpPickerStage, OpPickerVault, OpPickerVaultRef,
-    account_lines, build_op_picker_ref, field_display_rows_for_picker, field_lines,
-    filtered_accounts, filtered_fields, filtered_item_choices, filtered_items, filtered_vaults,
-    item_choice_lines, naming_stage_input_for_stage, section_choices_from_references,
-    section_lines, selected_account_id, selected_entity_label_or_empty,
-    selected_index_for_stage, vault_lines,
+    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerAccountRef,
+    OpPickerCache, OpPickerField, OpPickerFieldDisplayRef, OpPickerFieldRef, OpPickerItem,
+    OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode, OpPickerPendingLoad,
+    OpPickerRenderState, OpPickerStage, OpPickerVault, OpPickerVaultRef, account_lines,
+    build_op_picker_ref, field_display_rows_for_picker, field_lines, filtered_accounts,
+    filtered_fields, filtered_item_choices, filtered_items, filtered_vaults, item_choice_lines,
+    naming_stage_input_for_stage, section_choices_from_references, section_lines,
+    selected_account_id, selected_entity_label_or_empty, selected_index_for_stage, vault_lines,
 };
 
 /// Concrete load-result type for the op picker (all four payload variants
@@ -271,21 +270,15 @@ impl OpPickerRenderState for OpPickerState {
     }
 
     fn selected_vault_name(&self) -> &str {
-        selected_entity_label_or_empty(self.selected_vault.as_ref(), |vault| {
-            vault.name.as_str()
-        })
+        selected_entity_label_or_empty(self.selected_vault.as_ref(), |vault| vault.name.as_str())
     }
 
     fn selected_item_name(&self) -> &str {
-        selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
-            item.name.as_str()
-        })
+        selected_entity_label_or_empty(self.selected_item.as_ref(), |item| item.name.as_str())
     }
 
     fn selected_item_subtitle(&self) -> &str {
-        selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
-            item.subtitle.as_str()
-        })
+        selected_entity_label_or_empty(self.selected_item.as_ref(), |item| item.subtitle.as_str())
     }
 
     fn naming_stage_input(&self) -> Option<&TextInputState<'static>> {

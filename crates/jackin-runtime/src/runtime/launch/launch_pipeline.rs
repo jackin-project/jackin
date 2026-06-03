@@ -1,15 +1,15 @@
 //! Role load pipeline: public entry points and the full launch-to-attach sequence.
 
-use jackin_config::AppConfig;
-use jackin_core::CommandRunner;
-use jackin_docker::docker_client::DockerApi;
 use crate::instance::{
     DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest, RoleState,
 };
+use anyhow::Context;
+use jackin_config::AppConfig;
+use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_docker::docker_client::DockerApi;
 use jackin_image::version_check;
-use anyhow::Context;
 
 use super::launch_slot::{
     claim_container_name, claim_known_container_name, resolve_github_env_map,
@@ -466,11 +466,7 @@ pub(crate) async fn load_role_with(
     // supplied seams, so tests never need to mutate `std::env` and the
     // crate-level `unsafe_code = "forbid"` lint stays intact.
     let operator_env = if opts.op_runner.is_none() && opts.host_env.is_none() {
-        jackin_env::resolve_operator_env(
-            config,
-            Some(&selector.key()),
-            workspace_name.as_deref(),
-        )?
+        jackin_env::resolve_operator_env(config, Some(&selector.key()), workspace_name.as_deref())?
     } else {
         let default_runner = jackin_env::OpCli::new();
         let runner: &dyn jackin_env::OpRunner =

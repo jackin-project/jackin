@@ -3,9 +3,9 @@
 use fs2::FileExt;
 
 use super::super::attach::{ContainerState, docker_unavailable_msg};
-use jackin_docker::docker_client::DockerApi;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_docker::docker_client::DockerApi;
 
 /// Cap retries so a filesystem without working flock (NFS without
 /// lockd, exotic mount) surfaces as an actionable error instead of an
@@ -207,8 +207,7 @@ pub(crate) fn resolve_github_env_map(
         return Ok(resolved);
     }
     let default_runner = jackin_env::OpCli::new();
-    let runner: &dyn jackin_env::OpRunner =
-        opts.op_runner.as_deref().unwrap_or(&default_runner);
+    let runner: &dyn jackin_env::OpRunner = opts.op_runner.as_deref().unwrap_or(&default_runner);
     let mut host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
         opts.host_env.as_ref().map_or_else(
             || std::env::var(name),
@@ -217,13 +216,7 @@ pub(crate) fn resolve_github_env_map(
     };
     let mut errors: Vec<String> = Vec::new();
     for (key, value) in declarations {
-        match jackin_env::resolve_env_value(
-            "[github.env]",
-            key,
-            value,
-            runner,
-            &mut host_env_fn,
-        ) {
+        match jackin_env::resolve_env_value("[github.env]", key, value, runner, &mut host_env_fn) {
             Ok(v) => {
                 resolved.insert(key.clone(), v);
             }

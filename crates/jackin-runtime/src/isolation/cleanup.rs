@@ -5,9 +5,9 @@
 //! can investigate and re-run `jackin purge`. Not responsible for branch-name
 //! derivation (`branch.rs`) or record persistence schema (`state.rs`).
 
-use jackin_diagnostics::debug_log;
-use jackin_core::CommandRunner;
 use crate::isolation::state::{IsolationRecord, remove_record};
+use jackin_core::CommandRunner;
+use jackin_diagnostics::debug_log;
 use std::path::Path;
 
 /// Force-delete an isolated worktree and its scratch branch, then remove

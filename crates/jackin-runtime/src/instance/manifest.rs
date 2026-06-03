@@ -5,9 +5,9 @@
 //! session history. Not responsible for Docker interaction — purely JSON
 //! persistence under `~/.jackin/data/`.
 
-use jackin_core::agent::Agent;
 use anyhow::Context;
 use fs2::FileExt;
+use jackin_core::agent::Agent;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;

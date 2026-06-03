@@ -21,7 +21,10 @@ use crate::versions::CURRENT_CONFIG_VERSION;
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    #[serde(default = "crate::versions::current_config_version", rename = "version")]
+    #[serde(
+        default = "crate::versions::current_config_version",
+        rename = "version"
+    )]
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,

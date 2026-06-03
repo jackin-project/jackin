@@ -1,13 +1,11 @@
 use crate::op_runner::OpRunner;
-use crate::op_struct::{
-    OpItemCreateParams, OpStructRunner, OpWriteRunner,
-};
+use crate::op_struct::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
 use crate::picker::{
     RawOpAccount, RawOpItemDetail, RawOpVault, apply_field_edit, op_section_id,
     resolve_edited_field_ref,
 };
-use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
 use jackin_core::OpRef;
+use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
 
 const OP_DEFAULT_BIN: &str = "op";
 const OP_DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -88,6 +86,7 @@ impl OpCli {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(super) const fn with_binary_and_timeout(
         binary: String,
         timeout: std::time::Duration,

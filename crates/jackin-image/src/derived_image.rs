@@ -9,8 +9,8 @@
 //! Not responsible for: running `docker build` (`runtime/image.rs`), or the
 //! base-image Dockerfile authored by the role (lives in the role repo).
 
-use jackin_core::manifest::HooksConfig;
 use jackin_core::Agent;
+use jackin_core::manifest::HooksConfig;
 use jackin_manifest::ValidatedRoleRepo;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;

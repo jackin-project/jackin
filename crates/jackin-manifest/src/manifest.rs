@@ -3,14 +3,16 @@
 //! Serde types (`RoleManifest`, etc.) live in `jackin-core`. This module
 //! re-exports them and provides I/O helpers (`load_role_manifest`, migration
 //! validation) that depend on `toml_edit`, `jackin-config` migrations, and
-//! `jackin-core` env_model.
+//! `jackin-core` `env_model`.
 //!
 //! Not responsible for: filesystem validation (`repo.rs`), or env-var
 //! resolution (`operator_env.rs`).
 
-pub use jackin_core::env_model::{JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE};
 use crate::repo_contract::MANIFEST_FILENAME;
 use anyhow::Context;
+pub use jackin_core::env_model::{
+    JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE,
+};
 use std::path::Path;
 
 pub use jackin_core::manifest::{

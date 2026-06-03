@@ -174,8 +174,10 @@ pub struct KubernetesVersion {
     pub channel: Channel,
 }
 
-/// Kubernetes channel maturity. Variant declaration order is load-bearing —
-/// `Alpha < Beta < Stable` is required by the derived `Ord` and pinned by
+/// Kubernetes channel maturity.
+///
+/// Variant declaration order is load-bearing — `Alpha < Beta < Stable` is
+/// required by the derived `Ord` and pinned by
 /// `channel_order_is_alpha_beta_stable` in this module's tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Channel {
@@ -258,10 +260,10 @@ pub fn migrate_file_if_needed(
     Ok(Some(old_version))
 }
 
-/// Walk the registry from `old_version` up to `current_version`, mutating
-/// `doc` in place. After each step, the framework stamps `step.to` into the
-/// document — migration functions transform content; they must not write
-/// `version` themselves.
+/// Walk the registry from `old_version` to `current_version`, mutating `doc` in place.
+///
+/// After each step the framework stamps `step.to` into the document —
+/// migration functions transform content; they must not write `version` themselves.
 pub fn apply_migrations(
     doc: &mut DocumentMut,
     old_version: &SchemaVersion,
@@ -403,12 +405,12 @@ pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Walk a `MigrationStep` slice from `Legacy` to `current_raw` and assert
-/// the chain is shape-correct. Catches typos in `from` / `to`, missing
-/// middle steps, backward steps, cycles, and duplicate `from` values
-/// (which would silently fork the walker). Production registries call
-/// this from a `#[test]` so a registry mistake fails CI rather than
-/// surfacing on an operator's machine.
+/// Walk a `MigrationStep` slice from `Legacy` to `current_raw` and assert the chain is correct.
+///
+/// Catches typos in `from` / `to`, missing middle steps, backward steps,
+/// cycles, and duplicate `from` values (which would silently fork the walker).
+/// Production registries call this from a `#[test]` so a registry mistake
+/// fails CI rather than surfacing on an operator's machine.
 pub fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
     let mut seen_froms = std::collections::BTreeSet::new();
     for step in migrations {

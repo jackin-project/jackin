@@ -19,12 +19,12 @@
 // None require network access. The shared finalizer is safe to call
 // after a hardline-locked attach (offline lockdown).
 
-use jackin_diagnostics::debug_log;
-use jackin_core::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use crate::runtime::attach::JACKIN_STATUS_CMD;
 use crate::runtime::progress::PromptContextLine;
+use jackin_core::CommandRunner;
+use jackin_diagnostics::debug_log;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

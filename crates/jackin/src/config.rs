@@ -12,16 +12,15 @@ pub(crate) mod workspaces;
 
 // Note: DriftDetection and detect_workspace_edit_drift are NOT re-exported
 // here. They live in runtime::drift and must be imported from there directly.
-pub use jackin_config::{
-    AppConfig, ConfigEditor, EnvScope, GlobalMountRow, WorkspaceGlobalMountRows,
-    AgentAuthConfig, AmpAuthConfig, CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION,
-    CodexAuthConfig, DockerConfig, DockerMounts, GitConfig, GithubAuthConfig, GithubAuthMode,
-    GlobalMountConfig, KeepAwakeConfig, KimiAuthConfig, MountConfig, MountEntry, MountIsolation,
-    OpencodeAuthConfig, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride,
-    build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
-    AuthForwardMode,
-};
 pub use crate::workspace::validate_workspace_config;
+pub use jackin_config::{
+    AgentAuthConfig, AmpAuthConfig, AppConfig, AuthForwardMode, CURRENT_CONFIG_VERSION,
+    CURRENT_WORKSPACE_VERSION, CodexAuthConfig, ConfigEditor, DockerConfig, DockerMounts, EnvScope,
+    GitConfig, GithubAuthConfig, GithubAuthMode, GlobalMountConfig, GlobalMountRow,
+    KeepAwakeConfig, KimiAuthConfig, MountConfig, MountEntry, MountIsolation, OpencodeAuthConfig,
+    RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceGlobalMountRows, WorkspaceRoleOverride,
+    build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
+};
 pub use jackin_config::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
 
 #[cfg(test)]

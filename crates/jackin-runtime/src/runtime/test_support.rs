@@ -17,6 +17,7 @@ pub struct FakeRunner {
     pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
 }
 
+#[allow(dead_code)]
 impl FakeRunner {
     pub(super) fn with_capture_queue<const N: usize>(outputs: [String; N]) -> Self {
         Self {
@@ -166,12 +167,9 @@ pub mod fake_docker {
         pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
         pub list_containers_queue:
             std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
-        pub list_networks_queue:
-            std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
-        pub list_image_tags_queue:
-            std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
-        pub remove_image_queue:
-            std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
+        pub list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
+        pub list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
+        pub remove_image_queue: std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
         pub exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
         pub inspect_image_labels_queue:
             std::cell::RefCell<std::collections::VecDeque<HashMap<String, String>>>,

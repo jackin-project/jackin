@@ -40,12 +40,12 @@ pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
 pub(crate) use launch_pipeline::load_role_with;
 pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
 
-use jackin_config::AppConfig;
-use jackin_core::{CommandRunner, RunOptions};
 use crate::instance::{InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus, RoleState};
+use anyhow::Context;
+use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
-use anyhow::Context;
+use jackin_core::{CommandRunner, RunOptions};
 use std::path::PathBuf;
 
 use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
@@ -302,7 +302,10 @@ pub(super) fn launch_target_label(
     workspace_name: Option<&str>,
     workspace: &jackin_config::ResolvedWorkspace,
 ) -> String {
-    workspace_name.map_or_else(|| jackin_diagnostics::shorten_home(&workspace.workdir), str::to_string)
+    workspace_name.map_or_else(
+        || jackin_diagnostics::shorten_home(&workspace.workdir),
+        str::to_string,
+    )
 }
 
 /// Human-readable lines for the mounts whose host source differs from the
@@ -316,7 +319,11 @@ pub(super) fn launch_mount_lines(workspace: &jackin_config::ResolvedWorkspace) -
         .filter(|mount| mount.src.trim_end_matches('/') != mount.dst.trim_end_matches('/'))
         .map(|mount| {
             let ro = if mount.readonly { " (ro)" } else { "" };
-            format!("{} → {}{ro}", jackin_diagnostics::shorten_home(&mount.src), mount.dst)
+            format!(
+                "{} → {}{ro}",
+                jackin_diagnostics::shorten_home(&mount.src),
+                mount.dst
+            )
         })
         .collect()
 }
@@ -607,7 +614,10 @@ pub(super) async fn launch_role_runtime(
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display_name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
-    let dind_hostname = format!("{}={dind}", jackin_core::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
+    let dind_hostname = format!(
+        "{}={dind}",
+        jackin_core::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME
+    );
     let role_container_name_env = format!(
         "{}={container_name}",
         jackin_core::env_model::JACKIN_CONTAINER_NAME_ENV_NAME
@@ -729,7 +739,8 @@ pub(super) async fn launch_role_runtime(
     if let Some(ref env) = git_coauthor_trailer_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
-    let git_dco_env = git_dco.then(|| format!("{}=1", jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME));
+    let git_dco_env =
+        git_dco.then(|| format!("{}=1", jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME));
     if let Some(ref env) = git_dco_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
@@ -1856,7 +1867,7 @@ fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
 /// when a layer is silent; `ResolvedLiteral` / `ResolvedOpRef` by
 /// `build_env_layer_states` when a layer declares the var.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum EnvLayerState {
+pub(crate) enum EnvLayerState {
     /// Layer does not declare the var at all.
     Unset,
     /// Layer declares the var with a literal (or `$VAR`) value that
@@ -1890,7 +1901,7 @@ impl std::fmt::Display for EnvLayerState {
 // Constructed by Task 13's `verify_credential_env_present` and bubbled
 // through Task 14's `load_role_with` integration.
 #[derive(Debug, thiserror::Error)]
-pub(super) enum LaunchError {
+pub(crate) enum LaunchError {
     /// `auth_forward` mode requires a credential env var to resolve to
     /// a non-empty value, but the resolved operator env doesn't carry
     /// it. Carries enough structure for both CLI rendering (multi-line

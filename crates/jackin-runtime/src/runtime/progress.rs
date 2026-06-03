@@ -8,6 +8,7 @@ use std::io::Write;
 #[cfg(test)]
 use std::time::Duration;
 
+use jackin_launch::LaunchHostTerminal;
 pub use jackin_launch::progress::LaunchProgress;
 #[cfg(test)]
 use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
@@ -39,7 +40,6 @@ pub use jackin_launch::{
     LaunchView, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
-use jackin_launch::LaunchHostTerminal;
 #[cfg(test)]
 use jackin_tui::components::ConfirmState;
 #[cfg(test)]

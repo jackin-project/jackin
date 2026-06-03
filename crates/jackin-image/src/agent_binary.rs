@@ -8,8 +8,8 @@ use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
     parse_sha256_hex,
 };
-use jackin_core::{Agent, JackinPaths};
 use anyhow::{Context, Result};
+use jackin_core::{Agent, JackinPaths};
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

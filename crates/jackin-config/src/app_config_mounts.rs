@@ -8,8 +8,8 @@ use jackin_core::{MountIsolation, RoleSelector};
 
 use crate::app_config::AppConfig;
 use crate::paths::expand_tilde;
-use crate::schema::{GlobalMountConfig, MountConfig, MountEntry};
 use crate::schema::validate_mounts;
+use crate::schema::{GlobalMountConfig, MountConfig, MountEntry};
 
 /// A resolved global mount entry for display and validation.
 #[derive(Debug, Clone, PartialEq, Eq)]

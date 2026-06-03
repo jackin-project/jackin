@@ -1,6 +1,6 @@
 //! Tests for `instance/auth` — tests.
-use jackin_config::AuthForwardMode;
 use crate::instance::{AuthProvisionOutcome, RoleState};
+use jackin_config::AuthForwardMode;
 use jackin_core::paths::JackinPaths;
 use tempfile::tempdir;
 

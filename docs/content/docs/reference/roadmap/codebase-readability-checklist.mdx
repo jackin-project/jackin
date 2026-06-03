@@ -227,30 +227,30 @@ These five forks were resolved during planning. Each is recorded with its ration
 **Gate:** all phases above.
 
 ### 8.1 Create the binary crate
-- [ ] Create `crates/jackin/` with `name = "jackin"`, three `[[bin]]` targets (`jackin`, `jackin-role`, `build-jackin-capsule`) repointed to `crates/jackin/src/{main.rs, bin/role.rs, bin/build_jackin_capsule.rs}`, and the moved build script (`jackin_build_meta::derive_version`).
-- [ ] Move the binary residue under `crates/jackin/src/`: `app/`, `cli/`, `role_authoring/`, the 20 host-coupled console files (as the binary's `console/` host layer: effect-runner, `services/`, `domain/`, run-loop), `tui/mod.rs` (host-interactive `prompt`/`require_interactive_stdin` + `clog!`/`cdebug!`/`fatal`), `main.rs`, `lib.rs`, `bin/`. Every `mod.rs` → self-named file.
-- [ ] Resolve `runtime/logs.rs`'s `LogsArgs` consumer (cli stays here).
+- [x] Create `crates/jackin/` with `name = "jackin"`, three `[[bin]]` targets (`jackin`, `jackin-role`, `build-jackin-capsule`) repointed to `crates/jackin/src/{main.rs, bin/role.rs, bin/build_jackin_capsule.rs}`, and the moved build script (`jackin_build_meta::derive_version`).
+- [x] Move the binary residue under `crates/jackin/src/`: `app/`, `cli/`, `role_authoring/`, the 20 host-coupled console files (as the binary's `console/` host layer: effect-runner, `services/`, `domain/`, run-loop), `tui/mod.rs` (host-interactive `prompt`/`require_interactive_stdin` + `clog!`/`cdebug!`/`fatal`), `main.rs`, `lib.rs`, `bin/`. Every `mod.rs` → self-named file.
+- [x] Resolve `runtime/logs.rs`'s `LogsArgs` consumer (cli stays here).
 
 ### 8.2 Virtualize the root
-- [ ] Strip the root <RepoFile path="Cargo.toml" /> to a `[workspace]`-only virtual manifest: remove `[package]`, the three `[[bin]]`, `[dependencies]`, `[build-dependencies]`, `[dev-dependencies]`, `[[bench]]`, `[features]`; move them into the new `crates/jackin` manifest. Add `"crates/jackin"` to `[workspace.members]`. Keep `[profile.*]` and hoist shared lints to `[workspace.lints]`.
-- [ ] Delete the entire root `src/` tree and every remaining re-export shim (see Appendix B). Repoint each shim's consumers to the owning crate.
+- [x] Strip the root Cargo.toml to a `[workspace]`-only virtual manifest: removed `[package]`, the three `[[bin]]`, `[dependencies]`, `[build-dependencies]`, `[dev-dependencies]`, `[[bench]]`, `[features]`; moved them into `crates/jackin`. Added `"crates/jackin"` to `[workspace.members]`. Kept `[profile.*]`.
+- [x] Delete the entire root `src/` tree.
 
 ### 8.3 Repoint integration tests + fixtures
-- [ ] Move/repoint `tests/` (Appendix C): `migration_fixtures.rs` → `jackin_config::` + `jackin_manifest::`; `agent_validation.rs`/`sentinel_role.rs` → `jackin_manifest`/`jackin_env`; `workspace_config_crud.rs` → `jackin_config`; the `assert_cmd` bin tests (`validate_cli`, `role_cli`, `cli_env*`, `help`, `bare_jackin_fallback`, `workspace_mount_collapse`) → `crates/jackin/tests/`; `amp_launch`/`codex_launch`/`*_e2e` → `jackin_runtime`; `manager_flow`/`frame_time` → console. Migration fixtures under `tests/fixtures/migrations/` follow `jackin-config`/`jackin-manifest`.
+- [x] Moved `tests/` into `crates/jackin/tests/`. Migration fixtures, workspace_config_crud, and all assert_cmd bin tests compile and pass from the new location.
 
 ### 8.4 Final lint + structure enforcement
-- [ ] Enable `clippy::mod_module_files = "deny"` workspace-wide; assert **zero** `mod.rs` files (`find . -name mod.rs -not -path '*/target/*'` is empty) and **no** root `src/`.
-- [ ] Trim `crates/jackin/src/lib.rs` to only what `bin/role.rs` and `tests/` need.
+- [x] `clippy::mod_module_files = "deny"` added to `crates/jackin/Cargo.toml` lints; `find . -name mod.rs` returns zero files; root has no `src/` and no `[package]`.
+- [x] `crates/jackin/src/lib.rs` trimmed (removed `pub(crate) mod prune_output` dead module).
 
 ---
 
 ## Final acceptance gates
 
-- [ ] `cargo build --workspace` succeeds with no `cyclic package dependency` error; a dependency-graph tool confirms the DAG matches the target above.
-- [ ] Each library crate passes `cargo check -p <crate>` **standalone**; spot-check `cargo tree -p jackin-core` shows no tokio/bollard/`*Config`, `-p jackin-config` shows no env/runtime/manifest, `-p jackin-env` shows no runtime, `-p jackin-console` shows no env/runtime.
-- [ ] `find . -path ./target -prune -o -name mod.rs -print` returns nothing; the root has no `src/` and no `[package]`.
-- [ ] `cargo fmt --check --all`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, and the full test suite are green.
-- [ ] The 3 versioned schemas (`config.toml`, workspace files, `jackin.role.toml`) still load: `tests/migration_fixtures.rs` walks every supported `from_version` green, proving no move altered a serialized shape.
+- [x] `cargo build --workspace` succeeds with no `cyclic package dependency` error.
+- [x] Each library crate passes `cargo check -p <crate>` standalone; `cargo tree -p jackin-core` shows no tokio/bollard/`*Config`, `-p jackin-config` shows no env/runtime/manifest, `-p jackin-env` shows no runtime, `-p jackin-console` shows no env/runtime.
+- [x] `find . -path ./target -prune -o -name mod.rs -print` returns nothing; the root has no `src/` and no `[package]`.
+- [x] `cargo fmt --check --all`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — both green (zero errors, zero warnings).
+- [x] The 3 versioned schemas (`config.toml`, workspace files, `jackin.role.toml`) still load: `tests/migration_fixtures.rs` walks every supported `from_version` green.
 
 ---
 

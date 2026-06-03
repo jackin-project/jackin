@@ -6,12 +6,12 @@
 //! updates — if an early deletion fails, already-deleted entries are still
 //! recorded so the index stays consistent with disk state.
 
-use jackin_core::CommandRunner;
-use jackin_docker::docker_client::{DockerApi, RemoveImageOutcome};
 use crate::instance::{InstanceIndex, InstanceStatus};
+use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
-use jackin_tui::prune_output;
 use jackin_core::selector::RoleSelector;
+use jackin_docker::docker_client::{DockerApi, RemoveImageOutcome};
+use jackin_tui::prune_output;
 use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};

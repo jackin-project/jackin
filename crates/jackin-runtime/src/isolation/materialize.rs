@@ -10,13 +10,13 @@
 //! Not responsible for: finalization or cleanup of existing worktrees
 //! (`isolation/finalize.rs` and `isolation/cleanup.rs`).
 
-use jackin_diagnostics::debug_log;
-use jackin_core::CommandRunner;
 use crate::isolation::MountIsolation;
 use crate::isolation::branch::branch_name;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
-use jackin_config::ResolvedWorkspace;
 use anyhow::Context;
+use jackin_config::ResolvedWorkspace;
+use jackin_core::CommandRunner;
+use jackin_diagnostics::debug_log;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,23 +1,22 @@
 //! Config/workspace migration registry — re-exported from `jackin-config`.
 
 #[cfg(test)]
-pub(crate) use jackin_config::{
-    Channel, MigrationStep, SchemaVersion, apply_migrations,
-    migrate_config_file_if_needed,
-    migrate_workspace_file_if_needed, noop_migration, parse_registry_version, parse_version,
-};
-#[cfg(test)]
-pub(crate) use jackin_config::versions::LEGACY_VERSION;
-#[cfg(test)]
 pub(crate) use jackin_config::migrations::{
     CONFIG_MIGRATIONS, KubernetesVersion, WORKSPACE_MIGRATIONS, assert_registry_chain,
 };
 #[cfg(test)]
+pub(crate) use jackin_config::versions::LEGACY_VERSION;
+#[cfg(test)]
 pub(crate) use jackin_config::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
 #[cfg(test)]
-pub(crate) use toml_edit::DocumentMut;
+pub(crate) use jackin_config::{
+    Channel, MigrationStep, SchemaVersion, apply_migrations, migrate_config_file_if_needed,
+    migrate_workspace_file_if_needed, noop_migration, parse_registry_version, parse_version,
+};
 #[cfg(test)]
 pub(crate) use std::num::NonZeroU32;
+#[cfg(test)]
+pub(crate) use toml_edit::DocumentMut;
 
 #[cfg(test)]
 mod tests;

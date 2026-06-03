@@ -8,10 +8,10 @@
 //! transient state during the setup-once window; they must not surface it as
 //! a terminal error.
 
-use jackin_core::{CommandRunner, RunOptions};
-use jackin_docker::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
 use anyhow::Context as _;
+use jackin_core::{CommandRunner, RunOptions};
+use jackin_docker::docker_client::DockerApi;
 
 /// Shell command for querying the in-container daemon's session
 /// inventory.
@@ -53,10 +53,10 @@ pub(super) async fn wait_for_capsule_daemon(
     .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"))
 }
 
-pub use jackin_docker::docker_client::ContainerState;
 #[cfg(test)]
 use crate::instance::{InstanceIndex, InstanceStatus};
 use jackin_core::paths::JackinPaths;
+pub use jackin_docker::docker_client::ContainerState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSession {

@@ -93,11 +93,8 @@ fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
             .clone()
             .expect("test runner must be set before executing a load")
     });
-    let rx = crate::console::services::op_picker::start_load(
-        pending.cached,
-        pending.request,
-        runner,
-    );
+    let rx =
+        crate::console::services::op_picker::start_load(pending.cached, pending.request, runner);
     s.attach_load_receiver(rx);
     true
 }

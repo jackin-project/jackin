@@ -5,13 +5,13 @@
 //! responsible for Dockerfile validation or manifest parsing — those are
 //! handled in `repo.rs` and `repo_contract.rs` after the cache is warm.
 
-use jackin_core::{CommandRunner, RunOptions};
 use crate::instance::runtime_slug;
-use jackin_core::paths::JackinPaths;
-use jackin_manifest::repo::{CachedRepo, validate_role_repo};
-use jackin_core::selector::RoleSelector;
 use anyhow::Context;
 use fs2::FileExt;
+use jackin_core::paths::JackinPaths;
+use jackin_core::selector::RoleSelector;
+use jackin_core::{CommandRunner, RunOptions};
+use jackin_manifest::repo::{CachedRepo, validate_role_repo};
 #[cfg(test)]
 use std::io::IsTerminal;
 
@@ -178,7 +178,11 @@ async fn resolve_agent_repo(
     runner: &mut impl CommandRunner,
     debug: bool,
     branch_override: Option<&str>,
-) -> anyhow::Result<(CachedRepo, jackin_manifest::repo::ValidatedRoleRepo, std::fs::File)> {
+) -> anyhow::Result<(
+    CachedRepo,
+    jackin_manifest::repo::ValidatedRoleRepo,
+    std::fs::File,
+)> {
     resolve_agent_repo_with(
         paths,
         selector,
@@ -379,7 +383,11 @@ pub(super) async fn resolve_agent_repo_with(
     runner: &mut impl CommandRunner,
     opts: RepoResolveOptions,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
-) -> anyhow::Result<(CachedRepo, jackin_manifest::repo::ValidatedRoleRepo, std::fs::File)> {
+) -> anyhow::Result<(
+    CachedRepo,
+    jackin_manifest::repo::ValidatedRoleRepo,
+    std::fs::File,
+)> {
     let normalized = normalize_github_url(git_url);
     let git_url = normalized.as_str();
     let cached_repo = opts.branch_override.as_deref().map_or_else(

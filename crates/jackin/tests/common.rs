@@ -11,10 +11,10 @@ use jackin::paths::JackinPaths;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
-/// Install the test stub for `jackin-capsule` so integration tests
-/// don't try to download the binary from the GitHub preview release.
+/// Install the test stub for `jackin-capsule` so integration tests skip the download.
+///
 /// `cargo test` of the lib uses `cfg!(test)` for the same purpose;
-/// integration tests need to call this explicitly because cfg(test)
+/// integration tests need to call this explicitly because `cfg(test)`
 /// only affects the lib when compiled for the lib's own test target.
 #[allow(dead_code)]
 pub fn install_capsule_binary_stub(paths: &JackinPaths) {
@@ -91,9 +91,10 @@ impl DockerApi for NoOpDocker {
     }
 }
 
-/// Queue-based `CommandRunner` for `load_role` integration tests. Pre-fills
-/// 4 empty slots for the identity-lookup preamble (git config user.name/email,
-/// id -u/-g); GC calls now go through `DockerApi`, not `CommandRunner`.
+/// Queue-based `CommandRunner` for `load_role` integration tests.
+///
+/// Pre-fills 4 empty slots for the identity-lookup preamble (git config
+/// user.name/email, id -u/-g); GC calls now go through `DockerApi`, not `CommandRunner`.
 #[derive(Default)]
 #[allow(dead_code)]
 pub struct FakeRunner {

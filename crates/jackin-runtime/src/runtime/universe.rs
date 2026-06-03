@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use jackin_docker::docker_client::DockerApi;
 use jackin_core::paths::JackinPaths;
+use jackin_docker::docker_client::DockerApi;
 
 const FORCE_BOUNDARY_RITUALS_ENV: &str = "JACKIN_FORCE_BOUNDARY_RITUALS";
 const FORCE_BOUNDARY_INTRO_ENV: &str = "JACKIN_FORCE_BOUNDARY_INTRO";

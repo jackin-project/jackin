@@ -7,16 +7,16 @@
 //! Key invariant: the derived image label set written here is the authority
 //! consumed by `discovery` and `naming` for cache-hit detection.
 
-use jackin_image::capsule_binary;
-use jackin_image::derived_image::create_derived_build_context;
-use jackin_core::{CommandRunner, RunOptions};
-use jackin_docker::docker_client::DockerApi;
-use jackin_core::paths::JackinPaths;
-use jackin_manifest::repo::CachedRepo;
-use jackin_core::selector::RoleSelector;
-use jackin_image::version_check;
 use anyhow::Context as _;
 use futures_util::future::try_join_all;
+use jackin_core::paths::JackinPaths;
+use jackin_core::selector::RoleSelector;
+use jackin_core::{CommandRunner, RunOptions};
+use jackin_docker::docker_client::DockerApi;
+use jackin_image::capsule_binary;
+use jackin_image::derived_image::create_derived_build_context;
+use jackin_image::version_check;
+use jackin_manifest::repo::CachedRepo;
 use std::path::PathBuf;
 
 use super::identity::HostIdentity;
@@ -116,8 +116,8 @@ pub(super) async fn build_agent_image(
     // Skip the pre-built image when JACKIN_CONSTRUCT_IMAGE points at a local
     // build: the published image was built against the canonical construct, so
     // using it as base would silently ignore the local construct override.
-    let custom_construct =
-        jackin_manifest::repo_contract::construct_image() != jackin_manifest::repo_contract::CONSTRUCT_IMAGE;
+    let custom_construct = jackin_manifest::repo_contract::construct_image()
+        != jackin_manifest::repo_contract::CONSTRUCT_IMAGE;
     let mut use_prebuilt =
         published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
     let mut base_image_override = if use_prebuilt { published_image } else { None };

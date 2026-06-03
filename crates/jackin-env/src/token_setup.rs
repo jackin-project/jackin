@@ -649,11 +649,7 @@ pub fn run_revoke_with_runner(
         &EnvScope::Workspace(workspace.to_string()),
         CLAUDE_OAUTH_TOKEN_ENV,
     );
-    editor.set_workspace_auth_forward(
-        workspace,
-        Agent::Claude,
-        Some(AuthForwardMode::Ignore),
-    );
+    editor.set_workspace_auth_forward(workspace, Agent::Claude, Some(AuthForwardMode::Ignore));
     let saved = editor.save()?;
     *config = saved;
 
@@ -932,9 +928,7 @@ enum OrphanCleanup {
 
 impl OrphanCleanup {
     fn run(op_writer: &dyn OpWriteRunner, op_ref: &OpRef, account: Option<&str>) -> Self {
-        let Some(parts) =
-            jackin_console::op_reference::parse_op_reference(&op_ref.op)
-        else {
+        let Some(parts) = jackin_console::op_reference::parse_op_reference(&op_ref.op) else {
             return Self::UnparseableRef {
                 op: op_ref.op.clone(),
             };

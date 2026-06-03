@@ -8,15 +8,12 @@
 
 // ── Logging and terminal substrate — re-exported from jackin-diagnostics ───
 
+pub(crate) use jackin_diagnostics::{begin_debug_buffering, end_debug_buffering};
 pub use jackin_diagnostics::{
-    emit_compact_line, emit_debug_line, format_debug_line, is_debug_mode, set_debug_mode,
-    host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
+    emit_compact_line, emit_debug_line, format_debug_line, host_screen_owned, is_debug_mode,
+    reassert_alt_screen, rich_surface_active, rich_terminal_owned, set_debug_mode,
     set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
 };
-pub(crate) use jackin_diagnostics::{begin_debug_buffering, end_debug_buffering};
-
-#[cfg(test)]
-pub(crate) use jackin_diagnostics::drain_debug_buffer_for_test;
 
 // ── Output and animation — re-exported from jackin-tui ──────────────────
 

@@ -2,10 +2,7 @@
 //! `jackin-config::app_config_roles`.
 
 #[cfg(test)]
-pub(crate) use crate::config::{
-    AppConfig, AuthForwardMode,
-    build_github_env_layers, resolve_mode,
-};
+pub(crate) use crate::config::{AppConfig, AuthForwardMode, build_github_env_layers, resolve_mode};
 
 #[cfg(test)]
 mod resolve_mode_tests;

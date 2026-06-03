@@ -1,6 +1,6 @@
 //! Tests for `instance/auth` — amp auth tests.
-use jackin_config::AuthForwardMode;
 use crate::instance::{AuthProvisionOutcome, RoleState};
+use jackin_config::AuthForwardMode;
 use std::path::Path;
 use tempfile::tempdir;
 

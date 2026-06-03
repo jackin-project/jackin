@@ -8,8 +8,8 @@
 //! Not responsible for: parsing the manifest file (`manifest.rs`), or
 //! validating the role-repo filesystem (`repo.rs`).
 
-use jackin_core::manifest::{EnvVarDecl, ManifestWarning, RoleManifest};
 use jackin_core::env_model::extract_interpolation_refs;
+use jackin_core::manifest::{EnvVarDecl, ManifestWarning, RoleManifest};
 
 /// Check that an env var name contains only `[A-Za-z0-9_]` and doesn't start with a digit.
 pub fn is_valid_env_var_name(name: &str) -> bool {
