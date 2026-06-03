@@ -28,7 +28,6 @@ pub mod manifest;
 pub mod net;
 pub mod operator_env;
 pub mod paths;
-pub(crate) mod prune_output;
 pub mod repo;
 pub mod repo_contract;
 pub mod role_authoring;

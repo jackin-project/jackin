@@ -117,6 +117,7 @@ nursery = { level = "warn", priority = -1 }
 
 # Restriction lints (opt-in best practices)
 dbg_macro = "deny"
+mod_module_files = "deny"
 todo = "warn"
 unimplemented = "deny"
 
