@@ -310,12 +310,12 @@ impl AppConfig {
 
         let mut config = load_split_config(paths, contents_opt)?;
 
-        // Pre-sync validation: gives the operator the canonical
-        // validate_reserved_names error rather than save()'s "rejecting
-        // candidate config" wrapper. ConfigEditor::save runs the same check
-        // via validate_candidate; this call covers the path where save() is
-        // never invoked because builtins did not drift.
-        crate::operator_env::validate_reserved_names(&config)?;
+        // Pre-sync validation: gives the operator a reserved-name error
+        // rather than save()'s "rejecting candidate config" wrapper.
+        // ConfigEditor::save runs the same check via validate_candidate;
+        // this call covers the path where save() is never invoked because
+        // builtins did not drift.
+        validate_reserved_env_names(&config)?;
 
         let builtins_changed = config.sync_builtin_agents();
 
@@ -340,6 +340,45 @@ impl AppConfig {
         config.validate_workspaces()?;
         Ok(config)
     }
+}
+
+/// Reject operator env maps that declare any reserved runtime name.
+/// Mirrors `operator_env::validate_reserved_names` but located in `config` so
+/// `config` does not depend on `operator_env` (which would form a cycle).
+pub(crate) fn validate_reserved_env_names(config: &crate::config::AppConfig) -> anyhow::Result<()> {
+    let mut offenses: Vec<String> = Vec::new();
+    let mut check =
+        |layer: &str, env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>| {
+            for key in env.keys() {
+                if crate::env_model::is_reserved(key) {
+                    offenses.push(format!(
+                        "  - {key:?} is reserved by the jackin runtime; declared in {layer}"
+                    ));
+                }
+            }
+        };
+
+    check("global env", &config.env);
+    for (role_name, role_source) in &config.roles {
+        check(&format!("role \"{role_name}\" env"), &role_source.env);
+    }
+    for (ws_name, ws) in &config.workspaces {
+        check(&format!("workspace \"{ws_name}\" env"), &ws.env);
+        for (role_name, override_) in &ws.roles {
+            check(
+                &format!("workspace \"{ws_name}\" role \"{role_name}\" env"),
+                &override_.env,
+            );
+        }
+    }
+
+    if offenses.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "config contains reserved jackin runtime env vars:\n{}",
+        offenses.join("\n")
+    )
 }
 
 fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {

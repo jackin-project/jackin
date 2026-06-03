@@ -168,13 +168,13 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 **Cut the remaining upward edges**
 - [ ] **`config → runtime::list_role_names` (still live — roadmap wrongly claims Stage 1 cut it):** relocate `detect_workspace_edit_drift` (`config/workspaces/mod.rs:36`, calls `list_role_names` at `:46`) out of the config module to a runtime-side module. It already takes `&impl DockerApi` and pulls `isolation::state` + `runtime` + `workspace` — it is runtime/isolation drift logic mis-placed under `config/`. No trait inversion needed; both sides land in `jackin-runtime`
 - [x] **`config → instance::naming` (test-only):** repoint `config/workspaces/tests.rs:345` from `crate::instance::naming::CONTAINER_PREFIX_DASH` to `jackin_core::constants::CONTAINER_PREFIX_DASH` (there is no production `config → instance::naming` edge)
-- [ ] **`config ↔ operator_env` (unlisted cycle):** move `validate_reserved_names(&AppConfig)` (`operator_env/mod.rs:1364`) out of the config load/save path — its only two `config`-side callers are `config/persist/mod.rs:318` and `config/editor/mod.rs:690`. After this, `operator_env`'s only real edge is the legal `→ config::AppConfig` direction. See [The cycles, re-measured](#the-cycles-re-measured)
+- [x] **`config ↔ operator_env` (unlisted cycle):** move `validate_reserved_names(&AppConfig)` (`operator_env/mod.rs:1364`) out of the config load/save path — its only two `config`-side callers are `config/persist/mod.rs:318` and `config/editor/mod.rs:690`. After this, `operator_env`'s only real edge is the legal `→ config::AppConfig` direction. See [The cycles, re-measured](#the-cycles-re-measured)
 
 ### Cycle-breaking status
 - [x] `agent → config` broken (Agent uses `jackin_core::AuthForwardMode`)
 - [~] `config ↔ workspace`: the `*AuthConfig` data half already pre-extracted to the `jackin-config` scaffold; **residual is genuine logic coupling** (`token_setup → ConfigEditor/AppConfig`, `resolve → AppConfig`, version constants). Dissolves only when config + workspace become one `jackin-config` crate (Stage 4)
 - [~] `config → isolation::state → workspace → config`: the `MountIsolation` leg already dissolved (enum in core); the live leg is `config/workspaces → isolation::state`. Dissolves when `isolation` → `jackin-runtime`
-- [ ] `config ↔ operator_env`: cut by the `validate_reserved_names` relocation above
+- [x] `config ↔ operator_env`: cut by the `validate_reserved_names` relocation above
 - [x] `env_model ↔ manifest`: cut by moving `EnvVarDecl` to core (above)
 
 ---

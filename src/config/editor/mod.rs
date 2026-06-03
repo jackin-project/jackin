@@ -687,7 +687,7 @@ fn validate_candidate(
             .with_context(|| format!("deserializing candidate workspace {name:?}"))?;
         config.workspaces.insert(name.clone(), workspace);
     }
-    crate::operator_env::validate_reserved_names(&config)?;
+    crate::config::persist::validate_reserved_env_names(&config)?;
     Ok(config)
 }
 
