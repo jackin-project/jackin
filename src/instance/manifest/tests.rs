@@ -1,4 +1,4 @@
-//! Tests for `manifest`.
+//! Tests for `instance/manifest`.
 use super::*;
 use tempfile::tempdir;
 

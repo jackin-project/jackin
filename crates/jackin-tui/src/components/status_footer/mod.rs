@@ -1,0 +1,193 @@
+//! White bottom status footer component.
+
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Paragraph, Widget};
+
+use crate::theme::{DEBUG_AMBER, LINK_BLUE, WHITE, faded};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatusFooterHover {
+    pub left: bool,
+    pub right: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StatusFooter<'a> {
+    left: &'a str,
+    right: &'a str,
+    right_debug: Option<&'a str>,
+    alpha: f32,
+    hover: StatusFooterHover,
+}
+
+impl<'a> StatusFooter<'a> {
+    #[must_use]
+    pub const fn new(left: &'a str) -> Self {
+        Self {
+            left,
+            right: "",
+            right_debug: None,
+            alpha: 1.0,
+            hover: StatusFooterHover {
+                left: false,
+                right: false,
+            },
+        }
+    }
+
+    #[must_use]
+    pub const fn right(mut self, right: &'a str) -> Self {
+        self.right = right;
+        self
+    }
+
+    #[must_use]
+    pub const fn right_debug(mut self, right_debug: Option<&'a str>) -> Self {
+        self.right_debug = right_debug;
+        self
+    }
+
+    #[must_use]
+    pub const fn alpha(mut self, alpha: f32) -> Self {
+        self.alpha = alpha;
+        self
+    }
+
+    #[must_use]
+    pub const fn left_hover(mut self, left_hover: bool) -> Self {
+        self.hover.left = left_hover;
+        self
+    }
+
+    #[must_use]
+    pub const fn right_hover(mut self, right_hover: bool) -> Self {
+        self.hover.right = right_hover;
+        self
+    }
+}
+
+impl Widget for StatusFooter<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Block::default()
+            .style(
+                Style::default()
+                    .bg(faded(WHITE, self.alpha))
+                    .fg(Color::Black),
+            )
+            .render(area, buf);
+
+        let mut right_spans: Vec<Span<'static>> = Vec::new();
+        if !self.right.is_empty() {
+            right_spans.push(Span::styled(
+                format!(" {} ", self.right),
+                Style::default()
+                    .bg(faded(WHITE, self.alpha))
+                    .fg(faded(
+                        if self.hover.right {
+                            DEBUG_AMBER
+                        } else {
+                            LINK_BLUE
+                        },
+                        self.alpha,
+                    ))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        if let Some(debug) = self.right_debug.filter(|debug| !debug.is_empty()) {
+            right_spans.push(Span::styled(
+                format!(" {debug} "),
+                Style::default()
+                    .bg(faded(WHITE, self.alpha))
+                    .fg(faded(DEBUG_AMBER, self.alpha))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        let right_width = u16::try_from(
+            right_spans
+                .iter()
+                .map(|span| span.content.chars().count())
+                .sum::<usize>(),
+        )
+        .unwrap_or(u16::MAX);
+
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(1), Constraint::Length(right_width)])
+            .split(area);
+
+        let activity_fg = if self.hover.left {
+            faded(LINK_BLUE, self.alpha)
+        } else {
+            Color::Black
+        };
+        let activity = Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                self.left.to_string(),
+                Style::default()
+                    .bg(faded(WHITE, self.alpha))
+                    .fg(activity_fg)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        Paragraph::new(activity).render(cols[0], buf);
+
+        if !right_spans.is_empty() {
+            Paragraph::new(Line::from(right_spans))
+                .alignment(Alignment::Right)
+                .render(cols[1], buf);
+        }
+    }
+}
+
+pub fn render_status_footer(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    left: &str,
+    right: &str,
+    right_debug: Option<&str>,
+    alpha: f32,
+    hover: StatusFooterHover,
+) {
+    frame.render_widget(
+        StatusFooter::new(left)
+            .right(right)
+            .right_debug(right_debug)
+            .alpha(alpha)
+            .left_hover(hover.left)
+            .right_hover(hover.right),
+        area,
+    );
+}
+
+#[must_use]
+pub fn status_footer_right_chip_rect(
+    area: Rect,
+    right: &str,
+    right_debug: Option<&str>,
+) -> Option<Rect> {
+    if right.is_empty() || area.width == 0 || area.height == 0 {
+        return None;
+    }
+    let right_width = u16::try_from(format!(" {right} ").chars().count()).unwrap_or(u16::MAX);
+    let debug_width = right_debug
+        .filter(|debug| !debug.is_empty())
+        .map(|debug| u16::try_from(format!(" {debug} ").chars().count()).unwrap_or(u16::MAX))
+        .unwrap_or(0);
+    let total_width = right_width.saturating_add(debug_width);
+    let x = area
+        .x
+        .saturating_add(area.width.saturating_sub(total_width));
+    Some(Rect {
+        x,
+        y: area.y,
+        width: right_width.min(area.width),
+        height: area.height,
+    })
+}
+
+#[cfg(test)]
+mod tests;

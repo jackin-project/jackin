@@ -1,0 +1,74 @@
+//! Tests for `socket_backend`.
+use ratatui::{Terminal, backend::Backend, layout::Rect, text::Span, widgets::Paragraph};
+
+use super::{CellStyle, SocketBackend};
+
+#[test]
+fn backend_renders_text_to_output_buffer() {
+    let backend = SocketBackend::new(10, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            frame.render_widget(Paragraph::new(Span::raw("hi")), area);
+        })
+        .unwrap();
+    let output = terminal.backend_mut().take_output();
+    // Each character gets its own cursor-positioning sequence; verify
+    // both letters appear in the output.
+    let text = String::from_utf8_lossy(&output);
+    assert!(
+        text.contains('h') && text.contains('i'),
+        "expected 'h' and 'i' in output: {text:?}"
+    );
+}
+
+#[test]
+fn resize_updates_reported_size() {
+    let mut backend = SocketBackend::new(80, 24);
+    backend.current_style = CellStyle {
+        fg: ratatui::style::Color::Red,
+        bg: ratatui::style::Color::Blue,
+        modifiers: ratatui::style::Modifier::BOLD,
+    };
+    backend.resize(120, 40);
+    let size = backend.size().unwrap();
+    assert_eq!(size.width, 120);
+    assert_eq!(size.height, 40);
+    assert_eq!(backend.current_style, CellStyle::default());
+}
+
+#[test]
+fn take_output_drains_buffer() {
+    let backend = SocketBackend::new(10, 1);
+    let terminal = Terminal::new(backend).unwrap();
+    let _ = terminal; // do not call draw
+    let mut backend = SocketBackend::new(10, 1);
+    // Push directly for simplicity.
+    backend.output.extend_from_slice(b"hello");
+    let first = backend.take_output();
+    let second = backend.take_output();
+    assert_eq!(first, b"hello");
+    assert!(second.is_empty());
+}
+
+#[test]
+fn cursor_movement_uses_1_based_coords() {
+    let backend = SocketBackend::new(10, 5);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                Paragraph::new(Span::styled("X", ratatui::style::Style::default())),
+                Rect::new(2, 3, 1, 1),
+            );
+        })
+        .unwrap();
+    let output = terminal.backend_mut().take_output();
+    let text = String::from_utf8_lossy(&output);
+    // Row 3 (0-based) → row 4 (1-based), col 2 → col 3
+    assert!(
+        text.contains("\x1b[4;3H") || text.contains("\x1b[4;1H"),
+        "expected cursor at row 4: {text:?}"
+    );
+}

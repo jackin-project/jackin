@@ -1,0 +1,149 @@
+//! Tests for `render`.
+use super::*;
+use std::path::PathBuf;
+use tempfile::tempdir;
+
+fn make_state_at(path: PathBuf) -> FileBrowserState {
+    FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+        path.clone(),
+        path,
+    ))
+}
+
+// ── Render: ensure the ` (git)` suffix actually appears ───────────
+
+#[test]
+fn git_entries_render_with_git_suffix() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir(tmp.path().join("plain")).unwrap();
+
+    // Use a state where the selection is NOT on the git row, so the
+    // suffix renders as a separate span rather than getting absorbed
+    // into the highlight style.
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    // Sort order is alphabetical lowercase: plain < repo. Select plain
+    // (index 0) so repo's ` (git)` suffix renders unhighlighted.
+    state.list_state.select(Some(0));
+
+    let backend = TestBackend::new(40, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let dump = buffer
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(dump.contains("repo/"), "repo row should render: {dump:?}");
+    assert!(
+        dump.contains("(git)"),
+        "git suffix should render on the repo row: {dump:?}"
+    );
+    assert!(dump.contains("plain/"));
+}
+
+// ── Entry name colour (WHITE) ─────────────────────────────────────
+
+/// Plain (non-git) directory entries render their name in WHITE so
+/// the listing stays legible against phosphor-green accents.
+#[test]
+fn non_git_entry_renders_in_white() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let tmp = tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("plain")).unwrap();
+
+    let state = make_state_at(tmp.path().to_path_buf());
+    // Make sure nothing is selected so the highlight style doesn't
+    // mask the base WHITE colour we want to assert on.
+    let mut state = state;
+    state.list_state.select(None);
+
+    let backend = TestBackend::new(40, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    // Locate the first cell of the name "plain" — rows start at y=0
+    // with the block's top border, so the first entry sits at y=1
+    // and the name begins at x = 1 (border) + 2 (indent) = 3.
+    let cell = &buffer[(3, 1)];
+    assert_eq!(
+        cell.symbol(),
+        "p",
+        "expected 'p' at the entry's first char, got {:?}",
+        cell.symbol()
+    );
+    assert_eq!(
+        cell.fg, WHITE,
+        "non-git entry name should render in WHITE, got {:?}",
+        cell.fg
+    );
+}
+
+/// Git-repo entries render the name in WHITE and the ` (git)` suffix
+/// in `PHOSPHOR_GREEN` so the marker pops against the otherwise-white row.
+#[test]
+fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    // Clear selection so the highlight style doesn't mask the spans.
+    state.list_state.select(None);
+
+    let backend = TestBackend::new(40, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    // First entry row is at y=1 (below the block's top border).
+    // Name starts at x = 1 (border) + 2 (indent) = 3.
+    let name_cell = &buffer[(3, 1)];
+    assert_eq!(
+        name_cell.symbol(),
+        "r",
+        "expected 'r' at name's first char, got {:?}",
+        name_cell.symbol()
+    );
+    assert_eq!(
+        name_cell.fg, WHITE,
+        "git entry name should render in WHITE, got {:?}",
+        name_cell.fg
+    );
+
+    // Suffix: "  repo/ (git)" — the '(' of "(git)" sits at
+    // x = 3 (name start) + 5 (len of "repo/") + 1 (space) = 9.
+    let paren_cell = &buffer[(9, 1)];
+    assert_eq!(
+        paren_cell.symbol(),
+        "(",
+        "expected '(' at the suffix's first char, got {:?}",
+        paren_cell.symbol()
+    );
+    assert_eq!(
+        paren_cell.fg, PHOSPHOR_GREEN,
+        "git suffix should render in PHOSPHOR_GREEN, got {:?}",
+        paren_cell.fg
+    );
+}

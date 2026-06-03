@@ -1,4 +1,4 @@
-//! Tests for `validate`.
+//! Tests for `manifest/validate`.
 use super::*;
 use tempfile::tempdir;
 
