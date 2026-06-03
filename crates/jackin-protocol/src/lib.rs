@@ -208,7 +208,9 @@ impl Provider {
         minimax_key: bool,
         kimi_key: bool,
     ) -> Vec<Provider> {
-        let mut providers = vec![Provider::Anthropic];
+        // Only alternative providers — Anthropic is the default and never
+        // needs explicit selection. An empty list means no picker is shown.
+        let mut providers = vec![];
         match agent_slug {
             "claude" | "opencode" => {
                 if zai_key {
@@ -227,11 +229,18 @@ impl Provider {
             }
             _ => {}
         }
-        // Empty list signals "no picker needed" (only Anthropic available).
-        if providers.len() <= 1 {
-            Vec::new()
-        } else {
-            providers
+        providers
+    }
+
+    /// Model string in `provider/model` format for OpenCode's `-m` flag.
+    /// `None` for Anthropic (use OpenCode's own default model selection).
+    #[must_use]
+    pub fn opencode_model(self) -> Option<&'static str> {
+        match self {
+            Provider::Anthropic => None,
+            Provider::Zai => Some("zai/glm-5.1"),
+            Provider::Minimax => Some("minimax/MiniMax-M3"),
+            Provider::Kimi => Some("kimi/kimi-for-coding"),
         }
     }
 }
@@ -345,34 +354,30 @@ mod provider_tests {
 
     #[test]
     fn available_for_provider_matrix() {
-        // Claude: all three alt providers when keys present.
+        // Anthropic is the default — never in the returned list.
+        // Claude: alt providers only when keys present.
         assert_eq!(
             Provider::available_for("claude", true, false, false),
-            vec![Provider::Anthropic, Provider::Zai]
+            vec![Provider::Zai]
         );
         assert_eq!(
             Provider::available_for("claude", false, true, false),
-            vec![Provider::Anthropic, Provider::Minimax]
+            vec![Provider::Minimax]
         );
         assert_eq!(
             Provider::available_for("claude", false, false, true),
-            vec![Provider::Anthropic, Provider::Kimi]
+            vec![Provider::Kimi]
         );
         assert_eq!(
             Provider::available_for("claude", true, true, true),
-            vec![
-                Provider::Anthropic,
-                Provider::Zai,
-                Provider::Minimax,
-                Provider::Kimi
-            ]
+            vec![Provider::Zai, Provider::Minimax, Provider::Kimi]
         );
         assert!(Provider::available_for("claude", false, false, false).is_empty());
 
         // Codex: MiniMax only (GLM/Kimi deferred).
         assert_eq!(
             Provider::available_for("codex", false, true, false),
-            vec![Provider::Anthropic, Provider::Minimax]
+            vec![Provider::Minimax]
         );
         assert!(Provider::available_for("codex", true, false, false).is_empty());
         assert!(Provider::available_for("codex", false, false, true).is_empty());
@@ -380,7 +385,7 @@ mod provider_tests {
         // OpenCode: same matrix as Claude.
         assert_eq!(
             Provider::available_for("opencode", true, true, false),
-            vec![Provider::Anthropic, Provider::Zai, Provider::Minimax]
+            vec![Provider::Zai, Provider::Minimax]
         );
         assert!(Provider::available_for("opencode", false, false, false).is_empty());
 

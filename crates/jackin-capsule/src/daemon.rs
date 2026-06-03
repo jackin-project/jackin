@@ -1581,14 +1581,19 @@ impl Multiplexer {
                     Some(p) => format!("{} ({})", capitalize(slug), p),
                     None => capitalize(slug),
                 };
+                // For OpenCode, use provider/model format when a provider is
+                // selected; fall back to the manifest model otherwise.
+                let model = if slug == "opencode" {
+                    provider_label
+                        .and_then(jackin_protocol::Provider::from_label)
+                        .and_then(jackin_protocol::Provider::opencode_model)
+                        .or_else(|| self.model_for_agent(slug))
+                } else {
+                    self.model_for_agent(slug)
+                };
                 SessionLaunch {
                     label,
-                    cmd: build_agent_command(
-                        slug,
-                        self.model_for_agent(slug),
-                        env_passthrough,
-                        cwd,
-                    ),
+                    cmd: build_agent_command(slug, model, env_passthrough, cwd),
                 }
             }
             None => SessionLaunch {

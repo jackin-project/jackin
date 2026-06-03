@@ -1420,7 +1420,7 @@ mod quit_confirm_tests {
                 crate::agent::Agent::Claude,
             )
             .len(),
-            2
+            1
         );
         config.env.clear();
 
@@ -1438,7 +1438,7 @@ mod quit_confirm_tests {
                 crate::agent::Agent::Claude,
             )
             .len(),
-            2
+            1
         );
 
         config.workspaces.remove("workspace-demo");
@@ -1460,7 +1460,7 @@ mod quit_confirm_tests {
                 crate::agent::Agent::Claude,
             )
             .len(),
-            2
+            1
         );
 
         config.roles.clear();
@@ -1482,8 +1482,8 @@ mod quit_confirm_tests {
             "the-architect",
             crate::agent::Agent::Claude,
         );
-        assert_eq!(providers.len(), 2);
-        assert_eq!(providers[1], jackin_protocol::Provider::Zai);
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0], jackin_protocol::Provider::Zai);
     }
 
     #[test]
