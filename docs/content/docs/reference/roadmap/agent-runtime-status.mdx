@@ -33,7 +33,7 @@ This design is based on a May 28, 2026 source review of [Herdr](https://github.c
 |---|---|---|---|
 | Herdr | `ogulcancelik/herdr` commit `2d8b4e2db4642dede084801c03516046f205626b`; latest release observed as `v0.6.4` on May 27, 2026. | AGPL-3.0-or-later | Process ownership, visible-screen fallback, socket reports, central arbitration, and `done` until viewed. |
 | multicode | `graemerocher/multicode` commit `4a9852b4a5ca62134e59bcc78a2dc0fb704d47b4`; pushed May 5, 2026. | Apache-2.0 | Codex app-server status, OpenCode SSE/session APIs, descendant session roll-up, and cooperative state files. |
-| jackin' | Current branch state in <RepoFile path="src/agent/mod.rs" />, <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />, and <RepoFile path="docker/runtime/entrypoint.sh" />. | Apache-2.0 | Built-in agents are Claude Code, Codex, Amp, Kimi, and OpenCode; Capsule already owns the PTY, parser, socket, and runtime-local setup path. |
+| jackin' | Current branch state in <RepoFile path="crates/jackin-core/src/agent.rs" />, <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />, and <RepoFile path="docker/runtime/entrypoint.sh" />. | Apache-2.0 | Built-in agents are Claude Code, Codex, Amp, Kimi, and OpenCode; Capsule already owns the PTY, parser, socket, and runtime-local setup path. |
 
 Herdr is AGPL-3.0 and cannot be embedded in jackin' Apache-2.0 code. The implementation must be written from scratch. The value is the product shape and signal hierarchy, not source reuse.
 
@@ -135,7 +135,7 @@ This belongs in jackin' as a fallback/probe, not as the primary blocker detector
 
 ## Current jackin' Surface
 
-The built-in runtimes are exactly `claude`, `codex`, `amp`, `kimi`, and `opencode` in <RepoFile path="src/agent/mod.rs" />. Runtime setup already centralizes agent home seeding and credential copying in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />. Launch currently passes high-autonomy flags in <RepoFile path="docker/runtime/entrypoint.sh" />: Claude Code uses dangerous-skip-permissions, Codex uses dangerous bypass approvals/sandbox, Amp uses dangerous allow-all, Kimi uses yolo mode, and OpenCode gets permission allow config. These flags lower the number of tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures.
+The built-in runtimes are exactly `claude`, `codex`, `amp`, `kimi`, and `opencode` in <RepoFile path="crates/jackin-core/src/agent.rs" />. Runtime setup already centralizes agent home seeding and credential copying in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />. Launch currently passes high-autonomy flags in <RepoFile path="docker/runtime/entrypoint.sh" />: Claude Code uses dangerous-skip-permissions, Codex uses dangerous bypass approvals/sandbox, Amp uses dangerous allow-all, Kimi uses yolo mode, and OpenCode gets permission allow config. These flags lower the number of tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures.
 
 Capsule already owns the right implementation point: the PTY reader, `vt100` parser state, session lifecycle, 1Hz ticker, control socket at `/jackin/run/jackin.sock`, and in-container setup hooks. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
 
@@ -384,5 +384,5 @@ Out of scope for the first implementation:
 - <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — existing Capsule socket at `/jackin/run/jackin.sock`.
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — runtime-local setup path for container-owned hooks/plugins/API bridges.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — built-in agent launch commands and autonomy flags.
-- <RepoFile path="src/agent/mod.rs" /> — built-in runtime enum and slugs.
-- <RepoFile path="src/runtime/launch/mod.rs" /> — host launch path that must pass only explicit/container-local state setup.
+- <RepoFile path="crates/jackin-core/src/agent.rs" /> — built-in runtime enum and slugs.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — host launch path that must pass only explicit/container-local state setup.

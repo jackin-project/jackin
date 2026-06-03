@@ -191,7 +191,7 @@ host:
   -> render console preview / pane picker
 ```
 
-On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="src/runtime/snapshot/mod.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
+On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
 
 ### Failure and Security Boundaries
 
@@ -330,11 +330,11 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ## Distribution and versioning
 
-`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
+`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/jackin/build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
 
 ### How jackin' acquires the binary
 
-`ensure_available` in <RepoFile path="src/capsule_binary/mod.rs" /> resolves the binary in priority order:
+`ensure_available` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> resolves the binary in priority order:
 
 1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin' uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin' validates only that the file exists and is executable.
 
@@ -348,7 +348,7 @@ jackin' itself has no knowledge of how to build `jackin-capsule` from source. Bu
 
 ### Building for local development
 
-Use the `build-jackin-capsule` binary (defined in <RepoFile path="src/bin/build_jackin_capsule.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
 
 - `arm64` → `aarch64-unknown-linux-gnu.2.17`
 - `amd64` → `x86_64-unknown-linux-gnu.2.17`
@@ -384,19 +384,19 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 ### Derived image build
 
-<RepoFile path="src/derived_image/mod.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
+<RepoFile path="crates/jackin-image/src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
 
 ## Relationship to the rest of jackin'
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="src/capsule_binary/mod.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
-| <RepoFile path="src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
-| <RepoFile path="src/derived_image/mod.rs" /> | Copies binary into derived image build context |
+| <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
+| <RepoFile path="crates/jackin-image/src/derived_image.rs" /> | Copies binary into derived image build context |
 | <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
-| <RepoFile path="src/runtime/launch/mod.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
-| <RepoFile path="src/runtime/attach/mod.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
-| <RepoFile path="src/isolation/finalize/mod.rs" /> | Queries socket to detect live sessions before cleanup |
+| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
+| <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
+| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |
 | [jackin' daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |

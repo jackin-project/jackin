@@ -6,26 +6,26 @@ title: "Agent runtime trait — replace the closed Agent enum with per-runtime m
 
 ## Problem
 
-**Note (2026-06-03):** `enum Agent` has moved to `crates/jackin-core/src/agent.rs` as part of the Stage 1 vocabulary extraction. The paths below reflect the current codebase; <RepoFile path="src/agent/mod.rs" /> is now a one-line re-export of `jackin_core::Agent`.
+**Note (2026-06-03):** `enum Agent` has moved to `crates/jackin-core/src/agent.rs` as part of the Stage 1 vocabulary extraction. The paths below reflect the current codebase; <RepoFile path="crates/jackin-core/src/agent.rs" /> is now a one-line re-export of `jackin_core::Agent`.
 
 <RepoFile path="crates/jackin-core/src/agent.rs" /> defines `enum Agent { Claude, Codex, Amp, Kimi, Opencode }` — five closed variants, behind a `pub const` slug table and a hand-rolled `FromStr`. Every layer of the codebase then re-matches on it. The cost of adding a sixth runtime today is not "one new variant"; it is a sweeping, cross-file edit that an agent or human reviewer cannot mechanically verify:
 
 | File | `Agent::Variant` references | Role in the dispatch fan-out |
 |---|---|---|
-| <RepoFile path="src/runtime/launch/mod.rs" /> | **70** | Container launch, capsule config, mode-resolution trace, install-block emission |
-| <RepoFile path="src/derived_image/mod.rs" /> | **42** | Dockerfile generation, entrypoint dispatch, per-agent COPY/CHMOD scaffolding |
+| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | **70** | Container launch, capsule config, mode-resolution trace, install-block emission |
+| <RepoFile path="crates/jackin-image/src/derived_image.rs" /> | **42** | Dockerfile generation, entrypoint dispatch, per-agent COPY/CHMOD scaffolding |
 | <RepoFile path="crates/jackin-core/src/agent.rs" /> | **37** | The enum itself, plus its install-block / required-env / supported-modes tables |
-| <RepoFile path="src/instance/auth/mod.rs" /> | **27** | Credential provisioning (5 near-identical `provision_*` functions) |
-| <RepoFile path="src/config/roles/mod.rs" /> | **26** | Per-agent `AgentAuthConfig` field resolution at global / workspace / role layers |
+| <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> | **27** | Credential provisioning (5 near-identical `provision_*` functions) |
+| <RepoFile path="crates/jackin-config/src/app_config_roles.rs" /> | **26** | Per-agent `AgentAuthConfig` field resolution at global / workspace / role layers |
 | <RepoFile path="crates/jackin-console/src/tui/components/agent_choice.rs" /> | **23** | TUI agent picker |
 | <RepoFile path="crates/jackin-console/src/tui/auth.rs" /> | **20** | Auth-tab row construction |
-| <RepoFile path="src/agent_binary/mod.rs" /> | **19** | Per-agent release-resolution and cache layout |
-| <RepoFile path="src/instance/mod.rs" /> | **18** | Per-instance manifest state, model accessors |
-| <RepoFile path="src/version_check/mod.rs" /> | **15** | Per-agent CLI version probing |
+| <RepoFile path="crates/jackin-image/src/agent_binary.rs" /> | **19** | Per-agent release-resolution and cache layout |
+| <RepoFile path="crates/jackin-runtime/src/instance.rs" /> | **18** | Per-instance manifest state, model accessors |
+| <RepoFile path="crates/jackin-image/src/version_check.rs" /> | **15** | Per-agent CLI version probing |
 | 21 more files | **117** | Manifest validation, attach, image build, cleanup, save flow, workspace resolve, … |
 | **Total** | **414** | spread across **31 production files** |
 
-The same shape leaks into the data model. `AppConfig`, `WorkspaceConfig`, and `RoleConfig` each carry five parallel optional fields (`claude`, `codex`, `amp`, `kimi`, `opencode`) of *the same type* (`AgentAuthConfig`), and the TOML parser uses five separate newtypes (`CodexAuthConfig`, `AmpAuthConfig`, `KimiAuthConfig`, `OpencodeAuthConfig`) just to reject `oauth_token` on the four runtimes that don't support it. A single function in <RepoFile path="src/runtime/launch/mod.rs" /> — `build_mode_resolution` — contains *three* byte-for-byte-symmetric 5-arm matches in 30 lines, one per layer of the global / workspace / role resolution stack:
+The same shape leaks into the data model. `AppConfig`, `WorkspaceConfig`, and `RoleConfig` each carry five parallel optional fields (`claude`, `codex`, `amp`, `kimi`, `opencode`) of *the same type* (`AgentAuthConfig`), and the TOML parser uses five separate newtypes (`CodexAuthConfig`, `AmpAuthConfig`, `KimiAuthConfig`, `OpencodeAuthConfig`) just to reject `oauth_token` on the four runtimes that don't support it. A single function in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — `build_mode_resolution` — contains *three* byte-for-byte-symmetric 5-arm matches in 30 lines, one per layer of the global / workspace / role resolution stack:
 
 ```rust
 let agent_at_global = match agent {
@@ -120,8 +120,8 @@ The `Agent` enum itself does not have to disappear. The realistic shape is:
 
 The 31-file fan-out is exactly why a big-bang rewrite is wrong. Land in four small PRs, each of which leaves the tree green and incrementally retires one class of duplication:
 
-1. **PR 1 — Trait + adapters, no callers changed.** Introduce `AgentRuntime`, the five adapter modules, and `Agent::runtime()`. The enum's existing methods (`slug`, `install_block`, `required_env_var`, `supported_modes`) become two-line delegators to the trait. Zero behavioral change; the diff is one new directory and a trimmed <RepoFile path="src/agent/mod.rs" />. Snapshot tests in <RepoFile path="src/agent/mod.rs" /> still pass byte-for-byte against the new install-block formatters.
-2. **PR 2 — Retire the 18 explicit `Agent::Claude => …` arms.** Replace each match site with `agent.runtime().<method>(…)`. The three identical 5-arm matches in `build_mode_resolution` collapse to one line. Auth provisioning in <RepoFile path="src/instance/auth/mod.rs" /> picks up the `state_paths()` accessor.
+1. **PR 1 — Trait + adapters, no callers changed.** Introduce `AgentRuntime`, the five adapter modules, and `Agent::runtime()`. The enum's existing methods (`slug`, `install_block`, `required_env_var`, `supported_modes`) become two-line delegators to the trait. Zero behavioral change; the diff is one new directory and a trimmed <RepoFile path="crates/jackin-core/src/agent.rs" />. Snapshot tests in <RepoFile path="crates/jackin-core/src/agent.rs" /> still pass byte-for-byte against the new install-block formatters.
+2. **PR 2 — Retire the 18 explicit `Agent::Claude => …` arms.** Replace each match site with `agent.runtime().<method>(…)`. The three identical 5-arm matches in `build_mode_resolution` collapse to one line. Auth provisioning in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> picks up the `state_paths()` accessor.
 3. **PR 3 — Collapse per-agent serde newtypes.** Replace `CodexAuthConfig` / `AmpAuthConfig` / `KimiAuthConfig` / `OpencodeAuthConfig` with a single `AgentAuthConfig` plus an adapter-driven validator. This is a schema-versioned change ([per the AGENTS.md schema-versioning rule](/reference/runtime/schema-versions/)): bump `CURRENT_CONFIG_VERSION` and `CURRENT_WORKSPACE_VERSION`, add a migration step that re-keys the parallel `[claude]` / `[codex]` / … tables under a single shape if the storage layout changes (it likely doesn't — the *parser* changes, not the on-disk format), and re-bake all existing migration fixtures.
 4. **PR 4 — Collapse the parallel struct fields where it pays.** `AppConfig.claude` / `.codex` / `.amp` / `.kimi` / `.opencode` become `AppConfig.agents: BTreeMap<Agent, AgentAuthConfig>` *if and only if* the resulting call sites read more clearly than the named fields. This is a judgement PR — not every collapse is a win, and BTreeMap access at every call site can be worse than five named fields. The criterion is: if the next runtime would need to add a sixth named field to *N* structs in three modules, the map shape pays for itself; otherwise keep the named fields. Run the call-site read and make the call in the PR.
 
@@ -144,17 +144,17 @@ Each PR has a clear stop point. The work is parallelisable with the [Split `runt
 
 ## Related files
 
-- <RepoFile path="src/agent/mod.rs" /> — current `enum Agent` (446L; will shrink to ~120L identity + delegators)
-- <RepoFile path="src/runtime/launch/mod.rs" /> — heaviest consumer (70 references, 18 dispatch arms across 5 sites)
-- <RepoFile path="src/derived_image/mod.rs" /> — Dockerfile generation (42 references)
-- <RepoFile path="src/instance/auth/mod.rs" /> — 5 near-identical provision functions (27 references)
-- <RepoFile path="src/config/roles/mod.rs" /> — per-layer auth-config resolution (26 references)
-- <RepoFile path="src/agent_binary/mod.rs" /> — per-agent release-resolution (19 references)
-- <RepoFile path="src/version_check/mod.rs" /> — per-agent version probe (15 references)
+- <RepoFile path="crates/jackin-core/src/agent.rs" /> — current `enum Agent` (446L; will shrink to ~120L identity + delegators)
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — heaviest consumer (70 references, 18 dispatch arms across 5 sites)
+- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> — Dockerfile generation (42 references)
+- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> — 5 near-identical provision functions (27 references)
+- <RepoFile path="crates/jackin-config/src/app_config_roles.rs" /> — per-layer auth-config resolution (26 references)
+- <RepoFile path="crates/jackin-image/src/agent_binary.rs" /> — per-agent release-resolution (19 references)
+- <RepoFile path="crates/jackin-image/src/version_check.rs" /> — per-agent version probe (15 references)
 - <RepoFile path="crates/jackin-console/src/tui/components/agent_choice.rs" /> — TUI picker (23 references)
 - <RepoFile path="crates/jackin-console/src/tui/auth.rs" /> — auth-tab rows (20 references)
-- <RepoFile path="src/config/mod.rs" /> — `AppConfig.claude` / `.codex` / `.amp` / `.kimi` / `.opencode` parallel fields and the `CodexAuthConfig` / `AmpAuthConfig` / `KimiAuthConfig` / `OpencodeAuthConfig` newtypes
-- <RepoFile path="src/manifest/mod.rs" /> and <RepoFile path="src/manifest/validate/mod.rs" /> — `[claude]` / `[codex]` / `[amp]` / `[kimi]` / `[opencode]` manifest sections and their validators
+- <RepoFile path="crates/jackin/src/config.rs" /> — `AppConfig.claude` / `.codex` / `.amp` / `.kimi` / `.opencode` parallel fields and the `CodexAuthConfig` / `AmpAuthConfig` / `KimiAuthConfig` / `OpencodeAuthConfig` newtypes
+- <RepoFile path="crates/jackin-manifest/src/manifest.rs" /> and <RepoFile path="crates/jackin-manifest/src/validate.rs" /> — `[claude]` / `[codex]` / `[amp]` / `[kimi]` / `[opencode]` manifest sections and their validators
 
 ## Cross-references
 

@@ -8,7 +8,7 @@ The shipped launch progress spine provides: run IDs for every command, JSONL run
 
 ## Problem
 
-`jackin load` and the launch path entered from `jackin console` should feel like the same product surface, but today the launch path still reads as a sequence of terminal printouts. The current implementation in <RepoFile path="src/runtime/launch/mod.rs" /> uses direct status lines, config tables, animated step shimmer, and full-screen rain hooks that are tied to a single launch rather than to the larger "operator has entered or left jackin'" lifecycle. That makes repeated sequential launches slower and visually noisy, and it makes debug mode worse for normal users because troubleshooting detail competes with the product-level progress story.
+`jackin load` and the launch path entered from `jackin console` should feel like the same product surface, but today the launch path still reads as a sequence of terminal printouts. The current implementation in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> uses direct status lines, config tables, animated step shimmer, and full-screen rain hooks that are tied to a single launch rather than to the larger "operator has entered or left jackin'" lifecycle. That makes repeated sequential launches slower and visually noisy, and it makes debug mode worse for normal users because troubleshooting detail competes with the product-level progress story.
 
 The missing product model is a launch cockpit: a compact, recognizable, cyberpunk-styled TUI that explains what jackin' is doing now, what is waiting next, where failures are recorded, and when the operator has crossed a session boundary. Full digital rain should mark entering or leaving jackin' work, not every container start. The stage names should use jackin' vocabulary: the `construct` is the base world, the derived image is the role-specific layer, the Capsule is the persistent in-container control plane, and the `hardline` is the direct line into a running agent session.
 
@@ -210,7 +210,7 @@ The detailed error, command trace, Docker API trace, captured `docker logs`, bui
 
 ## Diagnostics model
 
-The current `debug_log!` channel in <RepoFile path="src/tui/mod.rs" /> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
+The current `debug_log!` channel in <RepoFile path="crates/jackin/src/tui.rs" /> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
 
 - Compact UI events go to the renderer.
 - Compact launch breadcrumbs go to the diagnostics artifact even without `--debug`.

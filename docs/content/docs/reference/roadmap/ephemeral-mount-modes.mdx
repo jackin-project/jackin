@@ -215,16 +215,16 @@ gets the right behavior.
 
 ## Related Files
 
-- <RepoFile path="src/workspace/mod.rs" /> — `MountConfig`,
+- <RepoFile path="crates/jackin/src/workspace.rs" /> — `MountConfig`,
   `MountIsolation` enum extension
-- <RepoFile path="src/workspace/mounts/mod.rs" /> — parser for the new
+- <RepoFile path="crates/jackin-config/src/mounts.rs" /> — parser for the new
   modes; rejects `src` for `tmpfs`/`ephemeral`
-- <RepoFile path="src/runtime/launch/mod.rs" /> — Docker arg construction
-- <RepoFile path="src/runtime/cleanup/mod.rs" /> — volume cleanup on
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — Docker arg construction
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — volume cleanup on
   `purge`
-- <RepoFile path="src/manifest/mod.rs" /> — `[[runtime.mounts]]`
+- <RepoFile path="crates/jackin-manifest/src/manifest.rs" /> — `[[runtime.mounts]]`
   role-level defaults
-- <RepoFile path="src/cli/workspace/mod.rs" /> — `--mount-isolation tmpfs`
+- <RepoFile path="crates/jackin/src/cli/workspace.rs" /> — `--mount-isolation tmpfs`
   / `ephemeral` in workspace edit/create
 
 ## See Also

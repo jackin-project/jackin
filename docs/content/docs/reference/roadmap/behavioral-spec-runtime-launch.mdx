@@ -2,11 +2,11 @@
 title: "Behavioral spec: runtime/launch.rs"
 ---
 
-**Status**: Partially implemented — spec published (2026-06-02); next step is adding the `//!` link from <RepoFile path="src/runtime/launch/mod.rs" /> to the spec URL, then using the spec as the oracle for the [split-runtime-launch](/reference/roadmap/split-runtime-launch/) refactor
+**Status**: Partially implemented — spec published (2026-06-02); next step is adding the `//!` link from <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> to the spec URL, then using the spec as the oracle for the [split-runtime-launch](/reference/roadmap/split-runtime-launch/) refactor
 
 ## Problem
 
-<RepoFile path="src/runtime/launch/mod.rs" /> is the `jackin load` critical path — now **7575L** total (was ~5494L at original analysis — 38% growth). It is targeted for a structural split. Without a behavioral spec, there is no oracle to verify that a refactor preserved the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> is the `jackin load` critical path — now **7575L** total (was ~5494L at original analysis — 38% growth). It is targeted for a structural split. Without a behavioral spec, there is no oracle to verify that a refactor preserved the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
 
 The file has grown significantly due to: instance identity support, Kimi agent runtime, expanded error reporting with mode traces, and additional test coverage.
 
@@ -37,8 +37,8 @@ The file has grown significantly due to: instance identity support, Kimi agent r
 
 ## Why this must come before the split
 
-The spec is the verification oracle. If <RepoFile path="src/runtime/launch/mod.rs" /> is split before the spec exists, there is no contract against which to verify the split preserved all invariants. At 7575L, this file is the single most error-prone split in the entire roadmap.
+The spec is the verification oracle. If <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> is split before the spec exists, there is no contract against which to verify the split preserved all invariants. At 7575L, this file is the single most error-prone split in the entire roadmap.
 
 ## Key file
 
-<RepoFile path="src/runtime/launch/mod.rs" /> — specifically the `load_agent_with` helper.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — specifically the `load_agent_with` helper.

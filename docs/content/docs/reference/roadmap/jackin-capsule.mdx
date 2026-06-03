@@ -422,7 +422,7 @@ A regression test runs an end-to-end smoke against Ghostty's reported features: 
 #### What does not change
 
 - The host-side `docker run` mount of `/jackin/run/<instance-id>.sock:/jackin/run/jackin.sock`. The socket location, ownership, and lifetime are unchanged.
-- The derived image build pipeline that downloads or builds `jackin-capsule` and installs it at `/jackin/runtime/jackin-capsule`. <RepoFile path="src/bin/build_jackin_capsule.rs" /> stays as-is.
+- The derived image build pipeline that downloads or builds `jackin-capsule` and installs it at `/jackin/runtime/jackin-capsule`. <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" /> stays as-is.
 - The Phase 2 `status` API on the control channel. Existing host callers do not need to change.
 - The `/jackin/run/agent.toml` launch-config contract between the host launcher and the daemon, plus the initial-agent argv contract from the host launcher into PID 1.
 - The PID 1 zombie-reaping logic in <RepoFile path="crates/jackin-capsule/src/pid1.rs" />.
@@ -430,9 +430,9 @@ A regression test runs an end-to-end smoke against Ghostty's reported features: 
 
 ### Host-side changes per phase
 
-**Phase 2:** add socket mount to `docker run`; update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach/mod.rs" /> to connect to socket instead of `docker exec tmux list-sessions`.
+**Phase 2:** add socket mount to `docker run`; update `inspect_agent_sessions` in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> to connect to socket instead of `docker exec tmux list-sessions`.
 
-**Phase 3:** remove `tmux` from the derived image (<RepoFile path="docker/construct/Dockerfile" />); replace all `docker exec tmux ...` call sites in <RepoFile path="src/runtime/attach/mod.rs" /> and <RepoFile path="src/runtime/launch/mod.rs" /> with socket API calls.
+**Phase 3:** remove `tmux` from the derived image (<RepoFile path="docker/construct/Dockerfile" />); replace all `docker exec tmux ...` call sites in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> with socket API calls.
 
 ## Prior art: Herdr
 
@@ -471,7 +471,7 @@ The deeper architectural difference: Herdr wraps **bare host processes**. jackin
 
 **What shipped in Phase 1:** `docker/runtime/supervisor.sh` (since deleted) polled `tmux list-sessions` every second rather than watching the socket file disappear. Using `tmux list-sessions` was robust to stale socket files left behind when tmux crashed or was killed without cleanup — a plain `[ -S socket ]` file-existence check would loop forever on a dead socket. When `tmux list-sessions` returned non-zero (server gone or no sessions), the supervisor exited 0. A 60-second startup grace period waited for the socket file to appear before entering the monitor loop, preventing a premature exit before the first `docker exec tmux new-session` created it.
 
-Two companion fixes in the host-side Rust code were required to make the cleanup path actually fire. <RepoFile path="src/isolation/finalize/mod.rs" /> (`finalize_foreground_session`) now calls `has_tmux_sessions` when the container is still `Running` after `docker exec` returns: an empty session list means supervisor lag, not a detach, so the code falls through to `finalize_clean_exit` and sweeps isolation worktrees normally instead of returning `Preserved`. <RepoFile path="src/runtime/launch/mod.rs" /> now tears down the DinD sidecar and Docker network in every branch where the container has exited — including crashes (non-zero exit) — rather than preserving them for a `jackin hardline` reconnect that cannot work without a live DinD. When `docker exec` returns and the container is still `Running` with an empty session list, teardown fires immediately without a redundant re-query (the session check in `finalize_foreground_session` already confirmed no sessions are present). Only a genuinely live detach (container still `Running` AND sessions confirmed present) keeps the DinD alive for reconnect.
+Two companion fixes in the host-side Rust code were required to make the cleanup path actually fire. <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> (`finalize_foreground_session`) now calls `has_tmux_sessions` when the container is still `Running` after `docker exec` returns: an empty session list means supervisor lag, not a detach, so the code falls through to `finalize_clean_exit` and sweeps isolation worktrees normally instead of returning `Preserved`. <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> now tears down the DinD sidecar and Docker network in every branch where the container has exited — including crashes (non-zero exit) — rather than preserving them for a `jackin hardline` reconnect that cannot work without a live DinD. When `docker exec` returns and the container is still `Running` with an empty session list, teardown fires immediately without a redundant re-query (the session check in `finalize_foreground_session` already confirmed no sessions are present). Only a genuinely live detach (container still `Running` AND sessions confirmed present) keeps the DinD alive for reconnect.
 
 **Why a purpose-built multiplexer made sense:** researching [Herdr](https://github.com/ogulcancelik/herdr) — a Rust terminal multiplexer purpose-built for AI coding agents — confirmed that the missing piece was a session layer that understands AI agents natively. Herdr tracks four agent states (blocked / working / done / idle) with zero configuration, exposes a Unix socket API for session control, and streams status-change events. It is designed for bare host processes (not containers) and is AGPL-3.0, so it cannot be embedded in jackin'. But the core concept is exactly right: a multiplexer that knows about agents, not just terminals. `jackin-capsule` is that in-container multiplexer/control plane, where it can see the agent's PTY output directly and expose it through a Unix socket that the host and desktop app both drive.
 
@@ -482,8 +482,8 @@ Two companion fixes in the host-side Rust code were required to make the cleanup
 - Implement tmux socket watch via `inotify` (replaces bash polling). Exit 0 when socket deleted.
 - Implement Unix socket listener and `status` command.
 - Add CI job: cross-compile for `linux/amd64` and `linux/arm64`, publish to GitHub Releases.
-- Add socket mount to `docker run` in <RepoFile path="src/runtime/launch/mod.rs" />.
-- Update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach/mod.rs" /> to query socket instead of `docker exec tmux list-sessions`.
+- Add socket mount to `docker run` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />.
+- Update `inspect_agent_sessions` in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> to query socket instead of `docker exec tmux list-sessions`.
 - Update `hardline --inspect` and console session inventory to use socket path.
 - Remove `docker/runtime/supervisor.sh` (pre-release; no migration shim needed).
 

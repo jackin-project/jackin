@@ -14,21 +14,21 @@ All priority files from both tables below received `//!` blocks following the `e
 
 | File | Status |
 |---|---|
-| <RepoFile path="src/runtime/launch/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/app/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/app/context/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/instance/auth/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/isolation/materialize/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/isolation/finalize/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/config/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/workspace/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/runtime/cleanup/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/derived_image/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/console/tui/state/mod.rs" /> | ✅ documented (stale path fixed) |
-| <RepoFile path="src/console/tui/input/global_mounts/mod.rs" /> | ✅ documented |
-| <RepoFile path="src/manifest/validate/mod.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin/src/app.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin/src/app/context.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin/src/config.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin/src/workspace.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin-image/src/derived_image.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin/src/console/tui/state.rs" /> | ✅ documented (stale path fixed) |
+| <RepoFile path="crates/jackin/src/console/tui/input/global_mounts.rs" /> | ✅ documented |
+| <RepoFile path="crates/jackin-manifest/src/validate.rs" /> | ✅ documented |
 
-<RepoFile path="src/console/tui/input/save/mod.rs" /> already had a `//!` block (purpose + scope); expanding to full 3-element format is a follow-up.
+<RepoFile path="crates/jackin/src/console/tui/input/save.rs" /> already had a `//!` block (purpose + scope); expanding to full 3-element format is a follow-up.
 
 ## Current coverage (2026-06-02)
 
@@ -42,7 +42,7 @@ The next orientation-doc work is `///` item-level docs on public API entry point
 
 1. For each file, read the first 50 lines and the public item list.
 2. Write a `//!` block at the top: purpose, scope claim, key invariants, what callers can assume.
-3. Model on <RepoFile path="src/env_model/mod.rs" /> (the 3-element exemplar: purpose + scope + history).
+3. Model on <RepoFile path="crates/jackin-core/src/env_model.rs" /> (the 3-element exemplar: purpose + scope + history).
 4. Do not add `///` item-level docs in this pass — only `//!` module-level.
 
 ## What a good `//!` block says

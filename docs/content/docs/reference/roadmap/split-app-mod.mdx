@@ -6,9 +6,9 @@ title: "Split app/mod.rs"
 
 ## Problem
 
-<RepoFile path="src/app/mod.rs" /> is now **2932L** total — more than **double** the 1243L at the original analysis (+136% growth). It is the sixth-largest file in the codebase after `runtime/launch.rs`, `console/tui/input/editor.rs`, `operator_env.rs`, `console/tui/render/editor.rs`, and `instance/auth.rs`. Nearly all production code is the `run()` dispatch function with a giant match on CLI commands, but the file has accumulated substantial new command handling, error recovery, and test coverage.
+<RepoFile path="crates/jackin/src/app.rs" /> is now **2932L** total — more than **double** the 1243L at the original analysis (+136% growth). It is the sixth-largest file in the codebase after `runtime/launch.rs`, `console/tui/input/editor.rs`, `operator_env.rs`, `console/tui/render/editor.rs`, and `instance/auth.rs`. Nearly all production code is the `run()` dispatch function with a giant match on CLI commands, but the file has accumulated substantial new command handling, error recovery, and test coverage.
 
-<RepoFile path="src/app/context/mod.rs" /> (1474L) has also grown and now contains significant instance management, workspace resolution, and Docker interaction logic.
+<RepoFile path="crates/jackin/src/app/context.rs" /> (1474L) has also grown and now contains significant instance management, workspace resolution, and Docker interaction logic.
 
 ## Proposed split
 
@@ -22,11 +22,11 @@ src/app/
   instance_cmd.rs  ← instance management commands (new — instance recovery/purge flows)
 ```
 
-Note: <RepoFile path="src/app/context/mod.rs" /> already implements the impl-extension pattern and stays as-is, though it may need its own split analysis if it continues growing.
+Note: <RepoFile path="crates/jackin/src/app/context.rs" /> already implements the impl-extension pattern and stays as-is, though it may need its own split analysis if it continues growing.
 
 ## Duplication found
 
-- `app/mod.rs` contains its own `FakeOpWriter` (stripped version) that duplicates the fuller one in <RepoFile path="src/workspace/token_setup/mod.rs" />. Should use a shared test utility.
+- `app/mod.rs` contains its own `FakeOpWriter` (stripped version) that duplicates the fuller one in <RepoFile path="crates/jackin-env/src/token_setup.rs" />. Should use a shared test utility.
 - 4 inline `format!("{name}-dind")` / `format!("{name}-net")` derivations that should use a shared naming helper.
 - `fake_runner_with_running` helper is near-identical to one in `console/tui/input/save.rs` but with a subtle trailing-newline difference — potential copy-paste bug.
 
@@ -47,6 +47,6 @@ To audit "does `jackin workspace create` correctly validate the workdir?", a rev
 
 ## Related files
 
-- <RepoFile path="src/app/mod.rs" /> — target file (2767L)
-- <RepoFile path="src/app/context/mod.rs" /> — impl-extension module (1466L)
-- <RepoFile path="src/cli/dispatch/mod.rs" /> — CLI argument types consumed by the dispatch match
+- <RepoFile path="crates/jackin/src/app.rs" /> — target file (2767L)
+- <RepoFile path="crates/jackin/src/app/context.rs" /> — impl-extension module (1466L)
+- <RepoFile path="crates/jackin/src/cli/dispatch.rs" /> — CLI argument types consumed by the dispatch match

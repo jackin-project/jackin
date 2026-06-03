@@ -36,7 +36,7 @@ Before adding any new TUI widget or state type:
 
 ### Why this rule exists — canonical lesson
 
-A `token_store_picker` widget once duplicated the Account → Vault → Item navigation state machine from <RepoFile path="src/console/tui/op_picker/mod.rs" /> — a 1067-line copy of closely parallel code where every `op_picker` bug fix to navigation, filtering, R-key refresh, or section display had to be manually reproduced or the two implementations drifted. That copy has since been deleted and `op_picker` was extended instead: an opt-in `OpPickerMode::Create` turns on the `+ New item`, `+ New field`, and `+ New section` creation sentinels and the naming sub-stages, and the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`). One widget now serves both the browse and create call sites. This is the positive reference for the rule: when a new call site needs more, **extend the shared widget with a mode**, never fork it into a second drill-down. The remaining Claude-token work is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
+A `token_store_picker` widget once duplicated the Account → Vault → Item navigation state machine from <RepoFile path="crates/jackin/src/console/tui/op_picker.rs" /> — a 1067-line copy of closely parallel code where every `op_picker` bug fix to navigation, filtering, R-key refresh, or section display had to be manually reproduced or the two implementations drifted. That copy has since been deleted and `op_picker` was extended instead: an opt-in `OpPickerMode::Create` turns on the `+ New item`, `+ New field`, and `+ New section` creation sentinels and the naming sub-stages, and the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`). One widget now serves both the browse and create call sites. This is the positive reference for the rule: when a new call site needs more, **extend the shared widget with a mode**, never fork it into a second drill-down. The remaining Claude-token work is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
 
 ---
 
@@ -46,7 +46,7 @@ Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
-| Op picker (1Password drill-down) | <RepoFile path="src/console/tui/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
+| Op picker (1Password drill-down) | <RepoFile path="crates/jackin/src/console/tui/op_picker.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
 | Role picker | <RepoFile path="crates/jackin-console/src/tui/components/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
 | Text input box | <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
 | Scope picker | <RepoFile path="crates/jackin-console/src/tui/components/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
@@ -65,11 +65,11 @@ Console role-load error text is assembled through <RepoFile path="crates/jackin-
 
 Console effect executors use the same error-popup helper boundary for side-effect failure titles such as token generation, URL opening, workspace deletion, and file-browser startup. The executor owns the work and the concrete error value; <RepoFile path="crates/jackin-console/src/tui/components/error_popup.rs" /> owns the visible popup title/state construction.
 
-Background-work status popups follow the same split: <RepoFile path="src/console/effects.rs" /> starts role registration, workspace drift checks, and isolated-state cleanup, while <RepoFile path="crates/jackin-console/src/tui/components/status_popup.rs" /> owns the visible status title/message construction.
+Background-work status popups follow the same split: <RepoFile path="crates/jackin/src/console/effects.rs" /> starts role registration, workspace drift checks, and isolated-state cleanup, while <RepoFile path="crates/jackin-console/src/tui/components/status_popup.rs" /> owns the visible status title/message construction.
 
 Root-console tests should seed modals through the same crate-owned helpers as runtime whenever the helper exists. This keeps the final-structure audit honest: direct constructors in root tests are treated as drift unless the test is explicitly exercising the shared primitive itself.
 
-Test-only helpers that need command runners, service calls, or config persistence belong with effect/service adapters, not input handlers. Role-input tests may use fake runners through <RepoFile path="src/console/effects.rs" />, but <RepoFile path="src/console/tui/input/editor/mod.rs" /> must stay limited to input-to-outcome routing and modal state transitions.
+Test-only helpers that need command runners, service calls, or config persistence belong with effect/service adapters, not input handlers. Role-input tests may use fake runners through <RepoFile path="crates/jackin/src/console/effects.rs" />, but <RepoFile path="crates/jackin/src/console/tui/input/editor.rs" /> must stay limited to input-to-outcome routing and modal state transitions.
 
 The transitional root op-picker adapter may own `operator_env` types, runner wiring, cache binding, subscriptions, and crossterm-to-outcome mapping, but user-visible picker copy, load-error state shaping, and blocked-load key policy belong in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" /> with the rest of the component. Root adapters pass concrete process errors, subscription-closed facts, or `Esc`/not-`Esc` key facts into component helpers; they do not construct recoverable/fatal picker error states inline or duplicate the loading/fatal key-consumption rule.
 
@@ -116,9 +116,9 @@ The lookbook is the visual regression surface for every component in the catalog
 
 jackin' has **one** convention for "add a new thing to this list": a sentinel row rendered at the bottom of the list with a leading `+ ` and the action label. It is the same across every surface:
 
-- `+ New workspace` — list stage (<RepoFile path="src/console/tui/components/workspace_list.rs" />)
-- `+ Add role` — workspace editor Roles tab (<RepoFile path="src/console/tui/view/editor/mod.rs" />)
-- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/tui/view/settings/mod.rs" />)
+- `+ New workspace` — list stage (<RepoFile path="crates/jackin/src/console/tui/components/workspace_list.rs" />)
+- `+ Add role` — workspace editor Roles tab (<RepoFile path="crates/jackin/src/console/tui/view/editor.rs" />)
+- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="crates/jackin/src/console/tui/view/settings.rs" />)
 - `+ Override for a role` — Auth tab per-role override
 
 Selecting a creation sentinel opens the next step in the flow — usually the **text input box** to name the new thing, or a two-button choice. Any new "add an item to this list" affordance MUST render as a `+ ` sentinel row in the same position and style, and MUST route its selection through the text input box (for naming) or a picker (for choosing). Do not invent a different add-affordance (no separate "New…" button floating elsewhere, no key-only shortcut without a visible row).
@@ -161,11 +161,11 @@ After the source/location choice, the console suspends, runs the `claude setup-t
 - **Field stage** (scoped to the chosen section) — the existing fields in that section, plus a `+ New field` sentinel that opens the **text input box** to name the field.
 - Selecting an **existing field** writes the token into that field in-place (overwrite); creation rows write into the chosen section (`(root)` ⇒ unsectioned). Browse mode skips the Section stage and keeps the flat field list with collapsible section headers.
 
-The root console run loop that drives the wizard lives under <RepoFile path="src/console/tui/run.rs" />; it suspends and resumes the terminal while external minting and write validation run through non-TUI services.
+The root console run loop that drives the wizard lives under <RepoFile path="crates/jackin/src/console/tui/run.rs" />; it suspends and resumes the terminal while external minting and write validation run through non-TUI services.
 
 Every "create" affordance in this branch is the same `+ ` sentinel row, and every "name it" prompt is the same text input box. Nothing new is drawn.
 
-**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="src/console/tui/op_picker/mod.rs" /> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
+**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="crates/jackin/src/console/tui/op_picker.rs" /> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
 
 ### Rich TUI lives in the console; the CLI stays plain CLI
 

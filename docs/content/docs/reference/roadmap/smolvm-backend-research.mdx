@@ -449,7 +449,7 @@ Embedding risks:
 
 ## Telemetry Surface
 
-Backend operations should emit `debug_log!("smolvm", …)` (the existing macro in <RepoFile path="src/tui/mod.rs" />). Minimum required lines:
+Backend operations should emit `debug_log!("smolvm", …)` (the existing macro in <RepoFile path="crates/jackin/src/tui.rs" />). Minimum required lines:
 
 - `smolvm version=<smolvm --version> libkrun=<v> libkrunfw=<v>`
 - `entitlement_present hypervisor=<yes|no>` (macOS)
@@ -525,9 +525,9 @@ These need answers before Phase 0 hands-on work converts to design commitments:
 
 ## Related Files
 
-- <RepoFile path="src/runtime/launch/mod.rs" /> - launch orchestration that needs a backend split.
-- <RepoFile path="src/runtime/image/mod.rs" /> - role image build path and OCI artifact source.
-- <RepoFile path="src/instance/manifest/mod.rs" /> - future backend/provider handles.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> - launch orchestration that needs a backend split.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> - role image build path and OCI artifact source.
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> - future backend/provider handles.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule startup assumptions.
 - <RepoFile path="docker/construct/Dockerfile" /> - role base image to test as a smolvm workload.
 

@@ -12,9 +12,9 @@ jackin' has three hand-rolled observability surfaces that solve the same problem
 |---|---|---|---|
 | `eprintln!` | host CLI (88 call sites) | unstructured, untimestamped strings | stderr only |
 | `clog!` / `cdebug!` | <RepoFile path="crates/jackin-capsule/src/logging.rs" /> (9 capsule files) | tagged + ISO-8601-stamped strings, debug gated on `JACKIN_DEBUG` | stderr **and** `/jackin/state/multiplexer.log` |
-| `RunDiagnostics` | <RepoFile path="src/diagnostics/mod.rs" /> (~14 host files) | JSON-per-line events with `trace_id` / `span_id` / `kind` / `stage` / `detail` | `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` |
+| `RunDiagnostics` | <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> (~14 host files) | JSON-per-line events with `trace_id` / `span_id` / `kind` / `stage` / `detail` | `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` |
 
-The third surface is the tell. <RepoFile path="src/diagnostics/mod.rs" /> already emits this per event:
+The third surface is the tell. <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> already emits this per event:
 
 ```rust
 struct JsonEvent<'a> {
@@ -29,11 +29,11 @@ struct JsonEvent<'a> {
 }
 ```
 
-This is a span tree drawn freehand. `trace_id` is hard-wired equal to `run_id`; `span_id` is *defined in the struct but never set* (the `stage()` method's own comment says "`span_id` is left unset"); `stage` and `detail` are weakly-typed strings that callers in <RepoFile path="src/runtime/progress/mod.rs" /> fill from a `LaunchStage` enum (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) by calling `.label()` and stringifying. The launch pipeline is exactly the concurrent, multi-stage workload that span correlation exists for — pull → construct → agent-binary fetch → derived-image build → DinD sidecar spawn → capsule start can overlap, and today the only way to know which event belongs to which stage is to string-match the `stage` field.
+This is a span tree drawn freehand. `trace_id` is hard-wired equal to `run_id`; `span_id` is *defined in the struct but never set* (the `stage()` method's own comment says "`span_id` is left unset"); `stage` and `detail` are weakly-typed strings that callers in <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> fill from a `LaunchStage` enum (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) by calling `.label()` and stringifying. The launch pipeline is exactly the concurrent, multi-stage workload that span correlation exists for — pull → construct → agent-binary fetch → derived-image build → DinD sidecar spawn → capsule start can overlap, and today the only way to know which event belongs to which stage is to string-match the `stage` field.
 
 The cost of three surfaces:
 
-- **Plumbing duplication.** The compact-vs-verbose split (`clog!` always on, `cdebug!` gated) is the exact behaviour `tracing` gives for free via levels + an `EnvFilter`. The capsule hand-rolls ISO-8601 stamping, a `OnceLock<Mutex<Option<File>>>` sink, a panic hook, and a debug-enabled `AtomicBool`. <RepoFile path="src/diagnostics/mod.rs" /> hand-rolls JSON serialization, a `BufWriter` behind a `Mutex`, file rotation/pruning, and the run-scoped `ACTIVE_RUN` thread-local-ish global.
+- **Plumbing duplication.** The compact-vs-verbose split (`clog!` always on, `cdebug!` gated) is the exact behaviour `tracing` gives for free via levels + an `EnvFilter`. The capsule hand-rolls ISO-8601 stamping, a `OnceLock<Mutex<Option<File>>>` sink, a panic hook, and a debug-enabled `AtomicBool`. <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> hand-rolls JSON serialization, a `BufWriter` behind a `Mutex`, file rotation/pruning, and the run-scoped `ACTIVE_RUN` thread-local-ish global.
 - **No real correlation.** Because `span_id` is never set and `trace_id` is just the run id, you cannot ask "show me every event under the derived-image build" without grepping the `stage` string — and nested work (a `docker build` inside the derived-image stage that itself shells out) has no parent/child link at all.
 - **Three formats to learn.** An operator pasting a bug report might paste stderr (`eprintln!`), the capsule log file (`clog!`), or a diagnostics run id (`RunDiagnostics`). They carry overlapping but differently-shaped information, and only one is machine-parseable.
 - **No metrics.** Stage durations, build cache hit/miss, bytes pulled, agent-binary cache reuse — all reconstructable from the JSONL timestamps today, none queryable. There is no counter/histogram surface at all.
@@ -149,7 +149,7 @@ The capsule (<RepoFile path="crates/jackin-capsule/src/logging.rs" />) gets the 
 Land incrementally; the tree stays green and operator-facing JSONL stays byte-stable at every step.
 
 1. **PR 1 — Registry + layers behind the existing API, zero call-site churn.** Add `tracing`, `tracing-subscriber`, `tracing-appender` to the host <RepoFile path="Cargo.toml" />. Build `observability::init` with the fmt layer + the custom `JackinDiagnosticsLayer`. Re-implement `RunDiagnostics::compact` / `stage` / `debug` as thin shims that emit `tracing` events (so existing callers keep compiling) while the layer produces the identical JSONL. Lock the schema with a golden-file test: capture a known launch's JSONL before and after and assert byte-equality of every field except the new `span_id`.
-2. **PR 2 — `#[instrument]` the launch stages.** Annotate the `LaunchStage` functions in <RepoFile path="src/runtime/launch/mod.rs" /> and <RepoFile path="src/runtime/progress/mod.rs" /> so `span_id` becomes real and the weakly-typed `stage`/`detail` strings become span fields. Retire the `RunDiagnostics::stage` shim once its callers are spans. Concurrent-stage correlation lands here.
+2. **PR 2 — `#[instrument]` the launch stages.** Annotate the `LaunchStage` functions in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> so `span_id` becomes real and the weakly-typed `stage`/`detail` strings become span fields. Retire the `RunDiagnostics::stage` shim once its callers are spans. Concurrent-stage correlation lands here.
 3. **PR 3 — Migrate the capsule.** Replace `clog!`/`cdebug!` bodies with `tracing` macros and a `tracing-appender` file layer in <RepoFile path="crates/jackin-capsule/src/logging.rs" />, keeping the `[jackin-capsule]` prefix as a `target`. Per-byte/per-frame `cdebug!` sites become `trace!`. The `jackin-capsule` smoke-test mandate in <RepoFile path=".github/AGENTS.md" /> applies — the eval one-shot build must pass.
 4. **PR 4 — Sweep the 88 `eprintln!` call sites.** Convert operator-facing error/lifecycle `eprintln!`s to leveled `tracing` events; leave genuine stdout *output* (command results the operator reads, not telemetry) as `println!`. This is a judgement sweep, not a mechanical one — distinguish "telemetry" from "program output."
 5. **PR 5 — Metrics + the OpenTelemetry layer (deferred / separate).** Add stage-duration histograms and cache hit/miss counters, and the `tracing-opentelemetry` bridge layer wired to `opentelemetry` + `opentelemetry-otlp` (protobuf/HTTP, batch processor). The OTel path is toggled at **two levels**: a compile-time Cargo feature (`otlp`) that decides whether the dependency tree and the layer are built at all, and a runtime env var (e.g. `JACKIN_OTLP_ENDPOINT`) that decides whether the layer is actually attached and exporting when the feature is compiled in. Default build: feature off, no `opentelemetry` / `tonic` / `prost` in the tree, no behaviour change. Operator with a collector: build with `--features otlp`, set the endpoint env var, get spans/metrics over OTLP. This is the only PR that adds a heavy dependency tree, and it is explicitly opt-in at both the build and run boundaries.
@@ -174,11 +174,11 @@ PRs 1–4 add only `tracing` + `tracing-subscriber` + `tracing-appender` (small,
 
 ## Related files
 
-- <RepoFile path="src/diagnostics/mod.rs" /> — the existing `RunDiagnostics` / `JsonEvent` JSONL surface (544L); becomes the file owner behind the custom layer
-- <RepoFile path="src/runtime/progress/mod.rs" /> — `LaunchStage`, `.stage()` / `.compact()` calls; primary `#[instrument]` target
-- <RepoFile path="src/runtime/launch/mod.rs" /> — heaviest diagnostics consumer (`active_debug`, `compact` across the launch pipeline)
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — the existing `RunDiagnostics` / `JsonEvent` JSONL surface (544L); becomes the file owner behind the custom layer
+- <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> — `LaunchStage`, `.stage()` / `.compact()` calls; primary `#[instrument]` target
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — heaviest diagnostics consumer (`active_debug`, `compact` across the launch pipeline)
 - <RepoFile path="crates/jackin-capsule/src/logging.rs" /> — `clog!` / `cdebug!` macros, file+stderr sink, panic hook, `JACKIN_DEBUG` capture
-- <RepoFile path="src/paths.rs" /> — `JackinPaths`, the diagnostics run directory root
+- <RepoFile path="crates/jackin-core/src/paths.rs" /> — `JackinPaths`, the diagnostics run directory root
 - <RepoFile path="Cargo.toml" /> and <RepoFile path="crates/jackin-capsule/Cargo.toml" /> — where `tracing` / `tracing-subscriber` / `tracing-appender` (and the feature-gated `opentelemetry` tree) are added
 
 ## Cross-references
