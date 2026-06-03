@@ -787,6 +787,13 @@ fn update_scroll_focus(
             };
             editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
             editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+            // Clicking the content block transfers interaction focus into it —
+            // same as Tab/↓ — so the green border and ▸ appear in the same frame.
+            let clicked_content =
+                plan.workspace_mounts_scroll_focused || plan.tab_content_scroll_focused;
+            if clicked_content && editor.tab_bar_focused {
+                editor.tab_bar_focused = false;
+            }
         }
         ManagerStage::Settings(settings) => {
             let modal_open = settings_modal_open(settings);
@@ -800,6 +807,11 @@ fn update_scroll_focus(
             settings.env.scroll_focused = plan.env;
             settings.auth.scroll_focused = plan.auth;
             settings.trust.scroll_focused = plan.trust;
+            // Clicking the content block transfers interaction focus into it —
+            // same as Tab/↓ — so the green border and ▸ appear in the same frame.
+            if in_content && settings.tab_bar_focused {
+                settings.tab_bar_focused = false;
+            }
         }
         ManagerStage::CreatePrelude(_)
         | ManagerStage::ConfirmDelete { .. }
