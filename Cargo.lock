@@ -1840,6 +1840,7 @@ dependencies = [
  "anstyle-parse",
  "base64",
  "crossterm",
+ "owo-colors",
  "ratatui",
  "tokio",
  "tui-scrollbar",

@@ -100,8 +100,8 @@ These five forks were resolved during planning. Each is recorded with its ration
 - [x] Verify the 15 consumer files (`env_resolver`, `app/config_cmd`, `app/workspace_cmd`, `config/persist`, `manifest`, `manifest/validate`, `runtime/launch*`, `runtime/attach`, `operator_env/resolve`, `console/*`) compile through the shim. `cargo check -p jackin-core`.
 
 ### 0.2 `prune_output` + pure host-TUI → `jackin-tui` (D5)
-- [ ] Move `prune_output/mod.rs` (130 L, owo_colors only) → `jackin-tui/src/prune_output.rs`. Move `tui/animation/` (488 L) and `tui/prompt/` (153 L) — both have no host deps — → `jackin-tui`. Leave binary shims.
-- [ ] `cargo check -p jackin-tui`.
+- [x] Move `prune_output/mod.rs` (130 L, owo_colors only) → `jackin-tui/src/prune_output.rs`. Move `tui/animation/` (488 L) and `tui/prompt/` (153 L) — both have no host deps — → `jackin-tui`. Leave binary shims.
+- [x] `cargo check -p jackin-tui`.
 
 ### 0.3 `jackin-diagnostics` crate (D1)
 - [ ] Create `crates/jackin-diagnostics/` (deps: `jackin-core`, `jackin-tui`, `serde`/`serde_json`, `rand`, `anyhow`; `mod_module_files = "deny"`, `unsafe_code = "forbid"`). Add to `[workspace.members]`.

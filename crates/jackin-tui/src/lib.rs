@@ -11,6 +11,7 @@
 pub mod ansi_text;
 pub mod components;
 pub mod geometry;
+pub mod prune_output;
 pub mod runtime;
 pub mod scroll;
 pub mod theme;
