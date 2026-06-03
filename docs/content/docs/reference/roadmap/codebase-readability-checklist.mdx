@@ -150,15 +150,15 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 - [x] Add `pub mod selector;` + re-exports to `jackin-core/src/lib.rs`
 
 **DockerApi trait** (gated by: core error-type decision)
-- [ ] Create `jackin-core/src/docker.rs`; move the pure data types + their methods: `ContainerState` (`docker_client/mod.rs:27`, + `short_label`/`inspect_label`/`is_present`), `ContainerRow` (`:78`), `NetworkRow` (`:84`), `RemoveImageOutcome` (`:90`), `ContainerSpec` (`:96`). All are pure std (verified: lines 27-141 reference no bollard/tokio)
-- [ ] Move the `DockerApi` trait (`docker_client/mod.rs:109`, 16 methods incl. the `inspect_image_label` default body) to core; apply the chosen error type
-- [ ] Keep `BollardDockerClient` (`:143`, impl `:433`) + `FakeDockerClient` (`:794`) + all bollard/tokio glue in `docker_client/mod.rs`; add `pub use jackin_core::docker::{…}` (29 consumer files unchanged). The concrete impl moves to `jackin-runtime` in Stage 4, not here
-- [ ] Add `pub mod docker;` + re-exports to `jackin-core/src/lib.rs`
+- [x] Create `jackin-core/src/docker.rs`; move the pure data types + their methods: `ContainerState` (`docker_client/mod.rs:27`, + `short_label`/`inspect_label`/`is_present`), `ContainerRow` (`:78`), `NetworkRow` (`:84`), `RemoveImageOutcome` (`:90`), `ContainerSpec` (`:96`). All are pure std (verified: lines 27-141 reference no bollard/tokio)
+- [x] Move the `DockerApi` trait (`docker_client/mod.rs:109`, 16 methods incl. the `inspect_image_label` default body) to core; apply the chosen error type (anyhow, option (a))
+- [x] Keep `BollardDockerClient` (`:143`, impl `:433`) + `FakeDockerClient` (`:794`) + all bollard/tokio glue in `docker_client/mod.rs`; add `pub use jackin_core::docker::{…}` (29 consumer files unchanged). The concrete impl moves to `jackin-runtime` in Stage 4, not here
+- [x] Add `pub mod docker;` + re-exports to `jackin-core/src/lib.rs`
 
 **CommandRunner trait** (gated by: core error-type decision — do it in the same PR as DockerApi for one consistent error type)
-- [ ] Create `jackin-core/src/runner.rs`; move `RunOptions` (`docker/mod.rs:17`, + `Default` `:36`) and the `CommandRunner` trait (`:51`, 3 methods); apply the chosen error type; rephrase the `jackin_launch::build_log` doc-link off the core struct
-- [ ] Keep `ShellRunner` (`docker/mod.rs:77`, impl `:220`) + `FakeRunner` + tokio glue behind; add `pub use jackin_core::runner::{CommandRunner, RunOptions};` (21 consumer files unchanged)
-- [ ] Add `pub mod runner;` + re-exports to `jackin-core/src/lib.rs`
+- [x] Create `jackin-core/src/runner.rs`; move `RunOptions` (`docker/mod.rs:17`, + `Default` `:36`) and the `CommandRunner` trait (`:51`, 3 methods); apply the chosen error type; rephrase the `jackin_launch::build_log` doc-link off the core struct
+- [x] Keep `ShellRunner` (`docker/mod.rs:77`, impl `:220`) + `FakeRunner` + tokio glue behind; add `pub use jackin_core::runner::{CommandRunner, RunOptions};` (21 consumer files unchanged)
+- [x] Add `pub mod runner;` + re-exports to `jackin-core/src/lib.rs`
 
 **JackinPaths struct** (gated by: paths purity decision)
 - [x] Create `jackin-core/src/paths.rs`; move the `JackinPaths` struct (`paths.rs:15`) + pure `resolve_with_env` (`:42`) + `for_tests` (`:63`)

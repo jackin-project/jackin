@@ -1,8 +1,8 @@
-//! `CommandRunner` trait and `RunOptions`: the subprocess execution seam for
-//! `docker`, `git`, and other external commands.
+//! `ShellRunner`: concrete subprocess implementation of `CommandRunner`.
 //!
-//! `CommandRunner` is dependency-injected into the runtime pipeline so tests
-//! can replace it with `FakeRunner` without spawning real processes.
+//! The `CommandRunner` trait and `RunOptions` are re-exported from
+//! `jackin-core` so consumer crates depend on the trait, not this
+//! tokio-based implementation.
 //!
 //! Not responsible for: the async Docker daemon API (`docker_client.rs`), or
 //! parsing Docker output formats (those live in the callers).
@@ -11,67 +11,7 @@ use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-/// Options that control how a command is executed.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, Debug)]
-pub struct RunOptions {
-    pub capture_stderr: bool,
-    pub capture_stdout: bool,
-    pub quiet: bool,
-    pub extra_env: Vec<(String, String)>,
-    pub null_stdin: bool,
-    pub stream_captured_output: bool,
-    /// The command needs the real terminal (an interactive `docker exec -it`
-    /// multiplexer/shell client). Such commands must inherit stdio and are
-    /// never captured — capturing denies the TTY and blocks forever on the
-    /// long-lived session, even under `--debug` or while a rich surface was
-    /// active.
-    pub interactive: bool,
-    /// Tee captured output, line by line as it arrives, into the global
-    /// [`jackin_launch::build_log`] sink so the loading cockpit can show a
-    /// live view. Only the derived-image `docker build` sets this.
-    pub tee_to_build_log: bool,
-}
-
-impl Default for RunOptions {
-    fn default() -> Self {
-        Self {
-            capture_stderr: false,
-            capture_stdout: false,
-            quiet: false,
-            extra_env: Vec::new(),
-            null_stdin: false,
-            stream_captured_output: true,
-            interactive: false,
-            tee_to_build_log: false,
-        }
-    }
-}
-
-pub trait CommandRunner {
-    async fn run(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-        opts: &RunOptions,
-    ) -> anyhow::Result<()>;
-    async fn capture(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-    ) -> anyhow::Result<String>;
-    /// Like `capture` but suppresses stdout from the debug stream and omits
-    /// stderr from error messages. Use for commands whose output is a credential
-    /// (e.g. `gh auth token`, `op read`) so the value never appears in debug logs.
-    async fn capture_secret(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-    ) -> anyhow::Result<String>;
-}
+pub use jackin_core::{CommandRunner, RunOptions};
 
 #[derive(Debug, Default)]
 pub struct ShellRunner {
