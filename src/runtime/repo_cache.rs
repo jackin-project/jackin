@@ -134,21 +134,6 @@ fn role_root_has_unexpected_entries(root: &std::path::Path) -> anyhow::Result<bo
     Ok(false)
 }
 
-/// Derive a short repository name from a git remote URL (e.g. `jackin-project/jackin`).
-pub(super) async fn git_repo_name(
-    dir: &std::path::Path,
-    runner: &mut impl CommandRunner,
-) -> Option<String> {
-    let dir_str = dir.display().to_string();
-    let url = try_capture(
-        runner,
-        "git",
-        &["-C", &dir_str, "remote", "get-url", "origin"],
-    )
-    .await?;
-    parse_repo_name(&url)
-}
-
 /// Get the current branch name for a git directory.
 pub(super) async fn git_branch(
     dir: &std::path::Path,
@@ -161,18 +146,6 @@ pub(super) async fn git_branch(
         &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"],
     )
     .await
-}
-
-/// Check whether a path is inside a git work tree.
-pub(super) async fn is_git_dir(dir: &std::path::Path, runner: &mut impl CommandRunner) -> bool {
-    let dir_str = dir.display().to_string();
-    try_capture(
-        runner,
-        "git",
-        &["-C", &dir_str, "rev-parse", "--is-inside-work-tree"],
-    )
-    .await
-    .is_some()
 }
 
 /// Resolve the role repository: clone if missing, pull if already present.

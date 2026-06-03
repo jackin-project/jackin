@@ -18,7 +18,6 @@ pub(super) const BANNER: &str = jackin_tui::ansi::BRAND_BANNER;
 
 pub mod cleanup;
 pub mod config;
-pub mod daemon;
 pub mod dispatch;
 pub mod help;
 pub mod logs;
@@ -30,7 +29,6 @@ pub use config::{
     AuthCommand, CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand,
     MountCommand, TrustCommand,
 };
-pub use daemon::DaemonCommand;
 pub use logs::LogsArgs;
 pub use prune::PruneCommand;
 pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
@@ -108,9 +106,6 @@ pub enum Command {
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
     Logs(LogsArgs),
-    /// Manage the per-user jackin daemon
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
-    Daemon(DaemonCommand),
     /// Print help documentation for a jackin command
     ///
     /// With no arguments, displays the jackin manual.
@@ -185,7 +180,6 @@ mod tests {
             "role",
             "workspace",
             "config",
-            "daemon",
         ] {
             assert!(help.contains(cmd), "missing command: {cmd}");
         }

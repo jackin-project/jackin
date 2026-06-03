@@ -148,9 +148,6 @@ pub async fn run(cli: Cli) -> Result<()> {
             opts.force = force;
             opts.agent = agent;
             opts.role_branch = role_branch;
-            if let Err(err) = crate::daemon::ensure_started(&paths) {
-                eprintln!("[jackin] daemon unavailable: {err:#}");
-            }
             // Pre-launch reconcile: if a previous role in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
@@ -309,9 +306,6 @@ pub async fn run(cli: Cli) -> Result<()> {
             } else {
                 play_construct_intro_if_needed(&paths, &docker).await
             };
-            if let Err(err) = crate::daemon::ensure_started(&paths) {
-                eprintln!("[jackin] daemon unavailable: {err:#}");
-            }
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(
                 &paths,
@@ -496,7 +490,6 @@ pub async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Logs(args) => runtime::logs::run(&paths, args),
-        Command::Daemon(daemon_cmd) => crate::daemon::exec(daemon_cmd),
         Command::Config(config_cmd) => match config_cmd {
             cli::ConfigCommand::Mount(mount_cmd) => match mount_cmd {
                 cli::MountCommand::Add {
@@ -1481,7 +1474,6 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Workspace(_) => "workspace",
         Command::Config(_) => "config",
         Command::Logs(_) => "logs",
-        Command::Daemon(_) => "daemon",
         Command::Help { .. } => "help",
     }
 }

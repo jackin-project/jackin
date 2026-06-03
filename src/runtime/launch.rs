@@ -25,9 +25,7 @@ use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
     image_name, image_name_for_branch,
 };
-use super::repo_cache::{
-    RepoResolveOptions, git_branch, git_repo_name, is_git_dir, resolve_agent_repo_with,
-};
+use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 use super::universe::ExitClaim;
 use crate::docker_client::DockerApi;
 
@@ -554,7 +552,6 @@ struct LaunchContext<'a> {
     dind: &'a str,
     selector: &'a RoleSelector,
     agent_display_name: &'a str,
-    workspace_label: &'a str,
     workspace: &'a crate::isolation::materialize::MaterializedWorkspace,
     state: &'a RoleState,
     git: &'a GitIdentity,
@@ -620,39 +617,6 @@ fn capsule_config(
     }
 }
 
-#[derive(Debug, Default)]
-struct WorkspaceRepoLabels {
-    repository: Option<String>,
-    branch: Option<String>,
-}
-
-async fn workspace_repo_labels(
-    workspace: &crate::isolation::materialize::MaterializedWorkspace,
-    runner: &mut impl CommandRunner,
-) -> WorkspaceRepoLabels {
-    let Some(mount) = workspace
-        .mounts
-        .iter()
-        .find(|mount| mount.dst == workspace.workdir)
-        .or_else(|| workspace.mounts.first())
-    else {
-        return WorkspaceRepoLabels::default();
-    };
-
-    let bind_src = PathBuf::from(&mount.bind_src);
-    if !bind_src.join(".git").exists() {
-        return WorkspaceRepoLabels::default();
-    }
-    if !is_git_dir(&bind_src, runner).await {
-        return WorkspaceRepoLabels::default();
-    }
-
-    WorkspaceRepoLabels {
-        repository: git_repo_name(&bind_src, runner).await,
-        branch: git_branch(&bind_src, runner).await,
-    }
-}
-
 /// Create the Docker network, start `DinD`, and launch the role container.
 #[allow(clippy::too_many_lines)]
 async fn launch_role_runtime(
@@ -668,7 +632,6 @@ async fn launch_role_runtime(
         dind,
         selector,
         agent_display_name,
-        workspace_label,
         workspace,
         state,
         git,
@@ -697,19 +660,6 @@ async fn launch_role_runtime(
     }
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
-    let workspace_label = format!("jackin.workspace={workspace_label}");
-    let role_key_label = format!("jackin.role_key={}", selector.key());
-    let agent_label = format!("jackin.agent={}", agent.slug());
-    let workspace_repo = workspace_repo_labels(workspace, runner).await;
-    let branch_label = format!(
-        "jackin.branch={}",
-        workspace_repo.branch.as_deref().unwrap_or("")
-    );
-    let repository_label = format!(
-        "jackin.repository={}",
-        workspace_repo.repository.as_deref().unwrap_or("")
-    );
-    let primary_repo_label = format!("jackin.primary_repo={}", workspace.workdir);
     let network_labels = [LABEL_MANAGED, role_label.as_str()]
         .iter()
         .map(|kv| {
@@ -815,8 +765,6 @@ async fn launch_role_runtime(
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
-    let daemon_socket = paths.run_dir.join("jackin-daemon.sock");
-    let daemon_socket_mount = format!("{}:/jackin/daemon.sock", daemon_socket.display());
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -856,18 +804,6 @@ async fn launch_role_runtime(
         &class_label,
         "--label",
         &display_label,
-        "--label",
-        &workspace_label,
-        "--label",
-        &role_key_label,
-        "--label",
-        &agent_label,
-        "--label",
-        &repository_label,
-        "--label",
-        &branch_label,
-        "--label",
-        &primary_repo_label,
         "--workdir",
         &workspace.workdir,
     ];
@@ -1008,9 +944,6 @@ async fn launch_role_runtime(
         run_args.push(env_str);
     }
     run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
-    if daemon_socket.exists() {
-        run_args.extend_from_slice(&["-e", "JACKIN_DAEMON_SOCKET=/jackin/daemon.sock"]);
-    }
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
@@ -1077,9 +1010,6 @@ async fn launch_role_runtime(
         "launch",
         "prepared host socket dir {socket_dir_str} (0o700) and Capsule config for bind-mount at /jackin/run",
     );
-    if daemon_socket.exists() {
-        run_args.extend_from_slice(&["-v", &daemon_socket_mount]);
-    }
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
     // daemon uses it only to choose the first tab; per-session
@@ -2276,7 +2206,6 @@ async fn load_role_with(
             dind: &dind,
             selector,
             agent_display_name: &agent_display_name,
-            workspace_label,
             workspace: &materialized,
             state: &state,
             git: &git,
@@ -7225,46 +7154,6 @@ plugins = []
             .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
-        assert!(
-            run_cmd.contains(&format!("jackin.workspace={}", workspace.label)),
-            "role container must label the source workspace for daemon session/list: {run_cmd}"
-        );
-        assert!(run_cmd.contains("jackin.role_key=agent-smith"));
-        assert!(run_cmd.contains("jackin.agent=claude"));
-        assert!(run_cmd.contains("jackin.repository="));
-        assert!(run_cmd.contains("jackin.branch="));
-        assert!(run_cmd.contains("jackin.primary_repo=/workspace"));
-    }
-
-    #[tokio::test]
-    async fn workspace_repo_labels_reads_mounted_workdir_git_state() {
-        let temp = tempdir().unwrap();
-        let repo = temp.path().join("repo");
-        std::fs::create_dir_all(repo.join(".git")).unwrap();
-        let workspace = MaterializedWorkspace {
-            workdir: "/workspace".to_string(),
-            mounts: vec![MaterializedMount {
-                bind_src: repo.display().to_string(),
-                dst: "/workspace".to_string(),
-                readonly: false,
-                isolation: MountIsolation::Shared,
-                worktree_aux: None,
-            }],
-            keep_awake_enabled: false,
-        };
-        let mut runner = FakeRunner {
-            capture_queue: VecDeque::from([
-                "true".to_string(),
-                "git@github.com:jackin-project/jackin.git".to_string(),
-                "feature/desktop".to_string(),
-            ]),
-            ..Default::default()
-        };
-
-        let labels = workspace_repo_labels(&workspace, &mut runner).await;
-
-        assert_eq!(labels.repository.as_deref(), Some("jackin-project/jackin"));
-        assert_eq!(labels.branch.as_deref(), Some("feature/desktop"));
     }
 
     #[tokio::test]
