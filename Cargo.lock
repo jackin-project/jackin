@@ -1754,6 +1754,7 @@ name = "jackin-config"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "directories",
  "fs2",
  "jackin-core",
  "serde",

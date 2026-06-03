@@ -21,6 +21,7 @@ anyhow = "1.0"
 toml_edit = "0.25"
 toml = "1.1"
 fs2 = "0.4"
+directories = "6.0"
 
 [dev-dependencies]
 tempfile = "3.20"

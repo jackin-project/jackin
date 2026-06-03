@@ -11,14 +11,22 @@
 //! migration lands in Phase 2 after `operator_env` is extracted to `jackin-env`.
 
 pub mod auth;
+pub mod mounts;
+pub mod paths;
 pub mod planner;
 pub mod schema;
+pub mod sensitive;
+pub mod validation;
 pub mod versions;
 
 pub use auth::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, GithubAuthMode,
     KimiAuthConfig, OpencodeAuthConfig,
 };
+pub use mounts::{parse_mount_spec, parse_mount_spec_resolved};
+pub use paths::{expand_tilde, resolve_path};
+pub use sensitive::{SensitiveMount, find_sensitive_mounts};
+pub use validation::{validate_isolation_layout, validate_workspace_config};
 pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, MountIsolation, OpRef};
 pub use planner::{
     CollapseError, CollapsePlan, Removal, WorkspaceCreatePlan, WorkspaceEditPlan,
