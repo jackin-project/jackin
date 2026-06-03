@@ -224,7 +224,7 @@ The `-dind` / `-net` / `-dind-certs` suffix conventions are derived in **three**
 ### Test infrastructure DRY
 - [x] `seed_valid_role_repo`, `first_temp_role_repo` consolidated into `runtime/test_support.rs`
 - [x] `TEST_DOCKERFILE_FROM`, `TEST_MANIFEST_TOML` in `runtime/test_support.rs`
-- [ ] **Consolidate the two shared test doubles into one support module — corrected:** there is no duplication; exactly one `FakeDockerClient` (`docker_client/mod.rs:794`, the only `DockerApi` impl besides `BollardDockerClient`, reused by 15 test files) and one `FakeRunner` (`runtime/test_support.rs:10`, the only `CommandRunner` impl besides `ShellRunner`, reused by 12 files). The issue is *location split* (two different non-test modules), not parallel copies — move both into one shared `test_support` location. Leave the 1Password `Op*Runner` stubs (`StubRunner`, `CounterRunner`, `FakeOpWriter`, `TestOpRunner`, …) alone — different trait family **(was: "duplicated across runtime/ and isolation/ test files")**
+- [x] **Consolidate the two shared test doubles into one support module:** moved `FakeDockerClient` from `docker_client/mod.rs` to `runtime/test_support.rs`; `docker_client/mod.rs` re-exports it for backward compatibility. Both `FakeDockerClient` and `FakeRunner` now live in `runtime/test_support.rs`
 
 ### Agent dispatch → trait (tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/))
 
