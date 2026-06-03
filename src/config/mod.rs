@@ -44,71 +44,8 @@ const fn is_false(v: &bool) -> bool {
 /// Re-exported from `jackin-core` — the canonical definition lives there.
 pub use jackin_core::AuthForwardMode;
 
-/// Per-agent auth configuration wrapper.
-///
-/// Used at every layer (global, per-role, per-workspace, per-(workspace × role))
-/// to carry the auth-forwarding mode for a particular agent.
-///
-/// Credentials always live in the shared `[env]` block at the same layer.
-/// For `auth_forward = "oauth_token"` mode, `jackin workspace claude-token
-/// setup` writes `CLAUDE_CODE_OAUTH_TOKEN` into `[workspaces.<ws>.env]`
-/// as an `op://` reference — identical to how `ANTHROPIC_API_KEY` or
-/// `GH_TOKEN` are stored.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct AgentAuthConfig {
-    #[serde(default)]
-    pub auth_forward: AuthForwardMode,
-}
-
-/// Controls how the host's `gh` auth state reaches role containers.
-///
-/// Distinct from [`AuthForwardMode`] because GitHub has no `api_key`
-/// / `oauth_token` distinction — `gh` PATs are uniform regardless of
-/// how the operator obtained them.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GithubAuthMode {
-    /// Materialize `~/.config/gh/hosts.yml` from the host's `gh` login on
-    /// each launch. When the host is logged out, the container's existing
-    /// login (if any) is preserved.
-    #[default]
-    #[serde(rename = "sync")]
-    Sync,
-    /// Inject `GH_TOKEN` (and `GITHUB_TOKEN`) into the container's process
-    /// env from the resolved operator-env layer. Any prior `hosts.yml`
-    /// in role state is wiped so a stale file-based login cannot shadow
-    /// the env token.
-    #[serde(rename = "token")]
-    Token,
-    /// Wipe any forwarded `gh` state and never forward host auth.
-    #[serde(rename = "ignore")]
-    Ignore,
-}
-
-impl std::fmt::Display for GithubAuthMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Sync => write!(f, "sync"),
-            Self::Token => write!(f, "token"),
-            Self::Ignore => write!(f, "ignore"),
-        }
-    }
-}
-
-impl std::str::FromStr for GithubAuthMode {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "sync" => Ok(Self::Sync),
-            "token" => Ok(Self::Token),
-            "ignore" => Ok(Self::Ignore),
-            other => Err(format!(
-                "invalid github auth_forward mode {other:?}; expected one of: sync, token, ignore"
-            )),
-        }
-    }
-}
+/// Re-exported from `jackin-config` — the canonical definitions live there.
+pub use jackin_config::{AgentAuthConfig, GithubAuthMode};
 
 /// Operator-only `[github]` configuration block. Lives at the same
 /// three layers as `[claude]` and `[codex]` (global, workspace,
@@ -127,58 +64,8 @@ pub struct GithubAuthConfig {
     pub env: BTreeMap<String, crate::operator_env::EnvValue>,
 }
 
-/// Generate an `AgentAuthConfig` newtype that rejects `OAuthToken` at both
-/// parse time (serde) and construction time (`new`). Used for agents that do
-/// not support OAuth token forwarding: Codex, Amp, Kimi, `OpenCode`.
-macro_rules! agent_auth_config_no_oauth {
-    ($name:ident, $agent:literal) => {
-        #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-        pub struct $name(pub(crate) AgentAuthConfig);
-
-        impl $name {
-            /// Construct, rejecting `OAuthToken`. The only public path to build
-            /// the newtype outside of serde, so the invariant holds end-to-end.
-            pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
-                if cfg.auth_forward == AuthForwardMode::OAuthToken {
-                    return Err(concat!(
-                        "auth_forward 'oauth_token' is not supported for ",
-                        $agent
-                    ));
-                }
-                Ok(Self(cfg))
-            }
-        }
-
-        impl<'de> serde::Deserialize<'de> for $name {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                let cfg = AgentAuthConfig::deserialize(deserializer)?;
-                if cfg.auth_forward == AuthForwardMode::OAuthToken {
-                    return Err(serde::de::Error::custom(concat!(
-                        "auth_forward 'oauth_token' is not supported for ",
-                        $agent,
-                        "; supported modes: sync, api_key, ignore"
-                    )));
-                }
-                Ok(Self(cfg))
-            }
-        }
-
-        impl std::ops::Deref for $name {
-            type Target = AgentAuthConfig;
-            fn deref(&self) -> &Self::Target {
-                &self.0
-            }
-        }
-    };
-}
-
-agent_auth_config_no_oauth!(CodexAuthConfig, "codex");
-agent_auth_config_no_oauth!(AmpAuthConfig, "amp");
-agent_auth_config_no_oauth!(KimiAuthConfig, "kimi");
-agent_auth_config_no_oauth!(OpencodeAuthConfig, "opencode");
+/// Re-exported from `jackin-config` — the canonical definitions live there.
+pub use jackin_config::{AmpAuthConfig, CodexAuthConfig, KimiAuthConfig, OpencodeAuthConfig};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -1687,10 +1687,13 @@ dependencies = [
  "futures-util",
  "insta",
  "jackin-build-meta",
+ "jackin-config",
  "jackin-console",
  "jackin-core",
+ "jackin-env",
  "jackin-launch",
  "jackin-protocol",
+ "jackin-runtime",
  "jackin-tui",
  "nix 0.31.3",
  "open",
@@ -1745,6 +1748,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-config"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "serde",
+ "thiserror 2.0.18",
+ "toml_edit",
+]
+
+[[package]]
 name = "jackin-console"
 version = "0.6.0-dev"
 dependencies = [
@@ -1770,6 +1784,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-env"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "jackin-launch"
 version = "0.6.0-dev"
 dependencies = [
@@ -1788,6 +1812,16 @@ version = "0.6.0-dev"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "jackin-runtime"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

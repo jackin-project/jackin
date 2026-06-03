@@ -2,10 +2,13 @@
 members = [
     "crates/jackin-build-meta",
     "crates/jackin-capsule",
+    "crates/jackin-config",
     "crates/jackin-console",
     "crates/jackin-core",
+    "crates/jackin-env",
     "crates/jackin-protocol",
     "crates/jackin-launch",
+    "crates/jackin-runtime",
     "crates/jackin-tui",
     "crates/jackin-tui-lookbook",
 ]
@@ -39,7 +42,10 @@ path = "src/bin/build_jackin_capsule.rs"
 [dependencies]
 anyhow = "1.0"
 anstyle-parse = "1.0"
+jackin-config = { path = "crates/jackin-config" }
 jackin-core = { path = "crates/jackin-core" }
+jackin-env = { path = "crates/jackin-env" }
+jackin-runtime = { path = "crates/jackin-runtime" }
 jackin-tui = { path = "crates/jackin-tui" }
 jackin-launch = { path = "crates/jackin-launch" }
 jackin-console = { path = "crates/jackin-console" }
