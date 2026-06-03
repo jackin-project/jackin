@@ -23,8 +23,9 @@ use jackin::binary_artifact::{chmod_executable, container_arch};
 use jackin::capsule_binary::{REQUIRED_VERSION, cached_binary_path};
 use jackin::paths::JackinPaths;
 
-// Compile-time workspace root: reliable even when cwd differs.
-const WORKSPACE_ROOT: &str = env!("CARGO_MANIFEST_DIR");
+// Compile-time crate manifest dir. Now that the binary lives in crates/jackin/,
+// this points to crates/jackin/ — not the workspace root. See workspace_root().
+const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 fn main() -> Result<()> {
     let Args { arch, export } = parse_args()?;
@@ -38,7 +39,7 @@ fn main() -> Result<()> {
             .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
     }
 
-    let workspace = PathBuf::from(WORKSPACE_ROOT);
+    let workspace = workspace_root();
     build_via_zigbuild(&workspace, &arch, &cached)?;
 
     if export {
@@ -61,6 +62,25 @@ fn main() -> Result<()> {
 struct Args {
     arch: Option<String>,
     export: bool,
+}
+
+/// Walk up from the crate manifest dir to find the Cargo workspace root.
+///
+/// Before Phase 8 the binary lived at the workspace root, so CARGO_MANIFEST_DIR
+/// pointed there directly. Now it lives at crates/jackin/; the workspace root is
+/// the ancestor whose Cargo.toml contains `[workspace]`.
+fn workspace_root() -> PathBuf {
+    let mut dir = PathBuf::from(MANIFEST_DIR);
+    loop {
+        let toml = dir.join("Cargo.toml");
+        if toml.exists() {
+            let contents = std::fs::read_to_string(&toml).unwrap_or_default();
+            if contents.contains("[workspace]") {
+                return dir;
+            }
+        }
+        dir = dir.parent().expect("hit filesystem root without finding workspace Cargo.toml").to_path_buf();
+    }
 }
 
 fn parse_args() -> Result<Args> {
