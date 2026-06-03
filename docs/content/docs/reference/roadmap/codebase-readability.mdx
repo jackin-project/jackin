@@ -2,7 +2,7 @@
 title: "Codebase readability & restructuring"
 ---
 
-**Status**: Implemented — all phases complete. The root `src/` crate no longer exists; every production module lives in a single-responsibility crate under `crates/`; the dependency graph is a DAG with no upward edges; zero `mod.rs` files remain in `crates/`; `cargo clippy --workspace --all-targets --all-features -- -D warnings` is green. The one remaining Phase 7 item (moving the remaining ~47 generic console UI files that bind `ManagerState<'_>` type aliases) is tracked as a follow-up.
+**Status**: Implemented — all phases complete. The root `src/` crate no longer exists; every production module lives in a single-responsibility crate under `crates/`; the dependency graph is a DAG with no upward edges; zero `mod.rs` files remain in `crates/`; `cargo clippy --workspace --all-targets --all-features -- -D warnings` is green. Phase 7 audit confirmed that the generic console screen logic (`screens/editor/update`, `screens/editor/view`, `screens/settings/update`, `screens/settings/view`) is already in `jackin-console` (23K+ L); what remains in `crates/jackin/src/console/tui/input/` and `view/` are host-coupled adapters that belong in the binary tier.
 
 ## Goal
 
