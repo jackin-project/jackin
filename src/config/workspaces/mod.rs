@@ -1,71 +1,11 @@
-//! Workspace drift detection: find isolated mounts whose src changed while containers are running.
+//! Workspace config helpers: lookup, CRUD, validation.
 //!
-//! Classifies drifted records into `running_containers` (edit blocked) and
-//! `stopped_records` (requires `--delete-isolated-state`). Not responsible
-//! for applying edits or removing isolation records — callers handle that
-//! after inspecting the returned `DriftDetection`.
+//! Drift detection (`DriftDetection`, `detect_workspace_edit_drift`) lives in
+//! `runtime/drift.rs` (it uses `runtime::list_role_names` and `isolation::state`).
+//! Re-exported from `config/mod.rs` for backward compatibility.
 
 use super::AppConfig;
-use crate::isolation::state::{IsolationRecord, list_records_for_workspace};
 use crate::workspace::{WorkspaceConfig, WorkspaceEdit, validate_workspace_config};
-use anyhow::Context as _;
-
-/// Outcome of a pre-edit drift check for a saved workspace.
-///
-/// `running_containers` are containers that are still running and have
-/// preserved isolated state for a mount whose `src` would be changed by the
-/// edit. The CLI rejects the edit unconditionally — the operator must eject
-/// before re-editing.
-///
-/// `stopped_records` are the corresponding records on stopped containers.
-/// The CLI requires `--delete-isolated-state` to drop them before applying
-/// the edit.
-#[derive(Debug, Clone, Default)]
-pub struct DriftDetection {
-    pub running_containers: Vec<String>,
-    pub stopped_records: Vec<IsolationRecord>,
-}
-
-/// Classify isolation drift across every container that holds preserved
-/// state for `workspace_name`.
-///
-/// A record drifts when its mount destination is no longer present in the
-/// edited mounts, or when the new `src` differs from the `original_src`
-/// recorded at materialization time. Drifted records on running containers
-/// go into `running_containers`; the rest land in `stopped_records`.
-pub async fn detect_workspace_edit_drift(
-    paths: &crate::paths::JackinPaths,
-    workspace_name: &str,
-    edited_mounts: &[crate::workspace::MountConfig],
-    docker: &impl crate::docker_client::DockerApi,
-) -> anyhow::Result<DriftDetection> {
-    let records = list_records_for_workspace(&paths.data_dir, workspace_name)?;
-    if records.is_empty() {
-        return Ok(DriftDetection::default());
-    }
-    let running = crate::runtime::list_role_names(docker, false)
-        .await
-        .context("listing running containers to check for workspace edit drift")?;
-
-    let mut affected_running = Vec::new();
-    let mut affected_stopped = Vec::new();
-    for rec in records {
-        let edited = edited_mounts.iter().find(|m| m.dst == rec.mount_dst);
-        let drifted = edited.is_none_or(|m| m.src != rec.original_src);
-        if !drifted {
-            continue;
-        }
-        if running.iter().any(|n| n == &rec.container_name) {
-            affected_running.push(rec.container_name.clone());
-        } else {
-            affected_stopped.push(rec);
-        }
-    }
-    Ok(DriftDetection {
-        running_containers: affected_running,
-        stopped_records: affected_stopped,
-    })
-}
 
 impl AppConfig {
     /// Return the workspace named `name`, or an `unknown workspace` error.

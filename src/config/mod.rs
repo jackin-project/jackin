@@ -15,6 +15,7 @@ mod roles;
 mod tests;
 mod workspaces;
 
+pub use crate::runtime::drift::{DriftDetection, detect_workspace_edit_drift};
 pub use editor::{ConfigEditor, EnvScope};
 pub use migrations::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
 pub(crate) use mounts::MountEntry;
@@ -22,7 +23,6 @@ pub use mounts::{DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows};
 pub use roles::{
     build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
 };
-pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
 /// Re-exported from `jackin-core`.
 pub use jackin_core::AuthForwardMode;

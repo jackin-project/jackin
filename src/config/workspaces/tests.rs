@@ -325,11 +325,11 @@ fn remove_workspace_errors_when_missing() {
 }
 
 mod drift_detection {
-    use super::super::*;
     use crate::docker_client::{ContainerRow, FakeDockerClient};
     use crate::isolation::MountIsolation;
     use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
     use crate::paths::JackinPaths;
+    use crate::runtime::drift::detect_workspace_edit_drift;
     use tempfile::TempDir;
 
     fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> IsolationRecord {
