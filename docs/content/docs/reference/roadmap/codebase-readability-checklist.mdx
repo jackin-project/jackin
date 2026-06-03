@@ -369,7 +369,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 
 ### `jackin-env` (→ core, config)
 - [x] Crate exists, standalone compile; `mod_module_files = "deny"` enforced
-- [ ] Move `OpRunner` (`operator_env/mod.rs:5`), `resolve_env_value` (`:40`)
+- [x] Move `OpRunner`, `resolve_env_value` — moved to `jackin-env/src/op_runner.rs`; `operator_env/mod.rs` re-exports
 - [ ] Move `OpCli` (`:133`) + subprocess helpers (add `serde_json` dep — confirmed needed for `op` JSON output, ~20 parse sites)
 - [ ] Move `OpStructRunner` (`:445`), `OpWriteRunner` (`:749`)
 - [ ] Move `EnvLayer` (`:1324`) + `merge_layers` (`:1346`)
