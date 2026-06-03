@@ -96,19 +96,25 @@ GLM and Kimi would use the same shape with `wire_api = "chat"`, but Codex no lon
 
 jackin' generates this file **inside the container** during `jackin-capsule runtime-setup` (the same stage that already seeds agent home dirs; see <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />). The host's `~/.codex/config.toml` is never touched (the host-side rule in <RepoFile path="AGENTS.md" /> forbids it). Today the only in-container write to `~/.codex/config.toml` marks the workspace trusted; this extends that same in-container write surface with a provider block.
 
-### OpenCode — provider config via `OPENCODE_CONFIG_CONTENT` (extend existing env)
+### OpenCode — self-contained `provider` blocks in `~/.config/opencode/opencode.json`
 
-The entrypoint already exports `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'` before launching OpenCode (<RepoFile path="docker/runtime/entrypoint.sh" />). OpenCode reads an OpenAI-compatible provider from config of the shape:
+`jackin-capsule runtime-setup` writes `~/.config/opencode/opencode.json` (see `write_opencode_config` in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />) with `"permission":"allow"` plus a `provider` block for each alt provider whose key is present in the container env. Each block is **self-contained** — it pins the SDK (`npm`), base URL, API key, and the one model id — rather than overriding only `baseURL` and leaving OpenCode to fill the rest from its bundled models.dev registry:
 
 ```json
 {
+  "permission": "allow",
   "provider": {
-    "zai": { "options": { "baseURL": "https://api.z.ai/api/coding/paas/v4" } }
+    "zai": {
+      "name": "Z.AI",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "https://api.z.ai/api/coding/paas/v4", "apiKey": "<ZAI_API_KEY>" },
+      "models": { "glm-5.1": { "name": "glm-5.1" } }
+    }
   }
 }
 ```
 
-The design extends the existing `OPENCODE_CONFIG_CONTENT` JSON with a `provider` block (and selects the model in `provider/model` form, which `OpencodeConfig.model` already documents in <RepoFile path="src/manifest/mod.rs" />), rather than introducing a new config-file write.
+The self-contained shape is load-bearing: the registry keys Z.AI's credential off `ZHIPU_API_KEY` (a name jackin' never sets) and has no `kimi` provider at all (its entry is `kimi-for-coding`), so a bare `{options:{baseURL}}` block would fail to authenticate or to resolve `-m kimi/kimi-for-coding`. MiniMax and Kimi reuse the same Anthropic-compatible endpoints as the verified Claude Code path via `@ai-sdk/anthropic`; Z.AI's coding-plan endpoint is OpenAI-compatible. At spawn the selected provider's `Provider::opencode_model()` supplies the `-m <provider>/<model>` flag (e.g. `-m zai/glm-5.1`).
 
 ## Proposal
 
@@ -126,7 +132,7 @@ In <RepoFile path="crates/jackin-protocol/src/lib.rs" />:
 
 - **Claude Code**: keep `env_overrides` as the Anthropic-surface renderer; extend it to the new variants.
 - **Codex**: add a renderer that emits the `[model_providers]` + `[profiles]` TOML fragment, written by `jackin-capsule runtime-setup`.
-- **OpenCode**: add a renderer that emits the `provider` JSON fragment, merged into `OPENCODE_CONFIG_CONTENT`.
+- **OpenCode**: add a renderer that emits a self-contained `provider` block per provider into `~/.config/opencode/opencode.json`.
 
 ### 3. Operator surface
 

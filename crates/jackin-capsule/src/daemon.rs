@@ -1651,16 +1651,30 @@ impl Multiplexer {
             }
             DialogAction::SpawnAgent { agent, intent } => {
                 let providers = self.providers_for_agent(agent.as_deref());
-                if providers.len() > 1 {
-                    // Multiple providers available — push ProviderPicker
-                    // on top so the operator chooses before spawning.
-                    self.dialog_push(Dialog::new_provider_picker(agent, providers, intent));
-                } else {
-                    // Zero or one provider — spawn immediately without
-                    // a picker step (operator experience unchanged when
-                    // Z.AI is not configured).
-                    self.dialog_clear();
-                    self.dispatch_spawn_intent(agent, intent);
+                match providers.as_slice() {
+                    // Multiple providers — push ProviderPicker so the operator
+                    // chooses before spawning.
+                    [_, _, ..] => {
+                        self.dialog_push(Dialog::new_provider_picker(agent, providers, intent));
+                    }
+                    // Exactly one alt provider — route through it directly
+                    // (no picker), matching the single-option launch path.
+                    [only] => {
+                        let provider = *only;
+                        self.dialog_clear();
+                        let env_overrides = provider.env_overrides(self.zai_key.as_deref());
+                        self.dispatch_spawn_intent_with_provider(
+                            agent,
+                            intent,
+                            &env_overrides,
+                            Some(provider.label()),
+                        );
+                    }
+                    // No alt provider — spawn on the agent's native auth.
+                    [] => {
+                        self.dialog_clear();
+                        self.dispatch_spawn_intent(agent, intent);
+                    }
                 }
             }
             DialogAction::SpawnAgentWithProvider {

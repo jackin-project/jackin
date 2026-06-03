@@ -57,19 +57,15 @@ pub const ZAI_DEFAULT_HAIKU_MODEL: &str = "glm-4.5-air";
 /// Z.AI recommended API timeout (50 minutes) for long-running agent operations through the proxy.
 pub const ZAI_API_TIMEOUT_MS: &str = "3000000";
 
-/// MiniMax Anthropic-compatible API base URL (Claude Code).
+/// MiniMax Anthropic-compatible API base URL (Claude Code and OpenCode).
 pub const MINIMAX_BASE_URL: &str = "https://api.minimax.io/anthropic";
-/// MiniMax OpenAI-compatible API base URL (Codex / OpenCode).
-pub const MINIMAX_OPENAI_BASE_URL: &str = "https://api.minimax.io/v1";
 /// MiniMax Token Plan model — all three Claude tiers map to this single model.
 pub const MINIMAX_DEFAULT_MODEL: &str = "MiniMax-M3";
 /// MiniMax recommended API timeout, matching the Z.AI value.
 pub const MINIMAX_API_TIMEOUT_MS: &str = "3000000";
 
-/// Kimi Code Anthropic-compatible API base URL (Claude Code).
+/// Kimi Code Anthropic-compatible API base URL (Claude Code and OpenCode).
 pub const KIMI_BASE_URL: &str = "https://api.kimi.com/coding";
-/// Kimi Code OpenAI-compatible API base URL (OpenCode).
-pub const KIMI_OPENAI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 /// Kimi Code model — all three Claude tiers map to this single model.
 pub const KIMI_DEFAULT_MODEL: &str = "kimi-for-coding";
 /// Kimi Code recommended API timeout, matching the Z.AI value.
@@ -248,11 +244,14 @@ impl Provider {
             }
             _ => {}
         }
-        // Single entry means no real choice — skip the picker.
-        if providers.len() <= 1 {
-            Vec::new()
-        } else {
-            providers
+        // Collapse to "no choice" only when the sole option is the agent's
+        // native Anthropic auth, which needs no redirect. A single alt
+        // provider must survive so the caller routes the session through it
+        // (a one-option picker is pointless, but the routing still has to
+        // happen — dropping it would silently ignore a configured key).
+        match providers.as_slice() {
+            [] | [Provider::Anthropic] => Vec::new(),
+            _ => providers,
         }
     }
 
@@ -421,8 +420,18 @@ mod provider_tests {
             vec![Provider::Zai, Provider::Minimax]
         );
         assert!(Provider::available_for("opencode", false, false, false, false).is_empty());
-        // Only ANTHROPIC_API_KEY, no alts → single entry → no picker.
+        // Only ANTHROPIC_API_KEY, no alts → sole entry is native Anthropic → no picker.
         assert!(Provider::available_for("opencode", true, false, false, false).is_empty());
+        // A single alt provider survives so the caller auto-routes through it
+        // (no picker, but the configured key must not be silently ignored).
+        assert_eq!(
+            Provider::available_for("opencode", false, true, false, false),
+            vec![Provider::Zai]
+        );
+        assert_eq!(
+            Provider::available_for("opencode", false, false, false, true),
+            vec![Provider::Kimi]
+        );
 
         // Unknown agent: always empty.
         assert!(Provider::available_for("amp", true, true, true, true).is_empty());

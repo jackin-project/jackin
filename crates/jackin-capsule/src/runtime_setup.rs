@@ -343,33 +343,98 @@ fn setup_opencode() -> Result<()> {
 /// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
 /// for every alt provider whose API key is present in the container env.
 fn write_opencode_config(config: &Path) -> Result<()> {
-    let mut provider_map = serde_json::Map::new();
-    if nonempty_env("ZAI_API_KEY").is_some() {
-        provider_map.insert(
-            "zai".to_string(),
-            json!({"options": {"baseURL": jackin_protocol::ZAI_OPENAI_BASE_URL}}),
-        );
-    }
-    if nonempty_env("MINIMAX_API_KEY").is_some() {
-        provider_map.insert(
-            "minimax".to_string(),
-            json!({"options": {"baseURL": jackin_protocol::MINIMAX_OPENAI_BASE_URL}}),
-        );
-    }
-    if nonempty_env("KIMI_CODE_API_KEY").is_some() {
-        provider_map.insert(
-            "kimi".to_string(),
-            json!({"options": {"baseURL": jackin_protocol::KIMI_OPENAI_BASE_URL}}),
-        );
-    }
-    let mut cfg = json!({"permission": "allow"});
-    if !provider_map.is_empty() {
-        cfg["provider"] = serde_json::Value::Object(provider_map);
-    }
+    let cfg = build_opencode_config(
+        nonempty_env("ZAI_API_KEY"),
+        nonempty_env("MINIMAX_API_KEY"),
+        nonempty_env("KIMI_CODE_API_KEY"),
+    );
     let mut content = serde_json::to_vec(&cfg).context("failed to serialize opencode.json")?;
     content.push(b'\n');
     fs::write(config, &content).context("failed to write opencode.json")?;
     Ok(())
+}
+
+/// Builds the `opencode.json` value: base `"permission":"allow"` plus a
+/// self-contained `provider` block for each alt provider whose key is present.
+///
+/// Each block fully defines the provider (npm SDK, baseURL, apiKey, the one
+/// model id) instead of relying on OpenCode's bundled models.dev registry. Two
+/// reasons it must be self-contained: the registry keys Z.AI's credential off
+/// `ZHIPU_API_KEY` (a name jackin never sets — so an apiKey-less block would
+/// fail to authenticate), and the registry has no `kimi` provider at all (its
+/// entry is `kimi-for-coding`), so a bare `{baseURL}` block leaves OpenCode
+/// with no SDK or model list to resolve `-m kimi/kimi-for-coding`. The model id
+/// is the suffix [`jackin_protocol::Provider::opencode_model`] emits for the
+/// `-m <provider>/<model>` flag; the test binds the two so they cannot drift.
+fn build_opencode_config(
+    zai_key: Option<String>,
+    minimax_key: Option<String>,
+    kimi_key: Option<String>,
+) -> serde_json::Value {
+    let mut providers = serde_json::Map::new();
+    if let Some(key) = zai_key {
+        providers.insert(
+            "zai".to_string(),
+            opencode_provider_block(
+                "Z.AI",
+                "@ai-sdk/openai-compatible",
+                jackin_protocol::ZAI_OPENAI_BASE_URL,
+                &key,
+                jackin_protocol::ZAI_DEFAULT_OPUS_MODEL,
+            ),
+        );
+    }
+    if let Some(key) = minimax_key {
+        providers.insert(
+            "minimax".to_string(),
+            opencode_provider_block(
+                "MiniMax",
+                "@ai-sdk/anthropic",
+                jackin_protocol::MINIMAX_BASE_URL,
+                &key,
+                jackin_protocol::MINIMAX_DEFAULT_MODEL,
+            ),
+        );
+    }
+    if let Some(key) = kimi_key {
+        providers.insert(
+            "kimi".to_string(),
+            opencode_provider_block(
+                "Kimi",
+                "@ai-sdk/anthropic",
+                jackin_protocol::KIMI_BASE_URL,
+                &key,
+                jackin_protocol::KIMI_DEFAULT_MODEL,
+            ),
+        );
+    }
+    let mut cfg = json!({"permission": "allow"});
+    if !providers.is_empty() {
+        cfg["provider"] = serde_json::Value::Object(providers);
+    }
+    cfg
+}
+
+/// One OpenCode custom-provider block. `model_id` is both the sole entry in the
+/// `models` map and the suffix OpenCode matches after the provider id in
+/// `-m <provider>/<model_id>`. MiniMax and Kimi speak the Anthropic wire format
+/// (npm `@ai-sdk/anthropic`, the same endpoints the verified Claude Code path
+/// uses); Z.AI's coding-plan endpoint is OpenAI-compatible.
+fn opencode_provider_block(
+    name: &str,
+    npm: &str,
+    base_url: &str,
+    api_key: &str,
+    model_id: &str,
+) -> serde_json::Value {
+    let mut models = serde_json::Map::new();
+    models.insert(model_id.to_string(), json!({ "name": model_id }));
+    json!({
+        "name": name,
+        "npm": npm,
+        "options": { "baseURL": base_url, "apiKey": api_key },
+        "models": serde_json::Value::Object(models),
+    })
 }
 
 fn seed_home_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
@@ -718,5 +783,63 @@ mod tests {
     #[test]
     fn hook_marker_points_at_capsule_runtime_binary() {
         assert_eq!(CAPSULE_RUNTIME_BIN, "/jackin/runtime/jackin-capsule");
+    }
+
+    #[test]
+    fn opencode_config_blocks_are_self_contained_and_match_picker_models() {
+        use jackin_protocol::Provider;
+        let cfg = build_opencode_config(
+            Some("zai-tok".to_string()),
+            Some("minimax-tok".to_string()),
+            Some("kimi-tok".to_string()),
+        );
+        assert_eq!(cfg["permission"], "allow");
+        let providers = cfg["provider"].as_object().expect("provider block present");
+
+        for (provider, npm, base_url, api_key) in [
+            (
+                Provider::Zai,
+                "@ai-sdk/openai-compatible",
+                jackin_protocol::ZAI_OPENAI_BASE_URL,
+                "zai-tok",
+            ),
+            (
+                Provider::Minimax,
+                "@ai-sdk/anthropic",
+                jackin_protocol::MINIMAX_BASE_URL,
+                "minimax-tok",
+            ),
+            (
+                Provider::Kimi,
+                "@ai-sdk/anthropic",
+                jackin_protocol::KIMI_BASE_URL,
+                "kimi-tok",
+            ),
+        ] {
+            // The picker emits the `-m <provider>/<model>` string; the config
+            // must define that exact provider id and model id, or the session
+            // fails to start.
+            let flag = provider
+                .opencode_model()
+                .expect("alt provider has -m string");
+            let (provider_id, model_id) = flag.split_once('/').expect("provider/model shape");
+            let block = providers
+                .get(provider_id)
+                .unwrap_or_else(|| panic!("config missing provider {provider_id}"));
+            assert_eq!(block["npm"], npm);
+            assert_eq!(block["options"]["baseURL"], base_url);
+            assert_eq!(block["options"]["apiKey"], api_key);
+            assert!(
+                block["models"].get(model_id).is_some(),
+                "provider {provider_id} block missing model {model_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn opencode_config_omits_absent_providers() {
+        let cfg = build_opencode_config(None, None, None);
+        assert_eq!(cfg["permission"], "allow");
+        assert!(cfg.get("provider").is_none());
     }
 }

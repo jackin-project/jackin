@@ -800,8 +800,20 @@ fn launch_with_committed_agent(
     let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
 
     let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
-    if providers.is_empty() {
-        return Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))));
+    match providers.as_slice() {
+        // No alt routing — launch on the agent's native auth.
+        [] => return Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent)))),
+        // Exactly one provider — route through it directly; a one-option
+        // picker would be busywork.
+        [only] => {
+            return Ok(Some(ConsoleOutcome::LaunchWithProvider {
+                selector: role,
+                workspace,
+                agent,
+                provider: *only,
+            }));
+        }
+        _ => {}
     }
 
     if let ConsoleStage::Manager(ms) = &mut state.stage {
