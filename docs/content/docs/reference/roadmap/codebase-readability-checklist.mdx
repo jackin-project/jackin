@@ -311,7 +311,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
   - [ ] `isolation/materialize/mod.rs` (1,119L) — `materialize_one` (`:650`, 251L) + `materialize_clone` (`:903`, 204L)
   - [ ] `console/effects.rs` (1,227L) — prod monolith by accumulation, no single mega-fn; split by concern if pursued
   - [ ] `docker_client/mod.rs` (1,054L) — prod monolith by accumulation; will largely relocate in Stage 1 (DockerApi → core) + Stage 4 (BollardDockerClient → runtime)
-- [ ] **Re-classified — not a prod split:** `console/tui/view/list.rs` (1,833L) is **97% inline test code** (1,792L of `mod *tests {}` under a file-level `#![allow(too_many_lines)]`); only ~41 prod lines. Externalize the inline test modules — it is a test bucket, not a monolith
+- [x] **Re-classified — not a prod split:** `console/tui/view/list.rs` (1,833L) is **97% inline test code**; externalized to `list.rs` (8L prod, `#[cfg(test)] mod tests;`) + `list/tests.rs` (1,825L, all 4 named test modules)
 
 ### Crate-side file splits
 - [x] `jackin-capsule/src/daemon.rs` → `daemon.rs` (982L) + `daemon/tests.rs`
