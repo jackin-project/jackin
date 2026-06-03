@@ -1,0 +1,158 @@
+---
+title: "Alternative LLM Providers (MiniMax, Kimi, GLM everywhere)"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+jackin' already routes one alternative provider into one agent: [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) is offered as an Anthropic-compatible backend for Claude Code (and OpenCode) sessions. The scaffolding that makes this work — the `Provider` enum, `Provider::env_overrides`, `Provider::available_for`, the in-container token resolution keyed on `ZAI_API_KEY`, and the console provider picker — is hardcoded to exactly that one provider and that one agent surface.
+
+Operators who hold a **MiniMax** or **Kimi** coding subscription, or who want to point **Codex** at a GLM/MiniMax/Kimi backend, have no path today. The three providers all sell coding-focused subscription plans that issue a plain API key usable against a coding base URL (no OAuth flow), so the shipped env-key pattern fits all three — but the catalog is closed at the `Provider::Zai` variant, `available_for` returns providers only for `agent == "claude"`, and there is no generation of the per-agent config that Codex and OpenCode require to route to an OpenAI-compatible endpoint.
+
+This item generalizes the existing single-provider scaffolding into a small provider catalog covering **MiniMax**, **Kimi**, and **GLM/Z.AI**, across **Claude Code**, **Codex**, and **OpenCode**.
+
+## Subscription landscape
+
+All three providers sell a coding-oriented subscription whose activation surface is a **copyable API key**, not an OAuth session. This is the load-bearing fact for the design: the operator journey is identical in shape to the shipped Z.AI flow — subscribe, copy a key from a console page, paste it into the jackin' **Auth** tab, pick the provider at launch. jackin' stores the key in its own `[env]` map (never a host dotfile) and injects the redirect into the spawned agent process only.
+
+| Provider | Subscribe | Extract key | Key shape | Models |
+|---|---|---|---|---|
+| **Z.AI / GLM Coding Plan** | [z.ai/subscribe](https://z.ai/subscribe) | [z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) | Z.AI API key | GLM-5.1, GLM-5-Turbo, GLM-4.7, GLM-4.5-Air |
+| **MiniMax Coding / Token Plan** | [platform.minimax.io](https://platform.minimax.io/subscribe/token-plan) (Plus $20 / Max $50 / Ultra $120 per month) | [platform.minimax.io/console/plan](https://platform.minimax.io/console/plan) → **Plan Details** → **Subscription Key (sk-cp)** | `sk-cp-…` | MiniMax-M3 (Token Plan), M2.x (Coding Plan) |
+| **Kimi Code** | [kimi.com/membership/pricing](https://www.kimi.com/membership/pricing) (shares Kimi membership quota; 7-day refresh, no carryover) | [Kimi Code Console](https://www.kimi.com/code/console) → API Keys | Kimi Code API key (shown once) | `kimi-for-coding` |
+
+The MiniMax **Subscription Key (sk-cp)** is explicitly scoped to "Token Plan / credits calls" and "cannot be used for pay-as-you-go" — it is the subscription key, distinct from a pay-as-you-go platform key. Kimi Code's coding endpoint (`api.kimi.com/coding`) is likewise distinct from the general Moonshot platform endpoint (`api.moonshot.ai/v1`); the subscription benefit is the coding endpoint, and its key is managed in the Kimi Code Console, not the Moonshot platform.
+
+## Endpoints
+
+Each provider exposes both an Anthropic-compatible surface (for Claude Code) and an OpenAI-compatible surface (for Codex and OpenCode):
+
+| Provider | Anthropic-compatible (Claude Code) | OpenAI-compatible (Codex / OpenCode) |
+|---|---|---|
+| **Z.AI / GLM** | `https://api.z.ai/api/anthropic` *(shipped)* | `https://api.z.ai/api/coding/paas/v4` |
+| **MiniMax** | `https://api.minimax.io/anthropic` (China: `https://api.minimaxi.com/anthropic`) | `https://api.minimax.io/v1` |
+| **Kimi** | `https://api.kimi.com/coding/` | `https://api.kimi.com/coding/v1` |
+
+## Per-agent injection mechanism
+
+The three target agents read provider configuration through three different mechanisms. The design keeps one provider catalog as the source of truth and gives each agent its own renderer off that catalog.
+
+### Claude Code — environment variables (mechanism already shipped)
+
+Claude Code routes to an Anthropic-compatible endpoint through process environment variables. This is exactly what `Provider::env_overrides` produces today for Z.AI:
+
+- `ANTHROPIC_BASE_URL` — the provider's Anthropic-compatible endpoint
+- `ANTHROPIC_AUTH_TOKEN` — the provider key (Kimi's own docs use `ANTHROPIC_API_KEY`; the implementation must confirm which variable Kimi's endpoint honors)
+- `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL` — per-provider tier mapping
+- `API_TIMEOUT_MS`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` — operational settings already injected for Z.AI
+
+Extending Claude Code support to MiniMax and Kimi is purely catalog data: add the variants, their base URLs, and their model maps. The injection path in <RepoFile path="crates/jackin-protocol/src/lib.rs" /> and the allowlist in `SESSION_ENV_PASSTHROUGH` (<RepoFile path="crates/jackin-capsule/src/session.rs" />) already carry the `ANTHROPIC_*` keys.
+
+### Codex — generated `~/.codex/config.toml` `[model_providers]` block (new mechanism)
+
+Codex routes to a custom backend through a `[model_providers.<id>]` table plus a `[profiles.<id>]` table in `~/.codex/config.toml`, for example:
+
+```toml
+[model_providers.zai]
+name = "Z.AI Coding Plan"
+base_url = "https://api.z.ai/api/coding/paas/v4"
+env_key = "ZAI_API_KEY"
+wire_api = "chat"
+
+[profiles.glm]
+model_provider = "zai"
+model = "GLM-4.7"
+```
+
+jackin' generates this file **inside the container** during `jackin-capsule runtime-setup` (the same stage that already seeds agent home dirs; see <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />). The host's `~/.codex/config.toml` is never touched (the host-side rule in <RepoFile path="AGENTS.md" /> forbids it). Today the only in-container write to `~/.codex/config.toml` marks the workspace trusted; this extends that same in-container write surface with a provider block.
+
+### OpenCode — provider config via `OPENCODE_CONFIG_CONTENT` (extend existing env)
+
+The entrypoint already exports `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'` before launching OpenCode (<RepoFile path="docker/runtime/entrypoint.sh" />). OpenCode reads an OpenAI-compatible provider from config of the shape:
+
+```json
+{
+  "provider": {
+    "zai": { "options": { "baseURL": "https://api.z.ai/api/coding/paas/v4" } }
+  }
+}
+```
+
+The design extends the existing `OPENCODE_CONFIG_CONTENT` JSON with a `provider` block (and selects the model in `provider/model` form, which `OpencodeConfig.model` already documents in <RepoFile path="src/manifest/mod.rs" />), rather than introducing a new config-file write.
+
+## Proposal
+
+One provider catalog, three renderers, plus the operator surface that already exists for Z.AI.
+
+### 1. Generalize the provider catalog
+
+In <RepoFile path="crates/jackin-protocol/src/lib.rs" />:
+
+- Add `Provider::Minimax` and `Provider::Kimi` variants alongside `Anthropic` and `Zai`. (The `Kimi` *provider* is distinct from the `kimi` *agent runtime* — naming in code and docs must keep that separation explicit so the two concepts do not blur.)
+- Add a per-provider constant block (base URLs for both protocol surfaces, model-tier map, timeout) mirroring the existing `ZAI_*` constants.
+- Replace the boolean `zai_key_available` parameter on `available_for` with a per-provider key-presence input, and return the providers available for a given `(agent, provider-keys)` pair from a single matrix.
+
+### 2. Per-agent renderers off the catalog
+
+- **Claude Code**: keep `env_overrides` as the Anthropic-surface renderer; extend it to the new variants.
+- **Codex**: add a renderer that emits the `[model_providers]` + `[profiles]` TOML fragment, written by `jackin-capsule runtime-setup`.
+- **OpenCode**: add a renderer that emits the `provider` JSON fragment, merged into `OPENCODE_CONFIG_CONTENT`.
+
+### 3. Operator surface
+
+- Host env keys `MINIMAX_API_KEY` and `KIMI_CODE_API_KEY` alongside the shipped `ZAI_API_KEY`, resolved in-container at spawn (same path as `daemon.rs` resolves `ZAI_API_KEY`). Per the operator decision, keys follow the existing env-key pattern — no new config table, no schema version bump.
+- Auth-tab rows for MiniMax and Kimi mirroring the shipped `AuthKind::Zai` row.
+- Generalize the two-item provider picker into an N-item picker driven by `available_for`, and the tab-label suffix (`Claude (Z.AI)`) into a per-provider suffix.
+
+### 4. Documentation
+
+Ship an operator guide per provider under `guides/authentication/` (mirroring the Z.AI guide), each documenting the subscribe → extract-key → paste-into-Auth-tab → pick-at-launch journey for subscription holders.
+
+## Host-side effects
+
+None. Every artifact this feature generates — the Codex `config.toml` provider block, the OpenCode provider JSON, the Claude Code env overrides — is produced **inside the container** at spawn time. Provider keys live in jackin' `config.toml` `[env]` map (the operator's jackin' config, not a host dotfile) and are injected only into the selected agent process. The host's `~/.codex/`, `~/.claude/`, and OpenCode config stay untouched. This is the same contract the shipped Z.AI integration honors.
+
+## Implementation phases
+
+### Phase 1 — Catalog + Claude Code for all three providers
+
+Add the `Minimax` and `Kimi` variants and their constants; extend `env_overrides`, `available_for`, and the picker/tab-label surfaces. This phase reuses the entire shipped Z.AI mechanism and delivers MiniMax + Kimi for Claude Code with the lowest risk.
+
+### Phase 2 — Codex backend routing
+
+Add the `[model_providers]` + `[profiles]` renderer and wire it into `jackin-capsule runtime-setup`. Resolve the wire-protocol question (see Open Questions) before claiming Codex support for `chat`-only providers.
+
+### Phase 3 — OpenCode backend routing
+
+Extend `OPENCODE_CONFIG_CONTENT` with the provider block and model selection.
+
+### Phase 4 — Operator surface + docs
+
+Auth-tab rows, N-item picker generalization, per-provider tab labels, and the per-provider operator guides.
+
+## Open questions
+
+1. **Codex wire protocol.** Codex moved to the Responses API and is reported to have removed Chat Completions support in early 2026 ([openai/codex#9612](https://github.com/openai/codex/issues/9612)). MiniMax documents `wire_api = "responses"` and is safe; GLM and Kimi are documented with `wire_api = "chat"`. Phase 2 must verify, against the pinned Codex version in the construct image, whether `chat`-wire providers still route at all — and if not, whether GLM/Kimi expose a Responses-compatible endpoint. This gates which `(provider, codex)` cells are actually deliverable.
+2. **Kimi Anthropic auth variable.** Kimi's Claude Code docs use `ANTHROPIC_API_KEY` rather than `ANTHROPIC_AUTH_TOKEN`. Confirm which variable the `api.kimi.com/coding/` endpoint honors, and whether Kimi's reported pre-launch "skip Anthropic login" step is needed inside the container or is already covered by jackin's launch flags.
+3. **Model-tier mapping per provider.** Z.AI maps Opus/Sonnet/Haiku tiers to GLM-5.1 / GLM-5-Turbo / GLM-4.5-Air. MiniMax exposes a single `MiniMax-M3` (so all three tiers map to one model); Kimi exposes `kimi-for-coding`. Confirm the intended tier maps, especially as MiniMax's Coding Plan model (M2.x) differs from its Token Plan model (M3).
+4. **China endpoints.** MiniMax exposes a separate China base URL (`api.minimaxi.com`). Decide whether region selection is operator-configurable or out of scope for the first cut.
+5. **Per-provider quota surfacing.** Subscriptions carry 5-hour / weekly / 7-day quota windows. Whether jackin' surfaces remaining quota is a separate concern, likely deferred to the [Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) account-state work.
+
+## Related files
+
+- <RepoFile path="crates/jackin-protocol/src/lib.rs" /> — `Provider` enum, `env_overrides`, `available_for`, `ZAI_*` constants
+- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `SESSION_ENV_PASSTHROUGH` allowlist
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — in-container key resolution (`ZAI_API_KEY`) and provider env application
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — in-container agent setup (target for Codex `config.toml` generation)
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — `OPENCODE_CONFIG_CONTENT` export
+- <RepoFile path="src/manifest/mod.rs" /> — per-agent `model` fields
+- <RepoFile path="src/console/mod.rs" /> — `zai_key_present` and the Auth tab
+
+## Cross-references
+
+- [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) — the shipped single-provider integration this item generalizes
+- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the agent runtimes this routing targets
+- [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) — once landed, each runtime's provider renderer can live in its adapter rather than in shared dispatch
+- [Agent launch flags API](/reference/roadmap/agent-launch-flags-api/) — shares the `jackin-capsule runtime-setup` dispatch surface Phase 2 writes into
+- [Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/) — the parallel work for Anthropic's own auth
