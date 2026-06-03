@@ -16,6 +16,9 @@
 //! * `render_exit` is called on both success and error exits from
 //!   `load_role_with`.
 
+mod launch_dind;
+use launch_dind::run_dind_sidecar;
+
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::{
@@ -30,7 +33,6 @@ use anyhow::Context;
 use fs2::FileExt;
 use std::path::PathBuf;
 
-use super::attach::wait_for_dind;
 use super::attach::{
     AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
     reconnect_or_create_session_with_focus, start_or_reconnect_capsule_client,
@@ -40,8 +42,8 @@ use super::discovery::list_running_agent_names;
 use super::identity::{GitIdentity, load_git_identity, load_host_identity};
 use super::image::{build_agent_image, prepare_runtime_binaries};
 use super::naming::{
-    LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
-    image_name, image_name_for_branch,
+    LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume, image_name,
+    image_name_for_branch,
 };
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 use super::universe::ExitClaim;
@@ -1077,92 +1079,6 @@ async fn launch_role_runtime(
 enum ExitPhase {
     PreAttach,
     PostAttach,
-}
-
-/// Create the Docker network and start the `DinD` sidecar container.
-///
-/// Extracted from `launch_role_runtime` for readability and as a prerequisite
-/// for `launch_dind.rs` Stage 3 split. `wait_for_dind` is already shared
-/// with `attach`; this function is the single-file complement.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
-async fn run_dind_sidecar(
-    container_name: &str,
-    network: &str,
-    dind: &str,
-    certs_volume: &str,
-    docker: &impl crate::docker_client::DockerApi,
-    runner: &mut impl crate::docker::CommandRunner,
-    steps: &mut StepCounter,
-    docker_run_opts: &crate::docker::RunOptions,
-) -> anyhow::Result<()> {
-    // Create Docker network
-    let role_label = format!("jackin.role={container_name}");
-    let network_labels = [LABEL_MANAGED, role_label.as_str()]
-        .iter()
-        .map(|kv| {
-            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-            (k.to_string(), v.to_string())
-        })
-        .collect();
-    docker.create_network(network, network_labels).await?;
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(super::progress::LaunchStage::Network, "isolated");
-    }
-
-    // Start Docker-in-Docker with TLS.
-    //
-    // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
-    // appended to the auto-generated server cert's Subject Alternative Names.
-    // Without it, the cert only covers the short container ID, `docker`, and
-    // `localhost` — so roles connecting via `tcp://{dind}:2376` get a TLS
-    // hostname-mismatch error.
-    //
-    // The entrypoint concatenates `DOCKER_TLS_SAN` into the openssl config
-    // verbatim (no type prefix added), so the value must already be in the
-    // `DNS:<name>` form that openssl's `subjectAltName` section expects.
-    // Without the prefix, openssl aborts with `v2i_GENERAL_NAME_ex: missing
-    // value` and DinD never comes up.
-    let certs_dind_mount = format!("{certs_volume}:/certs/client");
-    let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
-    let dind_args: Vec<&str> = vec![
-        "run",
-        "-d",
-        "--name",
-        dind,
-        "--network",
-        network,
-        "--privileged",
-        "--label",
-        LABEL_MANAGED,
-        "--label",
-        LABEL_KIND_DIND,
-        "--label",
-        &role_label,
-        "-e",
-        "DOCKER_TLS_CERTDIR=/certs",
-        "-e",
-        &dind_tls_san,
-        "-v",
-        &certs_dind_mount,
-        "docker:dind",
-    ];
-    let run_dind = runner.run("docker", &dind_args, None, docker_run_opts);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(run_dind).await?;
-    } else {
-        run_dind.await?;
-    }
-
-    let dind_ready = wait_for_dind(dind, certs_volume, docker);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(dind_ready).await?;
-    } else {
-        dind_ready.await?;
-    }
-    Ok(())
 }
 
 /// inspect + log fetch so the surfaced error names the exit code, OOM
