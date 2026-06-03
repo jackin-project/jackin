@@ -2,10 +2,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Clear, Paragraph, Widget};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Clear, HighlightSpacing, List, ListItem, ListState, Paragraph, Widget};
 
 use crate::ModalOutcome;
 use crate::components::FilterInput;
@@ -201,32 +201,22 @@ impl Widget for SelectList<'_> {
                 self.empty_label.to_string(),
                 crate::theme::DIM,
             )))
-            .alignment(ratatui::layout::Alignment::Center)
+            .alignment(Alignment::Center)
             .render(list_area, buf);
             return;
         }
-        let lines: Vec<Line<'_>> = self
+        let items: Vec<ListItem<'_>> = self
             .state
             .filtered
             .iter()
-            .enumerate()
-            .map(|(row, &item)| {
-                let is_selected = Some(row) == self.state.selected;
-                let prefix = if is_selected { "\u{25b8} " } else { "  " };
-                let style = if is_selected {
-                    Style::default()
-                        .fg(PHOSPHOR_GREEN)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(WHITE)
-                };
-                Line::from(vec![Span::styled(
-                    format!("{prefix}{}", self.state.items[item]),
-                    style,
-                )])
+            .map(|&item| {
+                ListItem::new(Line::from(Span::styled(
+                    self.state.items[item].clone(),
+                    Style::default().fg(WHITE),
+                )))
             })
             .collect();
-        render_selected_lines(list_area, buf, lines, self.state.selected);
+        render_selected_lines(list_area, buf, items, self.state.selected);
     }
 }
 
@@ -243,14 +233,26 @@ pub fn render_select_list(
 fn render_selected_lines(
     area: Rect,
     buf: &mut Buffer,
-    lines: Vec<Line<'_>>,
+    items: Vec<ListItem<'_>>,
     selected: Option<usize>,
 ) {
+    let total = items.len();
     let viewport = usize::from(area.height);
-    let total = lines.len();
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
-    let visible: Text<'_> = lines.into_iter().skip(offset).take(viewport).collect();
-    Paragraph::new(visible).render(area, buf);
+
+    // Use ratatui List so the selected row gets a full-width background fill.
+    let highlight = Style::default()
+        .bg(PHOSPHOR_GREEN)
+        .fg(PHOSPHOR_DARK)
+        .add_modifier(Modifier::BOLD);
+    let mut state = ListState::default()
+        .with_offset(offset)
+        .with_selected(selected);
+    let list = List::new(items)
+        .highlight_style(highlight)
+        .highlight_symbol("\u{25b8} ") // ▸
+        .highlight_spacing(HighlightSpacing::Always);
+    ratatui::widgets::StatefulWidget::render(list, area, buf, &mut state);
 
     if is_scrollable(total, viewport)
         && let Some(thumb) = full_cell_thumb(total, viewport, area.height, offset)
