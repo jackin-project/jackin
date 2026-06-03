@@ -25,24 +25,9 @@ pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + 
     std::sync::Arc::new(OpCli::new())
 }
 
-/// `id` is the `account_uuid` accepted by `op --account <id>`. `email`
-/// and `url` feed the picker's Account pane.
-pub type OpAccount = jackin_console::tui::components::op_picker::OpPickerAccount;
-
-pub type OpVault = jackin_console::tui::components::op_picker::OpPickerVault;
-
-/// `name` comes from JSON `title`; `subtitle` from
-/// `additional_information` (login username/email, empty on secure
-/// notes) — used to disambiguate items sharing a title.
-pub type OpItem = jackin_console::tui::components::op_picker::OpPickerItem;
-
-/// Field metadata only — the value is intentionally absent.
-///
-/// `reference` is the verbatim `op://...` 1Password emits per field;
-/// the picker commits this rather than synthesizing a path from
-/// display names (synthesis was wrong for sections, names containing
-/// `/`, or whitespace).
-pub type OpField = jackin_console::tui::components::op_picker::OpPickerField;
+/// Re-exported from `jackin-core` — canonical definitions live there so
+/// `jackin-env` no longer depends on `jackin-console` for data types.
+pub use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
 
 pub type OpCache = jackin_console::tui::components::op_picker::OpPickerCache;
 

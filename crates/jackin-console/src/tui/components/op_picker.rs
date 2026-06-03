@@ -334,38 +334,10 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
     },
 }
 
-/// 1Password account metadata displayed by the picker.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpPickerAccount {
-    pub id: String,
-    pub email: String,
-    pub url: String,
-}
-
-/// 1Password vault metadata displayed by the picker.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpPickerVault {
-    pub id: String,
-    pub name: String,
-}
-
-/// 1Password item metadata displayed by the picker.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpPickerItem {
-    pub id: String,
-    pub name: String,
-    pub subtitle: String,
-}
-
-/// 1Password field metadata displayed by the picker.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpPickerField {
-    pub id: String,
-    pub label: String,
-    pub field_type: String,
-    pub concealed: bool,
-    pub reference: String,
-}
+pub use jackin_core::op_types::{OpAccount as OpPickerAccount, OpVault as OpPickerVault};
+/// Re-exported from `jackin-core` — canonical definitions live there so
+/// `jackin-env` no longer depends on `jackin-console` for data types.
+pub use jackin_core::op_types::{OpField as OpPickerField, OpItem as OpPickerItem};
 
 /// Session-scoped metadata cache for picker drill-down panes.
 pub type OpPickerCache =

@@ -14,6 +14,7 @@ pub mod docker;
 pub mod env_value;
 pub mod isolation;
 pub mod manifest;
+pub mod op_types;
 pub mod paths;
 pub mod runner;
 pub mod selector;

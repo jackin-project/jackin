@@ -67,7 +67,7 @@ Dev/build-only crates outside the tiers: jackin-build-meta, jackin-tui-lookbook.
 - [x] `jackin-env` does not name `jackin-runtime` — `cargo check -p jackin-env` passes standalone
 - [ ] `jackin-runtime` is the **only** crate depending on `bollard` and the privileged-docker code paths
 - [ ] The root binary contains only `cli/`, `app/`, `main.rs`, `bin/` glue — every domain `use` resolves to `jackin_{core,config,env,runtime}`
-- [ ] **Layering cleanup — break the `jackin-env → jackin-console` edge:** `OpCli` imports the 1Password data aliases (`OpAccount`, `OpVault`, `OpItem`, `OpField`, `OpCache`) from `jackin_console::tui::components::op_picker`. A non-visual logic crate depending on a TUI crate inverts the tier order. Move those plain data types **down** to `jackin-core` (or `jackin-config`) and have both `jackin-env` and `jackin-console` import them from there, so `jackin-env`'s dependencies are exactly `core` + `config`
+- [x] **Layering cleanup — break the `jackin-env → jackin-console` edge:** `OpAccount`, `OpVault`, `OpItem`, `OpField` plain data types moved to `jackin-core/src/op_types.rs`; `jackin-env` now imports from `jackin-core`; `jackin-console` uses type aliases (`OpPickerAccount` etc.) pointing to `jackin-core`. `OpCache` still references `jackin-console::op_cache` (generic type, not data)
 - [x] Every new crate uses the self-named Rust 2024 layout (`foo.rs` + `foo/`, no `mod.rs`) and enforces `clippy::mod_module_files = "deny"` — verified: 0 `mod.rs` files in all crates, all 4 new crates have the lint
 
 ---
@@ -250,7 +250,7 @@ The 8 dispatch sites (verified line numbers):
 - [ ] **PR 3 — retire fs/version behavior sites:** `version_check/mod.rs:108-114`, `runtime/image/mod.rs:455-481` (delete the fn-pointer tuple), `instance/mod.rs:464-478`
 - [ ] **PR 4 — retire heaviest behavior:** `instance/mod.rs:427-458` (`provision_slot(&mut ProvisionedAuth, …)` — note the side-effect signature, each impl writes its own typed field), `agent_binary/mod.rs:196-305` (`resolve_latest_release().await`, relocate each `resolve_*` body into its adapter module — these stay structurally per-adapter)
 - [x] Keep `Agent::ALL` + exhaustive test matches (roadmap non-goal: the exhaustivity gate stays) — `Agent::ALL` is in `jackin-core/src/agent.rs:30`, all exhaustive matches intact
-- [ ] Update `agent-runtime-trait.mdx` `**Status**` per PR; it references stale paths `agent/mod.rs` / `instance/auth/mod.rs` (the `Agent` enum is now in `jackin-core/src/agent.rs`; the dispatch is inlined in `instance/mod.rs`)
+- [x] Update `agent-runtime-trait.mdx` — updated to note Agent is in `jackin-core/src/agent.rs`; stale `src/agent/mod.rs` path corrected to a RepoFile link
 
 ---
 
@@ -357,7 +357,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [x] Move `RoleSource`, `GitConfig` (already in jackin-config); `DockerConfig` now moved; `AppConfig` deferred (has binary-only impl blocks)
 - [x] Move `DockerMounts`, `GlobalMountConfig` (already in jackin-config), `MountEntry` — all now in `jackin-config/schema.rs`; `From<GlobalMountConfig> for MountConfig` impl also moved
 - [x] Move `MountConfig`, `WorkspaceConfig`, `WorkspaceRoleOverride`, `KeepAwakeConfig` (all already in `jackin-config/schema.rs`); `WorkspaceEdit` now moved to `jackin-config` in this session. `WorkspaceRoleAccess`/`WorkdirMount` trait impls deferred
-- [ ] Move `CURRENT_CONFIG_VERSION` / `CURRENT_WORKSPACE_VERSION` + `CONFIG_MIGRATIONS` / `WORKSPACE_MIGRATIONS` + the migration engine (resolve manifest-engine sharing — see PR 1)
+- [x] `CURRENT_CONFIG_VERSION` / `CURRENT_WORKSPACE_VERSION` / `current_config_version()` / `current_workspace_version()` already in jackin-config/versions.rs; `CONFIG_MIGRATIONS` + `WORKSPACE_MIGRATIONS` + migration engine deferred (complex, needs AppConfig in jackin-config first)
 - [ ] Move `ConfigEditor` + `EnvScope` (`config/editor/mod.rs:42/17`) — drop the `validate_reserved_names` call (done in PR 0); add `toml_edit`/`fs2` deps (already present: `toml_edit`)
 - [ ] Move `AppConfig::load_or_init` + `atomic_write` (`config/persist/mod.rs`) — drop the `validate_reserved_names` call (PR 0)
 - [ ] Move `plan_create` / `plan_edit` / `plan_collapse` (`workspace/planner/mod.rs:48/66/201`)
