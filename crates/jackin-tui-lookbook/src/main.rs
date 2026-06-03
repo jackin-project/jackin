@@ -110,11 +110,13 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = TerminalGuard::enter()?;
     let mut selected = 0usize;
     let mut preview_scroll: u16 = 0;
+    let mut sidebar_scroll: u16 = 0; // item-level scroll offset for the sidebar list
     let mut focus = Focus::Sidebar;
     let mut interactor: Box<dyn StoryInteraction> = stories[selected].make_interactor();
     // Rects updated after every draw for mouse hit-testing.
     let mut last_component_area = Rect::default();
     let mut last_preview_panel_area = Rect::default();
+    let mut last_sidebar_area = Rect::default();
     // Sidebar inner rect (inside the Panel border). Used to map click row
     // → story index (each story occupies 2 rows: component name + id).
     let mut last_sidebar_inner_area = Rect::default();
@@ -163,6 +165,18 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             let sidebar_inner = sidebar_block.inner(sidebar_area);
             frame.render_widget(sidebar_block, sidebar_area);
 
+            // Each story occupies 2 rows; compute the viewport in items.
+            let sidebar_viewport_items = (usize::from(sidebar_inner.height) / 2).max(1);
+            let total_stories = stories.len();
+            // Cursor-follow: keep selected item visible.
+            let eff_scroll = jackin_tui::components::cursor_follow_offset(
+                selected,
+                total_stories,
+                sidebar_viewport_items,
+                sidebar_scroll,
+            );
+            sidebar_scroll = eff_scroll;
+
             let items: Vec<ListItem<'_>> = stories
                 .iter()
                 .map(|s| {
@@ -172,7 +186,9 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                     ])
                 })
                 .collect();
-            let mut list_state = ListState::default().with_selected(Some(selected));
+            let mut list_state = ListState::default()
+                .with_offset(usize::from(eff_scroll))
+                .with_selected(Some(selected));
             frame.render_stateful_widget(
                 List::new(items)
                     .highlight_style(
@@ -181,10 +197,24 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                             .fg(PHOSPHOR_DARK)
                             .add_modifier(Modifier::BOLD),
                     )
-                    .highlight_symbol("▸ "),
+                    .highlight_symbol("▸ ")
+                    .highlight_spacing(ratatui::widgets::HighlightSpacing::Always),
                 sidebar_inner,
                 &mut list_state,
             );
+            // Vertical scrollbar: render in row units (2 rows per story).
+            let sidebar_content_rows = total_stories * 2;
+            let sidebar_viewport_rows = usize::from(sidebar_inner.height);
+            if jackin_tui::components::is_scrollable(sidebar_content_rows, sidebar_viewport_rows) {
+                jackin_tui::components::render_vertical_scrollbar(
+                    frame,
+                    sidebar_area,
+                    sidebar_content_rows,
+                    eff_scroll.saturating_mul(2),
+                );
+            }
+
+            last_sidebar_area = sidebar_area;
 
             // ── Description block ─────────────────────────────────────────────
             let desc_block = Panel::new()
@@ -312,33 +342,53 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
         match event::read()? {
             Event::Mouse(mouse) => {
                 use crossterm::event::MouseEventKind;
-                if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    let col = mouse.column;
-                    let row = mouse.row;
+                let col = mouse.column;
+                let row = mouse.row;
 
-                    // Click in sidebar: select the story at the clicked row and
-                    // focus the sidebar. Each story occupies 2 rows in the list
-                    // (component name line + id line). Per TUI design decisions:
-                    // clicking a focusable container transfers focus immediately.
-                    let s = last_sidebar_inner_area;
-                    if col >= s.x && col < s.x + s.width && row >= s.y && row < s.y + s.height {
-                        let row_in_inner = (row - s.y) as usize;
-                        let clicked_idx = row_in_inner / 2; // 2 rows per story
-                        let next = clicked_idx.min(stories.len().saturating_sub(1));
-                        if next != selected {
-                            preview_scroll = 0;
-                            interactor = stories[next].make_interactor();
-                            selected = next;
+                match mouse.kind {
+                    MouseEventKind::Down(_) => {
+                        // Click in sidebar: select the story at the clicked row and
+                        // focus the sidebar. Each story occupies 2 rows in the list
+                        // (component name line + id line). Per TUI design decisions:
+                        // clicking a focusable container transfers focus immediately.
+                        let s = last_sidebar_inner_area;
+                        if col >= s.x && col < s.x + s.width && row >= s.y && row < s.y + s.height {
+                            let row_in_inner = usize::from(row - s.y);
+                            let clicked_idx = (usize::from(sidebar_scroll) + row_in_inner / 2)
+                                .min(stories.len().saturating_sub(1));
+                            if clicked_idx != selected {
+                                preview_scroll = 0;
+                                interactor = stories[clicked_idx].make_interactor();
+                                selected = clicked_idx;
+                            }
+                            focus = Focus::Sidebar;
                         }
-                        focus = Focus::Sidebar;
-                    }
 
-                    // Click in preview panel: transfer focus to preview so the
-                    // component becomes keyboard-interactive.
-                    let p = last_preview_panel_area;
-                    if col >= p.x && col < p.x + p.width && row >= p.y && row < p.y + p.height {
-                        focus = Focus::Preview;
+                        // Click in preview panel: transfer focus to preview so the
+                        // component becomes keyboard-interactive.
+                        let p = last_preview_panel_area;
+                        if col >= p.x && col < p.x + p.width && row >= p.y && row < p.y + p.height {
+                            focus = Focus::Preview;
+                        }
                     }
+                    // Mouse wheel over sidebar: scroll the story list.
+                    MouseEventKind::ScrollUp => {
+                        let s = last_sidebar_area;
+                        if col >= s.x && col < s.x + s.width && row >= s.y && row < s.y + s.height {
+                            apply_scroll_delta(&mut sidebar_scroll, -1, 10, stories.len() * 2);
+                        } else if matches!(focus, Focus::Preview) {
+                            apply_scroll_delta(&mut preview_scroll, -3, 10, preview_content_rows);
+                        }
+                    }
+                    MouseEventKind::ScrollDown => {
+                        let s = last_sidebar_area;
+                        if col >= s.x && col < s.x + s.width && row >= s.y && row < s.y + s.height {
+                            apply_scroll_delta(&mut sidebar_scroll, 1, 10, stories.len() * 2);
+                        } else if matches!(focus, Focus::Preview) {
+                            apply_scroll_delta(&mut preview_scroll, 3, 10, preview_content_rows);
+                        }
+                    }
+                    _ => {}
                 }
                 interactor.handle_mouse(mouse, last_component_area);
             }
