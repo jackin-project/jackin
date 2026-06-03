@@ -125,7 +125,7 @@ jackin's focus indicator is the border of the **active interaction container** r
 
 Do not show two bright container borders in the same visible layer. If a dialog is open, the background's previous focus border must not remain visible. If focus moves from the sidebar to a scrollable details block, the sidebar border must return to the dark border. If focus returns after `Esc` or commit, the receiving container immediately regains the bright border.
 
-This rule is broader than scroll focus. Scrollable blocks still use the overflow checks in the [Focusability](#focusability) section so a passive block whose content fits cannot pretend to be scrollable. But forms, dialogs, pickers, tab panels, and other interactive containers are focusable because they accept keys, not because they overflow; they still get the bright border when they own interaction focus.
+This rule is broader than scroll focus. Scrollable blocks still use the overflow checks in the [Focusability](/reference/tui/navigation/#focusability) section so a passive block whose content fits cannot pretend to be scrollable. But forms, dialogs, pickers, tab panels, and other interactive containers are focusable because they accept keys, not because they overflow; they still get the bright border when they own interaction focus.
 
 **Enforcement — use the canonical helpers, never inline border colors:** The correct border style is encoded in two reusable primitives in <RepoFile path="crates/jackin-tui/src/components/panel.rs" />:
 

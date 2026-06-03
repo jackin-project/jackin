@@ -79,7 +79,10 @@ fn workspace_root() -> PathBuf {
                 return dir;
             }
         }
-        dir = dir.parent().expect("hit filesystem root without finding workspace Cargo.toml").to_path_buf();
+        dir = dir
+            .parent()
+            .expect("hit filesystem root without finding workspace Cargo.toml")
+            .to_path_buf();
     }
 }
 
