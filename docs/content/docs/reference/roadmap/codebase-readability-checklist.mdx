@@ -249,7 +249,7 @@ The 8 dispatch sites (verified line numbers):
 - [ ] **PR 2 — behavior trait + retire data-only sites:** add `src/runtime/adapter.rs` with `AgentRuntimeOps: AgentRuntime`; migrate `config/roles/mod.rs:43-67` (collapses the 3× block), `manifest/validate/mod.rs:60-124`, `runtime/launch/mod.rs:608-624` / `:2137`, **delete** `:3402-3408`, `derived_image/mod.rs:128-134` / `:144`
 - [ ] **PR 3 — retire fs/version behavior sites:** `version_check/mod.rs:108-114`, `runtime/image/mod.rs:455-481` (delete the fn-pointer tuple), `instance/mod.rs:464-478`
 - [ ] **PR 4 — retire heaviest behavior:** `instance/mod.rs:427-458` (`provision_slot(&mut ProvisionedAuth, …)` — note the side-effect signature, each impl writes its own typed field), `agent_binary/mod.rs:196-305` (`resolve_latest_release().await`, relocate each `resolve_*` body into its adapter module — these stay structurally per-adapter)
-- [ ] Keep `Agent::ALL` + exhaustive test matches (roadmap non-goal: the exhaustivity gate stays)
+- [x] Keep `Agent::ALL` + exhaustive test matches (roadmap non-goal: the exhaustivity gate stays) — `Agent::ALL` is in `jackin-core/src/agent.rs:30`, all exhaustive matches intact
 - [ ] Update `agent-runtime-trait.mdx` `**Status**` per PR; it references stale paths `agent/mod.rs` / `instance/auth/mod.rs` (the `Agent` enum is now in `jackin-core/src/agent.rs`; the dispatch is inlined in `instance/mod.rs`)
 
 ---
@@ -290,10 +290,10 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 ### `app/mod.rs` split — 1,593L prod **(was: 1,589)**
 - [x] `workspace_cmd.rs` (559L), `config_cmd.rs` (290L), `load_cmd.rs` (491L), `prune_cmd.rs` (80L) extracted
 - [x] `auth_set_tests.rs`, `resolve_role_tests.rs` extracted
-- [ ] Extract `app/helpers.rs` ← `mount_display` (`:1581`, 13L), `mount_mode` (`:1577`, 4L), `render_workspace_show` (`:1429`, **147L**), `resolve_instance_reference` (`:1091`, 23L), `resolve_role_to_container` (`:1074`, 17L) — **~200L total (was: "~600L")**
+- [x] Extract `app/helpers.rs` ← `mount_display`, `mount_mode`, `render_workspace_show`, `resolve_instance_reference`, `resolve_role_to_container` — ~200L extracted
 - [ ] **Untracked — the real ~600L bulk:** extract `app/token_cmd.rs` ← the Claude-token cluster (`:186-793`): `handle_claude_token` (`:186`, 189L), `delete_prior_op_item*` (`:383/392`), `print_token_setup_report` (`:463`), `prompt_interactive_token_store` (`:576`, 120L), `prompt_existing_item_section_and_field` (`:696`, 105L)
 - [ ] **Untracked:** extract `app/restore.rs` ← the hardline/restore + moved-path-browser cluster (`:874-1405`, ~430L): `ConsoleInPlaceHandler` impl (`:874`), `handle_console_instance_action` (`:961`, 113L), restore helpers (`:1114-1405`)
-- [ ] `run` (`:70`, ~64L) — verify under threshold and remove its near-stale `#[allow]`
+- [x] `run` (`:70`, ~64L) — verified under threshold; removed stale `#[allow(clippy::large_stack_frames)]` annotation (function no longer triggers the lint)
 
 ### Other large src/ files
 - [x] `instance/auth/mod.rs` (1,017L prod) — 5 per-agent test modules separated
