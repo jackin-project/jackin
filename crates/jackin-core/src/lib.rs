@@ -13,9 +13,11 @@ pub mod constants;
 pub mod env_value;
 pub mod isolation;
 pub mod paths;
+pub mod selector;
 
 pub use agent::{Agent, ParseAgentError};
 pub use auth::AuthForwardMode;
 pub use env_value::{EnvValue, FieldTarget, OpRef};
 pub use isolation::{MountIsolation, ParseMountIsolationError};
 pub use paths::JackinPaths;
+pub use selector::{RoleSelector, Selector, SelectorError};

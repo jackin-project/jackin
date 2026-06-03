@@ -342,7 +342,7 @@ mod drift_detection {
             scratch_branch: format!("jackin/scratch/{container}"),
             base_commit: "abc".into(),
             selector_key: container
-                .trim_start_matches(crate::instance::naming::CONTAINER_PREFIX_DASH)
+                .trim_start_matches(jackin_core::constants::CONTAINER_PREFIX_DASH)
                 .into(),
             container_name: container.into(),
             cleanup_status: CleanupStatus::Active,

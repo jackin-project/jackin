@@ -143,11 +143,11 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 - [ ] **Versioned-schema check:** confirm the serde representation is byte-identical (relocation only) → no `CURRENT_MANIFEST_VERSION` bump, no migration step, no fixture re-bake required (AGENTS.md's five-artifact rule triggers on serde-shape changes, not file moves)
 
 **Selector** (gated by: prefix decision; cuts the selector→TUI coupling)
-- [ ] Expose `CONTAINER_PREFIX` / `CONTAINER_PREFIX_DASH` from `jackin_core::constants` per the prefix decision
-- [ ] Create `jackin-core/src/selector.rs`; move `Selector` (`selector/mod.rs:12`), `RoleSelector` (`:18`, + `Display`, `new`/`parse`/`key`, `TryFrom<&str>` `:95`), `SelectorError` (`:35`, thiserror), and free fns `is_valid_role_segment` (`:131`), `is_valid_container_name` (`:138`), `is_reserved_builtin_role_name` (`:149`); repoint prefix refs (`:140`, `:150`)
-- [ ] Move `impl RoleChoice for RoleSelector` (`selector/mod.rs:86`) out into `jackin-console/src/tui/components/` (mirror `agent_choice.rs`) — resolves the orphan rule and the TUI dependency
-- [ ] Keep the `RolePickerState` alias (`selector/mod.rs:92`) in the binary; add `pub use jackin_core::{Selector, RoleSelector, SelectorError};` (96 consumer sites unchanged)
-- [ ] Add `pub mod selector;` + re-exports to `jackin-core/src/lib.rs`
+- [x] Expose `CONTAINER_PREFIX` / `CONTAINER_PREFIX_DASH` from `jackin_core::constants` per the prefix decision
+- [x] Create `jackin-core/src/selector.rs`; move `Selector` (`selector/mod.rs:12`), `RoleSelector` (`:18`, + `Display`, `new`/`parse`/`key`, `TryFrom<&str>` `:95`), `SelectorError` (`:35`, thiserror), and free fns `is_valid_role_segment` (`:131`), `is_valid_container_name` (`:138`), `is_reserved_builtin_role_name` (`:149`); repoint prefix refs (`:140`, `:150`)
+- [x] Move `impl RoleChoice for RoleSelector` (`selector/mod.rs:86`) out into `jackin-console/src/tui/components/role_choice.rs` (mirror `agent_choice.rs`) — resolves the orphan rule and the TUI dependency
+- [x] Keep the `RolePickerState` alias (`selector/mod.rs:92`) in the binary; add `pub use jackin_core::{Selector, RoleSelector, SelectorError};` (96 consumer sites unchanged)
+- [x] Add `pub mod selector;` + re-exports to `jackin-core/src/lib.rs`
 
 **DockerApi trait** (gated by: core error-type decision)
 - [ ] Create `jackin-core/src/docker.rs`; move the pure data types + their methods: `ContainerState` (`docker_client/mod.rs:27`, + `short_label`/`inspect_label`/`is_present`), `ContainerRow` (`:78`), `NetworkRow` (`:84`), `RemoveImageOutcome` (`:90`), `ContainerSpec` (`:96`). All are pure std (verified: lines 27-141 reference no bollard/tokio)
@@ -167,7 +167,7 @@ Each move follows the same shape: a **type/trait definition** moves down to `jac
 
 **Cut the remaining upward edges**
 - [ ] **`config → runtime::list_role_names` (still live — roadmap wrongly claims Stage 1 cut it):** relocate `detect_workspace_edit_drift` (`config/workspaces/mod.rs:36`, calls `list_role_names` at `:46`) out of the config module to a runtime-side module. It already takes `&impl DockerApi` and pulls `isolation::state` + `runtime` + `workspace` — it is runtime/isolation drift logic mis-placed under `config/`. No trait inversion needed; both sides land in `jackin-runtime`
-- [ ] **`config → instance::naming` (test-only):** repoint `config/workspaces/tests.rs:345` from `crate::instance::naming::CONTAINER_PREFIX_DASH` to `jackin_core::constants::CONTAINER_PREFIX_DASH` (there is no production `config → instance::naming` edge)
+- [x] **`config → instance::naming` (test-only):** repoint `config/workspaces/tests.rs:345` from `crate::instance::naming::CONTAINER_PREFIX_DASH` to `jackin_core::constants::CONTAINER_PREFIX_DASH` (there is no production `config → instance::naming` edge)
 - [ ] **`config ↔ operator_env` (unlisted cycle):** move `validate_reserved_names(&AppConfig)` (`operator_env/mod.rs:1364`) out of the config load/save path — its only two `config`-side callers are `config/persist/mod.rs:318` and `config/editor/mod.rs:690`. After this, `operator_env`'s only real edge is the legal `→ config::AppConfig` direction. See [The cycles, re-measured](#the-cycles-re-measured)
 
 ### Cycle-breaking status

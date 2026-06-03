@@ -15,3 +15,8 @@ pub const DOCKERFILE_NAME: &str = "Dockerfile";
 /// Set by `auth_forward = "oauth_token"` mode; Claude Code inside the
 /// container reads it to skip interactive login.
 pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/// Canonical source of truth from `jackin-protocol` — re-exported here so
+/// crates that depend on `jackin-core` (but not `jackin-protocol` directly)
+/// can use the prefix without literal drift.
+pub use jackin_protocol::{CONTAINER_PREFIX, CONTAINER_PREFIX_DASH};

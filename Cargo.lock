@@ -1785,6 +1785,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "directories",
+ "jackin-protocol",
  "serde",
  "serde_json",
  "tempfile",
