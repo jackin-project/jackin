@@ -10,6 +10,24 @@ The ordered, agent-executable checklist for the [post-restructure correctness & 
 
 **Validation gate for every defect:** `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, the test suite, and — for any lookbook visual change — regenerate SVGs (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) then verify no drift (`cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook`). Any cross-cutting TUI rule established goes into [TUI Design Decisions](/reference/tui/) in the same PR.
 
+**Smoke-test recipe (operator-facing).** Per the repo's debug-flag rule, validate fixes with `cargo run --bin jackin -- console --debug` (host TUI: lists, dialogs, focus, status bar, hover) and, for capsule changes, build + point at the local capsule via `eval "$(cargo run --bin build-jackin-capsule -- --export)"` then `cargo run --bin jackin -- console --debug` and attach. The lookbook (`cargo run -p jackin-tui-lookbook -- --terminal`) is the fast visual surface for shared-component fixes. These are pure TUI/UX fixes: **no versioned-schema or serde changes** are expected — if a fix appears to need one, stop and reconsider.
+
+---
+
+## Execution phases & defect clusters
+
+The 30+ defects are not independent — they converge on a few shared primitives and split into clusters that should be fixed together to avoid churn. Recommended order:
+
+1. **Phase 0 — build the shared primitives** (see *Build-first shared primitives* below): `HoverTracker`, `DialogBodyLayout`, shared scrollable-dialog, `FocusOwner`, action-row component, modal input/lifecycle helper, and the capsule full-invalidate path. Everything else routes through these.
+2. **Phase 1 — capsule render/lifecycle cluster** (Defects 26, 27, 28, 29, 30): one shared invalidate-and-full-repaint path + a capsule panic hook. These are crash/corruption bugs — highest severity — and the panic hook unblocks triage of the rest. Do first among the defects.
+3. **Phase 2 — focus cluster** (9, 17, 18, 19, 20, 23): land the `FocusOwner` model, then every focus/`▸`/tab-content/picker defect derives from it.
+4. **Phase 3 — dialog cluster** (5, 6, 7, 8, 9, 10, 11): land `DialogBodyLayout` + scrollable-dialog + modal-lifecycle, then route every dialog/picker through them.
+5. **Phase 4 — input/affordance cluster** (11, 13, 22): single-consumer mouse routing + `HoverTracker` (cursor + hover color).
+6. **Phase 5 — layout/styling cluster** (1, 2, 4, 14, 15, 16, 21, 24, 25, plus 31–35 below): scrollbars, padding, spacers, selection, action rows, status-bar reservation, palette, empty states.
+7. **Phase 6 — surface parity + coverage** (3, 12, capsule parity audit, lookbook coverage, testing, design-decision updates) and the program acceptance gates.
+
+Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run the capsule smoke build.
+
 ---
 
 ## Defect 1 — scrollable lists must show a scrollbar and accept the wheel everywhere
@@ -498,6 +516,9 @@ Most defects above converge on a handful of shared building blocks. Building the
 - [ ] **`FocusOwner` per-screen model.** Replace the scattered focus bools (`tab_bar_focused`, `*_scroll_focused`, `tab_content_scroll_focused`, `list_names_focused`, picker `focused`) with one value per screen naming the single focus owner, so "exactly one bright border" and "`▸` iff focused" (Defects 9, 17, 18, 19, 23) are structurally guaranteed, not maintained by hand. The render derives border + `▸` + hint scope from this one value.
 - [ ] **Shared action-row component (`+ …`).** One component/style for every `+ Add…/+ Override…` row app-wide (Defect 21).
 - [ ] **Modal input/lifecycle helper.** One place that owns: full-screen backdrop on open (Defects 10), single-consumer mouse routing while open (Defect 22), click-outside-dismiss (Defect 11), and one-bright-border for stacks (Defect 9). Every surface's modal handling routes through it rather than re-implementing backdrop/dismiss/precedence.
+- [ ] **Capsule full-invalidate path.** One "layout/lifecycle changed → request full repaint + invalidate caches" helper the capsule calls on resize, tab/pane close/open/switch, split/zoom, and dialog open/close (Defects 26, 29) — so no mutation leaves stale cells. Plus the capsule **panic hook** (Defect 27) that captures backtraces to the diagnostics log, unblocking triage of 27/28/30.
+- [ ] **Shared scroll-interaction model.** One helper for wheel (pointer-targeted), scrollbar-thumb drag, and track-click paging, used by console/launch/capsule, with one thumb glyph + track style (Defects 1, 24, 34).
+- [ ] **Shared empty-state + theme tokens.** A dim centered empty-state line for lists/pickers (Defect 32) and named `theme.rs` tokens for every color (Defect 31) — no inline RGB, no blank empty lists.
 
 ---
 
@@ -556,6 +577,8 @@ The program is done when:
 - [ ] **Affordance audit:** every clickable element shows the hand pointer + hover color via the shared `HoverTracker`.
 - [ ] **Debug surface audit:** the white status bar + red run-id chip appears on every screen under `--debug`; the chip opens the one shared cross-screen debug-info dialog (full-screen, additive content, scrollable).
 - [ ] **Lookbook audit:** every shared component + state variant has a story; SVGs regenerated and `--check` clean.
+- [ ] **Capsule render/lifecycle audit:** resize, tab/pane close, filter reflow, and exit never garble, panic, or leave stale cells; panic hook captures any crash; re-attach after exit works.
+- [ ] **Styling audit:** no inline color literals outside `theme.rs` (31); every list shows an empty state (32); hint bars are exhaustive/deduped/focus-scoped (33); scrollbar drag+wheel work on every surface (34); the host console resizes cleanly without garble or flicker (35).
 - [ ] `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, full test suite, and the docs gate are all green.
 
 ---
@@ -649,6 +672,84 @@ The program is done when:
 - [ ] Fix the re-attach failure: a prior crash/exit must not block the next `docker exec … /jackin/runtime/jackin-capsule` — reclaim a stale socket or restart the daemon cleanly; surface a clear error (not a bare non-zero exit) if the container is genuinely gone.
 - [ ] Investigate the recurring blank-line flood + `press Enter to continue` artifact on the host when the capsule exits abnormally (bounded output on teardown; compose with Defects 26/27).
 - [ ] Add a test: clean exit returns 0, removes the socket, restores the terminal; a second attach to the same container succeeds.
+
+---
+
+## Defect 31 — one color palette: no ad-hoc `Color::Rgb` literals outside the theme
+
+**Symptom:** colors drift because some render sites hard-code `Color::Rgb(...)` instead of using the shared theme tokens (the lookbook preview charcoal `Rgb(28,28,28)`, the debug-bar styles, scattered others). Divergent literals make "env vs auth use the same colors" (Defect 21) and the uniform dark card (Defect 2) impossible to guarantee.
+
+**Root cause:** the canonical palette lives in <RepoFile path="crates/jackin-tui/src/theme.rs" /> (`PHOSPHOR_GREEN`, `WHITE`, `DANGER_RED`, `DIALOG_BACKDROP`, …), but a handful of sites construct raw `Color::Rgb`/`Rgb(...)` values inline (`rg "Color::Rgb|Rgb(" crates/jackin-console/src crates/jackin/src/console crates/jackin-capsule/src/tui` finds ~5 outside `theme`). Each inline literal is a future drift.
+
+**Canonical pattern to converge on:** every color comes from a named theme token; no raw RGB literal anywhere outside `theme.rs`. New shared colors (e.g. the preview-card charcoal) are added as named tokens.
+
+**Tasks:**
+- [ ] Enumerate ad-hoc color literals: `rg -n "Color::Rgb|Rgb\(" crates/*/src --glob '!**/theme.rs' --glob '!**/tests*'`. For each, add or reuse a named theme token and replace the literal.
+- [ ] Promote the lookbook preview-card charcoal (Defect 2) and the debug-bar colors (Defect 12) into named theme tokens.
+- [ ] Per the per-item analysis rule, scan for non-`theme` color construction generally (owo_colors `Rgb`, ratatui `Style::fg/bg` with literals) and route through tokens.
+- [ ] Record "all colors come from `theme.rs` tokens; no inline RGB" in [TUI Visual Design](/reference/tui/visual-design/).
+
+---
+
+## Defect 32 — lists and pickers render a clear empty state
+
+**Symptom:** when a list/picker has no items (or a filter matches nothing), nothing is shown — no "no results" / "no roles" message. The operator cannot tell whether the list is empty or broken.
+
+**Root cause:** `SelectListState`/`render_select_list` (<RepoFile path="crates/jackin-tui/src/components/select_list.rs" />) and other list renderers draw zero rows when empty; there is no shared empty-state convention. Filter-no-match (the `Filter:` pickers) shows a blank body.
+
+**Canonical pattern to converge on:** every list/picker, when it has no rows (empty or filtered-to-nothing), renders one centered dim placeholder line (e.g. `no matches` / `no roles yet`) through a shared helper, so empty is always legible and consistent.
+
+**Tasks:**
+- [ ] Add a shared empty-state render (dim, centered placeholder) to the list/select component and route every list through it.
+- [ ] Distinguish "genuinely empty" vs "filtered to nothing" copy where useful.
+- [ ] Audit every list/picker (workspace list, role/agent/provider pickers, file browser, settings tables, capsule pickers, lookbook lists) for the missing empty state; fix the whole class.
+- [ ] Add a lookbook story for the empty + filtered-empty states.
+
+---
+
+## Defect 33 — the hint bar is accurate: exhaustive, focus-scoped, no duplicates
+
+**Symptom:** the focused-content hint on the settings screen reads `↑↓ navigate   ↑↓ navigate · ␣ toggle   ⇧Tab tab bar` — `↑↓ navigate` appears twice (observed under Defect 18). More broadly, hint bars must list every active key for the current focus, with no duplicates and no stale entries, recomputed on each focus change (the "exhaustive hints — no hidden keys" rule).
+
+**Root cause:** hint spans are assembled per screen/focus state and can double-include a group or omit keys; there is no single source that derives the hint set from the focused container's actual key map. Suspected duplication in the settings/editor focused-content hint assembly.
+
+**Canonical pattern to converge on:** the hint bar for any focus state is derived once from that container's active key bindings — exhaustive (every key that does something is listed), deduplicated, focus-scoped (recomputed on focus change), per the existing [navigation hints](/reference/tui/navigation/) rule.
+
+**Tasks:**
+- [ ] Find and fix the duplicated `↑↓ navigate` in the settings focused-content hint; audit editor/workspaces/capsule/launch hint assembly for other dupes or omissions. `rg -n "HintSpan|render_hint_bar|render_footer|navigate" crates/*/src`.
+- [ ] Ensure every clickable/keyable action (incl. the ones gaining hover/click in Defects 13/17/20) is represented in the relevant hint set — keyboard/mouse parity.
+- [ ] Recompute hints on every focus change (couples with the `FocusOwner` model, Defect 18/19).
+- [ ] Add coverage so a screen's hint set has no duplicate spans.
+
+---
+
+## Defect 34 — scrollbar drag + wheel work on every scrollable surface (console, launch, capsule)
+
+**Symptom:** scroll interaction is inconsistent across surfaces. The console supports dragging the scrollbar thumb (`try_drag_vertical_scrollbar`) and the wheel; other surfaces (launch, capsule) lack equivalent drag/wheel parity, so a scrollbar that renders (Defects 1, 24) may not be draggable everywhere.
+
+**Root cause:** `try_drag_vertical_scrollbar` / horizontal-drag live only in the console mouse handler (<RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" />); launch and capsule scroll handling don't share it. Drag-to-scroll, wheel-to-scroll, and click-in-track behaviors are implemented per surface.
+
+**Canonical pattern to converge on:** one shared scroll-interaction model — wheel over a scrollable region scrolls it (hover-targeted), the scrollbar thumb is draggable, and a click in the track pages — used by every surface that renders a scrollbar. The thumb glyph/track style is also one shared rendering.
+
+**Tasks:**
+- [ ] Inventory scroll-interaction handlers per surface: `rg -n "try_drag_vertical_scrollbar|try_drag_horizontal_scrollbar|ScrollUp|ScrollDown|scrollbar" crates/*/src`.
+- [ ] Extract the drag/wheel/track-click scroll interaction into a shared helper and route console, launch, and capsule through it (DRY).
+- [ ] Confirm wheel-targeting follows the pointer (the existing wheel-routing rule) on every surface, and composes with single-consumer routing (Defect 22).
+- [ ] Verify one scrollbar thumb glyph + track style across all surfaces (no per-surface drift).
+
+---
+
+## Defect 35 — host-console resize/repaint parity (no garble or flicker)
+
+**Symptom:** the capsule resize/repaint defects (26–30) prompt the question for the **host console** too: does resizing the console (not the capsule) garble, flicker, or leave modals overdrawing the status bar? This is a verify-and-fix item to ensure the host surface has the same clean reactive repaint guarantees.
+
+**Root cause (to confirm):** the host console (ratatui over the real terminal) and the capsule (`SocketBackend`) are different render paths; fixes to one do not automatically apply to the other. The host path must also fully reflow on resize, keep the status bar reserved (Defect 15), re-lay-out modals within the content area (Defect 7), and not flicker (the PR's "flicker fixes" theme).
+
+**Tasks:**
+- [ ] Resize the host console at various sizes (incl. very small) under `--debug`; confirm no garble, no stale cells, no flicker, and that modals/hint bar/status bar stay within the content area (composes with Defects 14, 15).
+- [ ] Confirm the host console fully repaints on resize (ratatui handles diff, but verify no custom caching leaves stale rows).
+- [ ] Audit for flicker on the full-repaint paths introduced by the dialog/focus fixes (avoid clear-then-draw flashes; prefer buffer diffing).
+- [ ] If the host shares any render helper with the capsule, ensure the fix lands once for both (DRY).
 
 ---
 
