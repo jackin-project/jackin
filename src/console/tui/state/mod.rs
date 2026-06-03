@@ -50,48 +50,12 @@ fn workspace_summary_from_config(
     WorkspaceSummary::from_source(name, ws)
 }
 
-impl jackin_console::tui::screens::workspaces::model::WorkspaceSummarySource
-    for crate::workspace::WorkspaceConfig
-{
-    fn workdir(&self) -> &str {
-        &self.workdir
-    }
-
-    fn mount_count(&self) -> usize {
-        self.mounts.len()
-    }
-
-    fn readonly_mount_count(&self) -> usize {
-        self.mounts.iter().filter(|mount| mount.readonly).count()
-    }
-
-    fn allowed_role_count(&self) -> usize {
-        self.allowed_roles.len()
-    }
-
-    fn default_role(&self) -> Option<&str> {
-        self.default_role.as_deref()
-    }
-
-    fn last_role(&self) -> Option<&str> {
-        self.last_role.as_deref()
-    }
-}
+// WorkspaceSummarySource impl for WorkspaceConfig now lives in jackin-console.
 
 pub(crate) type MountDiff<'a> =
     jackin_console::mount_diff::MountDiff<'a, crate::workspace::MountConfig>;
 
-impl jackin_console::mount_diff::MountDiffItem for crate::workspace::MountConfig {
-    fn dst(&self) -> &str {
-        &self.dst
-    }
-}
-
-impl jackin_console::mount_info_cache::MountSource for crate::workspace::MountConfig {
-    fn mount_src(&self) -> &str {
-        &self.src
-    }
-}
+// MountDiffItem and MountSource impls for MountConfig now live in jackin-console.
 
 impl jackin_console::mount_info_cache::MountSource for crate::config::GlobalMountRow {
     fn mount_src(&self) -> &str {

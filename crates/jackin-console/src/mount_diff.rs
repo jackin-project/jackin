@@ -42,3 +42,10 @@ pub fn classify_mount_diffs<'a, M: MountDiffItem>(
     }
     out
 }
+
+/// `MountDiffItem` impl for `jackin_config::MountConfig`.
+impl MountDiffItem for jackin_config::MountConfig {
+    fn dst(&self) -> &str {
+        &self.dst
+    }
+}

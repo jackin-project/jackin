@@ -62,3 +62,10 @@ impl MountInfoCache {
         self.entries.borrow_mut().clear();
     }
 }
+
+/// `MountSource` impl for `jackin_config::MountConfig`.
+impl MountSource for jackin_config::MountConfig {
+    fn mount_src(&self) -> &str {
+        &self.src
+    }
+}

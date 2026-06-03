@@ -209,10 +209,6 @@ pub fn current_config_version() -> String {
     CURRENT_CONFIG_VERSION.to_string()
 }
 
-pub fn current_workspace_version() -> String {
-    CURRENT_WORKSPACE_VERSION.to_string()
-}
-
 pub fn migrate_config_file_if_needed(path: &Path) -> anyhow::Result<bool> {
     Ok(
         migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS)?

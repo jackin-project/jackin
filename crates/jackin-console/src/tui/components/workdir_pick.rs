@@ -186,5 +186,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
     render_selected_lines_in_area(frame, rows[1], lines, state.list_state.selected);
 }
 
+/// `WorkdirMount` impl for `jackin_config::MountConfig`.
+/// Lives here (trait definition site) to satisfy the orphan rule.
+impl WorkdirMount for jackin_config::MountConfig {
+    fn dst(&self) -> &str {
+        &self.dst
+    }
+}
+
 #[cfg(test)]
 mod tests;

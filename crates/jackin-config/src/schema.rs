@@ -1,0 +1,210 @@
+//! Core configuration schema: `AppConfig`, `WorkspaceConfig`, and all supporting
+//! data types.
+//!
+//! This module breaks the `config ↔ workspace` mutual cycle by placing both
+//! `AppConfig` and `WorkspaceConfig` in the same crate — their mutual references
+//! become intra-crate. The behavior that operates on these types (TOML
+//! read/write, migrations, workspace resolution, mount planning) lives in the
+//! binary crate and imports from here.
+//!
+//! **Dependency tier:** `jackin-core` → `jackin-config` (this module)
+
+use std::collections::BTreeMap;
+
+use jackin_core::{Agent, EnvValue, MountIsolation};
+use serde::{Deserialize, Serialize};
+
+use crate::auth::{
+    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
+    OpencodeAuthConfig,
+};
+use crate::versions::current_workspace_version;
+
+// ─── Serde helper ────────────────────────────────────────────────────────────
+
+/// `skip_serializing_if` requires `fn(&T) -> bool`.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+// ─── Mount types ─────────────────────────────────────────────────────────────
+
+/// A single workspace mount: a host path bound into the container.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MountConfig {
+    pub src: String,
+    pub dst: String,
+    #[serde(default)]
+    pub readonly: bool,
+    /// Old configs without this field deserialize to `MountIsolation::Shared`
+    /// (the enum default). On save we always write the field so the stored TOML
+    /// is explicit and old configs migrate to the new shape on first save.
+    #[serde(default)]
+    pub isolation: MountIsolation,
+}
+
+// ─── Keep-awake ──────────────────────────────────────────────────────────────
+
+/// Per-workspace power-management opt-in (macOS: `caffeinate`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct KeepAwakeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+impl KeepAwakeConfig {
+    pub const fn is_default(&self) -> bool {
+        !self.enabled
+    }
+}
+
+// ─── Per-(workspace × role) override ─────────────────────────────────────────
+
+/// Per-(workspace × role) operator overrides — the most-specific auth layer.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceRoleOverride {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, EnvValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<AgentAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<CodexAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amp: Option<AmpAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimi: Option<KimiAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<OpencodeAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github: Option<GithubAuthConfig>,
+}
+
+// ─── WorkspaceConfig ─────────────────────────────────────────────────────────
+
+/// A saved workspace: the workdir, mounts, and per-agent auth config.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceConfig {
+    #[serde(default = "current_workspace_version", rename = "version")]
+    pub version: String,
+    pub workdir: String,
+    #[serde(default)]
+    pub mounts: Vec<MountConfig>,
+    #[serde(default)]
+    pub allowed_roles: Vec<String>,
+    #[serde(default)]
+    pub default_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_agent: Option<Agent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_role: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, EnvValue>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub roles: BTreeMap<String, WorkspaceRoleOverride>,
+    #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
+    pub keep_awake: KeepAwakeConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<AgentAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<CodexAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amp: Option<AmpAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimi: Option<KimiAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<OpencodeAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github: Option<GithubAuthConfig>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub git_pull_on_entry: bool,
+}
+
+impl Default for WorkspaceConfig {
+    fn default() -> Self {
+        Self {
+            version: current_workspace_version(),
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_roles: Vec::new(),
+            default_role: None,
+            default_agent: None,
+            last_role: None,
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
+            keep_awake: KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
+            amp: None,
+            kimi: None,
+            opencode: None,
+            github: None,
+            git_pull_on_entry: false,
+        }
+    }
+}
+
+impl WorkspaceConfig {
+    /// Returns the workspace's selected agent, defaulting to Claude.
+    pub fn resolved_agent(&self) -> Agent {
+        self.default_agent.unwrap_or(Agent::Claude)
+    }
+}
+
+// ─── Role source ─────────────────────────────────────────────────────────────
+
+/// A role source entry in the global config.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleSource {
+    pub git: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub trusted: bool,
+    /// Role-layer operator env map. Merged on top of the global `[env]` map.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, EnvValue>,
+}
+
+// ─── Global mount config ──────────────────────────────────────────────────────
+
+/// Global mount entry in `[[mounts]]` / `[mounts.<scope>]`.
+///
+/// Unlike `MountConfig` (which carries `MountIsolation`), global mounts in
+/// the operator config have no isolation field — isolation is workspace-only.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GlobalMountConfig {
+    pub src: String,
+    pub dst: String,
+    #[serde(default)]
+    pub readonly: bool,
+}
+
+// `DockerConfig` stays in the binary crate — it wraps `DockerMounts` which
+// is a complex nested structure tightly coupled to the binary crate's TUI.
+
+// ─── Git config ───────────────────────────────────────────────────────────────
+
+/// Global `[git]` block: co-author trailer and DCO settings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GitConfig {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub coauthor_trailer: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dco: bool,
+}
+
+impl GitConfig {
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+// AppConfig stays in the binary crate for now — it has impl blocks that
+// depend on JackinPaths and fs2 (binary-crate types). Migration to
+// jackin-config happens in Phase 2 after JackinPaths is extractable.
+// This note documents the deliberate deferral so the next agent doesn't
+// redo the analysis.

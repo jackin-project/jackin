@@ -88,3 +88,30 @@ impl WorkspaceSummary {
         }
     }
 }
+
+/// `WorkspaceSummarySource` impl for `jackin_config::WorkspaceConfig`.
+impl WorkspaceSummarySource for jackin_config::WorkspaceConfig {
+    fn workdir(&self) -> &str {
+        &self.workdir
+    }
+
+    fn mount_count(&self) -> usize {
+        self.mounts.len()
+    }
+
+    fn readonly_mount_count(&self) -> usize {
+        self.mounts.iter().filter(|m| m.readonly).count()
+    }
+
+    fn allowed_role_count(&self) -> usize {
+        self.allowed_roles.len()
+    }
+
+    fn default_role(&self) -> Option<&str> {
+        self.default_role.as_deref()
+    }
+
+    fn last_role(&self) -> Option<&str> {
+        self.last_role.as_deref()
+    }
+}

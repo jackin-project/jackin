@@ -17,11 +17,7 @@ use crate::workspace::{
 };
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 
-impl jackin_console::github_mounts::WorkspaceMounts for WorkspaceConfig {
-    fn mount_sources(&self) -> impl Iterator<Item = &str> {
-        self.mounts.iter().map(|mount| mount.src.as_str())
-    }
-}
+// WorkspaceMounts impl for WorkspaceConfig now lives in jackin-console (orphan rule).
 
 #[must_use]
 pub const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {

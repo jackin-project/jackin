@@ -1755,6 +1755,7 @@ dependencies = [
  "jackin-core",
  "serde",
  "thiserror 2.0.18",
+ "toml",
  "toml_edit",
 ]
 
@@ -1765,6 +1766,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "directories",
+ "jackin-config",
  "jackin-core",
  "jackin-tui",
  "nix 0.31.3",

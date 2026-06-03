@@ -79,3 +79,10 @@ fn github_choice_from_kind(src: &str, kind: MountKind) -> Option<GithubChoice> {
 
 #[cfg(test)]
 mod tests;
+
+/// `WorkspaceMounts` impl for `jackin_config::WorkspaceConfig`.
+impl WorkspaceMounts for jackin_config::WorkspaceConfig {
+    fn mount_sources(&self) -> impl Iterator<Item = &str> {
+        self.mounts.iter().map(|m| m.src.as_str())
+    }
+}

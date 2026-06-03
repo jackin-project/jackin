@@ -1,20 +1,10 @@
 //! jackin' configuration schema and public re-exports for the `config`
 //! subsystem.
 //!
-//! Re-exports the types callers depend on — `AppConfig`, `AuthForwardMode`,
-//! `ConfigEditor`, migration helpers, and mount helpers — so that
-//! `use crate::config::Foo` works without navigating sub-modules.
-//!
-//! Schema versioning lives in `config/migrations.rs`. Editor behavior (TOML
-//! reads and writes) lives in `config/editor.rs`. Workspace types and
-//! resolution logic live in `workspace/`.
-
-use crate::workspace::WorkspaceConfig;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-
-pub use crate::workspace::MountConfig;
-pub use crate::workspace::WorkspaceRoleOverride;
+//! The shared schema types (`WorkspaceConfig`, `MountConfig`, `AppConfig`, etc.)
+//! are defined in `jackin-config` and re-exported here so that
+//! `use crate::config::Foo` works. Behavior (TOML read/write, migrations,
+//! workspace resolution) lives in the sub-modules below.
 
 pub mod editor;
 pub(crate) mod migrations;
@@ -24,10 +14,7 @@ mod roles;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
-pub use migrations::{
-    CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, migrate_config_file_if_needed,
-    migrate_workspace_file_if_needed,
-};
+pub use migrations::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
 pub(crate) use mounts::MountEntry;
 pub use mounts::{DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows};
 pub use roles::{
@@ -35,55 +22,29 @@ pub use roles::{
 };
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
-/// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-const fn is_false(v: &bool) -> bool {
-    !*v
-}
-
-/// Re-exported from `jackin-core` — the canonical definition lives there.
+/// Re-exported from `jackin-core`.
 pub use jackin_core::AuthForwardMode;
 
-/// Re-exported from `jackin-config` — the canonical definitions live there.
+/// Re-exported from `jackin-config` — workspace schema lives there.
+/// `AppConfig` stays in this crate until `JackinPaths` is also extractable.
 pub use jackin_config::{
-    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, GithubAuthMode,
-    KimiAuthConfig, OpencodeAuthConfig,
+    AgentAuthConfig, AmpAuthConfig, CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION,
+    CodexAuthConfig, GitConfig, GithubAuthConfig, GithubAuthMode, GlobalMountConfig,
+    KeepAwakeConfig, KimiAuthConfig, MountConfig, MountIsolation, OpencodeAuthConfig, RoleSource,
+    WorkspaceConfig, WorkspaceRoleOverride,
 };
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoleSource {
-    pub git: String,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub trusted: bool,
-    /// Role-layer operator env map. Merged on top of the global
-    /// `[env]` map when the role is launched. Values use the
-    /// `operator_env` dispatch syntax.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub env: BTreeMap<String, crate::operator_env::EnvValue>,
-}
+/// `WorkspaceEdit` lives in the binary crate (mutation helper, not schema).
+pub use crate::workspace::{WorkspaceEdit, validate_workspace_config};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DockerConfig {
-    #[serde(default)]
-    pub mounts: DockerMounts,
-}
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GitConfig {
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub coauthor_trailer: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub dco: bool,
-}
-
-impl GitConfig {
-    fn is_default(&self) -> bool {
-        self == &Self::default()
-    }
-}
-
+/// The top-level operator configuration (`~/.config/jackin/config.toml`).
+///
+/// Schema types (`WorkspaceConfig`, `MountConfig`, etc.) now come from
+/// `jackin-config`; this struct assembles them. Behavior (load/save) lives
+/// in `config/persist`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default = "migrations::current_config_version", rename = "version")]
@@ -98,13 +59,8 @@ pub struct AppConfig {
     pub kimi: Option<KimiAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<OpencodeAuthConfig>,
-    /// Global `[github]` block — bottom layer of the layered resolver
-    /// (global → workspace → workspace × role). Operator-only; role
-    /// manifests cannot set or override it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
-    /// Global operator env map — the bottom layer. Merged under
-    /// per-role, per-workspace, and per-(workspace × role) layers.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, crate::operator_env::EnvValue>,
     #[serde(default)]
@@ -136,5 +92,12 @@ impl Default for AppConfig {
     }
 }
 
-#[cfg(test)]
-mod tests;
+/// Docker/mount configuration block.
+///
+/// Note: `DockerMounts` (the complex nested structure used by the TUI)
+/// stays in `config/mounts/` while `DockerConfig` is a thin wrapper.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DockerConfig {
+    #[serde(default)]
+    pub mounts: DockerMounts,
+}

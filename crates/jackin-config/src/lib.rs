@@ -11,9 +11,19 @@
 //! migration lands in Phase 2 after `operator_env` is extracted to `jackin-env`.
 
 pub mod auth;
+pub mod schema;
+pub mod versions;
 
 pub use auth::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, GithubAuthMode,
     KimiAuthConfig, OpencodeAuthConfig,
 };
-pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, OpRef};
+pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, MountIsolation, OpRef};
+pub use schema::{
+    GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig, RoleSource, WorkspaceConfig,
+    WorkspaceRoleOverride,
+};
+pub use versions::{
+    CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, current_config_version,
+    current_workspace_version,
+};

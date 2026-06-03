@@ -16,5 +16,13 @@ pub fn agent_is_effectively_allowed(ws: &impl WorkspaceRoleAccess, role: &str) -
     ws.allowed_roles().is_empty() || ws.allowed_roles().iter().any(|a| a == role)
 }
 
+/// `WorkspaceRoleAccess` impl for `jackin_config::WorkspaceConfig`.
+/// Lives here (trait definition site) to satisfy the orphan rule.
+impl WorkspaceRoleAccess for jackin_config::WorkspaceConfig {
+    fn allowed_roles(&self) -> &[String] {
+        &self.allowed_roles
+    }
+}
+
 #[cfg(test)]
 mod tests;
