@@ -1,0 +1,56 @@
+[package]
+name = "jackin-docker"
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Concrete Docker daemon and shell-runner implementations for jackin."
+license = "Apache-2.0"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "jackin_docker"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { path = "../jackin-core" }
+jackin-diagnostics = { path = "../jackin-diagnostics" }
+jackin-launch = { path = "../jackin-launch" }
+bollard = { version = "0.21", features = ["aws-lc-rs"] }
+tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+futures-util = "0.3"
+reqwest = { version = "0.13", default-features = false }
+fast-down = { version = "5.0", features = ["fast-puller", "file", "reqwest-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+
+[build-dependencies]
+jackin-build-meta = { path = "../jackin-build-meta" }
+
+[dev-dependencies]
+tempfile = "3.20"
+
+[lints.rust]
+unsafe_code = "forbid"
+async_fn_in_trait = "allow"
+
+[lints.clippy]
+mod_module_files = "deny"
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "warn"
+unimplemented = "deny"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+future_not_send = "allow"
+cast_possible_truncation = "allow"

@@ -1691,6 +1691,7 @@ dependencies = [
  "jackin-console",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-docker",
  "jackin-env",
  "jackin-launch",
  "jackin-manifest",
@@ -1808,6 +1809,25 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "jackin-docker"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "bollard",
+ "fast-down",
+ "futures-util",
+ "jackin-build-meta",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-launch",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
