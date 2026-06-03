@@ -21,10 +21,8 @@ pub use jackin_config::{
     build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
     AuthForwardMode,
 };
-pub use jackin_config::migrations::{
-    migrate_config_file_if_needed, migrate_workspace_file_if_needed,
-};
 pub use crate::workspace::validate_workspace_config;
+pub use jackin_config::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
 
 #[cfg(test)]
 pub(crate) use std::collections::BTreeMap;

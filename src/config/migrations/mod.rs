@@ -9,8 +9,8 @@ pub(crate) use jackin_config::versions::LEGACY_VERSION;
 
 #[cfg(test)]
 pub(crate) use jackin_config::{
-    Channel, Migration, apply_migrations, migrate_config_file_if_needed,
-    migrate_workspace_file_if_needed, parse_registry_version, set_doc_version,
+    Channel, apply_migrations, migrate_config_file_if_needed,
+    migrate_workspace_file_if_needed, parse_registry_version,
 };
 #[cfg(test)]
 pub(crate) use jackin_config::migrations::{

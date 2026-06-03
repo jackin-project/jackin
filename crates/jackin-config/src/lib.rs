@@ -18,6 +18,7 @@ pub mod mounts;
 pub mod paths;
 pub mod persist;
 pub mod planner;
+pub mod resolve;
 pub mod schema;
 pub mod sensitive;
 pub mod validation;
@@ -59,6 +60,9 @@ pub use migrations::{
     parse_version, set_doc_version,
 };
 pub use persist::{atomic_write, validate_workspace_file_stem};
+pub use resolve::{
+    LoadWorkspaceInput, current_dir_workspace, resolve_load_workspace, saved_workspace_match_depth,
+};
 pub use versions::{
     CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_VERSION, current_config_version,
     current_workspace_version,

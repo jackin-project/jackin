@@ -135,7 +135,7 @@ These five forks were resolved during planning. Each is recorded with its ration
 - [x] Relocate the paired tests (`config/{persist,editor,workspaces,mounts,roles}/tests.rs`, total ~2.9K L) into the crate. `cargo check -p jackin-config`; `cargo test -p jackin-config`; `cargo test --test migration_fixtures`.
 
 ### 1.4 Workspace resolution → `jackin-config`
-- [ ] Move `workspace/resolve/mod.rs` (`LoadWorkspaceInput`, `current_dir_workspace`, `saved_workspace_match_depth`, `resolve_load_workspace`, `host_path_match_depth`) — now compilable since it calls `AppConfig` methods that live in the crate. Re-export from `workspace/mod.rs`.
+- [x] Move `workspace/resolve/mod.rs` (`LoadWorkspaceInput`, `current_dir_workspace`, `saved_workspace_match_depth`, `resolve_load_workspace`, `host_path_match_depth`) — now compilable since it calls `AppConfig` methods that live in the crate. Re-export from `workspace/mod.rs`.
 - [ ] `cargo check -p jackin-config` standalone — **must not name** env, manifest, runtime, isolation, instance, or the binary.
 
 ---
