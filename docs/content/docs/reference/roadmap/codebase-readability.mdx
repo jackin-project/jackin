@@ -196,11 +196,11 @@ Three crate-side files also exceed 2,000 L and should be split, lower priority t
 
 With the cycles broken (Stage 1) and the monoliths split (Stage 3), draw the boundaries leaf-first:
 
-1. **`jackin-core`** already stands from Stage 1.
-2. **`jackin-config`** — config + workspace logic over the core types. Confirm no residual upward edge into runtime/instance survives.
-3. **`jackin-env`** — `operator_env` after its split.
-4. **`jackin-runtime`** — runtime + instance + isolation + `derived_image`, holding the concrete `DockerApi` / `CommandRunner` impls (dependency inversion: the traits are in core, the subprocess implementation is here).
-5. The root `src/` collapses to a thin CLI-dispatch binary over the crates.
+1. **`jackin-core`** ✅ stands from Stage 1 — `Agent`, `MountIsolation`, `AuthForwardMode`, constants.
+2. **`jackin-config`** 🟡 scaffold created with `AgentAuthConfig`, `GithubAuthMode`, auth newtypes re-exported into `crate::config`. Full `AppConfig`/`WorkspaceConfig` migration to the crate requires `jackin-env` extraction first (breaks the `GithubAuthConfig.env: EnvValue` dependency).
+3. **`jackin-env`** 🟡 scaffold created — `operator_env/` migrates here after Phase 2 of `jackin-config`.
+4. **`jackin-runtime`** 🟡 scaffold created — `runtime/`, `instance/`, `isolation/`, `derived_image/` migrate after `jackin-env` is extractable.
+5. The root `src/` collapses to a thin CLI-dispatch binary over the four crates.
 
 Each extraction is gated on the visibility pass for that slice — `pub(crate)` by default, `pub` only what the next crate up imports — so every crate's public API is a deliberate surface, not an accidental one.
 
