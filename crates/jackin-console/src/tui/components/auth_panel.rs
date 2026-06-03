@@ -488,5 +488,40 @@ const fn selected_button_style(selected: bool, style: Style) -> Style {
     }
 }
 
+/// `AuthCredentialRef` impl for `jackin_core::OpRef`.
+///
+/// Lives here (where the trait is defined) rather than in the binary crate
+/// to satisfy the orphan rule — both the trait and the type are external to
+/// the binary but this crate defines the trait.
+impl AuthCredentialRef for jackin_core::OpRef {
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn is_empty(&self) -> bool {
+        self.op.is_empty() || self.path.is_empty()
+    }
+}
+
+/// `AuthCredential` impl for `jackin_core::EnvValue`.
+impl AuthCredential for jackin_core::EnvValue {
+    type Ref = jackin_core::OpRef;
+
+    fn into_credential_input(self) -> CredentialInput<Self::Ref> {
+        match self {
+            Self::Plain(value) => CredentialInput::Literal(value),
+            Self::OpRef(value) => CredentialInput::OpRef(value),
+        }
+    }
+
+    fn from_plain(value: String) -> Self {
+        Self::Plain(value)
+    }
+
+    fn from_op_ref(value: Self::Ref) -> Self {
+        Self::OpRef(value)
+    }
+}
+
 #[cfg(test)]
 mod tests;

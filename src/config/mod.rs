@@ -45,27 +45,10 @@ const fn is_false(v: &bool) -> bool {
 pub use jackin_core::AuthForwardMode;
 
 /// Re-exported from `jackin-config` — the canonical definitions live there.
-pub use jackin_config::{AgentAuthConfig, GithubAuthMode};
-
-/// Operator-only `[github]` configuration block. Lives at the same
-/// three layers as `[claude]` and `[codex]` (global, workspace,
-/// workspace × role); role manifests cannot set or override it.
-///
-/// `env` is the operator env map for `token` mode and must contain
-/// `GH_TOKEN`. Optionally also `GH_HOST` (for GHE) and
-/// `GH_ENTERPRISE_TOKEN`. Values resolve through the same
-/// `operator_env` dispatch as Claude / Codex auth env.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct GithubAuthConfig {
-    #[serde(default)]
-    pub auth_forward: GithubAuthMode,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub env: BTreeMap<String, crate::operator_env::EnvValue>,
-}
-
-/// Re-exported from `jackin-config` — the canonical definitions live there.
-pub use jackin_config::{AmpAuthConfig, CodexAuthConfig, KimiAuthConfig, OpencodeAuthConfig};
+pub use jackin_config::{
+    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, GithubAuthMode,
+    KimiAuthConfig, OpencodeAuthConfig,
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

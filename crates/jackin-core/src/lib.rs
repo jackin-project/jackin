@@ -10,8 +10,10 @@
 pub mod agent;
 pub mod auth;
 pub mod constants;
+pub mod env_value;
 pub mod isolation;
 
 pub use agent::{Agent, ParseAgentError};
 pub use auth::AuthForwardMode;
+pub use env_value::{EnvValue, FieldTarget, OpRef};
 pub use isolation::{MountIsolation, ParseMountIsolationError};

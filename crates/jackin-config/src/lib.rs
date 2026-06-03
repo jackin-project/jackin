@@ -16,4 +16,4 @@ pub use auth::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, GithubAuthMode,
     KimiAuthConfig, OpencodeAuthConfig,
 };
-pub use jackin_core::AuthForwardMode;
+pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, OpRef};

@@ -8,7 +8,7 @@ use crate::console::tui::state::{
     AuthRow, EditorState, FieldFocus, SettingsState, auth_flat_rows, synthesize_appconfig_for_auth,
     workspace_name_for_panel,
 };
-use crate::operator_env::{EnvValue, OpRef};
+use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceValue, auth_source_display, auth_source_display_for_required_env,
 };
@@ -22,36 +22,7 @@ pub type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvVal
 
 pub(crate) use jackin_console::tui::components::auth_panel::mode_str;
 pub use jackin_console::tui::components::auth_panel::render_form;
-pub use jackin_console::tui::components::auth_panel::{CredentialInput, required_height};
-
-impl jackin_console::tui::components::auth_panel::AuthCredentialRef for OpRef {
-    fn path(&self) -> &str {
-        &self.path
-    }
-
-    fn is_empty(&self) -> bool {
-        self.op.is_empty() || self.path.is_empty()
-    }
-}
-
-impl jackin_console::tui::components::auth_panel::AuthCredential for EnvValue {
-    type Ref = OpRef;
-
-    fn into_credential_input(self) -> CredentialInput<Self::Ref> {
-        match self {
-            Self::Plain(value) => CredentialInput::Literal(value),
-            Self::OpRef(value) => CredentialInput::OpRef(value),
-        }
-    }
-
-    fn from_plain(value: String) -> Self {
-        Self::Plain(value)
-    }
-
-    fn from_op_ref(value: Self::Ref) -> Self {
-        Self::OpRef(value)
-    }
-}
+pub use jackin_console::tui::components::auth_panel::required_height;
 
 pub(crate) fn editor_auth_display_row(
     row: &AuthRow,

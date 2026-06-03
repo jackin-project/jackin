@@ -5,8 +5,9 @@
 //! do not hold credential values — only the *policy* for how credentials
 //! are forwarded.
 
-use jackin_core::AuthForwardMode;
+use jackin_core::{AuthForwardMode, EnvValue};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Per-agent auth configuration wrapper.
 ///
@@ -63,17 +64,16 @@ impl std::str::FromStr for GithubAuthMode {
 
 /// Operator-only `[github]` configuration block.
 ///
-/// `env` holds the operator env map for `token` mode (must contain `GH_TOKEN`,
-/// optionally `GH_HOST` and `GH_ENTERPRISE_TOKEN`).
-///
-/// Note: The `env` field uses `serde_json::Value` here as a placeholder until
-/// `jackin-env`'s `EnvValue` type is available as a dependency. The full type
-/// is restored when `jackin-env` is extracted.
+/// `env` holds the operator env map for `token` mode — must contain `GH_TOKEN`,
+/// optionally `GH_HOST` (for GHE) and `GH_ENTERPRISE_TOKEN`. Values resolve
+/// through the same `operator_env` dispatch as Claude/Codex auth env.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GithubAuthConfig {
     #[serde(default)]
     pub auth_forward: GithubAuthMode,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, EnvValue>,
 }
 
 /// Generates an `AgentAuthConfig` newtype that rejects `OAuthToken`.
