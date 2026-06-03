@@ -1,0 +1,214 @@
+//! Host-side fetch of the in-container `jackin-capsule` daemon's
+//! tab/pane snapshot.
+//!
+//! The daemon's socket is bind-mounted from
+//! `paths.jackin_home/sockets/<container_name>/jackin.sock` so same-
+//! kernel Docker hosts can talk to it directly via a `UnixStream`.
+//! Docker Desktop for macOS exposes the socket inode through the bind
+//! mount but cannot bridge the live Unix socket across the Linux VM
+//! boundary, so the host falls back to `docker exec ... snapshot`
+//! when the direct connection is absent or refused.
+//!
+//! Schema sharing: the protocol types live in `jackin_protocol`, a
+//! small shared crate. The host CLI and in-container Capsule both
+//! depend on it, so request and reply structs are imported verbatim.
+//! Drift between the two surfaces is a compile error, not a
+//! wire-format bug.
+//!
+//! Sync API by design: the only caller today is
+//! `ManagerState::refresh_instances`, which runs inside the host
+//! TUI's render loop. A blocking std `UnixStream` round-trip or
+//! bounded `docker exec` fallback is kept behind the existing 500 ms
+//! refresh throttle.
+
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result, bail};
+use jackin_protocol::control::{ClientMsg, ServerMsg, TabSnapshot, frame as control_frame};
+use serde::Deserialize;
+
+use jackin_core::paths::JackinPaths;
+
+/// Cap on the JSON reply read from the daemon. Must be ≥ the daemon's
+/// frame cap so legitimate Status / Snapshot replies fit; oversized
+/// replies are rejected to bound host memory.
+const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+
+/// Per-call socket timeout. The whole round-trip is "open socket,
+/// write 5 + json bytes, read 4 + json bytes" — anything beyond a
+/// couple seconds means the daemon is wedged or the bind-mount
+/// points at a stale dir. The console's preview pane re-polls on a
+/// cadence, so a short timeout here keeps a dead container from
+/// stalling the UI.
+const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[derive(Debug, Clone)]
+pub struct InstanceSnapshot {
+    pub tabs: Vec<TabSnapshot>,
+    pub active_tab: u32,
+}
+
+#[derive(Deserialize)]
+struct SnapshotPayload {
+    tabs: Vec<TabSnapshot>,
+    active_tab: u32,
+}
+
+/// Build the host-side path of a container's daemon socket. Matches
+/// the bind-mount source set up in `runtime/launch.rs`.
+pub fn socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
+    paths
+        .jackin_home
+        .join("sockets")
+        .join(container_name)
+        .join("jackin.sock")
+}
+
+/// Connect to the container's daemon socket and fetch its tab/pane
+/// snapshot.
+///
+/// Same-kernel Docker hosts can read the bind-mounted socket directly.
+/// Docker Desktop for macOS cannot; in that case, or when the socket
+/// is absent because the container predates the bind mount, this falls
+/// back to the in-container client via `docker exec`.
+pub fn fetch_snapshot(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> Result<Option<InstanceSnapshot>> {
+    let path = socket_path(paths, container_name);
+    let mut direct_error = None;
+    if path.exists() {
+        match fetch_snapshot_inner(&path) {
+            Ok(snapshot) => return Ok(Some(snapshot)),
+            Err(error) => direct_error = Some(error),
+        }
+    }
+
+    match fetch_snapshot_via_docker_exec(container_name) {
+        Ok(snapshot) => Ok(snapshot),
+        Err(exec_error) => match direct_error {
+            Some(error) => Err(exec_error.context(format!(
+                "direct socket snapshot failed for {} ({error:#})",
+                path.display()
+            ))),
+            None => Err(exec_error),
+        },
+    }
+}
+
+fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
+    let mut stream = UnixStream::connect(path)
+        .with_context(|| format!("connecting to daemon socket {}", path.display()))?;
+    stream
+        .set_read_timeout(Some(SOCKET_TIMEOUT))
+        .context("setting read timeout")?;
+    stream
+        .set_write_timeout(Some(SOCKET_TIMEOUT))
+        .context("setting write timeout")?;
+
+    stream
+        .write_all(&control_frame(&ClientMsg::Snapshot))
+        .context("writing Snapshot request to daemon")?;
+
+    let mut len_buf = [0u8; 4];
+    stream
+        .read_exact(&mut len_buf)
+        .context("reading reply length")?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    if len > MAX_CONTROL_REPLY {
+        bail!("daemon reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).context("reading reply body")?;
+
+    let msg: ServerMsg = serde_json::from_slice(&body).context("parsing reply JSON")?;
+    match msg {
+        ServerMsg::Snapshot { tabs, active_tab } => Ok(InstanceSnapshot { tabs, active_tab }),
+        ServerMsg::SessionList { .. } => {
+            bail!("daemon replied with SessionList; expected Snapshot")
+        }
+        ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
+    }
+}
+
+fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<InstanceSnapshot>> {
+    let output = run_docker_exec_snapshot(container_name)?;
+    if !output.status.success() {
+        bail!(
+            "docker exec snapshot failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).context("snapshot stdout is not UTF-8")?;
+    if stdout.trim().is_empty() {
+        return Ok(None);
+    }
+    snapshot_from_cli_stdout(&stdout).map(Some)
+}
+
+fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output> {
+    let script = snapshot_exec_script();
+    let mut child = Command::new("docker")
+        .args(["exec", container_name, "sh", "-lc", script])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("starting docker exec snapshot for {container_name}"))?;
+
+    let deadline = Instant::now() + SOCKET_TIMEOUT;
+    loop {
+        if child
+            .try_wait()
+            .context("polling docker exec snapshot child")?
+            .is_some()
+        {
+            return child
+                .wait_with_output()
+                .context("collecting docker exec snapshot output");
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            // SIGKILL is async — bound the post-kill drain so an
+            // unresponsive docker daemon does not leave us blocked
+            // in `wait_with_output` while the pipe stays open. The
+            // 500 ms ceiling caps how fast docker-exec children can
+            // accumulate when the daemon is consistently wedged.
+            let drain_deadline = Instant::now() + Duration::from_millis(500);
+            while Instant::now() < drain_deadline {
+                if child.try_wait().ok().flatten().is_some() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let output = child.wait_with_output().ok();
+            let stderr = output
+                .as_ref()
+                .map(|out| String::from_utf8_lossy(&out.stderr).trim().to_string())
+                .unwrap_or_default();
+            bail!("docker exec snapshot timed out after {SOCKET_TIMEOUT:?}: {stderr}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+const fn snapshot_exec_script() -> &'static str {
+    "exec /jackin/runtime/jackin-capsule snapshot"
+}
+
+fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
+    let payload: SnapshotPayload =
+        serde_json::from_str(stdout).context("parsing jackin-capsule snapshot JSON")?;
+    Ok(InstanceSnapshot {
+        tabs: payload.tabs,
+        active_tab: payload.active_tab,
+    })
+}
+
+#[cfg(test)]
+mod tests;

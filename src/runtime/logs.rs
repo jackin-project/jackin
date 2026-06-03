@@ -17,20 +17,19 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 
-use crate::cli::LogsArgs;
 use crate::instance::InstanceManifest;
 use crate::paths::JackinPaths;
 
 const LOG_FILE_NAME: &str = "multiplexer.log";
 
-pub fn run(paths: &JackinPaths, args: LogsArgs) -> Result<()> {
-    let LogsArgs {
-        selector,
-        path,
-        tail,
-        follow,
-        bundle,
-    } = args;
+pub fn run(
+    paths: &JackinPaths,
+    selector: Option<String>,
+    path: bool,
+    tail: usize,
+    follow: bool,
+    bundle: Option<std::path::PathBuf>,
+) -> Result<()> {
 
     match selector {
         None => list_all(paths),

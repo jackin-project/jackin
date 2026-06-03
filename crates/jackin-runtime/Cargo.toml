@@ -4,7 +4,7 @@ version = "0.6.0-dev"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "Container bootstrap pipeline: runtime, instance, isolation, and derived_image. Holds the concrete DockerApi/CommandRunner impls."
+description = "Container bootstrap pipeline: runtime, instance, isolation. Holds the concrete DockerApi/CommandRunner impls, image build, DinD sidecar management, mount materialization, and instance lifecycle."
 license = "Apache-2.0"
 readme = "README.md"
 publish = false
@@ -15,9 +15,42 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { path = "../jackin-core" }
-serde = { version = "1.0", features = ["derive"] }
-thiserror = "2.0"
+jackin-config = { path = "../jackin-config" }
+jackin-env = { path = "../jackin-env" }
+jackin-manifest = { path = "../jackin-manifest" }
+jackin-docker = { path = "../jackin-docker" }
+jackin-image = { path = "../jackin-image" }
+jackin-diagnostics = { path = "../jackin-diagnostics" }
+jackin-launch = { path = "../jackin-launch" }
+jackin-protocol = { path = "../jackin-protocol" }
+jackin-tui = { path = "../jackin-tui" }
+
+bollard = { version = "0.21", features = ["aws-lc-rs"] }
+tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+futures-util = "0.3"
 anyhow = "1.0"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+owo-colors = { version = "4", features = ["supports-colors"] }
+ratatui = "0.30"
+dialoguer = "0.12"
+sha2 = "0.11"
+fs2 = "0.4"
+directories = "6.0"
+toml = "1.1"
+toml_edit = "0.25"
+tabled = "0.21.0"
+serde_yaml_ng = "0.10.0"
+tempfile = "3.20"
+
+[dev-dependencies]
+tokio = { version = "=1.52.3", features = ["test-util"] }
+
+[build-dependencies]
+jackin-build-meta = { path = "../jackin-build-meta" }
 
 [lints.rust]
 unsafe_code = "forbid"

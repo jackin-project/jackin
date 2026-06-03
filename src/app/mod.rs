@@ -133,7 +133,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Eject(args) => load_cmd::handle_eject(args, &paths, debug, connect_docker).await,
         Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
-        Command::Logs(args) => runtime::logs::run(&paths, args),
+        Command::Logs(args) => {
+            runtime::logs::run(&paths, args.selector, args.path, args.tail, args.follow, args.bundle)
+        }
         Command::Config(config_cmd) => config_cmd::handle(config_cmd, &mut config, &paths, debug),
         Command::Workspace(command) => {
             workspace_cmd::handle(command, &mut config, &paths, debug).await

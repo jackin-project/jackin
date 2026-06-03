@@ -8,7 +8,14 @@
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, is_debug_mode, rgb, rich_terminal_owned};
+use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};
+
+fn rgb(c: (u8, u8, u8)) -> owo_colors::Rgb {
+    owo_colors::Rgb(c.0, c.1, c.2)
+}
+
+const PHOSPHOR_GREEN: (u8, u8, u8) = (0, 255, 65);
+const PHOSPHOR_DIM: (u8, u8, u8) = (0, 140, 30);
 
 // ── Interactive prompt ───────────────────────────────────────────────────
 

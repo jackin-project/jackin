@@ -1,59 +1,59 @@
-//! jackin' container runtime: image build, launch, attach, cleanup, and
-//! discovery.
+//! Runtime shim — all code lives in `jackin-runtime`.
 //!
-//! Re-exports the public entry points consumed by `app/mod.rs` and `console/`.
-//! Each sub-module owns one slice of the container lifecycle:
-//! `launch` (full load pipeline), `attach` (session management),
-//! `image` (Dockerfile build), `cleanup` (teardown and prune),
-//! `discovery` (list running or managed containers), `naming` (stable
-//! Docker resource names).
+//! Re-exports the public API from `jackin-runtime::runtime` so that existing
+//! `crate::runtime::*` call sites in the binary continue to compile unchanged.
 
-pub(crate) mod attach;
-mod caffeinate;
-mod cleanup;
-mod discovery;
-pub mod drift;
-mod exit_summary;
-mod identity;
-mod image;
-mod launch;
-pub mod logs;
-pub(crate) mod naming;
-pub mod progress;
-mod repo_cache;
-pub mod snapshot;
-mod universe;
+pub mod attach {
+    pub use jackin_runtime::runtime::attach::*;
+}
+pub mod drift {
+    pub use jackin_runtime::runtime::drift::*;
+}
+pub mod logs {
+    pub use jackin_runtime::runtime::logs::*;
+}
+pub mod naming {
+    pub use jackin_runtime::runtime::naming::*;
+}
+pub mod progress {
+    pub use jackin_runtime::runtime::progress::*;
+}
+pub mod snapshot {
+    pub use jackin_runtime::runtime::snapshot::*;
+}
 
 #[cfg(test)]
-pub mod test_support;
+pub mod test_support {
+    pub use jackin_runtime::runtime::test_support::*;
+}
 
 #[cfg(test)]
 pub use self::test_support::FakeRunner;
 
-pub(crate) use self::attach::docker_unavailable_msg;
-pub use self::attach::{
+pub(crate) use jackin_runtime::runtime::docker_unavailable_msg;
+pub use jackin_runtime::runtime::{
     AgentSession, AgentSessionInventory, ContainerState, describe_agent_session_count,
     hardline_agent, hardline_agent_with_focus, inspect_agent_sessions, inspect_hardline_instance,
     spawn_agent_session, spawn_shell_session,
 };
-pub use self::caffeinate::reconcile as reconcile_keep_awake;
-pub use self::cleanup::{
+pub use jackin_runtime::runtime::reconcile_keep_awake;
+pub use jackin_runtime::runtime::{
     eject_role, exile_all, prune_all_instances, prune_cache, prune_diagnostics, prune_images,
     prune_instances, prune_jackin_home, prune_roles, purge_class_data, purge_container_state,
 };
-pub(crate) use self::discovery::list_role_names;
-pub use self::discovery::{
+pub(crate) use jackin_runtime::runtime::list_role_names;
+pub use jackin_runtime::runtime::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
-pub use self::launch::{LoadOptions, load_role};
-pub use self::naming::matching_family;
-pub(crate) use self::repo_cache::{RepoError, normalize_github_url};
-pub(crate) use self::universe::{
-    EntryClaim, StartKind, claim_entry as claim_construct_entry, force_boundary_intro_enabled,
+pub use jackin_runtime::runtime::{LoadOptions, load_role};
+pub use jackin_runtime::runtime::matching_family;
+pub(crate) use jackin_runtime::runtime::{RepoError, normalize_github_url};
+pub(crate) use jackin_runtime::runtime::{
+    EntryClaim, StartKind, claim_construct_entry, force_boundary_intro_enabled,
     release_entry_if_idle,
 };
 
-pub use self::launch::resolve_supported_agents_for_console;
+pub use jackin_runtime::runtime::resolve_supported_agents_for_console;
 
 pub(crate) async fn register_agent_repo(
     paths: &crate::paths::JackinPaths,
@@ -62,5 +62,5 @@ pub(crate) async fn register_agent_repo(
     runner: &mut impl crate::docker::CommandRunner,
     debug: bool,
 ) -> anyhow::Result<(crate::repo::CachedRepo, crate::repo::ValidatedRoleRepo)> {
-    self::repo_cache::register_agent_repo(paths, selector, git_url, runner, debug).await
+    jackin_runtime::runtime::register_agent_repo(paths, selector, git_url, runner, debug).await
 }

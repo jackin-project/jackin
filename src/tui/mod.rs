@@ -18,26 +18,27 @@ pub(crate) use jackin_diagnostics::{begin_debug_buffering, end_debug_buffering};
 #[cfg(test)]
 pub(crate) use jackin_diagnostics::drain_debug_buffer_for_test;
 
-// ── Shared color palette ─────────────────────────────────────────────────
+// ── Output and animation — re-exported from jackin-tui ──────────────────
 
-const fn palette_tuple(color: jackin_tui::Rgb) -> (u8, u8, u8) {
-    (color.r, color.g, color.b)
+pub use jackin_tui::output::{clear_screen, fatal, hint, print_deploying, step_fail};
+
+/// Entry ritual — re-exported from jackin-tui, with `host_screen_owned` resolved here.
+pub fn warp_intro() {
+    jackin_tui::animation::warp_intro(jackin_diagnostics::host_screen_owned());
 }
 
-const WHITE: (u8, u8, u8) = palette_tuple(jackin_tui::WHITE);
-const PHOSPHOR_GREEN: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_GREEN);
-const PHOSPHOR_DIM: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_DIM);
-
-const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
-    owo_colors::Rgb(color.0, color.1, color.2)
+/// Exit ritual — re-exported from jackin-tui, with `host_screen_owned` resolved here.
+pub fn warp_out() {
+    jackin_tui::animation::warp_out(jackin_diagnostics::host_screen_owned());
 }
 
-pub mod animation;
-pub mod output;
+/// Closing screen — re-exported from jackin-tui, with `host_screen_owned` resolved here.
+pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
+    jackin_tui::animation::warp_end_caption(elapsed, jackin_diagnostics::host_screen_owned());
+}
+
 pub mod prompt;
 
-pub use animation::{warp_end_caption, warp_intro, warp_out};
-pub use output::{clear_screen, fatal, hint, print_deploying, step_fail};
 pub use prompt::{prompt_choice, require_interactive_stdin, spin_wait};
 
 // Thin macro wrapper so existing `debug_log!(...)` call sites in the binary
