@@ -18,10 +18,8 @@ pub mod resolve;
 pub mod sensitive;
 pub mod token_setup;
 
-pub use mounts::{
-    parse_mount_spec, parse_mount_spec_resolved, validate_mount_paths, validate_mount_specs,
-    validate_mounts,
-};
+pub use jackin_config::{validate_mount_paths, validate_mount_specs, validate_mounts};
+pub use mounts::{parse_mount_spec, parse_mount_spec_resolved};
 pub use paths::{expand_tilde, resolve_path};
 pub use planner::{CollapseError, CollapsePlan, Removal, plan_collapse};
 pub use resolve::{

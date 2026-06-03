@@ -361,7 +361,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [ ] Move `ConfigEditor` + `EnvScope` (`config/editor/mod.rs:42/17`) — drop the `validate_reserved_names` call (done in PR 0); add `toml_edit`/`fs2` deps (already present: `toml_edit`)
 - [ ] Move `AppConfig::load_or_init` + `atomic_write` (`config/persist/mod.rs`) — drop the `validate_reserved_names` call (PR 0)
 - [ ] Move `plan_create` / `plan_edit` / `plan_collapse` (`workspace/planner/mod.rs:48/66/201`)
-- [ ] Move `validate_mounts` / `validate_mount_paths` (`workspace/mounts/mod.rs:78/67`)
+- [x] Move `validate_mounts` / `validate_mount_paths` / `validate_mount_specs` to `jackin-config/schema.rs`; `workspace/mod.rs` re-exports them
 - [ ] Move `resolve_load_workspace` / `current_dir_workspace` / `ResolvedWorkspace` (`workspace/resolve/mod.rs:91/14`)
 - [ ] Move `resolve_mode` / `resolve_mode_with_trace` / `resolve_github_mode` / `build_github_env_layers` / `BUILTIN_ROLES` (`config/roles/mod.rs`)
 - [x] **Leave behind:** `detect_workspace_edit_drift` has already been moved to `runtime/drift.rs` in Stage 1; `token_setup` deferred to PR 4 as planned
@@ -375,7 +375,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [ ] Move `EnvLayer` (`:1324`) + `merge_layers` (`:1346`)
 - [ ] Move `validate_reserved_names` (`:1364`), `resolve_operator_env`(`:1683`)/`_with`(`:1698`), `build_attributed_layers` (`:1617`), `lookup_operator_env_raw` (`:1660`)
 - [ ] Move `print_launch_diagnostic` (`:1747`) + `emit/write_launch_diagnostic`
-- [ ] Add deps: `jackin-config`, `jackin-console` (the `OpCli` picker type aliases `OpAccount`/`OpVault`/`OpItem`/`OpField`/`OpCache` at `:465-482` come from `jackin_console::tui::components::op_picker`), `serde_json`
+- [x] Add deps note updated: `OpAccount`/`OpVault`/`OpItem`/`OpField` moved to `jackin-core` (no longer `jackin-console` dep for these); `OpCache` still uses `jackin-console::op_cache`; `serde_json` needed for `op` JSON output; `jackin-config` needed when `AppConfig` moves
 - [ ] Resolve reachability of `env_model::is_reserved`, `diagnostics::active_run`, `tui::rich_terminal_owned` (move or pass via param)
 - [ ] Update all ~54 `use crate::operator_env::*` sites → `use jackin_env::*`
 

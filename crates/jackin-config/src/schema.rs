@@ -242,6 +242,53 @@ pub struct DockerConfig {
 // require all those impls to also move, creating a very large extraction.
 // This note documents the deliberate deferral.
 
+// ─── Mount validation ─────────────────────────────────────────────────────────
+
+/// Structural validation: absolute paths, no duplicate destinations.
+///
+/// # Errors
+/// Returns an error if any mount has a relative path or duplicate destination.
+pub fn validate_mount_specs(mounts: &[MountConfig]) -> anyhow::Result<()> {
+    use std::collections::HashSet;
+    use std::path::Path;
+    let mut seen_dst = HashSet::new();
+    for mount in mounts {
+        if !Path::new(&mount.src).is_absolute() {
+            anyhow::bail!("mount source must be absolute: {}", mount.src);
+        }
+        if !mount.dst.starts_with('/') {
+            anyhow::bail!("mount destination must be an absolute path: {}", mount.dst);
+        }
+        if !seen_dst.insert(mount.dst.clone()) {
+            anyhow::bail!("duplicate mount destination: {}", mount.dst);
+        }
+    }
+    Ok(())
+}
+
+/// Filesystem validation: checks that mount sources exist on disk.
+///
+/// # Errors
+/// Returns an error if any mount source path does not exist.
+pub fn validate_mount_paths(mounts: &[MountConfig]) -> anyhow::Result<()> {
+    use std::path::Path;
+    for mount in mounts {
+        if !Path::new(&mount.src).exists() {
+            anyhow::bail!("mount source does not exist: {}", mount.src);
+        }
+    }
+    Ok(())
+}
+
+/// Full validation: structural + filesystem checks combined.
+///
+/// # Errors
+/// Returns an error if structural or filesystem validation fails.
+pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
+    validate_mount_specs(mounts)?;
+    validate_mount_paths(mounts)
+}
+
 // ─── Workspace edit ──────────────────────────────────────────────────────────
 
 /// Workspace mutation spec: built by the TUI/CLI from the pending-vs-original
