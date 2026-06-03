@@ -239,8 +239,7 @@ fn write_codex_provider_config() -> Result<()> {
         return Ok(());
     }
     let config_path = Path::new("/home/agent/.codex/config.toml");
-    fs::create_dir_all("/home/agent/.codex")
-        .context("failed to create /home/agent/.codex")?;
+    fs::create_dir_all("/home/agent/.codex").context("failed to create /home/agent/.codex")?;
     let provider_block = concat!(
         "\n[model_providers.minimax]\n",
         "name = \"MiniMax\"\n",
@@ -367,8 +366,7 @@ fn write_opencode_config(config: &Path) -> Result<()> {
     if !provider_map.is_empty() {
         cfg["provider"] = serde_json::Value::Object(provider_map);
     }
-    let mut content = serde_json::to_vec(&cfg)
-        .context("failed to serialize opencode.json")?;
+    let mut content = serde_json::to_vec(&cfg).context("failed to serialize opencode.json")?;
     content.push(b'\n');
     fs::write(config, &content).context("failed to write opencode.json")?;
     Ok(())

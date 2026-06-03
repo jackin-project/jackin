@@ -947,8 +947,9 @@ impl SettingsState<'_> {
         validate_settings_env(&self.env.pending, &self.trust.pending)?;
         for row in &self.auth.pending {
             if row.mode == crate::console::manager::auth_kind::AuthMode::Ignore {
-                if let Some(env_key) =
-                    row.kind.required_env_var(crate::console::manager::auth_kind::AuthMode::ApiKey)
+                if let Some(env_key) = row
+                    .kind
+                    .required_env_var(crate::console::manager::auth_kind::AuthMode::ApiKey)
                 {
                     self.env.pending.env.remove(env_key);
                 }
@@ -1014,8 +1015,7 @@ impl SettingsState<'_> {
                     editor.set_global_github_auth_forward(mode);
                 }
                 crate::console::manager::auth_kind::AuthKind::Zai
-                | crate::console::manager::auth_kind::AuthKind::Minimax
-                => {
+                | crate::console::manager::auth_kind::AuthKind::Minimax => {
                     // Provider-credential kinds are env-only; the credential lives in
                     // env_vars and is written via the env block path above — no
                     // auth_forward config block to commit here.

@@ -1540,8 +1540,7 @@ fn auth_source_value<'a>(
         | AuthKind::Kimi
         | AuthKind::Opencode
         | AuthKind::Zai
-        | AuthKind::Minimax
-        => agent_env_source_value(synthesized, workspace_name, role, env_name),
+        | AuthKind::Minimax => agent_env_source_value(synthesized, workspace_name, role, env_name),
     }
 }
 

@@ -141,12 +141,16 @@ impl AuthKind {
             // Kimi serves both runtime agent (typed block) and provider (env key).
             Self::Kimi => {
                 ro.kimi.is_some()
-                    || ro.env.contains_key(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+                    || ro
+                        .env
+                        .contains_key(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
             }
             Self::Opencode => ro.opencode.is_some(),
             Self::Github => ro.github.is_some(),
             Self::Zai => ro.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
-            Self::Minimax => ro.env.contains_key(crate::env_model::MINIMAX_API_KEY_ENV_NAME),
+            Self::Minimax => ro
+                .env
+                .contains_key(crate::env_model::MINIMAX_API_KEY_ENV_NAME),
         }
     }
 }

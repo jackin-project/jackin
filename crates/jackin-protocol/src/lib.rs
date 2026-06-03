@@ -149,8 +149,14 @@ impl Provider {
             }
             env.push(("ANTHROPIC_BASE_URL".to_string(), base_url.to_string()));
             env.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), opus.to_string()));
-            env.push(("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), sonnet.to_string()));
-            env.push(("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), haiku.to_string()));
+            env.push((
+                "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+                sonnet.to_string(),
+            ));
+            env.push((
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
+                haiku.to_string(),
+            ));
             env.push(("API_TIMEOUT_MS".to_string(), timeout.to_string()));
             env.push((
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
@@ -356,7 +362,12 @@ mod provider_tests {
         );
         assert_eq!(
             Provider::available_for("claude", true, true, true),
-            vec![Provider::Anthropic, Provider::Zai, Provider::Minimax, Provider::Kimi]
+            vec![
+                Provider::Anthropic,
+                Provider::Zai,
+                Provider::Minimax,
+                Provider::Kimi
+            ]
         );
         assert!(Provider::available_for("claude", false, false, false).is_empty());
 
@@ -382,20 +393,50 @@ mod provider_tests {
     #[test]
     fn minimax_env_overrides_map_all_tiers_to_same_model() {
         let env = Provider::Minimax.env_overrides(Some("mk"));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_BASE_URL" && v == MINIMAX_BASE_URL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_DEFAULT_OPUS_MODEL" && v == MINIMAX_DEFAULT_MODEL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_DEFAULT_SONNET_MODEL" && v == MINIMAX_DEFAULT_MODEL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_DEFAULT_HAIKU_MODEL" && v == MINIMAX_DEFAULT_MODEL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_AUTH_TOKEN" && v == "mk"));
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_BASE_URL" && v == MINIMAX_BASE_URL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_DEFAULT_OPUS_MODEL" && v == MINIMAX_DEFAULT_MODEL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_DEFAULT_SONNET_MODEL" && v == MINIMAX_DEFAULT_MODEL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_DEFAULT_HAIKU_MODEL" && v == MINIMAX_DEFAULT_MODEL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_AUTH_TOKEN" && v == "mk")
+        );
     }
 
     #[test]
     fn kimi_env_overrides_map_all_tiers_to_same_model() {
         let env = Provider::Kimi.env_overrides(Some("kk"));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_BASE_URL" && v == KIMI_BASE_URL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_DEFAULT_OPUS_MODEL" && v == KIMI_DEFAULT_MODEL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_DEFAULT_SONNET_MODEL" && v == KIMI_DEFAULT_MODEL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_DEFAULT_HAIKU_MODEL" && v == KIMI_DEFAULT_MODEL));
-        assert!(env.iter().any(|(k, v)| k == "ANTHROPIC_AUTH_TOKEN" && v == "kk"));
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_BASE_URL" && v == KIMI_BASE_URL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_DEFAULT_OPUS_MODEL" && v == KIMI_DEFAULT_MODEL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_DEFAULT_SONNET_MODEL" && v == KIMI_DEFAULT_MODEL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_DEFAULT_HAIKU_MODEL" && v == KIMI_DEFAULT_MODEL)
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "ANTHROPIC_AUTH_TOKEN" && v == "kk")
+        );
     }
 }

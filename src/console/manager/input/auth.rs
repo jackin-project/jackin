@@ -358,7 +358,9 @@ fn current_mode_and_credential(
                 }
                 AuthKind::Minimax => {
                     let cred = override_ref.and_then(|ro| {
-                        ro.env.get(crate::env_model::MINIMAX_API_KEY_ENV_NAME).cloned()
+                        ro.env
+                            .get(crate::env_model::MINIMAX_API_KEY_ENV_NAME)
+                            .cloned()
                     });
                     let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
                     (mode, cred)
@@ -938,8 +940,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                     | AuthKind::Kimi
                     | AuthKind::Opencode
                     | AuthKind::Zai
-                    | AuthKind::Minimax
-                    => {
+                    | AuthKind::Minimax => {
                         editor.pending.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -965,8 +966,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                     | AuthKind::Kimi
                     | AuthKind::Opencode
                     | AuthKind::Zai
-                    | AuthKind::Minimax
-                    => {
+                    | AuthKind::Minimax => {
                         entry.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
