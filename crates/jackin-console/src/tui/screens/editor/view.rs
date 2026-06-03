@@ -715,14 +715,7 @@ pub fn editor_auth_line_width(row: &EditorAuthLineRow) -> usize {
             padded_width(&format!("      {:<12}{mode_label}", "Mode"))
         }
         EditorAuthLineRow::RoleSource { display } => auth_source_line_width("Source", display, 6),
-        EditorAuthLineRow::AddSentinel { eligible } => {
-            let suffix = if *eligible == 0 {
-                "   (all roles overridden)"
-            } else {
-                ""
-            };
-            padded_width(&format!("  + Override for a role{suffix}"))
-        }
+        EditorAuthLineRow::AddSentinel { .. } => padded_width("  + Override for a role"),
         EditorAuthLineRow::Spacer => 0,
     }
 }
@@ -771,22 +764,11 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
             Span::styled(mode_label.clone(), phosphor),
         ]),
         EditorAuthLineRow::RoleSource { display } => render_auth_source_line("Source", display, 6),
-        EditorAuthLineRow::AddSentinel { eligible } => {
-            let label_style = if *eligible == 0 {
-                dim_green
-            } else {
-                action_row_style(selected)
-            };
-            let suffix = if *eligible == 0 {
-                "   (all roles overridden)".to_string()
-            } else {
-                String::new()
-            };
+        EditorAuthLineRow::AddSentinel { .. } => {
             let cursor_col = if selected { "\u{25b8} " } else { "  " };
             Line::from(vec![
                 Span::raw(cursor_col),
-                Span::styled("+ Override for a role", label_style),
-                Span::styled(suffix, dim_green),
+                Span::styled("+ Override for a role", action_row_style(selected)),
             ])
         }
         EditorAuthLineRow::Spacer => Line::from(""),

@@ -165,6 +165,19 @@ pub const ACTION_ACCENT: Rgb = Rgb::new(180, 255, 180);
 /// sections, trust prompts, and similar expand/collapse cues).
 pub const DISCLOSURE_ACCENT: Rgb = Rgb::new(255, 208, 102);
 
+/// Warm yellow used for warning notes inside confirmation dialogs.
+pub const WARNING_YELLOW: Rgb = Rgb::new(255, 216, 94);
+
+/// Dark charcoal canvas fill for the lookbook preview card. Sits between
+/// pure black and the phosphor-dark panel borders so components have a
+/// distinct bounded backdrop without the green tint of PHOSPHOR_DARK.
+pub const PREVIEW_CARD: Rgb = Rgb::new(28, 28, 28);
+
+/// Focused pane border for the capsule multiplexer. Near-white so it
+/// reads clearly against agent terminal output without the green brand
+/// tint that PHOSPHOR_GREEN would add.
+pub const CAPSULE_PANE_FOCUSED: Rgb = Rgb::new(180, 180, 180);
+
 /// Shared ANSI helpers + a centred text-input dialog renderer. The
 /// host TUI uses ratatui directly; the in-container multiplexer
 /// emits raw ANSI. Keeping the visual recipe (border style, title

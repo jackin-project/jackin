@@ -131,6 +131,7 @@ pub struct SelectList<'a> {
     state: &'a SelectListState,
     title: &'a str,
     context: &'a [Line<'a>],
+    empty_label: &'a str,
 }
 
 impl<'a> SelectList<'a> {
@@ -140,12 +141,20 @@ impl<'a> SelectList<'a> {
             state,
             title,
             context: &[],
+            empty_label: "no matches",
         }
     }
 
     #[must_use]
     pub const fn context(mut self, context: &'a [Line<'a>]) -> Self {
         self.context = context;
+        self
+    }
+
+    /// Override the placeholder shown when the list has no items (empty or filtered-to-nothing).
+    #[must_use]
+    pub const fn empty_label(mut self, label: &'a str) -> Self {
+        self.empty_label = label;
         self
     }
 }
@@ -186,6 +195,16 @@ impl Widget for SelectList<'_> {
             Paragraph::new(self.context.to_vec()).render(rows[2], buf);
         }
 
+        if self.state.filtered.is_empty() {
+            // Dim centered placeholder so operators can distinguish "empty" from "broken".
+            Paragraph::new(Line::from(Span::styled(
+                self.empty_label.to_string(),
+                crate::theme::DIM,
+            )))
+            .alignment(ratatui::layout::Alignment::Center)
+            .render(list_area, buf);
+            return;
+        }
         let lines: Vec<Line<'_>> = self
             .state
             .filtered

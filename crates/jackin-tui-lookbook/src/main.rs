@@ -31,7 +31,7 @@ use jackin_tui::{
         render_brand_header,
         scrollable_panel::{apply_scroll_delta, max_offset},
     },
-    theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN},
+    theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, PREVIEW_CARD},
 };
 use ratatui::{
     Terminal,
@@ -127,10 +127,11 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             let area = frame.area();
 
             // ── Global layout ─────────────────────────────────────────────────
-            // brand(2) | main | hint(1)
-            let [brand_area, main_area, hint_area] = Layout::vertical([
+            // brand(2) | main | spacer(1) | hint(1)
+            let [brand_area, main_area, _spacer_area, hint_area] = Layout::vertical([
                 Constraint::Length(2),
                 Constraint::Min(1),
+                Constraint::Length(1),
                 Constraint::Length(1),
             ])
             .areas(area);
@@ -236,13 +237,12 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             let preview_inner = preview_block.inner(preview_area);
             frame.render_widget(preview_block, preview_area);
 
-            // Fill the preview canvas with a dark charcoal so the preview area
-            // is visually distinct from the terminal background without the
-            // green tint of PHOSPHOR_DARK.
+            // Fill the preview canvas with the PREVIEW_CARD charcoal so the
+            // component floats on a distinct dark surface without the green
+            // tint of PHOSPHOR_DARK.
             frame.render_widget(
-                ratatui::widgets::Block::default().style(
-                    ratatui::style::Style::default().bg(ratatui::style::Color::Rgb(28, 28, 28)),
-                ),
+                ratatui::widgets::Block::default()
+                    .style(ratatui::style::Style::default().bg(PREVIEW_CARD)),
                 preview_inner,
             );
 

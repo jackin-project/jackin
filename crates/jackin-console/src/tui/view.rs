@@ -61,14 +61,26 @@ pub const fn workspace_header_title() -> &'static str {
 }
 
 /// How many rows the footer needs to display all `items` within `width`
-/// columns. Minimum 1.
+/// columns. Includes one leading blank spacer row above the hints.
 #[must_use]
 pub fn footer_height(items: &[jackin_tui::HintSpan<'_>], width: u16) -> u16 {
-    jackin_tui::components::wrapped_height(items, width)
+    // +1 for the mandatory leading spacer row above the hints on every screen.
+    jackin_tui::components::wrapped_height(items, width).saturating_add(1)
 }
 
 pub fn render_footer(frame: &mut Frame, area: Rect, items: &[jackin_tui::HintSpan<'_>]) {
-    jackin_tui::components::render_wrapped_hint_bar(frame, area, items);
+    if area.height == 0 {
+        return;
+    }
+    // Render hints in the bottom portion; the top row is the leading spacer.
+    let hint_rows = area.height.saturating_sub(1).max(1);
+    let hint_area = Rect {
+        x: area.x,
+        y: area.y.saturating_add(area.height.saturating_sub(hint_rows)),
+        width: area.width,
+        height: hint_rows,
+    };
+    jackin_tui::components::render_wrapped_hint_bar(frame, hint_area, items);
 }
 
 pub fn render_header(frame: &mut Frame, area: Rect, title: &str) {

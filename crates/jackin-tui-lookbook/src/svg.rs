@@ -196,6 +196,8 @@ fn color_to_css(color: Color) -> &'static str {
         Color::Rgb(0, 80, 180) => "#0050b4",
         Color::Rgb(204, 92, 0) => "#cc5c00",
         Color::Rgb(80, 80, 80) => "#505050",
+        Color::Rgb(28, 28, 28) => "#1c1c1c",
+        Color::Rgb(180, 180, 180) => "#b4b4b4",
         Color::Reset => "#000000",
         Color::Rgb(_, _, _) | Color::Indexed(_) => "#ffffff",
     }

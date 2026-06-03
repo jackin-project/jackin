@@ -393,10 +393,8 @@ fn auth_lines_render_kind_mode_source_and_sentinel() {
         "unset  (CLAUDE_API_KEY for api-key)"
     );
     assert_eq!(lines[3].spans[1].content.as_ref(), " Role: alpha");
-    assert_eq!(
-        lines[4].spans[2].content.as_ref(),
-        "   (all roles overridden)"
-    );
+    // AddSentinel row: cursor + action label only (no suffix, per action-row style rule).
+    assert_eq!(lines[4].spans[1].content.as_ref(), "+ Override for a role");
     assert_eq!(editor_auth_line_width(&rows[0]), padded_width("  Claude"));
     assert_eq!(
         editor_auth_line_width(&rows[1]),
@@ -408,6 +406,6 @@ fn auth_lines_render_kind_mode_source_and_sentinel() {
     );
     assert_eq!(
         editor_auth_line_width(&rows[4]),
-        padded_width("  + Override for a role   (all roles overridden)")
+        padded_width("  + Override for a role")
     );
 }

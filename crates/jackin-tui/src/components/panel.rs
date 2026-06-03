@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{BORDER_GRAY, CAPSULE_PANE_FOCUSED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelFocus {
@@ -57,8 +57,8 @@ impl FocusPalette {
     /// agent output; a gray ramp is easier on the eye while still
     /// providing a clear focused/unfocused contrast.
     pub const CAPSULE_PANE: Self = Self {
-        focused: Color::Rgb(180, 180, 180),
-        unfocused: Color::Rgb(80, 80, 80),
+        focused: CAPSULE_PANE_FOCUSED,
+        unfocused: BORDER_GRAY,
     };
 }
 
@@ -111,8 +111,10 @@ impl<'a> Panel<'a> {
             .borders(Borders::ALL)
             .border_style(self.focus.border_style_with_palette(&self.palette));
         if let Some(title) = self.title {
+            // Normalize to " Title " so callers never need to add padding manually.
+            let padded = format!(" {} ", title.trim());
             block = block.title(Span::styled(
-                title,
+                padded,
                 Style::new().fg(WHITE).add_modifier(Modifier::BOLD),
             ));
         }
@@ -151,6 +153,19 @@ pub fn modal_block<'a>() -> Block<'a> {
 /// which also handles titles. This helper is for untitled containers only.
 #[must_use]
 pub fn unfocused_block<'a>() -> Block<'a> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(PanelFocus::Unfocused.border_style())
+}
+
+/// A bordered `Block` for a **background** modal in a dialog stack.
+///
+/// When multiple dialogs are stacked, only the topmost dialog uses `modal_block()`
+/// (PHOSPHOR_GREEN border); every dialog beneath uses this helper (PHOSPHOR_DARK
+/// border). Exactly one PHOSPHOR_GREEN border is visible at a time, which satisfies
+/// the focus-visible one-bright-border rule.
+#[must_use]
+pub fn modal_block_inactive<'a>() -> Block<'a> {
     Block::default()
         .borders(Borders::ALL)
         .border_style(PanelFocus::Unfocused.border_style())

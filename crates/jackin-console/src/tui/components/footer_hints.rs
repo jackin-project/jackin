@@ -349,13 +349,8 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
 
 #[must_use]
 pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
-        HintSpan::Key("\u{2191}\u{2193}"),
-        HintSpan::Text("navigate"),
-        HintSpan::Sep,
-        HintSpan::Key("␣"),
-        HintSpan::Text("toggle"),
-    ]
+    // `content_footer_items` already prepends ↑↓ navigate; only add the tab-specific action.
+    vec![HintSpan::Key("␣"), HintSpan::Text("toggle")]
 }
 
 #[must_use]

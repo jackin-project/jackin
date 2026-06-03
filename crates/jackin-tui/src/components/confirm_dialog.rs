@@ -8,17 +8,15 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 
-use crate::{ModalOutcome, theme::PHOSPHOR_GREEN};
+use crate::{ModalOutcome, theme::{PHOSPHOR_GREEN, WARNING_YELLOW}};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
 use super::panel::modal_block;
-
-const WARNING_YELLOW: Color = Color::Rgb(255, 216, 94);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmFocus {
@@ -137,18 +135,22 @@ impl ConfirmState {
 pub fn required_height(state: &ConfirmState) -> u16 {
     match &state.kind {
         ConfirmKind::Details { rows, notes, .. } => {
-            let content_rows = 1usize
-                .saturating_add(1)
-                .saturating_add(rows.len())
-                .saturating_add(1)
-                .saturating_add(notes.len())
-                .saturating_add(1)
-                .saturating_add(1);
+            // 2 borders + 1 leading + prompt + sep + detail_rows + sep + note_rows + spacer + buttons + 1 trailing
+            let content_rows = 1usize       // leading spacer
+                .saturating_add(1)          // prompt
+                .saturating_add(1)          // separator
+                .saturating_add(rows.len()) // detail rows
+                .saturating_add(1)          // separator
+                .saturating_add(notes.len()) // note rows
+                .saturating_add(1)          // spacer before buttons
+                .saturating_add(1)          // buttons
+                .saturating_add(1);         // trailing spacer
             u16::try_from(content_rows.saturating_add(2)).unwrap_or(u16::MAX)
         }
         ConfirmKind::Default { prompt } => {
+            // 2 borders + 1 leading + prompt_lines + 1 spacer + 1 buttons + 1 trailing
             let prompt_lines = prompt.lines().count().max(1) as u16;
-            prompt_lines + 4
+            prompt_lines + 6
         }
     }
 }
@@ -181,12 +183,15 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
     };
 
     let prompt_lines = prompt.lines().count().max(1) as u16;
+    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(prompt_lines),
-            Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(1),            // leading spacer
+            Constraint::Length(prompt_lines), // prompt
+            Constraint::Length(1),            // spacer
+            Constraint::Length(1),            // buttons
+            Constraint::Length(1),            // trailing spacer
         ])
         .split(inner);
 
@@ -196,10 +201,10 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
         .collect();
     frame.render_widget(
         Paragraph::new(prompt_lines_vec).alignment(Alignment::Center),
-        chunks[0],
+        chunks[1],
     );
 
-    render_buttons(frame, chunks[2], state);
+    render_buttons(frame, chunks[3], state);
 }
 
 fn render_details(
@@ -212,16 +217,19 @@ fn render_details(
 ) {
     let detail_rows = u16::try_from(details.len()).unwrap_or(u16::MAX);
     let note_rows = u16::try_from(notes.len()).unwrap_or(u16::MAX);
+    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),           // rows[0]: prompt
-            Constraint::Length(1),           // rows[1]: separator
-            Constraint::Length(detail_rows), // rows[2]: detail rows
-            Constraint::Length(1),           // rows[3]: separator
-            Constraint::Length(note_rows),   // rows[4]: note rows
-            Constraint::Length(1),           // rows[5]: empty row before buttons
-            Constraint::Length(1),           // rows[6]: buttons
+            Constraint::Length(1),           // rows[0]: leading spacer
+            Constraint::Length(1),           // rows[1]: prompt
+            Constraint::Length(1),           // rows[2]: separator
+            Constraint::Length(detail_rows), // rows[3]: detail rows
+            Constraint::Length(1),           // rows[4]: separator
+            Constraint::Length(note_rows),   // rows[5]: note rows
+            Constraint::Length(1),           // rows[6]: spacer before buttons
+            Constraint::Length(1),           // rows[7]: buttons
+            Constraint::Length(1),           // rows[8]: trailing spacer
         ])
         .split(inner);
 
@@ -236,7 +244,7 @@ fn render_details(
             prompt.to_owned(),
             crate::theme::BOLD_WHITE,
         ))),
-        inset(rows[0], 3),
+        inset(rows[1], 3),
     );
 
     let detail_lines = details
@@ -248,7 +256,7 @@ fn render_details(
             ])
         })
         .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(detail_lines), inset(rows[2], 3));
+    frame.render_widget(Paragraph::new(detail_lines), inset(rows[3], 3));
 
     let note_lines = notes
         .iter()
@@ -265,9 +273,9 @@ fn render_details(
             ])
         })
         .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(note_lines), inset(rows[4], 3));
+    frame.render_widget(Paragraph::new(note_lines), inset(rows[5], 3));
 
-    render_buttons(frame, rows[6], state);
+    render_buttons(frame, rows[7], state);
 }
 
 const fn inset(area: Rect, x: u16) -> Rect {

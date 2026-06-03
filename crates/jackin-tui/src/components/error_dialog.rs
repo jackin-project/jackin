@@ -60,14 +60,16 @@ impl Widget for ErrorDialog<'_> {
         Clear.render(area, buf);
         block.render(area, buf);
 
-        let body_rows = inner.height.saturating_sub(3);
+        // Canonical dialog layout: leading spacer + body + spacer + button + trailing spacer.
+        let body_rows = inner.height.saturating_sub(4);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),
-                Constraint::Length(body_rows),
-                Constraint::Length(1),
-                Constraint::Length(1),
+                Constraint::Length(1),        // leading spacer
+                Constraint::Length(body_rows), // message body
+                Constraint::Length(1),        // spacer
+                Constraint::Length(1),        // OK button
+                Constraint::Length(1),        // trailing spacer
             ])
             .split(inner);
 
@@ -107,8 +109,9 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
 
 #[must_use]
 pub fn required_height(state: &ErrorPopupState, inner_width: u16, max_rows: u16) -> u16 {
+    // 2 borders + 1 leading + body + 1 spacer + 1 button + 1 trailing = body + 7
     let body = estimated_message_rows(state, inner_width);
-    body.saturating_add(6).min(max_rows.max(7))
+    body.saturating_add(7).min(max_rows.max(8))
 }
 
 pub fn render_error_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, state: &ErrorPopupState) {
