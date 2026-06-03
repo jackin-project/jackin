@@ -40,11 +40,11 @@ pub use crate::workspace::validate_workspace_config;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// The top-level operator configuration (`~/.config/jackin/config.toml`).
+/// Top-level operator configuration (`~/.config/jackin/config.toml`).
 ///
-/// Schema types (`WorkspaceConfig`, `MountConfig`, etc.) now come from
-/// `jackin-config`; this struct assembles them. Behavior (load/save) lives
-/// in `config/persist`.
+/// `AppConfig` stays in the binary crate — it has many inherent impl blocks
+/// that depend on binary-only types (`ConfigEditor`, `fs2`, etc.). Stage 4
+/// deferral: moved when all impl blocks can also move.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default = "migrations::current_config_version", rename = "version")]
@@ -91,5 +91,3 @@ impl Default for AppConfig {
         }
     }
 }
-
-// DockerConfig is now defined in jackin-config/schema.rs and re-exported above.

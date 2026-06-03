@@ -236,6 +236,12 @@ pub struct DockerConfig {
     pub mounts: DockerMounts,
 }
 
+// AppConfig stays in the binary crate — it has many inherent impl blocks
+// (load_or_init, edit_workspace, sync_builtin_agents, etc.) that depend on
+// binary-only types (ConfigEditor, fs2, JackinPaths). Moving AppConfig would
+// require all those impls to also move, creating a very large extraction.
+// This note documents the deliberate deferral.
+
 // ─── Workspace edit ──────────────────────────────────────────────────────────
 
 /// Workspace mutation spec: built by the TUI/CLI from the pending-vs-original
