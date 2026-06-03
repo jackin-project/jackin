@@ -1,29 +1,36 @@
 //! Model state for the 1Password picker.
+//!
+//! The runner is intentionally absent from `OpPickerState`: the host crate
+//! owns the runner and injects it at load-execution time (see the binary's
+//! `console/tui/op_picker/load.rs`). Pending-load slots use `()` as the
+//! runner type; the host layer swaps in the real runner when converting
+//! `take_pending_request` output into an `OpPickerPendingLoad` for execution.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
-#[cfg(test)]
-use std::sync::Arc;
 
 use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::BlockingSubscription;
 use ratatui::text::Line;
 use tui_widget_list::ListState;
 
-use super::{
-    FieldDisplayRow, FieldLabelOrigin, LoadResult, OpCache, OpLoadState, OpPickerAccount,
-    OpPickerField, OpPickerItem, OpPickerMode, OpPickerPendingLoad, OpPickerStage, OpPickerVault,
+use crate::tui::components::op_picker::{
+    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount,
+    OpPickerAccountRef, OpPickerCache, OpPickerField, OpPickerFieldDisplayRef, OpPickerFieldRef,
+    OpPickerItem, OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
+    OpPickerPendingLoad, OpPickerRenderState, OpPickerStage, OpPickerVault, OpPickerVaultRef,
+    account_lines, build_op_picker_ref, field_display_rows_for_picker, field_lines,
+    filtered_accounts, filtered_fields, filtered_item_choices, filtered_items, filtered_vaults,
+    item_choice_lines, naming_stage_input_for_stage, section_choices_from_references,
+    section_lines, selected_account_id, selected_entity_label_or_empty,
+    selected_index_for_stage, vault_lines,
 };
-#[cfg(test)]
-use crate::operator_env::OpStructRunner;
-use jackin_console::tui::components::op_picker::{
-    OpPickerAccountRef, OpPickerFieldDisplayRef, OpPickerItemRef, OpPickerRenderState,
-    OpPickerVaultRef, account_lines, build_op_picker_ref, field_display_rows_for_picker,
-    field_lines, filtered_accounts, filtered_fields, filtered_item_choices, filtered_items,
-    filtered_vaults, item_choice_lines, naming_stage_input_for_stage,
-    section_choices_from_references, section_lines, selected_index_for_stage, vault_lines,
-};
+
+/// Concrete load-result type for the op picker (all four payload variants
+/// carry lists of the picker's own account/vault/item/field types).
+pub type LoadResult =
+    OpPickerLoadResult<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
 
 pub struct OpPickerState {
     pub stage: OpPickerStage,
@@ -67,26 +74,27 @@ pub struct OpPickerState {
     pub pending_section: Option<String>,
     /// The stage the `FieldLabel` sub-stage was entered from, so its Esc
     /// returns to the right origin (Create mode has three entry points).
-    pub(super) field_label_origin: FieldLabelOrigin,
+    pub field_label_origin: FieldLabelOrigin,
     /// Set by the Field-stage `R` refresh before re-issuing the field
     /// load so the Fields-loaded arm rebuilds the field rows in place
     /// rather than bouncing back to the Section stage (Create mode). The
     /// initial item-selection load leaves it `false` and lands on Section
     /// as usual. Cleared the moment the refreshed fields arrive.
-    pub(super) field_refresh_in_place: bool,
+    pub field_refresh_in_place: bool,
 
-    /// Test-only injected runner. Production chooses its service runner outside
-    /// TUI state when executing the pending typed load request.
-    #[cfg(test)]
-    pub(super) runner: Arc<dyn OpStructRunner + Send + Sync>,
-    pub(super) rx: Option<BlockingSubscription<LoadResult>>,
-    pub(super) pending_load: Option<OpPickerPendingLoad>,
+    /// In-flight subscription waiting for a background load result.
+    pub rx: Option<BlockingSubscription<LoadResult>>,
+    /// Pending load request queued by state-mutation methods; the host
+    /// crate's load-execution layer picks this up and starts the worker.
+    /// Runner is `()` here — the host injects the real runner at execution
+    /// time (see the binary's `op_picker/load.rs`).
+    pub pending_load: Option<OpPickerPendingLoad<LoadResult, OpPickerLoadRequest, ()>>,
     /// Session-scoped cache shared with `ConsoleState`; the default
     /// constructor allocates a fresh empty one for unit tests.
-    pub(super) op_cache: Rc<RefCell<OpCache>>,
+    pub op_cache: Rc<RefCell<OpPickerCache>>,
 }
 
-// rx and test runner aren't Debug; skipped fields are plumbing only.
+// `rx` is not `Debug`; skipped fields are plumbing only.
 #[allow(clippy::missing_fields_in_debug)]
 impl std::fmt::Debug for OpPickerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -178,10 +186,7 @@ impl OpPickerState {
     /// # Panics
     ///
     /// Panics if vault or item are not selected.
-    pub(crate) fn build_op_ref_on_commit(
-        &self,
-        field: &OpPickerField,
-    ) -> crate::operator_env::OpRef {
+    pub fn build_op_ref_on_commit(&self, field: &OpPickerField) -> jackin_core::OpRef {
         let vault = self
             .selected_vault
             .as_ref()
@@ -206,12 +211,12 @@ impl OpPickerState {
                 name: &item.name,
                 subtitle: &item.subtitle,
             }),
-            super::OpPickerFieldRef {
+            OpPickerFieldRef {
                 id: &field.id,
                 label: &field.label,
                 reference: &field.reference,
             },
-            self.fields.iter().map(|field| super::OpPickerFieldRef {
+            self.fields.iter().map(|field| OpPickerFieldRef {
                 id: &field.id,
                 label: &field.label,
                 reference: &field.reference,
@@ -219,7 +224,7 @@ impl OpPickerState {
         );
 
         if built.empty_reference_with_sibling_refs {
-            crate::debug_log!(
+            jackin_diagnostics::debug_log!(
                 "op_picker",
                 "empty field.reference for {}/{} (id {}); sibling fields have references — falling back to 3-segment URI",
                 vault.name,
@@ -228,11 +233,17 @@ impl OpPickerState {
             );
         }
 
-        crate::operator_env::OpRef {
+        jackin_core::OpRef {
             op: built.op,
             path: built.path,
             account: self.selected_account_id(),
         }
+    }
+
+    pub fn selected_account_id(&self) -> Option<String> {
+        selected_account_id(self.selected_account.as_ref(), |account| {
+            account.id.as_str()
+        })
     }
 }
 
@@ -254,25 +265,25 @@ impl OpPickerRenderState for OpPickerState {
     }
 
     fn selected_account_email(&self) -> &str {
-        super::selected_entity_label_or_empty(self.selected_account.as_ref(), |account| {
+        selected_entity_label_or_empty(self.selected_account.as_ref(), |account| {
             account.email.as_str()
         })
     }
 
     fn selected_vault_name(&self) -> &str {
-        super::selected_entity_label_or_empty(self.selected_vault.as_ref(), |vault| {
+        selected_entity_label_or_empty(self.selected_vault.as_ref(), |vault| {
             vault.name.as_str()
         })
     }
 
     fn selected_item_name(&self) -> &str {
-        super::selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
+        selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
             item.name.as_str()
         })
     }
 
     fn selected_item_subtitle(&self) -> &str {
-        super::selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
+        selected_entity_label_or_empty(self.selected_item.as_ref(), |item| {
             item.subtitle.as_str()
         })
     }

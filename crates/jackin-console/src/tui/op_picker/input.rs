@@ -1,26 +1,28 @@
 //! Input/update handlers for the 1Password picker.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use jackin_console::tui::components::list_helpers::{
-    clamp_selection, cycle_select, first_selection, list_state_for_count, selected_choice,
-};
-use jackin_console::tui::components::op_picker::section_name_input_state;
 use jackin_tui::ModalOutcome;
 
-use super::{
-    AccountStageCommitPlan, ExistingFieldCommitSelectionInput, FieldStageCommitPlan,
-    ItemStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerBlockedLoadKeyPlan,
-    OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan,
-    VaultStageBackPlan, VaultStageCommitPlan, account_stage_commit_plan,
-    account_stage_refresh_plan, blocked_load_key_plan, existing_field_commit_plan,
-    existing_field_commit_selection, field_label_cancel_plan, field_label_commit_plan,
-    field_label_commit_selection, field_stage_back_plan, field_stage_commit_plan,
-    field_stage_refresh_plan, filter_reset_selection_for_stage, item_stage_back_plan,
-    item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
-    new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
-    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
-    vault_stage_refresh_plan,
+use crate::tui::components::list_helpers::{
+    clamp_selection, cycle_select, first_selection, list_state_for_count, selected_choice,
 };
+use crate::tui::components::op_picker::{
+    AccountStageCommitPlan, ExistingFieldCommitSelectionInput, FieldStageCommitPlan,
+    ItemStageCommitPlan, OpLoadState,
+    OpPickerBlockedLoadKeyPlan, OpPickerField, OpPickerItem, OpPickerStage,
+    SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan,
+    account_stage_commit_plan, account_stage_refresh_plan, blocked_load_key_plan,
+    existing_field_commit_plan, existing_field_commit_selection, field_label_cancel_plan,
+    field_label_commit_plan, field_label_commit_selection, field_stage_back_plan,
+    field_stage_commit_plan, field_stage_refresh_plan, filter_reset_selection_for_stage,
+    item_stage_back_plan, item_stage_commit_plan, item_stage_refresh_plan,
+    new_item_name_commit_plan, new_section_name_commit_plan, section_header_collapse_target,
+    section_name_input_state, section_stage_back_plan, section_stage_commit_plan,
+    vault_stage_back_plan, vault_stage_commit_plan, vault_stage_refresh_plan,
+};
+
+use super::state::OpPickerState;
+use super::OpPickerSelection;
 
 impl OpPickerState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
@@ -174,8 +176,8 @@ impl OpPickerState {
             }
             KeyCode::Enter => {
                 let visible = self.filtered_vaults();
-                let picked =
-                    selected_choice(&visible, self.vault_list_state.selected).map(|v| (*v).clone());
+                let picked = selected_choice(&visible, self.vault_list_state.selected)
+                    .map(|v| (*v).clone());
                 if let VaultStageCommitPlan::ExistingVault(v) = vault_stage_commit_plan(picked) {
                     let id = v.id.clone();
                     let account_id = self.selected_account_id();
@@ -241,7 +243,7 @@ impl OpPickerState {
             KeyCode::Enter => {
                 // `None` is the `+ New item` sentinel (Create mode only).
                 let visible = self.filtered_item_choices();
-                let picked: Option<Option<OpItem>> =
+                let picked: Option<Option<OpPickerItem>> =
                     selected_choice(&visible, self.item_list_state.selected)
                         .map(|choice| choice.map(Clone::clone));
                 match item_stage_commit_plan(picked) {
@@ -520,7 +522,7 @@ impl OpPickerState {
                     &label,
                 );
                 ModalOutcome::Commit(field_label_commit_selection(plan, |label| {
-                    crate::operator_env::FieldTarget::New { label }
+                    jackin_core::FieldTarget::New { label }
                 }))
             }
             ModalOutcome::Continue => ModalOutcome::Continue,
@@ -546,7 +548,7 @@ impl OpPickerState {
     /// field by its exact id. The consumer matches on `field_id` and preserves
     /// the field's existing section, so `selected_section` rides along only
     /// for display, not placement.
-    fn commit_existing_field(&self, field: &OpField) -> OpPickerSelection {
+    fn commit_existing_field(&self, field: &OpPickerField) -> OpPickerSelection {
         let plan = existing_field_commit_plan(
             &self.mode,
             &field.id,
@@ -567,7 +569,7 @@ impl OpPickerState {
                     .expect("item set before field commit"),
             },
             || self.build_op_ref_on_commit(field),
-            |id, label| crate::operator_env::FieldTarget::Existing { id, label },
+            |id, label| jackin_core::FieldTarget::Existing { id, label },
         )
     }
 

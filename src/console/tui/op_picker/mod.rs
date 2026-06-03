@@ -12,67 +12,66 @@
 //! multi-account operator's reference resolves against the account it was
 //! authored under rather than whichever happens to be the `op` default.
 //!
-//! `OpStructRunner` calls run through blocking workers, results routed
-//! through one-shot subscriptions; the spinner ticks until the receiver
-//! yields. Probe / vault-list failures fork into four fatal panels
-//! (not installed, not signed in, no vaults, generic).
+//! Generic state, input handlers, and load-completion polling are now in
+//! `jackin-console`. This module is the host-crate façade: it re-exports the
+//! generic types, binds `OpPickerSelection` to the concrete `jackin-core`
+//! types, and houses the test-runner thread-local so the binary's tests can
+//! inject a `StubRunner` without `jackin-env` becoming a `jackin-console` dep.
 //!
-//! Behavioral invariants documented in the Developer Reference → Behavioral Specs section of the docs site.
+//! Behavioral invariants documented in the Developer Reference → Behavioral
+//! Specs section of the docs site.
 
-mod input;
-mod load;
-mod state;
+pub(crate) use jackin_console::tui::op_picker::{OpPickerSelection, OpPickerState};
 
-pub(crate) use state::OpPickerState;
-
-pub(crate) use jackin_console::tui::components::op_picker::{
-    AccountStageCommitPlan, AccountsLoadedPlan, ExistingFieldCommitSelectionInput, FieldDisplayRow,
-    FieldLabelOrigin, FieldStageCommitPlan, FieldsLoadedPlan, ItemStageCommitPlan, OpLoadState,
-    OpPickerAccount, OpPickerBlockedLoadKeyPlan, OpPickerCache, OpPickerError, OpPickerFatalState,
-    OpPickerField, OpPickerFieldRef, OpPickerItem, OpPickerLoadRequest, OpPickerLoadResult,
-    OpPickerMode, OpPickerPendingLoad as GenericOpPickerPendingLoad, OpPickerStage, OpPickerVault,
-    SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan, VaultStageCommitPlan,
-    VaultsLoadedPlan, account_stage_commit_plan, account_stage_refresh_plan, blocked_load_key_plan,
-    disconnected_worker_error_state, existing_field_commit_plan, existing_field_commit_selection,
-    field_label_cancel_plan, field_label_commit_plan, field_label_commit_selection,
-    field_stage_back_plan, field_stage_commit_plan, field_stage_refresh_plan, fields_loaded_plan,
-    filter_reset_selection_for_stage, item_stage_back_plan, item_stage_commit_plan,
-    item_stage_refresh_plan, items_loaded_plan, new_item_name_commit_plan,
-    new_section_name_commit_plan, probe_load_error_state, recoverable_load_error_state,
-    section_header_collapse_target, section_stage_back_plan, section_stage_commit_plan,
-    selected_account_id, selected_account_id_ref, selected_entity_id_or_default,
-    selected_entity_label_or_empty, sort_fields_by_concealed_first, vault_stage_back_plan,
-    vault_stage_commit_plan, vault_stage_refresh_plan, vaults_loaded_plan,
+// Used by tests.rs via `use super::*`.
+#[cfg(test)]
+use jackin_console::tui::components::op_picker::{
+    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerCache, OpPickerError,
+    OpPickerFatalState, OpPickerField, OpPickerItem, OpPickerMode, OpPickerStage, OpPickerVault,
 };
+#[cfg(test)]
+use jackin_console::tui::op_picker::LoadResult;
 
-pub(crate) type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<
-    crate::operator_env::OpRef,
-    crate::operator_env::OpAccount,
-    crate::operator_env::OpVault,
-    crate::operator_env::OpItem,
-    crate::operator_env::FieldTarget,
->;
+/// Test-runner thread-local: stores the injected runner so
+/// `execute_pending_load_for_test` can pass it to `start_load` without
+/// storing it in `OpPickerState` (which would create a circular dep via the
+/// `OpStructRunner` trait bound in `jackin-env`).
+#[cfg(test)]
+thread_local! {
+    pub(super) static TEST_RUNNER: std::cell::RefCell<
+        Option<std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>>,
+    > = const { std::cell::RefCell::new(None) };
+}
 
-type LoadResult = OpPickerLoadResult<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
-
-type LoadRequest = OpPickerLoadRequest;
+/// Test constructor helpers — these are free functions (not methods on `OpPickerState`)
+/// because the orphan rule prevents adding inherent methods to a type from another crate.
+/// Each sets the thread-local runner so `execute_pending_load_for_test` can pick it up.
+#[cfg(test)]
+pub(super) fn new_picker_with_runner(
+    runner: std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>,
+) -> OpPickerState {
+    TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
+    OpPickerState::new()
+}
 
 #[cfg(test)]
-type PendingLoadRunner = std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>;
-#[cfg(not(test))]
-type PendingLoadRunner = ();
+pub(super) fn new_picker_with_runner_and_cache(
+    runner: std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>,
+    op_cache: std::rc::Rc<std::cell::RefCell<OpPickerCache>>,
+) -> OpPickerState {
+    TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
+    OpPickerState::new_with_cache(op_cache)
+}
 
-pub(in crate::console) type OpPickerPendingLoad =
-    GenericOpPickerPendingLoad<LoadResult, LoadRequest, PendingLoadRunner>;
-
-type OpField = OpPickerField;
-type OpItem = OpPickerItem;
-type OpCache = OpPickerCache;
-
-impl Default for OpPickerState {
-    fn default() -> Self {
-        Self::new()
-    }
+#[cfg(test)]
+pub(super) fn new_create_picker_with_runner_and_cache(
+    runner: std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>,
+    op_cache: std::rc::Rc<std::cell::RefCell<OpPickerCache>>,
+    item_name_default: impl Into<String>,
+    field_label_default: impl Into<String>,
+) -> OpPickerState {
+    TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
+    OpPickerState::new_create_with_cache(op_cache, item_name_default, field_label_default)
 }
 
 #[cfg(test)]

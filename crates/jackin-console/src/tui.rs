@@ -11,6 +11,7 @@ pub mod list_geometry;
 pub mod message;
 pub mod mount_display;
 pub mod op_breadcrumb;
+pub mod op_picker;
 pub mod run;
 pub mod screens;
 pub mod sidebar_layout;

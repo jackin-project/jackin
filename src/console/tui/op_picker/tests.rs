@@ -88,10 +88,15 @@ fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
     let Some(pending) = s.take_pending_load() else {
         return false;
     };
+    let runner = super::TEST_RUNNER.with(|r| {
+        r.borrow()
+            .clone()
+            .expect("test runner must be set before executing a load")
+    });
     let rx = crate::console::services::op_picker::start_load(
         pending.cached,
         pending.request,
-        pending.runner,
+        runner,
     );
     s.attach_load_receiver(rx);
     true
@@ -109,7 +114,7 @@ fn picker_ready() -> OpPickerState {
         )]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     s.rx = None;
     s.pending_load = None;
@@ -390,7 +395,7 @@ fn create_ready() -> OpPickerState {
         )]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_create_with_runner_and_cache(
+    let mut s = new_create_picker_with_runner_and_cache(
         runner,
         Rc::new(RefCell::new(OpCache::default())),
         "default-item",
@@ -488,7 +493,7 @@ fn create_mode_existing_item_lands_on_section_stage() {
         )]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_create_with_runner_and_cache(
+    let mut s = new_create_picker_with_runner_and_cache(
         runner,
         Rc::new(RefCell::new(OpCache::default())),
         "default-item",
@@ -819,7 +824,7 @@ fn stub_runner_constructor_is_not_fatal() {
         accounts: Mutex::new(vec![account("a", "a@example.com", "a.1password.com")]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     let bad = matches!(
         s.load_state,
@@ -845,7 +850,7 @@ fn picker_starts_at_account_when_multiple_accounts() {
         ]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     assert_eq!(
         s.stage,
@@ -870,7 +875,7 @@ fn picker_starts_at_vault_when_single_account() {
         )]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     assert_eq!(
         s.stage,
@@ -897,7 +902,7 @@ fn account_pane_filter_narrows_by_email() {
         ]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     s.rx = None;
     s.pending_load = None;
@@ -921,7 +926,7 @@ fn enter_on_account_advances_to_vault_with_account_scope() {
         ]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     s.rx = None;
     s.pending_load = None;
@@ -961,7 +966,7 @@ fn esc_from_vault_with_multi_account_returns_to_account() {
         ]),
         last_vault_list_account: Mutex::new(None),
     });
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     s.rx = None;
     s.pending_load = None;
@@ -1037,7 +1042,7 @@ fn op_cache_hit_skips_account_list_subprocess() {
     let counter2: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
     // First picker: cache miss → runner invoked once.
-    let mut s1 = OpPickerState::new_with_runner_and_cache(
+    let mut s1 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
             counter: counter1.clone(),
@@ -1052,7 +1057,7 @@ fn op_cache_hit_skips_account_list_subprocess() {
     );
 
     // Second picker: cache hit → runner must NOT be invoked.
-    let mut s2 = OpPickerState::new_with_runner_and_cache(
+    let mut s2 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
             counter: counter2.clone(),
@@ -1075,7 +1080,7 @@ fn op_cache_miss_calls_runner_and_stores() {
     let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
     let counter: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
-    let mut s1 = OpPickerState::new_with_runner_and_cache(
+    let mut s1 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
             counter: counter.clone(),
@@ -1089,7 +1094,7 @@ fn op_cache_miss_calls_runner_and_stores() {
         "first picker must populate the cache"
     );
 
-    let mut s2 = OpPickerState::new_with_runner_and_cache(
+    let mut s2 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
             counter: counter.clone(),
@@ -1119,7 +1124,7 @@ fn op_cache_refresh_re_fires_subprocess() {
         ],
         counter: counter.clone(),
     });
-    let mut s = OpPickerState::new_with_runner_and_cache(r, cache);
+    let mut s = new_picker_with_runner_and_cache(r, cache);
     drain_initial_account_load(&mut s);
     assert_eq!(*counter.lock().unwrap(), 1, "constructor must miss once");
     assert_eq!(s.accounts.len(), 2);
@@ -1190,7 +1195,7 @@ fn picker_construction_does_not_block_on_account_list() {
     let runner_for_release = Arc::clone(&runner);
 
     let start = std::time::Instant::now();
-    let _s = OpPickerState::new_with_runner(runner);
+    let _s = new_picker_with_runner(runner);
     let elapsed = start.elapsed();
     assert!(
         elapsed < std::time::Duration::from_millis(500),
@@ -1206,7 +1211,7 @@ fn picker_loading_account_state_renders_spinner_immediately() {
 
     let runner = Arc::new(BlockingRunner::new());
     let runner_for_release = Arc::clone(&runner);
-    let s = OpPickerState::new_with_runner(runner);
+    let s = new_picker_with_runner(runner);
 
     assert!(
         matches!(s.load_state, OpLoadState::Loading { .. }),
@@ -1443,7 +1448,7 @@ fn vault_list_uses_injected_runner_in_async_worker() {
         ..Default::default()
     });
     let runner_for_assert: Arc<RecorderRunner> = Arc::clone(&runner);
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     // Single-account fast path also fires a vault_list — drain so
     // the counter only reflects the explicit call below.
     drain_initial_account_load(&mut s);
@@ -1476,7 +1481,7 @@ fn item_list_uses_injected_runner_in_async_worker() {
         ..Default::default()
     });
     let runner_for_assert: Arc<RecorderRunner> = Arc::clone(&runner);
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     drain_worker_load(&mut s);
 
@@ -1508,7 +1513,7 @@ fn item_get_uses_injected_runner_in_async_worker() {
         ..Default::default()
     });
     let runner_for_assert: Arc<RecorderRunner> = Arc::clone(&runner);
-    let mut s = OpPickerState::new_with_runner(runner);
+    let mut s = new_picker_with_runner(runner);
     drain_initial_account_load(&mut s);
     drain_worker_load(&mut s);
 
