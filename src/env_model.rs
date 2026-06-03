@@ -91,9 +91,9 @@ pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
 /// `AuthKind::Minimax` env-only auth kind and gates the MiniMax provider picker.
 pub const MINIMAX_API_KEY_ENV_NAME: &str = "MINIMAX_API_KEY";
 
-/// Kimi Code API key env var. Distinct from `KIMI_API_KEY` (the Kimi runtime
-/// agent). Carries the credential for `AuthKind::KimiCode` and gates the
-/// Kimi provider picker.
+/// Kimi API key. Used for both the Kimi Code CLI runtime agent (api_key mode)
+/// and for routing Claude Code to Kimi's Anthropic-compatible coding endpoint.
+/// A single key from the Kimi Code Console covers both uses.
 pub const KIMI_CODE_API_KEY_ENV_NAME: &str = "KIMI_CODE_API_KEY";
 
 /// Primary GitHub token env var. `gh` reads this preferentially.

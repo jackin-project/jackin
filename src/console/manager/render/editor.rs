@@ -983,7 +983,7 @@ fn resolve_panel_mode(
             let mode = crate::config::resolve_github_mode(cfg, workspace, role);
             AuthMode::from_github(mode)
         }
-        AuthKind::Zai | AuthKind::Minimax | AuthKind::KimiCode => {
+        AuthKind::Zai | AuthKind::Minimax => {
             // Env-only provider kinds: mode derived from whether the key is
             // present in the effective env at this layer.
             let env_key = kind
@@ -1508,7 +1508,7 @@ fn explicit_workspace_mode(
             .github
             .as_ref()
             .map(|g| AuthMode::from_github(g.auth_forward)),
-        AuthKind::Zai | AuthKind::Minimax | AuthKind::KimiCode => {
+        AuthKind::Zai | AuthKind::Minimax => {
             let env_key = kind
                 .required_env_var(AuthMode::ApiKey)
                 .unwrap_or("ZAI_API_KEY");
@@ -1541,7 +1541,7 @@ fn auth_source_value<'a>(
         | AuthKind::Opencode
         | AuthKind::Zai
         | AuthKind::Minimax
-        | AuthKind::KimiCode => agent_env_source_value(synthesized, workspace_name, role, env_name),
+        => agent_env_source_value(synthesized, workspace_name, role, env_name),
     }
 }
 

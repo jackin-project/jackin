@@ -161,7 +161,10 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
             AuthKind::Claude => ro.claude = None,
             AuthKind::Codex => ro.codex = None,
             AuthKind::Amp => ro.amp = None,
-            AuthKind::Kimi => ro.kimi = None,
+            AuthKind::Kimi => {
+                ro.kimi = None;
+                ro.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
+            }
             AuthKind::Opencode => ro.opencode = None,
             AuthKind::Github => ro.github = None,
             AuthKind::Zai => {
@@ -169,9 +172,6 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
             }
             AuthKind::Minimax => {
                 ro.env.remove(crate::env_model::MINIMAX_API_KEY_ENV_NAME);
-            }
-            AuthKind::KimiCode => {
-                ro.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
             }
         }
     }
@@ -182,7 +182,10 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
         AuthKind::Claude => ws.claude = None,
         AuthKind::Codex => ws.codex = None,
         AuthKind::Amp => ws.amp = None,
-        AuthKind::Kimi => ws.kimi = None,
+        AuthKind::Kimi => {
+            ws.kimi = None;
+            ws.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
+        }
         AuthKind::Opencode => ws.opencode = None,
         AuthKind::Github => ws.github = None,
         AuthKind::Zai => {
@@ -190,9 +193,6 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
         }
         AuthKind::Minimax => {
             ws.env.remove(crate::env_model::MINIMAX_API_KEY_ENV_NAME);
-        }
-        AuthKind::KimiCode => {
-            ws.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
         }
     }
 }
@@ -290,15 +290,6 @@ fn current_mode_and_credential(
                 let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
                 (mode, cred)
             }
-            AuthKind::KimiCode => {
-                let cred = editor
-                    .pending
-                    .env
-                    .get(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
-                    .cloned();
-                let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
-                (mode, cred)
-            }
         },
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let override_ref = editor.pending.roles.get(role);
@@ -368,13 +359,6 @@ fn current_mode_and_credential(
                 AuthKind::Minimax => {
                     let cred = override_ref.and_then(|ro| {
                         ro.env.get(crate::env_model::MINIMAX_API_KEY_ENV_NAME).cloned()
-                    });
-                    let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
-                    (mode, cred)
-                }
-                AuthKind::KimiCode => {
-                    let cred = override_ref.and_then(|ro| {
-                        ro.env.get(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME).cloned()
                     });
                     let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
                     (mode, cred)
@@ -955,7 +939,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                     | AuthKind::Opencode
                     | AuthKind::Zai
                     | AuthKind::Minimax
-                    | AuthKind::KimiCode => {
+                    => {
                         editor.pending.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -982,7 +966,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                     | AuthKind::Opencode
                     | AuthKind::Zai
                     | AuthKind::Minimax
-                    | AuthKind::KimiCode => {
+                    => {
                         entry.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -1056,7 +1040,7 @@ fn set_workspace_mode(
                 GithubAuthConfig { auth_forward, env }
             });
         }
-        AuthKind::Zai | AuthKind::Minimax | AuthKind::KimiCode => {
+        AuthKind::Zai | AuthKind::Minimax => {
             // No auth_forward block — mode is implicit in the provider key presence in env.
         }
     }
@@ -1102,7 +1086,7 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
                 GithubAuthConfig { auth_forward, env }
             });
         }
-        AuthKind::Zai | AuthKind::Minimax | AuthKind::KimiCode => {
+        AuthKind::Zai | AuthKind::Minimax => {
             // No auth_forward block — mode is implicit in the provider key presence in env.
         }
     }

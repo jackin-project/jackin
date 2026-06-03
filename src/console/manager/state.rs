@@ -1015,7 +1015,7 @@ impl SettingsState<'_> {
                 }
                 crate::console::manager::auth_kind::AuthKind::Zai
                 | crate::console::manager::auth_kind::AuthKind::Minimax
-                | crate::console::manager::auth_kind::AuthKind::KimiCode => {
+                => {
                     // Provider-credential kinds are env-only; the credential lives in
                     // env_vars and is written via the env block path above — no
                     // auth_forward config block to commit here.
@@ -1165,7 +1165,6 @@ impl SettingsAuthState {
             crate::console::manager::auth_kind::AuthKind::Github,
             crate::console::manager::auth_kind::AuthKind::Zai,
             crate::console::manager::auth_kind::AuthKind::Minimax,
-            crate::console::manager::auth_kind::AuthKind::KimiCode,
         ]
         .into_iter()
         .map(|kind| SettingsAuthRow {
@@ -1199,16 +1198,6 @@ impl SettingsAuthState {
                     if config
                         .env
                         .contains_key(crate::env_model::MINIMAX_API_KEY_ENV_NAME)
-                    {
-                        crate::console::manager::auth_kind::AuthMode::ApiKey
-                    } else {
-                        crate::console::manager::auth_kind::AuthMode::Ignore
-                    }
-                }
-                crate::console::manager::auth_kind::AuthKind::KimiCode => {
-                    if config
-                        .env
-                        .contains_key(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
                     {
                         crate::console::manager::auth_kind::AuthMode::ApiKey
                     } else {

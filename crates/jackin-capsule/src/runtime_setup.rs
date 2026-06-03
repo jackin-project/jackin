@@ -300,8 +300,10 @@ fn setup_kimi() -> Result<()> {
         eprintln!(
             "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
         );
-    } else if nonempty_env("KIMI_API_KEY").is_some() {
-        eprintln!("[entrypoint] kimi: KIMI_API_KEY present in env; agent will use api-key auth");
+    } else if nonempty_env("KIMI_CODE_API_KEY").is_some() {
+        eprintln!(
+            "[entrypoint] kimi: KIMI_CODE_API_KEY present in env; agent will use api-key auth"
+        );
     } else {
         eprintln!(
             "[entrypoint] kimi: KIMI_API_KEY unset - agent will require interactive login or config"

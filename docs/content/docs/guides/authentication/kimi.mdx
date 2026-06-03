@@ -7,12 +7,8 @@ description: Use Kimi's Anthropic-compatible coding endpoint as an alternative p
 
 When `KIMI_CODE_API_KEY` is configured, opening a new Claude tab presents a provider picker with **Kimi** as one of the options. Operators without a Kimi key see no change: Kimi does not appear in the picker.
 
-<Aside type="note">
-This guide covers using Kimi's API as a **provider for Claude Code** sessions — routing Claude Code to Kimi's endpoint. It is separate from the [Kimi Code](/guides/authentication/agents/) agent runtime, which runs the Kimi Code CLI itself as an agent inside the container. Both can be active in the same jackin' installation.
-</Aside>
-
 <Aside type="tip">
-The Kimi provider is configured in the **Auth** tab of `jackin console` under the **Kimi** row. Configure it the same way as Z.AI or MiniMax — not by hand-editing any config file.
+Kimi is configured in the **Auth** tab of `jackin console` under the **Kimi** row. The same row covers both the Kimi Code CLI agent runtime (sync mode) and the Kimi API provider for Claude Code (api_key mode). Configure it the same way as Z.AI or MiniMax — not by hand-editing any config file.
 </Aside>
 
 ## Subscribe and get an API key
@@ -28,7 +24,7 @@ Kimi's coding endpoint (`api.kimi.com/coding`) is distinct from the general Moon
 ## Configure your Kimi API key in jackin'
 
 1. Open `jackin console`, select your workspace, and switch to the **Auth** tab.
-2. Scroll to the **Kimi** row and press `Enter` or `Space` to open the auth form. (This row is for the Kimi provider credential. The **Kimi Code** row controls the Kimi Code CLI agent runtime.)
+2. Scroll to the **Kimi** row and press `Enter` or `Space` to open the auth form.
 3. Set the mode to **API Key** (press `Space` to cycle).
 4. Enter your `KIMI_CODE_API_KEY` — either a literal key or a 1Password reference resolved at launch time.
 5. Save the form.
@@ -87,5 +83,5 @@ Your `KIMI_CODE_API_KEY` is never written to the logs, including `--debug` outpu
 - [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin' applies across every auth axis.
 - [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) — the other Anthropic-compatible alternative provider.
 - [MiniMax (Token Plan)](/guides/authentication/minimax/) — MiniMax's Anthropic-compatible endpoint.
-- [Agent Authentication](/guides/authentication/agents/) — includes the Kimi Code CLI runtime agent, separate from this provider guide.
+- [Agent Authentication](/guides/authentication/agents/) — covers agent runtime auth forwarding for the Kimi Code CLI and other agents.
 - [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies credentials at global and per-workspace scope.

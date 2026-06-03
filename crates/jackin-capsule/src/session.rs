@@ -60,7 +60,7 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
     // MiniMax key forwarded into Codex so its config.toml `env_key = "MINIMAX_API_KEY"` resolves.
     "MINIMAX_API_KEY",
-    // Kimi key forwarded for future Codex support once Kimi ships a Responses-compatible endpoint.
+    // Kimi key — serves both the Kimi Code runtime agent and the Kimi Claude Code provider.
     "KIMI_CODE_API_KEY",
 ];
 
