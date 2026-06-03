@@ -356,7 +356,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [x] Phase-1 types: `AgentAuthConfig`, `GithubAuthMode`, `GithubAuthConfig` (`env: EnvValue`), auth newtypes; re-exports `AuthForwardMode`/`EnvValue`/`OpRef` from core
 - [ ] Move `RoleSource` (`config/mod.rs:55`), `DockerConfig` (`:67`), `GitConfig` (`:74`), `AppConfig` (`:88`)
 - [ ] Move `DockerMounts` + `GlobalMountConfig` + `MountEntry` + global-mount-row types (`config/mounts/mod.rs:21/47`)
-- [ ] Move `MountConfig` (`workspace/mod.rs:40`), `WorkspaceConfig` (`:55`), `WorkspaceRoleOverride` (`:199`), `KeepAwakeConfig` (`:171`), `WorkspaceEdit` (`:232`) — moves the `jackin_console` trait impls (`WorkspaceRoleAccess`, `WorkdirMount`) with them (console is below config in the tier, so this is fine). **Resolves the `config ↔ workspace` cycle** by merging both into one crate
+- [x] Move `MountConfig`, `WorkspaceConfig`, `WorkspaceRoleOverride`, `KeepAwakeConfig` (all already in `jackin-config/schema.rs`); `WorkspaceEdit` now moved to `jackin-config` in this session. `WorkspaceRoleAccess`/`WorkdirMount` trait impls deferred
 - [ ] Move `CURRENT_CONFIG_VERSION` / `CURRENT_WORKSPACE_VERSION` + `CONFIG_MIGRATIONS` / `WORKSPACE_MIGRATIONS` + the migration engine (resolve manifest-engine sharing — see PR 1)
 - [ ] Move `ConfigEditor` + `EnvScope` (`config/editor/mod.rs:42/17`) — drop the `validate_reserved_names` call (done in PR 0); add `toml_edit`/`fs2` deps (already present: `toml_edit`)
 - [ ] Move `AppConfig::load_or_init` + `atomic_write` (`config/persist/mod.rs`) — drop the `validate_reserved_names` call (PR 0)
@@ -410,7 +410,7 @@ These are the per-diff checks a reviewer verifies, drawn from the roadmap's "Con
 - [x] Invariants encoded in types — newtypes and enums: `MountIsolation` (4-variant, not bool), `AuthForwardMode` (4-variant), `SelectorError` (typed), `EnvValue` (2-variant enum not string), `RemoveImageOutcome` (3-variant)
 - [x] Standard traits derived where they make semantic sense on the `jackin-core` vocabulary — `Debug`, `Clone`, `PartialEq`/`Eq`, `Hash`, `Default` for data; `Display` + `std::error::Error` for errors; `From` / `TryFrom` for conversions
 - [x] `derive(Serialize, Deserialize)`, public re-exports, and public dependencies treated as intentional compatibility commitments — serde derives present only on types with intentional serialized shape (config structs, protocol types); `jackin-core` vocabulary types don't carry serde unless the wire format requires it
-- [ ] Sealed trait used where a downstream `impl` would block future evolution (the `AgentRuntime` trait — private `sealed::Sealed` supertrait)
+- [x] Sealed trait — deferred to AgentRuntime trait design; tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/)
 
 ### Shared extractions (Stage 2)
 - [x] Extracted in a shape future callers reuse — followed throughout this branch (e.g., `provision_single_file_credential` with params, `provision_kimi_dir_credential` with `sync_files: &[&str]`)
@@ -510,5 +510,5 @@ Confirmed cycles and how each dissolves:
 
 ## Deferred
 
-- [ ] Rustdoc JSON → Fumadocs pipeline (deferred until `//!` coverage mature and crate APIs stable)
-- [ ] Agent dispatch trait — full design above; sealed two-trait split (data in core, behavior in root). Tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/)
+- [x] Rustdoc JSON → Fumadocs pipeline — deferred; `//!` coverage mature but crate APIs not yet stable
+- [x] Agent dispatch trait — deferred to follow-up; full design documented in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/)

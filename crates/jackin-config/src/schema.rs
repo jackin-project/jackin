@@ -185,6 +185,27 @@ pub struct GlobalMountConfig {
 // `DockerConfig` stays in the binary crate — it wraps `DockerMounts` which
 // is a complex nested structure tightly coupled to the binary crate's TUI.
 
+// ─── Workspace edit ──────────────────────────────────────────────────────────
+
+/// Workspace mutation spec: built by the TUI/CLI from the pending-vs-original
+/// diff, applied by `AppConfig::edit_workspace`.
+#[derive(Debug, Default, Clone)]
+pub struct WorkspaceEdit {
+    pub workdir: Option<String>,
+    pub upsert_mounts: Vec<MountConfig>,
+    pub remove_destinations: Vec<String>,
+    pub no_workdir_mount: bool,
+    pub allowed_roles_to_add: Vec<String>,
+    pub allowed_roles_to_remove: Vec<String>,
+    pub default_role: Option<Option<String>>,
+    /// `None` = no change, `Some(Some(h))` = set to `h`,
+    /// `Some(None)` = clear (fall back to Claude).
+    pub default_agent: Option<Option<Agent>>,
+    pub mount_isolation_overrides: Vec<(String, MountIsolation)>,
+    pub keep_awake_enabled: Option<bool>,
+    pub git_pull_on_entry_enabled: Option<bool>,
+}
+
 // ─── Git config ───────────────────────────────────────────────────────────────
 
 /// Global `[git]` block: co-author trailer and DCO settings.

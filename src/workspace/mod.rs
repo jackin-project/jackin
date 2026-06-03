@@ -32,30 +32,9 @@ pub use sensitive::{SensitiveMount, confirm_sensitive_mounts, find_sensitive_mou
 
 /// Re-exported schema types from `jackin-config`.
 pub use jackin_config::{
-    KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceRoleOverride,
+    KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceEdit,
+    WorkspaceRoleOverride,
 };
-
-// ─── WorkspaceEdit (mutation helper, not a schema type) ───────────────────────
-
-/// Mutation specification for `AppConfig::edit_workspace`.
-///
-/// Not serialized — built by CLI and TUI callers, then applied by the editor.
-#[derive(Debug, Clone, Default)]
-pub struct WorkspaceEdit {
-    pub workdir: Option<String>,
-    pub upsert_mounts: Vec<MountConfig>,
-    pub remove_destinations: Vec<String>,
-    pub no_workdir_mount: bool,
-    pub allowed_roles_to_add: Vec<String>,
-    pub allowed_roles_to_remove: Vec<String>,
-    pub default_role: Option<Option<String>>,
-    /// `None` = no change, `Some(Some(h))` = set to `h`,
-    /// `Some(None)` = clear (fall back to Claude).
-    pub default_agent: Option<Option<crate::agent::Agent>>,
-    pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
-    pub keep_awake_enabled: Option<bool>,
-    pub git_pull_on_entry_enabled: Option<bool>,
-}
 
 // ─── Workspace validation ─────────────────────────────────────────────────────
 
