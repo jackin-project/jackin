@@ -35,7 +35,6 @@ RUN apt-get update && \
     openssh-client \
     procps \
     ripgrep \
-    socat \
     sudo \
     tree \
     yq \
@@ -137,4 +136,3 @@ COPY --chown=agent:agent zshrc /home/agent/.zshrc
 # does not regress when switching shells.
 RUN mkdir -p /home/agent/.config/fish
 COPY --chown=agent:agent fish-config.fish /home/agent/.config/fish/config.fish
-COPY --chmod=0755 jackin-notify /usr/local/bin/jackin-notify
