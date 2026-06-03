@@ -181,10 +181,10 @@ These five forks were resolved during planning. Each is recorded with its ration
 
 **Gate:** Phase 0.3 (diagnostics substrate — `debug_log!`, `tui::*`, `diagnostics::*` resolved into `jackin-diagnostics`).
 
-- [ ] Create `crates/jackin-docker/` (deps: `jackin-core`, `jackin-diagnostics`, `bollard`, `tokio`, `futures-util`, `reqwest`, `fast-down`, `serde`/`serde_json`, `anyhow`; `mod_module_files = "deny"`). Add to members.
-- [ ] Move the concrete impls (traits + data types already in core): `BollardDockerClient` (`docker_client/mod.rs`), `ShellRunner` + `redact_env_args` (`docker/mod.rs`), `net` HTTP helpers (`net/mod.rs`). Repoint `crate::debug_log!`/`crate::tui::*`/`crate::diagnostics::*` → `jackin_diagnostics::*`. `docker/mod.rs` uses `jackin_launch::build_log::push_line` — add `jackin-launch` dep (or relocate that call).
-- [ ] **D2:** move `FakeDockerClient` + `FakeRunner` out of `runtime/test_support.rs` into `jackin-core` under `#[cfg(feature = "test-support")]`. Add `jackin-core/test-support` as a dev-dependency to every crate whose tests use them (app, config, console, isolation→runtime, docker, runtime).
-- [ ] Leave binary shims. Repoint consumers: `crate::docker_client::` (app 10, config 1, console 2), `crate::docker::` (app 5, console 5). `cargo check -p jackin-docker` standalone.
+- [x] Create `crates/jackin-docker/` (deps: `jackin-core`, `jackin-diagnostics`, `bollard`, `tokio`, `futures-util`, `reqwest`, `fast-down`, `serde`/`serde_json`, `anyhow`; `mod_module_files = "deny"`). Add to members.
+- [x] Move the concrete impls (traits + data types already in core): `BollardDockerClient` (`docker_client/mod.rs`), `ShellRunner` + `redact_env_args` (`docker/mod.rs`), `net` HTTP helpers (`net/mod.rs`). Repoint `crate::debug_log!`/`crate::tui::*`/`crate::diagnostics::*` → `jackin_diagnostics::*`. `docker/mod.rs` uses `jackin_launch::build_log::push_line` — add `jackin-launch` dep (or relocate that call).
+- [~] **D2:** move `FakeDockerClient` + `FakeRunner` out of `runtime/test_support.rs` into `jackin-core` under `#[cfg(feature = "test-support")]`. Deferred — can be done alongside Phase 6 (runtime extraction) without blocking crate compilation.
+- [x] Leave binary shims. Repoint consumers: `crate::docker_client::` (app 10, config 1, console 2), `crate::docker::` (app 5, console 5). `cargo check -p jackin-docker` standalone.
 
 ---
 
