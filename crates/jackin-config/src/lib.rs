@@ -11,6 +11,7 @@
 //! migration lands in Phase 2 after `operator_env` is extracted to `jackin-env`.
 
 pub mod auth;
+pub mod planner;
 pub mod schema;
 pub mod versions;
 
@@ -19,6 +20,10 @@ pub use auth::{
     KimiAuthConfig, OpencodeAuthConfig,
 };
 pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, MountIsolation, OpRef};
+pub use planner::{
+    CollapseError, CollapsePlan, Removal, WorkspaceCreatePlan, WorkspaceEditPlan,
+    apply_isolation_overrides, plan_collapse, plan_create, plan_edit,
+};
 pub use schema::{
     DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig,
     MountEntry, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride,

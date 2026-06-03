@@ -57,6 +57,7 @@ fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
 ///
 /// The `readonly` flag is ignored here. Readonly mismatches are caught at
 /// `plan_collapse` level, not in the predicate.
+#[cfg(test)]
 pub(crate) fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
     let parent_src = parent.src.trim_end_matches('/');
     let parent_dst = parent.dst.trim_end_matches('/');

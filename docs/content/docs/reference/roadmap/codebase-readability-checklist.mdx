@@ -360,7 +360,7 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [x] `CURRENT_CONFIG_VERSION` / `CURRENT_WORKSPACE_VERSION` / `current_config_version()` / `current_workspace_version()` already in jackin-config/versions.rs; `CONFIG_MIGRATIONS` + `WORKSPACE_MIGRATIONS` + migration engine deferred (complex, needs AppConfig in jackin-config first)
 - [ ] Move `ConfigEditor` + `EnvScope` (`config/editor/mod.rs:42/17`) — drop the `validate_reserved_names` call (done in PR 0); add `toml_edit`/`fs2` deps (already present: `toml_edit`)
 - [ ] Move `AppConfig::load_or_init` + `atomic_write` (`config/persist/mod.rs`) — drop the `validate_reserved_names` call (PR 0)
-- [ ] Move `plan_create` / `plan_edit` / `plan_collapse` (`workspace/planner/mod.rs:48/66/201`)
+- [x] Move `plan_create` / `plan_edit` / `plan_collapse` + supporting types (`CollapsePlan`, `Removal`, `CollapseError`, `WorkspaceCreatePlan`, `WorkspaceEditPlan`, `apply_isolation_overrides`, `covers`) to `jackin-config/src/planner.rs`
 - [x] Move `validate_mounts` / `validate_mount_paths` / `validate_mount_specs` to `jackin-config/schema.rs`; `workspace/mod.rs` re-exports them
 - [ ] Move `resolve_load_workspace` / `current_dir_workspace` / `ResolvedWorkspace` (`workspace/resolve/mod.rs:91/14`)
 - [ ] Move `resolve_mode` / `resolve_mode_with_trace` / `resolve_github_mode` / `build_github_env_layers` / `BUILTIN_ROLES` (`config/roles/mod.rs`)

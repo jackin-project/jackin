@@ -1,5 +1,6 @@
 //! Tests for `planner`.
 use super::*;
+use crate::workspace::{MountConfig, WorkspaceConfig, covers};
 
 fn mount(src: &str, dst: &str) -> MountConfig {
     MountConfig {
