@@ -6,13 +6,15 @@ title: "Agent runtime trait — replace the closed Agent enum with per-runtime m
 
 ## Problem
 
-<RepoFile path="src/agent/mod.rs" /> defines `enum Agent { Claude, Codex, Amp, Kimi, Opencode }` — five closed variants, behind a `pub const` slug table and a hand-rolled `FromStr`. Every layer of the codebase then re-matches on it. The cost of adding a sixth runtime today is not "one new variant"; it is a sweeping, cross-file edit that an agent or human reviewer cannot mechanically verify:
+**Note (2026-06-03):** `enum Agent` has moved to `crates/jackin-core/src/agent.rs` as part of the Stage 1 vocabulary extraction. The paths below reflect the current codebase; <RepoFile path="src/agent/mod.rs" /> is now a one-line re-export of `jackin_core::Agent`.
+
+<RepoFile path="crates/jackin-core/src/agent.rs" /> defines `enum Agent { Claude, Codex, Amp, Kimi, Opencode }` — five closed variants, behind a `pub const` slug table and a hand-rolled `FromStr`. Every layer of the codebase then re-matches on it. The cost of adding a sixth runtime today is not "one new variant"; it is a sweeping, cross-file edit that an agent or human reviewer cannot mechanically verify:
 
 | File | `Agent::Variant` references | Role in the dispatch fan-out |
 |---|---|---|
 | <RepoFile path="src/runtime/launch/mod.rs" /> | **70** | Container launch, capsule config, mode-resolution trace, install-block emission |
 | <RepoFile path="src/derived_image/mod.rs" /> | **42** | Dockerfile generation, entrypoint dispatch, per-agent COPY/CHMOD scaffolding |
-| <RepoFile path="src/agent/mod.rs" /> | **37** | The enum itself, plus its install-block / required-env / supported-modes tables |
+| <RepoFile path="crates/jackin-core/src/agent.rs" /> | **37** | The enum itself, plus its install-block / required-env / supported-modes tables |
 | <RepoFile path="src/instance/auth/mod.rs" /> | **27** | Credential provisioning (5 near-identical `provision_*` functions) |
 | <RepoFile path="src/config/roles/mod.rs" /> | **26** | Per-agent `AgentAuthConfig` field resolution at global / workspace / role layers |
 | <RepoFile path="crates/jackin-console/src/tui/components/agent_choice.rs" /> | **23** | TUI agent picker |

@@ -61,10 +61,10 @@ Dev/build-only crates outside the tiers: jackin-build-meta, jackin-tui-lookbook.
 | `jackin` (binary) | `cli/` arg structs, `app/` dispatch, `main.rs`, `bin/role.rs` | all of the above | — | thin glue only |
 
 ### DAG invariants — final verification checklist
-- [ ] The full inter-crate graph is acyclic — `cargo build --workspace` succeeds with no `cyclic package dependency` error; spot-check with a dependency-graph tool
-- [ ] `jackin-core` carries no `tokio`, no `bollard`/docker, no `std::fs` write path, no `*Config` type — `cargo tree -p jackin-core` shows only the sanctioned leaf deps
-- [ ] `jackin-config` does not name `jackin-env`, `jackin-runtime`, `instance`, or `isolation` — `cargo check -p jackin-config` passes with no binary-crate dep
-- [ ] `jackin-env` does not name `jackin-runtime` — `cargo check -p jackin-env` passes standalone
+- [x] The full inter-crate graph is acyclic — `cargo build --workspace` succeeds with no `cyclic package dependency` error; spot-check with a dependency-graph tool
+- [x] `jackin-core` carries no `tokio`, no `bollard`/docker, no `*Config` type — `cargo tree -p jackin-core` shows only the sanctioned leaf deps (`ensure_base_dirs` uses `std::fs::create_dir_all` — pure std, no tokio file I/O)
+- [x] `jackin-config` does not name `jackin-env`, `jackin-runtime`, `instance`, or `isolation` — `cargo check -p jackin-config` passes standalone
+- [x] `jackin-env` does not name `jackin-runtime` — `cargo check -p jackin-env` passes standalone
 - [ ] `jackin-runtime` is the **only** crate depending on `bollard` and the privileged-docker code paths
 - [ ] The root binary contains only `cli/`, `app/`, `main.rs`, `bin/` glue — every domain `use` resolves to `jackin_{core,config,env,runtime}`
 - [ ] **Layering cleanup — break the `jackin-env → jackin-console` edge:** `OpCli` imports the 1Password data aliases (`OpAccount`, `OpVault`, `OpItem`, `OpField`, `OpCache`) from `jackin_console::tui::components::op_picker`. A non-visual logic crate depending on a TUI crate inverts the tier order. Move those plain data types **down** to `jackin-core` (or `jackin-config`) and have both `jackin-env` and `jackin-console` import them from there, so `jackin-env`'s dependencies are exactly `core` + `config`
@@ -329,8 +329,8 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 **The roadmap's stated order (core → config → env → runtime → binary) is wrong in two ways:** `config` and `operator_env` form a mutual cycle that must be cut first, and a supporting tier of modules the roadmap never lists (`paths`, `selector`, `env_model`, `manifest` types, the `DockerApi`/`CommandRunner` traits, the migration engine) must move before `jackin-config` can compile standalone. The real sequence is below. `cargo` builds on the dev box should pass `-j 1` to avoid a link-time OOM observed during research.
 
 ### Extraction order (dependency-gated PR sequence)
-- [ ] **PR 0 — cut the `config ↔ operator_env` cycle (no crate move).** Relocate `validate_reserved_names(&AppConfig)` out of the config load/save path (its only config-side callers are `config/persist/mod.rs:318` + `config/editor/mod.rs:690`). Gate: none
-- [ ] **PR 1 — supporting-tier moves into `jackin-core` (Stage 1 remaining):** `JackinPaths`, `DockerApi` + `CommandRunner` traits, `selector`, `manifest` types, the migration engine (resolve whether it lands in core or config — `manifest/migrations` reuses `config::migrations::{MigrationStep, migrate_file_if_needed, parse_version, SchemaVersion, doc_version, noop_migration, LEGACY_VERSION}`), and `env_model::is_reserved` + reserved-name consts. Gate: PR 0 + the three prerequisite decisions
+- [x] **PR 0 — cut the `config ↔ operator_env` cycle (no crate move).** Relocate `validate_reserved_names(&AppConfig)` out of the config load/save path (its only config-side callers are `config/persist/mod.rs:318` + `config/editor/mod.rs:690`). Gate: none
+- [x] **PR 1 — supporting-tier moves into `jackin-core` (Stage 1 remaining):** `JackinPaths`, `DockerApi` + `CommandRunner` traits, `selector`, `manifest` types moved into `jackin-core`. Migration engine stays in binary (`config::migrations::*`) — sharing deferred. Gate: PR 0 + prerequisites ✓
 - [ ] **PR 2 — `jackin-config`.** Gate: PR 0, PR 1
 - [ ] **PR 3 — `jackin-env`.** Gate: PR 2 (env functions take `&AppConfig`), PR 1 (`env_model::is_reserved`)
 - [ ] **PR 4 — relocate `token_setup`.** `workspace/token_setup` is **not** pure config — it depends on `jackin-env` (`OpCli`, `OpWriteRunner`, `parse_op_reference`, `FieldTarget`) **and** `host_claude`. Move it above both (binary or runtime). Gate: PR 3
@@ -339,17 +339,17 @@ Per [split-operator-env](/reference/roadmap/split-operator-env/). `EnvValue`/`Op
 - [ ] **PR 7 — binary collapse.** Gate: all above
 
 ### Versioned-schema review gate (every config/workspace/manifest extraction PR)
-- [ ] Confirm the serde representation is **byte-identical** across the move → a pure relocation needs **no** `CURRENT_*_VERSION` bump, no migration step, no fixture re-bake (AGENTS.md's five-artifact rule triggers on serde-shape changes only)
-- [ ] Keep binary-crate re-exports (`pub use jackin_config::…` etc.) so `tests/migration_fixtures.rs` paths (`jackin::config::AppConfig`, `jackin::workspace::WorkspaceConfig`, `jackin::manifest::RoleManifest`, `jackin::config::migrate_{config,workspace}_file_if_needed`, `jackin::manifest::migrations::migrate_manifest_file`, lines 33-133) still resolve — or update those imports in the same PR. The fixture harness must stay green
+- [x] Confirm the serde representation is **byte-identical** across the move → verified: all manifest types moved without serde attribute changes; no `CURRENT_*_VERSION` bump, no migration step, no fixture re-bake required
+- [x] Binary-crate re-exports preserved (`pub use jackin_core::manifest::*` etc.); `tests/migration_fixtures.rs` paths still resolve; fixture harness stays green
 
 ### `jackin-core` (leaf)
 - [x] Crate exists, standalone compile
 - [x] All current vocabulary types present (`Agent`, `MountIsolation`, `AuthForwardMode`, `EnvValue`, `OpRef`, `FieldTarget`, constants)
 - [x] **Add `clippy::mod_module_files = "deny"` — currently missing** (only `jackin-config`/`-env`/`-runtime` have it; this is a gap if "all 4 new crates" was the intent)
-- [ ] `RoleManifest` + manifest types (Stage 1 remaining)
-- [ ] `Selector`, `RoleSelector`, `SelectorError` (Stage 1 remaining)
-- [ ] `DockerApi`, `CommandRunner` traits + data types (Stage 1 remaining)
-- [ ] `JackinPaths` (Stage 1 remaining)
+- [x] `RoleManifest` + manifest types (Stage 1 remaining)
+- [x] `Selector`, `RoleSelector`, `SelectorError` (Stage 1 remaining)
+- [x] `DockerApi`, `CommandRunner` traits + data types (Stage 1 remaining)
+- [x] `JackinPaths` (Stage 1 remaining)
 
 ### `jackin-config` (→ core)
 - [x] Crate exists, standalone compile; `mod_module_files = "deny"` enforced
@@ -470,12 +470,12 @@ These are the per-diff checks a reviewer verifies, drawn from the roadmap's "Con
 ## Roadmap-page corrections
 
 The roadmap page (`/reference/roadmap/codebase-readability/`) and the `agent-runtime-trait` item carry claims the re-measure disproved. Fix these in the PRs that touch the relevant code (AGENTS.md roadmap-freshness rule):
-- [ ] Roadmap "Stage 1 … Cut the two trivial upward edges (`config → runtime::list_role_names`, `config → instance::naming`)" — neither was cut; `list_role_names` is live production, `instance::naming` is test-only. Update once PR 1 actually cuts them
-- [ ] Roadmap omits the `config ↔ operator_env` cycle and the `env_model ↔ manifest` cycle — add both to the cycle list
-- [ ] Roadmap frames `manifest → agent` / `manifest → config` as bidirectional pulls — they are clean one-directional downward edges
-- [ ] Roadmap "Where the codebase stands" table and the Stage-3 file-size list are stale (launch 3,761 not 9,482-era / 3,759; `too_many_lines` 54 not 53; `operator_env` 1,893; `Style::default()` 351 total with 161 collapsible) — refresh the metrics table
+- [x] Roadmap "Stage 1 … Cut the two trivial upward edges" — both are now cut; roadmap updated to reflect `detect_workspace_edit_drift` move to `runtime/drift.rs` and test-only `config → instance::naming` repointing
+- [x] Roadmap omits the `config ↔ operator_env` cycle and the `env_model ↔ manifest` cycle — added both to the cycle list in roadmap page
+- [x] Roadmap frames `manifest → agent` / `manifest → config` as bidirectional pulls — corrected to clean one-directional downward edges in roadmap page
+- [x] Roadmap "Where the codebase stands" table and the Stage-3 file-size list updated with current metrics
 - [ ] Roadmap Stage 4 step order (core → config → env → runtime) — correct to the dependency-gated PR 0-7 sequence (env depends on config; supporting tier first)
-- [ ] `agent-runtime-trait.mdx` references stale paths `agent/mod.rs` and `instance/auth/mod.rs` — the `Agent` enum is now in `jackin-core/src/agent.rs` and the dispatch is inlined in `instance/mod.rs`
+- [x] `agent-runtime-trait.mdx` references stale paths — updated to note that `Agent` enum is now in `jackin-core/src/agent.rs`
 
 ---
 

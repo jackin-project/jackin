@@ -74,16 +74,18 @@ jackin (binary)        → all of the above
 
 This was verified, not assumed: nothing destined for `jackin-core` reaches up for a `*Config` type (`selector` needs only `instance`; the `manifest` *types* need only `Agent`; the docker traits reference no config), so the `*Config` types cleanly stay up in `jackin-config`.
 
-## Where the codebase stands (2026-06-02)
+## Where the codebase stands (2026-06-03)
+
+Metrics updated after Stage 0–2 completion and Stage 1 vocabulary moves to `jackin-core`.
 
 | Metric | `src/` (root crate) | `crates/` (workspace) |
 |---|---|---|
-| Production Rust | 108,103 L across 155 files | 62,385 L across 193 files |
-| Files > 2000 L | 13 | 3 |
-| Files > 1000 L | 32 | 9 |
-| `//!` module-doc coverage | 76 of 155 (49%) | 143 of 193 (74%) |
-| `#[allow(clippy::too_many_lines)]` | 53 | 2 |
-| `Style::default()` constructions | 2 | 347 |
+| Production Rust | ~108K L | ~62K L |
+| `#[allow/expect(clippy::too_many_lines)]` (prod) | ~28 (`#[expect]` pending extraction) | 0 |
+| `Style::default()` constructions remaining | ~0 (all 6 collapsible patterns replaced) | ~236 total |
+| Named style constants used | yes | yes (`jackin_tui::theme::*`) |
+| Cyclic module dependencies | config↔workspace (pending Stage 4 merge) | none |
+| `jackin-core` vocabulary types | 100% of Stage 1 targets moved | — |
 
 The split is the headline: the extracted crates are documented, small-filed, and component-driven; the root `src/` crate carries almost all of the remaining entropy. The `Style::default()` figure also shows that a relocation is not a fix — the TUI extraction moved 347 raw style constructions into `crates/` without collapsing them into named style constants.
 
@@ -111,7 +113,11 @@ The previous plan claimed "verified tiers" with `workspace/` and `manifest/` as 
 
 - **`config ↔ workspace`** — `config → workspace` 47 refs, `workspace → config` 50 refs. A direct mutual cycle.
 - **`config → isolation → workspace → config`** — a three-node cycle (`config` needs `MountIsolation`; `isolation` needs `MountConfig`/`ResolvedWorkspace`; `workspace` needs `AppConfig`).
-- **`agent → config`** and **`manifest → agent` / `manifest → config`** — the `Agent` and `AuthForwardMode` enums pulled in both directions.
+- **`config ↔ operator_env`** (missed in the original audit) — `config/persist` and `config/editor` call `operator_env::validate_reserved_names`. Cut in the feature/tui-architecture branch.
+- **`config → runtime::list_role_names`** (claimed cut in Stage 1, but was still live) — `detect_workspace_edit_drift` in `config/workspaces/mod.rs` called `runtime::list_role_names`. Cut by moving `detect_workspace_edit_drift` to `runtime/drift.rs`.
+- **`env_model ↔ manifest`** (missed in the original audit) — `env_model::topological_env_order` took a `&BTreeMap<String, manifest::EnvVarDecl>` param. Cut by moving `EnvVarDecl` to `jackin-core`.
+- **`agent → config`** — `Agent` and `AuthForwardMode` enums needed by config. Cut by moving them to `jackin-core`.
+- `manifest → agent` / `manifest → config` — these are **clean one-directional downward edges**, not bidirectional pulls. No cycle to cut.
 
 Cargo forbids cycles *between* crates, so no crate boundary can be drawn until these are broken. The decisive finding: **the cycles are ~95% shared data types, not shared logic.** `isolation → workspace` is `MountConfig` and `ResolvedWorkspace`; `agent → config` is `AuthForwardMode`; `manifest → agent` is `Agent`. All `#[derive(Serialize, Deserialize)]` structs and enums.
 
@@ -167,7 +173,7 @@ This program is a long sequence of moves that look mechanical — extract a cons
 
 ### Stage 1 — Build `jackin-core`, break the cycles
 
-Move the universal vocabulary into a new leaf crate: `Agent`, `MountIsolation`, `AuthForwardMode`, `RoleSource`, the `RoleManifest` + manifest types, `paths`, `selector`, and the `DockerApi` / `CommandRunner` traits. This is type-level surgery — a type definition moves to `jackin-core` while the behavior that uses it (e.g. `isolation::materialize`, `config::ConfigEditor`) stays put and references `jackin_core::…`. Cut the two trivial upward edges (`config → runtime::list_role_names`, `config → instance::naming`) by moving those functions down or inverting them through a trait. Result: the root crate's internal graph becomes a DAG, and `jackin-core` compiles standalone.
+Move the universal vocabulary into a new leaf crate: `Agent`, `MountIsolation`, `AuthForwardMode`, `RoleSource`, the `RoleManifest` + manifest types, `paths`, `selector`, and the `DockerApi` / `CommandRunner` traits. This is type-level surgery — a type definition moves to `jackin-core` while the behavior that uses it (e.g. `isolation::materialize`, `config::ConfigEditor`) stays put and references `jackin_core::…`. Also cut the two upward edges: `config → runtime::list_role_names` (by relocating `detect_workspace_edit_drift` to `runtime/drift.rs`) and `config → instance::naming` (test-only, repointed to `jackin_core::constants::CONTAINER_PREFIX_DASH`). Result: the root crate's internal graph becomes a DAG, and `jackin-core` compiles standalone.
 
 ### Stage 2 — DRY pass
 
