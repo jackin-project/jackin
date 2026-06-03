@@ -19,7 +19,7 @@ All three providers sell a coding-oriented subscription whose activation surface
 | Provider | Subscribe | Extract key | Key shape | Models |
 |---|---|---|---|---|
 | **Z.AI / GLM Coding Plan** | [z.ai/subscribe](https://z.ai/subscribe) | [z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) | Z.AI API key | GLM-5.1, GLM-5-Turbo, GLM-4.7, GLM-4.5-Air |
-| **MiniMax Coding / Token Plan** | [platform.minimax.io](https://platform.minimax.io/subscribe/token-plan) (Plus $20 / Max $50 / Ultra $120 per month) | [platform.minimax.io/console/plan](https://platform.minimax.io/console/plan) → **Plan Details** → **Subscription Key (sk-cp)** | `sk-cp-…` | MiniMax-M3 (Token Plan), M2.x (Coding Plan) |
+| **MiniMax Coding / Token Plan** | [platform.minimax.io](https://platform.minimax.io/subscribe/token-plan) (Plus $20 / Max $50 / Ultra $120 per month; international endpoint only) | [platform.minimax.io/console/plan](https://platform.minimax.io/console/plan) → **Plan Details** → **Subscription Key (sk-cp)** | `sk-cp-…` | MiniMax-M3 (Token Plan), M2.x (Coding Plan) |
 | **Kimi Code** | [kimi.com/membership/pricing](https://www.kimi.com/membership/pricing) (shares Kimi membership quota; weekly + rate-limit windows, no carryover) | [Kimi Code Console](https://www.kimi.com/code/console) → **API Keys** (shown once; up to 5 keys) | `sk-ki…` | `kimi-for-coding` |
 
 The MiniMax **Subscription Key (sk-cp)** is explicitly scoped to "Token Plan / credits calls" and "cannot be used for pay-as-you-go" — it is the subscription key, distinct from a pay-as-you-go platform key. Kimi Code's coding endpoint (`api.kimi.com/coding`) is likewise distinct from the general Moonshot platform endpoint (`api.moonshot.ai/v1`); the subscription benefit is the coding endpoint, and its key is managed in the Kimi Code Console, not the Moonshot platform.
@@ -31,7 +31,7 @@ Each provider exposes both an Anthropic-compatible surface (for Claude Code) and
 | Provider | Anthropic-compatible (Claude Code) | OpenAI-compatible (Codex / OpenCode) |
 |---|---|---|
 | **Z.AI / GLM** | `https://api.z.ai/api/anthropic` *(shipped)* | `https://api.z.ai/api/coding/paas/v4` |
-| **MiniMax** | `https://api.minimax.io/anthropic` (China: `https://api.minimaxi.com/anthropic`) | `https://api.minimax.io/v1` |
+| **MiniMax** | `https://api.minimax.io/anthropic` | `https://api.minimax.io/v1` |
 | **Kimi** | `https://api.kimi.com/coding/` | `https://api.kimi.com/coding/v1` |
 
 ## Deliverable scope
@@ -150,7 +150,7 @@ Auth-tab rows, N-item picker generalization, per-provider tab labels, and the pe
 1. **Codex wire protocol — gates the Codex column.** Codex moved to the Responses API and is reported to have removed Chat Completions support in early 2026 ([openai/codex#9612](https://github.com/openai/codex/issues/9612)). This splits the Codex cells cleanly: **MiniMax** documents `wire_api = "responses"` and is deliverable; **GLM/Z.AI** and **Kimi** expose only Chat Completions (`wire_api = "chat"`) on their OpenAI-compatible endpoints, so on a current Codex they likely will not route at all. Kimi in particular has **no documented Responses-compatible endpoint** — its coding surface is Anthropic-compatible (`api.kimi.com/coding/`, for Claude Code) plus Chat-Completions OpenAI-compatible (`api.kimi.com/coding/v1`, model `kimi-for-coding`, the surface Roo Code uses); there is no third surface for Codex. Phase 2 must verify against the pinned Codex version in the construct image whether `chat`-wire still routes, and if not, treat `(GLM, Codex)` and `(Kimi, Codex)` as **blocked until upstream ships a Responses endpoint** rather than as deliverable cells. Claude Code (Anthropic-compatible) and OpenCode (Chat-Completions OpenAI-compatible) are unaffected for all three providers.
 2. **Kimi Anthropic auth variable.** Kimi's Claude Code docs use `ANTHROPIC_API_KEY` rather than `ANTHROPIC_AUTH_TOKEN`. Confirm which variable the `api.kimi.com/coding/` endpoint honors, and whether Kimi's reported pre-launch "skip Anthropic login" step is needed inside the container or is already covered by jackin's launch flags.
 3. **Model-tier mapping per provider.** Z.AI maps Opus/Sonnet/Haiku tiers to GLM-5.1 / GLM-5-Turbo / GLM-4.5-Air. MiniMax exposes a single `MiniMax-M3` (so all three tiers map to one model); Kimi exposes `kimi-for-coding`. Confirm the intended tier maps, especially as MiniMax's Coding Plan model (M2.x) differs from its Token Plan model (M3).
-4. **China endpoints.** MiniMax exposes a separate China base URL (`api.minimaxi.com`). Decide whether region selection is operator-configurable or out of scope for the first cut.
+4. **Region.** International endpoints only. MiniMax's separate China base URL (`api.minimaxi.com`) is out of scope; the catalog hardcodes the international `api.minimax.io` surface and does not expose a region selector.
 5. **Per-provider quota surfacing.** Subscriptions carry 5-hour / weekly / 7-day quota windows. Whether jackin' surfaces remaining quota is a separate concern, likely deferred to the [Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) account-state work.
 
 ## Related files
