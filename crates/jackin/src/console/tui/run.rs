@@ -581,7 +581,20 @@ pub async fn run_console<H: InstanceActionHandler>(
                         );
                     }
                     // Debug chip click: open the shared container/session info popup.
+                    // Gated on "no modal open" so a modal always owns all mouse input —
+                    // the chip handler must not fire while a picker or dialog is active.
+                    let no_modal_open = state.quit_confirm.is_none()
+                        && (if let ConsoleStage::Manager(ms) = &state.stage {
+                            ms.list_modal.is_none() && {
+                                use crate::console::tui::state::ManagerStage;
+                                !matches!(&ms.stage,
+                                    ManagerStage::Editor(e) if e.modal.is_some())
+                            }
+                        } else {
+                            true
+                        });
                     if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
+                        && no_modal_open
                         && let Some(chip) = last_debug_chip_area
                     {
                         let col = mouse.column;
