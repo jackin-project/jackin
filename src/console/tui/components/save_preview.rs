@@ -6,7 +6,6 @@
 use crate::config::AppConfig;
 use crate::console::tui::state::{EditorMode, EditorState};
 
-#[allow(clippy::too_many_lines)]
 pub(crate) fn build_confirm_save_lines(
     editor: &EditorState<'_>,
     config: &AppConfig,

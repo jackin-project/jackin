@@ -1433,7 +1433,6 @@ fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
 
 // Boxed future required: load_role calls itself recursively via
 // RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
-#[allow(clippy::too_many_lines)]
 pub fn load_role<'a>(
     paths: &'a JackinPaths,
     config: &'a mut AppConfig,

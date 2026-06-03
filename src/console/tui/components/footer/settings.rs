@@ -48,7 +48,6 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
     )
 }
 
-#[allow(clippy::too_many_lines)]
 fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     settings_contextual_row_footer_items(settings_context_footer_mode(state), op_available)
 }

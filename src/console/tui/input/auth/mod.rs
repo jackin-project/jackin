@@ -172,7 +172,6 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
 /// Read the current mode + credential for the form's target out of
 /// `editor.pending`. Returns `(None, _)` when the layer has no explicit
 /// mode set yet — the form opens with the mode picker unset.
-#[allow(clippy::too_many_lines)]
 fn current_mode_and_credential(
     editor: &EditorState<'_>,
     target: &AuthFormTarget,

@@ -204,9 +204,9 @@ The six constants exist in `jackin-tui/src/theme.rs:50-55` but are barely used. 
 ### Auth provisioning DRY (`instance/auth/mod.rs`)
 Shared helper `provision_single_file_credential` (`:695`) is used by 2 of 6 agents.
 - [x] `provision_single_file_credential(target, host_path, mode, label, agent_name)` — used by `provision_amp_auth` (`:509`) and `provision_opencode_auth` (`:670`)
-- [ ] **Fold `Codex` in** — `provision_codex_auth` (`:51`) is structurally identical to the helper with exactly two deltas: the helper's `Sync` arm has an empty/whitespace guard (`:724-734`) Codex omits, and Codex's `OAuthToken` arm is silent vs the helper's parser-bypass warning. Add `treat_empty_as_missing: bool` + `warn_on_oauth: bool` params (Codex passes `false, false`), then `provision_codex_auth` becomes a wrapper like Amp/OpenCode
-- [ ] **Add `provision_kimi_dir_credential`** — `provision_kimi_auth` (`:554`) syncs a *directory tree* (`~/.kimi-code/`: `config.toml`, `device_id`, recursive `credentials/`) and returns `(outcome, bool)`. The single-file helper cannot absorb it; write a directory analogue `provision_kimi_dir_credential(kimi_dir, host_dir, mode, sync_files: &[&str], label, agent_name) -> (AuthProvisionOutcome, bool)` that factors out the 4-mode match + symlink-reject + forward-auth derivation, leaving Kimi a wrapper
-- [ ] No change to `provision_github_auth` (`:155`, different mode enum `GithubAuthMode` + `gh` CLI / `hosts.yml` YAML resolution) and `provision_claude_auth` (`:427`, two files + Keychain fallback + skeleton write) — genuinely divergent, leave separate
+- [x] **Fold `Codex` in** — added `treat_empty_as_missing`, `warn_on_oauth`, `wipe_on_oauth` params to `provision_single_file_credential`; `provision_codex_auth` is now a thin wrapper (passes `false, false, false`); Amp/OpenCode pass `true, true, true`
+- [x] **Add `provision_kimi_dir_credential`** — new directory helper with 4-mode match + symlink-reject + forward-auth derivation; `provision_kimi_auth` delegates to it with `KIMI_SYNC_FILES`
+- [x] No change to `provision_github_auth` and `provision_claude_auth` — genuinely divergent, left separate
 
 ### Docker resource naming DRY
 The `-dind` / `-net` / `-dind-certs` suffix conventions are derived in **three** independent places — the exact drift risk the DRY rule blocks.
@@ -259,7 +259,7 @@ The 8 dispatch sites (verified line numbers):
 ### `too_many_lines` suppressions — corrected count
 **54 production fn-attached suppressions (59 total: 54 prod-fn + 4 file-level + 1 test-fn).** 2 of the 54 are already `#[expect(reason=…)]`. **(was: "53 → 49")**
 - [~] Count corrected to 54 production suppressions
-- [ ] **Delete 6 dead/stale `#[allow(too_many_lines)]`** — the functions are now small delegators (under 30L): `runtime/launch/mod.rs:1436` `load_role` (~21L), `console/tui/input/auth/mod.rs:175` `current_mode_and_credential` (~27L), `console/tui/input/save/mod.rs:217` `commit_editor_save` (~15L), `console/tui/components/save_preview.rs:9` `build_confirm_save_lines` (~12L), `console/tui/components/footer/editor.rs:46` `contextual_row_items` (~8L), `console/tui/components/footer/settings.rs:51` `contextual_row_items` (~4L)
+- [x] **Delete 6 dead/stale `#[allow(too_many_lines)]`** — the functions are now small delegators (under 30L): `runtime/launch/mod.rs:1436` `load_role` (~21L), `console/tui/input/auth/mod.rs:175` `current_mode_and_credential` (~27L), `console/tui/input/save/mod.rs:217` `commit_editor_save` (~15L), `console/tui/components/save_preview.rs:9` `build_confirm_save_lines` (~12L), `console/tui/components/footer/editor.rs:46` `contextual_row_items` (~8L), `console/tui/components/footer/settings.rs:51` `contextual_row_items` (~4L)
 - [ ] Reduce the remaining ~46 to zero — each is an extraction target; the largest (>200L) listed under the per-file splits below
 - [ ] For each remaining suppression: split the function, or convert `#[allow]` → `#[expect(reason="…")]` so it fails loudly when stale
 

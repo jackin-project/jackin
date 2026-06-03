@@ -53,76 +53,18 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
-        // Reject any pre-existing symlink at the role-state auth.json path
-        // BEFORE branching on mode. The host bind-mounts this file RW into
-        // the container, so a compromised role could otherwise replace it
-        // with a symlink between launches and trick subsequent provisioning
-        // calls into reading/writing/deleting through the symlink.
-        if auth_json.exists() {
-            reject_symlink(auth_json)?;
-        }
-
-        let host_auth_json = host_home.join(".codex/auth.json");
-        let outcome = match mode {
-            // OAuthToken is parser-rejected for Codex, so this arm is
-            // unreachable in production — kept for match exhaustiveness
-            // and to preserve historical no-wipe behavior if a config ever
-            // bypasses the parser. Treated as TokenMode without touching
-            // role-state files.
-            AuthForwardMode::OAuthToken => AuthProvisionOutcome::TokenMode,
-            // ApiKey is env-driven (OPENAI_API_KEY): the agent inside the
-            // container must NOT see a forwarded auth.json from a prior
-            // Sync run, otherwise it would silently fall back to OAuth
-            // credentials that the operator has explicitly chosen to
-            // bypass. Wipe role-state auth.json identically to Ignore,
-            // and surface the env-driven nature via TokenMode.
-            AuthForwardMode::ApiKey => {
-                wipe_agent_file_state(auth_json, "Codex auth.json")?;
-                AuthProvisionOutcome::TokenMode
-            }
-            AuthForwardMode::Ignore => {
-                wipe_agent_file_state(auth_json, "Codex auth.json")?;
-                AuthProvisionOutcome::Skipped
-            }
-            AuthForwardMode::Sync => match std::fs::read_to_string(&host_auth_json) {
-                Ok(content) => {
-                    write_private_file(auth_json, &content)?;
-                    AuthProvisionOutcome::Synced
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    if auth_json.exists() {
-                        repair_permissions(auth_json);
-                    }
-                    AuthProvisionOutcome::HostMissing
-                }
-                Err(e) => {
-                    // Preserve `io::Error` source chain so `{e:#}` /
-                    // `--debug` exposes the kind (PermissionDenied,
-                    // NotADirectory) instead of misdiagnosing as
-                    // host-missing.
-                    let hint = match e.kind() {
-                        std::io::ErrorKind::PermissionDenied => {
-                            " (check host file permissions on the parent dir)"
-                        }
-                        _ => "",
-                    };
-                    return Err(anyhow::Error::new(e).context(format!(
-                        "failed to read host {}{}",
-                        host_auth_json.display(),
-                        hint
-                    )));
-                }
-            },
-        };
-
-        let mounted_auth_json = match outcome {
-            AuthProvisionOutcome::Synced => Some(auth_json.to_path_buf()),
-            AuthProvisionOutcome::Skipped => None,
-            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
-                auth_json.exists().then(|| auth_json.to_path_buf())
-            }
-        };
-        Ok((outcome, mounted_auth_json))
+        // OAuthToken is parser-rejected for Codex (unreachable in production),
+        // so no warning is needed. Codex has no empty/whitespace content guard.
+        provision_single_file_credential(
+            auth_json,
+            &host_home.join(".codex/auth.json"),
+            mode,
+            "Codex auth.json",
+            "Codex",
+            false,
+            false,
+            false,
+        )
     }
 }
 
@@ -517,6 +459,9 @@ impl RoleState {
             mode,
             "Amp secrets.json",
             "Amp",
+            true,
+            true,
+            true,
         )
     }
 }
@@ -556,62 +501,86 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-        reject_symlink(kimi_dir)?;
-
-        let host_kimi = host_home.join(".kimi-code");
-
-        let outcome = match mode {
-            AuthForwardMode::OAuthToken => {
-                eprintln!(
-                    "[jackin] internal: provision_kimi_auth received unsupported \
-                     OAuthToken mode for Kimi — parser invariant bypassed; \
-                     wiping role state and falling back to token-mode."
-                );
-                wipe_kimi_state(kimi_dir)?;
-                AuthProvisionOutcome::TokenMode
-            }
-            AuthForwardMode::ApiKey => {
-                wipe_kimi_state(kimi_dir)?;
-                AuthProvisionOutcome::TokenMode
-            }
-            AuthForwardMode::Ignore => {
-                wipe_kimi_state(kimi_dir)?;
-                AuthProvisionOutcome::Skipped
-            }
-            AuthForwardMode::Sync => {
-                use anyhow::Context;
-                std::fs::create_dir_all(kimi_dir)?;
-
-                if host_kimi.exists() {
-                    for name in KIMI_SYNC_FILES {
-                        let host_file = host_kimi.join(name);
-                        if host_file.exists() {
-                            let content = std::fs::read_to_string(&host_file)
-                                .with_context(|| format!("reading {}", host_file.display()))?;
-                            write_private_file(&kimi_dir.join(name), &content)?;
-                        }
-                    }
-
-                    let host_creds = host_kimi.join("credentials");
-                    if host_creds.exists() {
-                        let dest_creds = kimi_dir.join("credentials");
-                        copy_kimi_credentials_tree(&host_creds, &dest_creds)
-                            .with_context(|| format!("copying {}", host_creds.display()))?;
-                    }
-
-                    AuthProvisionOutcome::Synced
-                } else {
-                    AuthProvisionOutcome::HostMissing
-                }
-            }
-        };
-
-        let forward_auth = matches!(
-            outcome,
-            AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
-        );
-        Ok((outcome, forward_auth))
+        provision_kimi_dir_credential(
+            kimi_dir,
+            &host_home.join(".kimi-code"),
+            mode,
+            KIMI_SYNC_FILES,
+            "Kimi dir",
+            "Kimi",
+        )
     }
+}
+
+/// Generic directory credential provisioner for agents that sync a directory
+/// tree with standard `AuthForwardMode` semantics (OAuthToken/ApiKey/Ignore
+/// wipe the dir; Sync copies `sync_files` + a `credentials/` subtree).
+///
+/// Returns `(outcome, forward_auth)` where `forward_auth` is `true` when
+/// the role-state directory should be bind-mounted into the container
+/// (`Synced` or `HostMissing`), and `false` when it was wiped.
+fn provision_kimi_dir_credential(
+    target_dir: &Path,
+    host_dir: &Path,
+    mode: AuthForwardMode,
+    sync_files: &[&str],
+    _label: &str,
+    agent_name: &str,
+) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+    use anyhow::Context;
+
+    reject_symlink(target_dir)?;
+
+    let outcome = match mode {
+        AuthForwardMode::OAuthToken => {
+            eprintln!(
+                "[jackin] internal: {agent_name} provision received unsupported \
+                 OAuthToken mode — parser invariant bypassed; \
+                 wiping role state and falling back to token-mode."
+            );
+            wipe_kimi_state(target_dir)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::ApiKey => {
+            wipe_kimi_state(target_dir)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::Ignore => {
+            wipe_kimi_state(target_dir)?;
+            AuthProvisionOutcome::Skipped
+        }
+        AuthForwardMode::Sync => {
+            std::fs::create_dir_all(target_dir)?;
+
+            if host_dir.exists() {
+                for name in sync_files {
+                    let host_file = host_dir.join(name);
+                    if host_file.exists() {
+                        let content = std::fs::read_to_string(&host_file)
+                            .with_context(|| format!("reading {}", host_file.display()))?;
+                        write_private_file(&target_dir.join(name), &content)?;
+                    }
+                }
+
+                let host_creds = host_dir.join("credentials");
+                if host_creds.exists() {
+                    let dest_creds = target_dir.join("credentials");
+                    copy_kimi_credentials_tree(&host_creds, &dest_creds)
+                        .with_context(|| format!("copying {}", host_creds.display()))?;
+                }
+
+                AuthProvisionOutcome::Synced
+            } else {
+                AuthProvisionOutcome::HostMissing
+            }
+        }
+    };
+
+    let forward_auth = matches!(
+        outcome,
+        AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
+    );
+    Ok((outcome, forward_auth))
 }
 
 /// Single-file host artifacts forwarded into the role-state directory under
@@ -678,6 +647,9 @@ impl RoleState {
             mode,
             "OpenCode auth.json",
             "OpenCode",
+            true,
+            true,
+            true,
         )
     }
 }
@@ -685,19 +657,26 @@ impl RoleState {
 /// Shared file-credential provisioner for agents that use a single JSON
 /// credential file with standard `AuthForwardMode` semantics.
 ///
-/// Used by `provision_amp_auth` and `provision_opencode_auth`. Claude has
-/// two credential files and a token-mode skeleton, so it does not use this
-/// path. Codex does not have the empty-content check, so it also stays
-/// separate for now.
+/// `treat_empty_as_missing` — when `true`, an empty/whitespace file on the
+/// host is treated as host-missing. When `false`, an empty file is written as-is.
 ///
-/// `label` is the human-readable file name ("Amp secrets.json") for error
-/// messages. `agent_name` identifies the agent in the parser-bypass log.
+/// `warn_on_oauth` — when `true`, receiving `OAuthToken` mode logs a warning
+/// that the parser invariant was bypassed. When `false`, `OAuthToken`
+/// silently returns `TokenMode`.
+///
+/// `wipe_on_oauth` — when `true`, the role-state file is wiped on `OAuthToken`.
+/// When `false`, the existing file is preserved (Codex: `OAuthToken` is a
+/// parser-rejected no-op; preserving the file allows recovery from a bypass).
+#[allow(clippy::too_many_arguments)]
 fn provision_single_file_credential(
     target: &Path,
     host_path: &Path,
     mode: AuthForwardMode,
     label: &str,
     agent_name: &str,
+    treat_empty_as_missing: bool,
+    warn_on_oauth: bool,
+    wipe_on_oauth: bool,
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
     use anyhow::Context;
 
@@ -705,12 +684,16 @@ fn provision_single_file_credential(
 
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
-            eprintln!(
-                "[jackin] internal: {agent_name} provision received unsupported \
-                 OAuthToken mode — parser invariant bypassed; \
-                 wiping role state and falling back to token-mode."
-            );
-            wipe_agent_file_state(target, label)?;
+            if warn_on_oauth {
+                eprintln!(
+                    "[jackin] internal: {agent_name} provision received unsupported \
+                     OAuthToken mode — parser invariant bypassed; \
+                     wiping role state and falling back to token-mode."
+                );
+            }
+            if wipe_on_oauth {
+                wipe_agent_file_state(target, label)?;
+            }
             AuthProvisionOutcome::TokenMode
         }
         AuthForwardMode::ApiKey => {
@@ -722,7 +705,7 @@ fn provision_single_file_credential(
             AuthProvisionOutcome::Skipped
         }
         AuthForwardMode::Sync => match std::fs::read_to_string(host_path) {
-            Ok(content) if content.trim().is_empty() => {
+            Ok(content) if treat_empty_as_missing && content.trim().is_empty() => {
                 eprintln!(
                     "[jackin] host {} is empty/whitespace — treating as host-missing",
                     host_path.display()

@@ -43,7 +43,6 @@ pub(crate) fn editor_footer_items(
     )
 }
 
-#[allow(clippy::too_many_lines)]
 pub(crate) fn contextual_row_items(
     state: &EditorState<'_>,
     config: &AppConfig,

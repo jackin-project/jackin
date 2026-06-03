@@ -214,7 +214,7 @@ pub(super) fn begin_editor_save(
 /// confirm modal that, on Yes, re-stashes the plan with
 /// `delete_isolated_acknowledged = true` so the second commit pass starts
 /// the cleanup worker, then the final pass writes after cleanup completes.
-#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn commit_editor_save(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
