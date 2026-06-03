@@ -3,7 +3,7 @@ title: Kimi
 description: Use Kimi's Anthropic-compatible coding endpoint as an alternative provider for Claude Code sessions
 ---
 
-[Kimi](https://www.kimi.com) provides an Anthropic-compatible coding endpoint (`https://api.kimi.com/coding/`) backed by the `kimi-for-coding` model. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
+[Kimi](https://www.kimi.com) provides an Anthropic-compatible coding endpoint (`https://api.kimi.com/coding`) backed by the `kimi-for-coding` model. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
 
 When `KIMI_CODE_API_KEY` is configured, opening a new Claude tab presents a provider picker with **Kimi** as one of the options. Operators without a Kimi key see no change: Kimi does not appear in the picker.
 
@@ -65,7 +65,7 @@ Set a global key to have Kimi available in every workspace, or set a per-workspa
 When you select Kimi in the provider picker, jackin' injects environment variables into the spawned Claude Code process at launch time — not into any shared config file:
 
 - `ANTHROPIC_AUTH_TOKEN` — set to your `KIMI_CODE_API_KEY` value
-- `ANTHROPIC_BASE_URL` — set to `https://api.kimi.com/coding/`
+- `ANTHROPIC_BASE_URL` — set to `https://api.kimi.com/coding`
 - `ANTHROPIC_DEFAULT_OPUS_MODEL` — set to `kimi-for-coding`
 - `ANTHROPIC_DEFAULT_SONNET_MODEL` — set to `kimi-for-coding`
 - `ANTHROPIC_DEFAULT_HAIKU_MODEL` — set to `kimi-for-coding`

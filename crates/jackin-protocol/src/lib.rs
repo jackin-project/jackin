@@ -67,7 +67,7 @@ pub const MINIMAX_DEFAULT_MODEL: &str = "MiniMax-M3";
 pub const MINIMAX_API_TIMEOUT_MS: &str = "3000000";
 
 /// Kimi Code Anthropic-compatible API base URL (Claude Code).
-pub const KIMI_BASE_URL: &str = "https://api.kimi.com/coding/";
+pub const KIMI_BASE_URL: &str = "https://api.kimi.com/coding";
 /// Kimi Code OpenAI-compatible API base URL (OpenCode).
 pub const KIMI_OPENAI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 /// Kimi Code model — all three Claude tiers map to this single model.
