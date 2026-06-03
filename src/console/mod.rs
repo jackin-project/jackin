@@ -752,12 +752,17 @@ where
     }
 }
 
-fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
+fn env_key_present(
+    config: &AppConfig,
+    workspace_name: &str,
+    role_selector: &str,
+    key: &str,
+) -> bool {
     crate::operator_env::lookup_operator_env_raw(
         config,
         Some(role_selector),
         Some(workspace_name),
-        "ZAI_API_KEY",
+        key,
     )
     .is_some()
 }
@@ -770,7 +775,9 @@ pub(in crate::console) fn providers_for_launch(
 ) -> Vec<jackin_protocol::Provider> {
     jackin_protocol::Provider::available_for(
         agent.slug(),
-        zai_key_present(config, workspace_name, role_selector),
+        env_key_present(config, workspace_name, role_selector, "ZAI_API_KEY"),
+        env_key_present(config, workspace_name, role_selector, "MINIMAX_API_KEY"),
+        env_key_present(config, workspace_name, role_selector, "KIMI_CODE_API_KEY"),
     )
 }
 

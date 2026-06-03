@@ -35,6 +35,12 @@ pub enum AuthKind {
     /// Z.AI / GLM Coding Plan — env-only kind. No `auth_forward` config
     /// block; credential lives purely as `ZAI_API_KEY` in `[env]`.
     Zai,
+    /// MiniMax Token Plan — env-only provider credential. Distinct from
+    /// agent runtimes; credential lives as `MINIMAX_API_KEY` in `[env]`.
+    Minimax,
+    /// Kimi Code provider — env-only kind. Distinct from the `Kimi` agent
+    /// runtime; credential lives as `KIMI_CODE_API_KEY` in `[env]`.
+    KimiCode,
 }
 
 impl AuthKind {
@@ -50,6 +56,8 @@ impl AuthKind {
             Self::Opencode => "OpenCode",
             Self::Github => "GitHub CLI",
             Self::Zai => "Z.AI",
+            Self::Minimax => "MiniMax",
+            Self::KimiCode => "Kimi Code",
         }
     }
 
@@ -70,7 +78,7 @@ impl AuthKind {
                 &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
             }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
-            Self::Zai => &[AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Zai | Self::Minimax | Self::KimiCode => &[AuthMode::ApiKey, AuthMode::Ignore],
         }
     }
 
@@ -89,6 +97,10 @@ impl AuthKind {
             (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(crate::env_model::ZAI_API_KEY_ENV_NAME),
+            (Self::Minimax, AuthMode::ApiKey) => Some(crate::env_model::MINIMAX_API_KEY_ENV_NAME),
+            (Self::KimiCode, AuthMode::ApiKey) => {
+                Some(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+            }
             _ => None,
         }
     }
@@ -119,7 +131,7 @@ impl AuthKind {
             Self::Amp => Some(Agent::Amp),
             Self::Kimi => Some(Agent::Kimi),
             Self::Opencode => Some(Agent::Opencode),
-            Self::Github | Self::Zai => None,
+            Self::Github | Self::Zai | Self::Minimax | Self::KimiCode => None,
         }
     }
 
@@ -137,6 +149,8 @@ impl AuthKind {
             Self::Opencode => ro.opencode.is_some(),
             Self::Github => ro.github.is_some(),
             Self::Zai => ro.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
+            Self::Minimax => ro.env.contains_key(crate::env_model::MINIMAX_API_KEY_ENV_NAME),
+            Self::KimiCode => ro.env.contains_key(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME),
         }
     }
 }
@@ -502,5 +516,64 @@ mod tests {
         assert!(AuthKind::Codex.role_override_present(&ro));
         assert!(AuthKind::Amp.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
+    }
+
+    #[test]
+    fn minimax_label_and_env_var() {
+        assert_eq!(AuthKind::Minimax.label(), "MiniMax");
+        assert_eq!(
+            AuthKind::Minimax.required_env_var(AuthMode::ApiKey),
+            Some(crate::env_model::MINIMAX_API_KEY_ENV_NAME)
+        );
+        assert_eq!(AuthKind::Minimax.required_env_var(AuthMode::Ignore), None);
+        assert_eq!(
+            AuthKind::Minimax.supported_modes(),
+            &[AuthMode::ApiKey, AuthMode::Ignore]
+        );
+        assert_eq!(AuthKind::Minimax.agent(), None);
+    }
+
+    #[test]
+    fn kimi_code_label_and_env_var() {
+        assert_eq!(AuthKind::KimiCode.label(), "Kimi Code");
+        assert_eq!(
+            AuthKind::KimiCode.required_env_var(AuthMode::ApiKey),
+            Some(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+        );
+        assert_eq!(AuthKind::KimiCode.required_env_var(AuthMode::Ignore), None);
+        assert_eq!(
+            AuthKind::KimiCode.supported_modes(),
+            &[AuthMode::ApiKey, AuthMode::Ignore]
+        );
+        assert_eq!(AuthKind::KimiCode.agent(), None);
+    }
+
+    #[test]
+    fn provider_kinds_do_not_overlap_with_kimi_runtime_kind() {
+        // Kimi runtime agent and Kimi Code provider are distinct auth kinds.
+        assert_ne!(AuthKind::Kimi, AuthKind::KimiCode);
+        assert_ne!(
+            AuthKind::Kimi.required_env_var(AuthMode::ApiKey),
+            AuthKind::KimiCode.required_env_var(AuthMode::ApiKey)
+        );
+    }
+
+    #[test]
+    fn role_override_present_minimax_and_kimi_code() {
+        let mut ro = crate::config::WorkspaceRoleOverride::default();
+        assert!(!AuthKind::Minimax.role_override_present(&ro));
+        assert!(!AuthKind::KimiCode.role_override_present(&ro));
+        ro.env.insert(
+            crate::env_model::MINIMAX_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("mk".into()),
+        );
+        assert!(AuthKind::Minimax.role_override_present(&ro));
+        assert!(!AuthKind::KimiCode.role_override_present(&ro));
+        ro.env.insert(
+            crate::env_model::KIMI_CODE_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("kk".into()),
+        );
+        assert!(AuthKind::Minimax.role_override_present(&ro));
+        assert!(AuthKind::KimiCode.role_override_present(&ro));
     }
 }

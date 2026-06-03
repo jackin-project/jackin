@@ -174,6 +174,10 @@ pub struct Multiplexer {
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
+    /// Resolved MiniMax API key (`MINIMAX_API_KEY`) from the operator env.
+    minimax_key: Option<String>,
+    /// Resolved Kimi Code API key (`KIMI_CODE_API_KEY`) from the operator env.
+    kimi_key: Option<String>,
     /// Cached at construction for the hot polling path. The only
     /// mutation after that is `gh_available` flipping false → true when
     /// a background PR lookup succeeds, so a startup PATH /
@@ -585,6 +589,12 @@ impl Multiplexer {
         let zai_key = std::env::var("ZAI_API_KEY")
             .ok()
             .filter(|value| !value.is_empty());
+        let minimax_key = std::env::var("MINIMAX_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let kimi_key = std::env::var("KIMI_CODE_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -645,6 +655,8 @@ impl Multiplexer {
             workdir,
             workdir_context,
             zai_key,
+            minimax_key,
+            kimi_key,
         }
     }
 
@@ -1504,17 +1516,23 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
-                let token = self.zai_key.as_deref().filter(|value| !value.is_empty());
                 let resolved_env = match jackin_protocol::Provider::from_label(&provider_label) {
                     Some(provider) => {
-                        // Token is resolved here (not on the wire) from the
-                        // container's ZAI_API_KEY; the host only sends the label.
-                        if provider == jackin_protocol::Provider::Zai && token.is_none() {
+                        // Token is resolved here from the container env; the host only sends the label.
+                        let token = self.token_for_provider(provider);
+                        if token.is_none() && provider != jackin_protocol::Provider::Anthropic {
                             crate::clog!(
-                                "spawn: provider Z.AI selected but ZAI_API_KEY unresolved in container; session falls back to the agent's default auth"
+                                "spawn: provider {:?} selected but key unresolved in container; session falls back to agent's default auth",
+                                provider.label()
                             );
                         }
-                        provider.env_overrides(token)
+                        // env_overrides is the Anthropic-compatible surface for Claude Code.
+                        // Codex routes via ~/.codex/config.toml; OpenCode via opencode.json.
+                        if slug == "claude" {
+                            provider.env_overrides(token)
+                        } else {
+                            Vec::new()
+                        }
                     }
                     None => {
                         crate::clog!(
@@ -1533,7 +1551,21 @@ impl Multiplexer {
     /// default provider is available and no picker step is needed; a
     /// non-empty vec always has 2+ entries (enforced by the catalog).
     fn providers_for_agent(&self, agent: Option<&str>) -> Vec<jackin_protocol::Provider> {
-        jackin_protocol::Provider::available_for(agent.unwrap_or_default(), self.zai_key.is_some())
+        jackin_protocol::Provider::available_for(
+            agent.unwrap_or_default(),
+            self.zai_key.is_some(),
+            self.minimax_key.is_some(),
+            self.kimi_key.is_some(),
+        )
+    }
+
+    fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
+        match provider {
+            jackin_protocol::Provider::Anthropic => None,
+            jackin_protocol::Provider::Zai => self.zai_key.as_deref(),
+            jackin_protocol::Provider::Minimax => self.minimax_key.as_deref(),
+            jackin_protocol::Provider::Kimi => self.kimi_key.as_deref(),
+        }
     }
 
     fn session_launch(

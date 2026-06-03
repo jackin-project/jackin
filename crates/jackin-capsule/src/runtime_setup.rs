@@ -3,12 +3,14 @@
 //! sourcing role hooks and `exec`-ing the selected agent.
 
 use std::fs;
+use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use serde_json::json;
 
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
@@ -224,6 +226,40 @@ fn setup_codex() -> Result<()> {
     } else {
         remove_file_if_exists("/home/agent/.codex/auth.json")?;
     }
+    write_codex_provider_config()?;
+    Ok(())
+}
+
+/// Appends `[model_providers]` + `[profiles]` blocks for available alt
+/// providers to `~/.codex/config.toml`. MiniMax is the only deliverable
+/// Codex cell (Responses-API compatible); GLM and Kimi are deferred.
+fn write_codex_provider_config() -> Result<()> {
+    let minimax_key = nonempty_env("MINIMAX_API_KEY");
+    if minimax_key.is_none() {
+        return Ok(());
+    }
+    let config_path = Path::new("/home/agent/.codex/config.toml");
+    fs::create_dir_all("/home/agent/.codex")
+        .context("failed to create /home/agent/.codex")?;
+    let provider_block = concat!(
+        "\n[model_providers.minimax]\n",
+        "name = \"MiniMax\"\n",
+        "base_url = \"https://api.minimax.io/v1\"\n",
+        "env_key = \"MINIMAX_API_KEY\"\n",
+        "wire_api = \"responses\"\n",
+        "\n[profiles.minimax]\n",
+        "model_provider = \"minimax\"\n",
+        "model = \"MiniMax-M3\"\n",
+    );
+    // Append so any operator-authored config.toml content is preserved.
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(config_path)
+        .context("failed to open ~/.codex/config.toml for provider config")?;
+    file.write_all(provider_block.as_bytes())
+        .context("failed to write MiniMax provider block to ~/.codex/config.toml")?;
+    println!("[entrypoint] codex: wrote MiniMax provider block to ~/.codex/config.toml");
     Ok(())
 }
 
@@ -299,10 +335,40 @@ fn setup_opencode() -> Result<()> {
     fs::create_dir_all("/home/agent/.config/opencode")
         .context("failed to create /home/agent/.config/opencode")?;
     let config = Path::new("/home/agent/.config/opencode/opencode.json");
-    if !config.exists() {
-        fs::write(config, b"{\"permission\":\"allow\"}\n")
-            .context("failed to write default opencode.json")?;
+    write_opencode_config(config)?;
+    Ok(())
+}
+
+/// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
+/// for every alt provider whose API key is present in the container env.
+fn write_opencode_config(config: &Path) -> Result<()> {
+    let mut provider_map = serde_json::Map::new();
+    if nonempty_env("ZAI_API_KEY").is_some() {
+        provider_map.insert(
+            "zai".to_string(),
+            json!({"options": {"baseURL": jackin_protocol::ZAI_OPENAI_BASE_URL}}),
+        );
     }
+    if nonempty_env("MINIMAX_API_KEY").is_some() {
+        provider_map.insert(
+            "minimax".to_string(),
+            json!({"options": {"baseURL": jackin_protocol::MINIMAX_OPENAI_BASE_URL}}),
+        );
+    }
+    if nonempty_env("KIMI_CODE_API_KEY").is_some() {
+        provider_map.insert(
+            "kimi".to_string(),
+            json!({"options": {"baseURL": jackin_protocol::KIMI_OPENAI_BASE_URL}}),
+        );
+    }
+    let mut cfg = json!({"permission": "allow"});
+    if !provider_map.is_empty() {
+        cfg["provider"] = serde_json::Value::Object(provider_map);
+    }
+    let mut content = serde_json::to_vec(&cfg)
+        .context("failed to serialize opencode.json")?;
+    content.push(b'\n');
+    fs::write(config, &content).context("failed to write opencode.json")?;
     Ok(())
 }
 
