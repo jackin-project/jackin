@@ -1,0 +1,81 @@
+---
+title: "Codebase readability — implementation checklist"
+---
+
+Implementation tracking checklist for the [codebase readability program](/reference/roadmap/codebase-readability/). Each item is a concrete task; check it off when shipped to `main`.
+
+## Stage 0 — Safety net and honest map
+
+- [x] Behavioral spec: `runtime/launch.rs` (INV-1 through INV-6) — see [spec](/internal/specs/runtime-launch/)
+- [x] Behavioral spec: `op_picker` (INV-1 through INV-4) — see [spec](/internal/specs/op-picker/)
+- [x] Snapshot test net started (4 insta tests over composite panes)
+- [x] Module dependency graph documented — cycles identified in roadmap
+- [x] `//!` module-doc coverage: 100% of production source files
+
+## Stage 1 — Build `jackin-core`, break the cycles
+
+- [x] Create `crates/jackin-core` leaf crate (no tokio, no docker, no filesystem)
+- [x] Move `Agent` enum + `ParseAgentError` to jackin-core
+- [x] Move `MountIsolation` enum + `ParseMountIsolationError` to jackin-core
+- [x] Move `AuthForwardMode` enum to jackin-core
+- [x] Move `EnvValue` + `OpRef` + `FieldTarget` to jackin-core
+- [x] Move shared constants (`MANIFEST_FILENAME`, `DOCKERFILE_NAME`, `CLAUDE_OAUTH_TOKEN_ENV`) to jackin-core
+- [x] `agent → config` cycle broken (Agent no longer imports from config)
+- [ ] Move `RoleManifest` + manifest types to jackin-core (needs serde dependency already present)
+- [ ] Move `selector` types (`RoleSelector`, `Selector`, `SelectorError`) — blocked by application-specific parsing logic using `CONTAINER_PREFIX_DASH`
+- [ ] Move `DockerApi` / `CommandRunner` traits to jackin-core (I/O seam)
+- [ ] Move `JackinPaths` to jackin-core (depends on `directories` crate — add to core)
+- [ ] Cut `config → runtime::list_role_names` upward edge (invert through trait)
+
+## Stage 2 — DRY pass
+
+- [x] `MANIFEST_FILENAME` constant (was 160× literal) — in jackin-core
+- [x] `DOCKERFILE_NAME` constant (was 235× literal) — in jackin-core
+- [x] `TEST_DOCKERFILE_FROM` + `TEST_MANIFEST_TOML` test constants — in `runtime/test_support.rs`
+- [x] Named style constants: `BOLD_WHITE`, `BOLD_GREEN`, `DIM`, `GREEN`, `BORDER`, `DANGER` — in `jackin-tui/theme.rs`
+- [x] `provision_single_file_credential` — extracted from Amp/OpenCode auth provisioners
+- [x] `DockerResources::from_container_name` constructor — eliminates inline `format!("{name}-dind")` chains
+- [x] `resolve_mode_with_trace` — extracted to `config/roles.rs`, eliminates duplication with launch.rs
+- [x] `seed_valid_role_repo` / `first_temp_role_repo` test helpers consolidated
+- [ ] Agent dispatch trait — replace 8 `Agent::Claude => …` match files with trait dispatch (tracked in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/))
+- [ ] Replace remaining `"jackin.role.toml"` literal sites (replaced 3; ~140 remain in tests)
+- [ ] Replace remaining `"Dockerfile"` literal sites (replaced 3; ~230 remain in tests)
+
+## Stage 3 — Split and document the monoliths
+
+- [x] `runtime/launch.rs` (9,465L) → `launch/mod.rs` (3,759L) + `launch/tests.rs` (5,703L)
+- [x] `console/tui/input/editor.rs` → per-tab sub-modules (`agents.rs`, `secrets.rs`, `mounts.rs`, `general.rs`) + `tests.rs`
+- [x] `console/tui/view/editor.rs` → `editor.rs` dispatcher (75L) + 7 per-tab render test files (paired operation)
+- [x] `operator_env.rs` (4,209L) → `operator_env/mod.rs` (2,018L) + `tests.rs` (2,188L)
+- [x] `app/mod.rs` → `workspace_cmd.rs`, `config_cmd.rs`, `load_cmd.rs`, `prune_cmd.rs` extracted
+- [x] All remaining files > 500L with `mod tests { }`: production code separated from test code across ~300 files
+- [x] `daemon.rs` (3,910L) → `daemon.rs` (983L) + `daemon/tests.rs` (2,927L)
+- [x] `dialog.rs` (3,207L) → `dialog.rs` (2,411L) + `dialog/tests.rs` (802L)
+- [x] `op_picker.rs` (2,877L) → `op_picker.rs` (1,700L) + `op_picker/tests.rs` (1,174L)
+- [ ] `launch/mod.rs` (3,759L) — per-function pipeline split (`pipeline.rs`, `trust.rs`): needs deeper dependency analysis
+- [ ] Reduce `#[allow(clippy::too_many_lines)]` suppressions from 49 to zero
+
+## Stage 4 — Extract the crates bottom-up
+
+- [x] `jackin-core` — fully functional leaf crate, enforces `mod_module_files = "deny"`
+- [x] `jackin-config` scaffold — `AgentAuthConfig`, `GithubAuthMode`, `GithubAuthConfig`, auth newtypes in crate; `AppConfig`/`WorkspaceConfig` migration pending
+- [x] `jackin-env` scaffold — placeholder crate, ready for `operator_env/` migration
+- [x] `jackin-runtime` scaffold — placeholder crate, ready for runtime/instance/isolation migration
+- [ ] Move `AppConfig` + `WorkspaceConfig` + migrations + editor → `jackin-config` (unblocked now that `EnvValue` is in jackin-core)
+- [ ] Move `operator_env/` → `jackin-env` (depends on `jackin-config` for `EnvValue`)
+- [ ] Move `runtime/` + `instance/` + `isolation/` + `derived_image/` → `jackin-runtime`
+- [ ] Collapse root `src/` to thin CLI-dispatch binary (cli/, app/ only)
+
+## Conventions and tooling
+
+- [x] `crates/AGENTS.md` — module layout rule (Rust 2024 self-named files) + naming convention
+- [x] `crates/CLAUDE.md` — links to AGENTS.md
+- [x] `clippy::mod_module_files = "deny"` enforced in new crates (jackin-config, jackin-env, jackin-runtime)
+- [x] 95 crates/ `mod.rs` files migrated to self-named layout (Rust 2024 convention)
+- [ ] Migrate remaining root `src/` `mod.rs` files as each module extracts into a workspace crate
+- [ ] Enable `clippy::mod_module_files = "deny"` workspace-wide after last `src/mod.rs` is removed
+
+## Deferred
+
+- [ ] Rustdoc JSON → Fumadocs pipeline (deferred until `//!` coverage mature)
+- [ ] Agent dispatch trait (tracked separately in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/))

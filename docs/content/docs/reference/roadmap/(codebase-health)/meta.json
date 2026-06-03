@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "../codebase-readability",
+    "../codebase-readability-checklist",
     "../agent-runtime-trait",
     "../structured-tracing-metrics",
     "../pr-verification",
