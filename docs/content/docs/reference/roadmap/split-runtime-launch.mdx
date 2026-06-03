@@ -12,7 +12,7 @@ The file has grown significantly since the original analysis due to new agent ru
 
 ## Duplication found within this file
 
-- `build_mode_resolution()` at ~line 2977 duplicates the 3-layer × 4-agent match (12 arms) from <RepoFile path="src/config/roles.rs" /> `resolve_mode()` solely to capture the resolution trace for error rendering. Extract `resolve_mode_with_trace()` in `config/roles.rs` instead.
+- `build_mode_resolution()` at ~line 2977 duplicates the 3-layer × 4-agent match (12 arms) from <RepoFile path="src/config/roles/mod.rs" /> `resolve_mode()` solely to capture the resolution trace for error rendering. Extract `resolve_mode_with_trace()` in `config/roles.rs` instead.
 - DinD sidecar launch args (~line 777) are duplicated identically in <RepoFile path="src/runtime/attach/mod.rs" /> at ~line 472. Extract shared `fn run_dind_sidecar()`.
 - 17 inline `format!("{name}-dind")` / `format!("{name}-net")` derivations that should use a shared `DockerResources` naming helper.
 - The role container `docker run -d -it` argument list (~180 lines starting ~line 865) is a monolithic block interleaving env var injection, mount construction, and label assignment.
@@ -64,4 +64,4 @@ Do **last** among the Phase 2 splits. The test suite is the most complex (tests 
 - <RepoFile path="src/runtime/attach/mod.rs" /> — shares DinD sidecar and network logic (1130L)
 - <RepoFile path="src/runtime/test_support.rs" /> — `FakeRunner` used by the test suite
 - <RepoFile path="src/runtime/cleanup/mod.rs" /> — shares container teardown pattern
-- <RepoFile path="src/config/roles.rs" /> — `resolve_mode()` duplicated for trace in launch.rs
+- <RepoFile path="src/config/roles/mod.rs" /> — `resolve_mode()` duplicated for trace in launch.rs

@@ -28,7 +28,7 @@ All priority files from both tables below received `//!` blocks following the `e
 | <RepoFile path="src/console/tui/input/global_mounts/mod.rs" /> | ✅ documented |
 | <RepoFile path="src/manifest/validate/mod.rs" /> | ✅ documented |
 
-<RepoFile path="src/console/tui/input/save.rs" /> already had a `//!` block (purpose + scope); expanding to full 3-element format is a follow-up.
+<RepoFile path="src/console/tui/input/save/mod.rs" /> already had a `//!` block (purpose + scope); expanding to full 3-element format is a follow-up.
 
 ## Current coverage (2026-06-02)
 
@@ -42,7 +42,7 @@ The next orientation-doc work is `///` item-level docs on public API entry point
 
 1. For each file, read the first 50 lines and the public item list.
 2. Write a `//!` block at the top: purpose, scope claim, key invariants, what callers can assume.
-3. Model on <RepoFile path="src/env_model.rs" /> (the 3-element exemplar: purpose + scope + history).
+3. Model on <RepoFile path="src/env_model/mod.rs" /> (the 3-element exemplar: purpose + scope + history).
 4. Do not add `///` item-level docs in this pass — only `//!` module-level.
 
 ## What a good `//!` block says

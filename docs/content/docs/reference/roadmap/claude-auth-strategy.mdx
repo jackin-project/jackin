@@ -240,7 +240,7 @@ This proposal is about a better auth primitive, not about relaxing jackin' secur
 
 At minimum, this design would touch:
 
-- <RepoFile path="src/config/roles.rs" /> — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
+- <RepoFile path="src/config/roles/mod.rs" /> — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
 - <RepoFile path="src/config/mod.rs" /> — `AuthForwardMode` enum, persistence types
 - <RepoFile path="src/cli/config/mod.rs" /> — `config auth` subcommand help text and examples
 - <RepoFile path="src/app/mod.rs" /> — `config auth` command dispatch
@@ -274,7 +274,7 @@ copy-paste flow. A follow-up design proposal addresses that:
 ## Related Files
 
 - <RepoFile path="src/config/mod.rs" /> — `AuthForwardMode` enum, persistence types
-- <RepoFile path="src/config/roles.rs" /> — auth mode resolution
+- <RepoFile path="src/config/roles/mod.rs" /> — auth mode resolution
 - <RepoFile path="src/cli/config/mod.rs" /> — `jackin config auth` help text
 - <RepoFile path="src/app/mod.rs" /> — auth config command handlers
 - <RepoFile path="src/instance/auth/mod.rs" /> — credential forwarding and state preparation

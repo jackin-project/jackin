@@ -14,10 +14,10 @@ title: "Agent runtime trait — replace the closed Agent enum with per-runtime m
 | <RepoFile path="src/derived_image/mod.rs" /> | **42** | Dockerfile generation, entrypoint dispatch, per-agent COPY/CHMOD scaffolding |
 | <RepoFile path="src/agent/mod.rs" /> | **37** | The enum itself, plus its install-block / required-env / supported-modes tables |
 | <RepoFile path="src/instance/auth/mod.rs" /> | **27** | Credential provisioning (5 near-identical `provision_*` functions) |
-| <RepoFile path="src/config/roles.rs" /> | **26** | Per-agent `AgentAuthConfig` field resolution at global / workspace / role layers |
+| <RepoFile path="src/config/roles/mod.rs" /> | **26** | Per-agent `AgentAuthConfig` field resolution at global / workspace / role layers |
 | <RepoFile path="crates/jackin-console/src/tui/components/agent_choice/mod.rs" /> | **23** | TUI agent picker |
 | <RepoFile path="crates/jackin-console/src/tui/auth/mod.rs" /> | **20** | Auth-tab row construction |
-| <RepoFile path="src/agent_binary.rs" /> | **19** | Per-agent release-resolution and cache layout |
+| <RepoFile path="src/agent_binary/mod.rs" /> | **19** | Per-agent release-resolution and cache layout |
 | <RepoFile path="src/instance/mod.rs" /> | **18** | Per-instance manifest state, model accessors |
 | <RepoFile path="src/version_check/mod.rs" /> | **15** | Per-agent CLI version probing |
 | 21 more files | **117** | Manifest validation, attach, image build, cleanup, save flow, workspace resolve, … |
@@ -146,8 +146,8 @@ Each PR has a clear stop point. The work is parallelisable with the [Split `runt
 - <RepoFile path="src/runtime/launch/mod.rs" /> — heaviest consumer (70 references, 18 dispatch arms across 5 sites)
 - <RepoFile path="src/derived_image/mod.rs" /> — Dockerfile generation (42 references)
 - <RepoFile path="src/instance/auth/mod.rs" /> — 5 near-identical provision functions (27 references)
-- <RepoFile path="src/config/roles.rs" /> — per-layer auth-config resolution (26 references)
-- <RepoFile path="src/agent_binary.rs" /> — per-agent release-resolution (19 references)
+- <RepoFile path="src/config/roles/mod.rs" /> — per-layer auth-config resolution (26 references)
+- <RepoFile path="src/agent_binary/mod.rs" /> — per-agent release-resolution (19 references)
 - <RepoFile path="src/version_check/mod.rs" /> — per-agent version probe (15 references)
 - <RepoFile path="crates/jackin-console/src/tui/components/agent_choice/mod.rs" /> — TUI picker (23 references)
 - <RepoFile path="crates/jackin-console/src/tui/auth/mod.rs" /> — auth-tab rows (20 references)

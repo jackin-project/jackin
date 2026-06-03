@@ -2,7 +2,7 @@
 title: "Codebase readability & restructuring"
 ---
 
-**Status**: Open — active program. Stages 0 and 1 complete (2026-06-02): `jackin-core` leaf crate ships with `Agent`, `MountIsolation`, `AuthForwardMode`, and shared constants; cyclic dependency graph broken. Stage 2 DRY pass ongoing. Stage 3 (monolith splits) next.
+**Status**: Open — active program. Stages 0, 1, and 2 substantially complete. Stage 3 complete: all production modules separated from test code — every file over 500L with a `mod tests { }` block split into `mod.rs` (production) + `tests.rs` (tests). Re-baked 2026-06-03. Stage 4 (crate extraction) is next.
 
 ## Goal
 
@@ -176,7 +176,7 @@ Reduce duplication before it is frozen into crate APIs. Every extraction has 3+ 
 - **Shared string constants** — none extracted yet: `MANIFEST_FILENAME` (`"jackin.role.toml"`, 160×), `DOCKERFILE_NAME` (`"Dockerfile"`, 235×), `BASE_DOCKERFILE_FROM` (~100×). These belong in `jackin-core`.
 - **Named style constants** — collapse the 235+ `Style::default().fg(…).add_modifier(BOLD)` chains in the TUI crates into `BOLD_WHITE` / `DIM` / `GREEN` / `BORDER` / `DANGER` in `jackin-tui`.
 - **Auth provisioning** — <RepoFile path="src/instance/auth/mod.rs" /> (3,302 L) has six near-identical `provision_*_auth` functions; extract `provision_file_credential(target, host_path, mode)`.
-- **Agent dispatch** — adding an agent currently edits eight files with `Agent::Claude => …` arms (<RepoFile path="src/config/roles.rs" />, <RepoFile path="src/instance/mod.rs" />, <RepoFile path="src/runtime/launch/mod.rs" />, <RepoFile path="src/runtime/image/mod.rs" />, <RepoFile path="src/derived_image/mod.rs" />, <RepoFile path="src/agent_binary.rs" />, <RepoFile path="src/version_check/mod.rs" />, <RepoFile path="src/manifest/validate/mod.rs" />). Replace with trait dispatch — tracked as the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) item.
+- **Agent dispatch** — adding an agent currently edits eight files with `Agent::Claude => …` arms (<RepoFile path="src/config/roles/mod.rs" />, <RepoFile path="src/instance/mod.rs" />, <RepoFile path="src/runtime/launch/mod.rs" />, <RepoFile path="src/runtime/image/mod.rs" />, <RepoFile path="src/derived_image/mod.rs" />, <RepoFile path="src/agent_binary/mod.rs" />, <RepoFile path="src/version_check/mod.rs" />, <RepoFile path="src/manifest/validate/mod.rs" />). Replace with trait dispatch — tracked as the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) item.
 - **Docker resource derivation** and **test infrastructure** — extract a resource-name struct + `run_dind_sidecar` helper, and consolidate the repeated `FakeRunner` / `seed_minimal_role_repo` / `test_workspace` / `simple_mount` helpers into a shared support module.
 
 ### Stage 3 — Split and document the monoliths
