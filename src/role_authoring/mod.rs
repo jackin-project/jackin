@@ -168,7 +168,7 @@ name = "{}"
 }
 
 const fn dockerfile_contents() -> &'static str {
-    "FROM projectjackin/construct:0.1-trixie\n"
+    crate::repo_contract::BASE_DOCKERFILE_FROM
 }
 
 fn readme_contents(selector: &RoleSelector) -> String {

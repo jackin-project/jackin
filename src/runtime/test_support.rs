@@ -112,7 +112,7 @@ impl CommandRunner for FakeRunner {
 }
 
 /// Minimal Dockerfile content used in test role repos. Passes `validate_agent_dockerfile`.
-pub(crate) const TEST_DOCKERFILE_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
+pub(crate) const TEST_DOCKERFILE_FROM: &str = crate::repo_contract::BASE_DOCKERFILE_FROM;
 
 /// Minimal `jackin.role.toml` content used in test role repos. Parses as a valid manifest.
 pub(crate) const TEST_MANIFEST_TOML: &str = r#"version = "v1alpha3"

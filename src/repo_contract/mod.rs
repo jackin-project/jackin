@@ -23,6 +23,13 @@ pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
 /// `JACKIN_CONSTRUCT_IMAGE` is unset; also used in `DockerfileNonConstruct`
 /// error messages.
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
+/// Pinned construct tag used in generated Dockerfiles and test fixtures.
+///
+/// Role Dockerfiles must pin to a versioned release like this so Renovate
+/// can track updates and jackin can detect published-image staleness.
+pub const CONSTRUCT_PINNED_TAG: &str = "0.1-trixie";
+/// Canonical `FROM` line used in generated Dockerfiles and test harness fixtures.
+pub const BASE_DOCKERFILE_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
 
 pub fn construct_image() -> String {
     std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_else(|_| CONSTRUCT_IMAGE.to_owned())
