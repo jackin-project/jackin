@@ -234,7 +234,9 @@ impl Multiplexer {
         // Sent atomically with the full repaint so there is no visible blank flash.
         if matches!(
             reason,
-            FullRedrawReason::Resize | FullRedrawReason::SplitClose | FullRedrawReason::LayoutChange
+            FullRedrawReason::Resize
+                | FullRedrawReason::SplitClose
+                | FullRedrawReason::LayoutChange
         ) {
             buf.extend_from_slice(b"\x1b[2J");
         }
