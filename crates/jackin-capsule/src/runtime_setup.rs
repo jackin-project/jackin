@@ -368,7 +368,8 @@ fn write_opencode_config(config: &Path) -> Result<()> {
         .mode(0o600)
         .open(config)
         .context("failed to open opencode.json for writing")?;
-    f.write_all(&content).context("failed to write opencode.json")?;
+    f.write_all(&content)
+        .context("failed to write opencode.json")?;
     Ok(())
 }
 
@@ -408,7 +409,10 @@ fn build_opencode_config(
             opencode_provider_block(
                 "MiniMax",
                 "@ai-sdk/anthropic",
-                jackin_protocol::MINIMAX_BASE_URL,
+                // `@ai-sdk/anthropic` appends `/messages` to baseURL (its default
+                // is `…/v1`), whereas Claude Code's SDK appends `/v1/messages`.
+                // So the OpenCode block needs the `/v1` the Claude-path constant omits.
+                &format!("{}/v1", jackin_protocol::MINIMAX_BASE_URL),
                 &key,
                 jackin_protocol::MINIMAX_DEFAULT_MODEL,
             ),
@@ -420,7 +424,8 @@ fn build_opencode_config(
             opencode_provider_block(
                 "Kimi",
                 "@ai-sdk/anthropic",
-                jackin_protocol::KIMI_BASE_URL,
+                // See MiniMax note: `@ai-sdk/anthropic` needs `/v1` in baseURL.
+                &format!("{}/v1", jackin_protocol::KIMI_BASE_URL),
                 &key,
                 jackin_protocol::KIMI_DEFAULT_MODEL,
             ),
@@ -436,8 +441,8 @@ fn build_opencode_config(
 /// One OpenCode custom-provider block. `model_id` is both the sole entry in the
 /// `models` map and the suffix OpenCode matches after the provider id in
 /// `-m <provider>/<model_id>`. MiniMax and Kimi speak the Anthropic wire format
-/// (npm `@ai-sdk/anthropic`, the same endpoints the verified Claude Code path
-/// uses); Z.AI's coding-plan endpoint is OpenAI-compatible.
+/// (npm `@ai-sdk/anthropic`), but with a `/v1`-suffixed baseURL since that SDK
+/// appends only `/messages`; Z.AI's coding-plan endpoint is OpenAI-compatible.
 fn opencode_provider_block(
     name: &str,
     npm: &str,
@@ -814,23 +819,25 @@ mod tests {
         assert_eq!(cfg["permission"], "allow");
         let providers = cfg["provider"].as_object().expect("provider block present");
 
+        // MiniMax/Kimi baseURL carries a `/v1` suffix the Claude-path constant
+        // omits: `@ai-sdk/anthropic` appends only `/messages`, not `/v1/messages`.
         for (provider, npm, base_url, api_key) in [
             (
                 Provider::Zai,
                 "@ai-sdk/openai-compatible",
-                jackin_protocol::ZAI_OPENAI_BASE_URL,
+                jackin_protocol::ZAI_OPENAI_BASE_URL.to_string(),
                 "zai-tok",
             ),
             (
                 Provider::Minimax,
                 "@ai-sdk/anthropic",
-                jackin_protocol::MINIMAX_BASE_URL,
+                format!("{}/v1", jackin_protocol::MINIMAX_BASE_URL),
                 "minimax-tok",
             ),
             (
                 Provider::Kimi,
                 "@ai-sdk/anthropic",
-                jackin_protocol::KIMI_BASE_URL,
+                format!("{}/v1", jackin_protocol::KIMI_BASE_URL),
                 "kimi-tok",
             ),
         ] {
