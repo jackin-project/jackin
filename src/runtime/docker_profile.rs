@@ -604,10 +604,9 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
         }
     }
     base
-    // Note: implicit NET_ADMIN/NET_RAW injection for the allowlist network tier
-    // is handled by apply_implicit_grants(), called once at the end of
-    // resolve_effective_grants() after all sources are merged. It does not belong
-    // here because apply_grants() is a pure layering function.
+    // No implicit cap injection here: apply_grants() is a pure layering function.
+    // Injecting caps based on the merged network value would fire on every source
+    // layer, producing duplicates. apply_implicit_grants() fires once post-merge.
 }
 
 // ── Profile resolution ───────────────────────────────────────────────────────

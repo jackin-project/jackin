@@ -7915,6 +7915,7 @@ dind = "none"
             &[],
             Some(crate::runtime::docker_profile::DockerSecurityProfile::Standard),
             Some(manifest),
+            None,
         )
         .await;
         let run_cmd = result.unwrap();
@@ -7976,70 +7977,39 @@ min_profile = "standard"
     /// validate_grants aggregation: errors from config AND workspace both appear.
     #[tokio::test]
     async fn validate_grants_aggregates_config_and_workspace_errors() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let mut config = AppConfig::load_or_init(&paths).unwrap();
-        // Config: invalid cap name.
-        config.docker.grants = Some(crate::runtime::docker_profile::DockerGrants {
-            capabilities_add: vec!["CAP_TOTALLY_FAKE".to_string()],
-            ..Default::default()
-        });
-        let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
-        // Workspace label must match repo_workspace()'s label (repo_dir.display()).
-        let workspace_label = repo_dir.display().to_string();
-        config.workspaces.insert(workspace_label.clone(), {
-            let mut ws = crate::workspace::WorkspaceConfig::default();
-            ws.workdir = "/workspace".to_string();
-            // Workspace: user+sudo conflict (will appear as [workspace] in merged error).
-            ws.docker = Some(crate::workspace::WorkspaceDockerConfig {
-                grants: Some(crate::runtime::docker_profile::DockerGrants {
-                    user: Some("root".to_string()),
-                    sudo: Some(true),
+        let (err, _temp) = run_load_with_manifest_expecting_err_with_config(
+            None,
+            None,
+            |config, repo_dir| {
+                // Config: invalid cap name.
+                config.docker.grants = Some(crate::runtime::docker_profile::DockerGrants {
+                    capabilities_add: vec!["CAP_TOTALLY_FAKE".to_string()],
                     ..Default::default()
-                }),
-                ..Default::default()
-            });
-            ws
-        });
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "jk-agent-smith".to_string(),
-        ]);
-        std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
-        std::fs::write(
-            repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha5"
-dockerfile = "Dockerfile"
-[claude]
-plugins = []
-"#,
-        ).unwrap();
-        let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let err = load_role(
-            &paths,
-            &mut config,
-            &selector,
-            &workspace,
-            &docker,
-            &mut runner,
-            &LoadOptions::default(),
-        ).await.unwrap_err();
+                });
+                // Workspace label must match repo_workspace()'s label (repo_dir.display()).
+                let workspace_label = repo_dir.display().to_string();
+                config.workspaces.insert(workspace_label, {
+                    let mut ws = crate::workspace::WorkspaceConfig::default();
+                    ws.workdir = "/workspace".to_string();
+                    // Workspace: user+sudo conflict (will appear as [workspace] in merged error).
+                    ws.docker = Some(crate::workspace::WorkspaceDockerConfig {
+                        grants: Some(crate::runtime::docker_profile::DockerGrants {
+                            user: Some("root".to_string()),
+                            sudo: Some(true),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    });
+                    ws
+                });
+            },
+        )
+        .await;
         let msg = err.to_string();
-        // Config error: unknown cap.
-        assert!(
-            msg.contains("CAP_TOTALLY_FAKE"),
-            "config error (unknown cap) must appear in message: {msg}"
-        );
-        // Workspace error: user+sudo conflict.
+        assert!(msg.contains("CAP_TOTALLY_FAKE"), "config error must appear: {msg}");
         assert!(
             msg.contains("[workspace]") || msg.contains("user") || msg.contains("sudo"),
-            "workspace error (user+sudo) must appear in message: {msg}"
+            "workspace error must appear: {msg}"
         );
     }
 
@@ -8065,7 +8035,7 @@ plugins = []
     /// boundary — the sidecar is effectively the same as no isolation at all.
     #[tokio::test]
     async fn dind_sidecar_never_mounts_host_docker_socket() {
-        let (_, runner, _temp) = run_load_and_capture_all_commands(&[]).await;
+        let (_, runner, _temp) = run_load_core(&[], None).await;
         let dind_cmd = runner
             .recorded
             .iter()
@@ -8146,19 +8116,21 @@ plugins = []
         env_entries: &[(&str, &str)],
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
     ) -> (String, FakeRunner, tempfile::TempDir) {
-        let (result, runner, temp) = run_load_core_with_manifest(env_entries, profile, None).await;
+        let (result, runner, temp) = run_load_core_with_manifest(env_entries, profile, None, None).await;
         let run_cmd = result.unwrap();
         (run_cmd, runner, temp)
     }
 
     /// Shared scaffold. `manifest_toml = Some(s)` overrides the default manifest.
+    /// `config_mutator = Some(f)` is called after `AppConfig::load_or_init` and
+    /// before `load_role`, allowing tests to inject custom grants or workspaces.
     /// Returns `(anyhow::Result<String>, FakeRunner, TempDir)` where the `String`
-    /// is the matched `docker run` command on success. Callers use `.unwrap()` for
-    /// the success path or `.unwrap_err()` for the error path.
+    /// is the matched `docker run` command on success.
     async fn run_load_core_with_manifest(
         env_entries: &[(&str, &str)],
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
         manifest_toml: Option<&str>,
+        config_mutator: Option<&dyn Fn(&mut AppConfig, &std::path::Path)>,
     ) -> (anyhow::Result<String>, FakeRunner, tempfile::TempDir) {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -8178,6 +8150,11 @@ plugins = []
             "jk-agent-smith".to_string(),
         ]);
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        // Allow the caller to inject config mutations (grants, workspaces, etc.)
+        // before the repo dir is known but after config is loaded.
+        if let Some(mutate) = config_mutator {
+            mutate(&mut config, &repo_dir);
+        }
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -8215,18 +8192,10 @@ plugins = []
                 .recorded
                 .iter()
                 .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
-                .unwrap()
+                .expect("load_role succeeded but no 'docker run -d jackin.kind=role' command was recorded")
                 .clone()
         });
         (run_cmd, runner, temp)
-    }
-
-    /// Returns `(role_run_cmd, runner, tempdir)` — exposes the full runner so
-    /// callers can inspect DinD commands, not just the role container command.
-    async fn run_load_and_capture_all_commands(
-        entries: &[(&str, &str)],
-    ) -> (String, FakeRunner, tempfile::TempDir) {
-        run_load_core(entries, None).await
     }
 
     async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {
@@ -8240,7 +8209,19 @@ plugins = []
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
     ) -> (anyhow::Error, tempfile::TempDir) {
         let (result, _, temp) =
-            run_load_core_with_manifest(&[], profile, Some(manifest_toml)).await;
+            run_load_core_with_manifest(&[], profile, Some(manifest_toml), None).await;
+        (result.unwrap_err(), temp)
+    }
+
+    /// Like `run_load_with_manifest_expecting_err` but also accepts a config mutator
+    /// for tests that need to inject grants or workspaces before the launch.
+    async fn run_load_with_manifest_expecting_err_with_config(
+        manifest_toml: Option<&str>,
+        profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
+        config_mutator: impl Fn(&mut AppConfig, &std::path::Path),
+    ) -> (anyhow::Error, tempfile::TempDir) {
+        let (result, _, temp) =
+            run_load_core_with_manifest(&[], profile, manifest_toml, Some(&config_mutator)).await;
         (result.unwrap_err(), temp)
     }
 
