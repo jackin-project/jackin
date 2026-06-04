@@ -1,0 +1,114 @@
+---
+title: "Per-scope auth-sync source folder"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+jackin' `sync` auth mode copies an agent's host credential folder into the role-state directory and bind-mounts it into the container. The host source path is **hardcoded** per agent — `~/.claude`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`, `~/.kimi-code`, `~/.local/share/opencode/auth.json` — in the `provision_*_auth` functions in <RepoFile path="src/instance/auth.rs" />. There is no way to point `sync` at a different folder.
+
+Operators who keep credentials outside the default locations have no path today:
+
+- Multiple logins for the same agent (work vs personal Claude account) kept in separate directories, with different workspaces wanting different ones.
+- Credentials stored in a non-standard location (a synced/encrypted volume, a per-project secrets directory) rather than the tool's default home path.
+- A single workspace that must use a completely different credential set from the global default.
+
+The default locations must stay the default — the common case needs zero configuration — but `sync` should accept an operator-chosen source folder, settable globally or per workspace, exactly like the rest of the layered auth model.
+
+## Why It Matters
+
+- The auth model is already layered per (workspace × role × agent) for the *mode* (`sync` / `api_key` / `oauth_token` / `ignore`). The *source* of a `sync` is the one axis that is not configurable, so operators with more than one identity per agent are stuck.
+- Selecting a folder is a solved interaction in the console: the workspace-mount flow already has a directory picker (`FileBrowserState`). Reusing it keeps the operator experience consistent and avoids a second bespoke picker.
+- This is strictly additive and read-only against the host — it changes *which* host folder jackin' reads, never writes anything host-side — so it fits the existing `sync` contract without new risk.
+
+## Current behavior
+
+- **Host source paths** are hardcoded in each `provision_*_auth` in <RepoFile path="src/instance/auth.rs" /> as `host_home.join("<relative-path>")`. No struct carries a source path.
+- **Mode config** is `AgentAuthConfig { auth_forward: AuthForwardMode }` in <RepoFile path="src/config/mod.rs" />, embedded in both `AppConfig` (global, `config.toml`) and `WorkspaceConfig` (per-workspace files). Mode is resolved most-specific-first by `resolve_mode` in <RepoFile path="src/config/roles.rs" />.
+- **The directory picker** is `FileBrowserState` in <RepoFile path="src/console/widgets/file_browser/state.rs" />, already generic: it returns a bare `PathBuf` and knows nothing about mounts. It is opened today from the workspace editor and the settings global-mounts flow.
+- **Hidden folders are filtered out** by a single guard in `load_entries` (<RepoFile path="src/console/widgets/file_browser/state.rs" />): `if name.starts_with('.') { continue; }`. Because every default credential folder is a dotfile (`~/.claude`, `~/.codex`, …), the picker cannot currently show them.
+- **The Auth tab** `sync` flow only sets the mode — no folder step. The settings Auth modal (`SettingsAuthModal` in <RepoFile path="src/console/manager/state.rs" />) has no `FileBrowser` variant.
+
+## Proposal
+
+Add an optional per-agent **source-folder override** to the auth config, resolved with the same layering as the mode, consumed by the provisioning path, and selected in the console with the existing directory picker taught to show hidden folders. The default (no override) preserves today's hardcoded paths exactly.
+
+### Schema (versioned)
+
+Add an optional field to `AgentAuthConfig` (and the GitHub equivalent if GitHub is in scope — see Open questions):
+
+```toml
+[claude]
+auth_forward = "sync"
+sync_source_dir = "/Users/me/secrets/claude-work"   # new, optional
+```
+
+`#[serde(default, skip_serializing_if = "Option::is_none")]` keeps files without the field round-tripping cleanly. Because `AgentAuthConfig` is embedded in both `AppConfig` and `WorkspaceConfig` — both versioned schemas — this addition requires the full versioned-change artifact set per the pre-release schema rule:
+
+1. Bump `CURRENT_CONFIG_VERSION` and `CURRENT_WORKSPACE_VERSION` (currently `v1alpha5`) to the next version in <RepoFile path="src/config/migrations.rs" />.
+2. A no-op migration step in both `CONFIG_MIGRATIONS` and `WORKSPACE_MIGRATIONS` (the field is additive with a serde default).
+3. New fixture dirs under `tests/fixtures/migrations/config/from-v1alpha5/` and `tests/fixtures/migrations/workspace/from-v1alpha5/`.
+4. Re-bake every existing fixture's `after.toml` through the new step.
+5. A Timeline entry in [Schema Versions](/reference/schema-versions/).
+
+One version bump covers all affected file kinds, per the one-bump-per-PR rule. `RoleManifest` is untouched (role manifests cannot control auth source).
+
+### Resolution
+
+Add a companion resolver `resolve_sync_source_dir` next to `resolve_mode` in <RepoFile path="src/config/roles.rs" />, walking the same three layers (workspace-role override → workspace → global), returning `Option<PathBuf>`. `None` at every layer means "use the agent's default folder." This keeps the source axis symmetric with the mode axis — the DRY rule wants both resolved by parallel functions reading the same layered structs, so they advance together.
+
+### Provisioning
+
+Each `provision_*_auth` in <RepoFile path="src/instance/auth.rs" /> takes the resolved override and falls back to the current hardcoded relative path when it is `None`. Factor the per-agent default into a single place so the default and the override flow through one code path:
+
+```rust
+let source = resolved_source_dir.unwrap_or_else(|| host_home.join(AGENT_DEFAULT_REL));
+```
+
+This is read-only against the host (the existing `sync` contract). When the chosen folder is missing the expected credential file, fall back to the existing "no forwarded auth" warning path rather than failing the launch.
+
+### Console UX
+
+When the operator opens the Auth tab, selects an agent, and sets mode **Sync**, show an additional **Source folder** row:
+
+- Default state renders `(default) ~/.claude` (the per-agent default), so the common case needs no action and the operator can see what will be used.
+- Pressing Enter on the row opens the **same** `FileBrowserState` picker used for mounts, rooted at `$HOME`, with hidden folders visible.
+- Selecting a folder stores it as the override; a "reset to default" action clears it back to `None`.
+
+Picker changes:
+
+- Add a `show_hidden: bool` to `FileBrowserState` (default `false`) threaded into `load_entries`, gating the dotfile filter at <RepoFile path="src/console/widgets/file_browser/state.rs" />. The auth flow constructs the picker with `show_hidden = true`; the mount flow keeps `false` so its behavior is unchanged.
+- Add a `FileBrowser` variant to `SettingsAuthModal` (settings Auth tab) and to the workspace-editor auth modal, dispatched the same way the mount file browser is dispatched in <RepoFile path="src/console/manager/input/global_mounts.rs" />.
+
+### Both surfaces behave identically
+
+The settings Auth tab (global) and the workspace-editor Auth tab must offer the same Source-folder row and the same picker, writing to the global vs workspace layer respectively — the only difference is which config layer receives the value. Per the reuse rule, both surfaces route through one shared "open source-folder picker / persist result" helper rather than two parallel copies, mirroring how `resolve_mode` already serves both layers.
+
+## Host-side effects
+
+None that mutate the host. The feature only changes **which** host folder `sync` *reads*; jackin' never writes to the operator-chosen folder. The chosen path is stored in jackin' own config (`config.toml` / workspace files), not in any host dotfile. This is the same read-only contract the current `sync` mode honors.
+
+## Per-agent applicability
+
+| Agent | Default source | Override applies |
+|---|---|---|
+| Claude Code | `~/.claude` + `~/.claude.json` | Yes |
+| Codex | `~/.codex/auth.json` | Yes |
+| Amp | `~/.local/share/amp/secrets.json` | Yes |
+| Kimi | `~/.kimi-code` | Yes |
+| OpenCode | `~/.local/share/opencode/auth.json` | Yes |
+| GitHub CLI | `gh auth token` subprocess, `~/.config/gh/hosts.yml` fallback | See Open questions |
+
+## Phases
+
+1. **Schema + resolution** — add `sync_source_dir` to `AgentAuthConfig`, the version bump + migrations + fixtures, and `resolve_sync_source_dir`. No behavior change yet (nothing reads the field).
+2. **Provisioning** — wire the resolved override into `provision_*_auth` with default fallback and the missing-file warning path. Now CLI-set overrides take effect.
+3. **Console UX** — `show_hidden` on the picker, the Source-folder row on both Auth-tab surfaces, the shared open/persist helper, and reset-to-default.
+
+## Open questions
+
+- **GitHub CLI.** `sync` for GitHub primarily reads via the `gh auth token` subprocess, not a folder, with `~/.config/gh/hosts.yml` only as a fallback. A folder override is meaningful only for the file fallback. Decide whether to expose the override for GitHub at all, or scope Phase 1–3 to the five file-based agents and treat GitHub separately.
+- **Relationship to the unified [Credential Source Pattern](/reference/roadmap/credential-source-pattern/).** This folder override is the "filesystem source" axis. If the cross-cutting credential-source abstraction lands, the source folder should become one source kind under it rather than a standalone field. Decide whether to ship this independently first (small, self-contained) or hold for the abstraction.
+- **Interaction with [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/).** Live sync reconsiders the `sync` name and adds bidirectional follow-up. A per-scope source folder is orthogonal (it picks the read location) but both touch the same provisioning path; sequence them so the live-sync work consumes the resolved source rather than the hardcoded path.
+- **Validation depth.** Whether to validate at config-set time that the chosen folder contains the expected credential file, or only warn at launch (the current provisioning behavior).
