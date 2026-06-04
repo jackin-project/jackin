@@ -63,20 +63,24 @@ Equivalently: the filter starts at `box_row + 1`, the spacer at `box_row + 2`, a
 
 Why this rule exists: a leading blank pad row pushes the filter one row down and visually disconnects it from the title in the top border. The eye reads it as "the filter is floating in the middle of the dialog," not as "type here to narrow the list" — a small but cumulative perceptual cost across the many dialogs jackin opens during a typical session. Drop the pad; keep the filter glued to the chrome.
 
-### Dialog button spacing — one empty row before buttons
+### Dialog button spacing — symmetric leading and trailing spacers
 
-Every dialog that contains a button row (OK, Yes/No, Save/Discard/Cancel, etc.) must have **exactly one empty row** between the last content row and the button row. No more, no fewer.
+Every dialog that contains a button row (OK, Yes/No, Save/Discard/Cancel, etc.) must follow the canonical five-slot inner layout described above under "Symmetric vertical padding." The old rule of "one empty row before buttons" was incomplete — the updated rule requires **both** a leading spacer before the first content row and a trailing spacer after the button row.
 
 ```
-│  Last content line                    │
-│                                       │  ← exactly one empty row
+│                                       │  ← leading spacer
+│  Content line                         │
+│                                       │  ← spacer before buttons
 │              Yes        No            │  ← button row
+│                                       │  ← trailing spacer
 └───────────────────────────────────────┘
 ```
 
-This applies to all dialog surfaces: the host console confirm dialog, the launch failure popup, the capsule confirm action dialog, and any future dialog that renders buttons. Two empty rows make the button feel disconnected; zero empty rows make it feel cramped. One empty row is the invariant.
+This applies to all dialog surfaces: the host console confirm dialog, the launch failure popup, the capsule confirm action dialog, and any future dialog that renders buttons.
 
-**Implementation:** In height calculations, use `content_rows + border(2) + separator(1) + button(1)`. For the failure popup: `row_count + 5` (was `+6`). For the capsule confirm action: height 8 (was 9). For any new dialog: compute the exact row count and add exactly 4 overhead rows (2 border + 1 separator before button + 1 button row).
+**Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Use `jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows))` to split the inner area into the canonical five slots and render into the correct slots.
+
+**Universal dialog scroll rule:** When a dialog's content cannot fit in the dialog area after the preferred-size shrink (Defect 7), the dialog body must scroll using the shared scroll machinery — vertical scrollbar on the right border and `↑↓`/`J`/`K`/wheel to scroll. No dialog clips content silently. `ContainerInfoState` is the reference implementation: it exposes `scroll_y`, handles Up/Down/j/k in its key handler, and calls `render_vertical_scrollbar` when `total_rows > viewport`.
 
 ### Confirmation dialogs use the canonical Yes/No layout
 
