@@ -146,13 +146,14 @@ impl Dialog {
                 let shell_match = needle.is_empty() || "shell".contains(&needle);
                 let mut items: Vec<PickerItem> = Vec::with_capacity(agent_matches.len() + 3);
                 if !agent_matches.is_empty() {
-                    items.push(PickerItem::Section("── agents ──".into()));
+                    // Label only — render_separator in dialog.rs adds the ── dashes.
+                    items.push(PickerItem::Section("agents".into()));
                     for (_, label) in &agent_matches {
                         items.push(PickerItem::Item((*label).to_string()));
                     }
                 }
                 if shell_match {
-                    items.push(PickerItem::Section("── shells ──".into()));
+                    items.push(PickerItem::Section("shells".into()));
                     items.push(PickerItem::Item("Shell".into()));
                 }
                 DialogRatatuiSnapshot::FilterPicker {
