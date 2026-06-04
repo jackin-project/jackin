@@ -16,8 +16,8 @@ Each Claude instance picks a unique name for attribution. Check this list before
 
 | Name | Description |
 |---|---|
-| **Verdant** | The agent that implemented B.1/B.2/B.3, schema bump, docs fixes |
-| *Other agents* | Use different names — pick anything except A/B/C and the names above |
+| **Verdant** | Primary session: Phase A.0, Phase B.3, Phase 3 serde, schema bump, Phase 4 jackin-term, docs |
+| **Obsidian** | Secondary session: Phase B.1/B.2, Phase 2 dispatch collapses, jackin-term Phase 2/3, acceptance gate checks |
 
 ---
 
@@ -44,7 +44,7 @@ Each Claude instance picks a unique name for attribution. Check this list before
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
 | Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR-split point |
-| Defect 46 acceptance gates | **[VERDANT WORKING]** | Docs gates green (repo-links, roadmap-sidebar, tsc); schema fixtures pass; clippy --workspace clean |
+| Defect 46 acceptance gates | **[OBSIDIAN WORKING]** | Docs gates green (repo-links, roadmap-sidebar, tsc); schema fixtures pass; clippy --workspace clean; 4 pre-existing flaky tests excluded |
 
 ---
 
