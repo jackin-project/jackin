@@ -609,7 +609,7 @@ The program is done when:
 - [ ] Reproduce and instrument the resize path with `cdebug!` (per the repo's debug-telemetry rule) to capture the frame geometry before/after resize and confirm where stale cells originate (daemon double-buffer vs attach-client terminal).
 - [x] On resize, force a full repaint: mark all rows/panes dirty and emit a real erase for the new geometry (reconcile `SocketBackend::clear()`'s no-erase optimization with correctness — erase on resize even if not on steady-state frames), so shrink/grow/reflow leaves no leftover cells. compose_full_frame now emits \x1b[2J for Resize/SplitClose/LayoutChange.
 - [x] Ensure the attach client's **outer** terminal is also cleared/repainted on resize so duplicated chrome (the doubled PR/status line) cannot persist.
-- [ ] Invalidate any cached geometry on resize: `pane_body_caches`, dirty-row state, `reconcile_content_rows`, status-bar/tab-strip caches.
+- [x] Invalidate any cached geometry on resize: `pane_body_caches`, dirty-row state, `reconcile_content_rows`, status-bar/tab-strip caches. pane_body_caches.clear() and dirty_panes.clear() added to resize().
 - [ ] Compose with Defect 15 (status bar reserved) and Defect 7 (dialog sizing) so a resize re-lays-out chrome + modals within the new content area without overdraw.
 - [ ] Add a resize regression test (shrink then grow) asserting the rendered buffer has no duplicated status/chrome rows.
 - [ ] Record any capsule-specific resize/redraw rule in [TUI Design Decisions](/reference/tui/) and the capsule architecture reference.
