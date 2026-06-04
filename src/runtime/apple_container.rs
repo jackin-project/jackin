@@ -224,32 +224,22 @@ pub async fn launch(
         );
     }
 
-    let mut run_args: Vec<String> = vec![
-        "run".to_string(),
-        "--name".to_string(),
-        container_name.to_string(),
-        "-d".to_string(),
-    ];
-
-    // JACKIN_CAPSULE_FORCE_DAEMON=1 — daemon mode without PID 1 (vminitd is PID 1).
-    run_args.push("-e".to_string());
-    run_args.push("JACKIN_CAPSULE_FORCE_DAEMON=1".to_string());
-
+    // Build AppleContainerSpec — delegates all arg formatting to the client.
+    // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
+    // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
+    let mut env: Vec<(String, String)> =
+        vec![("JACKIN_CAPSULE_FORCE_DAEMON".to_string(), "1".to_string())];
     if debug {
-        run_args.push("-e".to_string());
-        run_args.push("JACKIN_DEBUG=1".to_string());
+        env.push(("JACKIN_DEBUG".to_string(), "1".to_string()));
     }
-
-    // Inject env vars (skip ones we already inject above).
     for (k, v) in env_pairs {
         if k == "JACKIN_CAPSULE_FORCE_DAEMON" || k == "JACKIN_DEBUG" {
             continue;
         }
-        run_args.push("-e".to_string());
-        run_args.push(format!("{k}={v}"));
+        env.push((k.clone(), v.clone()));
     }
 
-    // Bind mounts.
+    // Log mount telemetry before building spec.
     for (host, guest) in mount_pairs {
         crate::debug_log!(
             "apple-container",
@@ -257,36 +247,25 @@ pub async fn launch(
             host.display(),
             guest.display()
         );
-        run_args.push("-v".to_string());
-        run_args.push(format!("{}:{}", host.display(), guest.display()));
     }
 
     // socket dir bind-mount so /jackin/run/host.sock is reachable inside.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
     std::fs::create_dir_all(&socket_dir)?;
-    run_args.push("-v".to_string());
-    run_args.push(format!("{}:/jackin/run", socket_dir.display()));
+    let mut mounts: Vec<(PathBuf, PathBuf)> = mount_pairs.to_vec();
+    mounts.push((socket_dir, PathBuf::from("/jackin/run")));
 
-    run_args.push(image.to_string());
-    run_args.push("/jackin/runtime/jackin-capsule".to_string());
+    let spec = crate::apple_container_client::AppleContainerSpec {
+        image: image.to_string(),
+        env,
+        mounts,
+        caps_add: vec![],
+    };
 
-    let output = tokio::process::Command::new("container")
-        .args(&run_args)
-        .output()
+    crate::apple_container_client::AppleContainerClient::new()
+        .run_container(container_name, &spec)
         .await
-        .context("container run failed")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Fail-closed: if `container run` fails (e.g. unsupported --cap-add,
-        // container CLI not installed, image not found), surface the exact error.
-        // Do not silently fall back to Docker or swallow the failure.
-        bail!(
-            "container run failed — required capabilities or image may be unavailable: {}",
-            stderr.trim()
-        );
-    }
-    crate::debug_log!("apple-container", "container_run name={container_name} ok");
+        .context("container run failed — required capabilities or image may be unavailable")?;
 
     // Compact launch telemetry line (always-on tier, equivalent to clog! in capsule).
     crate::debug_log!(

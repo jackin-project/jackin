@@ -200,15 +200,13 @@ fn validate_op_source(source: &str) -> Result<()> {
         "invalid op:// reference {:?}: must start with op://",
         source
     );
-    // Reject values that look like CLI flags (start with -) after stripping the scheme.
+    // Reject segments that look like CLI flags (start with -) to prevent arg injection.
     let path = &source["op://".len()..];
-    for segment in path.split('/') {
-        anyhow::ensure!(
-            !segment.starts_with('-'),
-            "invalid op:// reference segment {:?}: looks like a flag",
-            segment
-        );
-    }
+    anyhow::ensure!(
+        !path.split('/').any(|s| s.starts_with('-')),
+        "invalid op:// reference: segment looks like a flag in {:?}",
+        source
+    );
     Ok(())
 }
 
