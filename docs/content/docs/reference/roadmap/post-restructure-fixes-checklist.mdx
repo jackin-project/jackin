@@ -649,7 +649,7 @@ The program is done when:
 **Tasks:**
 - [x] First rule out the deterministic content bug: read the section-separator row renderer; confirm whether `── agents ──` + width-fill can emit the label twice. If so, fix the composition (label once, dashes fill to inner width) — and check the console/shared separator helpers for the same bug (fix the whole class). Fixed: PickerItem::Section labels now pass bare text ("agents"/"shells"); render_separator provides surrounding dashes.
 - [ ] If it is a diff/stale-cell issue, add `cdebug!` telemetry to `SocketBackend` capturing per-frame changed-cell ranges and the dialog rect, reproduce, and localize where stale cells originate (composes with Defects 26/27 — same capsule render-correctness cluster).
-- [ ] Ensure dialog/picker renders fully cover their rect each frame (clear the dialog interior before drawing) so a reflow cannot leave stale text behind it.
+- [x] Ensure dialog/picker renders fully cover their rect each frame (clear the dialog interior before drawing) so a reflow cannot leave stale text behind it. Confirmed: render_capsule_raw_dialog_overlay calls fill_screen() with DIALOG_BACKDROP before rendering the dialog, clearing all cells including the dialog interior.
 - [ ] Verify the fix against filter reflow (typing in the picker filter changes row content/positions) — the most likely trigger of stale cells.
 - [ ] Add a regression test: rendering the agent picker (with and without a filter) produces a buffer whose section rows contain each label exactly once.
 
