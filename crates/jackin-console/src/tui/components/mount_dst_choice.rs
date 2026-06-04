@@ -95,14 +95,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // question | path | blank | buttons. Hints live in the screen footer.
+    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // leading spacer
             Constraint::Length(1), // question
             Constraint::Length(1), // src path
             Constraint::Length(1), // spacer
             Constraint::Length(1), // buttons
+            Constraint::Length(1), // trailing spacer
         ])
         .split(inner);
 
@@ -112,7 +114,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
             jackin_tui::theme::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
-        chunks[0],
+        chunks[1],
     );
 
     // Host path line — the operator-picked source.
@@ -125,7 +127,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
                 .add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),
-        chunks[1],
+        chunks[2],
     );
 
     let items = [
@@ -140,7 +142,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     };
     jackin_tui::components::ButtonStrip::new(&items)
         .focused(focused)
-        .render(frame, chunks[3]);
+        .render(frame, chunks[4]);
 }
 
 #[cfg(test)]

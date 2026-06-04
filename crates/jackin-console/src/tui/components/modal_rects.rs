@@ -150,8 +150,9 @@ pub fn confirm_rect(outer: Rect, state: &jackin_tui::components::ConfirmState) -
 
 #[must_use]
 pub fn mount_choice_rect(outer: Rect) -> Rect {
+    // 2 borders + 1 leading + 1 question + 1 path + 1 spacer + 1 buttons + 1 trailing = 8
     let w = outer.width.min(80);
-    let h = 6.min(outer.height);
+    let h = 8u16.min(outer.height);
     Rect {
         x: outer.x + outer.width.saturating_sub(w) / 2,
         y: outer.y + outer.height.saturating_sub(h) / 2,
