@@ -166,11 +166,11 @@ pub fn render<M: Clone>(frame: &mut Frame, area: Rect, state: &ConfirmSaveState<
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),                    // leading spacer
-            Constraint::Length(content_area_height),  // content
-            Constraint::Length(1),                    // spacer
-            Constraint::Length(1),                    // buttons
-            Constraint::Length(1),                    // trailing spacer
+            Constraint::Length(1),                   // leading spacer
+            Constraint::Length(content_area_height), // content
+            Constraint::Length(1),                   // spacer
+            Constraint::Length(1),                   // buttons
+            Constraint::Length(1),                   // trailing spacer
         ])
         .split(inner);
 
