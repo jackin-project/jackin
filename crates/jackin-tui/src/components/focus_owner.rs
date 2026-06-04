@@ -37,11 +37,10 @@ impl<Tab: Copy> FocusOwner<Tab> {
         }
     }
 
-    /// Return the `PanelFocus` for the given content block.
+    /// Return the `PanelFocus` for the content block identified by `tab`.
     ///
-    /// A block is `Focused` when this owner is `Content(tab)` for its tab.
-    /// Otherwise `Unfocused`. Pass `None` for blocks that have no tab identity
-    /// (e.g. the overall panel); they are focused whenever any content is focused.
+    /// Returns `Focused` when this owner is `Content(t)` where `tab == t`,
+    /// and `Unfocused` otherwise (including when the tab bar owns focus).
     #[must_use]
     pub fn panel_focus_for<F: PartialEq<Tab>>(self, tab: &F) -> PanelFocus {
         match self {

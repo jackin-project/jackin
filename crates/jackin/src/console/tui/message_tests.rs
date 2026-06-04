@@ -1,7 +1,9 @@
 use crate::console::effects::{execute_manager_effect, poll_background_messages};
+use crate::console::tui::app::{ConsoleStage, ConsoleState};
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::message::ManagerBackgroundEvent;
 use crate::console::tui::message::{ManagerMessage, update_manager};
+use crate::console::tui::run::no_modal_open;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsTab,
@@ -1077,8 +1079,6 @@ fn chip_click_does_not_fire_while_list_modal_open() {
     // Verifies single-consumer precedence: when a list_modal is active, the
     // no_modal_open guard returns false, preventing the debug chip handler
     // (and base-surface mouse routing) from mutating manager state.
-    use crate::console::tui::app::{ConsoleStage, ConsoleState};
-    use crate::console::tui::run::no_modal_open;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -1115,8 +1115,6 @@ fn chip_click_does_not_fire_while_list_modal_open() {
 
 #[test]
 fn chip_click_does_not_fire_while_quit_confirm_open() {
-    use crate::console::tui::app::{ConsoleStage, ConsoleState};
-    use crate::console::tui::run::no_modal_open;
     use std::cell::RefCell;
     use std::rc::Rc;
 

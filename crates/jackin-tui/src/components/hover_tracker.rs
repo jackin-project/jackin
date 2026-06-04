@@ -13,9 +13,9 @@ use ratatui::layout::Rect;
 
 /// A clickable element identified by an application-defined key `K`.
 #[derive(Debug, Clone)]
-pub struct ClickableRect<K> {
-    pub rect: Rect,
-    pub key: K,
+pub(crate) struct ClickableRect<K> {
+    pub(crate) rect: Rect,
+    pub(crate) key: K,
 }
 
 /// Per-frame hover tracker: register clickable rects, then query the hovered target.
