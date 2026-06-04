@@ -93,11 +93,11 @@ fn handle_cockpit_mouse_down(
         let state =
             launch_container_info_state(v, run_id, "", terminal.is_debug_mode(), jackin_version);
         let rect = launch_container_info_rect(area, &state);
-        let inside_dialog = col >= rect.x
-            && col < rect.x.saturating_add(rect.width)
-            && row >= rect.y
-            && row < rect.y.saturating_add(rect.height);
-        if !inside_dialog {
+        let click = jackin_tui::components::classify_click(rect, col, row);
+        if matches!(
+            click,
+            jackin_tui::components::ModalClickResult::OutsideDismiss
+        ) {
             // Click outside the dialog → dismiss (Defect 11).
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
         } else if let Some((copy_row, payload)) =
