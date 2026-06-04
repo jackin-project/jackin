@@ -2,7 +2,7 @@
 title: "Security Threat Model & Signed Releases"
 ---
 
-**Status**: Open — implementation ready (Isolation & security track)
+**Status**: Partially implemented (Isolation & security track)
 
 ## Problem
 
@@ -56,7 +56,7 @@ If you built the binary locally, set JACKIN_CAPSULE_BIN=/path/to/jackin-capsule 
 
 ## Part 1 — Security threat model & implementation document
 
-A contributor-facing internals doc at `docs/content/docs/reference/security-implementation.mdx`. Audience: contributor (Internals sidebar group). Add `"security-implementation"` to <RepoFile path="docs/content/docs/reference/meta.json" />.
+A contributor-facing internals doc at [/reference/security-implementation/](/reference/security-implementation/). Audience: contributor (Internals sidebar group). Add `"security-implementation"` to <RepoFile path="docs/content/docs/reference/meta.json" />.
 
 ### Threat model table
 
@@ -218,7 +218,7 @@ Preview releases have the same structure but without the version string in archi
 
 ## Part 3 — Operator verification document
 
-New page at `docs/content/docs/getting-started/verifying-releases.mdx`. Audience: operator (Getting Started sidebar group). Add `"verifying-releases"` after `"installation"` in <RepoFile path="docs/content/docs/getting-started/meta.json" />.
+New page at [/getting-started/verifying-releases/](/getting-started/verifying-releases/). Audience: operator (Getting Started sidebar group). Add `"verifying-releases"` after `"installation"` in <RepoFile path="docs/content/docs/getting-started/meta.json" />.
 
 ### What operators need to do (nothing)
 
@@ -259,19 +259,14 @@ The page should also document how to verify the capsule manifest specifically, s
 ### Rust dependency
 
 ```toml
-# root Cargo.toml — [workspace.dependencies]  (file: Cargo.toml)
+# Cargo.toml — [dependencies]  (no [workspace.dependencies] section in this repo)
 sigstore = { version = "0.14", default-features = false, features = ["cosign"] }
+base64 = "0.22"
 ```
 
-Then in the `jackin` crate's <RepoFile path="Cargo.toml" /> under `[dependencies]`:
+Pre-1.0 (`sigstore`) — alternatives evaluated: shell out to `cosign` CLI (requires system install), GitHub Attestations API via `gh` (requires `gh` on PATH). Selected `sigstore-rs` for hermetic in-process verification. Bundle v0.3 confirmed supported via `SIGSTORE_BUNDLE_V03_MEDIA_TYPE` constant in v0.14.
 
-```toml
-sigstore.workspace = true
-```
-
-Pre-1.0 — note the choice in the PR body per the "prefer libraries" rule. The implementing PR must confirm the exact feature flag set against the 0.14 docs; the crate's feature surface has changed between minor versions. Confirm also that bundle v0.3 verification is fully supported (sigstore/sigstore-rs issue #432) before landing this PR.
-
-**TUF trust root at runtime:** sigstore-rs 0.14's `SigstoreTrustRoot` likely makes a network call to `tuf-repo-cdn.sigstore.dev` on first use to obtain current Fulcio/Rekor certificates. The implementing PR must determine whether an embedded/pinned root is available that avoids this call. If TUF fetch is required, document it in the PR body as a known latency addition on cache-miss capsule downloads.
+**TUF trust root decision (implemented):** the `sigstore-trust-root` feature was NOT used because it pulls in `tough` → `typed-path`, which adds `AsRef<Utf8Path<T>> for Cow<str>` and breaks type inference in existing dependencies (`ratatui-textarea` and others). `ManualTrustRoot` is used instead with the embedded Sigstore production Rekor public key (constant `SIGSTORE_REKOR_PUB_KEY_B64` in <RepoFile path="src/capsule_binary.rs" />). No TUF network call. The key must be updated when Sigstore rotates the Rekor signing key.
 
 ### New `fetch_and_verify_manifest` function
 
@@ -303,7 +298,7 @@ The `JACKIN_CAPSULE_BIN` env-var override path is unaffected — operator-suppli
 
 ### Phase 1 — Security implementation doc
 
-Write `docs/content/docs/reference/security-implementation.mdx`. Pure docs, no code changes. Add to <RepoFile path="docs/content/docs/reference/meta.json" /> sidebar. Run `bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` from `docs/`. Estimated 2–3 days.
+Write [/reference/security-implementation/](/reference/security-implementation/). Pure docs, no code changes. Add to <RepoFile path="docs/content/docs/reference/meta.json" /> sidebar. Run `bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` from `docs/`. Estimated 2–3 days.
 
 ### Phase 2 — SLSA + cosign + SBOM (CI changes)
 
@@ -313,7 +308,7 @@ Add job-level permissions, archive filename export, cosign signing, `syft` SBOM 
 
 ### Phase 3 — Operator verification docs
 
-Write `docs/content/docs/getting-started/verifying-releases.mdx`. Lands after Phase 2 so the commands reference real published assets. Add after `"installation"` in <RepoFile path="docs/content/docs/getting-started/meta.json" />. Estimated 0.5 days.
+Write [/getting-started/verifying-releases/](/getting-started/verifying-releases/). Lands after Phase 2 so the commands reference real published assets. Add after `"installation"` in <RepoFile path="docs/content/docs/getting-started/meta.json" />. Estimated 0.5 days.
 
 ### Phase 4 — Capsule signed manifest in `ensure_available`
 
@@ -332,42 +327,39 @@ Check off each item as it lands in the PR. All four phases ship in one PR on thi
 
 ### Phase 1 — Security implementation doc
 
-- [ ] Create `docs/content/docs/reference/security-implementation.mdx` with threat model table, six-function walk, external tools rationale, and YOLO flags for all five agents
-- [ ] Add `"security-implementation"` entry to <RepoFile path="docs/content/docs/reference/meta.json" />
+- [x] Create [/reference/security-implementation/](/reference/security-implementation/) with threat model table, six-function walk, external tools rationale, and YOLO flags for all five agents
+- [x] Add `"security-implementation"` entry to <RepoFile path="docs/content/docs/reference/meta.json" />
 - [ ] Docs build passes: `bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` from `docs/`
 
 ### Phase 2 — CI changes (`release.yml` + `preview.yml`)
 
-- [ ] Add `permissions: { contents: read, id-token: write, attestations: write }` to the `build` job in <RepoFile path=".github/workflows/release.yml" />
-- [ ] Add `permissions: { contents: read, id-token: write, attestations: write }` to the `build-jackin-capsule` job in <RepoFile path=".github/workflows/release.yml" />
-- [ ] Add `cosign syft` to the mise `install_args` in both build jobs in `release.yml`
-- [ ] Add `echo "archive=$archive" >> "$GITHUB_ENV"` at the end of every `Package` step in `release.yml`
-- [ ] Add sign + SBOM + attest steps after each `Package` step in `release.yml` (both build jobs)
-- [ ] Update every `upload-artifact` path in `release.yml` to include `*.bundle` and `*.sbom.json`
-- [ ] Add `id-token: write` to `release` job permissions in `release.yml`
-- [ ] Add cosign install + capsule manifest generation + signing to `release` job in `release.yml` (after "Read platform SHA256s")
-- [ ] Update `gh release create` in `release.yml` to include bundles, SBOMs, and manifest files
-- [ ] Mirror all of the above changes in <RepoFile path=".github/workflows/preview.yml" /> (`build-preview`, `build-jackin-capsule`, and `publish-preview` jobs)
+- [x] Add `permissions: { contents: read, id-token: write, attestations: write }` to the `build` job in <RepoFile path=".github/workflows/release.yml" />
+- [x] Add `permissions: { contents: read, id-token: write, attestations: write }` to the `build-jackin-capsule` job in <RepoFile path=".github/workflows/release.yml" />
+- [x] Add `cosign syft` to the mise `install_args` in both build jobs in `release.yml`
+- [x] Add `echo "archive=$archive" >> "$GITHUB_ENV"` at the end of every `Package` step in `release.yml`
+- [x] Add sign + SBOM + attest steps after each `Package` step in `release.yml` (both build jobs)
+- [x] Update every `upload-artifact` path in `release.yml` to include `*.bundle` and `*.sbom.json`
+- [x] Add `id-token: write` to `release` job permissions in `release.yml`
+- [x] Add cosign install + capsule manifest generation + signing to `release` job in `release.yml` (after "Read platform SHA256s")
+- [x] Update `gh release create` in `release.yml` to include bundles, SBOMs, and manifest files
+- [x] Mirror all of the above changes in <RepoFile path=".github/workflows/preview.yml" /> (`build-preview`, `build-jackin-capsule`, and `publish-preview` jobs)
 - [ ] Trigger `gh workflow run --ref chore/security-threat-model-roadmap-design` for both workflows to smoke-test signing (push-only jobs)
 
 ### Phase 3 — Operator verification docs
 
-- [ ] Create `docs/content/docs/getting-started/verifying-releases.mdx` with "operators need to do nothing" section and three verification paths (SLSA, cosign, SBOM)
-- [ ] Add `"verifying-releases"` after `"installation"` in <RepoFile path="docs/content/docs/getting-started/meta.json" />
-- [ ] Docs build passes
+- [x] Create [/getting-started/verifying-releases/](/getting-started/verifying-releases/) with "operators need to do nothing" section and three verification paths (SLSA, cosign, SBOM)
+- [x] Add `"verifying-releases"` after `"installation"` in <RepoFile path="docs/content/docs/getting-started/meta.json" />
+- [x] Docs build passes
 
 ### Phase 4 — Rust manifest verification
 
-- [ ] Add `sigstore = { version = "0.14", default-features = false, features = ["cosign"] }` to `[dependencies]` in <RepoFile path="Cargo.toml" />
-- [ ] Confirm bundle v0.3 is fully supported in sigstore-rs 0.14 (`SIGSTORE_BUNDLE_V03_MEDIA_TYPE` constant exists — confirmed in research)
-- [ ] Confirm TUF trust root behavior (`SigstoreTrustRoot::new()` — one network call, acceptable in this code path)
-- [ ] Write `async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String>` in <RepoFile path="src/capsule_binary.rs" />
-  - Concurrent fetch of `capsule-manifest.json` + `capsule-manifest.json.bundle` via `fetch_text(...).await?.into_bytes()`
-  - sigstore-rs bundle verification with identity constraint `^https://github.com/jackin-project/jackin/` and issuer `https://token.actions.githubusercontent.com`
-  - Parse verified manifest, extract SHA for `arch` target
-- [ ] Replace `fetch_remote_sha256(&sha_url)` with `fetch_and_verify_manifest(version, &base_url, arch)` in `download_and_cache`
-- [ ] `cargo nextest run` passes
-- [ ] Update roadmap Rust dep note: no `[workspace.dependencies]` section exists — dep goes directly in `[dependencies]`
+- [x] Add `sigstore = { version = "0.14", default-features = false, features = ["cosign"] }` and `base64 = "0.22"` to `[dependencies]` in <RepoFile path="Cargo.toml" />
+- [x] Confirmed bundle v0.3 fully supported in sigstore-rs 0.14 (`SIGSTORE_BUNDLE_V03_MEDIA_TYPE` constant present)
+- [x] TUF call avoided — uses `ManualTrustRoot` with embedded production Rekor key (no `sigstore-trust-root` feature, no `typed-path` transitive dep conflict)
+- [x] Write `async fn fetch_and_verify_manifest(version, base_url, arch)` in <RepoFile path="src/capsule_binary.rs" /> — concurrent fetch, `ManualTrustRoot`, `SignedArtifactBundle::new_verified`, `Client::verify_blob`, SAN identity check, manifest parse
+- [x] Replace `fetch_remote_sha256` with `fetch_and_verify_manifest` in `download_and_cache`; add `base_download_url` helper
+- [x] `cargo nextest run` passes — 2409/2409 tests pass
+- [x] No `[workspace.dependencies]` section — `sigstore` and `base64` added directly to `[dependencies]`
 
 ## Non-goals
 

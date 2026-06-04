@@ -132,6 +132,10 @@ jobs:
     needs: source-changed
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -166,7 +170,7 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "rust zig cargo:cargo-zigbuild"
+          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: rustup target add ${{ matrix.target }}
       - name: Cache Cargo registry
@@ -212,18 +216,41 @@ jobs:
             -C "target/${TARGET}/release" \
             jackin jackin-role
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Sign archive
+        env:
+          ARCHIVE: ${{ env.archive }}
+        run: cosign sign-blob --bundle "${ARCHIVE}.bundle" --yes "${ARCHIVE}"
+
+      - name: Generate SBOM
+        env:
+          ARCHIVE: ${{ env.archive }}
+        run: syft scan "${ARCHIVE}" -o cyclonedx-json > "${ARCHIVE}.sbom.json"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: ${{ env.archive }}
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-${{ matrix.target }}
           path: |
             jackin-${{ matrix.target }}.tar.gz
             jackin-${{ matrix.target }}.tar.gz.sha256
+            jackin-${{ matrix.target }}.tar.gz.bundle
+            jackin-${{ matrix.target }}.tar.gz.sbom.json
 
 
   build-jackin-capsule:
     needs: source-changed
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -252,7 +279,7 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "rust zig cargo:cargo-zigbuild"
+          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: rustup target add ${{ matrix.target }}
       - name: Cache Cargo registry
@@ -288,12 +315,31 @@ jobs:
             -C "target/${TARGET}/release" \
             jackin-capsule
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Sign archive
+        env:
+          ARCHIVE: ${{ env.archive }}
+        run: cosign sign-blob --bundle "${ARCHIVE}.bundle" --yes "${ARCHIVE}"
+
+      - name: Generate SBOM
+        env:
+          ARCHIVE: ${{ env.archive }}
+        run: syft scan "${ARCHIVE}" -o cyclonedx-json > "${ARCHIVE}.sbom.json"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: ${{ env.archive }}
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-capsule-${{ matrix.target }}
           path: |
             jackin-capsule-${{ matrix.target }}.tar.gz
             jackin-capsule-${{ matrix.target }}.tar.gz.sha256
+            jackin-capsule-${{ matrix.target }}.tar.gz.bundle
+            jackin-capsule-${{ matrix.target }}.tar.gz.sbom.json
 
   publish-preview:
     needs: [source-changed, build-preview, build-jackin-capsule]
@@ -301,6 +347,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -383,8 +430,14 @@ jobs:
           assets=(
             artifacts/jackin-[ax]*.tar.gz
             artifacts/jackin-[ax]*.tar.gz.sha256
+            artifacts/jackin-[ax]*.tar.gz.bundle
+            artifacts/jackin-[ax]*.tar.gz.sbom.json
             artifacts/jackin-capsule-*.tar.gz
             artifacts/jackin-capsule-*.tar.gz.sha256
+            artifacts/jackin-capsule-*.tar.gz.bundle
+            artifacts/jackin-capsule-*.tar.gz.sbom.json
+            artifacts/capsule-manifest.json
+            artifacts/capsule-manifest.json.bundle
           )
 
           # The repository protects tags from deletion and non-fast-forward
@@ -424,6 +477,28 @@ jobs:
           echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
           echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
           echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          install_args: "cosign"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Produce and sign capsule manifest
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          CAPSULE_ARM64_SHA: ${{ steps.shas.outputs.capsule_arm64_linux }}
+          CAPSULE_X86_SHA: ${{ steps.shas.outputs.capsule_x86_linux }}
+        run: |
+          jq -n \
+            --arg v "$VERSION" \
+            --arg arm64 "$CAPSULE_ARM64_SHA" \
+            --arg x86 "$CAPSULE_X86_SHA" \
+            '{"version":$v,"targets":{"aarch64-unknown-linux-gnu":$arm64,"x86_64-unknown-linux-gnu":$x86}}' \
+            > artifacts/capsule-manifest.json
+          cosign sign-blob \
+            --bundle artifacts/capsule-manifest.json.bundle \
+            --yes artifacts/capsule-manifest.json
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:

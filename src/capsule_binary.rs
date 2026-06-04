@@ -169,7 +169,7 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
 
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
-    let sha_url = format!("{url}.sha256");
+    let base_url = base_download_url(version);
     crate::debug_log!(
         "capsule_binary",
         "downloading jackin-capsule {version} for linux/{arch}"
@@ -177,14 +177,16 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
 
-    // Fetch the expected SHA-256 and download the archive concurrently.
+    // Fetch the signed capsule manifest (verifies cosign bundle + identity) and
+    // download the archive concurrently. The manifest returns the expected SHA-256
+    // for this arch, replacing the bare .sha256 file fetch.
     let (expected_sha_result, download_result) = tokio::join!(
-        fetch_remote_sha256(&sha_url),
+        fetch_and_verify_manifest(version, &base_url, arch),
         crate::net::download_parallel(&url, &tmp_archive),
     );
 
     // Either failure must remove the partial archive so a retry starts clean —
-    // the SHA fetch and the download run concurrently, so a SHA error can land
+    // the manifest fetch and the download run concurrently, so a manifest error can land
     // with the archive already fully written.
     if let Err(e) = download_result {
         let _ = std::fs::remove_file(&tmp_archive);
@@ -204,8 +206,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         Ok(sha) => sha,
         Err(e) => {
             let _ = std::fs::remove_file(&tmp_archive);
-            return Err(e)
-                .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"));
+            return Err(e);
         }
     };
 
@@ -276,12 +277,6 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
-/// Fetch the published SHA-256 hex string for a release asset. The CI workflow
-/// emits one line of hex (optionally `<hex>  <filename>`).
-async fn fetch_remote_sha256(url: &str) -> Result<String> {
-    let text = crate::net::fetch_text(url).await?;
-    parse_sha256_hex(&text).with_context(|| format!("{url} did not return a valid sha256"))
-}
 
 fn download_url(version: &str, arch: &str) -> String {
     let target = linux_target(arch);
@@ -292,6 +287,179 @@ fn download_url(version: &str, arch: &str) -> String {
         let asset = format!("{ASSET_PREFIX}-{version}-{target}.tar.gz");
         format!("https://github.com/jackin-project/jackin/releases/download/v{version}/{asset}")
     }
+}
+
+fn base_download_url(version: &str) -> String {
+    if version.contains("-dev") || version.contains("-preview.") {
+        "https://github.com/jackin-project/jackin/releases/download/preview".to_string()
+    } else {
+        format!("https://github.com/jackin-project/jackin/releases/download/v{version}")
+    }
+}
+
+// Sigstore production Rekor transparency log public key (ECDSA P-256, SPKI DER, base64-encoded).
+// Source: trust_root/prod/trusted_root.json in sigstore-rs v0.14, logId wNI9atQG...
+// Used to verify Signed Entry Timestamps in cosign bundles without a TUF network call.
+// Update when Sigstore rotates the Rekor key (announced at blog.sigstore.dev).
+const SIGSTORE_REKOR_PUB_KEY_B64: &str =
+    "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwrkBbm\
+     LSGtks4L3qX6yYY0zufBnhC8Ur/iy55GhWP/9A/bY2LhC30M9+RYtw==";
+const SIGSTORE_REKOR_KEY_ID: &str = "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0=";
+
+/// Fetch the signed `capsule-manifest.json`, verify its cosign bundle, and return
+/// the attested SHA-256 hex for the given arch target.
+///
+/// Verification chain:
+/// 1. Fetch manifest JSON + cosign bundle concurrently.
+/// 2. Build a `ManualTrustRoot` from the embedded Sigstore production Rekor key
+///    (no TUF network call).
+/// 3. Verify the Rekor Signed Entry Timestamp via `SignedArtifactBundle::new_verified`.
+/// 4. Verify the blob signature via `Client::verify_blob`.
+/// 5. Check the certificate SAN starts with `https://github.com/jackin-project/jackin/`.
+/// 6. Parse the verified manifest JSON and extract the SHA256 for `arch`.
+///
+/// Failure is a hard abort — no warn-and-continue fallback.
+async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String> {
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine as _;
+    use sigstore::cosign::bundle::SignedArtifactBundle;
+    use sigstore::cosign::{Client, CosignCapabilities};
+    use sigstore::crypto::CosignVerificationKey;
+    use sigstore::trust::{ManualTrustRoot, TrustRoot};
+
+    let manifest_url = format!("{base_url}/capsule-manifest.json");
+    let bundle_url = format!("{base_url}/capsule-manifest.json.bundle");
+
+    crate::debug_log!(
+        "capsule_binary",
+        "fetching signed capsule manifest for jackin-capsule {version} linux/{arch}"
+    );
+
+    let (manifest_result, bundle_result) = tokio::join!(
+        crate::net::fetch_text(&manifest_url),
+        crate::net::fetch_text(&bundle_url),
+    );
+
+    let manifest_text = manifest_result
+        .with_context(|| format!("fetching capsule manifest at {manifest_url}"))?;
+    let bundle_text = bundle_result
+        .with_context(|| format!("fetching capsule manifest bundle at {bundle_url}"))?;
+
+    // Build trust root from embedded production Rekor key — no TUF network call needed.
+    let rekor_key_der = BASE64
+        .decode(SIGSTORE_REKOR_PUB_KEY_B64)
+        .context("decoding embedded Sigstore Rekor public key")?;
+    let trust_root = {
+        let mut rekor_keys = std::collections::BTreeMap::new();
+        rekor_keys.insert(SIGSTORE_REKOR_KEY_ID.to_string(), rekor_key_der);
+        ManualTrustRoot {
+            rekor_keys,
+            ..Default::default()
+        }
+    };
+
+    // Convert raw Rekor key bytes to CosignVerificationKey.
+    let raw_rekor_keys = trust_root
+        .rekor_keys()
+        .context("reading embedded Rekor keys from ManualTrustRoot")?;
+    let rekor_keys: std::collections::BTreeMap<String, CosignVerificationKey> = raw_rekor_keys
+        .into_iter()
+        .map(|(id, der)| {
+            let key = CosignVerificationKey::try_from_der(der)
+                .with_context(|| format!("parsing Rekor public key {id}"))?;
+            Ok((id.clone(), key))
+        })
+        .collect::<Result<_>>()?;
+
+    // Verify Rekor Signed Entry Timestamp. `manifest_text.as_bytes()` is the exact byte
+    // sequence the CI step signed — do NOT parse-then-re-serialize before this call.
+    let manifest_bytes = manifest_text.as_bytes();
+
+    let bundle = SignedArtifactBundle::new_verified(&bundle_text, &rekor_keys)
+        .context("verifying Rekor log entry in capsule manifest bundle")?;
+
+    // The cert field in the bundle is base64-encoded PEM.
+    let cert_pem = String::from_utf8(
+        BASE64
+            .decode(&bundle.cert)
+            .context("base64-decoding certificate from capsule manifest bundle")?,
+    )
+    .context("certificate in bundle is not valid UTF-8")?;
+
+    // Verify blob signature against the certificate's public key.
+    Client::verify_blob(&cert_pem, &bundle.base64_signature, manifest_bytes)
+        .with_context(|| {
+            format!(
+                "jackin-capsule manifest signature verification failed for {manifest_url}\n\
+                 expected signer: ^https://github.com/jackin-project/jackin/\n\
+                 OIDC issuer: https://token.actions.githubusercontent.com\n\
+                 refusing to use unverified capsule binary; investigate release tampering and retry.\n\
+                 If you built the binary locally, set JACKIN_CAPSULE_BIN=/path/to/jackin-capsule instead."
+            )
+        })?;
+
+    // Confirm the certificate SAN encodes a jackin' CI workflow URL.
+    let san = extract_cert_san_url(&cert_pem)?;
+    anyhow::ensure!(
+        san.starts_with("https://github.com/jackin-project/jackin/"),
+        "capsule manifest signed by unexpected identity {san:?}; \
+         expected signer under https://github.com/jackin-project/jackin/"
+    );
+
+    crate::debug_log!(
+        "capsule_binary",
+        "capsule manifest signature verified for {version} linux/{arch}: signer = {san}"
+    );
+
+    // Parse the verified manifest and return the SHA256 for this arch.
+    #[derive(serde::Deserialize)]
+    struct CapsuleManifest {
+        targets: std::collections::HashMap<String, String>,
+    }
+    let manifest: CapsuleManifest = serde_json::from_str(&manifest_text)
+        .context("parsing verified capsule-manifest.json")?;
+
+    let target = linux_target(arch);
+    let sha = manifest
+        .targets
+        .get(target)
+        .with_context(|| format!("capsule manifest missing target {target:?} (arch {arch:?})"))?;
+    parse_sha256_hex(sha).with_context(|| format!("invalid sha256 in manifest for {target}"))
+}
+
+/// Extract the first URI Subject Alternative Name from a PEM-encoded X.509 certificate.
+///
+/// Fulcio issues certificates with the OIDC subject as a URI SAN for keyless signing.
+/// The certificate chain validity has already been verified by `Client::verify_blob` at
+/// the call site, so here we only need to extract the identity string, not re-validate.
+///
+/// Decodes PEM to DER without a `pem` crate dep — strips the `-----BEGIN/END-----` header
+/// lines, base64-decodes the body, then searches the DER bytes for the URI SAN. URI SANs
+/// are encoded in DER as a context-tag `[6]` byte followed by a length byte and raw ASCII,
+/// so `from_utf8_lossy` over the DER preserves the URL characters intact.
+fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine as _;
+
+    // Strip PEM armor and decode base64 body to get DER bytes.
+    let b64_body: String = cert_pem
+        .lines()
+        .filter(|l| !l.starts_with("-----"))
+        .collect();
+    let der = BASE64
+        .decode(b64_body.trim())
+        .context("base64-decoding PEM certificate body to DER")?;
+
+    // URI SANs appear as raw ASCII in DER. Search for the GitHub URL prefix.
+    let der_str = String::from_utf8_lossy(&der);
+    if let Some(pos) = der_str.find("https://github.com/") {
+        let rest = &der_str[pos..];
+        let end = rest
+            .find(|c: char| !c.is_ascii_graphic() || c == '"')
+            .unwrap_or(rest.len());
+        return Ok(rest[..end].to_string());
+    }
+    anyhow::bail!("no GitHub Actions URI SAN found in Fulcio certificate")
 }
 
 fn linux_target(arch: &str) -> &'static str {
