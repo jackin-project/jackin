@@ -7,6 +7,7 @@ pub mod container_info;
 pub mod dialog_layout;
 pub mod error_dialog;
 pub mod filter_input;
+pub mod focus_owner;
 pub mod hint_bar;
 pub mod modal_backdrop;
 pub mod panel;
@@ -34,6 +35,7 @@ pub use error_dialog::{
     ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,
 };
 pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
+pub use focus_owner::FocusOwner;
 pub use hint_bar::{
     HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
 };
