@@ -139,8 +139,9 @@ filter speaks for itself.>
 `CURRENT_WORKSPACE_VERSION`, or `CURRENT_MANIFEST_VERSION`; drop it otherwise.
 For config/workspace migrations, copy only the operator's real
 `~/.config/jackin` into the PR-scoped config dir from Checkout first, then run
-the PR binary against that copy. Keep `JACKIN_HOME_DIR` empty and PR-scoped so
-the smoke path cannot read or mutate live `~/.jackin` state.>
+the PR's later smoke/test commands against that copy. Keep `JACKIN_HOME_DIR`
+empty and PR-scoped so the smoke path cannot read or mutate live `~/.jackin`
+state.>
 
 ```sh
 rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"
@@ -152,16 +153,13 @@ else
 fi
 
 mkdir -p "$JACKIN_HOME_DIR"
-
-jackin workspace list --debug
-rg 'version = "<CURRENT_CONFIG_OR_WORKSPACE_VERSION>"' "$JACKIN_CONFIG_DIR"
 ```
 
-Expected: the PR binary loads and migrates the copied config/workspace files
-successfully; the `rg` command prints the copied files with the new version.
-The operator's live `~/.config/jackin` is only read for the initial copy, and
-live `~/.jackin` is not copied or read; every command runs with the Checkout
-block's PR-scoped env vars.
+Expected: the operator's real config is copied into the PR-scoped config dir,
+and `JACKIN_HOME_DIR` exists as an empty PR-scoped state dir. The operator's
+live `~/.config/jackin` is only read for the initial copy, and live
+`~/.jackin` is not copied or read; later commands run with the Checkout block's
+PR-scoped env vars.
 
 ### Docs checks
 
