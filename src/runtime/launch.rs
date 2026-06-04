@@ -2578,6 +2578,10 @@ async fn load_role_with(
             workspace_name.as_deref().unwrap_or(""),
             &role_key,
         );
+        let auth_mode_is_sync = matches!(
+            auth_mode,
+            crate::config::AuthForwardMode::Sync
+        );
         crate::debug_log!(
             "launch",
             "credential_posture agent={} mode={:?} profile={} \
@@ -2595,6 +2599,33 @@ async fn load_role_with(
                 "sync mode copies credentials to container state dir"
             },
         );
+        // Credential Policy: `locked` should not use persistent copied auth by default.
+        // `hardened` should warn on copied auth. Both emit operator-visible warnings.
+        if auth_mode_is_sync {
+            match resolved_profile_early.0 {
+                crate::runtime::docker_profile::DockerSecurityProfile::Locked => {
+                    crate::tui::emit_compact_line(
+                        "warning",
+                        &format!(
+                            "[docker] profile=locked: agent {} is using sync auth mode — \
+                             credentials are copied to the container state dir and readable \
+                             by the agent. Use auth_forward = \"api_key\" or \"oauth_token\" \
+                             for locked profile to avoid persistent copied credentials.",
+                            agent.slug()
+                        ),
+                    );
+                }
+                crate::runtime::docker_profile::DockerSecurityProfile::Hardened => {
+                    crate::debug_log!(
+                        "launch",
+                        "credential_posture_warning profile=hardened agent={} \
+                         reason=sync-mode-copies-credentials-to-state-dir",
+                        agent.slug()
+                    );
+                }
+                _ => {}
+            }
+        }
 
         // Modes that inject a credential require the well-known env
         // var to resolve to a non-empty value; fail fast with an

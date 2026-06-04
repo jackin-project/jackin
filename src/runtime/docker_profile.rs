@@ -856,6 +856,131 @@ pub fn readonly_root_flags(grants: &EffectiveGrants) -> Vec<String> {
     flags
 }
 
+// ── Convenience helpers ──────────────────────────────────────────────────────
+
+/// Returns `true` when the effective grants enable any DinD tier.
+pub fn dind_enabled(grants: &EffectiveGrants) -> bool {
+    grants.dind != DindGrant::None
+}
+
+/// Returns `true` when the effective DinD tier is `Privileged`.
+pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
+    grants.dind == DindGrant::Privileged
+}
+
+/// Emit ALL security and resource Docker CLI flags for `run_args` in one call.
+///
+/// Combines `capability_flags`, `readonly_root_flags`, and `resource_flags`.
+/// The caller still handles:
+/// - `--network <name>` (network is created before flags are assembled)
+/// - `-v`, `-e`, `--label`, `--name`, `--hostname`, `--workdir` (structural flags)
+/// - `--user` (handled separately because it needs the user string value)
+/// - `--security-opt no-new-privileges` (handled separately, same reason)
+pub fn to_docker_flags(
+    profile: DockerSecurityProfile,
+    grants: &EffectiveGrants,
+) -> Vec<String> {
+    let mut flags = Vec::new();
+    flags.extend(capability_flags(profile, &grants.capabilities_add));
+    flags.extend(readonly_root_flags(grants));
+    flags.extend(resource_flags(grants));
+    if grants.no_new_privileges {
+        flags.push("--security-opt".to_string());
+        flags.push("no-new-privileges".to_string());
+    }
+    if grants.user != "agent" {
+        flags.push("--user".to_string());
+        flags.push(grants.user.clone());
+    }
+    flags
+}
+
+/// Produce a Bollard `ContainerSpec`-compatible security/resource configuration
+/// from resolved grants. Used by the Bollard test path to stay in sync with
+/// the CLI flag path.
+///
+/// Returns `(cap_add, cap_drop, security_opt, memory_bytes, nano_cpus,
+/// pids_limit, read_only_rootfs, tmpfs)` as a tuple. The caller wires these
+/// into `ContainerSpec` fields.
+pub fn to_host_config_fields(
+    profile: DockerSecurityProfile,
+    grants: &EffectiveGrants,
+) -> HostConfigFields {
+    let drops_all = matches!(
+        profile,
+        DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
+    );
+    let cap_drop = if drops_all {
+        vec!["ALL".to_string()]
+    } else {
+        vec![]
+    };
+    let mut cap_add = if drops_all {
+        MINIMUM_CAPABILITIES
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
+    cap_add.extend(grants.capabilities_add.iter().cloned());
+
+    let mut security_opt = Vec::new();
+    if grants.no_new_privileges {
+        security_opt.push("no-new-privileges".to_string());
+    }
+
+    let tmpfs: std::collections::HashMap<String, String> = if !grants.system_writes {
+        [
+            "/tmp",
+            "/run",
+            "/var/run",
+            "/var/tmp",
+            "/var/cache",
+            "/var/log",
+            "/var/lib/apt/lists",
+            "/var/cache/apt/archives",
+            "/var/lib/dpkg",
+            "/home/agent/.cache",
+            "/home/agent/.zsh_sessions",
+        ]
+        .iter()
+        .map(|p| ((*p).to_string(), "rw,nosuid,nodev".to_string()))
+        .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // nano_cpus = cpus * 1e9 (Docker's internal representation)
+    let nano_cpus = grants.cpus.map(|c| (c * 1_000_000_000.0) as i64);
+
+    HostConfigFields {
+        cap_add,
+        cap_drop,
+        security_opt,
+        memory: grants.memory_bytes.map(|b| b as i64),
+        nano_cpus,
+        pids_limit: grants.pids,
+        read_only_rootfs: !grants.system_writes,
+        tmpfs,
+    }
+}
+
+/// Security and resource fields extracted from `EffectiveGrants` for the
+/// Bollard `ContainerSpec`/`HostConfig` path.
+pub struct HostConfigFields {
+    pub cap_add: Vec<String>,
+    pub cap_drop: Vec<String>,
+    pub security_opt: Vec<String>,
+    /// Hard memory limit in bytes for `HostConfig.memory`.
+    pub memory: Option<i64>,
+    /// CPU quota in nanocpus for `HostConfig.nano_cpus`.
+    pub nano_cpus: Option<i64>,
+    pub pids_limit: Option<i64>,
+    pub read_only_rootfs: bool,
+    pub tmpfs: std::collections::HashMap<String, String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

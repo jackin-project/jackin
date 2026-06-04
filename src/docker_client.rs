@@ -112,6 +112,27 @@ pub struct ContainerSpec {
     pub tmpfs: HashMap<String, String>,
 }
 
+impl ContainerSpec {
+    /// Apply security and resource fields from resolved effective grants,
+    /// keeping the Bollard path in sync with the CLI flag path.
+    pub fn apply_grants(
+        mut self,
+        profile: crate::runtime::docker_profile::DockerSecurityProfile,
+        grants: &crate::runtime::docker_profile::EffectiveGrants,
+    ) -> Self {
+        let fields = crate::runtime::docker_profile::to_host_config_fields(profile, grants);
+        self.cap_add = fields.cap_add;
+        self.cap_drop = fields.cap_drop;
+        self.security_opt = fields.security_opt;
+        self.memory = fields.memory;
+        self.nano_cpus = fields.nano_cpus;
+        self.pids_limit = fields.pids_limit;
+        self.read_only_rootfs = fields.read_only_rootfs;
+        self.tmpfs = fields.tmpfs;
+        self
+    }
+}
+
 pub trait DockerApi {
     #[must_use]
     async fn inspect_container_state(&self, name: &str) -> ContainerState;
