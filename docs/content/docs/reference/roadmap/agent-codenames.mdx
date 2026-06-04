@@ -12,9 +12,15 @@ The identity gap also breaks across context-window resets. When an agent's conte
 
 ## What jackin' provides
 
-jackin' solves the identity problem and nothing else. Each tab is assigned a unique single-word codename at creation time — drawn from a small curated wordlist embedded in `jackin-capsule`. The codename is injected into the environment of every process spawned inside that tab as `JACKIN_AGENT_CODENAME`. It appears alongside the agent and provider labels in the Capsule tab strip so the operator can see at a glance which tab is which. The codename is stable for the lifetime of the tab: if the agent's context window fills, the agent process is restarted, or the operator sends a new session via the same tab, the replacement process still has the same `JACKIN_AGENT_CODENAME` — because it is a tab property, not a process property.
+jackin' provides two things: a stable identity for each tab, and a read-only registry that any agent can query. How agents use these is entirely up to the operator and role author.
 
-How agents use this identity is entirely up to the operator and role author. jackin' does not prescribe a coordination format, a file name, a claiming protocol, or a communication pattern. It provides the stable, machine-readable identity that makes self-organized coordination possible; the coordination itself is an agent-level and operator-level concern. A role author might include a coordination file convention in their agent's bootstrap prompt; an operator might simply use the codenames to tell agents apart by eye; agents might use the codename in git commit messages, in log lines, in a shared scratchpad, or in any other surface that makes sense for the task at hand.
+**Per-tab codename.** Each tab is assigned a unique single-word codename at creation time — drawn from a small curated wordlist embedded in `jackin-capsule`. The codename is injected into the environment of every process spawned inside that tab as `JACKIN_AGENT_CODENAME`. It is stable for the lifetime of the tab: if the agent's context window fills, the agent process is restarted, or the operator sends a new session via the same tab, the replacement process still has the same `JACKIN_AGENT_CODENAME` — because it is a tab property, not a process property.
+
+**Agent registry command.** `jackin-capsule agents` is an in-container binary subcommand that outputs the complete session registry for the current container: every codename ever assigned (active and exited), the agent type (`claude`, `codex`, `amp`, `kimi`, `opencode`), the provider, and whether the tab is still open. Any process inside the container can call it at any time. The registry is owned and maintained exclusively by the capsule daemon — agents can read it but cannot write to it. An agent that needs to orient itself in a multi-agent session runs `jackin-capsule agents`, reads the output, and immediately knows who it is, who else is here, and who was here before.
+
+An agent can answer "what is my codename?" from its own environment: `echo $JACKIN_AGENT_CODENAME`. It can answer "who else is here?" from the registry: `jackin-capsule agents`. The operator can answer "what is that tab?" from the Capsule tab strip and a hover tooltip. All three surfaces serve a different audience but expose the same underlying fact: each tab has a unique, stable, human-readable identity.
+
+jackin' does not prescribe a coordination format, a file name, a claiming protocol, or a communication pattern. It provides the identity infrastructure that makes self-organized coordination possible; what the agents do with it is an operator-level and role-author-level concern.
 
 ## Prior art on infrastructure-assigned identity
 
@@ -36,7 +42,9 @@ Because codenames are not recycled, the effective pool shrinks as tabs are opene
 
 ### Daemon changes
 
-The `Tab` struct in <RepoFile path="crates/jackin-capsule/src/layout.rs" /> gains a `codename: String` field assigned at construction. The `Multiplexer` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> holds two sets: `live: HashSet<String>` for codenames currently assigned to open tabs, and `retired: HashSet<String>` for codenames that have ever been assigned and must never be reused. On tab creation the daemon picks the next word from the wordlist that is absent from both sets, inserts it into `live`, and stores it on the `Tab`. When a tab is closed, its codename moves from `live` to `retired` — it is never available for assignment again. Both sets exist only in daemon memory and reset when the container restarts, which is the correct scope: coordination state that is scoped to a container lifetime is already gone after a restart.
+The `Tab` struct in <RepoFile path="crates/jackin-capsule/src/layout.rs" /> gains a `codename: String` field assigned at construction. The `Multiplexer` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> holds two sets: `live: HashSet<String>` for codenames currently assigned to open tabs, and `retired: HashSet<String>` for codenames that have ever been assigned and must never be reused. On tab creation the daemon picks the next word from the wordlist that is absent from both sets, inserts it into `live`, and stores it on the `Tab`. When a tab is closed, its codename moves from `live` to `retired` — it is never available for assignment again. Both sets exist only in daemon memory and reset when the container restarts, which is the correct scope: coordination state scoped to a container lifetime is already gone after a restart.
+
+The daemon also maintains a `history: Vec<AgentRecord>` — an append-only ordered log of every tab ever opened, storing codename, agent slug, provider label, and a final `status` (`active` or `exited`). This history is the data source for the `agents` subcommand and for the tab hover tooltip. It is never pruned during a container lifetime.
 
 ### Environment injection
 
@@ -46,24 +54,69 @@ The `Tab` struct in <RepoFile path="crates/jackin-capsule/src/layout.rs" /> gain
 
 ### TUI display
 
-The Capsule tab strip currently renders `agent · provider` in each tab cell. With codenames active the cell renders `codename · agent · provider` (or `codename · agent` when there is no provider). The codename is rendered in the same muted accent color the current provider label uses, to the left of the agent slug. Codenames are always single short words (typically 4–8 characters), so the added width is small and does not crowd the strip at reasonable terminal widths. The existing tab-rename feature lets operators override the auto-generated label entirely; operators who prefer a custom display name can rename the tab and retain `JACKIN_AGENT_CODENAME` in the environment.
+The Capsule tab strip currently renders `agent · provider` in each tab cell. With codenames active the cell renders `codename · agent · provider` (or `codename · agent` when there is no provider). The codename is rendered in the same muted accent color the current provider label uses, to the left of the agent slug. Codenames are always single short words (typically 4–8 characters), so the added width is small and does not crowd the strip at reasonable terminal widths.
+
+**Tab hover tooltip.** When the operator moves their mouse cursor over a tab cell in the strip, the multiplexer renders a small overlay showing the full identity record for that tab: the codename (prominent, large), agent type, provider, tab index, and current status (`active` or `exited`). For exited tabs (tabs that have been closed but whose codename appears in the strip of a re-read operator view, or in a tooltip while reviewing history), the overlay marks the status clearly so the operator can see at a glance that the tab is no longer running. The tooltip design should follow the overlay component conventions documented in [`tui-design-decisions.mdx`](/reference/tui-design-decisions/).
+
+The existing tab-rename feature lets operators override the auto-generated label entirely. When a custom label is set, the tab strip shows `my-label [badger]` — the custom label as the primary display, the codename in brackets — so the operator can rename tabs for their own orientation without losing the machine-readable codename.
+
+## Agent registry command
+
+`jackin-capsule agents` is a subcommand of the in-container capsule binary that queries the daemon over the control socket and renders the complete session registry. Any process running inside the container — an agent, a shell, a hook script — can call it.
+
+### Output format
+
+The command renders structured output that is both human-readable in a terminal and reliably parseable by an LLM in a tool call. The format uses Markdown table syntax for the agent list, which is universally parseable:
+
+```
+jackin' agent registry
+
+You are: badger  (claude · anthropic)
+
+Active agents
+─────────────
+  codename   agent     provider      status
+  badger     claude    anthropic     active  ← you
+  falcon     claude    anthropic     active
+  reef       codex     openai        active
+
+Previous agents
+───────────────
+  codename   agent     provider      status
+  crater     claude    anthropic     exited
+```
+
+The `← you` marker on the calling agent's own row is rendered using the caller's `JACKIN_AGENT_CODENAME` env var — the command reads its own env to identify itself and annotate the output accordingly. This means an agent that reads the output immediately sees itself highlighted without having to cross-reference its own env separately.
+
+### Machine-readable flag
+
+`jackin-capsule agents --format json` outputs the same registry as a JSON array for tooling and scripting:
+
+```json
+[
+  {"codename": "badger", "agent": "claude", "provider": "anthropic", "status": "active", "self": true},
+  {"codename": "falcon", "agent": "claude", "provider": "anthropic", "status": "active", "self": false},
+  {"codename": "reef",   "agent": "codex",  "provider": "openai",    "status": "active", "self": false},
+  {"codename": "crater", "agent": "claude", "provider": "anthropic", "status": "exited", "self": false}
+]
+```
+
+### Why read-only
+
+Agents can read the registry but cannot write to it. The capsule daemon is the sole authority on which tabs exist, which codenames are assigned, and which tabs have exited. An agent that could write to the registry could falsify identity records, impersonate another agent's codename, or poison the shared identity surface that other agents depend on. The read-only constraint is enforced by design: the `agents` subcommand is a query to the daemon over the control socket, not a write to a file.
+
+### Relationship to `JACKIN_AGENT_CODENAME`
+
+The env var and the registry serve different use cases. The env var is for the agent's own identity — it is always available, requires no subprocess call, and survives context-window resets. The registry is for fleet awareness — it answers "who else is here and what are they doing?" The two together give an agent everything it needs to reason about a multi-agent session: "I am `badger`, there are also `falcon` and `reef`, and `crater` has already exited."
 
 ## Example: file-based parallel coordination
 
-The following is one possible pattern for how agents can use `JACKIN_AGENT_CODENAME` to coordinate. It is an illustrative example, not something jackin' enforces or requires. Role authors who want structured parallel coordination can adapt it, replace it entirely, or use a different approach — a shared SQLite database, a per-agent log directory, git branches, GitHub issues, or any other mechanism that makes sense for the task.
+The following is one possible pattern for how agents can use `JACKIN_AGENT_CODENAME` and `jackin-capsule agents` to coordinate. It is an illustrative example, not something jackin' enforces or requires. Role authors who want structured parallel coordination can adapt it, replace it entirely, or use a different approach — a shared SQLite database, a per-agent log directory, git branches, GitHub issues, or any other mechanism that makes sense for the task.
 
-The pattern: the operator creates a `COORDINATION.md` file in the workdir with a task list. Each agent reads the file, claims a task by writing its codename into the row, and updates a heartbeat timestamp so other agents can detect if a claim has gone stale. A skeleton:
+The pattern: the operator creates a `COORDINATION.md` file in the workdir with a task list. Each agent reads the file, claims a task by writing its codename into the row, and updates a heartbeat timestamp so other agents can detect if a claim has gone stale. Before claiming, each agent runs `jackin-capsule agents` to verify it understands the current fleet and does not try to reference a codename that has already exited.
 
 ```markdown
 # COORDINATION.md
-
-## Agents
-
-| codename | status  | current_task | last_seen           |
-|----------|---------|--------------|---------------------|
-| badger   | working | task-003     | 2026-06-04T10:23:00 |
-| falcon   | idle    |              | 2026-06-04T10:21:00 |
-| crater   | working | task-007     | 2026-06-04T10:22:00 |
 
 ## Tasks
 
@@ -75,52 +128,72 @@ The pattern: the operator creates a `COORDINATION.md` file in the workdir with a
 | task-009 | pending     |            | Integration test end-to-end         |
 ```
 
-For this pattern to be safe, the write to `claimed_by` must be atomic. A `flock(2)` advisory lock on the file is sufficient on a local overlay filesystem inside Docker: acquire the lock, re-read the file in full, verify the target task is still unclaimed, write the claim, release the lock. The re-read inside the lock is critical — two agents that both read `status: pending` before either acquires the lock will both try to claim the same task, and only the second write survives. The lock-then-reread sequence prevents this race. Role authors should provide the complete template in the agent's bootstrap prompt rather than expecting the agent to derive the correct sequence on its own.
+For this pattern to be safe, the write to `claimed_by` must be atomic. A `flock(2)` advisory lock on the file is sufficient on a local overlay filesystem inside Docker: acquire the lock, re-read the file in full, verify the target task is still unclaimed, write the claim, release the lock. The re-read inside the lock is critical — two agents that both read `status: pending` before either acquires the lock will both try to claim the same task, and only the second write survives. The lock-then-reread sequence prevents this race.
 
-Heartbeat timestamps let agents detect stale claims. An agent that writes a claim and then crashes will leave a `last_seen` timestamp that stops updating; another agent reading the file after 2× the heartbeat interval can reclaim the task. This recovers from context-window resets, killed processes, and agents that get stuck.
+The specific vocabulary, file name, and file location are all choices made by the operator and role author, not requirements from jackin'. The only requirement from jackin' is that each agent has a stable, unique `JACKIN_AGENT_CODENAME` it can use as its claim identifier.
 
-The specific vocabulary (`pending`, `in_progress`, `done`, `blocked`, `abandoned`), the file name (`COORDINATION.md`), and the file location (workdir root) are all choices made by the operator and role author, not requirements from jackin'. The only requirement from jackin' is that each agent has a stable, unique `JACKIN_AGENT_CODENAME` it can use as its claim identifier.
+## Future direction: inter-agent messaging
+
+The codename and registry infrastructure described above is the first layer. It gives agents identity and fleet awareness. The natural next layer — which this roadmap item does not implement — is direct inter-agent communication: an agent addressing a message to another agent by codename, and jackin' routing it.
+
+A concrete future shape: `jackin-capsule send falcon "I finished task-003, you can start task-009 now"` sends a message to the tab running `falcon`. The `falcon` tab receives the message through a queue the capsule daemon manages. Each tab has an inbound message queue exposed as a readable event stream, and agents poll it or block on it between work units. The sending agent does not need to know which session ID, PID, or PTY owns `falcon` — it addresses by codename, and the daemon resolves the routing.
+
+This pattern has clear prior art in the agent orchestration ecosystem (Batty's maildir-style inboxes, CrewAI's task hand-off model, LangGraph's channel model), and it is the natural extension of the identity infrastructure described here. It is deferred because the identity and registry layer must ship and prove useful first — premature messaging infrastructure before agents are reliably using codenames for coordination would be building on an unvalidated foundation.
+
+The messaging layer also intersects with the [agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) runner: a workflow profile that spawns multiple agents and routes work between them via codename messages is a more structured version of the same concept, with jackin' as the orchestrator instead of the agents themselves.
 
 ## Design questions
 
-**Should the wordlist be extensible by role authors?** The compile-time static slice is the simplest implementation. A wordlist file under `/jackin/runtime/` baked into the role image, falling back to the compiled list, would let role authors customize codenames for their domain. The tradeoff is an extra read at daemon startup and potential operator confusion when codenames differ across roles. Deferred to implementation.
+**Should the wordlist be extensible by role authors?** The compile-time static slice is the simplest implementation. A wordlist file under `/jackin/runtime/` baked into the role image, falling back to the compiled list, would let role authors customize codenames for their domain. Deferred to implementation.
 
-**What happens to the tab strip when a tab is renamed?** If the operator renames a tab to `my-custom-label`, the tab strip no longer shows the codename. The agent still has `JACKIN_AGENT_CODENAME` in its environment; coordination continues to work. A reasonable display rule: show `my-custom-label [badger]` when the tab has both a custom label and a codename, so neither is lost.
+**How should `jackin-capsule agents` handle the case where the daemon is not running?** The command should exit with a clear error message and a non-zero status code rather than hanging. A timeout of ~500ms before fallback to error output is the right behavior for an in-agent tool call.
 
-**Should codenames be operator-assignable?** The current proposal generates them automatically. Allowing operators to specify a codename at tab creation (`jackin new-tab --codename badger`) adds control but also responsibility — the operator must ensure uniqueness. If user-assignable codenames are added, the capsule must validate uniqueness and reject with a clear error if the name is already in use.
+**Should codenames be operator-assignable?** The current proposal generates them automatically. Allowing `jackin new-tab --codename badger` adds control but also responsibility — the operator must ensure uniqueness. If user-assignable codenames are added, the capsule must validate uniqueness and reject with a clear error if the name is already in use or retired.
 
-**Should the capsule expose codenames via the control socket?** A `jackin status` query that returns per-tab codename alongside agent and provider would let host-side tooling (scripts, the future workflow runner) identify tabs by their human-readable name. This is deferred to Phase 3.
+**What does the tab hover tooltip look like for split panes?** A tab can contain multiple split panes, each running a different session. The tooltip for the tab strip cell should show the primary session's identity and summarize the pane count. Detailed per-pane identity is a Phase 3 design question.
+
+**Should the registry survive container restarts?** The current proposal keeps the registry in daemon memory, which means it resets on container restart. Persisting it to a file under `/jackin/state/` would let operators review the full session history after a restart. The tradeoff is added I/O on every tab open/close and a schema-migration concern if the registry format changes. Deferred.
 
 ## Phases
 
-### Phase 1 — Codename infrastructure
+### Phase 1 — Codename infrastructure and registry command
 
 Deliverables:
 - Embedded 150-word curated wordlist in `jackin-capsule`.
-- `codename: String` field on `Tab`; assigned at tab creation from the wordlist; returned to the pool when the tab closes.
+- `codename: String` field on `Tab`; assigned at tab creation from the wordlist.
 - `live: HashSet<String>` and `retired: HashSet<String>` in `Multiplexer` — live tracks currently-open tabs; retired tracks all previously-used codenames that must never be reassigned.
+- `history: Vec<AgentRecord>` append-only log in `Multiplexer` — the authoritative source for the registry command and tab tooltip.
 - `JACKIN_AGENT_CODENAME` env injection in `build_agent_command()`, passed from the dispatch path in `daemon.rs`.
 - `JACKIN_AGENT_CODENAME` added to the reserved runtime env list in <RepoFile path="src/env_model.rs" />.
 - Codename displayed in the Capsule tab strip: `codename · agent · provider`.
+- `jackin-capsule agents` subcommand — queries the daemon via the control socket, renders the registry with the `← you` annotation, supports `--format json`.
+- Tab hover tooltip in the Capsule tab strip: codename, agent, provider, status.
 
 ### Phase 2 — Operator documentation
 
 Deliverables:
 - This roadmap item updated to `Partially implemented` after Phase 1 lands.
-- Operator guide page `guides/parallel-agent-coordination.mdx` explaining what `JACKIN_AGENT_CODENAME` is, where it comes from, and how operators can use it — with the file-based coordination pattern as one worked example among other possible approaches.
+- Operator guide page `guides/parallel-agent-coordination.mdx` explaining `JACKIN_AGENT_CODENAME`, `jackin-capsule agents`, and the `jackin-capsule agents --format json` flag — with the file-based coordination pattern as one worked example among other possible approaches.
 
 ### Phase 3 — Integration (deferred pending operator feedback)
 
 Deferred until Phase 1 and 2 have shipped and there is operator evidence for what further integration is actually useful. Candidate work:
-- `jackin status` and capsule control-socket query reporting per-tab codename alongside agent and provider.
-- `JACKIN_COORDINATION_FILE` env var convention for operators who want the coordination file path injected automatically.
+- Registry persistence across container restarts under `/jackin/state/agent-registry.json`.
+- `JACKIN_COORDINATION_FILE` env var convention for operators who want a coordination file path injected automatically.
 - Configurable wordlist override in the role manifest.
-- Capsule writing a `status: exited` signal when a tab closes, if a standard coordination file path is configured.
+- `jackin status` host-side command reporting per-tab codenames alongside the existing instance overview.
+
+### Phase 4 — Inter-agent messaging (future direction)
+
+- `jackin-capsule send <codename> <message>` routes a text message to another agent's inbound queue by codename.
+- Each tab has a daemon-managed inbound message queue, readable as a blocking event stream.
+- Sending by codename; the daemon resolves routing; sending agent does not need to know session IDs or PTY addresses.
+- Design and scope gated on Phase 1 and 2 proving useful and on the [agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) runner design stabilizing.
 
 ## Related work
 
 - [jackin' Capsule control plane](/reference/roadmap/jackin-capsule/) — the in-container multiplexer that owns tab lifecycle, pane tree, and environment injection. Phase 1 of this item is a direct extension of Capsule Phases 1–3.
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — classifies whether an agent is `working`, `blocked`, `done`, or `idle`. Codenames give agents a stable per-tab identity; runtime status gives the operator visibility into what each identified agent is currently doing. Together they form the per-tab observability pair: who is this tab, and what state is it in.
-- [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) — the longer-term vision for jackin'-driven multi-agent workflows with a run ledger, GitHub reporter, and phase controls. Codenames are a lightweight, operator-configured precursor that does not require a full workflow runner.
+- [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) — the longer-term vision for jackin'-driven multi-agent workflows. Codenames and the registry are the identity substrate the workflow runner will build on; Phase 4 inter-agent messaging is the direct precursor to the runner's session-routing model.
 - [Persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) — a future durable storage surface that could host coordination state with stronger consistency guarantees than file locking and better lifecycle integration across container restarts.
 - [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) — the typed read/wait/send Capsule API that a coordination-aware workflow runner would use to watch for task completion signals without screen-scraping.
