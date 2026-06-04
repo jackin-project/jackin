@@ -47,6 +47,12 @@ pub enum MouseProtocolEncoding {
 /// rows changed via `dirty.mark_row()`.  Call `dirty_spans()` to retrieve
 /// and clear the dirty set before rendering.
 pub struct DamageGrid {
+    // ── Parser — must persist across process() calls to handle split sequences ──
+    // vte::Parser maintains internal state for multi-byte escape sequences.
+    // Creating a new parser on each process() call would lose that state, causing
+    // sequences split across PTY read() boundaries to be silently dropped.
+    parser: vte::Parser,
+
     // ── Grid state ────────────────────────────────────────────────────────────
     rows: u16,
     cols: u16,
@@ -93,6 +99,7 @@ impl DamageGrid {
     pub fn new(rows: u16, cols: u16, scrollback_limit: usize) -> Self {
         let blank = make_blank_grid(rows, cols);
         Self {
+            parser: vte::Parser::new(),
             rows,
             cols,
             primary: blank.clone(),
@@ -118,11 +125,24 @@ impl DamageGrid {
         }
     }
 
-    /// Feed raw PTY bytes through the vte parser, mutating the grid.
-    /// Dirty rows are recorded via `self.dirty`.
+    /// Feed raw PTY bytes through the persistent vte parser, mutating the grid.
+    ///
+    /// The parser is persisted across calls so that multi-byte escape sequences
+    /// split across PTY read() boundaries are handled correctly. Creating a new
+    /// parser on each call would lose inter-call state and silently drop split
+    /// sequences (bug caught by the differential harness).
     pub fn process(&mut self, bytes: &[u8]) {
-        let mut parser = vte::Parser::new();
+        // SAFETY: we need a mutable reference to both self.parser and self (which
+        // implements vte::Perform). The parser only reads `bytes`; it calls self
+        // through &mut dyn Perform. Rust's borrow rules prevent this directly,
+        // so we temporarily move the parser out, advance, then restore it.
+        //
+        // Alternative: store parser in a separate wrapper or use RefCell. The
+        // move-out approach avoids any runtime cost. The parser is always restored
+        // before the function returns, so the field is never left empty.
+        let mut parser = std::mem::replace(&mut self.parser, vte::Parser::new());
         parser.advance(self, bytes);
+        self.parser = parser;
     }
 
     /// Drain and return the dirty-row set, clearing it for the next frame.

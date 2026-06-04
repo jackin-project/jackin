@@ -522,6 +522,113 @@ fn vt_erase_display_from_cursor() {
     run_differential(24, 80, seq, "erase entire display");
 }
 
+// ---------------------------------------------------------------------------
+// More VT conformance tests — common agent TUI patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vt_scroll_up_csi_s_down_csi_t() {
+    // CSI S (scroll up n lines) — vt100 supports this.
+    let seq = b"\x1b[1;1HLine1\r\nLine2\r\nLine3\r\nLine4\x1b[2S"; // scroll up 2 lines
+    run_differential(24, 80, seq, "scroll up CSI S");
+}
+
+#[test]
+fn vt_line_feed_beyond_scroll_region() {
+    // LF at bottom of a scroll region causes the region to scroll.
+    // Set region to rows 5-10, move to row 10, write LF.
+    let seq = b"\x1b[5;10r\x1b[10;1HLast\n\x1b[r";
+    run_differential(24, 80, seq, "LF at bottom of scroll region");
+}
+
+#[test]
+fn vt_cursor_vertical_absolute_vpa() {
+    // CSI d (VPA - cursor vertical absolute, 1-based row).
+    let seq = b"\x1b[5;10H\x1b[15dHere"; // move to row 15 (cursor at col 10)
+    run_differential(24, 80, seq, "cursor vertical absolute (VPA)");
+}
+
+#[test]
+fn vt_cursor_next_prev_line() {
+    // CSI E (CNL - cursor next line), CSI F (CPL - cursor previous line).
+    let seq = b"\x1b[10;5H\x1b[3EDown3"; // from (10,5) go down 3 rows, col reset to 0
+    run_differential(24, 80, seq, "cursor next line (CNL)");
+    let seq = b"\x1b[10;5H\x1b[2FUp2"; // from (10,5) go up 2 rows, col reset to 0
+    run_differential(24, 80, seq, "cursor previous line (CPL)");
+}
+
+#[test]
+fn vt_dim_and_strikethrough_sgr() {
+    // SGR 2 (dim/faint), SGR 9 (strikethrough) — used by agent TUIs for metadata.
+    let seq = b"\x1b[2mFaint\x1b[22m \x1b[9mStrike\x1b[29m\x1b[0m";
+    run_differential(24, 80, seq, "dim and strikethrough SGR");
+}
+
+#[test]
+fn vt_blinking_hidden_sgr() {
+    // SGR 5 (blink), SGR 8 (conceal/hidden) — some TUIs use these.
+    let seq = b"\x1b[5mBlink\x1b[25m \x1b[8mHidden\x1b[28m\x1b[0m";
+    run_differential(24, 80, seq, "blink and hidden SGR");
+}
+
+#[test]
+fn vt_cursor_up_with_scrollback() {
+    // Move cursor to top, RI creates scrollback, then scroll back.
+    let seq = b"\x1b[1;1HTop\r\nLine2\r\nLine3\x1b[1;1H\x1bM\x1bM"; // two RI at top
+    run_differential(24, 80, seq, "cursor RI creates scrollback");
+}
+
+#[test]
+fn vt_insert_delete_lines_with_scroll_region() {
+    // IL (L) and DL (M) inside a scroll region.
+    let seq = b"\x1b[5;15r\x1b[5;1HLine5\x1b[5;1H\x1b[2L\x1b[r";
+    run_differential(24, 80, seq, "insert lines in scroll region");
+    let seq = b"\x1b[5;15r\x1b[5;1HLine5\r\nLine6\r\nLine7\x1b[5;1H\x1b[2M\x1b[r";
+    run_differential(24, 80, seq, "delete lines in scroll region");
+}
+
+#[test]
+fn vt_mixed_wide_and_narrow() {
+    // Mix of CJK wide chars and ASCII narrow chars on same line.
+    run_differential(
+        24,
+        80,
+        "AB你好CD\r\n".as_bytes(),
+        "mixed wide and narrow chars",
+    );
+}
+
+// Note: CSI 2J with active SGR attrs intentionally omitted.
+// vt100 fills erased cells with the current SGR background color when erasing
+// (blank cells retain attrs from the current SGR state). DamageGrid fills erased
+// cells with Cell::default() (Default attrs). This is a documented vt100
+// divergence for the "fill-on-erase with current SGR" behavior. Test only
+// the RIS reset which both models agree on.
+#[test]
+fn vt_ris_reset_clears_all_state() {
+    // ESC c (RIS - reset to initial state): clears grid + attrs + cursor.
+    let seq = b"\x1b[1;31mRed text\x1bc"; // RIS resets everything
+    run_differential(24, 80, seq, "RIS resets all state");
+}
+
+#[test]
+fn vt_sequence_split_across_process_calls() {
+    // A real PTY might split a sequence across two read() calls.
+    // DamageGrid must handle this correctly via vte's streaming parser.
+    let mut grid = DamageGrid::new(24, 80, 1_000);
+    // Process part 1: incomplete CSI sequence
+    grid.process(b"\x1b[5;10");
+    // Process part 2: completes the CSI H (cursor move) + text
+    grid.process(b"HHello");
+    let left = snapshot_damagegrid(&grid);
+
+    let mut right = vt100::Parser::new(24, 80, 1_000);
+    right.process(b"\x1b[5;10H");
+    right.process(b"Hello");
+    let right_snap = snapshot_vt100(&right);
+    left.assert_eq(&right_snap, "split CSI sequence across process() calls");
+}
+
 /// Minimal recursive directory walker that avoids pulling in `walkdir` as a dev dep.
 fn walkdir(dir: &Path) -> Vec<std::path::PathBuf> {
     let mut paths = Vec::new();
