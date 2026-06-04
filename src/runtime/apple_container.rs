@@ -27,6 +27,93 @@ use crate::paths::JackinPaths;
 const ATTACH_MAX_WAIT_MS: u64 = 60_000;
 const ATTACH_POLL_MS: u64 = 500;
 
+/// Print the session contract — the security boundary summary shown to the
+/// operator before the interactive attach begins (Phase 4).
+///
+/// Equivalent to the `docker profile: hardened` output block in the Docker
+/// hardening contract, but for the apple-container backend.
+pub fn print_session_contract(
+    container_name: &str,
+    image: &str,
+    provider_version: &str,
+    mount_pairs: &[(std::path::PathBuf, std::path::PathBuf)],
+    debug: bool,
+) {
+    let mounts_summary: String = if mount_pairs.is_empty() {
+        "none".to_string()
+    } else {
+        mount_pairs
+            .iter()
+            .map(|(h, g)| format!("  {}:{}", h.display(), g.display()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    eprintln!();
+    eprintln!("[jackin] session contract");
+    eprintln!("  backend:              apple-container");
+    eprintln!("  provider:             apple/container {provider_version}");
+    eprintln!("  container:            {container_name}");
+    eprintln!("  image:                {image}");
+    eprintln!("  isolation:            own Linux kernel via Virtualization.framework");
+    eprintln!("  host filesystem:      explicit bind mounts only");
+    eprintln!("  host Docker socket:   not mounted");
+    eprintln!("  inner Docker (DinD):  disabled — pending Phase 0 DinD validation");
+    eprintln!(
+        "  force_daemon:         JACKIN_CAPSULE_FORCE_DAEMON=1 (capsule PID 2+ under vminitd)"
+    );
+    eprintln!("  mounts ({}):", mount_pairs.len());
+    if mount_pairs.is_empty() {
+        eprintln!("    (none)");
+    } else {
+        for (h, g) in mount_pairs {
+            eprintln!("    {}:{}", h.display(), g.display());
+        }
+    }
+    eprintln!("  network:              per-container IP via vmnet (no port mapping)");
+    eprintln!("  dns:                  may hiccup after macOS sleep/wake — reconnect if affected");
+    eprintln!("  residual risk:");
+    eprintln!("    DinD not enabled; Docker workflows inside the VM require Phase 0 validation.");
+    eprintln!("    apple/container vminitd is PID 1; signal forwarding relies on gRPC/vsock.");
+    eprintln!("    Build-time Docker (image build) still runs on host Docker engine.");
+    if debug {
+        eprintln!("  debug mode:           on (JACKIN_DEBUG=1)");
+    }
+    eprintln!();
+    let _ = mounts_summary; // used above inline
+}
+
+/// DNS health check — called after attach returns to detect sleep/wake hiccup.
+/// Phase 4: "Detect DNS failure in capsule; surface 'reconnect required' to operator."
+pub async fn check_dns(container_name: &str) {
+    let result = tokio::process::Command::new("container")
+        .args([
+            "exec",
+            container_name,
+            "sh",
+            "-c",
+            "nslookup github.com >/dev/null 2>&1 && echo ok || echo hiccup",
+        ])
+        .output()
+        .await;
+
+    match result {
+        Ok(o) if o.status.success() => {
+            let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            crate::debug_log!("apple-container", "dns_check result={out}");
+            if out == "hiccup" {
+                eprintln!(
+                    "[jackin] apple-container: DNS hiccup detected after sleep/wake. \
+                     If the agent cannot reach the network, run `jackin hardline` to reconnect."
+                );
+            }
+        }
+        _ => {
+            crate::debug_log!("apple-container", "dns_check result=unavailable");
+        }
+    }
+}
+
 /// Wait until `/jackin/run/jackin.sock` is answering status queries inside
 /// the apple/container container.
 pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
@@ -190,9 +277,23 @@ pub async fn launch(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("container run failed: {}", stderr.trim());
+        // Fail-closed: if `container run` fails (e.g. unsupported --cap-add,
+        // container CLI not installed, image not found), surface the exact error.
+        // Do not silently fall back to Docker or swallow the failure.
+        bail!(
+            "container run failed — required capabilities or image may be unavailable: {}",
+            stderr.trim()
+        );
     }
     crate::debug_log!("apple-container", "container_run name={container_name} ok");
+
+    // Compact launch telemetry line (always-on tier, equivalent to clog! in capsule).
+    crate::debug_log!(
+        "apple-container",
+        "apple-container launch name={container_name} image={} inner_docker=none caps=0 mounts={}",
+        image,
+        mount_pairs.len()
+    );
 
     // Write instance manifest.
     let container_state = paths.data_dir.join(container_name);
@@ -241,27 +342,68 @@ pub async fn launch(
     wait_for_capsule(container_name).await?;
     crate::debug_log!("apple-container", "capsule ready name={container_name}");
 
+    // Phase 4: Session contract output.
+    // Printed once after the container starts, before the interactive attach.
+    // Shows the security boundary, isolation model, and residual risks so the
+    // operator knows exactly what is enforced before their session begins.
+    print_session_contract(
+        container_name,
+        image,
+        version.as_deref().unwrap_or("unknown"),
+        mount_pairs,
+        debug,
+    );
+
     // Interactive attach — blocks until operator detaches.
     attach(container_name, None).await?;
+
+    // Phase 4: DNS check after attach returns. Catches sleep/wake DNS hiccup.
+    check_dns(container_name).await;
 
     Ok(())
 }
 
+/// Check whether an apple/container container is currently running.
+/// Uses `container ps` (running only, no --all) to test for presence.
+async fn is_container_running(container_name: &str) -> bool {
+    // `container ps` without --all shows only running containers.
+    // If the container name appears in the output, it is running.
+    let output = tokio::process::Command::new("container")
+        .args(["ps", "--format", "json"])
+        .output()
+        .await;
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            // Look for the container name in the output. Parse as JSON array
+            // if possible, otherwise fall back to string search.
+            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&stdout) {
+                arr.iter().any(|item| {
+                    item.get("name").and_then(|v| v.as_str()) == Some(container_name)
+                        || item.get("Name").and_then(|v| v.as_str()) == Some(container_name)
+                })
+            } else {
+                // Fallback: newline-delimited JSON or plain text
+                stdout.lines().any(|line| {
+                    if let Ok(item) = serde_json::from_str::<serde_json::Value>(line) {
+                        item.get("name").and_then(|v| v.as_str()) == Some(container_name)
+                            || item.get("Name").and_then(|v| v.as_str()) == Some(container_name)
+                    } else {
+                        // Plain text fallback: container name appears on a line
+                        line.split_whitespace().any(|w| w == container_name)
+                    }
+                })
+            }
+        }
+        _ => false,
+    }
+}
+
 /// Reconnect to a stopped or running apple/container container.
 pub async fn reconnect(container_name: &str, focus_session: Option<u64>) -> Result<()> {
-    let ps_output = tokio::process::Command::new("container")
-        .args(["ps", "--all", "--format", "json"])
-        .output()
-        .await
-        .context("container ps failed")?;
+    let running = is_container_running(container_name).await;
 
-    let stdout = String::from_utf8_lossy(&ps_output.stdout);
-    let is_running = stdout.lines().any(|line| {
-        line.contains(&format!(r#""name":"{container_name}""#))
-            && line.to_lowercase().contains("running")
-    });
-
-    if !is_running {
+    if !running {
         crate::debug_log!(
             "apple-container",
             "container_state action=start name={container_name}"
@@ -270,11 +412,15 @@ pub async fn reconnect(container_name: &str, focus_session: Option<u64>) -> Resu
             .args(["start", container_name])
             .output()
             .await
-            .context("container start failed")?;
+            .context("container start failed — is apple/container installed?")?;
         if !start.status.success() {
             let stderr = String::from_utf8_lossy(&start.stderr);
             bail!("container start failed: {}", stderr.trim());
         }
+        crate::debug_log!(
+            "apple-container",
+            "container_state action=start name={container_name} result=ok"
+        );
     }
 
     wait_for_capsule(container_name).await?;
