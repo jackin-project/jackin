@@ -4,25 +4,23 @@ title: "Per-scope auth-sync source folder"
 
 **Status**: Open — **folded into the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) epic** (executing in the `feature/tui-architecture` PR, June 2026). Implemented there because it touches exactly the surface that epic collapses — `AgentAuthConfig`, the five `provision_*_auth` functions, and the auth-tab UI — so the new override field rides the unified config + adapter dispatch instead of adding a sixth parallel branch. Executable checklist: [Defect 46, Phase B](/reference/roadmap/post-restructure-fixes/). This page is the design of record for the default/explicit/inherited semantics and the operator flow.
 
-## Credential-source kind is per-agent (researched June 2026)
+## Folder-only selection, with a per-agent env-var hint (operator-decided, June 2026)
 
-The override target is **not uniformly "a folder"** — each agent stores credentials differently, so the **adapter declares its credential-source kind** and the picker matches it. Researched truth:
+**The override is always one folder — never a file.** Every supported agent relocates its credentials by pointing a single **directory** environment variable at a new home; the credential file (`auth.json`, `secrets.json`, `.credentials.json`, …) lives *inside* that folder and its name is the adapter's business, not the operator's. So the operator picks **one folder** and nothing else.
 
-| Agent | Credential (container/Linux form) | Relocation mechanism | Adapter source kind |
+To make it obvious *which* folder to point at, the auth row shows the **env var that governs that agent's folder** as a hint — the same variable the agent itself honors — so the operator immediately recognizes the location. Per-agent (researched June 2026):
+
+| Agent | Folder env var (the hint shown) | Default folder | Credential within (adapter-known) |
 |---|---|---|---|
-| **Claude Code** | `<dir>/.credentials.json` + `~/.claude.json`; **macOS host → Keychain (no file)** | `CLAUDE_CONFIG_DIR` (directory) | **Dir** (config home) |
-| **Codex** | `<CODEX_HOME>/auth.json`; or OS **keyring**; or `auto` | `CODEX_HOME` (directory) | **Dir** (config home) |
-| **Amp** | `~/.local/share/amp/secrets.json`; settings `~/.config/amp/settings.json` | `AMP_DATA_HOME` (dir); `AMP_SETTINGS_FILE` (**file**); `XDG_CONFIG_HOME` | **Dir** (data home; secrets within) |
-| **Kimi** | `~/.kimi-code/` | (directory) | **Dir** |
-| **OpenCode** | `~/.local/share/opencode/auth.json` | `XDG_DATA_HOME` (directory) | **Dir** (data home) |
+| **Claude Code** | `CLAUDE_CONFIG_DIR` | `~/.claude` | `.credentials.json` + `~/.claude.json` |
+| **Codex** | `CODEX_HOME` | `~/.codex` | `auth.json` |
+| **Amp** | `AMP_DATA_HOME` | `~/.local/share/amp` | `secrets.json` |
+| **Kimi** | (`~/.kimi-code`) | `~/.kimi-code` | dir contents |
+| **OpenCode** | `XDG_DATA_HOME` | `~/.local/share/opencode` | `auth.json` |
 
-What this means for the picker:
+So the adapter declares two things for this feature: the **default folder** and the **folder env-var name** (for the hint label). The picker is always the directory picker; there is **no file picker and no per-agent picker-kind branching** — one folder, every agent.
 
-- **Default and primary UX = folder selection.** Every agent's credentials live inside a *relocatable directory*; the operator picks that directory and the adapter resolves the known entry within it (`auth.json`, `secrets.json`, `.credentials.json`, or the dir itself). The operator never has to know the filename. This is the "folder, not file" rule the operator asked for — correct for all five agents today.
-- **The kind is adapter-declared, not hardcoded folder-only.** Model it as a `CredentialSource` the adapter returns: `Dir { default_rel, entry }` today for all five; leave room for `File { default_rel }` (an agent whose credential relocates file-granular, e.g. an `AMP_SETTINGS_FILE`-style target) and `Keychain` / `Keyring` (macOS Claude, Codex keyring — **no host file exists to sync**, so the override is inapplicable and the row must say so rather than offer a meaningless picker).
-- **Keychain/keyring caveat (host-dependent).** On a macOS host, Claude credentials live in the Keychain and Codex may use the OS keyring — there is no folder/file for `sync` to read. The source-folder override is only meaningful for the file/dir storage forms. The auth row must detect/declare this and show "not file-based on this host" instead of an override that can't work.
-
-The picker therefore dispatches on the adapter's `CredentialSource`: **Dir → folder picker** (the common case), **File → file picker** (reserved), **Keychain/Keyring → no override, explanatory note**.
+**Keychain/keyring caveat (host-dependent, not a selection mode).** On a macOS host, Claude stores credentials in the Keychain and Codex may use the OS keyring — there is then no file inside the folder for `sync` to copy. This does not change the selection (still a folder); it just means the row notes that, on this host, the folder may hold no syncable credential. The selection model stays uniform: one folder, hinted by the agent's folder env var.
 
 ## Problem
 
