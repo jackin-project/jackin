@@ -2,7 +2,7 @@
 
 **Single source of truth.** Read and update this file before claiming work.
 
-**Deprecated files (do not use):** `AGENT-COORDINATION.md` (deleted in `6a6c2940`), `.claude/agent-coordination.md` (local-only, gitignored), `.claude/AGENT_COORDINATION.md` (local-only, gitignored). Those are all superseded by this file.
+**Deprecated files (superseded by this file, do not use):** `.claude/agent-coordination.md` and `.claude/AGENT_COORDINATION.md` are local-only (gitignored) stub files that redirect here. `AGENT-COORDINATION.md` was deleted. This `COORDINATION.md` is the only one that matters.
 
 ---
 
@@ -23,7 +23,7 @@
 | Checklist item | Status | Notes |
 |---|---|---|
 | Defect 46 Phase B.1 (auth schema + resolver) | **[DONE]** | sync_source_dir field + resolve_sync_source_dir + 4 tests |
-| Defect 46 Phase B.2-B.5 (provisioning + UX) | AVAILABLE | B.2 uses state_paths() from AgentRuntime adapter |
+| Defect 46 Phase B.2 (provisioning: sync_source_dir → credential copy) | AVAILABLE | B.2 wires sync_source_dirs through provision_*_slot |
 | Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Decision: `crates/jackin/src/console/` is canonical |
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
