@@ -326,6 +326,55 @@ fn settings_tab_bar_follows_aria_focus_pattern() {
 }
 
 #[test]
+fn settings_focus_owner_exclusivity() {
+    // Defect 563 regression: when content owns focus, exactly one "green border"
+    // signal exists — tab_bar_focused is false AND the active-tab's scroll_focused
+    // is true. The tab bar must not also be green (tab_bar_focused must be false).
+    let tmp = tempfile::tempdir().unwrap();
+    let config = AppConfig::default();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    state.stage = ManagerStage::Settings(settings_state_from_config(&config));
+
+    // Enter content (General tab by default).
+    handle_settings_key(&mut state, key(KeyCode::Down));
+    {
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("settings stage expected");
+        };
+        assert!(
+            !settings.tab_bar_focused,
+            "tab_bar must yield focus when content gains it"
+        );
+    }
+    // Return to tab bar, switch to Mounts tab, enter content.
+    handle_settings_key(&mut state, key(KeyCode::Esc));
+    handle_settings_key(&mut state, key(KeyCode::Right));
+    handle_settings_key(&mut state, key(KeyCode::Down));
+    {
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("settings stage expected");
+        };
+        assert!(
+            !settings.tab_bar_focused,
+            "tab bar must not be green while content is focused"
+        );
+        assert!(
+            settings.mounts.scroll_focused,
+            "mounts.scroll_focused must be true (Defect 18)"
+        );
+    }
+    handle_settings_key(&mut state, key(KeyCode::Esc));
+    {
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("settings stage expected");
+        };
+        assert!(settings.tab_bar_focused, "tab bar regains focus on Esc");
+        // mounts.scroll_focused may stay true — rendering correctly handles
+        // !tab_bar_focused && scroll_focused = false AND true = false.
+    }
+}
+
+#[test]
 fn trust_tab_space_toggles_trusted_state() {
     let tmp = tempfile::tempdir().unwrap();
     let mut config = AppConfig::default();
