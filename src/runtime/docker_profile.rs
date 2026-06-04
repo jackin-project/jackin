@@ -1,30 +1,29 @@
-/// Docker security profiles — named bundles of capability grants.
+/// Docker security profiles and capability grant model.
 ///
 /// Profiles are ordered ascending by capability: `Locked` is the tightest,
 /// `Compat` grants everything. An operator grants up from a locked baseline
 /// rather than restricting down from a permissive one.
-///
-/// Phase 1: the enum and type infrastructure exist; all profiles resolve to
-/// `Compat`-equivalent Docker flags until Phase 2–5 wire each dimension.
 use serde::{Deserialize, Serialize};
+
+// ── Profile enum ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DockerSecurityProfile {
-    /// Minimal — model API access only, no DinD, no sudo, read-only root.
-    /// Purpose-built read-only analysis roles. Highest confidence in
-    /// container boundary.
+    /// Minimal — allowlist network, no DinD, no sudo, read-only root, 4G memory.
+    /// Purpose-built read-only analysis roles. Highest confidence in container
+    /// boundary.
     Locked,
-    /// Restricted — no DinD by default, allowlist network, no sudo, read-only
-    /// root. For untrusted repos or long autonomous runs where inner Docker
-    /// is not needed.
+    /// Restricted — allowlist network, no DinD by default, no sudo, read-only
+    /// root, 16G memory. For untrusted repos or long autonomous runs where
+    /// inner Docker is not needed.
     Hardened,
-    /// Typical dev work — open network, DinD, sudo, writable root, resource
-    /// limits required. Intended eventual default after the sudo audit.
+    /// Typical dev work — open network, DinD, sudo, writable root, 16G memory.
+    /// Intended eventual default after the sudo audit.
     Standard,
-    /// Maximum compatibility — today's behavior. Privileged DinD, open
-    /// network, NOPASSWD:ALL sudo, no resource limits. Explicit opt-in for
-    /// roles that need everything.
+    /// Maximum compatibility — today's behavior. Privileged DinD, open network,
+    /// NOPASSWD:ALL sudo, no resource limits. Explicit opt-in for roles that
+    /// need everything.
     Compat,
 }
 
@@ -77,19 +76,607 @@ impl std::fmt::Display for ParseProfileError {
 
 impl std::error::Error for ParseProfileError {}
 
-/// Resolve the effective profile for a launch from the available sources.
+// ── Per-dimension grant enums ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NetworkGrant {
+    None,
+    Allowlist,
+    Open,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DindGrant {
+    None,
+    Rootless,
+    Privileged,
+}
+
+// ── Valid Linux capability names ─────────────────────────────────────────────
+
+/// All recognized Linux capability names (without the `CAP_` prefix,
+/// uppercase). Used to validate `capabilities_add` entries at launch time.
+pub const VALID_CAPABILITIES: &[&str] = &[
+    "AUDIT_CONTROL",
+    "AUDIT_READ",
+    "AUDIT_WRITE",
+    "BPF",
+    "BLOCK_SUSPEND",
+    "CHECKPOINT_RESTORE",
+    "CHOWN",
+    "DAC_OVERRIDE",
+    "DAC_READ_SEARCH",
+    "FOWNER",
+    "FSETID",
+    "IPC_LOCK",
+    "IPC_OWNER",
+    "KILL",
+    "LEASE",
+    "LINUX_IMMUTABLE",
+    "MAC_ADMIN",
+    "MAC_OVERRIDE",
+    "MKNOD",
+    "NET_ADMIN",
+    "NET_BIND_SERVICE",
+    "NET_BROADCAST",
+    "NET_RAW",
+    "PERFMON",
+    "SETFCAP",
+    "SETGID",
+    "SETPCAP",
+    "SETUID",
+    "SYS_ADMIN",
+    "SYS_BOOT",
+    "SYS_CHROOT",
+    "SYS_MODULE",
+    "SYS_NICE",
+    "SYS_PACCT",
+    "SYS_PTRACE",
+    "SYS_RAWIO",
+    "SYS_RESOURCE",
+    "SYS_TIME",
+    "SYS_TTY_CONFIG",
+    "WAKE_ALARM",
+];
+
+/// The 8-cap minimum set applied under `hardened` and `locked` when DinD is
+/// disabled. Derived from common role workflows (package managers, build tools,
+/// process supervisors). Everything else is dropped from Docker's 14-cap default.
+pub const MINIMUM_CAPABILITIES: &[&str] = &[
+    "CHOWN",
+    "DAC_OVERRIDE",
+    "FOWNER",
+    "FSETID",
+    "SETUID",
+    "SETGID",
+    "SETFCAP",
+    "KILL",
+];
+
+/// Docker's 14-cap default. Applied under `standard` and `compat` (no explicit
+/// `--cap-drop` / `--cap-add` flags are emitted for these profiles).
+pub const DEFAULT_CAPABILITIES: &[&str] = &[
+    "CHOWN",
+    "DAC_OVERRIDE",
+    "FSETID",
+    "FOWNER",
+    "MKNOD",
+    "NET_RAW",
+    "SETGID",
+    "SETUID",
+    "SETFCAP",
+    "SETPCAP",
+    "NET_BIND_SERVICE",
+    "SYS_CHROOT",
+    "KILL",
+    "AUDIT_WRITE",
+];
+
+// ── Grant overrides struct ───────────────────────────────────────────────────
+
+/// Per-dimension explicit overrides that layer on top of a profile's defaults.
+/// All fields are optional — `None` means "use the profile's default for this
+/// dimension." Validated at launch time before any container is started.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DockerGrants {
+    /// Outbound network tier. Overrides the profile default for this dimension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<NetworkGrant>,
+    /// Extra hosts/IPs added to the `allowlist` network tier (beyond the
+    /// auto-assembled agent API endpoints). Each entry is a domain name,
+    /// IPv4/IPv6 CIDR, wildcard subdomain (`*.example.com`), or
+    /// `domain:port`. Only meaningful when `network = "allowlist"`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_hosts: Vec<String>,
+    /// Docker-in-Docker tier. Overrides the profile default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dind: Option<DindGrant>,
+    /// User the container process runs as (`"agent"`, `"root"`, or any
+    /// username defined in the image). Maps to `--user <value>`.
+    /// Default: `"agent"` (host-UID-remapped from the construct image).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// Grant `NOPASSWD:ALL` sudo to the container user.
+    /// **Validation error** if `user = "root"` and `sudo = true` are both set —
+    /// root does not need sudo escalation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sudo: Option<bool>,
+    /// Allow writes to the container's root filesystem (image layer).
+    /// `false` = `--read-only` + tmpfs preset; `true` = writable root (default
+    /// for `standard`/`compat`). Workspace mounts have their own `readonly`
+    /// flag independent of this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_writes: Option<bool>,
+    /// Hard memory ceiling (`--memory`). Parsed as a human-readable size:
+    /// `"512M"`, `"4G"`, `"32G"`. Omit = no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<String>,
+    /// Soft memory ceiling (`--memory-reservation`). Must be ≤ `memory`
+    /// when both are set. Triggers throttling before OOM-kill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_reservation: Option<String>,
+    /// CPU share quota (`--cpus`). `4.0` = 4 full cores. Omit = unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpus: Option<f64>,
+    /// Maximum number of processes (`--pids-limit`). Prevents fork bombs.
+    /// Omit = unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pids: Option<i64>,
+    /// Open file descriptor limit (`--ulimit nofile=N:N`). Omit = system
+    /// default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nofile: Option<u64>,
+    /// Linux capabilities to add beyond the profile's base cap set
+    /// (`--cap-add`). Each entry is a cap name without the `CAP_` prefix,
+    /// case-insensitive. **Validation error** if any entry is not in
+    /// `VALID_CAPABILITIES`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities_add: Vec<String>,
+}
+
+// ── Validation ───────────────────────────────────────────────────────────────
+
+/// Errors produced by [`validate_grants`] before any container is started.
+#[derive(Debug)]
+pub enum GrantValidationError {
+    /// `user = "root"` and `sudo = true` are mutually exclusive.
+    RootAndSudo,
+    /// An entry in `capabilities_add` is not a recognized Linux capability.
+    UnknownCapability(String),
+    /// `memory_reservation` exceeds `memory` (both provided).
+    MemoryReservationExceedsMemory { reservation: u64, memory: u64 },
+    /// A size string could not be parsed.
+    UnparsableSize { field: &'static str, value: String },
+}
+
+impl std::fmt::Display for GrantValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RootAndSudo => write!(
+                f,
+                "grants.user = \"root\" and grants.sudo = true are mutually exclusive: \
+                 root does not need sudo escalation; remove one of the two grants"
+            ),
+            Self::UnknownCapability(cap) => {
+                write!(
+                    f,
+                    "unknown Linux capability {cap:?} in grants.capabilities_add — \
+                     valid values: {}",
+                    VALID_CAPABILITIES.join(", ")
+                )
+            }
+            Self::MemoryReservationExceedsMemory {
+                reservation,
+                memory,
+            } => write!(
+                f,
+                "grants.memory_reservation ({}) must be ≤ grants.memory ({})",
+                format_bytes(*reservation),
+                format_bytes(*memory),
+            ),
+            Self::UnparsableSize { field, value } => write!(
+                f,
+                "cannot parse {value:?} as a size for grants.{field} — \
+                 use format \"512M\", \"4G\", \"32G\""
+            ),
+        }
+    }
+}
+
+impl std::error::Error for GrantValidationError {}
+
+/// Parse a human-readable byte size (`"512M"`, `"4G"`, `"16G"`, `"2048K"`)
+/// into a byte count. Case-insensitive suffix.
+///
+/// # Errors
+///
+/// Returns `None` if the string cannot be parsed.
+pub fn parse_memory_bytes(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    // Find where the numeric part ends.
+    let split = s
+        .find(|c: char| c.is_alphabetic())
+        .unwrap_or(s.len());
+    let number: u64 = s[..split].trim().parse().ok()?;
+    let suffix = s[split..].trim().to_ascii_uppercase();
+    let multiplier = match suffix.as_str() {
+        "K" | "KB" => 1_024,
+        "M" | "MB" => 1_024 * 1_024,
+        "G" | "GB" => 1_024 * 1_024 * 1_024,
+        "T" | "TB" => 1_024 * 1_024 * 1_024 * 1_024,
+        "" => 1,
+        _ => return None,
+    };
+    number.checked_mul(multiplier)
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const GB: u64 = 1_024 * 1_024 * 1_024;
+    const MB: u64 = 1_024 * 1_024;
+    const KB: u64 = 1_024;
+    if bytes % GB == 0 {
+        format!("{}G", bytes / GB)
+    } else if bytes % MB == 0 {
+        format!("{}M", bytes / MB)
+    } else if bytes % KB == 0 {
+        format!("{}K", bytes / KB)
+    } else {
+        format!("{bytes}B")
+    }
+}
+
+/// Validate explicit grants, returning all errors found (not just the first).
+///
+/// Called at launch time before any container is started. A non-empty error
+/// list aborts the launch with clear, actionable messages.
+pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
+    let mut errors = Vec::new();
+
+    // user = "root" + sudo = true is mutually exclusive.
+    if grants.user.as_deref() == Some("root") && grants.sudo == Some(true) {
+        errors.push(GrantValidationError::RootAndSudo);
+    }
+
+    // Validate capability names.
+    for cap in &grants.capabilities_add {
+        let upper = cap.to_ascii_uppercase();
+        // Strip leading CAP_ if present (be lenient on input).
+        let normalized = upper.strip_prefix("CAP_").unwrap_or(&upper);
+        if !VALID_CAPABILITIES.contains(&normalized) {
+            errors.push(GrantValidationError::UnknownCapability(cap.clone()));
+        }
+    }
+
+    // Parse and validate memory sizes.
+    let memory_bytes = grants.memory.as_deref().and_then(|s| {
+        if parse_memory_bytes(s).is_none() {
+            errors.push(GrantValidationError::UnparsableSize {
+                field: "memory",
+                value: s.to_string(),
+            });
+        }
+        parse_memory_bytes(s)
+    });
+
+    let reservation_bytes = grants.memory_reservation.as_deref().and_then(|s| {
+        if parse_memory_bytes(s).is_none() {
+            errors.push(GrantValidationError::UnparsableSize {
+                field: "memory_reservation",
+                value: s.to_string(),
+            });
+        }
+        parse_memory_bytes(s)
+    });
+
+    if let (Some(res), Some(mem)) = (reservation_bytes, memory_bytes) {
+        if res > mem {
+            errors.push(GrantValidationError::MemoryReservationExceedsMemory {
+                reservation: res,
+                memory: mem,
+            });
+        }
+    }
+
+    errors
+}
+
+/// Normalize a capability name to uppercase without `CAP_` prefix.
+fn normalize_cap(cap: &str) -> String {
+    let upper = cap.to_ascii_uppercase();
+    upper.strip_prefix("CAP_").unwrap_or(&upper).to_string()
+}
+
+// ── Effective grants ─────────────────────────────────────────────────────────
+
+/// Fully resolved grants for a launch — every dimension has a concrete value,
+/// produced by merging the profile's defaults with explicit overrides.
+#[derive(Debug, Clone)]
+pub struct EffectiveGrants {
+    pub network: NetworkGrant,
+    /// Merged list of allowed hosts for the `allowlist` network tier.
+    pub allowed_hosts: Vec<String>,
+    pub dind: DindGrant,
+    /// Username passed to `--user` on `docker run`. `"agent"` means no
+    /// explicit `--user` flag (the image's `USER` directive governs).
+    pub user: String,
+    pub sudo: bool,
+    pub system_writes: bool,
+    /// Parsed hard memory limit in bytes. `None` = no limit.
+    pub memory_bytes: Option<u64>,
+    /// Parsed soft memory limit in bytes. `None` = no soft limit.
+    pub memory_reservation_bytes: Option<u64>,
+    pub cpus: Option<f64>,
+    pub pids: Option<i64>,
+    pub nofile: Option<u64>,
+    /// Additional capabilities beyond the profile's base set.
+    pub capabilities_add: Vec<String>,
+    /// Whether `--security-opt no-new-privileges` should be applied.
+    /// Currently schema-only (sudo audit pending); enforcement is deferred.
+    pub no_new_privileges: bool,
+}
+
+/// Per-profile base grants. Explicit [`DockerGrants`] are layered on top via
+/// [`apply_grants`].
+pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
+    const GB: u64 = 1_024 * 1_024 * 1_024;
+    match profile {
+        DockerSecurityProfile::Locked => EffectiveGrants {
+            network: NetworkGrant::Allowlist,
+            allowed_hosts: Vec::new(),
+            dind: DindGrant::None,
+            user: "agent".to_string(),
+            sudo: false,
+            system_writes: false,
+            memory_bytes: Some(4 * GB),
+            memory_reservation_bytes: Some(3 * GB),
+            cpus: Some(2.0),
+            pids: Some(512),
+            nofile: Some(2048),
+            capabilities_add: Vec::new(),
+            no_new_privileges: true,
+        },
+        DockerSecurityProfile::Hardened => EffectiveGrants {
+            network: NetworkGrant::Allowlist,
+            allowed_hosts: Vec::new(),
+            dind: DindGrant::None,
+            user: "agent".to_string(),
+            sudo: false,
+            system_writes: false,
+            memory_bytes: Some(16 * GB),
+            memory_reservation_bytes: Some(12 * GB),
+            cpus: Some(4.0),
+            pids: Some(2048),
+            nofile: Some(8192),
+            capabilities_add: Vec::new(),
+            no_new_privileges: true,
+        },
+        DockerSecurityProfile::Standard => EffectiveGrants {
+            network: NetworkGrant::Open,
+            allowed_hosts: Vec::new(),
+            dind: DindGrant::Privileged,
+            user: "agent".to_string(),
+            sudo: true,
+            system_writes: true,
+            memory_bytes: Some(16 * GB),
+            memory_reservation_bytes: Some(12 * GB),
+            cpus: Some(4.0),
+            pids: Some(2048),
+            nofile: Some(8192),
+            capabilities_add: Vec::new(),
+            no_new_privileges: false,
+        },
+        DockerSecurityProfile::Compat => EffectiveGrants {
+            network: NetworkGrant::Open,
+            allowed_hosts: Vec::new(),
+            dind: DindGrant::Privileged,
+            user: "agent".to_string(),
+            sudo: true,
+            system_writes: true,
+            memory_bytes: None,
+            memory_reservation_bytes: None,
+            cpus: None,
+            pids: None,
+            nofile: None,
+            capabilities_add: Vec::new(),
+            no_new_privileges: false,
+        },
+    }
+}
+
+/// Apply explicit grants on top of profile defaults. Each dimension takes the
+/// more capable of the profile default and the explicit override.
+///
+/// Grants must already have been validated by [`validate_grants`].
+pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> EffectiveGrants {
+    if let Some(network) = grants.network {
+        if network > base.network {
+            base.network = network;
+        }
+    }
+    if !grants.allowed_hosts.is_empty() {
+        base.allowed_hosts.extend(grants.allowed_hosts.iter().cloned());
+        base.allowed_hosts.sort_unstable();
+        base.allowed_hosts.dedup();
+    }
+    if let Some(dind) = grants.dind {
+        if dind > base.dind {
+            base.dind = dind;
+        }
+    }
+    if let Some(ref user) = grants.user {
+        base.user = user.clone();
+    }
+    if let Some(sudo) = grants.sudo {
+        base.sudo = base.sudo || sudo;
+    }
+    if let Some(sw) = grants.system_writes {
+        base.system_writes = base.system_writes || sw;
+    }
+    if let Some(ref mem) = grants.memory {
+        if let Some(bytes) = parse_memory_bytes(mem) {
+            base.memory_bytes = Some(base.memory_bytes.map_or(bytes, |b| b.max(bytes)));
+        }
+    }
+    if let Some(ref res) = grants.memory_reservation {
+        if let Some(bytes) = parse_memory_bytes(res) {
+            base.memory_reservation_bytes =
+                Some(base.memory_reservation_bytes.map_or(bytes, |b| b.max(bytes)));
+        }
+    }
+    if let Some(cpus) = grants.cpus {
+        base.cpus = Some(base.cpus.map_or(cpus, |c: f64| c.max(cpus)));
+    }
+    if let Some(pids) = grants.pids {
+        base.pids = Some(base.pids.map_or(pids, |p| p.max(pids)));
+    }
+    if let Some(nofile) = grants.nofile {
+        base.nofile = Some(base.nofile.map_or(nofile, |n| n.max(nofile)));
+    }
+    for cap in &grants.capabilities_add {
+        let normalized = normalize_cap(cap);
+        if !base.capabilities_add.contains(&normalized) {
+            base.capabilities_add.push(normalized);
+        }
+    }
+    base
+}
+
+// ── Profile resolution ───────────────────────────────────────────────────────
+
+/// Resolve the effective Docker security profile from the available sources.
 ///
 /// Precedence (highest to lowest):
 /// 1. CLI `--docker-profile` override
-/// 2. Workspace `[docker] profile` (not yet wired — Phase 2)
-/// 3. Role manifest `[docker] min_profile` (not yet wired — Phase 2)
-/// 4. Global `[docker] default_profile` from config.toml (not yet wired — Phase 2)
-/// 5. Compiled-in default (`Compat` until sudo audit resolves)
+/// 2. Workspace `[docker] profile` override
+/// 3. Global `[docker] default_profile` from `config.toml`
+/// 4. Compiled-in default (`Compat` until sudo audit resolves)
+pub fn resolve_profile(
+    cli_override: Option<DockerSecurityProfile>,
+    workspace_profile: Option<DockerSecurityProfile>,
+    config_default: Option<DockerSecurityProfile>,
+) -> DockerSecurityProfile {
+    cli_override
+        .or(workspace_profile)
+        .or(config_default)
+        .unwrap_or_default()
+}
+
+/// Resolve the effective profile and apply grants, returning the merged
+/// [`EffectiveGrants`] for a launch.
 ///
-/// Phase 1: only the CLI override and the compiled-in default are active.
-/// All profiles produce identical Docker flags (`Compat` behavior).
-pub fn resolve_profile(cli_override: Option<DockerSecurityProfile>) -> DockerSecurityProfile {
-    cli_override.unwrap_or_default()
+/// Precedence: config-level grants are applied first, then workspace-level
+/// grants layer on top (workspace wins). Both use the same profile base.
+pub fn resolve_effective_grants(
+    profile: DockerSecurityProfile,
+    config_grants: Option<&DockerGrants>,
+    workspace_grants: Option<&DockerGrants>,
+) -> EffectiveGrants {
+    let base = profile_base_grants(profile);
+    let after_config = match config_grants {
+        Some(g) => apply_grants(base, g),
+        None => base,
+    };
+    match workspace_grants {
+        Some(g) => apply_grants(after_config, g),
+        None => after_config,
+    }
+}
+
+// ── Docker flag emission ─────────────────────────────────────────────────────
+
+/// Emit resource limit Docker CLI flags from resolved grants.
+/// Returns an owned `Vec<String>` of alternating flag/value pairs ready to
+/// extend a `Vec<&str>` run_args via `.iter().map(String::as_str)`.
+pub fn resource_flags(grants: &EffectiveGrants) -> Vec<String> {
+    let mut flags = Vec::new();
+    if let Some(bytes) = grants.memory_bytes {
+        flags.push("--memory".to_string());
+        flags.push(bytes.to_string());
+    }
+    if let Some(bytes) = grants.memory_reservation_bytes {
+        flags.push("--memory-reservation".to_string());
+        flags.push(bytes.to_string());
+    }
+    if let Some(cpus) = grants.cpus {
+        flags.push("--cpus".to_string());
+        flags.push(cpus.to_string());
+    }
+    if let Some(pids) = grants.pids {
+        flags.push("--pids-limit".to_string());
+        flags.push(pids.to_string());
+    }
+    if let Some(nofile) = grants.nofile {
+        flags.push("--ulimit".to_string());
+        flags.push(format!("nofile={nofile}:{nofile}"));
+    }
+    flags
+}
+
+/// Emit capability flags for the profile's base cap set.
+///
+/// Only meaningful when `grants.dind == DindGrant::None` — with DinD active,
+/// capability drops are circumventable via `docker run --privileged` against
+/// the sidecar. Returns empty when the profile uses Docker's default cap set
+/// (`standard`/`compat`) to avoid redundant flags.
+pub fn capability_flags(profile: DockerSecurityProfile, extra_caps: &[String]) -> Vec<String> {
+    let drops_all = matches!(
+        profile,
+        DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
+    );
+    if !drops_all && extra_caps.is_empty() {
+        return Vec::new();
+    }
+    let mut flags = Vec::new();
+    if drops_all {
+        flags.push("--cap-drop=ALL".to_string());
+        for cap in MINIMUM_CAPABILITIES {
+            flags.push("--cap-add".to_string());
+            flags.push(cap.to_string());
+        }
+    }
+    for cap in extra_caps {
+        let normalized = normalize_cap(cap);
+        flags.push("--cap-add".to_string());
+        flags.push(normalized);
+    }
+    flags
+}
+
+/// Emit `--read-only` and `--tmpfs` flags for profiles that use a read-only
+/// root filesystem.
+///
+/// The tmpfs preset covers paths that tooling writes to at runtime but that
+/// are NOT already bind-mounted (`/jackin/run`, `/jackin/state`, and agent
+/// home credential dirs are bind mounts and already writable regardless of
+/// `--read-only`).
+pub fn readonly_root_flags(grants: &EffectiveGrants) -> Vec<String> {
+    if grants.system_writes {
+        return Vec::new();
+    }
+    let mut flags = vec!["--read-only".to_string()];
+    let tmpfs_paths = [
+        "/tmp",
+        "/run",
+        "/var/run",
+        "/var/tmp",
+        "/var/cache",
+        "/var/log",
+        "/var/lib/apt/lists",
+        "/var/cache/apt/archives",
+        "/var/lib/dpkg",
+        "/home/agent/.cache",
+        "/home/agent/.zsh_sessions",
+    ];
+    for path in &tmpfs_paths {
+        flags.push("--tmpfs".to_string());
+        flags.push(format!("{path}:rw,nosuid,nodev"));
+    }
+    flags
 }
 
 #[cfg(test)]
@@ -130,13 +717,210 @@ mod tests {
     #[test]
     fn resolve_cli_override_wins() {
         assert_eq!(
-            resolve_profile(Some(DockerSecurityProfile::Locked)),
+            resolve_profile(
+                Some(DockerSecurityProfile::Locked),
+                Some(DockerSecurityProfile::Standard),
+                Some(DockerSecurityProfile::Compat),
+            ),
             DockerSecurityProfile::Locked,
         );
     }
 
     #[test]
+    fn resolve_workspace_beats_config() {
+        assert_eq!(
+            resolve_profile(
+                None,
+                Some(DockerSecurityProfile::Hardened),
+                Some(DockerSecurityProfile::Compat),
+            ),
+            DockerSecurityProfile::Hardened,
+        );
+    }
+
+    #[test]
     fn resolve_no_override_returns_default() {
-        assert_eq!(resolve_profile(None), DockerSecurityProfile::default());
+        assert_eq!(
+            resolve_profile(None, None, None),
+            DockerSecurityProfile::default()
+        );
+    }
+
+    #[test]
+    fn parse_memory_bytes_units() {
+        assert_eq!(parse_memory_bytes("512M"), Some(512 * 1024 * 1024));
+        assert_eq!(parse_memory_bytes("4G"), Some(4 * 1024 * 1024 * 1024));
+        assert_eq!(parse_memory_bytes("2048K"), Some(2048 * 1024));
+        assert_eq!(parse_memory_bytes("1024"), Some(1024));
+        assert_eq!(parse_memory_bytes("4g"), Some(4 * 1024 * 1024 * 1024));
+        assert_eq!(parse_memory_bytes("bad"), None);
+        assert_eq!(parse_memory_bytes(""), None);
+    }
+
+    #[test]
+    fn validate_grants_root_and_sudo_error() {
+        let grants = DockerGrants {
+            user: Some("root".to_string()),
+            sudo: Some(true),
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(!errors.is_empty());
+        assert!(matches!(errors[0], GrantValidationError::RootAndSudo));
+    }
+
+    #[test]
+    fn validate_grants_unknown_cap_error() {
+        let grants = DockerGrants {
+            capabilities_add: vec!["MAGIC_CAP".to_string()],
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(!errors.is_empty());
+        assert!(matches!(&errors[0], GrantValidationError::UnknownCapability(s) if s == "MAGIC_CAP"));
+    }
+
+    #[test]
+    fn validate_grants_cap_prefix_stripped() {
+        let grants = DockerGrants {
+            capabilities_add: vec!["CAP_NET_RAW".to_string()],
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(errors.is_empty(), "CAP_NET_RAW should be valid after stripping prefix");
+    }
+
+    #[test]
+    fn validate_grants_memory_reservation_exceeds_memory() {
+        let grants = DockerGrants {
+            memory: Some("4G".to_string()),
+            memory_reservation: Some("8G".to_string()),
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(!errors.is_empty());
+        assert!(matches!(
+            errors[0],
+            GrantValidationError::MemoryReservationExceedsMemory { .. }
+        ));
+    }
+
+    #[test]
+    fn validate_grants_valid_passes() {
+        let grants = DockerGrants {
+            memory: Some("16G".to_string()),
+            memory_reservation: Some("12G".to_string()),
+            cpus: Some(4.0),
+            pids: Some(2048),
+            nofile: Some(8192),
+            capabilities_add: vec!["NET_RAW".to_string(), "SYS_PTRACE".to_string()],
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn resource_flags_full() {
+        let grants = EffectiveGrants {
+            network: NetworkGrant::Open,
+            allowed_hosts: vec![],
+            dind: DindGrant::Privileged,
+            user: "agent".to_string(),
+            sudo: true,
+            system_writes: true,
+            memory_bytes: Some(4 * 1024 * 1024 * 1024),
+            memory_reservation_bytes: Some(3 * 1024 * 1024 * 1024),
+            cpus: Some(2.0),
+            pids: Some(512),
+            nofile: Some(2048),
+            capabilities_add: vec![],
+            no_new_privileges: false,
+        };
+        let flags = resource_flags(&grants);
+        assert!(flags.contains(&"--memory".to_string()));
+        assert!(flags.contains(&"--memory-reservation".to_string()));
+        assert!(flags.contains(&"--cpus".to_string()));
+        assert!(flags.contains(&"--pids-limit".to_string()));
+        assert!(flags.contains(&"--ulimit".to_string()));
+    }
+
+    #[test]
+    fn resource_flags_empty_for_compat() {
+        let grants = profile_base_grants(DockerSecurityProfile::Compat);
+        let flags = resource_flags(&grants);
+        assert!(flags.is_empty());
+    }
+
+    #[test]
+    fn capability_flags_hardened_drops_all() {
+        let flags =
+            capability_flags(DockerSecurityProfile::Hardened, &[]);
+        assert!(flags.contains(&"--cap-drop=ALL".to_string()));
+        for cap in MINIMUM_CAPABILITIES {
+            assert!(
+                flags.contains(&"--cap-add".to_string()),
+                "missing --cap-add for {cap}"
+            );
+            assert!(flags.contains(&cap.to_string()));
+        }
+    }
+
+    #[test]
+    fn capability_flags_compat_empty() {
+        let flags = capability_flags(DockerSecurityProfile::Compat, &[]);
+        assert!(flags.is_empty());
+    }
+
+    #[test]
+    fn readonly_root_flags_for_locked() {
+        let grants = profile_base_grants(DockerSecurityProfile::Locked);
+        let flags = readonly_root_flags(&grants);
+        assert!(flags.contains(&"--read-only".to_string()));
+        assert!(flags.iter().any(|f| f.starts_with("/tmp")));
+    }
+
+    #[test]
+    fn readonly_root_flags_empty_for_compat() {
+        let grants = profile_base_grants(DockerSecurityProfile::Compat);
+        let flags = readonly_root_flags(&grants);
+        assert!(flags.is_empty());
+    }
+
+    #[test]
+    fn apply_grants_raises_network() {
+        let base = profile_base_grants(DockerSecurityProfile::Locked);
+        assert_eq!(base.network, NetworkGrant::Allowlist);
+        let grants = DockerGrants {
+            network: Some(NetworkGrant::Open),
+            ..Default::default()
+        };
+        let effective = apply_grants(base, &grants);
+        assert_eq!(effective.network, NetworkGrant::Open);
+    }
+
+    #[test]
+    fn apply_grants_cannot_lower_network() {
+        let base = profile_base_grants(DockerSecurityProfile::Standard);
+        assert_eq!(base.network, NetworkGrant::Open);
+        let grants = DockerGrants {
+            network: Some(NetworkGrant::None),
+            ..Default::default()
+        };
+        // Grant is lower than profile default — profile wins.
+        let effective = apply_grants(base, &grants);
+        assert_eq!(effective.network, NetworkGrant::Open);
+    }
+
+    #[test]
+    fn network_grant_ord() {
+        assert!(NetworkGrant::None < NetworkGrant::Allowlist);
+        assert!(NetworkGrant::Allowlist < NetworkGrant::Open);
+    }
+
+    #[test]
+    fn dind_grant_ord() {
+        assert!(DindGrant::None < DindGrant::Rootless);
+        assert!(DindGrant::Rootless < DindGrant::Privileged);
     }
 }

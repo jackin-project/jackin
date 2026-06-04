@@ -24,13 +24,50 @@ The split-workspace layout described in [Configuration File](/reference/configur
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha5` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha5` | jackin | Automatic on startup |
-| `jackin.role.toml` | `v1alpha4` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
+| `~/.config/jackin/config.toml` | `v1alpha6` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha6` | jackin | Automatic on startup |
+| `jackin.role.toml` | `v1alpha5` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### `v1alpha6` — 2026-06-04
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha5/meta.toml" /> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-v1alpha5/meta.toml" /> |
+
+**Summary**: introduces `[docker].profile` (optional string: `locked`, `hardened`, `standard`, `compat`) and `[docker].grants` (optional table with per-dimension capability overrides) on both `config.toml` and workspace files. Both fields are additive with serde defaults — absent means no profile override / no grants. The migration is a no-op restamp for both file kinds.
+
+**Before** (v1alpha5 config):
+
+```toml
+version = "v1alpha5"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
+
+**After** (v1alpha6):
+
+```toml
+version = "v1alpha6"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
+
+### `v1alpha5` (manifest) — 2026-06-04
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml" /> |
+
+**Summary**: introduces `[docker].min_profile` (optional string), `[docker].dind` (optional string), and `network_allow` (optional array of strings). All additive with serde defaults. The migration is a no-op restamp.
 
 ### Workspace `v1alpha5` — 2026-05-26
 

@@ -617,18 +617,15 @@ pub async fn inspect_hardline_instance(
     let manifest_result: Result<Option<InstanceManifest>, String> =
         InstanceManifest::read_optional(&state_dir).map_err(|e| e.to_string());
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);
-    let dind_name = manifest.map_or_else(
-        || format!("{container_name}-dind"),
-        |manifest| manifest.docker.dind_container.clone(),
-    );
-    let network_name = manifest.as_ref().map_or_else(
-        || format!("{container_name}-net"),
-        |manifest| manifest.docker.network.clone(),
-    );
-    let certs_volume = manifest.as_ref().map_or_else(
-        || dind_certs_volume(container_name),
-        |manifest| manifest.docker.certs_volume.clone(),
-    );
+    let dind_name = manifest
+        .and_then(|m| m.docker.dind_container.clone())
+        .unwrap_or_else(|| format!("{container_name}-dind"));
+    let network_name = manifest
+        .map(|m| m.docker.network.clone())
+        .unwrap_or_else(|| format!("{container_name}-net"));
+    let certs_volume = manifest
+        .and_then(|m| m.docker.certs_volume.clone())
+        .unwrap_or_else(|| dind_certs_volume(container_name));
 
     let (role_container_state, dind_state_raw, network_result) = tokio::join!(
         docker.inspect_container_state(container_name),
@@ -1009,9 +1006,9 @@ mod tests {
             image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
+                dind_container: Some(format!("{container_name}-dind")),
                 network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
+                certs_volume: Some(format!("{container_name}-dind-certs")),
             },
         });
         let docker = FakeDockerClient {
@@ -1072,9 +1069,9 @@ mod tests {
             image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
+                dind_container: Some(format!("{container_name}-dind")),
                 network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
+                certs_volume: Some(format!("{container_name}-dind-certs")),
             },
         });
         let docker = FakeDockerClient {
@@ -1145,9 +1142,9 @@ mod tests {
             image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
+                dind_container: Some(format!("{container_name}-dind")),
                 network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
+                certs_volume: Some(format!("{container_name}-dind-certs")),
             },
         });
         let docker = FakeDockerClient {
@@ -1380,9 +1377,9 @@ mod tests {
             image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
+                dind_container: Some(format!("{container_name}-dind")),
                 network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
+                certs_volume: Some(format!("{container_name}-dind-certs")),
             },
         });
         manifest.mark_status(InstanceStatus::Crashed);
@@ -1421,9 +1418,9 @@ mod tests {
             image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
+                dind_container: Some(format!("{container_name}-dind")),
                 network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
+                certs_volume: Some(format!("{container_name}-dind-certs")),
             },
         });
         manifest.mark_status(InstanceStatus::PreservedDirty);
@@ -1585,9 +1582,9 @@ mod tests {
             image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
+                dind_container: Some(format!("{container_name}-dind")),
                 network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
+                certs_volume: Some(format!("{container_name}-dind-certs")),
             },
         });
         manifest

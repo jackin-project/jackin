@@ -87,9 +87,15 @@ pub struct SessionRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
     pub role_container: String,
-    pub dind_container: String,
+    /// DinD sidecar container name. `None` when the launch used
+    /// `dind = "none"` (DinD-free role or `locked`/`hardened` profile without
+    /// an explicit DinD grant).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dind_container: Option<String>,
     pub network: String,
-    pub certs_volume: String,
+    /// DinD TLS cert volume name. `None` when there is no DinD sidecar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certs_volume: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -613,9 +619,9 @@ mod tests {
             image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                dind_container: Some("jk-k7p9m2xq-workspace-agent-dind".to_string()),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+                certs_volume: Some("jk-k7p9m2xq-workspace-agent-dind-certs".to_string()),
             },
         })
     }
@@ -637,9 +643,9 @@ mod tests {
             image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                dind_container: Some("jk-k7p9m2xq-workspace-agent-dind".to_string()),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+                certs_volume: Some("jk-k7p9m2xq-workspace-agent-dind-certs".to_string()),
             },
         });
         manifest.mark_status(InstanceStatus::Running);
@@ -670,9 +676,9 @@ mod tests {
             image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                dind_container: Some("jk-k7p9m2xq-workspace-agent-dind".to_string()),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+                certs_volume: Some("jk-k7p9m2xq-workspace-agent-dind-certs".to_string()),
             },
         });
         manifest
@@ -714,9 +720,9 @@ mod tests {
             image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                dind_container: Some("jk-k7p9m2xq-workspace-agent-dind".to_string()),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+                certs_volume: Some("jk-k7p9m2xq-workspace-agent-dind-certs".to_string()),
             },
         });
 

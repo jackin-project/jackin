@@ -1,0 +1,4 @@
+from_version = "v1alpha5"
+target_version = "v1alpha6"
+target_version_shipped = "2026-06-04"
+summary = "Restamps workspace config as v1alpha6. Introduces [docker].profile (optional string) and [docker].grants (optional table); the migration is a no-op restamp."

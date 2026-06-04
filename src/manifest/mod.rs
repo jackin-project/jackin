@@ -41,6 +41,22 @@ pub struct RoleManifest {
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
+    /// Minimum Docker security profile this role requires.
+    /// Launches under a stricter profile than `min_profile` will fail with
+    /// a clear conflict message. Default: `None` (accepts any profile).
+    #[serde(default)]
+    pub min_profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
+    /// Docker-in-Docker requirement declared by the role.
+    /// Determines which DinD tier (if any) to start under profiles where
+    /// DinD is not granted by default (e.g. `hardened`, `locked`).
+    /// `None` = role does not declare a DinD requirement (DinD controlled
+    /// entirely by profile + operator grants).
+    #[serde(default)]
+    pub dind: Option<crate::runtime::docker_profile::DindGrant>,
+    /// Role-level network allowed hosts, merged into `JACKIN_ALLOWED_HOSTS`
+    /// when `network = "allowlist"` is active.
+    #[serde(default)]
+    pub network_allow: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -433,7 +449,7 @@ plugins = []
 
         let err = RoleManifest::load(temp.path()).unwrap_err();
         let chain = format!("{err:#}");
-        assert!(chain.contains("only understands up to v1alpha4"), "{chain}");
+        assert!(chain.contains("only understands up to v1alpha5"), "{chain}");
     }
 
     #[test]

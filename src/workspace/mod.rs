@@ -41,7 +41,9 @@ pub struct MountConfig {
     pub isolation: crate::isolation::MountIsolation,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// `PartialEq` only (not `Eq`) because `WorkspaceDockerConfig` contains
+// `DockerGrants` which has `Option<f64>` — floats don't implement `Eq`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkspaceConfig {
     #[serde(
         default = "crate::config::migrations::current_workspace_version",
@@ -104,6 +106,22 @@ pub struct WorkspaceConfig {
     pub github: Option<crate::config::GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
+    /// Workspace-level Docker security configuration — profile override and
+    /// explicit capability grants for this workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker: Option<WorkspaceDockerConfig>,
+}
+
+/// Docker security settings scoped to one workspace.
+// `PartialEq` only because `DockerGrants` contains `Option<f64>`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct WorkspaceDockerConfig {
+    /// Override the global `[docker] profile` for launches in this workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
+    /// Workspace-level capability grants applied on top of the resolved profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<crate::runtime::docker_profile::DockerGrants>,
 }
 
 impl Default for WorkspaceConfig {
@@ -126,6 +144,7 @@ impl Default for WorkspaceConfig {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         }
     }
 }
@@ -811,6 +830,7 @@ isolation = "clone"
             opencode: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

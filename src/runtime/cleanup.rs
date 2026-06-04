@@ -97,17 +97,40 @@ pub async fn eject_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    let dind = dind_container_name(container_name);
-    let certs_volume = dind_certs_volume(container_name);
     let network = role_network_name(container_name);
 
-    // Remove containers first so the network has no active endpoints.
-    let (r1, r2) = tokio::join!(
-        docker.remove_container(container_name),
-        docker.remove_container(&dind),
-    );
-    r1?;
-    r2?;
+    // Read the instance manifest to learn whether DinD was started for this
+    // instance. DinD-free launches (locked/hardened profile without a dind
+    // grant) record `None` for both `dind_container` and `certs_volume`.
+    let container_state = paths.data_dir.join(container_name);
+    let manifest = crate::instance::manifest::InstanceManifest::read_optional(&container_state)
+        .ok()
+        .flatten();
+    let dind = manifest
+        .as_ref()
+        .and_then(|m| m.docker.dind_container.as_deref())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| dind_container_name(container_name));
+    let certs_volume = manifest
+        .as_ref()
+        .and_then(|m| m.docker.certs_volume.as_deref())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| dind_certs_volume(container_name));
+    let dind_was_started = manifest
+        .as_ref()
+        .map_or(true, |m| m.docker.dind_container.is_some());
+
+    // Remove role container first; DinD only if it was started.
+    if dind_was_started {
+        let (r1, r2) = tokio::join!(
+            docker.remove_container(container_name),
+            docker.remove_container(&dind),
+        );
+        r1?;
+        r2?;
+    } else {
+        docker.remove_container(container_name).await?;
+    }
 
     // Volume and network are independent of each other once containers are gone.
     let (r3, r4) = tokio::join!(
@@ -714,9 +737,9 @@ mod tests {
                 image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: primary.into(),
-                    dind_container: format!("{primary}-dind"),
+                    dind_container: Some(format!("{primary}-dind")),
                     network: format!("{primary}-net"),
-                    certs_volume: format!("{primary}-dind-certs"),
+                    certs_volume: Some(format!("{primary}-dind-certs")),
                 },
             });
         manifest.write(&paths.data_dir.join(primary)).unwrap();
@@ -736,9 +759,9 @@ mod tests {
                 image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: second.into(),
-                    dind_container: format!("{second}-dind"),
+                    dind_container: Some(format!("{second}-dind")),
                     network: format!("{second}-net"),
-                    certs_volume: format!("{second}-dind-certs"),
+                    certs_volume: Some(format!("{second}-dind-certs")),
                 },
             });
         second_manifest.write(&paths.data_dir.join(second)).unwrap();
@@ -1329,9 +1352,9 @@ mod tests {
                 image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: container.to_string(),
-                    dind_container: format!("{container}-dind"),
+                    dind_container: Some(format!("{container}-dind")),
                     network: format!("{container}-net"),
-                    certs_volume: format!("{container}-dind-certs"),
+                    certs_volume: Some(format!("{container}-dind-certs")),
                 },
             });
         manifest.mark_status(status);
@@ -1649,9 +1672,9 @@ mod tests {
                 image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: container.to_string(),
-                    dind_container: format!("{container}-dind"),
+                    dind_container: Some(format!("{container}-dind")),
                     network: format!("{container}-net"),
-                    certs_volume: format!("{container}-dind-certs"),
+                    certs_volume: Some(format!("{container}-dind-certs")),
                 },
             });
         let mut manifest = manifest;

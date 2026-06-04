@@ -284,6 +284,7 @@ mod tests {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         };
         config
             .create_workspace("big-monorepo", original.clone())

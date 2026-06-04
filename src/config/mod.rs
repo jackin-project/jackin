@@ -238,6 +238,15 @@ pub struct RoleSource {
 pub struct DockerConfig {
     #[serde(default)]
     pub mounts: DockerMounts,
+    /// Global default Docker security profile. Applied to every launch unless
+    /// overridden by a workspace `[docker] profile` or the `--docker-profile`
+    /// CLI flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
+    /// Global-level capability grants applied on top of the resolved profile.
+    /// Workspace grants layer on top of these.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<crate::runtime::docker_profile::DockerGrants>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

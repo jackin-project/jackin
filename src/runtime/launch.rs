@@ -584,6 +584,8 @@ struct LaunchContext<'a> {
     /// Phase 1: all profiles produce identical `Compat`-equivalent flags;
     /// profile-specific flag generation lands in Phase 2–4.
     profile: crate::runtime::docker_profile::DockerSecurityProfile,
+    /// Fully resolved capability grants for this launch.
+    grants: crate::runtime::docker_profile::EffectiveGrants,
 }
 
 fn capsule_config(
@@ -653,6 +655,7 @@ async fn launch_role_runtime(
         github_env,
         paths,
         profile,
+        grants,
     } = ctx;
 
     crate::debug_log!(
@@ -687,55 +690,70 @@ async fn launch_role_runtime(
         progress.stage_done(super::progress::LaunchStage::Network, "isolated");
     }
 
-    // Start Docker-in-Docker with TLS.
-    //
-    // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
-    // appended to the auto-generated server cert's Subject Alternative Names.
-    // Without it, the cert only covers the short container ID, `docker`, and
-    // `localhost` — so roles connecting via `tcp://{dind}:2376` get a TLS
-    // hostname-mismatch error.
-    //
-    // The entrypoint concatenates `DOCKER_TLS_SAN` into the openssl config
-    // verbatim (no type prefix added), so the value must already be in the
-    // `DNS:<name>` form that openssl's `subjectAltName` section expects.
-    // Without the prefix, openssl aborts with `v2i_GENERAL_NAME_ex: missing
-    // value` and DinD never comes up.
-    let certs_dind_mount = format!("{certs_volume}:/certs/client");
-    let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
-    let dind_args: Vec<&str> = vec![
-        "run",
-        "-d",
-        "--name",
-        dind,
-        "--network",
-        network,
-        "--privileged",
-        "--label",
-        LABEL_MANAGED,
-        "--label",
-        LABEL_KIND_DIND,
-        "--label",
-        &role_label,
-        "-e",
-        "DOCKER_TLS_CERTDIR=/certs",
-        "-e",
-        &dind_tls_san,
-        "-v",
-        &certs_dind_mount,
-        "docker:dind",
-    ];
-    let run_dind = runner.run("docker", &dind_args, None, &docker_run_opts);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(run_dind).await?;
-    } else {
-        run_dind.await?;
-    }
+    // Start Docker-in-Docker with TLS — skipped when the effective grant
+    // sets `dind = None` (locked/hardened profiles without an explicit DinD
+    // grant, or roles that declare `dind = "none"` in their manifest).
+    let dind_enabled = grants.dind != super::docker_profile::DindGrant::None;
+    if dind_enabled {
+        // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
+        // appended to the auto-generated server cert's Subject Alternative Names.
+        // Without it, the cert only covers the short container ID, `docker`, and
+        // `localhost` — so roles connecting via `tcp://{dind}:2376` get a TLS
+        // hostname-mismatch error.
+        //
+        // The entrypoint concatenates `DOCKER_TLS_SAN` into the openssl config
+        // verbatim (no type prefix added), so the value must already be in the
+        // `DNS:<name>` form that openssl's `subjectAltName` section expects.
+        // Without the prefix, openssl aborts with `v2i_GENERAL_NAME_ex: missing
+        // value` and DinD never comes up.
+        let certs_dind_mount = format!("{certs_volume}:/certs/client");
+        let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
+        // TODO Phase 3: use `docker:dind-rootless` when grants.dind == Rootless and
+        // cgroup v2 is detected. For now all DinD grants use privileged.
+        let dind_args: Vec<&str> = vec![
+            "run",
+            "-d",
+            "--name",
+            dind,
+            "--network",
+            network,
+            "--privileged",
+            "--label",
+            LABEL_MANAGED,
+            "--label",
+            LABEL_KIND_DIND,
+            "--label",
+            &role_label,
+            "-e",
+            "DOCKER_TLS_CERTDIR=/certs",
+            "-e",
+            &dind_tls_san,
+            "-v",
+            &certs_dind_mount,
+            "docker:dind",
+        ];
+        crate::debug_log!(
+            "launch",
+            "dind enabled=yes mode=privileged container={dind}",
+        );
+        let run_dind = runner.run("docker", &dind_args, None, &docker_run_opts);
+        if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(run_dind).await?;
+        } else {
+            run_dind.await?;
+        }
 
-    let dind_ready = wait_for_dind(dind, &certs_volume, docker);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(dind_ready).await?;
+        let dind_ready = wait_for_dind(dind, &certs_volume, docker);
+        if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(dind_ready).await?;
+        } else {
+            dind_ready.await?;
+        }
     } else {
-        dind_ready.await?;
+        crate::debug_log!(
+            "launch",
+            "dind enabled=no reason=profile-{profile}-dind-none container={container_name}",
+        );
     }
 
     // Step 4: Mount volumes and launch
@@ -827,22 +845,73 @@ async fn launch_role_runtime(
         run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);
     }
 
+    // ── Security and resource flags (Phase 2–4) ────────────────────────────
+    // Capability drops + read-only root. Only meaningful when DinD is disabled
+    // (with DinD active, the agent can regain caps via docker run --privileged).
+    let cap_flags = super::docker_profile::capability_flags(*profile, &grants.capabilities_add);
+    let cap_flag_strs: Vec<&str> = cap_flags.iter().map(String::as_str).collect();
+    run_args.extend_from_slice(&cap_flag_strs);
+
+    let readonly_flags = super::docker_profile::readonly_root_flags(grants);
+    let readonly_flag_strs: Vec<&str> = readonly_flags.iter().map(String::as_str).collect();
+    run_args.extend_from_slice(&readonly_flag_strs);
+
+    // no-new-privileges: schema present, enforcement deferred pending sudo audit.
+    if grants.no_new_privileges {
+        crate::debug_log!(
+            "launch",
+            "no_new_privileges enforced=no reason=sudo-audit-pending container={container_name}",
+        );
+    }
+
+    // User override — only emit --user when not the default agent user.
+    // The image's USER directive already sets the correct UID-remapped agent user.
+    let user_flag_val = grants.user.clone();
+    if user_flag_val != "agent" {
+        run_args.extend_from_slice(&["--user", &user_flag_val]);
+    }
+
+    // Resource limits.
+    let resource_flags = super::docker_profile::resource_flags(grants);
+    let resource_flag_strs: Vec<&str> = resource_flags.iter().map(String::as_str).collect();
+    run_args.extend_from_slice(&resource_flag_strs);
+
+    crate::debug_log!(
+        "launch",
+        "effective_grants profile={profile} network={:?} dind={:?} system_writes={} \
+         memory_bytes={:?} cpus={:?} pids={:?} no_new_privileges={}",
+        grants.network,
+        grants.dind,
+        grants.system_writes,
+        grants.memory_bytes,
+        grants.cpus,
+        grants.pids,
+        grants.no_new_privileges,
+    );
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // DinD env vars — only when DinD is active.
+    if dind_enabled {
+        run_args.extend_from_slice(&[
+            "-e",
+            &docker_host,
+            "-e",
+            "DOCKER_TLS_VERIFY=1",
+            "-e",
+            "DOCKER_CERT_PATH=/certs/client",
+            "-e",
+            &dind_hostname,
+            "-e",
+            &testcontainers_host_override,
+        ]);
+    }
+
     run_args.extend_from_slice(&[
         // JACKIN_* runtime metadata is injected by jackin, not declared in role manifests.
-        "-e",
-        &docker_host,
-        "-e",
-        "DOCKER_TLS_VERIFY=1",
-        "-e",
-        "DOCKER_CERT_PATH=/certs/client",
-        "-e",
-        &dind_hostname,
         "-e",
         &role_container_name_env,
         "-e",
         &instance_id_env,
-        "-e",
-        &testcontainers_host_override,
         "-e",
         &git_author_name,
         "-e",
@@ -958,7 +1027,11 @@ async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-    run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
+    // certs volume only when DinD is active.
+    if dind_enabled {
+        run_args.extend_from_slice(&["-v", &certs_agent_mount]);
+    }
+    run_args.extend_from_slice(&["-v", &gh_config_mount]);
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
@@ -1999,6 +2072,26 @@ async fn load_role_with(
         let dind = format!("{container_name}-dind");
         let certs_volume = dind_certs_volume(&container_name);
         let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
+
+        // Resolve Docker security profile and effective grants early so they
+        // can inform the instance manifest (dind enablement) and the launch.
+        let workspace_docker_for_grants = config
+            .workspaces
+            .get(&workspace.label)
+            .and_then(|wc| wc.docker.as_ref());
+        let resolved_profile_early = super::docker_profile::resolve_profile(
+            opts.docker_profile,
+            workspace_docker_for_grants.and_then(|wd| wd.profile),
+            config.docker.profile,
+        );
+        let effective_grants_early = super::docker_profile::resolve_effective_grants(
+            resolved_profile_early,
+            config.docker.grants.as_ref(),
+            workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
+        );
+        let dind_started = effective_grants_early.dind
+            != super::docker_profile::DindGrant::None;
+
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
             container_base: &container_name,
             workspace_name: workspace_name.as_deref(),
@@ -2013,9 +2106,9 @@ async fn load_role_with(
             image_tag: &image,
             docker: DockerResources {
                 role_container: container_name.clone(),
-                dind_container: dind.clone(),
+                dind_container: dind_started.then(|| dind.clone()),
                 network: network.clone(),
-                certs_volume: certs_volume.clone(),
+                certs_volume: dind_started.then(|| certs_volume.clone()),
             },
         });
         // `read_optional` already separates "manifest absent" (fall back
@@ -2245,7 +2338,8 @@ async fn load_role_with(
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
             paths,
-            profile: super::docker_profile::resolve_profile(opts.docker_profile),
+            profile: resolved_profile_early,
+            grants: effective_grants_early,
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
         let mut cleanup = LoadCleanup::new(
@@ -3836,9 +3930,9 @@ mod tests {
             image_tag: &image_tag,
             docker: DockerResources {
                 role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
+                dind_container: Some(format!("{container_name}-dind")),
                 network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
+                certs_volume: Some(format!("{container_name}-dind-certs")),
             },
         })
     }
@@ -7094,15 +7188,25 @@ plugins = []
                 run_cmd.contains("jackin.kind=role"),
                 "profile {profile} run command missing jackin.kind=role label",
             );
-            // No security flags injected in Phase 1 (all profiles = compat).
-            assert!(
-                !run_cmd.contains("--cap-drop"),
-                "profile {profile} unexpectedly added --cap-drop in Phase 1",
+            // Verify expected security flags per profile.
+            // locked/hardened → --cap-drop=ALL; compat/standard → no cap-drop.
+            let expects_cap_drop = matches!(
+                profile,
+                crate::runtime::docker_profile::DockerSecurityProfile::Locked
+                    | crate::runtime::docker_profile::DockerSecurityProfile::Hardened
             );
-            assert!(
-                !run_cmd.contains("--read-only"),
-                "profile {profile} unexpectedly added --read-only in Phase 1",
+            assert_eq!(
+                run_cmd.contains("--cap-drop"),
+                expects_cap_drop,
+                "profile {profile}: --cap-drop presence mismatch",
             );
+            // locked/hardened → --read-only; compat/standard → no --read-only.
+            assert_eq!(
+                run_cmd.contains("--read-only"),
+                expects_cap_drop,
+                "profile {profile}: --read-only presence mismatch",
+            );
+            // no-new-privileges not yet enforced (sudo audit pending).
             assert!(
                 !run_cmd.contains("no-new-privileges"),
                 "profile {profile} unexpectedly added no-new-privileges in Phase 1",

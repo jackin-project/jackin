@@ -787,6 +787,7 @@ mod tests {
                 opencode: None,
                 github: None,
                 git_pull_on_entry: false,
+                docker: None,
             },
         );
 
@@ -838,6 +839,7 @@ mod tests {
                 opencode: None,
                 github: None,
                 git_pull_on_entry: false,
+                docker: None,
             },
         );
 
@@ -888,6 +890,7 @@ mod tests {
                 opencode: None,
                 github: None,
                 git_pull_on_entry: false,
+                docker: None,
             },
         );
 
@@ -946,6 +949,7 @@ mod tests {
                 opencode: None,
                 github: None,
                 git_pull_on_entry: false,
+                docker: None,
             },
         );
         config
@@ -1034,9 +1038,9 @@ mod tests {
             image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: "jk-k7p9m2xq-myapp-agentsmith".to_string(),
-                dind_container: "jk-k7p9m2xq-myapp-agentsmith-dind".to_string(),
+                dind_container: Some("jk-k7p9m2xq-myapp-agentsmith-dind".to_string()),
                 network: "jk-k7p9m2xq-myapp-agentsmith-net".to_string(),
-                certs_volume: "jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_string(),
+                certs_volume: Some("jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_string()),
             },
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -1082,9 +1086,9 @@ mod tests {
             image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: "jk-k7p9m2xq-agentsmith".to_string(),
-                dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
+                dind_container: Some("jk-k7p9m2xq-agentsmith-dind".to_string()),
                 network: "jk-k7p9m2xq-agentsmith-net".to_string(),
-                certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
+                certs_volume: Some("jk-k7p9m2xq-agentsmith-dind-certs".to_string()),
             },
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -1125,9 +1129,9 @@ mod tests {
             image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
-                dind_container: format!("{container}-dind"),
+                dind_container: Some(format!("{container}-dind")),
                 network: format!("{container}-net"),
-                certs_volume: format!("{container}-dind-certs"),
+                certs_volume: Some(format!("{container}-dind-certs")),
             },
         });
         manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
@@ -1169,9 +1173,9 @@ mod tests {
             image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
-                dind_container: format!("{container}-dind"),
+                dind_container: Some(format!("{container}-dind")),
                 network: format!("{container}-net"),
-                certs_volume: format!("{container}-dind-certs"),
+                certs_volume: Some(format!("{container}-dind-certs")),
             },
         });
         manifest.write(&paths.data_dir.join(container)).unwrap();

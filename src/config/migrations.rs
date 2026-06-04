@@ -4,8 +4,8 @@ use std::path::Path;
 use anyhow::{Context, bail};
 use toml_edit::DocumentMut;
 
-pub const CURRENT_CONFIG_VERSION: &str = "v1alpha5";
-pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha5";
+pub const CURRENT_CONFIG_VERSION: &str = "v1alpha6";
+pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha6";
 pub const LEGACY_VERSION: &str = "legacy";
 
 pub type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
@@ -40,6 +40,11 @@ const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     },
     MigrationStep {
         from: "v1alpha4",
+        to: "v1alpha5",
+        migrate: noop_migration,
+    },
+    MigrationStep {
+        from: "v1alpha5",
         to: CURRENT_CONFIG_VERSION,
         migrate: noop_migration,
     },
@@ -67,8 +72,13 @@ const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     },
     MigrationStep {
         from: "v1alpha4",
-        to: CURRENT_WORKSPACE_VERSION,
+        to: "v1alpha5",
         migrate: migrate_workspace_op_account_to_refs,
+    },
+    MigrationStep {
+        from: "v1alpha5",
+        to: CURRENT_WORKSPACE_VERSION,
+        migrate: noop_migration,
     },
 ];
 
@@ -478,7 +488,7 @@ mod tests {
         assert!(migrate_config_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
         let parsed: toml::Value = toml::from_str(&out).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -491,7 +501,7 @@ mod tests {
         assert!(migrate_workspace_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
         let parsed: toml::Value = toml::from_str(&out).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -501,7 +511,7 @@ mod tests {
         let path = temp.path().join("prod.toml");
         std::fs::write(
             &path,
-            "version = \"v1alpha5\"\nworkdir = \"/workspace/prod\"\n",
+            "version = \"v1alpha6\"\nworkdir = \"/workspace/prod\"\n",
         )
         .unwrap();
 
@@ -515,7 +525,7 @@ mod tests {
         std::fs::write(&path, r#"version = "v2alpha1""#).unwrap();
 
         let err = migrate_config_file_if_needed(&path).unwrap_err();
-        assert!(err.to_string().contains("only understands up to v1alpha5"));
+        assert!(err.to_string().contains("only understands up to v1alpha6"));
     }
 
     #[test]
@@ -883,7 +893,7 @@ RG = { op = "op://rgv/rgi/rgf", path = "RGV/RGI/RGF" }
         let out = std::fs::read_to_string(&path).unwrap();
         let parsed: toml::Value = toml::from_str(&out).unwrap();
 
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
         assert!(
             !out.contains("op_account"),
             "top-level key must be gone:\n{out}"
@@ -964,7 +974,7 @@ TOKEN = { op = "op://v/i/f", path = "V/I/F" }
 
         assert!(migrate_workspace_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
-        assert!(out.starts_with("version = \"v1alpha5\""), "{out}");
+        assert!(out.starts_with("version = \"v1alpha6\""), "{out}");
         assert!(out.contains("workdir = \"/workspace/prod\""), "{out}");
         assert!(out.contains("# trailing comment"), "{out}");
     }
