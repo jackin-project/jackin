@@ -209,7 +209,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [ ] Define one shared dialog-body scroll path in `jackin-tui` (a helper or a state mixin) that wraps a dialog body in the canonical H/V scroll machinery — scrollbar-on-overflow, none-when-fits, standard key + wheel bindings — so every dialog inherits identical behavior.
 - [ ] Route every dialog through it: Confirm, Error, SaveDiscard, StatusPopup, Container/Run info, AuthForm, op-picker, launch failure/prompt dialogs, capsule dialogs, and the **filter/selection pickers** (`Select Role`, `Unfinished jackin instances`, etc.). Confirmed offender: the `Unfinished jackin instances` picker has a row (`Recover other role with hardline 3bekkf7b status:failed_setup agent:claude role:the-architect upd…`) far wider than the dialog — it must scroll horizontally (and vertically when rows overflow) instead of clipping. Fix the whole class in one pass — no dialog left clipping — by reusing **one** shared scrollable-dialog component (DRY; never a second implementation).
 - [ ] Compose with Defect 7: a dialog first holds its preferred size, shrinks only when the screen is too small, and **then** (if content still overflows the shrunk body) becomes scrollable. The two behaviors must work together, not fight.
-- [ ] Compose with Defect 5: the symmetric vertical padding (leading/trailing spacer) is part of the body that scrolls — confirm the spacers stay correct under scroll.
+- [x] Compose with Defect 5: the symmetric vertical padding (leading/trailing spacer) is part of the body that scrolls — confirm the spacers stay correct under scroll.
 - [x] Record the universal dialog-scroll rule in [TUI Design Decisions](/reference/tui/dialogs/): "every dialog scrolls H/V when its content exceeds the dialog area, using the shared scroll machinery; no scrollbar when content fits."
 - [x] Regenerate lookbook SVGs and add/adjust stories that exercise an overflowing dialog so the scroll affordance is visible and regression-covered.
 
@@ -261,7 +261,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Add the backdrop-click-dismiss branch to the console mouse handler: when a modal is open and a mouse-down lands outside its rect, close it (same path as `Esc`); when inside the rect but not on a clickable target, swallow the event.
 - [x] Apply the same to the launch surface dialogs and any other non-compliant dialog. Fix the whole class — model the behavior on the capsule's existing implementation rather than inventing a second one. Fixed in launch subscriptions.rs: click outside ContainerInfo closes, click inside no-copy-target is no-op.
 - [x] Confirm the rule covers stacked/superseding modals correctly: a click outside the **top** dialog dismisses only the top one (per Defect 9/10 stack-vs-supersede distinction).
-- [ ] Verify the rule text in [TUI Dialogs](/reference/tui/dialogs/) states it applies to **all** surfaces (console, launch, capsule), not just the multiplexer; generalize if it reads capsule-specific.
+- [x] Verify the rule text in [TUI Dialogs](/reference/tui/dialogs/) states it applies to **all** surfaces (console, launch, capsule), not just the multiplexer; generalize if it reads capsule-specific.
 
 ---
 
@@ -292,7 +292,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** one shared clickable-affordance mechanism. Any element registered as clickable (a) emits the OSC 22 hand pointer while the mouse is over its rect and `POINTER_DEFAULT` when it leaves, and (b) renders a hover style (color/background lift) while hovered — both driven by the same hover hit-test, so the cursor and the color never disagree. DRY: no element hand-rolls its own pointer/hover logic.
 
 **Tasks:**
-- [ ] Inventory every clickable element across all surfaces: run-id/debug chip, `ButtonStrip` buttons, tab strips, list rows (workspace list, pickers, file browser), dialog buttons (Yes/No/OK/Save/Discard/Cancel), copyable/hyperlink rows in Container/Run info, mount rows, the launch build-log activity button, capsule clickable chrome. `rg -n "MouseEventKind::Down|on_click|clickable|hovered|POINTER_HAND" crates/*/src`.
+- [x] Inventory every clickable element across all surfaces: run-id/debug chip, `ButtonStrip` buttons, tab strips, list rows (workspace list, pickers, file browser), dialog buttons (Yes/No/OK/Save/Discard/Cancel), copyable/hyperlink rows in Container/Run info, mount rows, the launch build-log activity button, capsule clickable chrome. `rg -n "MouseEventKind::Down|on_click|clickable|hovered|POINTER_HAND" crates/*/src`.
 - [ ] Define a shared hover-affordance helper in `jackin-tui` (e.g. a hovered-rect registry or a per-frame "hovered target" + a `clickable_style(hovered)` + pointer-emit helper) so every clickable routes through one path for both cursor and color.
 - [x] Add hover color + hand pointer to every clickable that lacks it — starting with the debug chip (`render_debug_bar` must take hover state, lift the chip color, and emit `POINTER_HAND`), then every other element from the inventory. Fix the whole class in one pass.
 - [x] Ensure `POINTER_HAND` is emitted on hover-enter and `POINTER_DEFAULT` on hover-leave consistently, so the cursor never sticks as a hand after leaving a target.
@@ -380,12 +380,12 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** every selectable block derives `▸` visibility from exactly the same focus expression that drives its green border — focused block ⇒ `▸` on the selected row; unfocused ⇒ no `▸`. One source of truth per block; no independent `show_cursor` that can drift.
 
 **Tasks:**
-- [ ] Inventory every place a `▸` cursor / `highlight_symbol` / `show_cursor` flag is used or should be: `rg -n "▸|highlight_symbol|show_cursor|SELECT_MARK" crates/*/src`. For each, confirm the `▸` is gated on the block's focus state and matches the green-border expression exactly.
+- [x] Inventory every place a `▸` cursor / `highlight_symbol` / `show_cursor` flag is used or should be: `rg -n "▸|highlight_symbol|show_cursor|SELECT_MARK" crates/*/src`. For each, confirm the `▸` is gated on the block's focus state and matches the green-border expression exactly.
 - [x] Fix every block where `▸` is missing while focused or present while unfocused. Confirmed-missing examples (all five settings tabs, focused): **General** (now correct), **Mounts** (`+ Add mount` row), **Environments** (op rows + `+ Add environment variable`), **Auth** (agent rows), **Trust** (role rows). Also workspace editor tabs, pickers, file browser, capsule dialogs, and the lookbook lists. Fix the whole class.
 - [ ] Header rows are not selectable: where a tab has a column-header row (Mounts, Environments, Trust show `Destination…`, `Role  Trust  Git`, etc.), the `▸` must appear on the selected **data** row, never on the header. Confirm the cursor never lands on a header/non-selectable row.
 - [ ] Where `show_cursor` is computed independently of focus, refactor so a single focus value drives both the border and `▸` (enforce the "identical expressions" rule structurally, e.g. derive both from one `focused` bool).
 - [x] (Observation to verify) the settings hint bar in the focused state reads `↑↓ navigate   ↑↓ navigate · ␣ toggle   ⇧Tab tab bar` — `↑↓ navigate` appears twice. Confirm whether the focused-content hint is duplicated and fix if so. Fixed: settings_general_row_footer_items() now returns only [␣ toggle]; regression test added.
-- [ ] Confirm the rule in [TUI Design Decisions](/reference/tui/chrome/) ("`▸` and green border are inseparable") is honored everywhere after the sweep.
+- [x] Confirm the rule in [TUI Design Decisions](/reference/tui/chrome/) ("`▸` and green border are inseparable") is honored everywhere after the sweep.
 
 ---
 
