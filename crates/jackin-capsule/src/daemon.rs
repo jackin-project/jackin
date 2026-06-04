@@ -600,6 +600,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     focus_session,
                     client_permit,
                 } = ready;
+                crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
                 mux.attached_terminal = terminal;
@@ -951,6 +952,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // further Hello on the same connection is ignored.
         }
         ClientFrame::Resize { rows, cols } => {
+            crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
             mux.resize(rows, cols);
             let frame_data = mux.compose_full_frame(resize_redraw_reason());
             mux.send_output(frame_data);

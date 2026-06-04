@@ -2340,9 +2340,24 @@ pub(crate) fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans
     let total = hint_row_cols(spans);
     let padded_total = total.saturating_add(4);
     if padded_total > term_cols as usize {
+        crate::cdebug!(
+            "hint-row: SKIP row={} term_cols={} content_cols={} padded={} (too wide)",
+            row,
+            term_cols,
+            total,
+            padded_total,
+        );
         return;
     }
     let start_col = ((term_cols as usize).saturating_sub(padded_total) / 2) as u16;
+    crate::cdebug!(
+        "hint-row: row={} term_cols={} content_cols={} padded={} start_col={}",
+        row,
+        term_cols,
+        total,
+        padded_total,
+        start_col,
+    );
     move_to(buf, row, 0);
     buf.extend_from_slice(BG_DARK.as_bytes());
     for _ in 0..term_cols {

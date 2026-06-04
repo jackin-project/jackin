@@ -76,6 +76,21 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
 
 impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
+        let backend_size = self
+            .ratatui_terminal
+            .size()
+            .map_or((0, 0), |s| (s.width, s.height));
+        crate::cdebug!(
+            "frame: full_redraw={:?} dirty_panes={} term={}x{} backend={}x{} content_rows={} dialog_open={}",
+            self.pending_full_redraw.map(|r| r.as_str()),
+            self.dirty_panes.len(),
+            self.term_cols,
+            self.term_rows,
+            backend_size.0,
+            backend_size.1,
+            self.content_rows,
+            self.dialog_open(),
+        );
         if let Some(reason) = self.pending_full_redraw.take() {
             self.dirty_panes.clear();
             // Reset Ratatui's internal double-buffer before a full redraw so the

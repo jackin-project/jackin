@@ -46,6 +46,13 @@ pub(crate) fn render_branch_context_bar(
     };
 
     let bar_row = term_rows.saturating_sub(1);
+    crate::cdebug!(
+        "branch-bar: bar_row={} term_cols={} left_cols={} container_region={:?}",
+        bar_row,
+        term_cols,
+        jackin_tui::display_cols(&layout.left),
+        layout.container_region.map(|r| (r.start, r.end)),
+    );
     jackin_tui::ansi::move_to(buf, bar_row, 0);
     buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
     buf.extend_from_slice(BRANCH_CONTEXT_BAR_FG.as_bytes());

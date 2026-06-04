@@ -228,6 +228,14 @@ pub(crate) struct CapsuleBottomChrome<'a> {
 }
 
 pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBottomChrome<'_>) {
+    crate::cdebug!(
+        "bottom-chrome: site=raw-full term={}x{} branch_bar_row={} hint_row={} debug_chip={}",
+        view.term_cols,
+        view.term_rows,
+        view.term_rows.saturating_sub(1),
+        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
+        view.debug_run_id.unwrap_or(""),
+    );
     render_branch_context_bar(
         buf,
         view.term_rows,
@@ -282,6 +290,14 @@ pub(crate) fn render_capsule_dialog_bottom_chrome(
     buf: &mut Vec<u8>,
     view: CapsuleDialogBottomChrome<'_>,
 ) {
+    crate::cdebug!(
+        "bottom-chrome: site=dialog term={}x{} branch_bar_row={} hint_row={} has_hint={}",
+        view.term_cols,
+        view.term_rows,
+        view.term_rows.saturating_sub(1),
+        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
+        view.hint_spans.is_some(),
+    );
     render_branch_context_bar(
         buf,
         view.term_rows,
@@ -359,6 +375,17 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         width: view.term_cols,
         height: 1,
     };
+    crate::cdebug!(
+        "bottom-chrome: site=ratatui term={}x{} frame_area={}x{} hint_y={} sep_y={} branch_bar_y={} panes={}",
+        view.term_cols,
+        view.term_rows,
+        frame.area().width,
+        frame.area().height,
+        hint_area.y,
+        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
+        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS),
+        view.panes.len(),
+    );
     jackin_tui::components::render_hint_bar(frame, hint_area, hint_spans);
 
     let sep_area = RatatuiRect {
