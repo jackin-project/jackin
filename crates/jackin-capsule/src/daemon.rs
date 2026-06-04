@@ -743,9 +743,17 @@ impl Multiplexer {
         if self.hover_target == next {
             return None;
         }
+        let prev = self.hover_target;
         self.hover_target = next;
         if self.dialog_open() {
             Some(self.compose_full_frame(FullRedrawReason::DialogChange))
+        } else if matches!(prev, Some(HoverTarget::Tab(_)))
+            || matches!(next, Some(HoverTarget::Tab(_)))
+        {
+            // Full repaint when entering or leaving a tab hover so the tooltip
+            // painted at the tooltip row is cleaned up by the pane repaint and
+            // never sticks when the operator moves to a different tab or away.
+            Some(self.compose_full_frame(FullRedrawReason::StatusChange))
         } else {
             Some(self.compose_chrome_hover_frame())
         }
@@ -4861,16 +4869,16 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 /// Uses a single-line Unicode border, ~30 chars wide.
 /// Painted with ANSI absolute cursor positioning; caller wraps in ESC-7/ESC-8.
 fn render_tab_tooltip(codename: String, _record: Option<AgentRecord>, col_start: u16) -> Vec<u8> {
-    // Codename pill: brand green background, black text, bold, space padding —
-    // matches the BRAND_BANNER style. Row 3 gives one blank row of spacing below
-    // the tab strip before the label appears. Col aligned with the tab cell's left edge.
+    // Codename label: dark bg (TAB_BG_INACTIVE 30,30,30) + phosphor green text + bold.
+    // Reads as a contextual label in jackin's color language without duplicating the
+    // brand pill (which is green bg + black text). Row 3 leaves one blank line of
+    // breathing room below the tab strip.
     let tooltip_row = 3u16;
     let col = col_start + 1;
     let mut buf = Vec::new();
-    // Brand green bg (0,255,65) + black fg + bold — same palette as the brand pill.
     buf.extend_from_slice(
         format!(
-            "\x1b[{tooltip_row};{col}H\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m {codename} \x1b[0m"
+            "\x1b[{tooltip_row};{col}H\x1b[1m\x1b[48;2;30;30;30m\x1b[38;2;0;255;65m {codename} \x1b[0m"
         )
         .as_bytes(),
     );
