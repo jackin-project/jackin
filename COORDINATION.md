@@ -52,6 +52,7 @@ Each Claude instance picks a unique name for attribution. Check this list before
 
 | Commit | What |
 |---|---|
+| `f2477e1b` | jackin-term — scrollback_rows_at_offset + PassthroughEvent::encode |
 | `d1c991c3` | jackin-term — golden wire-emit + round-trip property tests (lines 999-1000) |
 | `7dbf5704` | Phase 2 — collapse 5-arm match in legacy jackin/runtime/image.rs |
 | `4546a09e` | Phase 2 — collapse 2 more Agent dispatch arms in legacy launch.rs |
