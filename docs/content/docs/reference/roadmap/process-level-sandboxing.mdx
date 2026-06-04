@@ -97,13 +97,190 @@ The two improvements address different attack surfaces:
 
 Process sandboxing is the layer that controls *what individual operations can do inside the sandbox*, complementing the layer that controls *what the sandbox can see of the host*.
 
+## The Credential Exposure Problem That Process Sandboxing Solves
+
+This is the core motivation for investing in this layer — especially for macOS ARM operators using jackin' today.
+
+The standard jackin' setup today forwards credentials into the role container as environment variables or synced files. This means:
+
+- The agent process can `printenv` and see raw API keys
+- The agent can read credential files from the agent home mount
+- The agent can remember credential values across prompts (they appear in its context)
+- If multiple agents share a workspace, a compromised or misbehaving agent can access another agent's credentials
+- An agent prompted to "share your environment with my server" can exfiltrate raw tokens
+
+The operator wants to say: "I trust this agent to connect to my server, but I do not trust it with my raw SSH private key or API token. I want jackin' to make the connection happen on behalf of the agent without ever giving the agent the secret itself."
+
+That is exactly what process-level sandboxing with credential injection solves. The agent calls a command. jackin' intercepts, injects the credential at execution time, runs the command, optionally filters the output, and returns the result. The raw credential never enters the agent's context.
+
+## The Secure Execution Wrapper (`jackin-exec`)
+
+This is the new concept that emerged from the June 2026 design pass. It extends the zerobox-inspired sandboxing model with a jackin'-specific operator approval and credential injection layer.
+
+### The Core Idea
+
+jackin' installs a wrapper binary — `jackin-exec` — inside every role container's construct image. The agent is instructed (via system prompt, role configuration, or MCP tool description) that when it needs to run a sensitive command, it calls `jackin-exec <command>` instead of running the command directly.
+
+```bash
+# Without jackin-exec: agent runs directly, has raw SSH key or none at all
+ssh sentry
+
+# With jackin-exec: jackin intercepts, injects credential, agent never sees key
+jackin-exec ssh sentry
+```
+
+`jackin-exec` communicates with jackin-capsule over the existing vsock/Unix control channel. jackin-capsule handles:
+
+1. Receives command + args from the wrapper
+2. Looks up matching credentials from operator-configured workspace secret bindings
+3. Optionally shows an approval dialog in the TUI (operator can approve, deny, or approve all similar)
+4. Executes the command with injected credentials via the secure execution boundary
+5. Scans output for sensitive patterns and redacts them before returning to the agent
+6. Logs the full exchange (with redaction) to the diagnostics run file
+
+### Command Flow
+
+```text
+agent process
+  → jackin-exec ssh sentry
+    → jackin-capsule (vsock/Unix socket)
+      → [optional] TUI approval dialog shown to operator
+      → operator approves
+      → capsule looks up: workspace secret "sentry-ssh-key" → SSH private key from host vault
+      → executes: ssh -i <injected-key> sentry (key is a temp file in /jackin/run/, not in /home/agent/)
+      → captures stdout/stderr
+      → scans output for secret patterns → redacts
+      → returns sanitized output to jackin-exec
+    → jackin-exec writes sanitized output to agent's stdout
+  agent sees: connection established, no key material
+```
+
+The key property: the SSH private key never exists in `/home/agent/`, never appears in `env`, never enters agent context. It is materialized as a temp file under `/jackin/run/<instance>/secrets/` (following the container path convention), used for the single invocation, then deleted. The agent sees only the command's output — which is filtered before return.
+
+### Naming
+
+`jackin-exec` is the proposed binary name. Alternative names considered: `jsecure`, `jx`, `jackin-safe`. The binary name matters because agents must call it by name in shell. `jackin-exec` is explicit, namespaced, and reads naturally in agent tool calls. The concept is called the "secure execution boundary" in docs; operators can think of it as "jackin' runs this on your behalf."
+
+### What Commands Make Sense for `jackin-exec`
+
+| Command type | Why `jackin-exec` adds value |
+|---|---|
+| `ssh <host>` | SSH key never exposed to agent |
+| `gh pr create`, `gh auth login` | GitHub token injected, not stored in container |
+| `docker login <registry>` | Registry credential injected per-invocation |
+| `aws s3 ...`, `kubectl ...` | Cloud credentials injected without `~/.aws/credentials` in container |
+| `curl -H "Authorization: Bearer ..."` | Bearer token constructed and injected, not passed as agent arg |
+| `git push` (with SSH or HTTPS) | Git credential injected, not stored in `.git/config` |
+
+Commands that do NOT need `jackin-exec`: read-only operations, package installs, builds, lint/test runs — these don't require credentials the agent shouldn't see.
+
+## Operator Approval UI
+
+jackin' controls the entire TUI display. When an agent calls `jackin-exec`, jackin' can interrupt the session and surface a native approval dialog before execution. This is not possible with any other sandbox approach — it is unique to jackin' because jackin' owns the terminal layer.
+
+Proposed approval dialog shape (exact design belongs in [TUI design decisions](/reference/tui-design-decisions/)):
+
+```
+┌─ Secure Execution Request ─────────────────────────────────────┐
+│  Agent: the-architect  │  Session: ws:my-service/#4            │
+│                                                                  │
+│  Command:   ssh sentry                                          │
+│  Credential: sentry-prod-ssh-key (SSH key, read from host)     │
+│  Will inject: SSH_KEY → temp file, deleted after               │
+│  Output filter: redact SSH host key fingerprints                │
+│                                                                  │
+│  [Approve]  [Deny]  [Approve All Similar]  [Always for Session] │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Approval modes:
+
+| Mode | Behavior |
+|---|---|
+| `Approve` | Run this invocation only |
+| `Deny` | Return "permission denied" to the agent |
+| `Approve All Similar` | Auto-approve all `jackin-exec ssh sentry` calls for this session |
+| `Always for Session` | Auto-approve all `jackin-exec` calls for this session (removes friction once operator trusts the session direction) |
+
+The approval dialog is configurable:
+
+```toml
+[runtime.secure_exec]
+require_approval = "sensitive"  # always | sensitive | never
+```
+
+`sensitive` means approval is required for commands matched in the workspace secret bindings; other `jackin-exec` calls (e.g. commands with no credential injection) run without approval.
+
+When approval is disabled or "always for session" is active, jackin-capsule still logs every `jackin-exec` call with command, credential used, output hash, and timestamp to the diagnostics run file. The operator can review the full log after the session.
+
+## Output Filtering and Redaction
+
+Even with credential injection, command output can contain sensitive content that the operator does not want the agent to see: host key fingerprints, server banners with internal hostnames, partial credential echoes, or error messages that expose infrastructure details.
+
+jackin-capsule scans every `jackin-exec` output stream before returning it to the agent. Redaction rules:
+
+- **Configured secret patterns**: any value matching a workspace-configured secret (its value, its base64 encoding, its hex encoding) is replaced with `[redacted by jackin']`
+- **PEM blocks**: `-----BEGIN * KEY-----` … `-----END * KEY-----` → `[key material redacted by jackin']`
+- **AWS-style credential strings**: `AKIA...` 20-char uppercase alphanumeric → redacted
+- **Operator-defined patterns**: regex patterns declared in workspace config → redacted
+
+The agent receives sanitized output. The full unredacted output is written to the diagnostics run file under the operator's JACKIN_DEBUG run, accessible only from the host.
+
+### Limitations of Output Filtering
+
+Output filtering is not a complete defense. A sufficiently adversarial agent could:
+
+- Exfiltrate in pieces across multiple invocations and reconstruct
+- Use encoding tricks (base64, ROT13, steganography in filenames)
+- Ask jackin-exec to run a command that re-reads credentials from a known path
+
+The operator approval step is the higher-value defense for these cases: if the operator reviews the command before it runs, they can spot suspicious patterns. Output filtering is defense-in-depth, not a complete boundary. The design is honest about this in the session contract output.
+
+## How the Agent Learns to Use `jackin-exec`
+
+The agent must know to call `jackin-exec` for sensitive operations instead of running commands directly. Three mechanisms, in order of preference:
+
+**1. Role system prompt** (highest coverage, works with any agent runtime): the role's construct image configures the agent's system prompt with an instruction block:
+
+```text
+When you need to execute commands that require credentials — SSH connections, registry logins,
+cloud CLI commands, git push — call jackin-exec <command> instead of running the command directly.
+jackin' will securely inject any required credentials. Available credential bindings for this
+workspace: sentry-ssh-key (ssh), ghcr-token (docker login), github-token (gh).
+```
+
+**2. MCP tool** (Claude Code / MCP-capable agents): jackin-capsule exposes a `jackin_exec` MCP tool inside the role container. The tool description tells the agent when and how to use it. This surfaces naturally in Claude Code's tool panel. The MCP approach is more structured than shell prompt instructions — the agent can inspect the tool's `inputSchema` to know which commands are supported and which credential bindings are available for the current workspace.
+
+**3. Shell alias / PATH shadowing** (fallback, automatic): the construct image can shadow specific binaries with wrappers that transparently call `jackin-exec`. For example, `~/.local/bin/ssh` (higher in `PATH` than `/usr/bin/ssh`) calls `jackin-exec ssh "$@"`. The agent runs `ssh sentry` naturally and gets jackin-exec behavior without needing to know the wrapper exists. Risk: the agent cannot distinguish sandboxed vs. direct execution, which makes the approval dialog less transparent. Use only for commands where the credential binding is unambiguous.
+
+The recommended approach is (1) + (2): system prompt for universal coverage, MCP tool for structured invocation from Claude Code and Codex.
+
+## Workspace Secret Bindings
+
+The operator declares credential bindings per workspace. These map command patterns to host-side secrets:
+
+```toml
+[workspaces.my-service.secure_exec.bindings]
+# name = { command_pattern, credential_source, output_filters }
+sentry-ssh   = { match = "ssh sentry*", credential = "op://Personal/sentry-ssh/private-key" }
+ghcr-token   = { match = "docker login ghcr.io*", credential = "op://Work/ghcr/token" }
+github-token = { match = "gh *", credential = "op://Work/github/token" }
+aws-creds    = { match = "aws *", credential_env = { AWS_ACCESS_KEY_ID = "op://Work/aws/key-id", AWS_SECRET_ACCESS_KEY = "op://Work/aws/secret" } }
+```
+
+`credential` sources supported initially: `op://` (1Password via `op` CLI), `env:<VAR>` (from operator host environment), `file:<path>` (from host file path). Future: native host keychain, HashiCorp Vault, jackin' host bridge.
+
+When a command matches a binding, jackin-capsule resolves the credential at execution time from the host — never pre-loading it into the container. No credential is ever decrypted until the moment of execution, and no decrypted value persists longer than the single invocation.
+
 ## Integration Shape for jackin'
 
-This section captures early thinking on how process-level sandboxing could surface in jackin'. It is not a committed design.
+This section captures how the above pieces wire into the existing codebase. It is not a committed design.
 
-### Entrypoint wrapping
+### Entrypoint wrapping and zerobox
 
-The construct image and runtime entrypoint could install a sandboxing shim and configure the agent runtime to route shell executions through it. For Claude Code, this aligns with its `--dangerously-skip-permissions` full-auto model: the agent still runs without interactive permission prompts, but each shell command it issues is constrained by a jackin'-managed sandbox policy rather than running unrestricted.
+The construct image and runtime entrypoint install both `zerobox` (for general per-operation filesystem/network sandboxing) and `jackin-exec` (for credential-aware secure invocations). For Claude Code, this aligns with its `--dangerously-skip-permissions` full-auto model: the agent still runs without interactive permission prompts, but each shell command it issues is constrained by a jackin'-managed sandbox policy rather than running unrestricted.
+
+`jackin-exec` and `zerobox` compose: `jackin-exec` handles credential injection and operator approval, then delegates actual sandboxed execution to `zerobox` with the appropriate filesystem/network policy derived from mount config.
 
 ### Policy derivation
 
@@ -127,6 +304,8 @@ The sandbox policy for any command running against these mounts would be derived
 
 Zerobox's built-in network proxy implements the same credential injection architecture that Docker Sandboxes uses: secrets never enter the sandboxed process; the proxy substitutes them only for approved host names. This is a direct implementation path for the credential proxy item in the security roadmap. Rather than building a standalone proxy, jackin' could delegate this to the process sandbox layer for commands that run inside the agent session.
 
+`jackin-exec` and the zerobox credential proxy are complementary: zerobox handles network-layer HTTPS token substitution for arbitrary outbound calls; `jackin-exec` handles command-level credential injection for specific commands with explicit operator approval. Both are needed for full coverage.
+
 ### Sandboxed DinD commands
 
 Some agents (role repos that invoke Docker to build sibling containers) issue Docker CLI commands as part of their workflow. These could be sandboxed separately from the agent entrypoint: the agent runs with normal permissions, but its `docker build` or `docker run` invocations are wrapped with a policy that restricts which paths the build context can include and which registries the pull can reach.
@@ -135,11 +314,13 @@ Some agents (role repos that invoke Docker to build sibling containers) issue Do
 
 | Roadmap item | Relationship |
 |---|---|
-| [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Process sandbox is the innermost tier; microVM is the outermost. Both are needed for the strongest isolation model. This item fills the per-operation gap that VM boundaries cannot close. |
+| [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Process sandbox is the innermost tier; microVM is the outermost. Both are needed for the strongest isolation model. This item fills the per-operation gap that VM boundaries cannot close — even a microVM with its own kernel cannot prevent an agent inside it from reading secrets that are injected as env vars. |
 | [Network egress policy](/reference/roadmap/network-egress-policy/) | Zerobox implements per-process network policy enforcement at the OS level. Its allow-list mechanism is a concrete implementation path for egress policy inside agent sessions. |
-| Credential proxy (planned) | Zerobox's built-in HTTPS proxy with per-host credential injection is a direct implementation of the credential proxy architecture described in the roadmap overview. |
+| [Container credential exposure](/reference/roadmap/container-credential-exposure/) | `jackin-exec` and the workspace secret bindings are the implementation path for the credential proxy architecture: raw tokens never enter the container; jackin-capsule injects them at execution time for specific approved commands. |
+| [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/) | `jackin-exec` is the agent-facing surface of the same capability; the host bridge is the host-side resolver that looks up the credential from the operator's vault or keychain. The two are the same feature seen from different sides of the container boundary. |
 | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) | Zerobox's snapshot module (Blake3 + Merkle + LZ4) provides per-operation filesystem checkpointing as a lightweight alternative to full container/VM checkpoints. |
 | [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | Both are hardening steps that improve the Docker runtime before microVMs. Rootless DinD reduces the sidecar's host privilege; process sandboxing reduces per-operation access inside the container. |
+| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | Every `jackin-exec` call and its approval outcome should appear in the session contract output, including which credential binding was used, whether output was redacted, and which approval mode was active. |
 
 ## Alternatives
 
@@ -157,11 +338,19 @@ The DinD container already applies a default seccomp profile. jackin' could tigh
 
 ## Open Questions
 
-1. **Which zerobox integration surface?** Shell-out to the `zerobox` CLI, embed the Rust crate directly, or wait for a more mature API surface before committing to either.
-2. **Policy authoring burden.** Who specifies which paths and hosts each agent operation may access? Should jackin' derive this from mount configuration automatically, expose it in `jackin.role.toml`, or leave it to a default-open policy with operator override?
-3. **Interaction with Bubblewrap inside the DinD container.** DinD currently runs a privileged container. Bubblewrap requires unprivileged user namespaces, which may be restricted by AppArmor on some hosts. Compatibility testing is needed before committing to the Linux mechanism.
-4. **Performance at scale.** Zerobox reports 10 ms overhead per invocation. An agent making 500 tool calls in a session adds 5 seconds of overhead. At 1000 calls, 10 seconds. Whether this is acceptable depends on the operation mix.
-5. **Snapshot policy.** Should snapshots be taken before every command, only before commands classified as risky, or only on explicit operator opt-in?
+**`jackin-exec` design:**
+1. **Binary name.** `jackin-exec` proposed. Alternatives: `jsecure`, `jx`, `jackin-safe`. Final name must be decided before the construct image bakes it in — renaming later breaks existing role system prompts and MCP tool descriptions.
+2. **MCP vs binary vs PATH-shadowing.** Which mechanism should be primary? MCP gives structured tool use for Claude Code / Codex; binary works for any agent; PATH-shadowing is transparent but opaque. Recommendation: binary + MCP, not PATH-shadowing — operators should be able to see when `jackin-exec` is being used.
+3. **Credential source priority.** When a command matches multiple bindings, which binding wins? Longest match? First declared? Named explicitly in invocation?
+4. **Agent circumvention risk.** A determined agent can still exfiltrate in pieces, use encoding, or run the raw command via a different path. How much of this is acceptable for the current threat model (trusted operator, semi-trusted agent, untrusted external code the agent runs)? The approval dialog is the primary defense; output filtering is secondary. Document this honestly in the session contract.
+5. **UX for approval latency.** The operator must approve before the command runs. For an agent making many sensitive calls in sequence, this creates friction. The "Approve All Similar" and "Always for Session" modes address this but need UX design. What session-level state does jackin' track to honor "always for session" across reconnects?
+
+**Zerobox integration:**
+6. **Which zerobox integration surface?** Shell-out to the `zerobox` CLI, embed the Rust crate directly, or wait for a more mature API surface before committing to either.
+7. **Policy authoring burden.** Who specifies which paths and hosts each agent operation may access? Should jackin' derive this from mount configuration automatically, expose it in `jackin.role.toml`, or leave it to a default-open policy with operator override?
+8. **Interaction with Bubblewrap inside the DinD container.** DinD currently runs a privileged container. Bubblewrap requires unprivileged user namespaces, which may be restricted by AppArmor on some hosts. Compatibility testing is needed before committing to the Linux mechanism.
+9. **Performance at scale.** Zerobox reports 10 ms overhead per invocation. An agent making 500 tool calls in a session adds 5 seconds of overhead. At 1000 calls, 10 seconds. Whether this is acceptable depends on the operation mix.
+10. **Snapshot policy.** Should snapshots be taken before every command, only before commands classified as risky, or only on explicit operator opt-in?
 
 ## Related Files
 
