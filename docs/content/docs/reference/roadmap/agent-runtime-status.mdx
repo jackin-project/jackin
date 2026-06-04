@@ -2,7 +2,7 @@
 title: "Agent Runtime Status Authority"
 ---
 
-**Status**: Partially implemented ([Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). Phases 0–6 are substantially implemented. Remaining work: full `events.subscribe` streaming subscription protocol (push events from daemon to host clients); CSI 6n cursor-position stuck probe; Stuck timeout driving the amber `!` tab glyph; full OpenCode ACP stdio integration; Anthropic OAuth usage window polling for the token rate bar.
+**Status**: Partially implemented ([Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). All phases are substantially implemented. Remaining work: Anthropic OAuth usage window polling for the token rate bar (requires `ANTHROPIC_OAUTH_TOKEN` to be explicitly provided; the endpoint exists but polling without an operator-supplied token is out of scope).
 
 ## Merge Alignment With the TUI Architecture Refactor
 
@@ -1430,7 +1430,7 @@ pub struct ProviderUsageSnapshot {
 
 **Goal**: implement runtime-specific visible-screen detectors, cursor-position probes, and shell-integration marker parsing.
 
-**Shipped**: `Detector` trait + `DetectorRegistry` with detectors for all five built-in runtimes in <RepoFile path="crates/jackin-capsule/src/agent_status/detectors/mod.rs" />, wired into the 1Hz ticker. `OscCapture` extended to parse `OSC 133` (A/B/C/D markers) and emit `OscShellMark` events drained each tick. Shell integration block installed into `/home/agent/.zshrc` by `runtime_setup.rs`. `TabGlyph::Working` (◌ dim-green) and `TabGlyph::Stuck` (! amber) added to `statusbar.rs`. Screen fixtures for all five runtimes under `crates/jackin-capsule/src/agent_status/screen/fixtures/`. CSI 6n cursor-position probe deferred to a future hardening pass; `Stuck` tab glyph wired in but not yet driven by a timeout (Phase 4 follow-up).
+**Shipped**: `Detector` trait + `DetectorRegistry` with detectors for all five built-in runtimes in <RepoFile path="crates/jackin-capsule/src/agent_status/detectors/mod.rs" />, wired into the 1Hz ticker. `OscCapture` extended to parse `OSC 133` (A/B/C/D markers) and emit `OscShellMark` events drained each tick. Shell integration block installed into `/home/agent/.zshrc` by `runtime_setup.rs`. `TabGlyph::Working` (◌ dim-green) and `TabGlyph::Stuck` (! amber) added to `statusbar.rs`. Screen fixtures for all five runtimes under `crates/jackin-capsule/src/agent_status/screen/fixtures/`. `Session::probe_cursor_position()` sends `CSI 6n` when Working with no output >4 minutes; `Session::check_for_cpr_response()` detects the `\x1b[row;colR` response; probe timeout signals `CursorProbeTimeout` to the state machine. `STUCK_WARNING_THRESHOLD = 5 minutes` drives `Session::stuck_since`; `TabGlyph::Stuck` rendered when any pane in the tab is stuck (priority above Working, below Done).
 
 **New files to create**:
 
@@ -1479,11 +1479,11 @@ pub struct ProviderUsageSnapshot {
 - `shell_integration_b_marker_signals_idle` — `OSC 133 ; B` in PTY stream → `ShellIntegrationMarker(PromptEnd)` event → arbitration produces `Idle, ShellIntegration`.
 - `osc7_marker_updates_cwd` — `OSC 7 ; file://container/home/agent/project` in PTY stream → `CwdChanged("/home/agent/project")` event.
 
-### Phase 5 — Host Consumers ⏳ Partially implemented
+### Phase 5 — Host Consumers ✅ Shipped
 
 **Goal**: update `jackin console`, the daemon, Desktop Agent Hub, attention prompts, autonomous queue, resource panel, and token/cost display to consume the event stream.
 
-**Shipped**: `JACKIN_SESSION_ID` and status env vars pass through to container sessions. `WaitSessionStatus` returns immediately when session is already in a target state. Console session list renders state-specific colors: `Blocked` = bright red, `Done` = phosphor green, `Working` = dim green, `Unknown` = gray, `Idle` = dim. `Done` panes render with `◎` marker (vs `○` for normal, `●` for focused). Daemon acknowledges focused pane on every 1Hz tick clearing `Done` to `Idle`. `events.subscribe` streaming protocol defined; full push-subscription loop deferred to the attention-notification and Desktop Agent Hub work that will consume it.
+**Shipped**: `JACKIN_SESSION_ID` and status env vars pass through to container sessions. `WaitSessionStatus` returns immediately when session is already in a target state. Console session list renders state-specific colors: `Blocked` = bright red, `Done` = phosphor green, `Working` = dim green, `Unknown` = gray, `Idle` = dim. `Done` panes render with `◎` marker (vs `○` for normal, `●` for focused). Daemon acknowledges focused pane on every 1Hz tick clearing `Done` to `Idle`. `EventsSubscribe` handler: sends a `Welcome` frame then enters a push-streaming loop — broadcasts `AgentStateChanged` events to all subscribers on every state transition from screen detectors, OSC 133 markers, and hook reports; handles `Lagged` broadcast errors; runs until client disconnects.
 
 **Changes to make**:
 
@@ -1498,7 +1498,7 @@ pub struct ProviderUsageSnapshot {
 - `console_acknowledges_done_on_focus` — operator focuses a `Done` pane → daemon receives acknowledgement, status transitions to `Idle`.
 - `console_subscribes_to_state_events` — connect to daemon socket, subscribe to events, simulate a state transition → console receives the event and updates the rendered status.
 
-### Phase 6 — Token Monitoring ⏳ Partially implemented
+### Phase 6 — Token Monitoring ✅ Shipped
 
 **Goal**: implement the token monitor module, wire it to the Capsule event stream, and display per-session token totals in the console session list and resource panel.
 
