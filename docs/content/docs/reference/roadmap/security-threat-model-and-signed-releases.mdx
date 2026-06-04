@@ -2,7 +2,7 @@
 title: "Security Threat Model & Signed Releases"
 ---
 
-**Status**: Open — design proposal (Isolation & security track)
+**Status**: Open — implementation ready (Isolation & security track)
 
 ## Problem
 
@@ -12,11 +12,39 @@ jackin' has two credibility gaps that this roadmap item addresses together.
 
 **Gap 2 — unsigned capsule binary.** The `jackin-capsule` binary is downloaded into every operator's container at runtime (<RepoFile path="src/capsule_binary.rs" />), verified by SHA256 only. There is no cryptographic signing, no SLSA provenance, and no SBOM. A compromised release artifact that matches the expected SHA256 would go undetected.
 
+## Implementation decisions
+
+These decisions were made during the design phase and are binding for the implementing PRs.
+
+**Phase 2 — sigstore-rs for in-process manifest verification.** `ensure_available` in <RepoFile path="src/capsule_binary.rs" /> will use the `sigstore` Rust crate (official Sigstore project Rust client, pre-1.0 at 0.12.x, but actively maintained and the only canonical option for in-process cosign bundle verification). No shelling out to `cosign` CLI, no system dependency requirement. The Sigstore TUF root certificates are bundled with the crate — no extra network round-trip beyond the manifest and bundle download. Verification failure is a hard abort, consistent with the existing SHA256 mismatch behavior. There is no "warn and continue" fallback. The pre-1.0 crate choice must be documented in the PR per the "prefer libraries" rule, naming the alternatives evaluated (shell out to `cosign` CLI, GitHub Attestations API via `gh` CLI) and the criterion that selected `sigstore-rs` (hermetic, no system dep, canonical client).
+
+**Phase 2 — identity constraint scope.** The certificate identity regex used in `ensure_available` is `^https://github.com/jackin-project/jackin/`, matching any workflow under the jackin' repository. This covers both `release.yml` (stable tags) and `preview.yml` (rolling main) without separate code paths per version channel. The OIDC issuer is `https://token.actions.githubusercontent.com`.
+
+**Phase 2 — signed manifest format.** CI produces a single `capsule-manifest.json` per release or preview containing the version string and per-architecture SHA256 digests for the capsule binary archives:
+
+```json
+{
+  "version": "0.6.0",
+  "targets": {
+    "aarch64-unknown-linux-gnu": "<sha256-hex>",
+    "x86_64-unknown-linux-gnu": "<sha256-hex>"
+  }
+}
+```
+
+The manifest and its cosign bundle (`capsule-manifest.json.bundle`) are published as release assets alongside the archive and existing `.sha256` file. `ensure_available` verifies the bundle before trusting the SHA256 values inside the manifest.
+
+**CI signing scope.** SLSA provenance attestations, cosign per-artifact signing, and SBOM generation apply to both the tagged release pipeline (`release.yml`) and the rolling preview pipeline (`preview.yml`). All binary targets in both workflows receive individual attestations and `.bundle` files. The `jackin-capsule` build jobs additionally produce the signed `capsule-manifest.json` + `capsule-manifest.json.bundle` pair.
+
+**SBOM scope.** `syft scan` runs on each built binary archive (`.tar.gz`) to produce a CycloneDX JSON SBOM per artifact. This captures file-level and ELF-level dependency data from the built binary. Source-level `cargo-cyclonedx` SBOM generation is not included in this phase.
+
+**Tool installation.** `cosign` and `syft` must follow the mise-first rule from <RepoFile path=".github/AGENTS.md" />. If mise plugins for these tools are not available, `sigstore/cosign-installer@v3` is acceptable as an equivalent to `rui314/setup-mold` (single-purpose binary installer, not a language runtime setup action). The implementing PR must confirm installation approach against the mise plugin registry before reaching for dedicated installer actions.
+
 ## Part 1 — Security threat model & implementation document
 
-A contributor-facing internals doc at `docs/content/docs/reference/security-implementation.mdx` covering the following.
+A contributor-facing internals doc at `docs/content/docs/reference/security-implementation.mdx`. Audience: contributor (Internals sidebar group). Add `"security-implementation"` to <RepoFile path="docs/content/docs/reference/meta.json" />.
 
-### 1. Threat model table
+### Threat model table
 
 | Threat | Defended? | Where in code | Residual risk |
 |---|---|---|---|
@@ -24,86 +52,244 @@ A contributor-facing internals doc at `docs/content/docs/reference/security-impl
 | Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="src/instance/auth.rs" /> | TOCTOU window between symlink check and file use |
 | Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/reference/roadmap/smolvm-backend-research/) | Shared kernel; future microVM work addresses this |
 | Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/reference/roadmap/network-egress-policy/) | Open egress by default today |
-| Supply chain (capsule binary) | SHA256 only | <RepoFile path="src/capsule_binary.rs" /> | No signing, no provenance — Part 2 below |
+| Supply chain (capsule binary) | SHA256 only → signing in Part 2 | <RepoFile path="src/capsule_binary.rs" /> | Signing and provenance addressed by Part 2 of this item |
 
-### 2. Implementation walk
+### Implementation walk
 
-One paragraph each for every security function:
+One paragraph each for every security function. All live in <RepoFile path="src/instance/auth.rs" />.
 
-- `reject_symlink` — rejects symlink paths when writing credential files to prevent agent-created symlinks from redirecting auth writes to hostile locations
-- `repair_permissions` — fixes file permission drift on credential and state files that may have been loosened by tooling inside the container
-- `write_private_file` — atomically writes a file with owner-only permissions, closing the window where a file briefly exists world-readable
-- `set_file_perms` — sets explicit permissions on a file after creation, used when the file may have been created by a tool that applied a default umask
-- `host_home_is_real` — verifies that the host home directory is a real directory (not a symlink or mount artifact) before trusting it for credential resolution
-- `parse_gh_hosts_yml` — safely reads and validates `~/.config/gh/hosts.yml` without exposing the parser to malformed or hostile input
+- `reject_symlink` (line 925) — uses `symlink_metadata` (lstat, not stat, so the call does not follow the symlink) to detect symlinks at `path` before any write or chmod. An agent-controlled role-state directory is mounted read-write into the container; a compromised role can plant a symlink between launches. `reject_symlink` is called unconditionally before every write path and at the top of every `provision_*` function. No-ops on `ENOENT`. Returns an operator-readable error naming the path and suggesting the operator remove the symlink and retry.
 
-### 3. External tools rationale
+- `repair_permissions` (line 1012) — tightens existing credential files to `0o600` on Unix via `set_permissions`. Uses `symlink_metadata` (lstat) before calling `set_permissions` so it never chmods through a symlink. Errors (permission denied, stat failure) are logged via `eprintln!` rather than returned — callers are mid-Sync and must not abort the launch, but a silent chmod failure on a credential file is a security regression that must surface.
 
-- `shellfirm` — intercepts dangerous shell commands (`rm -rf /`, `chmod 777`, `curl | bash`, etc.) at the shell level before execution. Protects against both accidental operator mistakes and agent-generated destructive commands. Installed in <RepoFile path="docker/construct/Dockerfile" />.
-- `tirith` — security scanner that validates container runtime state against a policy. Protects against configuration drift and unexpected privilege escalation during a session. Installed in <RepoFile path="docker/construct/Dockerfile" />.
-- Both can be disabled by the operator via environment variables when they interfere with legitimate workflows.
+- `write_private_bytes` (line 951) / `write_private_file` (line 947) — atomically writes bytes with `0o600` permissions. Calls `reject_symlink` at entry. Uses `tempfile::NamedTempFile` (opens with `O_EXCL` internally, so a pre-planted symlink at the temp path is impossible because `O_EXCL` fails on any existing path) with a random suffix, sets permissions on the temp file before rename. Closes the TOCTOU window completely: no intermediate state where a world-readable file exists at the destination path.
 
-### 4. Container boundary contract with YOLO flags
+- `create_private_file_if_absent` (line 986) — race-free skeleton seeding via `O_CREAT|O_EXCL`. Used to seed `{}` into `account_json` before the Claude CLI runs so the downstream consumer never sees a missing file. Returns `Ok(())` on `EEXIST` without touching existing content. The `O_EXCL` flag prevents any race between a missing-file check and the create.
 
-When `--dangerously-skip-permissions` (YOLO) flags are active:
+- `host_home_is_real` (line 231) — gates host-binary shellouts (`gh auth token`, macOS `security` keychain) on whether `host_home` matches the value returned by `directories::BaseDirs::new().home_dir()`. Keeps integration tests hermetic (they pass temp dirs as `host_home`) while allowing the real `gh` and `security` binaries in production runs. Without this gate, tests would shell out to the operator's installed `gh` and contaminate results.
 
-- jackin' still enforces mount scoping, network isolation, and the host Docker socket exclusion
-- jackin' does **not** guarantee that the agent cannot damage the workspace content on writable mounts
-- jackin' does **not** guarantee that the agent cannot exfiltrate data over the network when egress is open
-- The flag name (`dangerously-skip-permissions`) is the contract: the operator explicitly opted into reduced safety for agent productivity
+- `parse_gh_hosts_yml` (line 346) — uses `serde_yaml_ng` to parse `~/.config/gh/hosts.yml`. Returns `None` on any malformed input, including a document that has a `github.com` block but no `oauth_token` field, or one where `oauth_token` is empty/whitespace. Partial results are never returned: silently accepting half-parsed scalars would land bogus credentials in the container's `hosts.yml` and surface as unrelated authentication failures mid-session.
+
+### External tools rationale
+
+- `shellfirm` — intercepts dangerous shell commands at the shell level before execution, blocking `rm -rf /`, `chmod 777`, `curl | bash`, and similar patterns. Installed in <RepoFile path="docker/construct/Dockerfile" /> at line 5 via `cargo install shellfirm --version ... --locked` in a multi-stage build. Protects against both accidental operator mistakes and agent-generated destructive commands. Disabled by the operator via the environment variable documented in the shellfirm README when it interferes with legitimate workflows.
+
+- `tirith` — security scanner that validates container runtime state against a policy. Guards against configuration drift and unexpected privilege escalation during a session. Downloaded in <RepoFile path="docker/construct/Dockerfile" /> at line 51 via a SHA256-verified curl + `tar` extraction. Disabled by the operator via environment variable when it interferes.
+
+### Container boundary contract with YOLO flags
+
+The per-agent YOLO launch flags defined in <RepoFile path="docker/runtime/entrypoint.sh" /> are:
+
+- Claude (line 41): `--dangerously-skip-permissions` plus the settings JSON flag `skipDangerousModePermissionPrompt: true`
+- Codex (line 47): `--dangerously-bypass-approvals-and-sandbox`
+- Amp (line 53): `--dangerously-allow-all`
+
+When any YOLO flag is active: jackin' still enforces mount scoping, network isolation, and the host Docker socket exclusion. It does **not** guarantee that the agent cannot damage workspace content on writable mounts. It does **not** guarantee that the agent cannot exfiltrate data when egress is open. The flag name is the contract — the operator explicitly opted into reduced safety for agent productivity.
 
 ## Part 2 — Signed releases + SLSA provenance + SBOM
 
-### What to add to publish workflows
+### Workflow permission additions
 
-1. **SLSA provenance** — `actions/attest-build-provenance@v2` for every published binary, producing a signed provenance attestation that chains back to the GitHub Actions run
-2. **Cosign signing** — `cosign sign-blob` with keyless OIDC signing for every release artifact, so operators can verify the binary came from the jackin' CI without pre-sharing a public key
-3. **SBOM generation** — `syft scan` to produce a CycloneDX SBOM for each binary, uploaded as a release asset alongside the binary itself
-4. **Operator verification docs** — document verification steps (`cosign verify-blob`, `slsa-verifier`) in a new page at `docs/content/docs/getting-started/verifying-releases.mdx`
-5. **Runtime verifier upgrade** — upgrade the capsule binary download in <RepoFile path="src/capsule_binary.rs" /> `ensure_available` to verify against a signed manifest instead of downloading and checking SHA256 alone
+Both the `build` and `build-jackin-capsule` jobs in <RepoFile path=".github/workflows/release.yml" /> and <RepoFile path=".github/workflows/preview.yml" /> require job-level permission additions. Job-level placement is mandatory per the env-var scope rule in <RepoFile path=".github/AGENTS.md" /> — workflow-level `permissions:` would leak into jobs that don't run the corresponding actions:
 
-### Affected workflows
+```yaml
+permissions:
+  contents: read
+  id-token: write       # GitHub OIDC token for cosign keyless signing
+  attestations: write   # for actions/attest-build-provenance@v2
+```
 
-- <RepoFile path=".github/workflows/preview.yml" /> — preview/rolling release
-- <RepoFile path=".github/workflows/release.yml" /> — tagged releases
+The `release` job in `release.yml` and the `publish-preview` job in `preview.yml` also need `id-token: write` for the capsule manifest signing step described below.
+
+### Steps after each `Package` step
+
+Add in this order after the existing `Package` step in every `build` and `build-jackin-capsule` matrix job:
+
+```yaml
+- name: Install cosign
+  uses: sigstore/cosign-installer@v3
+
+- name: Sign archive
+  env:
+    ARCHIVE: ${{ env.archive }}   # set to the archive filename in the Package step
+  run: |
+    cosign sign-blob --bundle "${ARCHIVE}.bundle" --yes "${ARCHIVE}"
+
+- name: Generate SBOM
+  run: |
+    syft scan "${ARCHIVE}" -o cyclonedx-json > "${ARCHIVE}.sbom.json"
+
+- name: Attest build provenance
+  uses: actions/attest-build-provenance@v2
+  with:
+    subject-path: ${{ env.archive }}
+```
+
+`syft` installation follows the tool-installation rule — use mise first; fall back to `anchore/sbom-action@v0` only if a mise plugin is unavailable.
+
+The `upload-artifact` step in every affected job adds `*.bundle` and `*.sbom.json` to its `path:` list so the artifacts reach the release and publish-preview jobs.
+
+### Capsule manifest (produced in release / publish-preview jobs)
+
+After the existing "Read platform SHA256s" step, both release jobs add:
+
+```yaml
+- name: Install cosign
+  uses: sigstore/cosign-installer@v3
+
+- name: Produce and sign capsule manifest
+  env:
+    VERSION: ${{ needs.check-version.outputs.version }}    # preview: steps.meta.outputs.version
+    CAPSULE_ARM64_SHA: ${{ steps.shas.outputs.capsule_arm64_linux }}
+    CAPSULE_X86_SHA: ${{ steps.shas.outputs.capsule_x86_linux }}
+  run: |
+    jq -n \
+      --arg v "$VERSION" \
+      --arg arm64 "$CAPSULE_ARM64_SHA" \
+      --arg x86 "$CAPSULE_X86_SHA" \
+      '{"version":$v,"targets":{"aarch64-unknown-linux-gnu":$arm64,"x86_64-unknown-linux-gnu":$x86}}' \
+      > artifacts/capsule-manifest.json
+    cosign sign-blob \
+      --bundle artifacts/capsule-manifest.json.bundle \
+      --yes artifacts/capsule-manifest.json
+```
+
+Both `capsule-manifest.json` and `capsule-manifest.json.bundle` are included in the `gh release create` / `gh release upload` invocation.
+
+### Release asset summary after these changes
+
+Per release, the published assets grow from:
+
+```
+jackin-<ver>-<target>.tar.gz
+jackin-<ver>-<target>.tar.gz.sha256
+jackin-capsule-<ver>-<target>.tar.gz
+jackin-capsule-<ver>-<target>.tar.gz.sha256
+```
+
+to:
+
+```
+jackin-<ver>-<target>.tar.gz
+jackin-<ver>-<target>.tar.gz.sha256
+jackin-<ver>-<target>.tar.gz.bundle
+jackin-<ver>-<target>.tar.gz.sbom.json
+jackin-capsule-<ver>-<target>.tar.gz
+jackin-capsule-<ver>-<target>.tar.gz.sha256
+jackin-capsule-<ver>-<target>.tar.gz.bundle
+jackin-capsule-<ver>-<target>.tar.gz.sbom.json
+capsule-manifest.json
+capsule-manifest.json.bundle
+```
+
+## Part 3 — Operator verification document
+
+New page at `docs/content/docs/getting-started/verifying-releases.mdx`. Audience: operator (Getting Started sidebar group). Add `"verifying-releases"` to <RepoFile path="docs/content/docs/getting-started/meta.json" />.
+
+The page documents three independent verification paths for any release asset:
+
+**SLSA provenance via GitHub Attestations API** (no extra tools beyond `gh`):
+
+```sh
+gh attestation verify <file> --repo jackin-project/jackin
+```
+
+**Cosign keyless bundle verification** (requires `cosign` installed locally):
+
+```sh
+cosign verify-blob \
+  --bundle <file>.bundle \
+  --certificate-identity-regexp 'https://github.com/jackin-project/jackin/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  <file>
+```
+
+**SBOM inspection**:
+
+```sh
+# View the raw CycloneDX JSON
+cat <file>.sbom.json | jq .
+
+# Or use a CycloneDX-compatible tool
+cyclonedx validate --input-file <file>.sbom.json
+```
+
+The page should also document how to verify the capsule manifest specifically, since operators who want to audit the SHA256 values jackin' uses at runtime can verify `capsule-manifest.json` + `capsule-manifest.json.bundle` against the same identity constraint.
+
+## Part 4 — Capsule binary signed manifest verification in `ensure_available`
+
+### Rust dependency
+
+```toml
+# Cargo.toml
+sigstore = { version = "0.12", default-features = false, features = ["cosign"] }
+```
+
+Pre-1.0 — note the choice in the PR body per the "prefer libraries" rule. Confirm the exact feature flag name against the published crate docs at implementation time; the crate's feature surface has changed between minor versions. The TUF root certs are bundled — `ensure_available` does not make a separate network call to the Sigstore TUF CDN.
+
+### New `fetch_and_verify_manifest` function
+
+The new function in <RepoFile path="src/capsule_binary.rs" />, `async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String>`, replaces `fetch_remote_sha256` in the `download_and_cache` call path:
+
+1. Concurrently fetch `{base_url}/capsule-manifest.json` and `{base_url}/capsule-manifest.json.bundle` using the existing `crate::net::fetch_text` helper (or a bytes variant if needed for the bundle).
+2. Verify the cosign bundle against the manifest bytes using `sigstore-rs`. Identity constraint: `certificate_identity_regexp = "^https://github.com/jackin-project/jackin/"`, `certificate_oidc_issuer = "https://token.actions.githubusercontent.com"`. Failure is a hard abort — same behavior as the existing SHA256 mismatch error that calls `anyhow::bail!`.
+3. Parse the verified manifest JSON. Extract `targets["aarch64-unknown-linux-gnu"]` or `targets["x86_64-unknown-linux-gnu"]` based on `arch` (the value returned by `container_arch()`).
+4. Return the attested SHA256 hex string to the caller, which continues with the existing archive download + hash comparison + version verification flow.
+
+### URL derivation
+
+`base_url` follows the existing `download_url` logic already in the file:
+
+- Dev/preview versions (contain `-dev` or `-preview.`) → `https://github.com/jackin-project/jackin/releases/download/preview`
+- Stable versions → `https://github.com/jackin-project/jackin/releases/download/v{version}`
+
+The manifest lives at the same base URL as the capsule archive, so no new URL construction function is needed.
+
+### What stays unchanged
+
+The `JACKIN_CAPSULE_BIN` env-var override path is unaffected — operator-supplied binaries explicitly bypass the download and verification path, as documented in the existing `clog!` note at that branch. The packaged-binary (Homebrew `libexec`) path is also unaffected — that binary is verified by Homebrew's formula SHA256 at install time.
+
+## Implementation phases
+
+### Phase 1 — Security implementation doc
+
+Write `docs/content/docs/reference/security-implementation.mdx`. Pure docs, no code changes. Add to <RepoFile path="docs/content/docs/reference/meta.json" /> sidebar. Run `bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` from `docs/`. Estimated 2–3 days.
+
+### Phase 2 — SLSA + cosign + SBOM (CI changes)
+
+Add job-level permissions (`id-token: write`, `attestations: write`), cosign signing, `syft` SBOM generation, and `actions/attest-build-provenance@v2` to both build jobs in <RepoFile path=".github/workflows/release.yml" /> and <RepoFile path=".github/workflows/preview.yml" />. Add capsule manifest generation and signing to the `release` and `publish-preview` jobs. Verify with `gh workflow run --ref feature-branch` for both workflows (push-only jobs per <RepoFile path=".github/AGENTS.md" />). Estimated 1.5 days.
+
+### Phase 3 — Operator verification docs
+
+Write `docs/content/docs/getting-started/verifying-releases.mdx`. Lands after Phase 2 so the examples reference real published assets. Add to <RepoFile path="docs/content/docs/getting-started/meta.json" />. Estimated 0.5 days.
+
+### Phase 4 — Capsule signed manifest in `ensure_available`
+
+Add `sigstore` dep to <RepoFile path="Cargo.toml" />, write `fetch_and_verify_manifest`, wire into `download_and_cache`. Document the pre-1.0 crate choice in the PR body. Run full test suite. Estimated 1 day.
+
+## PR split
+
+- **PR 1**: Phase 1 (docs-only, zero code risk — safe to land first)
+- **PR 2**: Phase 2 (CI workflow changes to `release.yml` and `preview.yml`)
+- **PR 3**: Phase 3 (operator verification docs — lands after PR 2 so examples are accurate)
+- **PR 4**: Phase 4 (`sigstore` dep + <RepoFile path="src/capsule_binary.rs" /> changes + capsule manifest signing step added to both CI workflows)
 
 ## Non-goals
 
 - Do not claim hostile multi-tenant safety from Docker hardening alone — that is the [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) scope.
 - Do not replace future microVM work — [smolvm backend research](/reference/roadmap/smolvm-backend-research/) tracks that separately.
 - Do not retroactively sign historical releases — provenance starts from the first workflow that includes signing.
-
-## Implementation phases
-
-### Phase 1 — Security implementation doc
-
-Write the contributor-facing security implementation document at `docs/content/docs/reference/security-implementation.mdx`. Pure docs, no code changes. Estimated ~2-3 days.
-
-### Phase 2 — SLSA provenance + cosign signing
-
-Add `actions/attest-build-provenance@v2` and `cosign sign-blob` to the publish workflows. Both preview and tagged release pipelines produce signed artifacts. Estimated ~1 day.
-
-### Phase 3 — SBOM generation
-
-Add `syft scan` to produce CycloneDX SBOMs, uploaded as release assets alongside each binary. Estimated ~half day.
-
-### Phase 4 — Operator verification docs
-
-Write the verification guide at `docs/content/docs/getting-started/verifying-releases.mdx` with `cosign verify-blob` and `slsa-verifier` instructions. Estimated ~half day.
-
-### Phase 5 — Capsule binary signed manifest
-
-Upgrade `ensure_available` in <RepoFile path="src/capsule_binary.rs" /> to verify against a signed manifest (signature over the SHA256 digest + version tag) instead of bare checksum comparison. The manifest is produced and signed in the same CI step that publishes the binary. Estimated ~1 day.
+- Do not add `cargo-cyclonedx` source-level SBOM in this phase — `syft scan` on the binary archive is sufficient for the supply chain transparency goal here.
 
 ## Related files
 
-- <RepoFile path="src/instance/auth.rs" /> — symlink rejection, credential safety
-- <RepoFile path="src/workspace/mounts.rs" /> — mount scoping
-- <RepoFile path="docker/construct/Dockerfile" /> — shellfirm, tirith installation
-- <RepoFile path="docker/runtime/entrypoint.sh" /> — YOLO flag handling
-- <RepoFile path="src/capsule_binary.rs" /> — capsule binary download verification
-- <RepoFile path=".github/workflows/preview.yml" /> — publish workflow
-- <RepoFile path=".github/workflows/release.yml" /> — release workflow
+- <RepoFile path="src/instance/auth.rs" /> — all six security functions documented in Part 1
+- <RepoFile path="src/workspace/mounts.rs" /> — mount scoping that enforces host file access policy
+- <RepoFile path="docker/construct/Dockerfile" /> — `shellfirm` and `tirith` installation
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — per-agent YOLO flag arms
+- <RepoFile path="src/capsule_binary.rs" /> — `ensure_available` and `download_and_cache` (Phase 4 target)
+- <RepoFile path=".github/workflows/preview.yml" /> — rolling preview publish workflow (Phase 2 target)
+- <RepoFile path=".github/workflows/release.yml" /> — tagged release workflow (Phase 2 target)
 
 ## Related roadmap items
 
