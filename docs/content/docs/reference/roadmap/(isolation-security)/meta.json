@@ -2,6 +2,7 @@
   "title": "Isolation & security",
   "defaultOpen": false,
   "pages": [
+    "../agent-isolation-architecture",
     "../process-level-sandboxing",
     "../docker-runtime-hardening-contract",
     "../orbstack-isolated-machine-backend",
