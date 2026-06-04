@@ -760,7 +760,7 @@ The program is done when:
 **Root cause (to confirm):** the host console (ratatui over the real terminal) and the capsule (`SocketBackend`) are different render paths; fixes to one do not automatically apply to the other. The host path must also fully reflow on resize, keep the status bar reserved (Defect 15), re-lay-out modals within the content area (Defect 7), and not flicker (the PR's "flicker fixes" theme).
 
 **Tasks:**
-- [ ] Resize the host console at various sizes (incl. very small) under `--debug`; confirm no garble, no stale cells, no flicker, and that modals/hint bar/status bar stay within the content area (composes with Defects 14, 15).
+- [~] Resize the host console at various sizes (incl. very small) under `--debug`; confirm no garble, no stale cells, no flicker, and that modals/hint bar/status bar stay within the content area (composes with Defects 14, 15). Code review: ratatui auto-resizes; content area excludes footer (Defect 15); hint bar has spacer (Defect 14); modals use content area. Runtime validation still needed.
 - [x] Confirm the host console fully repaints on resize (ratatui handles diff, but verify no custom caching leaves stale rows). Confirmed: run.rs calls terminal.resize(rect) on SIGWINCH which resets ratatui double-buffer; no custom per-row caching on the host.
 - [ ] Audit for flicker on the full-repaint paths introduced by the dialog/focus fixes (avoid clear-then-draw flashes; prefer buffer diffing).
 - [x] If the host shares any render helper with the capsule, ensure the fix lands once for both (DRY). Host uses real ratatui terminal (not SocketBackend); compose_full_frame changes are capsule-only; host resize handled separately in run.rs.
