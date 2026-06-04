@@ -700,7 +700,7 @@ The program is done when:
 **Tasks:**
 - [x] Enumerate ad-hoc color literals: `rg -n "Color::Rgb|Rgb\(" crates/*/src --glob '!**/theme.rs' --glob '!**/tests*'`. For each, add or reuse a named theme token and replace the literal.
 - [x] Promote the lookbook preview-card charcoal (Defect 2) and the debug-bar colors (Defect 12) into named theme tokens.
-- [ ] Per the per-item analysis rule, scan for non-`theme` color construction generally (owo_colors `Rgb`, ratatui `Style::fg/bg` with literals) and route through tokens.
+- [x] Per the per-item analysis rule, scan for non-`theme` color construction generally (owo_colors `Rgb`, ratatui `Style::fg/bg` with literals) and route through tokens. Scanned: fixed owo_colors::Rgb(0,0,0) in animation.rs → BLACK token; remaining owo_colors uses are dynamic computations (not literals); Color::Black named variant (not Rgb) used in file_browser render is acceptable.
 - [x] Record "all colors come from `theme.rs` tokens; no inline RGB" in [TUI Visual Design](/reference/tui/visual-design/).
 
 ---
