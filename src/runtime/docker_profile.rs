@@ -627,6 +627,131 @@ pub fn resolve_effective_grants(
 
 // ── Docker flag emission ─────────────────────────────────────────────────────
 
+/// Format a human-readable session contract table for the active grants.
+/// Emitted via `crate::debug_log!` at launch; surfaced to the operator in
+/// `--debug` mode as a factual summary of what the container can do.
+pub fn format_session_contract(
+    profile: DockerSecurityProfile,
+    profile_source: &str,
+    grants: &EffectiveGrants,
+    apparmor_available: bool,
+    apparmor_layer: &str,
+    cgroup_version: &str,
+    agent_auth_mode: &str,
+    gh_auth_forwarded: bool,
+) -> String {
+    let caps_line = if matches!(
+        profile,
+        DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
+    ) {
+        let extra = if grants.capabilities_add.is_empty() {
+            String::new()
+        } else {
+            format!(" + {}", grants.capabilities_add.join(","))
+        };
+        format!(
+            "drop-all + {}{}",
+            MINIMUM_CAPABILITIES.join(","),
+            extra
+        )
+    } else {
+        format!(
+            "docker-default (14 caps){}",
+            if grants.capabilities_add.is_empty() {
+                String::new()
+            } else {
+                format!(" + {}", grants.capabilities_add.join(","))
+            }
+        )
+    };
+    let dind_status = match grants.dind {
+        DindGrant::None => "disabled".to_string(),
+        DindGrant::Rootless => "rootless".to_string(),
+        DindGrant::Privileged => "privileged".to_string(),
+    };
+    let network_mode = match grants.network {
+        NetworkGrant::None => "none (--network none)".to_string(),
+        NetworkGrant::Allowlist => format!(
+            "allowlist ({} hosts)",
+            grants.allowed_hosts.len()
+                + 1 // agent endpoint always included
+        ),
+        NetworkGrant::Open => "open".to_string(),
+    };
+    let network_enforcement = if matches!(grants.network, NetworkGrant::Allowlist) {
+        if grants.sudo || grants.user == "root" {
+            "partial (sudo grants iptables access)"
+        } else if grants.dind != DindGrant::None {
+            "partial (DinD inner containers bypass host iptables)"
+        } else {
+            "full"
+        }
+    } else {
+        "n/a"
+    };
+    let memory_line = grants
+        .memory_bytes
+        .map(|b| format!("{}", format_bytes(b)))
+        .unwrap_or_else(|| "unlimited".to_string());
+    let cpus_line = grants
+        .cpus
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "unlimited".to_string());
+    let pids_line = grants
+        .pids
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| "unlimited".to_string());
+    let cred_line = agent_auth_mode;
+    let gh_line = if gh_auth_forwarded { "forwarded" } else { "not forwarded" };
+    let residual = if grants.dind != DindGrant::None {
+        "shared host kernel; writable workspace mounts can still be changed; DinD sidecar has kernel access"
+    } else if !grants.system_writes {
+        "shared host kernel; writable workspace mounts can still be changed"
+    } else {
+        "shared host kernel; writable workspace mounts can still be changed; writable container root"
+    };
+
+    format!(
+        "Docker profile: {} (source: {})\n\
+         Role container:\n  \
+           seccomp: docker-default\n  \
+           apparmor: {} (layer: {})\n  \
+           no-new-privileges: {}\n  \
+           capabilities: {}\n  \
+           root filesystem: {}\n  \
+           writable tmpfs: {}\n\
+         DinD:\n  status: {}\n\
+         Network:\n  mode: {}\n  enforcement: {}\n\
+         cgroup: {}\n\
+         Resources:\n  memory: {}\n  cpus: {}\n  pids: {}\n\
+         Credentials:\n  agent: {}\n  GitHub CLI: {}\n\
+         Residual risk:\n  {}",
+        profile,
+        profile_source,
+        if apparmor_available { "docker-default" } else { "unavailable" },
+        apparmor_layer,
+        if grants.no_new_privileges { "enforced" } else { "not applied" },
+        caps_line,
+        if grants.system_writes { "writable" } else { "read-only" },
+        if grants.system_writes {
+            "none (writable root)".to_string()
+        } else {
+            "/tmp,/run,/var/run,/var/tmp,/var/cache,/var/log,/var/lib/apt/lists,\
+             /var/cache/apt/archives,/var/lib/dpkg,/home/agent/.cache".to_string()
+        },
+        dind_status,
+        network_mode,
+        network_enforcement,
+        cgroup_version,
+        memory_line,
+        cpus_line,
+        pids_line,
+        cred_line,
+        gh_line,
+        residual,
+    )
+}
+
 /// Default agent API endpoints added to `JACKIN_ALLOWED_HOSTS` when
 /// `network = "allowlist"` is active. These are the minimum set required
 /// for each agent to reach its model API.

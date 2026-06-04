@@ -588,6 +588,16 @@ struct LaunchContext<'a> {
     grants: crate::runtime::docker_profile::EffectiveGrants,
     /// Source of the active profile (cli/workspace/config/default).
     profile_source: crate::runtime::docker_profile::ProfileSource,
+    /// Cgroup version detected on the host (`"v1"`, `"v2"`, `"unknown"`).
+    cgroup_version: String,
+    /// AppArmor availability on the host.
+    apparmor_available: bool,
+    /// AppArmor enforcement layer (`"host"` or `"backend-vm"`).
+    apparmor_layer: String,
+    /// Auth mode string for the agent (e.g. `"sync"`, `"api_key"`).
+    agent_auth_mode_str: String,
+    /// Whether gh auth is being forwarded into this container.
+    gh_auth_forwarded: bool,
 }
 
 fn capsule_config(
@@ -659,6 +669,11 @@ async fn launch_role_runtime(
         profile,
         grants,
         profile_source,
+        cgroup_version,
+        apparmor_available,
+        apparmor_layer,
+        agent_auth_mode_str,
+        gh_auth_forwarded,
     } = ctx;
 
     crate::debug_log!(
@@ -865,8 +880,8 @@ async fn launch_role_runtime(
     run_args.extend_from_slice(&cap_flag_strs);
     let drops_all = matches!(
         *profile,
-        super::docker_profile::DockerSecurityProfile::Hardened
-            | super::docker_profile::DockerSecurityProfile::Locked
+        crate::runtime::docker_profile::DockerSecurityProfile::Hardened
+            | crate::runtime::docker_profile::DockerSecurityProfile::Locked
     );
     if drops_all {
         crate::debug_log!("launch", "cap_drop_all container={container_name}");
@@ -939,6 +954,20 @@ async fn launch_role_runtime(
         "launch",
         "seccomp profile=docker-default container={container_name}",
     );
+
+    // Session contract table — factual summary of effective grants.
+    // Emitted under JACKIN_DEBUG=1 so operators can verify what was applied.
+    let contract = super::docker_profile::format_session_contract(
+        *profile,
+        &profile_source.to_string(),
+        grants,
+        *apparmor_available,
+        apparmor_layer,
+        cgroup_version,
+        agent_auth_mode_str,
+        *gh_auth_forwarded,
+    );
+    crate::debug_log!("launch", "session_contract:\n{contract}");
 
     // User override — only emit --user when not the default agent user.
     let user_flag_val = grants.user.clone();
@@ -2342,7 +2371,6 @@ async fn load_role_with(
                     role_dind,
                     effective_grants_early.dind,
                 );
-                // Re-resolve effective_grants_early with the role's dind grant applied.
                 let role_grants = super::docker_profile::DockerGrants {
                     dind: Some(role_dind),
                     ..Default::default()
@@ -2351,10 +2379,51 @@ async fn load_role_with(
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);
             }
         }
+        // `requires_inner_engine = false`: role declares it does not need DinD.
+        // Under hardened/locked (where DinD is already None by default) this is
+        // a no-op. Under standard/compat (where DinD would normally be enabled),
+        // this overrides the profile and disables DinD for this role.
+        if validated_repo.manifest.requires_inner_engine == Some(false)
+            && effective_grants_early.dind != super::docker_profile::DindGrant::None
+        {
+            crate::debug_log!(
+                "launch",
+                "role declares requires_inner_engine=false; disabling DinD \
+                 (was {:?})",
+                effective_grants_early.dind,
+            );
+            effective_grants_early.dind = super::docker_profile::DindGrant::None;
+        }
 
         // Lock dind_started AFTER role manifest adjustments.
         let dind_started =
             effective_grants_early.dind != super::docker_profile::DindGrant::None;
+
+        // Resource limits enforcement: hardened and locked require memory and pid
+        // limits. The profile defaults provide them, but explicit grants cannot
+        // bypass them — apply_grants raises limits, never removes them. Emit an
+        // explicit check so the invariant is visible and machine-verifiable.
+        let profile_requires_limits = matches!(
+            resolved_profile_early.0,
+            crate::runtime::docker_profile::DockerSecurityProfile::Hardened
+                | crate::runtime::docker_profile::DockerSecurityProfile::Locked
+        );
+        if profile_requires_limits {
+            if effective_grants_early.memory_bytes.is_none() {
+                anyhow::bail!(
+                    "docker profile {:?} requires memory limits but none are configured; \
+                     set [docker.grants] memory = \"…\" or choose a less restrictive profile",
+                    resolved_profile_early.0,
+                );
+            }
+            if effective_grants_early.pids.is_none() {
+                anyhow::bail!(
+                    "docker profile {:?} requires pids limits but none are configured; \
+                     set [docker.grants] pids = N or choose a less restrictive profile",
+                    resolved_profile_early.0,
+                );
+            }
+        }
 
         // Validate explicit grants before any container work starts.
         // Collect all errors so the operator sees the full list at once.
@@ -2438,8 +2507,8 @@ async fn load_role_with(
             resolved_profile_early.0,
             if matches!(
                 resolved_profile_early.0,
-                super::docker_profile::DockerSecurityProfile::Hardened
-                    | super::docker_profile::DockerSecurityProfile::Locked
+                crate::runtime::docker_profile::DockerSecurityProfile::Hardened
+                    | crate::runtime::docker_profile::DockerSecurityProfile::Locked
             ) {
                 "hardened/locked prefer api_key or oauth_token over sync"
             } else {
@@ -2647,6 +2716,19 @@ async fn load_role_with(
             profile: resolved_profile_early.0,
             grants: effective_grants_early,
             profile_source: resolved_profile_early.1,
+            cgroup_version: cgroup_version.clone(),
+            apparmor_available: apparmor_info.available,
+            apparmor_layer: apparmor_info.layer.clone(),
+            agent_auth_mode_str: format!(
+                "{:?}",
+                crate::config::resolve_mode(
+                    config,
+                    agent,
+                    workspace_name.as_deref().unwrap_or(""),
+                    &role_key,
+                )
+            ),
+            gh_auth_forwarded: !github_resolved_env.is_empty(),
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
         let mut cleanup = LoadCleanup::new(
@@ -7506,6 +7588,104 @@ plugins = []
         let (run_cmd, _temp) = run_load_with_env(&[]).await;
         assert!(!run_cmd.contains("NO_PROXY="));
         assert!(!run_cmd.contains("no_proxy="));
+    }
+
+    // ── Docker security profile — compatibility test matrix ──────────────────
+    //
+    // Verifies that each profile produces the correct Docker flags, following
+    // the compatibility test matrix in the Docker Runtime Hardening Contract.
+
+    /// `locked` profile must: disable DinD, drop all caps + 8-cap minimum,
+    /// use --read-only, apply no-new-privileges, enforce resource limits.
+    #[tokio::test]
+    async fn locked_profile_compliance_matrix() {
+        let (run_cmd, _) =
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Locked).await;
+        // DinD disabled — no dind container started, no DOCKER_HOST env.
+        assert!(
+            !run_cmd.contains("DOCKER_HOST="),
+            "locked: DOCKER_HOST must not be injected"
+        );
+        // Capability drops.
+        assert!(run_cmd.contains("--cap-drop=ALL"), "locked: must drop all caps");
+        assert!(run_cmd.contains("--cap-add"), "locked: must add minimum caps");
+        // Read-only root.
+        assert!(run_cmd.contains("--read-only"), "locked: must be read-only");
+        // no-new-privileges.
+        assert!(
+            run_cmd.contains("no-new-privileges"),
+            "locked: must set no-new-privileges"
+        );
+        // Resource limits present (profile defaults: 4G memory, 512 pids).
+        assert!(run_cmd.contains("--memory"), "locked: memory limit required");
+        assert!(run_cmd.contains("--pids-limit"), "locked: pids limit required");
+    }
+
+    /// `hardened` profile must: disable DinD by default, drop caps, read-only
+    /// root, no-new-privileges, resource limits.
+    #[tokio::test]
+    async fn hardened_profile_compliance_matrix() {
+        let (run_cmd, _) =
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Hardened).await;
+        assert!(
+            !run_cmd.contains("DOCKER_HOST="),
+            "hardened: DOCKER_HOST must not be injected by default"
+        );
+        assert!(run_cmd.contains("--cap-drop=ALL"), "hardened: must drop all caps");
+        assert!(run_cmd.contains("--read-only"), "hardened: must be read-only");
+        assert!(
+            run_cmd.contains("no-new-privileges"),
+            "hardened: must set no-new-privileges"
+        );
+        assert!(run_cmd.contains("--memory"), "hardened: memory limit required");
+        assert!(run_cmd.contains("--pids-limit"), "hardened: pids limit required");
+    }
+
+    /// `standard` profile must: enable DinD, NOT drop caps, NOT read-only,
+    /// NOT set no-new-privileges, apply resource limits.
+    #[tokio::test]
+    async fn standard_profile_compliance_matrix() {
+        let (run_cmd, _) =
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Standard).await;
+        assert!(
+            run_cmd.contains("DOCKER_HOST="),
+            "standard: DOCKER_HOST must be injected (DinD active)"
+        );
+        assert!(
+            !run_cmd.contains("--cap-drop=ALL"),
+            "standard: must not drop all caps"
+        );
+        assert!(!run_cmd.contains("--read-only"), "standard: must not be read-only");
+        assert!(
+            !run_cmd.contains("no-new-privileges"),
+            "standard: must not set no-new-privileges"
+        );
+        assert!(run_cmd.contains("--memory"), "standard: memory limit required");
+    }
+
+    /// `compat` profile must: enable privileged DinD, no cap drops, no
+    /// read-only, no no-new-privileges, no resource limits.
+    #[tokio::test]
+    async fn compat_profile_compliance_matrix() {
+        let (run_cmd, _) =
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Compat).await;
+        assert!(
+            run_cmd.contains("DOCKER_HOST="),
+            "compat: DOCKER_HOST must be injected (DinD active)"
+        );
+        assert!(
+            !run_cmd.contains("--cap-drop=ALL"),
+            "compat: must not drop all caps"
+        );
+        assert!(!run_cmd.contains("--read-only"), "compat: must not be read-only");
+        assert!(
+            !run_cmd.contains("no-new-privileges"),
+            "compat: must not set no-new-privileges"
+        );
+        assert!(
+            !run_cmd.contains("--memory"),
+            "compat: must not have memory limits"
+        );
     }
 
     // ── Docker security profile — host socket guard ───────────────────────────

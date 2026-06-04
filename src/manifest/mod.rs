@@ -53,6 +53,16 @@ pub struct RoleManifest {
     /// entirely by profile + operator grants).
     #[serde(default)]
     pub dind: Option<crate::runtime::docker_profile::DindGrant>,
+    /// Whether this role requires a Docker-in-Docker engine inside the sandbox.
+    /// `Some(false)` = role declares it does not need DinD; jackin' skips the
+    /// sidecar under `hardened` and `locked` profiles (and any profile where
+    /// DinD is not already disabled by the effective grants).
+    /// `Some(true)` or `None` = DinD enablement controlled by profile + grants.
+    /// Note: this field (`requires_inner_engine`) and `dind` address different
+    /// aspects — `requires_inner_engine = false` is a boolean opt-out; `dind`
+    /// specifies the required tier when DinD IS needed.
+    #[serde(default)]
+    pub requires_inner_engine: Option<bool>,
     /// Role-level network allowed hosts, merged into `JACKIN_ALLOWED_HOSTS`
     /// when `network = "allowlist"` is active.
     #[serde(default)]
