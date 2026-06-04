@@ -831,25 +831,53 @@ pub fn capability_flags(profile: DockerSecurityProfile, extra_caps: &[String]) -
 /// are NOT already bind-mounted (`/jackin/run`, `/jackin/state`, and agent
 /// home credential dirs are bind mounts and already writable regardless of
 /// `--read-only`).
-pub fn readonly_root_flags(grants: &EffectiveGrants) -> Vec<String> {
+/// Tmpfs paths required for ALL read-only root profiles (hardened and locked).
+/// These are the minimum paths needed for any agent session to start — shell
+/// session state and the POSIX `/tmp` requirement.
+const TMPFS_PATHS_MINIMAL: &[&str] = &[
+    "/tmp",
+    "/run",
+    "/var/run",
+    // Shell history and session state — must be writable for the shell to start.
+    "/home/agent/.zsh_sessions",
+    "/home/agent/.zsh_history",
+    "/home/agent/.bash_history",
+];
+
+/// Additional tmpfs paths needed by `hardened` profile (roles that do package
+/// management at build time but not at runtime). Under `locked`, these are
+/// omitted because `apt install` is explicitly unsupported.
+const TMPFS_PATHS_HARDENED_EXTRA: &[&str] = &[
+    "/var/tmp",
+    "/var/cache",
+    "/var/log",
+    "/var/lib/apt/lists",
+    "/var/cache/apt/archives",
+    "/var/lib/dpkg",
+    "/home/agent/.cache",
+];
+
+/// Emit `--read-only` and `--tmpfs` flags for profiles that use a read-only root.
+///
+/// `locked` uses the minimal tmpfs set (no package-manager paths — apt is
+/// unsupported under locked). `hardened` adds the full package-manager path set
+/// for roles that might call `apt-get update` but not `apt install`.
+pub fn readonly_root_flags(
+    profile: DockerSecurityProfile,
+    grants: &EffectiveGrants,
+) -> Vec<String> {
     if grants.system_writes {
         return Vec::new();
     }
     let mut flags = vec!["--read-only".to_string()];
-    let tmpfs_paths = [
-        "/tmp",
-        "/run",
-        "/var/run",
-        "/var/tmp",
-        "/var/cache",
-        "/var/log",
-        "/var/lib/apt/lists",
-        "/var/cache/apt/archives",
-        "/var/lib/dpkg",
-        "/home/agent/.cache",
-        "/home/agent/.zsh_sessions",
-    ];
-    for path in &tmpfs_paths {
+
+    let extra_paths: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
+        &[]
+    } else {
+        TMPFS_PATHS_HARDENED_EXTRA
+    };
+
+    for path in TMPFS_PATHS_MINIMAL.iter().chain(extra_paths.iter()) {
         flags.push("--tmpfs".to_string());
         flags.push(format!("{path}:rw,nosuid,nodev"));
     }
@@ -882,7 +910,7 @@ pub fn to_docker_flags(
 ) -> Vec<String> {
     let mut flags = Vec::new();
     flags.extend(capability_flags(profile, &grants.capabilities_add));
-    flags.extend(readonly_root_flags(grants));
+    flags.extend(readonly_root_flags(profile, grants));
     flags.extend(resource_flags(grants));
     if grants.no_new_privileges {
         flags.push("--security-opt".to_string());
@@ -1185,7 +1213,7 @@ mod tests {
     #[test]
     fn readonly_root_flags_for_locked() {
         let grants = profile_base_grants(DockerSecurityProfile::Locked);
-        let flags = readonly_root_flags(&grants);
+        let flags = readonly_root_flags(DockerSecurityProfile::Locked, &grants);
         assert!(flags.contains(&"--read-only".to_string()));
         assert!(flags.iter().any(|f| f.starts_with("/tmp")));
     }
@@ -1193,7 +1221,7 @@ mod tests {
     #[test]
     fn readonly_root_flags_empty_for_compat() {
         let grants = profile_base_grants(DockerSecurityProfile::Compat);
-        let flags = readonly_root_flags(&grants);
+        let flags = readonly_root_flags(DockerSecurityProfile::Compat, &grants);
         assert!(flags.is_empty());
     }
 

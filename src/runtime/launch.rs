@@ -945,7 +945,7 @@ async fn launch_role_runtime(
     }
 
     // Read-only root filesystem + tmpfs preset.
-    let readonly_flags = super::docker_profile::readonly_root_flags(grants);
+    let readonly_flags = super::docker_profile::readonly_root_flags(*profile, grants);
     let readonly_flag_strs: Vec<&str> = readonly_flags.iter().map(String::as_str).collect();
     run_args.extend_from_slice(&readonly_flag_strs);
     {
@@ -994,6 +994,32 @@ async fn launch_role_runtime(
         "launch",
         "seccomp profile=docker-default container={container_name}",
     );
+
+    // AppArmor: enforce docker-default for standard/hardened/locked on Linux.
+    // Docker Desktop / OrbStack apply docker-default inside their VM by default;
+    // we explicitly request it for profiles ≥ standard to make the intent clear.
+    // `systempaths=unconfined` is NOT added (masked paths stay on for all profiles
+    // except where an explicit capability grant relaxes them — tracked as future).
+    let apparmor_flag_val;
+    if *apparmor_available
+        && !matches!(*profile, super::docker_profile::DockerSecurityProfile::Compat)
+    {
+        apparmor_flag_val = "apparmor=docker-default".to_string();
+        run_args.extend_from_slice(&["--security-opt", &apparmor_flag_val]);
+        crate::debug_log!(
+            "launch",
+            "apparmor profile=docker-default layer={apparmor_layer} container={container_name}",
+        );
+    } else {
+        apparmor_flag_val = String::new();
+        crate::debug_log!(
+            "launch",
+            "apparmor available={} profile=docker-default layer={apparmor_layer} \
+             applied={} container={container_name}",
+            apparmor_available,
+            if !apparmor_available { "no(unavailable)" } else { "no(compat)" },
+        );
+    }
 
     // Session contract table — factual summary of effective grants.
     // Emitted under JACKIN_DEBUG=1 so operators can verify what was applied.
@@ -2457,6 +2483,26 @@ async fn load_role_with(
         // Lock dind_started AFTER role manifest adjustments.
         let dind_started =
             effective_grants_early.dind != super::docker_profile::DindGrant::None;
+
+        // Cgroup v1 fail-close: hardened/locked require cgroup v2 for full
+        // resource enforcement. On macOS (Docker Desktop/OrbStack), the VM
+        // always uses v2; the probe returns "unknown" on macOS since it runs
+        // against the host filesystem, not the VM. We only fail-close on
+        // explicit "v1" — "unknown" is treated as potentially v2 on macOS.
+        if cgroup_version == "v1"
+            && matches!(
+                resolved_profile_early.0,
+                super::docker_profile::DockerSecurityProfile::Hardened
+                    | super::docker_profile::DockerSecurityProfile::Locked
+            )
+        {
+            anyhow::bail!(
+                "docker profile {:?} requires cgroup v2 for full resource enforcement; \
+                 this host reports cgroup v1. Upgrade the kernel to 5.11+ or choose \
+                 a less restrictive profile (standard or compat)",
+                resolved_profile_early.0,
+            );
+        }
 
         // Resource limits enforcement: hardened and locked require memory and pid
         // limits. The profile defaults provide them, but explicit grants cannot
@@ -7364,7 +7410,7 @@ plugins = ["code-review@claude-plugins-official"]
         assert!(error.to_string().contains("docker run -d --name jk-"));
         let container_name = launched_role_container_name(&runner);
         let dind = format!("{container_name}-dind");
-        let certs_volume = format!("{container_name}-dind-certs");
+        let _certs_volume = format!("{container_name}-dind-certs");
         let network = format!("{container_name}-net");
         // Cleanup uses docker (bollard) for rm operations
         assert!(
@@ -7522,7 +7568,7 @@ plugins = []
         .unwrap();
 
         let dind = launched_dind_container_name(&runner);
-        let certs_volume = dind.strip_suffix("-dind").unwrap().to_string() + "-dind-certs";
+        let _certs_volume = dind.strip_suffix("-dind").unwrap().to_string() + "-dind-certs";
         assert!(crate::instance::naming::is_dns_label(&dind), "{dind}");
 
         // DinD sidecar: TLS enabled with cert volume
