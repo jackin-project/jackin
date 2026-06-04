@@ -99,7 +99,7 @@ eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
 eval "$(cargo run --bin build-jackin-capsule -- --debug --export)"
 ```
 
-The debug capsule uses `[profile.capsule-debug]` in the workspace `Cargo.toml` (inherits release optimisation, retains symbols + DWARF line tables, does **not** strip). The resulting binary is ~10× larger but is otherwise byte-compatible with the release capsule.
+The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml" /> (inherits release optimisation, retains symbols + DWARF line tables, does **not** strip). The resulting binary is ~10× larger but is otherwise byte-compatible with the release capsule.
 
 ### Launch with the debug capsule
 

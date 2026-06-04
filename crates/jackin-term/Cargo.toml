@@ -1,0 +1,26 @@
+[package]
+name = "jackin-term"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# jackin-term: owned terminal model for the jackin-capsule re-emitting PTY multiplexer.
+#
+# See crates/jackin-term/README.md for the full engineering rationale.
+# Implements: Defect 45 (post-restructure-fixes-checklist.mdx).
+
+[lib]
+name = "jackin_term"
+
+[dependencies]
+# vte: the canonical VT/ANSI parser. Never rebuilt — depend always.
+# This is the "parse" layer in our vte → DamageGrid → PassthroughEvents → WireDiff pipeline.
+vte = "0.15"
+
+unicode-width = "0.2"
+
+[dev-dependencies]
+# vt100 fork: differential oracle for the harness (Phase 1).
+# Do NOT use vt100 in production jackin-term code — it is a test dependency only.
+vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
