@@ -612,7 +612,7 @@ The program is done when:
 - [x] Invalidate any cached geometry on resize: `pane_body_caches`, dirty-row state, `reconcile_content_rows`, status-bar/tab-strip caches. pane_body_caches.clear() and dirty_panes.clear() added to resize().
 - [x] Compose with Defect 15 (status bar reserved) and Defect 7 (dialog sizing) so a resize re-lays-out chrome + modals within the new content area without overdraw. Defect 15 fix (prepare_visible_modal uses footer-adjusted content area) naturally handles resize too.
 - [ ] Add a resize regression test (shrink then grow) asserting the rendered buffer has no duplicated status/chrome rows.
-- [ ] Record any capsule-specific resize/redraw rule in [TUI Design Decisions](/reference/tui/) and the capsule architecture reference.
+- [~] Record any capsule-specific resize/redraw rule in [TUI Design Decisions](/reference/tui/) and the capsule architecture reference. Rule documented in code comments: compose_full_frame emits \x1b[2J for Resize/SplitClose/LayoutChange; resize() clears pane_body_caches + dirty_panes. Needs addition to architecture.mdx.
 
 ---
 
