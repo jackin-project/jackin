@@ -114,7 +114,7 @@ jackin' generates this file **inside the container** during `jackin-capsule runt
 }
 ```
 
-The self-contained shape is load-bearing: the registry keys Z.AI's credential off `ZHIPU_API_KEY` (a name jackin' never sets) and has no `kimi` provider at all (its entry is `kimi-for-coding`), so a bare `{options:{baseURL}}` block would fail to authenticate or to resolve `-m kimi/kimi-for-coding`. MiniMax and Kimi reuse the same Anthropic-compatible endpoints as the verified Claude Code path via `@ai-sdk/anthropic`; Z.AI's coding-plan endpoint is OpenAI-compatible. At spawn the selected provider's `Provider::opencode_model()` supplies the `-m <provider>/<model>` flag (e.g. `-m zai/glm-5.1`).
+The self-contained shape is load-bearing: the registry keys Z.AI's credential off `ZHIPU_API_KEY` (a name jackin' never sets) and has no `kimi` provider at all (its entry is `kimi-for-coding`), so a bare `{options:{baseURL}}` block would fail to authenticate or to resolve `-m kimi/kimi-for-coding`. MiniMax and Kimi hit the same Anthropic-compatible hosts as the verified Claude Code path via `@ai-sdk/anthropic`, but with a `/v1`-suffixed `baseURL` (`https://api.minimax.io/anthropic/v1`, `https://api.kimi.com/coding/v1`): that SDK appends only `/messages` to the configured `baseURL` (its default is `https://api.anthropic.com/v1`), whereas Claude Code's own SDK appends `/v1/messages` — so the OpenCode block must carry the `/v1` the Claude-path env var omits. Z.AI's coding-plan endpoint is OpenAI-compatible. At spawn the selected provider's `Provider::opencode_model()` supplies the `-m <provider>/<model>` flag (e.g. `-m zai/glm-5.1`).
 
 ## Proposal
 
