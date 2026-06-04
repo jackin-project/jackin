@@ -733,7 +733,7 @@ The program is done when:
 - [x] Find and fix the duplicated `↑↓ navigate` in the settings focused-content hint; audit editor/workspaces/capsule/launch hint assembly for other dupes or omissions. `rg -n "HintSpan|render_hint_bar|render_footer|navigate" crates/*/src`.
 - [ ] Ensure every clickable/keyable action (incl. the ones gaining hover/click in Defects 13/17/20) is represented in the relevant hint set — keyboard/mouse parity.
 - [ ] Recompute hints on every focus change (couples with the `FocusOwner` model, Defect 18/19).
-- [ ] Add coverage so a screen's hint set has no duplicate spans.
+- [x] Add coverage so a screen's hint set has no duplicate spans. Added settings_general_content_footer_has_no_duplicate_navigate_span test in footer_hints/tests.rs.
 
 ---
 
