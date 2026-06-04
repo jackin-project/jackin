@@ -1958,9 +1958,8 @@ impl Multiplexer {
         let provider = provider_label
             .map(str::to_string)
             .or_else(|| match agent.as_deref() {
-                Some("claude") | Some("amp") => Some("anthropic".to_string()),
+                Some("claude") => Some("anthropic".to_string()),
                 Some("codex") => Some("openai".to_string()),
-                Some("kimi") => Some("kimi".to_string()),
                 _ => None,
             });
         let agent_name = agent.clone();
