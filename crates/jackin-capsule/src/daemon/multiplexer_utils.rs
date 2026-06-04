@@ -37,13 +37,15 @@ impl Multiplexer {
         &self,
         agent: Option<&str>,
     ) -> Vec<jackin_protocol::Provider> {
-        jackin_protocol::Provider::available_for(
-            agent.unwrap_or_default(),
-            self.anthropic_api_key.is_some(),
-            self.zai_key.is_some(),
-            self.minimax_key.is_some(),
-            self.kimi_key.is_some(),
-        )
+        jackin_protocol::Provider::available_for(agent.unwrap_or_default(), |p| {
+            use jackin_protocol::Provider;
+            match p {
+                Provider::Anthropic => self.anthropic_api_key.is_some(),
+                Provider::Zai => self.zai_key.is_some(),
+                Provider::Minimax => self.minimax_key.is_some(),
+                Provider::Kimi => self.kimi_key.is_some(),
+            }
+        })
     }
 
     /// Resolve the container-side API key for `provider` from the operator

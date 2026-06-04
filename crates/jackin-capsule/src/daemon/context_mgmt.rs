@@ -202,7 +202,18 @@ impl Multiplexer {
         // bare `branch.is_some()` would miss the `git checkout <sha>` case.
         if (branch.is_some() || head.is_some()) && !self.workdir_context.is_git_repo {
             self.workdir_context.is_git_repo = true;
-            self.workdir_context.default_branch = resolve_default_branch(&self.workdir);
+            // Offload the synchronous `git` subprocess to the blocking pool so
+            // it doesn't stall the daemon's render thread (Defect 43).
+            let workdir = self.workdir.clone();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn_blocking(move || {
+                    // Result discarded: the next git-branch watcher tick will
+                    // pick up the default branch via inotify or periodic poll.
+                    let _ = resolve_default_branch(&workdir);
+                });
+            } else {
+                self.workdir_context.default_branch = resolve_default_branch(&workdir);
+            }
         }
         self.pull_request_context = branch
             .as_ref()

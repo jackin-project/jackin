@@ -46,6 +46,13 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// Model string in `provider/model` format for OpenCode's `-m` flag.
     /// `None` for Anthropic (use OpenCode's own default selection).
     fn opencode_model(&self) -> Option<&'static str>;
+
+    /// The environment variable name that carries the API key for this provider.
+    /// `None` for Anthropic (subscription auth — no per-provider key variable).
+    ///
+    /// Use this in `Provider::available_for` closures so callers map a provider
+    /// to its key lookup without hardcoding the variable name.
+    fn key_env_var(&self) -> Option<&'static str>;
 }
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
@@ -109,6 +116,11 @@ impl ProviderAdapter for AnthropicAdapter {
     fn opencode_model(&self) -> Option<&'static str> {
         None
     }
+
+    fn key_env_var(&self) -> Option<&'static str> {
+        // Anthropic uses subscription auth; there is no per-provider key env var.
+        None
+    }
 }
 
 /// Z.AI — GLM Coding Plan via Anthropic-compatible endpoint.
@@ -146,6 +158,10 @@ impl ProviderAdapter for ZaiAdapter {
     fn opencode_model(&self) -> Option<&'static str> {
         Some("zai/glm-5.1")
     }
+
+    fn key_env_var(&self) -> Option<&'static str> {
+        Some("ZAI_API_KEY")
+    }
 }
 
 /// MiniMax Token Plan via Anthropic-compatible endpoint.
@@ -180,6 +196,10 @@ impl ProviderAdapter for MinimaxAdapter {
     fn opencode_model(&self) -> Option<&'static str> {
         Some("minimax/MiniMax-M3")
     }
+
+    fn key_env_var(&self) -> Option<&'static str> {
+        Some("MINIMAX_API_KEY")
+    }
 }
 
 /// Kimi Code via Anthropic-compatible endpoint.
@@ -213,5 +233,9 @@ impl ProviderAdapter for KimiAdapter {
 
     fn opencode_model(&self) -> Option<&'static str> {
         Some("kimi/kimi-for-coding")
+    }
+
+    fn key_env_var(&self) -> Option<&'static str> {
+        Some("KIMI_CODE_API_KEY")
     }
 }

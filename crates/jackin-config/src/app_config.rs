@@ -11,6 +11,10 @@ use std::collections::BTreeMap;
 use jackin_core::EnvValue;
 use serde::{Deserialize, Serialize};
 
+use jackin_core::agent::Agent;
+
+use jackin_core::AuthForwardMode;
+
 use crate::auth::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
     OpencodeAuthConfig,
@@ -48,6 +52,22 @@ pub struct AppConfig {
     pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
+}
+
+impl AppConfig {
+    /// Auth-forward mode for `agent` at the global (top-level) config layer.
+    ///
+    /// Collapses the five-arm `match agent { Agent::Claude => self.claude…, … }`
+    /// pattern used in `resolve_mode_with_trace` (Defect 46 Phase 2).
+    pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
+        match agent {
+            Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
+            Agent::Codex => self.codex.as_ref().map(|c| c.auth_forward),
+            Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
+            Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
+            Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
+        }
+    }
 }
 
 impl Default for AppConfig {

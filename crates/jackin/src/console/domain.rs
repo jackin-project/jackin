@@ -1001,14 +1001,16 @@ pub(in crate::console) fn providers_for_launch(
     role_selector: &str,
     agent: crate::agent::Agent,
 ) -> Vec<jackin_protocol::Provider> {
+    // Use the adapter's key_env_var() so the env-var name lives with the provider,
+    // not scattered across callers. Providers with no key_env_var (Anthropic native
+    // auth) always pass — the adapter's needs_key_for_agent gate handles that case.
     let key = |env_var: &str| operator_key_present(config, workspace_name, role_selector, env_var);
-    jackin_protocol::Provider::available_for(
-        agent.slug(),
-        key("ANTHROPIC_API_KEY"),
-        key("ZAI_API_KEY"),
-        key("MINIMAX_API_KEY"),
-        key("KIMI_CODE_API_KEY"),
-    )
+    jackin_protocol::Provider::available_for(agent.slug(), |provider| {
+        provider
+            .adapter()
+            .key_env_var()
+            .is_none_or(|env_var| key(env_var))
+    })
 }
 
 fn configured_agents(config: &AppConfig) -> Vec<RoleSelector> {

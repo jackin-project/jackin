@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use jackin_core::{Agent, EnvValue, MountIsolation};
 use serde::{Deserialize, Serialize};
 
+use jackin_core::AuthForwardMode;
+
 use crate::auth::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
     OpencodeAuthConfig,
@@ -80,6 +82,19 @@ pub struct WorkspaceRoleOverride {
     pub opencode: Option<OpencodeAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
+}
+
+impl WorkspaceRoleOverride {
+    /// Auth-forward mode for `agent` at the workspace×role override layer.
+    pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
+        match agent {
+            Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
+            Agent::Codex => self.codex.as_ref().map(|c| c.auth_forward),
+            Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
+            Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
+            Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
+        }
+    }
 }
 
 // ─── WorkspaceConfig ─────────────────────────────────────────────────────────
@@ -150,6 +165,17 @@ impl WorkspaceConfig {
     /// Returns the workspace's selected agent, defaulting to Claude.
     pub fn resolved_agent(&self) -> Agent {
         self.default_agent.unwrap_or(Agent::Claude)
+    }
+
+    /// Auth-forward mode for `agent` at the workspace layer.
+    pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
+        match agent {
+            Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
+            Agent::Codex => self.codex.as_ref().map(|c| c.auth_forward),
+            Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
+            Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
+            Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
+        }
     }
 }
 

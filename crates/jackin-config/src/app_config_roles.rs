@@ -42,31 +42,16 @@ pub fn resolve_mode_with_trace(
     workspace: &str,
     role: &str,
 ) -> (AuthForwardMode, Vec<(String, Option<AuthForwardMode>)>) {
-    let agent_at_global = match agent {
-        Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
-        Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
-        Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
-        Agent::Kimi => cfg.kimi.as_ref().map(|c| c.auth_forward),
-        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
-    };
-    let agent_at_workspace = cfg.workspaces.get(workspace).and_then(|ws| match agent {
-        Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
-        Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
-        Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
-        Agent::Kimi => ws.kimi.as_ref().map(|c| c.auth_forward),
-        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
-    });
+    let agent_at_global = cfg.auth_forward_for(agent);
+    let agent_at_workspace = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|ws| ws.auth_forward_for(agent));
     let agent_at_ws_role = cfg
         .workspaces
         .get(workspace)
         .and_then(|ws| ws.roles.get(role))
-        .and_then(|ro| match agent {
-            Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
-            Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
-            Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
-            Agent::Kimi => ro.kimi.as_ref().map(|c| c.auth_forward),
-            Agent::Opencode => ro.opencode.as_ref().map(|c| c.auth_forward),
-        });
+        .and_then(|ro| ro.auth_forward_for(agent));
     let winning = agent_at_ws_role
         .or(agent_at_workspace)
         .or(agent_at_global)
