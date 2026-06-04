@@ -14,8 +14,9 @@
 //! - Phase 1 (harness): complete — differential tester + corpus + fuzz target.
 //! - Phase 2 (v0 grid): complete — DamageGrid with vte::Perform, dirty_spans(),
 //!   typed PassthroughEvents. Full coupling surface implemented.
-//! - Phase 3 (capsule feature flag): complete -- `jackin-term` feature routes live render through DamageGrid; scrollback fallback to vt100 (Phase 4).
-//! - Phase 4-5: not started.
+//! - Phase 3 (capsule feature flag): complete — `jackin-term` feature routes live render through DamageGrid; scrollback fallback to vt100 (Phase 4).
+//! - Phase 4 (optimize): in progress — `Cell::contents` uses `CompactString` (no heap alloc for ≤24 byte graphemes, covers ASCII + most Unicode). Ghostty PageList arena pending.
+//! - Phase 5: not started.
 
 pub mod cell;
 pub mod damage;

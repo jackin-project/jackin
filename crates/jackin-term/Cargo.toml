@@ -24,6 +24,11 @@ vte = "0.15"
 
 unicode-width = "0.2"
 
+# Phase 4: inline storage for grapheme clusters (≤24 bytes = no heap alloc for ASCII + most Unicode).
+# Eliminates the per-cell `String` alloc storm in the focused-pane render path.
+# canonical, actively maintained, >10M downloads. MIT/Apache-2.0.
+compact_str = "0.9"
+
 [dev-dependencies]
 # vt100 fork: differential oracle for the Phase 1 harness.
 # Do NOT use vt100 in production jackin-term code — it is a test dependency only.

@@ -248,7 +248,8 @@ impl DamageGrid {
         let attrs = self.current_attrs.clone();
         let cols = self.cols;
         let cell = Cell {
-            contents: ch.to_string(),
+            // Phase 4: CompactString stores ch inline (no heap alloc for ASCII + most Unicode).
+            contents: compact_str::format_compact!("{ch}"),
             is_wide: width == 2,
             is_wide_continuation: false,
             attrs: attrs.clone(),
@@ -258,7 +259,7 @@ impl DamageGrid {
             grid[row][col] = cell;
             if width == 2 && col + 1 < cols as usize && col + 1 < grid[row].len() {
                 grid[row][col + 1] = Cell {
-                    contents: String::new(),
+                    contents: compact_str::CompactString::new(""),
                     is_wide: false,
                     is_wide_continuation: true,
                     attrs: attrs.clone(),
