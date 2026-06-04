@@ -684,7 +684,7 @@ The program is done when:
 - [ ] Reproduce a normal exit, capture the backtrace, and root-cause the exit-101 panic (final render? lock poison? socket teardown?).
 - [ ] Make teardown panic-free and ordered: stop sessions, reap children, remove `/jackin/run/jackin.sock`, restore the terminal (leave alt-screen, disable raw mode/mouse) — no `unwrap`/`expect` on shutdown paths.
 - [x] Fix the re-attach failure: a prior crash/exit must not block the next `docker exec … /jackin/runtime/jackin-capsule` — reclaim a stale socket or restart the daemon cleanly; surface a clear error (not a bare non-zero exit) if the container is genuinely gone. Existing socket.rs:start_listener_at_inner removes stale socket before binding; re-attach should work.
-- [ ] Investigate the recurring blank-line flood + `press Enter to continue` artifact on the host when the capsule exits abnormally (bounded output on teardown; compose with Defects 26/27).
+- [~] Investigate the recurring blank-line flood + `press Enter to continue` artifact on the host when the capsule exits abnormally (bounded output on teardown; compose with Defects 26/27). SIGWINCH coalescing (Defect 27) reduces repeated full repaints; \x1b[2J erase bounds output to one frame per resize. Abnormal exit teardown still needs investigation.
 - [ ] Add a test: clean exit returns 0, removes the socket, restores the terminal; a second attach to the same container succeeds.
 
 ---
