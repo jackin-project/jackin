@@ -84,7 +84,9 @@ The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/ru
 - `container_exited(container_name, exit_code, oom_killed, capsule_log_path, crash_evidence)` — structured crash/exit event; emits an additional `container_crash_log` event when `crash_evidence` is `Some`.
 - `emit_run_summary()` — writes the `run_summary` event with all accumulated stage durations.
 
-Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event through the `tracing` subscriber (Defect 47), so the same event appears in the structured JSONL and in the `tracing` subscriber output (stderr in `--debug` mode, or an OpenTelemetry collector in future).
+Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event (Defect 47). These events feed **only** the optional OTLP exporter, installed when jackin' is compiled with `--features otlp` and `JACKIN_OTLP_ENDPOINT` is set. The default build installs no terminal subscriber.
+
+**Diagnostic output is file-only — it never reaches the operator's screen, in either the full-screen TUI or plain CLI commands.** The run JSONL is the sole sink for the firehose; `--debug` raises the captured detail level in that file, it does not stream events to stderr. This is why `init_tracing` attaches no `fmt` layer: a layer writing to stdout/stderr would corrupt the alternate screen the console / launch cockpit owns, and would clutter ordinary CLI output. Operator-visible lifecycle lines are a separate, deliberately compact surface (`emit_compact_line`), gated on `rich_terminal_owned()`; the verbose firehose stays in the file where the run ID can retrieve it.
 
 ## Redaction
 
