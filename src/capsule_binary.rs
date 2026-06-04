@@ -427,14 +427,116 @@ struct CapsuleManifest {
 /// 1. Fetch manifest JSON + cosign bundle concurrently.
 /// 2. Verify the Rekor Signed Entry Timestamp against the embedded production
 ///    Rekor key via `SignedArtifactBundle::new_verified` (no TUF network call).
-/// 3. Verify the blob signature via `Client::verify_blob`.
-/// 4. Require the certificate SAN to be the `release.yml` or `preview.yml`
+/// 3. Cross-check the Rekor payload body covers these exact manifest bytes, this
+///    cert, and this signature — closing the field-swap window where an attacker
+///    keeps a real Rekor SET but substitutes a self-signed cert (`verify_rekor_body_binds_bundle`).
+/// 4. Verify the blob signature via `Client::verify_blob`.
+/// 5. Require the certificate SAN to be the `release.yml` or `preview.yml`
 ///    signing workflow in `jackin-project/jackin`.
-/// 5. Validate the manifest `version` field: assert equality for stable releases;
+/// 6. Validate the manifest `version` field: assert equality for stable releases;
 ///    log for preview (host and capsule build versions legitimately differ on the
 ///    rolling preview channel).
-/// 6. Parse the verified manifest JSON and extract the SHA256 for `arch`.
+/// 7. Parse the verified manifest JSON and extract the SHA256 for `arch`.
 ///
+/// Hashedrekord body fields extracted from `payload.body` for cross-checking.
+/// Only the fields required for the Rekor body binding check are deserialized;
+/// unknown keys are ignored so this remains forward-compatible with Rekor spec changes.
+#[derive(serde::Deserialize)]
+struct RekorBody {
+    spec: RekorSpec,
+}
+#[derive(serde::Deserialize)]
+struct RekorSpec {
+    data: RekorData,
+    signature: RekorSig,
+}
+#[derive(serde::Deserialize)]
+struct RekorData {
+    hash: RekorHash,
+}
+#[derive(serde::Deserialize)]
+struct RekorHash {
+    algorithm: String,
+    value: String,
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RekorSig {
+    content: String,
+    public_key: RekorPublicKey,
+}
+#[derive(serde::Deserialize)]
+struct RekorPublicKey {
+    content: String,
+}
+
+/// Decode the Rekor `payload.body` (base64 hashedrekord JSON) and assert:
+/// 1. `spec.data.hash.value` == `sha256(manifest_bytes)` — the SET covers these bytes.
+/// 2. `spec.signature.publicKey.content` == `bundle.cert` — the SET covers this cert.
+/// 3. `spec.signature.content` == `bundle.base64_signature` — the SET covers this sig.
+///
+/// `SignedArtifactBundle::new_verified` only verifies the Signed Entry Timestamp over
+/// the canonical Payload JSON, treating `payload.body` as an opaque string. Without this
+/// check, the `cert` and `base64_signature` fields in the bundle are fully attacker-
+/// controlled — keeping any real Rekor SET while substituting a self-signed cert passes
+/// all downstream `verify_blob` and SAN checks.
+fn verify_rekor_body_binds_bundle(
+    bundle: &sigstore::cosign::bundle::SignedArtifactBundle,
+    manifest_bytes: &[u8],
+) -> Result<()> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use sha2::{Digest, Sha256};
+
+    // Decode the opaque body field from the Payload.
+    let body_json = BASE64
+        .decode(&bundle.rekor_bundle.payload.body)
+        .context("base64-decoding Rekor payload body")?;
+
+    let body: RekorBody =
+        serde_json::from_slice(&body_json).context("parsing Rekor payload body as hashedrekord")?;
+
+    // 1. Verify the body covers these exact manifest bytes.
+    anyhow::ensure!(
+        body.spec.data.hash.algorithm == "sha256",
+        "Rekor entry uses unexpected hash algorithm {:?}; expected sha256",
+        body.spec.data.hash.algorithm
+    );
+    let digest = Sha256::digest(manifest_bytes);
+    let manifest_sha256 = digest.iter().fold(String::with_capacity(64), |mut s, b| {
+        use std::fmt::Write as _;
+        let _ = write!(s, "{b:02x}");
+        s
+    });
+    anyhow::ensure!(
+        body.spec
+            .data
+            .hash
+            .value
+            .eq_ignore_ascii_case(&manifest_sha256),
+        "Rekor entry covers a different artifact (body hash {}, actual manifest hash {}); \
+         the bundle may have been transplanted from another signing event",
+        body.spec.data.hash.value,
+        manifest_sha256
+    );
+
+    // 2. Verify the body covers the same certificate presented in bundle.cert.
+    anyhow::ensure!(
+        body.spec.signature.public_key.content == bundle.cert,
+        "Rekor entry covers a different certificate than bundle.cert; \
+         the bundle fields may have been swapped after the Rekor entry was created"
+    );
+
+    // 3. Verify the body covers the same signature presented in bundle.base64_signature.
+    anyhow::ensure!(
+        body.spec.signature.content == bundle.base64_signature,
+        "Rekor entry covers a different signature than bundle.base64_signature; \
+         the bundle fields may have been swapped after the Rekor entry was created"
+    );
+
+    Ok(())
+}
+
 /// Failure is a hard abort — no warn-and-continue fallback.
 async fn fetch_and_verify_manifest(
     version: &str,
@@ -471,6 +573,17 @@ async fn fetch_and_verify_manifest(
 
     let bundle = SignedArtifactBundle::new_verified(&bundle_text, rekor_verification_keys())
         .context("verifying Rekor log entry in capsule manifest bundle")?;
+
+    // Cross-check: the Rekor payload body must cover these exact manifest bytes and this
+    // exact certificate. `new_verified` only validates the SET signature over the Payload
+    // struct — it treats `payload.body` as an opaque string and never compares it to the
+    // top-level `cert` / `base64_signature` fields. Without this check, an attacker who
+    // can replace the .bundle file could keep any legitimate Rekor SET, substitute their
+    // own self-signed cert (which verify_blob accepts without CA validation), and sign the
+    // malicious manifest with it — passing all three subsequent checks.
+    verify_rekor_body_binds_bundle(&bundle, manifest_bytes).context(
+        "Rekor log entry does not cover the certificate or manifest hash in this bundle",
+    )?;
 
     // The cert field in the bundle is base64-encoded PEM.
     let cert_pem = String::from_utf8(
