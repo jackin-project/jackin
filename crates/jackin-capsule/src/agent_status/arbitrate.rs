@@ -191,6 +191,7 @@ mod tests {
     fn screen_working() -> ScreenDetection {
         ScreenDetection { visible_working: true, observed_at: Some(Instant::now()), ..Default::default() }
     }
+    #[allow(dead_code)]
     fn screen_idle() -> ScreenDetection {
         ScreenDetection { visible_idle: true, observed_at: Some(Instant::now()), ..Default::default() }
     }

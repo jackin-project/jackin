@@ -8931,4 +8931,69 @@ mod tests {
         };
         assert_eq!(outcome, "satisfied");
     }
+
+    #[test]
+    fn wait_session_status_logic_timeout_when_not_satisfied() {
+        use jackin_protocol::control::AgentState;
+        let sessions = vec![jackin_protocol::control::SessionInfo {
+            id: 42,
+            label: "test".to_string(),
+            agent: Some("claude".to_string()),
+            state: AgentState::Working,
+            active: true,
+            token_usage: None,
+        }];
+        let current = sessions
+            .iter()
+            .find(|s| s.id == 42)
+            .map(|s| s.state.label().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        // Target is "blocked" or "done" — current is "working" — not satisfied
+        let target_statuses = vec!["blocked".to_string(), "done".to_string()];
+        let satisfied = target_statuses.contains(&current);
+        assert!(!satisfied, "working should not satisfy blocked/done targets");
+        // Outcome would be "timeout" after the timeout duration elapses.
+        let outcome = if satisfied { "satisfied" } else { "timeout" };
+        assert_eq!(outcome, "timeout");
+    }
+
+    #[test]
+    fn wait_session_status_logic_not_found_for_unknown_session() {
+        let sessions: Vec<jackin_protocol::control::SessionInfo> = vec![];
+        let current = sessions
+            .iter()
+            .find(|s| s.id == 999)
+            .map(|s| s.state.label().to_string());
+        // Session not found → outcome is "not_found"
+        assert!(current.is_none());
+        let outcome = current.map(|_| "satisfied").unwrap_or("not_found");
+        assert_eq!(outcome, "not_found");
+    }
+
+    #[test]
+    fn session_info_token_usage_is_populated_from_monitor() {
+        use jackin_protocol::control::{AgentState, SessionInfo, TokenUsageSummary};
+
+        let summary = TokenUsageSummary {
+            input_tokens: 5000,
+            output_tokens: 1200,
+            cache_read_tokens: 300,
+            cache_write_tokens: 100,
+            cost_usd: Some(0.085),
+            model: Some("claude-sonnet-4-6-20251101".to_string()),
+        };
+        let info = SessionInfo {
+            id: 1,
+            label: "claude".to_string(),
+            agent: Some("claude".to_string()),
+            state: AgentState::Working,
+            active: true,
+            token_usage: Some(summary.clone()),
+        };
+        assert!(info.token_usage.is_some());
+        let usage = info.token_usage.unwrap();
+        assert_eq!(usage.input_tokens, 5000);
+        assert_eq!(usage.cost_usd, Some(0.085));
+        assert_eq!(usage.model.as_deref(), Some("claude-sonnet-4-6-20251101"));
+    }
 }

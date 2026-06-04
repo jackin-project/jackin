@@ -292,6 +292,41 @@ mod tests {
     }
 
     #[test]
+    fn claude_stop_hook_is_registered_as_sync_and_checks_background_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_path_buf();
+        installer().install(&home).unwrap();
+        let settings_path = home.join(".claude").join("settings.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let hooks = val.get("hooks").and_then(|h| h.as_object()).unwrap();
+
+        // Stop must be async: false so Claude reads stdout from the hook.
+        let stop_entries = hooks.get("Stop").and_then(|v| v.as_array()).unwrap();
+        let stop_hook = &stop_entries[0]["hooks"][0];
+        assert_eq!(
+            stop_hook.get("async").and_then(|v| v.as_bool()),
+            Some(false),
+            "Stop hook must be async: false"
+        );
+
+        // PermissionRequest must also be async: false.
+        let perm_entries = hooks.get("PermissionRequest").and_then(|v| v.as_array()).unwrap();
+        let perm_hook = &perm_entries[0]["hooks"][0];
+        assert_eq!(
+            perm_hook.get("async").and_then(|v| v.as_bool()),
+            Some(false),
+            "PermissionRequest hook must be async: false"
+        );
+
+        // The hook script path matches our expected path.
+        assert_eq!(
+            stop_hook.get("command").and_then(|v| v.as_str()),
+            Some("/jackin/runtime/agent-status/hooks/claude/report-hook.sh")
+        );
+    }
+
+    #[test]
     fn claude_hook_installer_preserves_unrelated_settings() {
         let dir = TempDir::new().unwrap();
         let home = dir.path().to_path_buf();

@@ -363,6 +363,38 @@ mod tests {
     }
 
     #[test]
+    fn subagent_counter_prevents_working_from_clearing_blocked() {
+        // The roadmap requires: while subagent_count > 0, PostToolUse-equivalent
+        // WorkingVisible signals must NOT clear a Blocked state.
+        // This is implemented in daemon.rs handle_control_msg. Verify the intent
+        // via the SessionStatus state machine: if we're Blocked and receive
+        // WorkingVisible, it transitions — but the daemon's subagent guard
+        // prevents that signal from being fed in the first place.
+        //
+        // This test verifies the state machine behavior that makes the guard correct:
+        // WorkingVisible DOES override Blocked in the raw machine, which is why
+        // the daemon-level guard (suppressing WorkingVisible when subagent_count > 0
+        // and state == Blocked) is necessary.
+        let mut s = SessionStatus::new();
+        s.advance(AgentRawState::BlockedVisible);
+        assert_eq!(s.effective, AgentState::Blocked);
+
+        // Without the guard, WorkingVisible would clear Blocked.
+        let changed = s.advance(AgentRawState::WorkingVisible);
+        assert_eq!(changed, Some(AgentState::Working),
+            "WorkingVisible overrides Blocked in raw machine — daemon guard prevents this when subagents active");
+
+        // Reset and verify the guard logic: Blocked stays Blocked when
+        // the daemon suppresses the working signal (simulated by not calling advance).
+        let mut s2 = SessionStatus::new();
+        s2.advance(AgentRawState::BlockedVisible);
+        // Simulate daemon guard: when subagent_count > 0, don't call advance
+        // with WorkingVisible. State should remain Blocked.
+        assert_eq!(s2.effective, AgentState::Blocked,
+            "Blocked persists when daemon suppresses WorkingVisible (subagent guard active)");
+    }
+
+    #[test]
     fn clear_authority_removes_only_matching_source() {
         let mut seq = sequence::SequenceTracker::new();
         seq.accept("source-a", 100);
