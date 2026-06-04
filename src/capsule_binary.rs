@@ -306,10 +306,32 @@ fn base_download_url(version: &str) -> String {
 // Source: trust_root/prod/trusted_root.json in sigstore-rs v0.14, logId wNI9atQG...
 // Used to verify Signed Entry Timestamps in cosign bundles without a TUF network call.
 // Update when Sigstore rotates the Rekor key (announced at blog.sigstore.dev).
-const SIGSTORE_REKOR_PUB_KEY_B64: &str =
-    "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwrkBbm\
+const SIGSTORE_REKOR_PUB_KEY_B64: &str = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwrkBbm\
      LSGtks4L3qX6yYY0zufBnhC8Ur/iy55GhWP/9A/bY2LhC30M9+RYtw==";
 const SIGSTORE_REKOR_KEY_ID: &str = "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0=";
+
+/// The embedded Rekor key decoded into a verification key, keyed by its log ID.
+///
+/// Decoded once and cached: the key is a compile-time constant, so a decode
+/// failure is a build-time mistake, not a runtime condition — hence `expect`
+/// rather than a propagated error.
+fn rekor_verification_keys()
+-> &'static std::collections::BTreeMap<String, sigstore::crypto::CosignVerificationKey> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use sigstore::crypto::CosignVerificationKey;
+
+    static KEYS: std::sync::OnceLock<std::collections::BTreeMap<String, CosignVerificationKey>> =
+        std::sync::OnceLock::new();
+    KEYS.get_or_init(|| {
+        let der = BASE64
+            .decode(SIGSTORE_REKOR_PUB_KEY_B64)
+            .expect("embedded Sigstore Rekor key is valid base64");
+        let key = CosignVerificationKey::try_from_der(&der)
+            .expect("embedded Sigstore Rekor key is a valid SPKI DER key");
+        std::collections::BTreeMap::from([(SIGSTORE_REKOR_KEY_ID.to_string(), key)])
+    })
+}
 
 /// The verified `capsule-manifest.json` payload: per-Linux-target SHA-256 digests.
 #[derive(serde::Deserialize)]
@@ -322,20 +344,19 @@ struct CapsuleManifest {
 ///
 /// Verification chain:
 /// 1. Fetch manifest JSON + cosign bundle concurrently.
-/// 2. Build a `ManualTrustRoot` from the embedded Sigstore production Rekor key
-///    (no TUF network call).
-/// 3. Verify the Rekor Signed Entry Timestamp via `SignedArtifactBundle::new_verified`.
-/// 4. Verify the blob signature via `Client::verify_blob`.
-/// 5. Check the certificate SAN starts with `https://github.com/jackin-project/jackin/`.
-/// 6. Parse the verified manifest JSON and extract the SHA256 for `arch`.
+/// 2. Verify the Rekor Signed Entry Timestamp against the embedded production
+///    Rekor key via `SignedArtifactBundle::new_verified` (no TUF network call).
+/// 3. Verify the blob signature via `Client::verify_blob`.
+/// 4. Require the certificate SAN to be the `release.yml` or `preview.yml`
+///    signing workflow in `jackin-project/jackin`.
+/// 5. Parse the verified manifest JSON and extract the SHA256 for `arch`.
 ///
 /// Failure is a hard abort — no warn-and-continue fallback.
 async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String> {
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
     use sigstore::cosign::bundle::SignedArtifactBundle;
     use sigstore::cosign::{Client, CosignCapabilities};
-    use sigstore::crypto::CosignVerificationKey;
 
     let manifest_url = format!("{base_url}/capsule-manifest.json");
     let bundle_url = format!("{base_url}/capsule-manifest.json.bundle");
@@ -350,26 +371,17 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
         crate::net::fetch_text(&bundle_url),
     );
 
-    let manifest_text = manifest_result
-        .with_context(|| format!("fetching capsule manifest at {manifest_url}"))?;
+    let manifest_text =
+        manifest_result.with_context(|| format!("fetching capsule manifest at {manifest_url}"))?;
     let bundle_text = bundle_result
         .with_context(|| format!("fetching capsule manifest bundle at {bundle_url}"))?;
 
-    // Decode the embedded production Rekor key straight into a verification key —
-    // no TUF network call, no ManualTrustRoot round-trip.
-    let rekor_key_der = BASE64
-        .decode(SIGSTORE_REKOR_PUB_KEY_B64)
-        .context("decoding embedded Sigstore Rekor public key")?;
-    let rekor_key = CosignVerificationKey::try_from_der(&rekor_key_der)
-        .context("parsing embedded Sigstore Rekor public key")?;
-    let rekor_keys: std::collections::BTreeMap<String, CosignVerificationKey> =
-        std::collections::BTreeMap::from([(SIGSTORE_REKOR_KEY_ID.to_string(), rekor_key)]);
-
-    // Verify Rekor Signed Entry Timestamp. `manifest_text.as_bytes()` is the exact byte
-    // sequence the CI step signed — do NOT parse-then-re-serialize before this call.
+    // Verify Rekor Signed Entry Timestamp against the embedded production Rekor key.
+    // `manifest_text.as_bytes()` is the exact byte sequence the CI step signed — do
+    // NOT parse-then-re-serialize before this call.
     let manifest_bytes = manifest_text.as_bytes();
 
-    let bundle = SignedArtifactBundle::new_verified(&bundle_text, &rekor_keys)
+    let bundle = SignedArtifactBundle::new_verified(&bundle_text, rekor_verification_keys())
         .context("verifying Rekor log entry in capsule manifest bundle")?;
 
     // The cert field in the bundle is base64-encoded PEM.
@@ -400,11 +412,10 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     // repo from producing a valid manifest bundle.
     let san = extract_cert_san_url(&cert_pem)?;
     anyhow::ensure!(
-        san.starts_with(
-            "https://github.com/jackin-project/jackin/.github/workflows/release.yml@"
-        ) || san.starts_with(
-            "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@"
-        ),
+        san.starts_with("https://github.com/jackin-project/jackin/.github/workflows/release.yml@")
+            || san.starts_with(
+                "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@"
+            ),
         "capsule manifest signed by unexpected signer {san:?}; \
          expected release.yml or preview.yml workflow in jackin-project/jackin"
     );
@@ -415,8 +426,8 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     );
 
     // Parse the verified manifest and return the SHA256 for this arch.
-    let manifest: CapsuleManifest = serde_json::from_str(&manifest_text)
-        .context("parsing verified capsule-manifest.json")?;
+    let manifest: CapsuleManifest =
+        serde_json::from_str(&manifest_text).context("parsing verified capsule-manifest.json")?;
 
     let target = linux_target(arch);
     let sha = manifest
