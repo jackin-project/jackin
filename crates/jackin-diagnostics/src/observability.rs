@@ -10,8 +10,48 @@
 //! `tracing-opentelemetry` layer exports spans to the specified OTLP/HTTP
 //! endpoint. No opentelemetry crates are present in the default build.
 
+use std::io::{self, Write};
+
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::prelude::*;
+
+/// stderr `MakeWriter` that drops bytes while a rich TUI owns the terminal.
+///
+/// The fmt layer streams every `tracing` event; without this guard those events
+/// land on the alternate screen the console / launch cockpit draws to and
+/// corrupt the frame. `RunDiagnostics::write` records the same events to the
+/// run JSONL unconditionally and before the `tracing` event fires, so dropping
+/// the terminal copy loses nothing — it only honours the same
+/// `rich_terminal_owned()` guard the `emit_compact_line` / `emit_debug_line`
+/// paths already respect.
+pub(crate) struct GuardedStderr;
+
+pub(crate) struct GuardedStderrWriter(io::Stderr);
+
+impl<'a> MakeWriter<'a> for GuardedStderr {
+    type Writer = GuardedStderrWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        GuardedStderrWriter(io::stderr())
+    }
+}
+
+impl Write for GuardedStderrWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if crate::terminal::rich_terminal_owned() {
+            return Ok(buf.len());
+        }
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if crate::terminal::rich_terminal_owned() {
+            return Ok(());
+        }
+        self.0.flush()
+    }
+}
 
 /// Initialize the global `tracing` subscriber.
 ///
@@ -34,7 +74,7 @@ pub fn init_tracing(debug: bool) -> anyhow::Result<()> {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .compact()
         .with_target(false)
-        .with_writer(std::io::stderr)
+        .with_writer(GuardedStderr)
         .with_filter(EnvFilter::new(level));
 
     #[cfg(feature = "otlp")]
