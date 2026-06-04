@@ -120,12 +120,20 @@ impl Multiplexer {
         let _ = self.ratatui_terminal.clear();
         if let Some(ratatui_output) = self.compose_ratatui_frame() {
             crate::cdebug!(
-                "render: kind=full reason={} via=ratatui bytes={}",
+                "render: kind=full reason={} via=ratatui bytes={} clears_screen={}",
                 reason.as_str(),
-                ratatui_output.len()
+                ratatui_output.len(),
+                reason.clears_screen(),
             );
             let mut out = Vec::with_capacity(ratatui_output.len() + 64);
             self.append_outer_terminal_title(&mut out);
+            // Geometry-changing redraws wipe the previous layout first: the
+            // Ratatui diff cannot erase the raw-ANSI bottom chrome it never
+            // tracked, and SocketBackend::clear() omits the erase. Without this
+            // the prior geometry's branch bar / debug chip is orphaned.
+            if reason.clears_screen() {
+                out.extend_from_slice(b"\x1b[2J");
+            }
             out.extend_from_slice(&ratatui_output);
             return out;
         }
@@ -290,12 +298,7 @@ impl Multiplexer {
         // For geometry-changing events, emit a real screen erase before painting
         // so the outer terminal does not show stale cells from the previous layout.
         // Sent atomically with the full repaint so there is no visible blank flash.
-        if matches!(
-            reason,
-            FullRedrawReason::Resize
-                | FullRedrawReason::SplitClose
-                | FullRedrawReason::LayoutChange
-        ) {
+        if reason.clears_screen() {
             buf.extend_from_slice(b"\x1b[2J");
         }
 

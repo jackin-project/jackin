@@ -56,6 +56,21 @@ impl FullRedrawReason {
             Self::UnsafePartial => "unsafe-partial",
         }
     }
+
+    /// Whether this redraw must emit a real `\x1b[2J` screen erase before
+    /// painting. True for every reason that changes where chrome lands or
+    /// starts from a screen whose prior contents are untrusted: a resize or
+    /// layout/split change moves the bottom-chrome row, and the first attach
+    /// follows the attach-time resize. The bottom chrome is raw ANSI that the
+    /// Ratatui `SocketBackend` diff does not track (and `clear()` deliberately
+    /// omits `2J`), so without this erase the previous geometry's chrome is
+    /// orphaned — empty pane cells never paint over it.
+    pub(crate) const fn clears_screen(self) -> bool {
+        matches!(
+            self,
+            Self::Resize | Self::SplitClose | Self::LayoutChange | Self::FirstAttach
+        )
+    }
 }
 
 pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {

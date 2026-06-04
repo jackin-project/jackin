@@ -458,6 +458,49 @@ fn resize_then_full_frame_repaints_with_new_geometry() {
 }
 
 #[test]
+fn geometry_changing_redraws_emit_screen_erase_others_do_not() {
+    // PR #495 regression: the bottom chrome (branch bar, debug chip) is raw
+    // ANSI the Ratatui SocketBackend diff cannot track. When a geometry change
+    // moves the chrome row, the previous geometry's chrome must be wiped with a
+    // real \x1b[2J or it is orphaned (empty pane cells never paint over it).
+    // first-attach follows the attach-time resize, so it clears too.
+    let erase = b"\x1b[2J";
+    let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
+
+    for reason in [
+        FullRedrawReason::FirstAttach,
+        FullRedrawReason::Resize,
+        FullRedrawReason::SplitClose,
+        FullRedrawReason::LayoutChange,
+    ] {
+        assert!(reason.clears_screen(), "{reason:?} must clear the screen");
+        let mut mux = single_pane_tab_mux_with_size(24, 80);
+        let frame = mux.compose_full_frame(reason);
+        assert!(
+            contains(&frame),
+            "{reason:?} full frame must emit \\x1b[2J"
+        );
+    }
+
+    for reason in [
+        FullRedrawReason::StatusChange,
+        FullRedrawReason::PaneCacheMiss,
+        FullRedrawReason::ScrollbackMovement,
+    ] {
+        assert!(
+            !reason.clears_screen(),
+            "{reason:?} must not clear the screen"
+        );
+        let mut mux = single_pane_tab_mux_with_size(24, 80);
+        let frame = mux.compose_full_frame(reason);
+        assert!(
+            !contains(&frame),
+            "{reason:?} full frame must not emit \\x1b[2J (would flash on every tick)"
+        );
+    }
+}
+
+#[test]
 fn resize_shrink_then_grow_does_not_panic() {
     // Defect 614/634 regression: rapid resize including shrink-to-floor and grow
     // must not panic. Also verifies cache invalidation on each resize.
