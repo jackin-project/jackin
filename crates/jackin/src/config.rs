@@ -19,7 +19,7 @@ pub use jackin_config::{
     GithubAuthMode, GlobalMountConfig, GlobalMountRow, KeepAwakeConfig, MountConfig, MountEntry,
     MountIsolation, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceGlobalMountRows,
     WorkspaceRoleOverride, build_github_env_layers, resolve_github_mode, resolve_mode,
-    resolve_mode_with_trace,
+    resolve_mode_with_trace, resolve_sync_source_dir,
 };
 pub use jackin_config::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
 

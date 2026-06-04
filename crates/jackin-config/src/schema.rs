@@ -92,6 +92,20 @@ impl WorkspaceRoleOverride {
             Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
         }
     }
+
+    /// Sync source dir override for `agent` at the workspace×role layer.
+    pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
+        match agent {
+            Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Codex => self.codex.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Amp => self.amp.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Kimi => self.kimi.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Opencode => self
+                .opencode
+                .as_ref()
+                .and_then(|c| c.sync_source_dir.clone()),
+        }
+    }
 }
 
 // ─── WorkspaceConfig ─────────────────────────────────────────────────────────
@@ -172,6 +186,20 @@ impl WorkspaceConfig {
             Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
             Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
             Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
+        }
+    }
+
+    /// Sync source dir override for `agent` at the workspace layer.
+    pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
+        match agent {
+            Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Codex => self.codex.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Amp => self.amp.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Kimi => self.kimi.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Opencode => self
+                .opencode
+                .as_ref()
+                .and_then(|c| c.sync_source_dir.clone()),
         }
     }
 

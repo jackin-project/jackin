@@ -308,3 +308,71 @@ fn build_github_env_layers_empty_when_no_layers_set() {
     let merged = build_github_env_layers(&cfg, "proj", "smith");
     assert!(merged.is_empty());
 }
+
+// ── resolve_sync_source_dir tests (Defect 46 Phase B) ─────────────────────
+
+#[test]
+fn resolve_sync_source_dir_global_wins_when_nothing_else_set() {
+    use std::path::PathBuf;
+    let mut cfg = AppConfig::default();
+    let dir = PathBuf::from("/opt/claude");
+    cfg.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::Sync,
+        sync_source_dir: Some(dir.clone()),
+    });
+    assert_eq!(
+        crate::config::resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "role"),
+        Some(dir)
+    );
+}
+
+#[test]
+fn resolve_sync_source_dir_workspace_wins_over_global() {
+    use std::path::PathBuf;
+    let mut cfg = AppConfig::default();
+    cfg.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::Sync,
+        sync_source_dir: Some(PathBuf::from("/global/claude")),
+    });
+    let mut ws = WorkspaceConfig::default();
+    ws.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::Sync,
+        sync_source_dir: Some(PathBuf::from("/workspace/claude")),
+    });
+    cfg.workspaces.insert("ws".into(), ws);
+    assert_eq!(
+        crate::config::resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "role"),
+        Some(PathBuf::from("/workspace/claude"))
+    );
+}
+
+#[test]
+fn resolve_sync_source_dir_role_override_wins_over_workspace() {
+    use std::path::PathBuf;
+    let mut cfg = AppConfig::default();
+    let mut ws = WorkspaceConfig::default();
+    ws.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::Sync,
+        sync_source_dir: Some(PathBuf::from("/workspace/claude")),
+    });
+    let mut role_override = WorkspaceRoleOverride::default();
+    role_override.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::Sync,
+        sync_source_dir: Some(PathBuf::from("/role/claude")),
+    });
+    ws.roles.insert("smith".into(), role_override);
+    cfg.workspaces.insert("ws".into(), ws);
+    assert_eq!(
+        crate::config::resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "smith"),
+        Some(PathBuf::from("/role/claude"))
+    );
+}
+
+#[test]
+fn resolve_sync_source_dir_none_when_not_set() {
+    let cfg = AppConfig::default();
+    assert_eq!(
+        crate::config::resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "role"),
+        None
+    );
+}

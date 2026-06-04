@@ -92,6 +92,23 @@ impl AppConfig {
             Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
         }
     }
+
+    /// Sync source dir override for `agent` at the global config layer.
+    ///
+    /// Returns `None` when the field is absent at this layer — caller inherits
+    /// from the per-agent hardcoded default. Introduced in Defect 46 Phase B.
+    pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
+        match agent {
+            Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Codex => self.codex.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Amp => self.amp.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Kimi => self.kimi.as_ref().and_then(|c| c.sync_source_dir.clone()),
+            Agent::Opencode => self
+                .opencode
+                .as_ref()
+                .and_then(|c| c.sync_source_dir.clone()),
+        }
+    }
 }
 
 impl Default for AppConfig {

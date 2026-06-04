@@ -99,6 +99,41 @@ pub fn resolve_github_mode(cfg: &AppConfig, workspace: &str, role: &str) -> Gith
         .map_or_else(GithubAuthMode::default, |g| g.auth_forward)
 }
 
+/// Resolve the effective sync source folder override for an agent in a
+/// (workspace, role) scope — the parallel axis to `resolve_mode`.
+///
+/// Walks three layers, most-specific wins:
+///
+/// 1. `workspaces[ws].roles[role].<agent>.sync_source_dir`
+/// 2. `workspaces[ws].<agent>.sync_source_dir`
+/// 3. `<agent>.sync_source_dir` (global)
+///
+/// Returns `None` when no layer is set — caller falls back to the per-agent
+/// hardcoded default folder from `AgentRuntime::state_paths().credential_dir`.
+///
+/// Introduced in Defect 46 Phase B (auth-sync-source-folder).
+pub fn resolve_sync_source_dir(
+    cfg: &AppConfig,
+    agent: Agent,
+    workspace: &str,
+    role: &str,
+) -> Option<std::path::PathBuf> {
+    let ws = cfg.workspaces.get(workspace);
+    // Most-specific first: workspace × role override.
+    if let Some(dir) = ws
+        .and_then(|ws| ws.roles.get(role))
+        .and_then(|ro| ro.sync_source_dir_for(agent))
+    {
+        return Some(dir);
+    }
+    // Workspace-level.
+    if let Some(dir) = ws.and_then(|ws| ws.sync_source_dir_for(agent)) {
+        return Some(dir);
+    }
+    // Global level.
+    cfg.sync_source_dir_for(agent)
+}
+
 /// Walk the three `[…github.env]` layers for the given pair.
 ///
 /// Merges later layers over earlier ones. Used by the launcher to
