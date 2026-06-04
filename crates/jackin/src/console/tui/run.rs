@@ -25,7 +25,7 @@ use jackin_console::tui::components::status_popup::{
 };
 use jackin_console::tui::run::{
     LetterInputModalKind, LetterInputState, QuitInterceptState, debug_bar_chip_area,
-    debug_run_id_label, quit_confirm_area, quit_confirm_state, render_debug_bar,
+    debug_run_id_label, quit_confirm_area, quit_confirm_state, render_debug_bar_hovered,
     should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
     token_generate_status_message,
 };
@@ -228,6 +228,8 @@ pub async fn run_console<H: InstanceActionHandler>(
 
     // Track the debug chip rect for click hit-testing. Updated after each draw.
     let mut last_debug_chip_area: Option<ratatui::layout::Rect> = None;
+    // Track whether the pointer is currently over the debug chip (for hover color).
+    let mut debug_chip_hovered = false;
 
     let result = 'main: loop {
         // Drain a pending token-generate request before render: suspend the
@@ -305,7 +307,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     let active_run = crate::diagnostics::active_run();
                     let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()));
                     last_debug_chip_area = Some(debug_bar_chip_area(bar_area, &run_id, None));
-                    render_debug_bar(frame, bar_area, &run_id, None);
+                    render_debug_bar_hovered(frame, bar_area, &run_id, None, debug_chip_hovered);
                 }
             })?;
             if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
@@ -690,6 +692,11 @@ pub async fn run_console<H: InstanceActionHandler>(
                                     && mouse.column < chip.x + chip.width
                                     && mouse.row == chip.y
                             });
+                        // Update chip hover state — drives the chip color change on next frame.
+                        if over_chip != debug_chip_hovered {
+                            debug_chip_hovered = over_chip;
+                            needs_redraw = true;
+                        }
                         let hand = over_chip
                             || crate::console::tui::input::clickable_at(
                                 ms,

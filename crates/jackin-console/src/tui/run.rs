@@ -124,6 +124,16 @@ pub fn split_debug_area(area: Rect, debug_mode: bool) -> (Rect, Option<Rect>) {
 /// danger chip right-aligned on a white bar. The combined chip is clickable
 /// in the root event loop.
 pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id: Option<&str>) {
+    render_debug_bar_hovered(frame, area, run_id, instance_id, false);
+}
+
+pub fn render_debug_bar_hovered(
+    frame: &mut Frame,
+    area: Rect,
+    run_id: &str,
+    instance_id: Option<&str>,
+    chip_hovered: bool,
+) {
     let chip_text =
         instance_id.map_or_else(|| format!(" {run_id} "), |iid| format!(" {run_id}:{iid} "));
     let [left_area, chip_area] = Layout::horizontal([
@@ -135,10 +145,18 @@ pub fn render_debug_bar(frame: &mut Frame, area: Rect, run_id: &str, instance_id
     let white_bg = Style::default()
         .bg(jackin_tui::theme::WHITE)
         .fg(jackin_tui::theme::PHOSPHOR_DARK);
-    let chip_style = Style::default()
-        .bg(jackin_tui::theme::DANGER_RED)
-        .fg(jackin_tui::theme::WHITE)
-        .add_modifier(Modifier::BOLD);
+    // On hover: invert to white bg + red text to signal clickability (Defect 13).
+    let chip_style = if chip_hovered {
+        Style::default()
+            .bg(jackin_tui::theme::WHITE)
+            .fg(jackin_tui::theme::DANGER_RED)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .bg(jackin_tui::theme::DANGER_RED)
+            .fg(jackin_tui::theme::WHITE)
+            .add_modifier(Modifier::BOLD)
+    };
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::raw("")])).style(white_bg),
