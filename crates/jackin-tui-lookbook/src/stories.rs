@@ -258,6 +258,24 @@ pub fn stories() -> Vec<Story> {
             8,
             story_confirm_focus_yes,
         ),
+        Story::new(
+            "button-strip/all-disabled",
+            "Button strip all-disabled",
+            "ButtonStrip",
+            "Button strip with all buttons disabled — no item can be selected.",
+            54,
+            3,
+            story_button_strip_all_disabled,
+        ),
+        Story::new(
+            "save-discard/focus-save",
+            "Save/discard dialog — Save focused",
+            "SaveDiscardDialog",
+            "Dirty workspace editor exit with Save pre-selected.",
+            54,
+            7,
+            story_save_discard_focus_save,
+        ),
     ]
 }
 
@@ -512,6 +530,30 @@ fn story_select_list_empty(frame: &mut Frame<'_>, area: Rect) {
 fn story_confirm_focus_yes(frame: &mut Frame<'_>, area: Rect) {
     let state = ConfirmState::new("Exit without saving?").with_focus_yes();
     render_confirm_dialog(frame, area, &state);
+}
+
+fn story_button_strip_all_disabled(frame: &mut Frame<'_>, area: Rect) {
+    use ratatui::layout::{Constraint, Layout};
+    let items = [
+        ButtonStripItem::disabled("Save"),
+        ButtonStripItem::disabled("Discard"),
+        ButtonStripItem::disabled("Cancel"),
+    ];
+    let [_, strip_area, _] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
+    ButtonStrip::new(&items)
+        .focused(0)
+        .render(frame, strip_area);
+}
+
+fn story_save_discard_focus_save(frame: &mut Frame<'_>, area: Rect) {
+    let mut state = SaveDiscardState::new("Save workspace changes before leaving?");
+    state.focus = SaveDiscardFocus::Save;
+    render_save_discard_dialog(frame, area, &state);
 }
 
 #[cfg(test)]
