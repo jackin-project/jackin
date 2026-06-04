@@ -36,6 +36,12 @@
 
 | Commit | What |
 |---|---|
+| `7dbf5704` | Phase 2 — collapse 5-arm match in legacy jackin/runtime/image.rs |
+| `4546a09e` | Phase 2 — collapse 2 more Agent dispatch arms in legacy launch.rs |
+| `0ff6f194` | Phase 2 — collapse 5-arm match in extract_agent_version (runtime/image.rs) |
+| `7c4fd2e7` | Verify #523 ledger complete |
+| `5b4977c7` | Roadmap status update (terminal-emulation-crate Phases 0-3 complete) |
+| `cf4fa942` | jackin-term DamageGrid bug fixes (ESC M, ICH/@, DECSTBM) from harness |
 | `3e9b4a2a` | Defect 43 — RoleState::prepare wrapped in spawn_blocking |
 | `4390f408` | TUI architecture — capsule terminal model pipeline decisions |
 | `8cb8429b` | codebase-map — jackin-term entry; Defect 43/46 checklist |
