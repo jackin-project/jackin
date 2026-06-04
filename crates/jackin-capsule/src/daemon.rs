@@ -477,6 +477,14 @@ impl Multiplexer {
                 max_row > self.term_rows,
                 max_col > self.term_cols,
             );
+            // Verbatim dump of small frames (chrome / hover / dialog). The
+            // scan above proves cursor moves stay in-bounds, but a printed run
+            // that overflows the line (causing wrap-driven smear on the real
+            // terminal) leaves no cursor-move trace — only the bytes show it.
+            // Bounded so a steady-state firehose stays readable.
+            if bytes.len() <= 1500 {
+                crate::cdebug!("send-bytes: {}", escape_for_log(&bytes));
+            }
         }
         self.send_to_client(ServerFrame::Output(bytes));
     }
@@ -491,6 +499,23 @@ impl Multiplexer {
 /// chrome blocks in one frame show up as a doubled cursor-move count. The scan
 /// is over our own trusted output, so the few lines of hand parsing are cheaper
 /// than a dependency.
+/// Render a frame's bytes as a single readable line: ESC as `\e`, other
+/// control bytes as `\xNN`, printable ASCII verbatim. Used only behind the
+/// debug flag to dump small chrome frames for triage.
+fn escape_for_log(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        match b {
+            0x1b => out.push_str("\\e"),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            0x20..=0x7e => out.push(b as char),
+            _ => out.push_str(&format!("\\x{b:02x}")),
+        }
+    }
+    out
+}
+
 fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
     let mut moves = 0usize;
     let mut erases = 0usize;
