@@ -6,12 +6,12 @@
 use jackin_tui::{
     HintSpan,
     components::{
-        ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, Panel, PanelFocus,
-        SaveDiscardFocus, SaveDiscardState, SelectListState, StatusFooterHover, TabStrip,
-        TextInputState, panel_body_area, render_brand_header, render_confirm_dialog,
-        render_error_dialog, render_filter_input, render_save_discard_dialog,
-        render_scrollable_block, render_select_list, render_status_footer, render_status_popup,
-        render_text_input, render_wrapped_hint_bar,
+        ButtonStrip, ButtonStripItem, ConfirmState, ContainerInfoRow, ContainerInfoState,
+        ErrorPopupState, Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState,
+        StatusFooterHover, TabStrip, TextInputState, panel_body_area, render_brand_header,
+        render_confirm_dialog, render_container_info, render_error_dialog, render_filter_input,
+        render_save_discard_dialog, render_scrollable_block, render_select_list,
+        render_status_footer, render_status_popup, render_text_input, render_wrapped_hint_bar,
     },
 };
 use ratatui::{
@@ -221,6 +221,33 @@ pub fn stories() -> Vec<Story> {
             58,
             5,
             story_text_input_workspace_name,
+        ),
+        Story::new(
+            "panel/unfocused",
+            "Panel unfocused",
+            "Panel",
+            "Unfocused panel showing dark PHOSPHOR_DARK border.",
+            54,
+            6,
+            story_panel_unfocused,
+        ),
+        Story::new(
+            "container-info/debug",
+            "Container info",
+            "ContainerInfoState",
+            "Debug-mode container info dialog with run ID and log path rows.",
+            72,
+            12,
+            story_container_info_debug,
+        ),
+        Story::new(
+            "select-list/empty",
+            "Select list empty",
+            "SelectList",
+            "Select list with no items showing the empty-state placeholder.",
+            48,
+            8,
+            story_select_list_empty,
         ),
     ]
 }
@@ -433,6 +460,44 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
 fn story_text_input_workspace_name(frame: &mut Frame<'_>, area: Rect) {
     let state = TextInputState::new("Workspace name", "jackin-core");
     render_text_input(frame, area, &state);
+}
+
+fn story_panel_unfocused(frame: &mut Frame<'_>, area: Rect) {
+    let block = Panel::new()
+        .title("Settings")
+        .focus(PanelFocus::Unfocused)
+        .block();
+    let content_area = panel_body_area(&block, area);
+    frame.render_widget(block, area);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(ratatui::text::Line::from(ratatui::text::Span::styled(
+            "Co-author trailer  enabled",
+            jackin_tui::theme::DIM,
+        ))),
+        content_area,
+    );
+}
+
+fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
+    let state = ContainerInfoState::new(
+        "Container info",
+        vec![
+            ContainerInfoRow::new("Container ID", "jk-sk76zdat-thearchitect").copyable(),
+            ContainerInfoRow::new("Role", "the-architect"),
+            ContainerInfoRow::new("Agent", "claude"),
+            ContainerInfoRow::new("Workdir", "/Users/jackin/Projects/jackin"),
+            ContainerInfoRow::new("jackin", "0.6.0-dev"),
+            ContainerInfoRow::new("jackin-capsule", "0.6.0-dev+444004b"),
+            ContainerInfoRow::new("Run ID", "jk-run-cc5ff2").emphasised(),
+            ContainerInfoRow::new("Run log", "~/.jackin/data/diagnostics/jk-run-cc5ff2.jsonl"),
+        ],
+    );
+    render_container_info(frame, area, &state);
+}
+
+fn story_select_list_empty(frame: &mut Frame<'_>, area: Rect) {
+    let state = SelectListState::new(vec![]);
+    render_select_list(frame, area, &state, "No roles found", &[]);
 }
 
 #[cfg(test)]

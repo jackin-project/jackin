@@ -8,6 +8,7 @@ fn every_exported_component_has_a_story() {
         "BrandHeader",
         "ButtonStrip",
         "ConfirmDialog",
+        "ContainerInfoState",
         "ErrorDialog",
         "FilterInput",
         "HintBar",
