@@ -173,9 +173,9 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Implement the debug gate: non-debug shows the simpler container rows; `--debug` adds the diagnostics rows (Run ID, Run log path + contents, Docker build log pointer, …) as a superset — never fewer rows in debug.
 - [x] On open, paint the full-screen backdrop (Defect 10) so the dialog supersedes the entire screen — nothing else visible.
 - [x] Base content on every surface: Run ID value, run log path, and the run log **contents** (read from the active run's `.jsonl`), in a scrollable body (Defect 8: `jackin_tui::scroll` + bottom-border `full_cell_thumb`, no scrollbar when it fits, `↑↓`/`J`/`K`/wheel).
-- [ ] Additive content: on capsule and launch, include the container ID and the started-container details; design the model so new fields are added in one place and inherited everywhere, never removed per surface.
-- [ ] Wire the run-id chip → this dialog on **every** surface that shows the chip (console, launch, capsule): `rg -n "status_footer_right_chip_rect|debug_bar_chip_area|last_debug_chip_area" crates/*/src`. In the capsule, **both** the container-ID chip and the (restored, Defect 12) red run-id chip open this same dialog.
-- [ ] Record the cross-screen debug-info-dialog contract (shared component, full-screen on open, additive content, scrollable, same style everywhere) in [TUI Design Decisions](/reference/tui/chrome/).
+- [x] Additive content: on capsule and launch, include the container ID and the started-container details; design the model so new fields are added in one place and inherited everywhere, never removed per surface.
+- [x] Wire the run-id chip → this dialog on **every** surface that shows the chip (console, launch, capsule): `rg -n "status_footer_right_chip_rect|debug_bar_chip_area|last_debug_chip_area" crates/*/src`. In the capsule, **both** the container-ID chip and the (restored, Defect 12) red run-id chip open this same dialog.
+- [x] Record the cross-screen debug-info-dialog contract (shared component, full-screen on open, additive content, scrollable, same style everywhere) in [TUI Design Decisions](/reference/tui/chrome/).
 
 ---
 
@@ -278,7 +278,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [~] Define/route one shared debug-bar render path (white band + red run-id chip) used by every surface; remove the per-surface variants (amber run id, separate chip) so the style cannot drift. Visual parity achieved (both use DANGER_RED); code deduplication (fold render_debug_bar into StatusFooter) remains.
 - [x] Guarantee the bar appears on **every** screen under `--debug` — including sub-screens (editor, settings) and the launch/capsule surfaces — not only the console manager. Console render loop calls split_debug_area + render_debug_bar_hovered for all stages.
 - [x] Keep the chip clickable on every screen (feeds Defect 6's Run info dialog) and the styling exact: white bar, red chip only.
-- [ ] **Capsule specifically:** the red run-id chip is currently **missing** inside the capsule. Restore it in the capsule status bar (<RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" />) next to the container-ID chip; **both** the container-ID chip and the red run-id chip must be clickable and open the **same** shared debug-info dialog (Defect 6). The console shows the bar correctly under `--debug` (white bar, red `jk-run-…` chip bottom-right); the capsule must match.
+- [x] **Capsule specifically:** the red run-id chip is currently **missing** inside the capsule. Restore it in the capsule status bar (<RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" />) next to the container-ID chip; **both** the container-ID chip and the red run-id chip must be clickable and open the **same** shared debug-info dialog (Defect 6). The console shows the bar correctly under `--debug` (white bar, red `jk-run-…` chip bottom-right); the capsule must match.
 - [x] Record the cross-screen debug-bar rule in [TUI Design Decisions](/reference/tui/chrome/).
 
 ---
