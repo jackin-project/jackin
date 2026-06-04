@@ -93,15 +93,23 @@ fn handle_cockpit_mouse_down(
         let state =
             launch_container_info_state(v, run_id, "", terminal.is_debug_mode(), jackin_version);
         let rect = launch_container_info_rect(area, &state);
-        if let Some((row, payload)) =
+        let inside_dialog = col >= rect.x
+            && col < rect.x.saturating_add(rect.width)
+            && row >= rect.y
+            && row < rect.y.saturating_add(rect.height);
+        if !inside_dialog {
+            // Click outside the dialog → dismiss (Defect 11).
+            let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
+        } else if let Some((copy_row, payload)) =
             jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
         {
+            // Click inside on a copyable value → copy.
             if terminal.copy_to_clipboard(&payload) {
-                let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoCopied(row));
+                let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoCopied(copy_row));
             }
-        } else {
-            let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
+            // If clipboard write failed: no-op (no close, no dirty).
         }
+        // Click inside with no copy target → no-op (Defect 11: inside click swallowed).
     } else if let Some(failure) = v.failure.as_ref() {
         if let Some(target) = failure_copy_target_at(area, failure, run_id, col, row)
             && let Some(payload) = failure_copy_payload(failure, run_id, target)
