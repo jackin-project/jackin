@@ -23,6 +23,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
@@ -394,8 +396,6 @@ const SIGSTORE_REKOR_KEY_ID: &str = "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0
 /// rather than silently at first production download.
 fn rekor_verification_keys()
 -> &'static std::collections::BTreeMap<String, sigstore::crypto::CosignVerificationKey> {
-    use base64::Engine as _;
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use sigstore::crypto::CosignVerificationKey;
 
     static KEYS: std::sync::OnceLock<std::collections::BTreeMap<String, CosignVerificationKey>> =
@@ -438,9 +438,8 @@ struct CapsuleManifest {
 ///    rolling preview channel).
 /// 7. Parse the verified manifest JSON and extract the SHA256 for `arch`.
 ///
-/// Hashedrekord body fields extracted from `payload.body` for cross-checking.
-/// Only the fields required for the Rekor body binding check are deserialized;
-/// unknown keys are ignored so this remains forward-compatible with Rekor spec changes.
+// Hashedrekord body field subset for the Rekor body binding check.
+// Unknown keys are ignored for forward-compatibility with Rekor spec changes.
 #[derive(serde::Deserialize)]
 struct RekorBody {
     spec: RekorSpec,
@@ -463,8 +462,10 @@ struct RekorHash {
 #[serde(rename_all = "camelCase")]
 struct RekorSig {
     content: String,
+    /// Base64-encoded PEM certificate (`publicKey.content` in hashedrekord).
     public_key: RekorPublicKey,
 }
+/// Wrapper so serde can deserialise `{"content": "..."}` into a plain `String`.
 #[derive(serde::Deserialize)]
 struct RekorPublicKey {
     content: String,
@@ -484,8 +485,6 @@ fn verify_rekor_body_binds_bundle(
     bundle: &sigstore::cosign::bundle::SignedArtifactBundle,
     manifest_bytes: &[u8],
 ) -> Result<()> {
-    use base64::Engine as _;
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use sha2::{Digest, Sha256};
 
     // Decode the opaque body field from the Payload.
@@ -544,8 +543,6 @@ async fn fetch_and_verify_manifest(
     arch: &str,
     is_preview: bool,
 ) -> Result<String> {
-    use base64::Engine as _;
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use sigstore::cosign::bundle::SignedArtifactBundle;
     // CosignCapabilities is the trait that defines verify_blob; must be in scope.
     use sigstore::cosign::{Client, CosignCapabilities};
