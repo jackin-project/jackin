@@ -482,7 +482,7 @@ impl Multiplexer {
             // that overflows the line (causing wrap-driven smear on the real
             // terminal) leaves no cursor-move trace — only the bytes show it.
             // Bounded so a steady-state firehose stays readable.
-            if bytes.len() <= 1500 {
+            if bytes.len() <= 24000 {
                 crate::cdebug!("send-bytes: {}", escape_for_log(&bytes));
             }
         }
