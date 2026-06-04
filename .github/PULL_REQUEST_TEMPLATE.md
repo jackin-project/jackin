@@ -144,8 +144,6 @@ empty and PR-scoped so the smoke path cannot read or mutate live `~/.jackin`
 state.>
 
 ```sh
-rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"
-
 if [ -d "$HOME/.config/jackin" ]; then
   cp -a "$HOME/.config/jackin" "$JACKIN_CONFIG_DIR"
 else
