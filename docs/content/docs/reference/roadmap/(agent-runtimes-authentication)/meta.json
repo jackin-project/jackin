@@ -5,6 +5,7 @@
     "../multi-runtime-support",
     "../alternative-llm-providers",
     "../native-apm-role-support",
+    "../auth-overwrite-on-new-tab",
     "../claude-auth-strategy",
     "../auth-sync-source-folder",
     "../workspace-claude-token-setup",

@@ -22,10 +22,14 @@ const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v3.don
 const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
 
 pub fn run() -> Result<()> {
+    // Capture before run_container_init_once() writes the marker so new-tab
+    // invocations can be distinguished from first-boot: on first boot the
+    // marker is absent, on every subsequent `jackin-capsule new` it exists.
+    let is_first_init = !Path::new(CONTAINER_INIT_MARKER).exists();
     run_container_init_once()?;
     install_git_trailer_hook_if_requested()?;
     cache_dco_identity_if_needed();
-    run_agent_setup()
+    run_agent_setup(is_first_init)
 }
 
 fn run_container_init_once() -> Result<()> {
@@ -165,35 +169,40 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn run_agent_setup() -> Result<()> {
+fn run_agent_setup(copy_auth: bool) -> Result<()> {
+    if !copy_auth {
+        crate::clog!("new-tab session: skipping auth copy to preserve in-container credentials");
+    }
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
     match agent.as_str() {
-        "claude" => setup_claude(),
-        "codex" => setup_codex(),
-        "amp" => setup_amp(),
-        "kimi" => setup_kimi(),
-        "opencode" => setup_opencode(),
+        "claude" => setup_claude(copy_auth),
+        "codex" => setup_codex(copy_auth),
+        "amp" => setup_amp(copy_auth),
+        "kimi" => setup_kimi(copy_auth),
+        "opencode" => setup_opencode(copy_auth),
         other => bail!("unknown JACKIN_AGENT: {other}"),
     }
 }
 
-fn setup_claude() -> Result<()> {
+fn setup_claude(copy_auth: bool) -> Result<()> {
     seed_home_dir("/jackin/default-home/.claude", "/home/agent/.claude")?;
-    if Path::new("/jackin/claude/account.json").is_file() {
-        copy_file_with_mode(
-            "/jackin/claude/account.json",
-            "/home/agent/.claude.json",
-            0o600,
-        )?;
-    }
-    if Path::new("/jackin/claude/credentials.json").is_file() {
-        copy_file_with_mode(
-            "/jackin/claude/credentials.json",
-            "/home/agent/.claude/.credentials.json",
-            0o600,
-        )?;
-    } else {
-        remove_file_if_exists("/home/agent/.claude/.credentials.json")?;
+    if copy_auth {
+        if Path::new("/jackin/claude/account.json").is_file() {
+            copy_file_with_mode(
+                "/jackin/claude/account.json",
+                "/home/agent/.claude.json",
+                0o600,
+            )?;
+        }
+        if Path::new("/jackin/claude/credentials.json").is_file() {
+            copy_file_with_mode(
+                "/jackin/claude/credentials.json",
+                "/home/agent/.claude/.credentials.json",
+                0o600,
+            )?;
+        } else {
+            remove_file_if_exists("/home/agent/.claude/.credentials.json")?;
+        }
     }
 
     if !env_is_one("JACKIN_DISABLE_TIRITH") {
@@ -215,16 +224,18 @@ fn setup_claude() -> Result<()> {
     Ok(())
 }
 
-fn setup_codex() -> Result<()> {
+fn setup_codex(copy_auth: bool) -> Result<()> {
     seed_home_dir("/jackin/default-home/.codex", "/home/agent/.codex")?;
-    if Path::new("/jackin/codex/auth.json").is_file() {
-        copy_file_with_mode(
-            "/jackin/codex/auth.json",
-            "/home/agent/.codex/auth.json",
-            0o600,
-        )?;
-    } else {
-        remove_file_if_exists("/home/agent/.codex/auth.json")?;
+    if copy_auth {
+        if Path::new("/jackin/codex/auth.json").is_file() {
+            copy_file_with_mode(
+                "/jackin/codex/auth.json",
+                "/home/agent/.codex/auth.json",
+                0o600,
+            )?;
+        } else {
+            remove_file_if_exists("/home/agent/.codex/auth.json")?;
+        }
     }
     write_codex_provider_config(Path::new("/home/agent/.codex"))?;
     Ok(())
@@ -333,76 +344,84 @@ fn codex_minimax_provider_toml() -> Result<String> {
     Ok(format!("\n{body}"))
 }
 
-fn setup_amp() -> Result<()> {
+fn setup_amp(copy_auth: bool) -> Result<()> {
     seed_home_dir(
         "/jackin/default-home/.local/share/amp",
         "/home/agent/.local/share/amp",
     )?;
-    if Path::new("/jackin/amp/secrets.json").is_file() {
-        eprintln!("[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/");
-        copy_file_with_mode(
-            "/jackin/amp/secrets.json",
-            "/home/agent/.local/share/amp/secrets.json",
-            0o600,
-        )?;
-    } else if nonempty_env("AMP_API_KEY").is_some() {
-        eprintln!("[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth");
-    } else {
-        remove_file_if_exists("/home/agent/.local/share/amp/secrets.json")?;
-        eprintln!(
-            "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset - agent will require interactive login"
-        );
+    if copy_auth {
+        if Path::new("/jackin/amp/secrets.json").is_file() {
+            eprintln!("[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/");
+            copy_file_with_mode(
+                "/jackin/amp/secrets.json",
+                "/home/agent/.local/share/amp/secrets.json",
+                0o600,
+            )?;
+        } else if nonempty_env("AMP_API_KEY").is_some() {
+            eprintln!("[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth");
+        } else {
+            remove_file_if_exists("/home/agent/.local/share/amp/secrets.json")?;
+            eprintln!(
+                "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset - agent will require interactive login"
+            );
+        }
     }
     Ok(())
 }
 
-fn setup_kimi() -> Result<()> {
+fn setup_kimi(copy_auth: bool) -> Result<()> {
     seed_home_dir("/jackin/default-home/.kimi-code", "/home/agent/.kimi-code")?;
-    let kimi_src = Path::new("/jackin/kimi-code");
-    if kimi_src.is_dir() && dir_nonempty(kimi_src)? {
-        eprintln!("[entrypoint] kimi: copying provisioned credentials into ~/.kimi-code/");
-        copy_dir_contents(
-            kimi_src,
-            Path::new("/home/agent/.kimi-code"),
-            CopyMode::Overwrite,
-        )?;
-    } else if kimi_src.is_dir() {
-        eprintln!(
-            "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
-        );
-    } else if nonempty_env("KIMI_CODE_API_KEY").is_some() {
-        eprintln!(
-            "[entrypoint] kimi: KIMI_CODE_API_KEY present in env; agent will use api-key auth"
-        );
-    } else {
-        eprintln!(
-            "[entrypoint] kimi: KIMI_CODE_API_KEY unset - agent will require interactive login or config"
-        );
+    if copy_auth {
+        let kimi_src = Path::new("/jackin/kimi-code");
+        if kimi_src.is_dir() && dir_nonempty(kimi_src)? {
+            eprintln!("[entrypoint] kimi: copying provisioned credentials into ~/.kimi-code/");
+            copy_dir_contents(
+                kimi_src,
+                Path::new("/home/agent/.kimi-code"),
+                CopyMode::Overwrite,
+            )?;
+        } else if kimi_src.is_dir() {
+            eprintln!(
+                "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
+            );
+        } else if nonempty_env("KIMI_CODE_API_KEY").is_some() {
+            eprintln!(
+                "[entrypoint] kimi: KIMI_CODE_API_KEY present in env; agent will use api-key auth"
+            );
+        } else {
+            eprintln!(
+                "[entrypoint] kimi: KIMI_CODE_API_KEY unset - agent will require interactive login or config"
+            );
+        }
     }
     Ok(())
 }
 
-fn setup_opencode() -> Result<()> {
+fn setup_opencode(copy_auth: bool) -> Result<()> {
     seed_home_dir(
         "/jackin/default-home/.local/share/opencode",
         "/home/agent/.local/share/opencode",
     )?;
-    if Path::new("/jackin/opencode/auth.json").is_file() {
-        eprintln!("[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/");
-        copy_file_with_mode(
-            "/jackin/opencode/auth.json",
-            "/home/agent/.local/share/opencode/auth.json",
-            0o600,
-        )?;
-    } else if nonempty_env("OPENCODE_API_KEY").is_some() {
-        eprintln!(
-            "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth"
-        );
-    } else {
-        remove_file_if_exists("/home/agent/.local/share/opencode/auth.json")?;
-        eprintln!(
-            "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
-        );
+    if copy_auth {
+        if Path::new("/jackin/opencode/auth.json").is_file() {
+            eprintln!(
+                "[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/"
+            );
+            copy_file_with_mode(
+                "/jackin/opencode/auth.json",
+                "/home/agent/.local/share/opencode/auth.json",
+                0o600,
+            )?;
+        } else if nonempty_env("OPENCODE_API_KEY").is_some() {
+            eprintln!(
+                "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth"
+            );
+        } else {
+            remove_file_if_exists("/home/agent/.local/share/opencode/auth.json")?;
+            eprintln!(
+                "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
+            );
+        }
     }
     use std::os::unix::fs::DirBuilderExt as _;
     fs::DirBuilder::new()
