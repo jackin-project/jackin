@@ -1146,7 +1146,10 @@ fn codex_trust_fixture(
         root: root.to_path_buf(),
         gh_config_dir: root.join("gh"),
         gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
-        agent_runtime: crate::instance::AgentRuntimeState::Codex { model: None },
+        agent_runtime: crate::instance::AgentRuntimeState {
+            agent: jackin_core::agent::Agent::Codex,
+            model: None,
+        },
         auth: crate::instance::ProvisionedAuth {
             codex: Some(crate::instance::CodexAuth::default()),
             ..Default::default()

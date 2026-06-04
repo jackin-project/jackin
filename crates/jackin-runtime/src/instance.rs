@@ -165,19 +165,18 @@ pub enum GithubProvisionKind {
     Skipped,
 }
 
-/// Runtime state for the selected agent (model override only).
+/// Runtime state for the selected agent (identity + model override).
 ///
+/// Collapsed from a 5-variant enum to a single struct (Phase 2/3).
 /// Auth paths for all agents in `manifest.supported_agents()` are tracked
 /// separately on [`ProvisionedAuth`] so `hardline --new` can switch to any
 /// supported agent without re-authentication.
 #[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum AgentRuntimeState {
-    Claude { model: Option<String> },
-    Codex { model: Option<String> },
-    Amp,
-    Kimi { model: Option<String> },
-    Opencode { model: Option<String> },
+pub struct AgentRuntimeState {
+    /// The selected agent for this session.
+    pub agent: jackin_core::agent::Agent,
+    /// Optional model override from the role manifest (`None` = agent default).
+    pub model: Option<String>,
 }
 
 /// Claude's provisioned auth slot.
@@ -259,15 +258,13 @@ impl RoleState {
     }
 
     /// `Some` only when the selected runtime is Claude; the field on
-    /// `AgentRuntimeState::Claude` carries the manifest override.
+    /// Manifest model override for Claude, or `None` if not Claude or no override.
     #[must_use]
     pub fn claude_model(&self) -> Option<&str> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Claude { model } => model.as_deref(),
-            AgentRuntimeState::Codex { .. }
-            | AgentRuntimeState::Amp
-            | AgentRuntimeState::Kimi { .. }
-            | AgentRuntimeState::Opencode { .. } => None,
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Claude {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
         }
     }
 
@@ -290,27 +287,23 @@ impl RoleState {
         self.auth.claude.as_ref().is_some_and(|c| c.forward_auth)
     }
 
-    /// `Some` only when the selected runtime is Codex.
+    /// Manifest model override for Codex, or `None` if not Codex or no override.
     #[must_use]
     pub fn codex_model(&self) -> Option<&str> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Codex { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. }
-            | AgentRuntimeState::Amp
-            | AgentRuntimeState::Kimi { .. }
-            | AgentRuntimeState::Opencode { .. } => None,
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Codex {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
         }
     }
 
-    /// `Some` only when the selected runtime is Kimi.
+    /// Manifest model override for Kimi, or `None` if not Kimi or no override.
     #[must_use]
     pub fn kimi_model(&self) -> Option<&str> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Kimi { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. }
-            | AgentRuntimeState::Codex { .. }
-            | AgentRuntimeState::Amp
-            | AgentRuntimeState::Opencode { .. } => None,
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Kimi {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
         }
     }
 
@@ -320,15 +313,13 @@ impl RoleState {
         self.auth.kimi.as_ref().is_some_and(|c| c.forward_auth)
     }
 
-    /// `Some` only when the selected runtime is `OpenCode`.
+    /// Manifest model override for OpenCode, or `None` if not OpenCode or no override.
     #[must_use]
     pub fn opencode_model(&self) -> Option<&str> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Opencode { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. }
-            | AgentRuntimeState::Codex { .. }
-            | AgentRuntimeState::Kimi { .. }
-            | AgentRuntimeState::Amp => None,
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Opencode {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
         }
     }
 
@@ -487,14 +478,10 @@ impl RoleState {
             }
         }
 
-        // Collapse 5-arm model lookup to manifest.agent_model(agent) (Phase 2).
-        let model = manifest.agent_model(agent).map(str::to_owned);
-        let agent_runtime = match agent {
-            jackin_core::agent::Agent::Claude => AgentRuntimeState::Claude { model },
-            jackin_core::agent::Agent::Codex => AgentRuntimeState::Codex { model },
-            jackin_core::agent::Agent::Amp => AgentRuntimeState::Amp,
-            jackin_core::agent::Agent::Kimi => AgentRuntimeState::Kimi { model },
-            jackin_core::agent::Agent::Opencode => AgentRuntimeState::Opencode { model },
+        // Single struct construction — no per-variant dispatch needed (Phase 2/3).
+        let agent_runtime = AgentRuntimeState {
+            agent,
+            model: manifest.agent_model(agent).map(str::to_owned),
         };
 
         Ok((
