@@ -337,6 +337,38 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) prefix_mode: crate::tui::components::status_bar::PrefixMode,
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) menu_hovered: bool,
+    pub(crate) selection: Option<crate::tui::selection::SelectionState>,
+}
+
+/// Overlay the inverse-video selection highlight onto the cells the pane
+/// bodies already painted. The Ratatui equivalent of
+/// `paint_selection_highlight`: it toggles `REVERSED` on the selected cells so
+/// the SocketBackend diff carries it, instead of a raw post-frame append.
+fn apply_selection_highlight(
+    buf: &mut ratatui::buffer::Buffer,
+    sel: &crate::tui::selection::SelectionState,
+) {
+    let (start_row, start_col, end_row, end_col) =
+        crate::tui::selection::canonical_selection(sel);
+    let inner = sel.inner;
+    for r in start_row..=end_row {
+        let from_col = if r == start_row { start_col } else { 0 };
+        let to_col = if r == end_row {
+            end_col
+        } else {
+            inner.cols.saturating_sub(1)
+        };
+        if to_col < from_col {
+            continue;
+        }
+        let y = inner.row + r;
+        for c in from_col..=to_col {
+            let x = inner.col + c;
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.modifier |= ratatui::style::Modifier::REVERSED;
+            }
+        }
+    }
 }
 
 pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>) {
@@ -428,6 +460,12 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             };
             frame.render_widget(PaneBodyWidget::new(snap), body_area);
         }
+    }
+
+    // Selection highlight is overlaid after the pane bodies so the agent's
+    // glyphs survive underneath the reversed-colour cue.
+    if let Some(sel) = view.selection {
+        apply_selection_highlight(frame.buffer_mut(), &sel);
     }
 }
 

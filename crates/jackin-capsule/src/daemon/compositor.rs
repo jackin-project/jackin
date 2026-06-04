@@ -180,6 +180,9 @@ impl Multiplexer {
         let prefix_mode = self.status_bar.prefix_mode;
         let hovered_tab = crate::tui::view::hovered_tab(self.hover_target);
         let menu_hovered = crate::tui::view::hovered_menu(self.hover_target);
+        // Selection highlight is only meaningful in the unzoomed multi-pane
+        // view; a zoom toggle cancels it, matching the raw path's gate.
+        let selection = if zoomed { None } else { self.selection };
         let github_view_for_hint = self.github_context_view();
         let dialog_hint_spans = self
             .dialog_top()
@@ -243,6 +246,7 @@ impl Multiplexer {
                     prefix_mode,
                     hovered_tab,
                     menu_hovered,
+                    selection,
                 },
             );
         });
