@@ -251,3 +251,59 @@ The debug output includes:
 - **Credential files inside the container.** Auth tokens copied into the container via `sync` mode are readable by the agent. The `hardened`/`locked` profiles emit a telemetry note recommending `api_key` or `oauth_token` mode over `sync`, but do not enforce it.
 
 For the full design rationale and phased implementation plan, see the [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) roadmap item.
+
+## What's in place today vs. what comes next
+
+### Today (all shipped)
+
+Everything described on this page is fully implemented and available now:
+- All four profiles with enforced capability sets
+- `[docker.grants]` in config and workspace for per-dimension overrides
+- `[docker]` in `jackin.role.toml` for role declarations (`min_profile`, `requires_inner_engine`, `dind`, `network_allow`, `capabilities_add`)
+- `allowlist` network tier via `init-firewall.sh` (iptables/ipset, `JACKIN_ALLOWED_HOSTS` assembled at launch)
+- All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
+- Full telemetry under `--debug` (profile source, cap decisions, cgroup version, AppArmor, session contract)
+
+### Current default: `compat`
+
+Every launch uses `compat` by default — this is the same behavior as before profiles existed. Nothing breaks for anyone who doesn't opt in.
+
+To use a stricter profile today: pass `--docker-profile <profile>` or set `[docker] default_profile = "…"` in config.
+
+### What will change in a future PR
+
+**`standard` will become the default.** This requires one code change and one base-image change:
+
+1. **Sudo audit** (<RepoFile path="docker/construct/Dockerfile" /> line 116): replace `NOPASSWD:ALL` with per-binary file capabilities. This is the blocker — adding `--security-opt no-new-privileges` to `standard` containers would silently break any agent script that calls `sudo`. Until the audit confirms every privileged operation is handled without blanket sudo, `standard` stays `sudo = true` with `no-new-privileges` off.
+
+2. **Default flip** (<RepoFile path="src/runtime/docker_profile.rs" />): change `impl Default for DockerSecurityProfile` from `Compat` to `Standard`. One line.
+
+Both items are tracked in `TODO.md` with full context. Until they land, the default stays `compat` and **no existing user is affected**.
+
+### The `compat` profile stays permanently
+
+`compat` is not a temporary workaround — it is a valid named profile for roles that need privileged DinD, `apt install` at runtime, or any other capability that `standard` doesn't grant. After `standard` becomes the default, `compat` requires explicit opt-in:
+```sh
+jackin load fullstack . --docker-profile compat
+```
+or
+```toml
+[docker]
+default_profile = "compat"
+```
+
+or in a role manifest:
+```toml
+[docker]
+min_profile = "compat"   # role needs full sudo + apt install at runtime
+```
+
+### Remaining research items (explicitly deferred)
+
+These are **not** blocked by the sudo audit — they require separate research before implementation:
+
+| Item | What's needed | Where tracked |
+|---|---|---|
+| Rootless DinD | Compatibility matrix with Testcontainers, Compose, BuildKit on cgroup v2 | [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) Phase B |
+| Sysbox backend | Host-install policy decision (must not mutate host silently) | Phase C |
+| Network proxy sidecar | V2 allowlist implementation covering non-HTTP protocols | [Network egress policy](/reference/roadmap/network-egress-policy/) |
