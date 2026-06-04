@@ -74,8 +74,9 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
-mkdir -p "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
-cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+export JACKIN_PR_TEST_DIR="$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+mkdir -p "$JACKIN_PR_TEST_DIR"
+cd "$JACKIN_PR_TEST_DIR"
 
 if [ ! -d jackin/.git ]; then
   git clone https://github.com/jackin-project/jackin.git
@@ -89,8 +90,8 @@ mise trust
 mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
-export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
-export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
+export JACKIN_CONFIG_DIR="$JACKIN_PR_TEST_DIR/.config/jackin"
+export JACKIN_HOME_DIR="$JACKIN_PR_TEST_DIR/.jackin"
 which jackin
 ```
 

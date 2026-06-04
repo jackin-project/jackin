@@ -78,7 +78,7 @@ The checkout recipe must keep these properties:
 - It fetches the real PR head branch into a PR-numbered test directory.
 - It force-updates the remote-tracking ref so operator verification survives authorized force-pushes.
 - It builds the local `jackin` binary and prepends `target/debug` so smoke commands exercise the PR checkout, not a previously installed binary.
-- It exports PR-scoped `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` so schema migrations, workspace writes, role caches, and runtime state do not touch the operator's live config/state.
+- It exports PR-scoped `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` under the PR test directory so schema migrations, workspace writes, role caches, and runtime state do not touch the operator's live config/state.
 - For `crates/jackin-capsule/` PRs, it includes the template's capsule build/export paste before any `jackin console` or `jackin load` smoke command.
 
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
@@ -104,7 +104,7 @@ Three env vars let the operator test a PR without touching their live config or 
 | `JACKIN_HOME_DIR` | `~/.jackin` | data/, roles/, cache/ |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | construct image used for role validation and launch |
 
-`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. Use the PR number as the suffix so two PRs can be tested in parallel on the same machine without their state directories colliding.
+`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. Keep both directories under the PR-numbered test directory so all checkout, build, config, and runtime verification state lives in one removable tree.
 
 For construct image PRs, use the construct-image block from the template. It builds a local construct image and points jackin' at that image for Dockerfile validation and role container launch instead of the published one.
 
