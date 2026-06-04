@@ -182,6 +182,14 @@ In `mouse.rs`, `editor_scroll_area` wraps `editor_content_area` to guarantee the
 
 A violated hit-test rect is a silent bug: no compile error, no test failure, and no obvious visual artifact — the block just refuses to focus when clicked in the empty trailing area.
 
+### Horizontal scrollbar renders whenever content overflows horizontally
+
+Any block whose content is wider than its viewport renders the shared horizontal scrollbar thumb on its **bottom border**, mirroring the vertical thumb on the right border. When content fits horizontally, no scrollbar is shown.
+
+**Enforcement:** `render_scrollable_block` / `render_scrollable_block_at` already calls `render_horizontal_scrollbar(frame, area, content_width, eff_x)` internally. Any surface that tracks `scroll_x` independently must call `render_horizontal_scrollbar` itself after rendering its rows.
+
+The `H/L scroll` hint must only appear in the footer when horizontal scrolling is actually possible (content overflows the viewport). Showing `H/L scroll` when content fits is a false affordance.
+
 ### Content height formula for each block type
 
 These are the exact formulas that match what each render function passes to `render_scrollable_block`:
