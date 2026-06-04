@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
-use super::panel::modal_block;
+use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmFocus {
@@ -167,11 +167,7 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
 }
 
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
-    let title = format!(" {} ", state.title);
-    let block = modal_block().title(Span::styled(title, crate::theme::BOLD_WHITE));
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
+    let inner = render_dialog_shell(frame, area, Some(&state.title));
 
     let prompt = match &state.kind {
         ConfirmKind::Details {
@@ -186,17 +182,7 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
     };
 
     let prompt_lines = prompt.lines().count().max(1) as u16;
-    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),            // leading spacer
-            Constraint::Length(prompt_lines), // prompt
-            Constraint::Length(1),            // spacer
-            Constraint::Length(1),            // buttons
-            Constraint::Length(1),            // trailing spacer
-        ])
-        .split(inner);
+    let chunks = dialog_inner_chunks(inner, Some(prompt_lines));
 
     let prompt_lines_vec: Vec<Line<'_>> = prompt
         .lines()

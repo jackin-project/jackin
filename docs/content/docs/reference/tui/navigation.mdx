@@ -115,6 +115,12 @@ Every selectable list — workspace sidebar, pickers, file browser, settings tab
 
 A narrow text-only highlight (background stops after the last character) is a design-decision violation. Route every selectable list through the shared `SelectList` component or the same `List + highlight_style` pattern the workspace sidebar uses.
 
+### `▸` cursor appears on the selected row only when the panel has focus
+
+The `▸` prefix on the selected row is **focus-gated**: it must appear if and only if the enclosing panel currently owns focus. When the panel is unfocused, suppress the `▸` — the selected row is still indicated by its row style (bold text, or the row highlight color at reduced intensity), but the cursor glyph must not show. Displaying `▸` in an unfocused panel misleads the operator into thinking the panel is the active keyboard target.
+
+**Implementation:** compute `show_cursor = panel_focused && modal.is_none()` (or the equivalent expression for the surface) and thread it through every row-line builder. Use `highlight_spacing(HighlightSpacing::Always)` on the ratatui `List` so the blank prefix column is reserved even when `show_cursor` is false — this keeps row alignment stable across focus transitions. A `▸` visible in an unfocused panel is a design-decision violation.
+
 ### Hint bar always has one blank spacer row above it
 
 Every screen (workspace list, workspace editor, settings, launch cockpit, lookbook) must reserve exactly one blank spacer row **directly above** the hint bar. This breathing room separates the screen body from the hints so the layout reads as two distinct layers.

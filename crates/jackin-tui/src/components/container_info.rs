@@ -6,12 +6,13 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::ModalOutcome;
 use crate::ansi;
-use crate::components::{Panel, PanelFocus};
+use crate::components::dialog_layout::render_dialog_shell;
+use crate::components::panel::{Panel, PanelFocus};
 use crate::theme::{LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
@@ -132,14 +133,7 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     if area.width < 20 || area.height < 5 {
         return;
     }
-    let title = format!(" {} ", state.title);
-    let block = Panel::new()
-        .title(&title)
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(Clear, area);
-    frame.render_widget(block, area);
+    let inner = render_dialog_shell(frame, area, Some(&state.title));
 
     let label_width = state
         .rows

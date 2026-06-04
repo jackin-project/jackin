@@ -23,7 +23,6 @@ use ratatui::{
 use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use jackin_tui::components::{Panel, PanelFocus};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,13 +256,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
         height: h,
     };
 
-    let block = Panel::new()
-        .title(" Git repository detected ")
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("Git repository detected"));
 
     // Row constraints: [prompt][url?][spacer][buttons][spacer].
     let row_count = if has_url { 5 } else { 4 };

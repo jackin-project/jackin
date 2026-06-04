@@ -10,7 +10,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::render_dialog_shell;
 
 pub trait AgentChoice: Copy + Eq + 'static {
     const ALL: &'static [Self];
@@ -95,14 +95,7 @@ pub fn render<A: AgentChoice>(frame: &mut Frame, area: Rect, state: &AgentChoice
         ])
     };
 
-    let block = Panel::new()
-        .title(" Pick Agent ")
-        .focus(PanelFocus::Focused)
-        .block();
-
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
+    let inner = render_dialog_shell(frame, area, Some("Pick Agent"));
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

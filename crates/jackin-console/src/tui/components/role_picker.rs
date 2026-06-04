@@ -123,21 +123,13 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use jackin_tui::components::render_dialog_shell;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
-use jackin_tui::components::{Panel, PanelFocus, render_filter_input};
+use jackin_tui::components::render_filter_input;
 use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame, area: Rect, state: &RolePickerState<R>) {
-    // Filter row stays out of the title — see RULES.md "TUI List
-    // Modals" for the canonical layout.
-    let block = Panel::new()
-        .title(" Select Role ")
-        .focus(PanelFocus::Focused)
-        .block();
-
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
+    let inner = render_dialog_shell(frame, area, Some("Select Role"));
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

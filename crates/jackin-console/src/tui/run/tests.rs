@@ -89,34 +89,6 @@ fn token_generate_status_message_names_target_scope() {
     );
 }
 
-#[test]
-fn debug_bar_chip_area_matches_right_aligned_chip_width() {
-    let area = Rect {
-        x: 2,
-        y: 5,
-        width: 20,
-        height: 1,
-    };
-
-    assert_eq!(
-        debug_bar_chip_area(area, "run", None),
-        Rect {
-            x: 17,
-            y: 5,
-            width: 5,
-            height: 1,
-        }
-    );
-    assert_eq!(
-        debug_bar_chip_area(area, "run", Some("inst")),
-        Rect {
-            x: 12,
-            y: 5,
-            width: 10,
-            height: 1,
-        }
-    );
-}
 
 #[test]
 fn debug_run_id_label_uses_empty_fallback() {

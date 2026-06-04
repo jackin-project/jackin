@@ -14,7 +14,7 @@ use crate::tui::components::list_helpers::first_selection;
 pub use crate::tui::components::list_helpers::matches_filter;
 use crate::tui::components::spinner::SPINNER_FRAMES;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
-use jackin_tui::components::{Panel, PanelFocus, TextInputState};
+use jackin_tui::components::TextInputState;
 use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 pub fn item_name_input_state<'a>(item_default: impl Into<String>) -> TextInputState<'a> {
@@ -910,7 +910,6 @@ pub fn existing_field_commit_selection<Reference, Account, Vault, Item, FieldTar
 }
 
 pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
-    frame.render_widget(ratatui::widgets::Clear, area);
     match state.load_state() {
         OpLoadState::Error(OpPickerError::Fatal(fatal)) => render_fatal(frame, area, fatal),
         OpLoadState::Loading { spinner_tick } => render_loading(frame, area, state, *spinner_tick),
@@ -937,13 +936,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) 
         state.selected_vault_name(),
         state.selected_item_name(),
     );
-    let title_with_spaces = format!(" {title} ");
-    let block = Panel::new()
-        .title(&title_with_spaces)
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(&title));
 
     let banner_height: u16 = match state.load_state() {
         OpLoadState::Error(OpPickerError::Recoverable { .. }) => 2,
@@ -1004,13 +997,7 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderStat
         state.selected_vault_name(),
         state.selected_item_name(),
     );
-    let title_with_spaces = format!(" {title} ");
-    let block = Panel::new()
-        .title(&title_with_spaces)
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(&title));
 
     let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
     let descriptor = loading_descriptor(
@@ -1036,12 +1023,7 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderStat
 }
 
 pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
-    let block = Panel::new()
-        .title(" 1Password ")
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("1Password"));
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

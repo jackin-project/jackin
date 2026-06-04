@@ -15,7 +15,7 @@ use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
-use jackin_tui::components::{Panel, PanelFocus, TextInputState};
+use jackin_tui::components::TextInputState;
 use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub trait AuthCredentialRef: Clone + std::fmt::Debug + PartialEq + Eq {
@@ -295,13 +295,7 @@ pub fn render_form<V: AuthCredential>(
     form: &AuthForm<V>,
     focus: AuthFormFocus,
 ) {
-    frame.render_widget(ratatui::widgets::Clear, area);
-    let block = Panel::new()
-        .title(" Edit auth ")
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("Edit auth"));
 
     for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {
         let y = inner.y.saturating_add(idx as u16);

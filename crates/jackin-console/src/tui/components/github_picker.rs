@@ -66,21 +66,12 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use jackin_tui::components::render_dialog_shell;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
-use jackin_tui::components::{Panel, PanelFocus};
 use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
-    // Title style matches WorkdirPick — Panel::block() applies the correct
-    // modal focus styling (PHOSPHOR_GREEN border, WHITE + BOLD title).
-    let block = Panel::new()
-        .title(" Open in GitHub ")
-        .focus(PanelFocus::Focused)
-        .block();
-
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
+    let inner = render_dialog_shell(frame, area, Some("Open in GitHub"));
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

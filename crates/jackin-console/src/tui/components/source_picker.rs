@@ -75,18 +75,12 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::render_dialog_shell;
 use jackin_tui::theme::PHOSPHOR_DARK;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
-    let title = format!(" Source for {} ", state.key);
-    let block = Panel::new()
-        .title(&title)
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
+    let title = format!("Source for {}", state.key);
+    let inner = render_dialog_shell(frame, area, Some(&title));
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)

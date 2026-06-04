@@ -19,6 +19,24 @@ The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path=
 | `PREVIEW_CARD` | `Rgb(28, 28, 28)` | Lookbook preview canvas background |
 | `CAPSULE_PANE_FOCUSED` | `Rgb(180, 180, 180)` | Capsule pane focused border |
 
+Every lookbook story preview card and lookbook background must use the `PREVIEW_CARD` token, never an inline `Color::Rgb(28, 28, 28)` literal. The general rule (no inline `Color::Rgb(...)` outside `theme.rs`) already covers this, but `PREVIEW_CARD` is the token to reach for whenever a dark card background is needed.
+
+## Panel Title Spacing
+
+Every titled block passes its title through `Panel::title()`, which normalizes the string to `" {trimmed_title} "` (one space, trimmed title, one space) internally. Callers must **not** pre-pad the title string with spaces. The resulting display is `┌ Title ┐` with exactly one space on each side of the title text.
+
+A title passed as `"  Title  "` (extra spaces) or `"Title"` (no spaces) is a design-decision violation — pass the bare trimmed title and let `Panel::title()` apply the canonical padding.
+
+---
+
+## Panel Body Inset
+
+Panel body content must be inset from the border by exactly 1 cell horizontally. Use `panel_body_area(block_area, inner_area)` from `jackin_tui::components::panel` instead of rendering content directly into `block.inner(area)`. The 1-cell inset prevents text from touching the left and right border characters and is a visual requirement across all titled panels.
+
+`render_scrollable_block` applies this inset automatically. Direct callers that render text content into a titled panel via the ratatui `Block` API must call `panel_body_area` to obtain the inset rect and render into that, not into the raw `inner` rect.
+
+---
+
 ## Action Rows (`+ Add …` / `+ Override …`)
 
 Every row that begins with `+` is an add/create action and must render through the one shared `action_row_style(selected)` function in `jackin-console`. Rules:

@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Rect},
     text::Span,
     widgets::Paragraph,
 };
@@ -11,7 +11,7 @@ use ratatui::{
 use crate::ModalOutcome;
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
-use super::panel::modal_block;
+use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveDiscardChoice {
@@ -74,22 +74,8 @@ impl SaveDiscardState {
 }
 
 pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &SaveDiscardState) {
-    let block = modal_block().title(Span::styled(" Unsaved changes ", crate::theme::BOLD_WHITE));
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
-
-    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // leading spacer
-            Constraint::Length(1), // prompt
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // buttons
-            Constraint::Length(1), // trailing spacer
-        ])
-        .split(inner);
+    let inner = render_dialog_shell(frame, area, Some("Unsaved changes"));
+    let chunks = dialog_inner_chunks(inner, Some(1));
 
     frame.render_widget(
         Paragraph::new(Span::styled(state.prompt.clone(), crate::theme::BOLD_WHITE))

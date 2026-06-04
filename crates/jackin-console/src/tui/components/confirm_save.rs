@@ -9,7 +9,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     text::{Line, Span},
     widgets::{Block, Borders},
 };
@@ -18,7 +18,7 @@ use jackin_tui::ModalOutcome;
 use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::{dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {
@@ -137,16 +137,7 @@ pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>)
 }
 
 pub fn render<M: Clone>(frame: &mut Frame, area: Rect, state: &ConfirmSaveState<M>) {
-    let block = Panel::new()
-        .title(" Confirm changes ")
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
-
-    // Content rows = inner height minus 4 fixed rows (leading + spacer + buttons + trailing).
-    let content_area_height = inner.height.saturating_sub(4);
+    let inner = render_dialog_shell(frame, area, Some("Confirm changes"));
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
@@ -162,17 +153,7 @@ pub fn render<M: Clone>(frame: &mut Frame, area: Rect, state: &ConfirmSaveState<
         })
         .collect();
 
-    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),                   // leading spacer
-            Constraint::Length(content_area_height), // content
-            Constraint::Length(1),                   // spacer
-            Constraint::Length(1),                   // buttons
-            Constraint::Length(1),                   // trailing spacer
-        ])
-        .split(inner);
+    let chunks = dialog_inner_chunks(inner, None);
 
     render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 

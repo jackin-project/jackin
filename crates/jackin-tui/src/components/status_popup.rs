@@ -2,13 +2,14 @@
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    layout::{Alignment, Rect},
+    style::Style,
+    widgets::{Paragraph, Wrap},
 };
 
-use crate::theme::{PHOSPHOR_GREEN, WHITE};
+use crate::theme::WHITE;
+
+use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone)]
 pub struct StatusPopupState {
@@ -30,30 +31,8 @@ pub fn render_status_popup(frame: &mut Frame<'_>, area: Rect, state: &StatusPopu
     if area.width < 8 || area.height < 7 {
         return;
     }
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(crate::theme::GREEN)
-        .title(Span::styled(
-            format!(" {} ", state.title),
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(area);
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(block, area);
-
-    // Canonical dialog layout: leading spacer + content + spacer + status row + trailing spacer.
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // leading spacer
-            Constraint::Min(1),    // message
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // "Please wait" status indicator
-            Constraint::Length(1), // trailing spacer
-        ])
-        .split(inner);
+    let inner = render_dialog_shell(frame, area, Some(&state.title));
+    let chunks = dialog_inner_chunks(inner, None);
 
     frame.render_widget(
         Paragraph::new(state.message.as_str())

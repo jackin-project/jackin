@@ -80,7 +80,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 **Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Use `jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows))` to split the inner area into the canonical five slots and render into the correct slots.
 
-**Universal dialog scroll rule:** When a dialog's content cannot fit in the dialog area after the preferred-size shrink (Defect 7), the dialog body must scroll using the shared scroll machinery — vertical scrollbar on the right border and `↑↓`/`J`/`K`/wheel to scroll. No dialog clips content silently. `ContainerInfoState` is the reference implementation: it exposes `scroll_y`, handles Up/Down/j/k in its key handler, and calls `render_vertical_scrollbar` when `total_rows > viewport`.
+**Universal dialog scroll rule:** When a dialog's content cannot fit in the dialog area after the preferred-size shrink, the dialog body must scroll — vertical scrollbar on the right border, keyboard scroll via `↑`/`↓`/`J`/`K`/wheel. No dialog may silently clip content. Use `DialogBodyScroll` state with `handle_key()` for keyboard dispatch and `render_scrollbars()` after rendering the body. `ContainerInfoState` is the reference implementation: it exposes `scroll_y`, handles Up/Down/j/k, and calls `render_vertical_scrollbar` when `total_rows > viewport`. Any dialog that displays content of variable or potentially large length (container info, long error messages, confirm-save diff) must carry a `DialogBodyScroll` field and wire it.
 
 ### Confirmation dialogs use the canonical Yes/No layout
 
@@ -107,7 +107,7 @@ Concrete obligations:
 
 - **Open**: push the new modal *on top of* the parent — do not overwrite the slot.
 - **Esc / Cancel**: pop one frame. Operator returns to whichever modal was visible immediately before.
-- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss).
+- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss). **Implementation:** use `classify_click(modal_rect, col, row)` from `jackin_tui::components::modal_lifecycle`; result `OutsideDismiss` triggers dismiss, `InsideSwallow` and `InsideHit` are consumed by the modal and do not propagate to underlying chrome.
 - **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
 - **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
 

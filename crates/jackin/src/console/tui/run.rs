@@ -105,6 +105,20 @@ pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptS
     }
 }
 
+/// True iff no modal overlay is currently blocking input on the console surface.
+///
+/// Used by the mouse routing layer to enforce single-consumer precedence: when
+/// this returns `false`, chrome interactions (debug chip) and base-surface mouse
+/// handling are suppressed so only the active modal handles the event.
+pub(crate) fn no_modal_open(state: &ConsoleState) -> bool {
+    use crate::console::tui::state::ManagerStage;
+    let ConsoleStage::Manager(ms) = &state.stage;
+    state.quit_confirm.is_none()
+        && ms.list_modal.is_none()
+        && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
+}
+
+
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -592,64 +606,34 @@ pub async fn run_console<H: InstanceActionHandler>(
                             console_location_debug(&state)
                         );
                     }
-                    // Debug chip click: open the shared container/session info popup.
-                    // Gated on "no modal open" so a modal always owns all mouse input —
-                    // the chip handler must not fire while a picker or dialog is active.
-                    let no_modal_open = state.quit_confirm.is_none()
-                        && (if let ConsoleStage::Manager(ms) = &state.stage {
-                            ms.list_modal.is_none() && {
-                                use crate::console::tui::state::ManagerStage;
-                                !matches!(&ms.stage,
-                                    ManagerStage::Editor(e) if e.modal.is_some())
-                            }
-                        } else {
-                            true
-                        });
-                    if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
-                        && no_modal_open
-                        && let Some(chip) = last_debug_chip_area
-                    {
-                        let col = mouse.column;
-                        let row = mouse.row;
-                        if col >= chip.x
-                            && col < chip.x + chip.width
-                            && row == chip.y
-                            && let Some(run) = crate::diagnostics::active_run()
-                            && let ConsoleStage::Manager(ms) = &mut state.stage
-                        {
-                            let log_path = run.path().display().to_string();
-                            let _ = crate::console::tui::update_manager(
-                                ms,
-                                crate::console::tui::ManagerMessage::OpenListContainerInfo {
-                                    state: jackin_console::tui::components::container_info::debug_run_info_state(
-                                        run.run_id(),
-                                        log_path,
-                                    ),
-                                },
-                            );
-                        }
-                    }
-                    // Defect 10/11 — click outside any open dialog dismisses it.
-                    // Check quit_confirm first (supersedes everything): click anywhere
-                    // outside the confirm rect closes it, same as Esc.
-                    if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
-                        if let Some(confirm) = &state.quit_confirm {
+                    // Single-consumer mouse precedence:
+                    //   1. quit_confirm (supersedes everything) — consumes all input
+                    //   2. list_modal — consumes all input while open
+                    //   3. debug chip (chrome layer, only when no modal)
+                    //   4. base surface (handle_mouse_with_config)
+                    // A layer that handles the event does not fall through.
+                    let no_modal_open = no_modal_open(&state);
+
+                    // Layer 1 & 2: modal layers consume all input. Click outside = dismiss.
+                    let consumed_by_modal = if let Some(confirm) = &state.quit_confirm {
+                        if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
                             let full_area: ratatui::layout::Rect = term_size;
                             let (main_area, _) =
                                 split_debug_area(full_area, crate::tui::is_debug_mode());
                             let confirm_rect = quit_confirm_area(main_area, confirm);
-                            let col = mouse.column;
-                            let row = mouse.row;
-                            let inside = col >= confirm_rect.x
-                                && col < confirm_rect.x + confirm_rect.width
-                                && row >= confirm_rect.y
-                                && row < confirm_rect.y + confirm_rect.height;
+                            let inside = mouse.column >= confirm_rect.x
+                                && mouse.column < confirm_rect.x + confirm_rect.width
+                                && mouse.row >= confirm_rect.y
+                                && mouse.row < confirm_rect.y + confirm_rect.height;
                             if !inside {
                                 state.quit_confirm = None;
                             }
-                        } else if let ConsoleStage::Manager(ms) = &mut state.stage
-                            && let Some(modal) = &ms.list_modal
-                        {
+                        }
+                        true
+                    } else if let ConsoleStage::Manager(ms) = &mut state.stage
+                        && let Some(modal) = &ms.list_modal
+                    {
+                        if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
                             let full_area: ratatui::layout::Rect = term_size;
                             let (main_area, _) =
                                 split_debug_area(full_area, crate::tui::is_debug_mode());
@@ -657,12 +641,10 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 crate::console::tui::components::modal_layout::modal_outer_rect(
                                     modal, main_area,
                                 );
-                            let col = mouse.column;
-                            let row = mouse.row;
-                            let inside = col >= modal_rect.x
-                                && col < modal_rect.x + modal_rect.width
-                                && row >= modal_rect.y
-                                && row < modal_rect.y + modal_rect.height;
+                            let inside = mouse.column >= modal_rect.x
+                                && mouse.column < modal_rect.x + modal_rect.width
+                                && mouse.row >= modal_rect.y
+                                && mouse.row < modal_rect.y + modal_rect.height;
                             if !inside {
                                 let _ = crate::console::tui::update_manager(
                                     ms,
@@ -670,9 +652,54 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 );
                             }
                         }
-                    }
+                        true
+                    } else {
+                        false
+                    };
 
-                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                    if consumed_by_modal {
+                        // Modal owned this event — clear chip hover and revert pointer.
+                        if debug_chip_hovered {
+                            debug_chip_hovered = false;
+                            needs_redraw = true;
+                        }
+                        if pointer_is_hand {
+                            pointer_is_hand = false;
+                            let mut out = std::io::stdout();
+                            let _ = std::io::Write::write_all(
+                                &mut out,
+                                jackin_tui::ansi::POINTER_DEFAULT.as_bytes(),
+                            );
+                            let _ = std::io::Write::flush(&mut out);
+                        }
+                    } else if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        // Layer 3: chrome (debug chip) — only fires when no modal.
+                        // Debug chip click: open the shared container/session info popup.
+                        if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
+                            && no_modal_open
+                            && let Some(chip) = last_debug_chip_area
+                        {
+                            let col = mouse.column;
+                            let row = mouse.row;
+                            if col >= chip.x
+                                && col < chip.x + chip.width
+                                && row == chip.y
+                                && let Some(run) = crate::diagnostics::active_run()
+                            {
+                                let log_path = run.path().display().to_string();
+                                let _ = crate::console::tui::update_manager(
+                                    ms,
+                                    crate::console::tui::ManagerMessage::OpenListContainerInfo {
+                                        state: jackin_console::tui::components::container_info::debug_run_info_state(
+                                            run.run_id(),
+                                            log_path,
+                                        ),
+                                    },
+                                );
+                            }
+                        }
+
+                        // Layer 4: base surface.
                         let _outcome = crate::console::tui::input::handle_mouse_with_config(
                             ms,
                             mouse,
@@ -687,18 +714,13 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 effect,
                             );
                         }
-                        // Switch the terminal pointer to the hand shape over any
-                        // clickable element (and back off it), per the clickable
-                        // affordance rule — only when the state changes.
-                        // Also check the debug chip rect (managed by the run loop,
-                        // not the manager state).
+                        // Pointer + chip hover tracking.
                         let over_chip = no_modal_open
                             && last_debug_chip_area.is_some_and(|chip| {
                                 mouse.column >= chip.x
                                     && mouse.column < chip.x + chip.width
                                     && mouse.row == chip.y
                             });
-                        // Update chip hover state — drives the chip color change on next frame.
                         if over_chip != debug_chip_hovered {
                             debug_chip_hovered = over_chip;
                             needs_redraw = true;
