@@ -276,11 +276,12 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 preview_inner,
             );
 
-            // Apply 1-cell uniform padding so the component floats inside the
-            // canvas with equal breathing room on all sides.
+            // Apply 3-cell uniform padding so the component floats inside the
+            // canvas with generous breathing room on all sides — makes the dark
+            // preview background visible around every component.
             let canvas = preview_inner.inner(ratatui::layout::Margin {
-                horizontal: 1,
-                vertical: 1,
+                horizontal: 3,
+                vertical: 3,
             });
 
             // Centre component both horizontally and vertically within the padded canvas.
