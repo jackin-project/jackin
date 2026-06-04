@@ -169,3 +169,24 @@ tui/update.rs
 ```
 
 No renderer, component, or update function calls Docker, git, `op`, `gh`, the filesystem, the network, or config persistence directly. All of that travels through a typed `Effect`, executes outside `src/tui/`, and returns as a typed `Message`.
+
+---
+
+## Capsule terminal model pipeline (jackin-term)
+
+The `jackin-capsule` render path has a two-layer model:
+
+1. **Host Ratatui layer** — the multiplexer chrome (status bar, pane borders, dialog overlays, hint row) is composed by `view.rs` using `ratatui`. This is the same Elm Architecture layer as every other jackin' TUI surface.
+
+2. **Pane content layer (ANSI / `jackin-term`)** — each pane's body is raw terminal output from the agent's PTY. The capsule maintains a terminal model per pane that parses the agent's escape bytes and produces a cell grid for re-emission. This layer is **not** Ratatui — it is the `vte → DamageGrid → PassthroughEvents → WireDiff` pipeline in `crates/jackin-term/`.
+
+**Terminal model pipeline decisions:**
+
+- **Depend on `vte`, never rebuild the parser.** `vte` (by doy, MIT) is the canonical VT/ANSI parser crate. The capsule feeds raw PTY bytes to a `vte::Parser` which calls `vte::Perform` methods on the `DamageGrid`. No second parser.
+- **Own the grid.** `DamageGrid` (`crates/jackin-term/src/grid.rs`) is a `Vec<Vec<Cell>>` grid owned by jackin-term. It records dirty rows at mutation time (`DirtyTracker`). The capsule previously used a forked `vt100::Parser` (`donbeave/vt100-rust`); `DamageGrid` is the replacement. The fork remains as an oracle for the differential test harness until Phase 5 removes it.
+- **Own the emit.** `WireEmitter` (`crates/jackin-term/src/wire.rs`) converts a `GridSnapshot` + `DirtySpans` into a minimal ANSI byte sequence — cursor repositioning + SGR run-length compression + erase-to-EOL. This is NOT Ratatui. It runs after the Ratatui chrome compose and writes directly to the socket backend.
+- **Erase-to-EOL after each row is mandatory.** After emitting all cells in a row, the emit path must write `\x1b[K` (EL). This clears any stale cells from a previous wider frame. Omitting it is a correctness violation (Defect 44 class).
+- **`CompactString` for cell contents.** `Cell::contents` uses `compact_str::CompactString` which stores ≤24 bytes inline with no heap allocation. This covers all ASCII and most Unicode grapheme clusters. The public `contents() -> &str` API is unchanged.
+- **Feature-flagged cutover.** The capsule uses the `jackin-term` feature flag: `cargo build -p jackin-capsule --features jackin-term` runs through `DamageGrid`; without the flag it uses the `vt100` fork. Both paths must pass the same tests.
+- **Correctness gate: differential harness.** `tests/differential.rs` in `jackin-term` feeds identical byte streams to `DamageGrid` (left) and `vt100::Parser` (right, oracle) and asserts identical final grids. Any behavior change to `DamageGrid` must keep the harness green.
+- **`dump()` for acceptance testing.** `DamageGrid::dump()` returns a `GridSnapshot` — an owned, serializable snapshot of the full screen state with `to_text()` and `cell(row, col)` accessors. Use it in acceptance tests to assert exact screen content without going through the ANSI emit path.
