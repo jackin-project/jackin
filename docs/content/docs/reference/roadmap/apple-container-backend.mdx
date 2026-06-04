@@ -29,11 +29,10 @@ If rootless DinD fails inside apple/container — either `CAP_SYS_ADMIN` is bloc
 
 Apple Container's `vminitd` runs as PID 1 inside every VM. The current jackin-capsule daemon mode triggers on `process::id() == 1` (<RepoFile path="crates/jackin-capsule/src/main.rs" /> line 22). Since `vminitd` is PID 1 and jackin-capsule runs as the container's entrypoint (PID 2+), capsule will enter client mode instead of daemon mode.
 
-**Required code change** before Phase 0 testing:
+**Required code change** before Phase 0 testing. In <RepoFile path="crates/jackin-capsule/src/main.rs" /> the daemon-mode check is at line 22:
 
 ```rust
-// crates/jackin-capsule/src/main.rs
-// Before:
+// Before (line 22):
 let is_pid1 = std::process::id() == 1;
 
 // After:
