@@ -97,6 +97,7 @@ pub struct DamageGrid {
     hide_cursor: bool,
     bracketed_paste: bool,
     application_cursor: bool,
+    focus_events: bool,
 
     // ── Current SGR attributes (applied to newly written cells) ───────────────
     current_attrs: Attrs,
@@ -133,6 +134,7 @@ impl DamageGrid {
             hide_cursor: false,
             bracketed_paste: false,
             application_cursor: false,
+            focus_events: false,
             current_attrs: Attrs::default(),
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
@@ -336,6 +338,14 @@ impl DamageGrid {
 
     pub fn application_cursor(&self) -> bool {
         self.application_cursor
+    }
+
+    /// Whether the terminal has enabled focus-event reporting (DEC 1004).
+    ///
+    /// Mirrors the DEC mode state tracked internally so callers do not need
+    /// to maintain their own copy by draining `PassthroughEvent::FocusEvents`.
+    pub fn focus_events(&self) -> bool {
+        self.focus_events
     }
 
     // ── Internal grid helpers ─────────────────────────────────────────────────
@@ -951,8 +961,9 @@ impl DamageGrid {
             }
             // Alternate screen (simple form, no cursor save).
             47 => self.set_alt_screen(enabled),
-            // Focus events — emit for passthrough.
+            // Focus events — track state and emit for passthrough.
             1004 => {
+                self.focus_events = enabled;
                 self.passthrough
                     .push(PassthroughEvent::FocusEvents(enabled));
             }
