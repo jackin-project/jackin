@@ -1171,14 +1171,28 @@ impl Session {
         viewport_rows: u16,
         viewport_cols: u16,
     ) -> Vec<RowSnapshot> {
-        // Phase 5: DamageGrid is the primary render model.
-        // Live view always uses DamageGrid. Scrollback view still uses the vt100
-        // path via `scrollback_render_prefix` until Phase 5 OscCapture removal
-        // ports the scrollback render to DamageGrid exclusively.
+        // Phase 5: DamageGrid is the primary render model for both live and scrollback views.
         if self.scrollback_offset == 0 {
             return pane_snapshot_from_damagegrid(&self.shadow_grid, viewport_rows, viewport_cols);
         }
 
+        // Scrollback view: inject DamageGrid scrollback rows as prefix.
+        // `scrollback_rows_at_offset` returns the most recent `offset` rows from the buffer.
+        let sb_rows = self
+            .shadow_grid
+            .scrollback_rows_at_offset(self.scrollback_offset, viewport_rows as usize);
+        if !sb_rows.is_empty() {
+            // Use DamageGrid scrollback — eliminates vt100 fallback.
+            return crate::tui::render::pane_snapshot_from_damagegrid_with_scrollback(
+                &self.shadow_grid,
+                sb_rows,
+                viewport_rows,
+                viewport_cols,
+            );
+        }
+
+        // Fallback: DamageGrid scrollback empty (inline history not yet ported).
+        // Use vt100 inline scrollback prefix.
         let scrollback_prefix = self.scrollback_render_prefix(viewport_rows);
         pane_snapshot_with_scrollback_prefix(
             self.screen(),
@@ -1195,7 +1209,6 @@ impl Session {
     ///
     /// Returns `(snapshot, dirty_spans)`.  Call after every PTY read batch so
     /// the spans reflect only what changed since the last compositor tick.
-    #[cfg(feature = "jackin-term")]
     pub fn take_damagegrid_frame(
         &mut self,
     ) -> (jackin_term::GridSnapshot, jackin_term::DirtySpans) {
@@ -1328,10 +1341,8 @@ impl Session {
                 self.inline_scroll_region_tracker.region.bottom
             );
         }
-        // Shadow feed for the jackin-term feature: same bytes → DamageGrid.
-        // Fed as a batch after the vt100 per-byte loop so inline scrollback
-        // interception (which is vt100-specific) does not interfere.
-        #[cfg(feature = "jackin-term")]
+        // DamageGrid feed: same bytes processed as a batch after the vt100 per-byte loop.
+        // Phase 5: DamageGrid is always-on; vt100 remains for OscCapture + scrollback.
         self.shadow_grid.process(bytes);
 
         self.last_output_at = std::time::Instant::now();
@@ -1495,21 +1506,14 @@ impl Session {
     /// typed stream once the smoke gate passes).
     pub fn drain_passthrough(&mut self) -> Vec<Vec<u8>> {
         let out = self.parser.callbacks_mut().drain();
-        #[cfg(feature = "jackin-term")]
-        {
-            // Drain the shadow grid's PassthroughEvents and encode them.
-            // Collect into a separate Vec to avoid borrow conflicts with `out`.
-            let typed: Vec<Vec<u8>> = self
-                .shadow_grid
-                .drain_passthrough()
-                .into_iter()
-                .filter_map(|ev| ev.encode())
-                .collect();
-            // For now, silently drop typed events to avoid double-forwarding:
-            // the OscCapture path already produced the raw bytes. In Phase 5,
-            // the OscCapture path is removed and typed becomes the sole source.
-            let _ = typed;
-        }
+        // Always drain the DamageGrid's PassthroughEvents (Phase 5 — always-on).
+        // Dropped to avoid double-forwarding — OscCapture still produces raw bytes.
+        let _ = self
+            .shadow_grid
+            .drain_passthrough()
+            .into_iter()
+            .filter_map(|ev| ev.encode())
+            .collect::<Vec<_>>();
         out
     }
 
@@ -1638,7 +1642,6 @@ impl Session {
         self.inline_scroll_region_tracker.resize(rows);
         self.clamp_scrollback_offset();
         self.apply_scrollback_offset();
-        #[cfg(feature = "jackin-term")]
         self.shadow_grid.set_size(rows, cols);
     }
 

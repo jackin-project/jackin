@@ -482,6 +482,65 @@ pub(crate) fn pane_snapshot_from_damagegrid(
         .collect()
 }
 
+/// Build a snapshot from a `DamageGrid` with a scrollback prefix.
+///
+/// Mirrors `pane_snapshot_with_scrollback_prefix` for the DamageGrid path.
+/// `scrollback_rows` are the rows from `DamageGrid::scrollback_rows_at_offset()`.
+pub(crate) fn pane_snapshot_from_damagegrid_with_scrollback(
+    grid: &jackin_term::DamageGrid,
+    scrollback_rows: &[Vec<jackin_term::Cell>],
+    rect_rows: u16,
+    rect_cols: u16,
+) -> Vec<RowSnapshot> {
+    let (screen_rows, screen_cols) = grid.size();
+    let rows_to_draw = rect_rows.min(screen_rows);
+    let cols_to_draw = rect_cols.min(screen_cols);
+    let prefix_rows = scrollback_rows.len().min(rows_to_draw as usize);
+    let mut snapshot = Vec::with_capacity(rows_to_draw as usize);
+
+    // Convert scrollback rows to RowSnapshot.
+    for sb_row in scrollback_rows.iter().take(prefix_rows) {
+        snapshot.push(snapshot_damagegrid_cells(sb_row, cols_to_draw));
+    }
+
+    // Fill remaining rows from the live DamageGrid screen.
+    let live_rows = rows_to_draw.saturating_sub(prefix_rows as u16);
+    for row in 0..live_rows {
+        snapshot.push(snapshot_damagegrid_row(grid, row, cols_to_draw));
+    }
+
+    snapshot
+}
+
+/// Build a `RowSnapshot` from a raw slice of `jackin_term::Cell`s.
+fn snapshot_damagegrid_cells(cells: &[jackin_term::Cell], cols_to_draw: u16) -> RowSnapshot {
+    let mut out = Vec::with_capacity(cols_to_draw as usize);
+    let mut col = 0u16;
+    for cell in cells {
+        if col >= cols_to_draw {
+            break;
+        }
+        if cell.is_wide_continuation {
+            col += 1;
+            continue;
+        }
+        let width = if cell.is_wide { 2 } else { 1 }.min(cols_to_draw - col);
+        let attrs = cell_attrs_damagegrid(cell);
+        let contents = if cell.has_contents() {
+            cell.contents().to_string()
+        } else {
+            " ".repeat(width as usize)
+        };
+        out.push(CellSnapshot {
+            contents,
+            attrs,
+            width,
+        });
+        col += width;
+    }
+    RowSnapshot { cells: out }
+}
+
 fn cell_attrs_damagegrid(cell: &jackin_term::Cell) -> Attrs {
     Attrs {
         fg: ColorKey::from(cell.fgcolor()),
