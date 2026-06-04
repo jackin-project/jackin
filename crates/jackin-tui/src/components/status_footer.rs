@@ -175,7 +175,8 @@ pub fn render_status_footer(
             .right_debug(right_debug)
             .alpha(alpha)
             .left_hover(hover.left)
-            .right_hover(hover.right),
+            .right_hover(hover.right)
+            .right_debug_hover(hover.right_debug),
         area,
     );
 }
