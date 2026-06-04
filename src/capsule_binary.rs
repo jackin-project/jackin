@@ -118,7 +118,7 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
 }
 
 async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {
-    let is_preview = version.contains("-dev") || version.contains("-preview.");
+    let is_preview = is_preview_version(version);
     for candidate in packaged_binary_candidates(arch) {
         if !is_executable_file(&candidate) {
             continue;
@@ -260,7 +260,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     //     for the same identity marker (and the version string, when
     //     stable) since both are baked in via env! and appear as
     //     contiguous ASCII runs.
-    let is_preview = version.contains("-dev") || version.contains("-preview.");
+    let is_preview = is_preview_version(version);
     if let Err(e) = verify_version(&tmp, version, is_preview).await {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
@@ -277,10 +277,15 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
+/// A `-dev` or `-preview.` version downloads from the rolling `preview` release
+/// tag; any other version downloads from the matching `v<version>` tag.
+fn is_preview_version(version: &str) -> bool {
+    version.contains("-dev") || version.contains("-preview.")
+}
 
 fn download_url(version: &str, arch: &str) -> String {
     let target = linux_target(arch);
-    if version.contains("-dev") || version.contains("-preview.") {
+    if is_preview_version(version) {
         let asset = format!("{ASSET_PREFIX}-{target}.tar.gz");
         format!("https://github.com/jackin-project/jackin/releases/download/preview/{asset}")
     } else {
@@ -290,7 +295,7 @@ fn download_url(version: &str, arch: &str) -> String {
 }
 
 fn base_download_url(version: &str) -> String {
-    if version.contains("-dev") || version.contains("-preview.") {
+    if is_preview_version(version) {
         "https://github.com/jackin-project/jackin/releases/download/preview".to_string()
     } else {
         format!("https://github.com/jackin-project/jackin/releases/download/v{version}")
@@ -305,6 +310,12 @@ const SIGSTORE_REKOR_PUB_KEY_B64: &str =
     "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwrkBbm\
      LSGtks4L3qX6yYY0zufBnhC8Ur/iy55GhWP/9A/bY2LhC30M9+RYtw==";
 const SIGSTORE_REKOR_KEY_ID: &str = "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0=";
+
+/// The verified `capsule-manifest.json` payload: per-Linux-target SHA-256 digests.
+#[derive(serde::Deserialize)]
+struct CapsuleManifest {
+    targets: std::collections::HashMap<String, String>,
+}
 
 /// Fetch the signed `capsule-manifest.json`, verify its cosign bundle, and return
 /// the attested SHA-256 hex for the given arch target.
@@ -325,7 +336,6 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     use sigstore::cosign::bundle::SignedArtifactBundle;
     use sigstore::cosign::{Client, CosignCapabilities};
     use sigstore::crypto::CosignVerificationKey;
-    use sigstore::trust::{ManualTrustRoot, TrustRoot};
 
     let manifest_url = format!("{base_url}/capsule-manifest.json");
     let bundle_url = format!("{base_url}/capsule-manifest.json.bundle");
@@ -345,31 +355,15 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     let bundle_text = bundle_result
         .with_context(|| format!("fetching capsule manifest bundle at {bundle_url}"))?;
 
-    // Build trust root from embedded production Rekor key — no TUF network call needed.
+    // Decode the embedded production Rekor key straight into a verification key —
+    // no TUF network call, no ManualTrustRoot round-trip.
     let rekor_key_der = BASE64
         .decode(SIGSTORE_REKOR_PUB_KEY_B64)
         .context("decoding embedded Sigstore Rekor public key")?;
-    let trust_root = {
-        let mut rekor_keys = std::collections::BTreeMap::new();
-        rekor_keys.insert(SIGSTORE_REKOR_KEY_ID.to_string(), rekor_key_der);
-        ManualTrustRoot {
-            rekor_keys,
-            ..Default::default()
-        }
-    };
-
-    // Convert raw Rekor key bytes to CosignVerificationKey.
-    let raw_rekor_keys = trust_root
-        .rekor_keys()
-        .context("reading embedded Rekor keys from ManualTrustRoot")?;
-    let rekor_keys: std::collections::BTreeMap<String, CosignVerificationKey> = raw_rekor_keys
-        .into_iter()
-        .map(|(id, der)| {
-            let key = CosignVerificationKey::try_from_der(der)
-                .with_context(|| format!("parsing Rekor public key {id}"))?;
-            Ok((id.clone(), key))
-        })
-        .collect::<Result<_>>()?;
+    let rekor_key = CosignVerificationKey::try_from_der(&rekor_key_der)
+        .context("parsing embedded Sigstore Rekor public key")?;
+    let rekor_keys: std::collections::BTreeMap<String, CosignVerificationKey> =
+        std::collections::BTreeMap::from([(SIGSTORE_REKOR_KEY_ID.to_string(), rekor_key)]);
 
     // Verify Rekor Signed Entry Timestamp. `manifest_text.as_bytes()` is the exact byte
     // sequence the CI step signed — do NOT parse-then-re-serialize before this call.
@@ -421,10 +415,6 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     );
 
     // Parse the verified manifest and return the SHA256 for this arch.
-    #[derive(serde::Deserialize)]
-    struct CapsuleManifest {
-        targets: std::collections::HashMap<String, String>,
-    }
     let manifest: CapsuleManifest = serde_json::from_str(&manifest_text)
         .context("parsing verified capsule-manifest.json")?;
 
@@ -439,7 +429,7 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
 /// Extract the first URI Subject Alternative Name from a PEM-encoded X.509 certificate.
 ///
 /// Fulcio issues certificates with the OIDC subject as a URI SAN for keyless signing.
-/// Uses `x509-cert` to parse the SubjectAltName extension by OID rather than scanning
+/// Uses `x509-cert` to parse the `SubjectAltName` extension by OID rather than scanning
 /// DER bytes — prevents bypass via URL-like strings in other certificate fields.
 fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
     use x509_cert::Certificate;
@@ -451,7 +441,7 @@ fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
 
     for result in cert.tbs_certificate.filter::<SubjectAltName>() {
         let (_, san) = result.context("parsing SubjectAltName extension")?;
-        for name in san.0.iter() {
+        for name in &san.0 {
             if let GeneralName::UniformResourceIdentifier(uri) = name {
                 return Ok(uri.to_string());
             }
