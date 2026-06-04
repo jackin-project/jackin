@@ -682,12 +682,21 @@ pub async fn run_console<H: InstanceActionHandler>(
                         // Switch the terminal pointer to the hand shape over any
                         // clickable element (and back off it), per the clickable
                         // affordance rule — only when the state changes.
-                        let hand = crate::console::tui::input::clickable_at(
-                            ms,
-                            mouse,
-                            term_size,
-                            Some(&config),
-                        );
+                        // Also check the debug chip rect (managed by the run loop,
+                        // not the manager state).
+                        let over_chip = no_modal_open
+                            && last_debug_chip_area.is_some_and(|chip| {
+                                mouse.column >= chip.x
+                                    && mouse.column < chip.x + chip.width
+                                    && mouse.row == chip.y
+                            });
+                        let hand = over_chip
+                            || crate::console::tui::input::clickable_at(
+                                ms,
+                                mouse,
+                                term_size,
+                                Some(&config),
+                            );
                         if hand != pointer_is_hand {
                             pointer_is_hand = hand;
                             let seq = if hand {
