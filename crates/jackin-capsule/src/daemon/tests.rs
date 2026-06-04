@@ -1680,11 +1680,12 @@ fn kitty_escape_in_agent_picker_returns_to_menu() {
 #[test]
 fn mouse_sgr_encoding_preserves_press_and_release() {
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, true, vt100::MouseProtocolEncoding::Sgr).unwrap(),
+        encode_mouse_for_protocol(0, 12, 3, true, jackin_term::MouseProtocolEncoding::Sgr).unwrap(),
         b"\x1b[<0;12;3M"
     );
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, false, vt100::MouseProtocolEncoding::Sgr).unwrap(),
+        encode_mouse_for_protocol(0, 12, 3, false, jackin_term::MouseProtocolEncoding::Sgr)
+            .unwrap(),
         b"\x1b[<0;12;3m"
     );
 }
@@ -1692,18 +1693,20 @@ fn mouse_sgr_encoding_preserves_press_and_release() {
 #[test]
 fn mouse_default_encoding_uses_xterm_fields() {
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, true, vt100::MouseProtocolEncoding::Default).unwrap(),
+        encode_mouse_for_protocol(0, 12, 3, true, jackin_term::MouseProtocolEncoding::Default)
+            .unwrap(),
         b"\x1b[M ,#"
     );
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, false, vt100::MouseProtocolEncoding::Default).unwrap(),
+        encode_mouse_for_protocol(0, 12, 3, false, jackin_term::MouseProtocolEncoding::Default)
+            .unwrap(),
         b"\x1b[M#,#"
     );
 }
 
 #[test]
 fn mouse_mode_filter_respects_tracking_granularity() {
-    use vt100::MouseProtocolMode;
+    use jackin_term::MouseProtocolMode;
 
     assert!(!mouse_event_allowed_for_mode(
         MouseProtocolMode::None,

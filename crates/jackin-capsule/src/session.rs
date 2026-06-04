@@ -1264,14 +1264,12 @@ impl Session {
         )
     }
 
-    pub fn mouse_protocol_encoding(&self) -> vt100::MouseProtocolEncoding {
-        // Phase 5 TODO: migrate callers to jackin_term::MouseProtocolEncoding.
-        self.parser.screen().mouse_protocol_encoding()
+    pub fn mouse_protocol_encoding(&self) -> jackin_term::MouseProtocolEncoding {
+        self.shadow_grid.mouse_protocol_encoding()
     }
 
-    pub fn mouse_protocol_mode(&self) -> vt100::MouseProtocolMode {
-        // Phase 5 TODO: migrate callers to jackin_term::MouseProtocolMode.
-        self.parser.screen().mouse_protocol_mode()
+    pub fn mouse_protocol_mode(&self) -> jackin_term::MouseProtocolMode {
+        self.shadow_grid.mouse_protocol_mode()
     }
 
     /// True when the session enabled DEC private mode `?1004` (focus

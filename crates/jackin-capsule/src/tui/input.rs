@@ -65,11 +65,11 @@ pub(crate) fn is_wheel_button(button: u8) -> bool {
 }
 
 pub(crate) fn mouse_event_allowed_for_mode(
-    mode: vt100::MouseProtocolMode,
+    mode: jackin_term::MouseProtocolMode,
     button: u8,
     press: bool,
 ) -> bool {
-    if mode == vt100::MouseProtocolMode::None {
+    if mode == jackin_term::MouseProtocolMode::None {
         return false;
     }
     if is_wheel_button(button) {
@@ -79,20 +79,25 @@ pub(crate) fn mouse_event_allowed_for_mode(
     let motion = button & 0b100000 != 0;
     let passive_motion = motion && button & 0b11 == 3;
     match mode {
-        vt100::MouseProtocolMode::None => false,
-        vt100::MouseProtocolMode::Press => press && !motion,
-        vt100::MouseProtocolMode::PressRelease => !motion,
-        vt100::MouseProtocolMode::ButtonMotion => !passive_motion,
-        vt100::MouseProtocolMode::AnyMotion => true,
+        jackin_term::MouseProtocolMode::None => false,
+        jackin_term::MouseProtocolMode::Press => press && !motion,
+        // PressRelease = mode 1001: press + release events, no motion.
+        jackin_term::MouseProtocolMode::PressRelease => !motion,
+        // ButtonMotion = mode 1002: press + release + button-held motion, no passive motion.
+        jackin_term::MouseProtocolMode::ButtonMotion => !passive_motion,
+        // AnyEvent and AnyMotion are aliases for mode 1003: all events.
+        jackin_term::MouseProtocolMode::AnyEvent | jackin_term::MouseProtocolMode::AnyMotion => {
+            true
+        }
     }
 }
 
 pub(crate) fn mouse_event_encoding_for_mode(
-    mode: vt100::MouseProtocolMode,
-    encoding: vt100::MouseProtocolEncoding,
+    mode: jackin_term::MouseProtocolMode,
+    encoding: jackin_term::MouseProtocolEncoding,
     button: u8,
     press: bool,
-) -> Option<vt100::MouseProtocolEncoding> {
+) -> Option<jackin_term::MouseProtocolEncoding> {
     if mouse_event_allowed_for_mode(mode, button, press) {
         return Some(encoding);
     }
@@ -104,14 +109,17 @@ pub(crate) fn encode_mouse_for_protocol(
     col: u16,
     row: u16,
     press: bool,
-    encoding: vt100::MouseProtocolEncoding,
+    encoding: jackin_term::MouseProtocolEncoding,
 ) -> Option<Vec<u8>> {
     match encoding {
-        vt100::MouseProtocolEncoding::Sgr => {
+        jackin_term::MouseProtocolEncoding::Sgr => {
             let final_byte = if press { 'M' } else { 'm' };
             Some(format!("\x1b[<{button};{col};{row}{final_byte}").into_bytes())
         }
-        vt100::MouseProtocolEncoding::Default | vt100::MouseProtocolEncoding::Utf8 => {
+        jackin_term::MouseProtocolEncoding::Default
+        | jackin_term::MouseProtocolEncoding::Utf8
+        // Urxvt uses decimal coordinates but the same CSI M prefix — treat as Default.
+        | jackin_term::MouseProtocolEncoding::Urxvt => {
             let release_button = (button & !0b11) | 3;
             let button_code = if press { button } else { release_button };
             let mut out = b"\x1b[M".to_vec();
@@ -152,18 +160,18 @@ pub(crate) fn encode_wheel_cursor_fallback(
 pub(crate) fn push_xterm_mouse_number(
     out: &mut Vec<u8>,
     value: u32,
-    encoding: vt100::MouseProtocolEncoding,
+    encoding: jackin_term::MouseProtocolEncoding,
 ) -> Option<()> {
     match encoding {
-        vt100::MouseProtocolEncoding::Default => {
+        jackin_term::MouseProtocolEncoding::Default | jackin_term::MouseProtocolEncoding::Urxvt => {
             out.push(u8::try_from(value).ok()?);
         }
-        vt100::MouseProtocolEncoding::Utf8 => {
+        jackin_term::MouseProtocolEncoding::Utf8 => {
             let ch = char::from_u32(value)?;
             let mut buf = [0u8; 4];
             out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
         }
-        vt100::MouseProtocolEncoding::Sgr => unreachable!("SGR does not use xterm fields"),
+        jackin_term::MouseProtocolEncoding::Sgr => unreachable!("SGR does not use xterm fields"),
     }
     Some(())
 }
