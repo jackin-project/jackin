@@ -333,6 +333,10 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
     pub(crate) pane_screens: &'a [(u64, jackin_term::GridSnapshot)],
+    pub(crate) sessions_state: &'a [(u64, VisibleAgentState)],
+    pub(crate) prefix_mode: crate::tui::components::status_bar::PrefixMode,
+    pub(crate) hovered_tab: Option<usize>,
+    pub(crate) menu_hovered: bool,
 }
 
 pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>) {
@@ -347,6 +351,10 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             tabs: view.tabs,
             active_tab: view.active_tab,
             cols: view.term_cols,
+            sessions_state: view.sessions_state,
+            prefix_mode: view.prefix_mode,
+            hovered_tab: view.hovered_tab,
+            menu_hovered: view.menu_hovered,
         },
         status_area,
     );

@@ -175,6 +175,11 @@ impl Multiplexer {
         let focused_id = self.active_focused_id();
         let zoomed = self.active_zoomed_id().is_some();
         let dialog_open = self.dialog_open();
+        // Status-bar inputs snapshotted before the draw closure borrows self.
+        let session_states = self.snapshot_session_states();
+        let prefix_mode = self.status_bar.prefix_mode;
+        let hovered_tab = crate::tui::view::hovered_tab(self.hover_target);
+        let menu_hovered = crate::tui::view::hovered_menu(self.hover_target);
         let github_view_for_hint = self.github_context_view();
         let dialog_hint_spans = self
             .dialog_top()
@@ -234,9 +239,23 @@ impl Multiplexer {
                     dialog_open,
                     dialog_snapshot: dialog_snapshot.as_ref(),
                     pane_screens: &pane_screens,
+                    sessions_state: &session_states,
+                    prefix_mode,
+                    hovered_tab,
+                    menu_hovered,
                 },
             );
         });
+
+        // Keep tab/menu click regions in sync with the columns the widget
+        // just painted (both derive from status_bar_plan), so hit-testing is
+        // correct after a Ratatui frame, not just after a raw one.
+        self.status_bar.refresh_click_regions(
+            self.term_cols,
+            &self.tabs,
+            self.active_tab,
+            &session_states,
+        );
 
         match result {
             Ok(_) => {

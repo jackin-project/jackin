@@ -379,13 +379,144 @@ impl StatusBar {
             .iter()
             .position(|&(start, end)| c >= start && c < end)
     }
+
+    /// Recompute the tab + menu click regions WITHOUT emitting any bytes.
+    ///
+    /// Hit-testing reads `tab_regions` / `hint_region`. The raw `render`
+    /// sets them as a side effect, but the Ratatui `StatusBarWidget` draws
+    /// the bar without going through `render`, so during a Ratatui frame the
+    /// regions would otherwise reflect whatever the last raw frame computed —
+    /// stale once tabs or width changed. The Ratatui compositor calls this
+    /// after each draw so the regions always match the columns the widget
+    /// painted (both derive from the one `status_bar_plan`).
+    pub fn refresh_click_regions(
+        &mut self,
+        cols: u16,
+        tabs: &[Tab],
+        active_tab: usize,
+        sessions_state: &[(u64, VisibleAgentState)],
+    ) {
+        let plan = status_bar_plan(cols, tabs, active_tab, sessions_state, self.prefix_mode);
+        self.tab_regions = plan
+            .cells
+            .iter()
+            .map(|c| (c.start_col0 + 1, c.start_col0 + 1 + c.cell_cols))
+            .collect();
+        self.hint_region = plan.hint_start.map(|start| (start, start + plan.hint_cols));
+    }
+}
+
+/// One laid-out tab cell, resolved name + state glyph, in 0-based columns.
+pub(crate) struct StatusTabCell {
+    pub(crate) start_col0: u16,
+    pub(crate) cell_cols: u16,
+    pub(crate) active: bool,
+    pub(crate) name: String,
+    pub(crate) glyph: TabGlyph,
+}
+
+/// Geometry for the whole status bar (row 0): which tab cells fit, where the
+/// right-side menu button sits, and whether an overflow `›` is needed. The
+/// single source of truth shared by the Ratatui `StatusBarWidget` (which
+/// paints it) and `StatusBar::refresh_click_regions` (which turns it into
+/// click regions) so the two cannot drift on column maths.
+pub(crate) struct StatusBarPlan {
+    pub(crate) cells: Vec<StatusTabCell>,
+    pub(crate) hint_text: String,
+    pub(crate) hint_cols: u16,
+    /// 1-based start column of the menu button, or `None` when there is no
+    /// room for it without overlapping the brand pill.
+    pub(crate) hint_start: Option<u16>,
+    /// 1-based column for the overflow `›` indicator, set only when at least
+    /// one tab was clipped past the right edge.
+    pub(crate) overflow_col: Option<u16>,
+}
+
+pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> String {
+    match prefix_mode {
+        PrefixMode::Idle => " ☰Menu ".to_string(),
+        PrefixMode::Awaiting => " prefix… ".to_string(),
+    }
+}
+
+/// Lay out row 0 of the status bar. Mirrors the column maths in
+/// `StatusBar::render` exactly — both call `lay_out_tabs` with the same
+/// glyph-padded labels and reserve the same right-side button width — so a
+/// click region computed from this plan lands on the cell the widget drew.
+pub(crate) fn status_bar_plan(
+    cols: u16,
+    tabs: &[Tab],
+    active_tab: usize,
+    sessions_state: &[(u64, VisibleAgentState)],
+    prefix_mode: PrefixMode,
+) -> StatusBarPlan {
+    let hint_text = button_text_for(prefix_mode);
+    let hint_cols = display_cols(&hint_text);
+    let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
+
+    let resolved: Vec<(String, TabGlyph, bool)> = tabs
+        .iter()
+        .enumerate()
+        .map(|(i, tab)| {
+            let (name, glyph) = tab_label(tab, sessions_state);
+            (name, glyph, i == active_tab)
+        })
+        .collect();
+    let padded: Vec<String> = resolved
+        .iter()
+        .map(|(name, _, _)| tab_display_label(name))
+        .collect();
+    let label_refs: Vec<(&str, bool)> = padded
+        .iter()
+        .zip(resolved.iter())
+        .map(|(label, (_, _, active))| (label.as_str(), *active))
+        .collect();
+
+    let start_col_0based = display_cols(BRAND_TEXT) + BRAND_PAD_COLS;
+    let laid = lay_out_tabs(&label_refs, start_col_0based);
+    let max_tab_col = cols.saturating_sub(reserve_right);
+
+    let mut cells = Vec::with_capacity(laid.len());
+    let mut clipped = false;
+    for (cell, (name, glyph, active)) in laid.iter().zip(resolved.iter()) {
+        if cell.start_col + cell.cell_cols > max_tab_col {
+            clipped = true;
+            break;
+        }
+        cells.push(StatusTabCell {
+            start_col0: cell.start_col,
+            cell_cols: cell.cell_cols,
+            active: *active,
+            name: name.clone(),
+            glyph: *glyph,
+        });
+    }
+
+    let brand_end_1based = start_col_0based.saturating_add(1);
+    let hint_candidate = cols.saturating_sub(hint_cols);
+    let hint_start = (hint_candidate > brand_end_1based).then_some(hint_candidate);
+
+    let overflow_col = if clipped {
+        let pos = cols.saturating_sub(reserve_right);
+        (pos > brand_end_1based).then_some(pos)
+    } else {
+        None
+    };
+
+    StatusBarPlan {
+        cells,
+        hint_text,
+        hint_cols,
+        hint_start,
+        overflow_col,
+    }
 }
 
 /// State glyph the status-bar paints in the rightmost slot of a tab
 /// cell. The `●` Blocked variant is rendered in red so the operator
 /// can spot "agent is waiting for you" without reading labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TabGlyph {
+pub(crate) enum TabGlyph {
     /// `Working` / `Idle` — single space placeholder. The slot is
     /// always reserved so cell width stays stable across state
     /// transitions.

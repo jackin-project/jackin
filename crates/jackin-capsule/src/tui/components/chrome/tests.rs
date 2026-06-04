@@ -13,6 +13,10 @@ fn status_bar_renders_without_tabs() {
                     tabs: &[],
                     active_tab: 0,
                     cols: 80,
+                    sessions_state: &[],
+                    prefix_mode: crate::tui::components::status_bar::PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
                 },
                 frame.area(),
             );
@@ -20,8 +24,8 @@ fn status_bar_renders_without_tabs() {
         .unwrap();
     let buf = terminal.backend().buffer();
     // Brand pill should appear in row 0
-    let row0: String = (0..5).map(|x| buf[(x, 0)].symbol().to_string()).collect();
-    assert!(row0.contains("▓"), "brand pill missing: {row0:?}");
+    let row0: String = (0..9).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+    assert!(row0.contains("jackin'"), "brand pill missing: {row0:?}");
 }
 
 #[test]
@@ -36,6 +40,10 @@ fn status_bar_renders_shared_tab_underline() {
                     tabs: &tabs,
                     active_tab: 0,
                     cols: 80,
+                    sessions_state: &[],
+                    prefix_mode: crate::tui::components::status_bar::PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
                 },
                 frame.area(),
             );
@@ -45,7 +53,7 @@ fn status_bar_renders_shared_tab_underline() {
     let tab_start = u16::try_from(jackin_tui::display_cols(BRAND_TEXT)).unwrap() + 1;
 
     assert_eq!(buf[(tab_start, 1)].symbol(), "━");
-    assert_eq!(buf[(tab_start, 1)].fg, tc(jackin_tui::WHITE));
+    assert_eq!(buf[(tab_start, 1)].fg, jackin_tui::theme::WHITE);
 }
 
 #[test]
@@ -58,7 +66,7 @@ fn dialog_backdrop_fills_with_black() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    let expected = tc(jackin_tui::DIALOG_BACKDROP);
+    let expected = jackin_tui::theme::DIALOG_BACKDROP;
     assert_eq!(buf[(0, 0)].bg, expected);
     assert_eq!(buf[(9, 4)].bg, expected);
 }

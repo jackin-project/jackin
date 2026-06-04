@@ -25,6 +25,40 @@ fn tab_click_region_width_matches_layout() {
 }
 
 #[test]
+fn refresh_click_regions_matches_raw_render_regions() {
+    // PR #495 migration invariant: the Ratatui StatusBarWidget computes its
+    // click regions via refresh_click_regions, the raw StatusBar::render sets
+    // them inline. Both must agree exactly, or a click after a Ratatui frame
+    // lands on the wrong tab. Cover several widths incl. an overflow case.
+    let tabs = vec![
+        Tab::new_single("Claude", 1),
+        Tab::new_single("Codex", 2),
+        Tab::new_single("OpenCode", 3),
+    ];
+    let states = vec![
+        (1u64, VisibleAgentState::Blocked),
+        (2u64, VisibleAgentState::Done),
+    ];
+    for cols in [80u16, 120, 40, 24] {
+        let mut raw = StatusBar::new();
+        let mut buf = Vec::new();
+        raw.render(&mut buf, cols, &tabs, 1, &states, None, false);
+
+        let mut widget = StatusBar::new();
+        widget.refresh_click_regions(cols, &tabs, 1, &states);
+
+        assert_eq!(
+            widget.tab_regions, raw.tab_regions,
+            "tab regions diverged at cols={cols}"
+        );
+        assert_eq!(
+            widget.hint_region, raw.hint_region,
+            "hint region diverged at cols={cols}"
+        );
+    }
+}
+
+#[test]
 fn tab_display_label_has_no_name_centering_padding() {
     assert_eq!(tab_display_label("Kimi"), "Kimi X");
     assert_eq!(tab_display_label("OpenCode"), "OpenCode X");
