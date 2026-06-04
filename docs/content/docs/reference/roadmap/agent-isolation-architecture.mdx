@@ -95,13 +95,13 @@ The credential exposure problem requires a different mechanism than both VM isol
 
 The answer: a two-tier workspace env model and a `jackin-exec` subcommand of `jackin-capsule`.
 
-**Two env tiers:**
-- `env.*` (always-available): injected into container at launch, all processes see them — used for non-sensitive config
-- `secure_exec.*` (protected): NOT in container env, NOT visible via `printenv`, resolved by the host at launch and stored capsule-private, materialized only during `jackin-capsule exec` invocations
+**Two env tiers — same `env` map, one new flag:**
+- `{ op = "...", path = "..." }` (default): injected into container at launch, all processes see the resolved value
+- `{ op = "...", path = "...", on_demand = true }`: NOT injected at launch, NOT visible via `printenv`; appears in a TUI picker dialog when the agent calls `jackin-exec`, operator selects which credentials to attach, host resolves via `op read` at that moment, injected ephemerally for the command duration
 
-**`jackin-exec` = `jackin-capsule exec`**: a symlink to the capsule binary, not a separate artifact. The agent calls `jackin-exec ssh sentry`; the capsule subcommand injects the SSH key as a temp file under `/jackin/run/secrets/`, runs the command, scans output for secret patterns, deletes the key, and returns sanitized output. The raw credential value never appears in the agent's process environment.
+**`jackin-exec` = `jackin-capsule exec`**: a symlink, not a separate binary. The agent calls `jackin-exec gh pr create`; the capsule subcommand shows the on-demand picker, resolves selected credentials via the host process, injects them as temp env vars, runs the command, scans output for leaked values, deletes temp values. Raw credential values never appear in the container's process environment.
 
-This is the same architecture Docker Sandboxes uses for its host-side credential proxy — except jackin' builds it explicitly, with a TUI-native operator approval dialog, instead of relying on Docker's opaque implementation.
+This is the same architecture Docker Sandboxes uses for its host-side credential proxy — except jackin' builds it explicitly, with a TUI-native picker dialog and full operator control.
 
 ---
 
