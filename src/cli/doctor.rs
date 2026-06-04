@@ -60,9 +60,8 @@ pub async fn run(args: &DoctorArgs, paths: &JackinPaths) -> anyhow::Result<()> {
         );
         println!("  Run with `--debug` if you need a diagnostics run id to share.");
         anyhow::bail!("doctor checks failed");
-    } else {
-        println!("{}", "✓  all checks passed (or warned)".green());
     }
+    println!("{}", "✓  all checks passed (or warned)".green());
     Ok(())
 }
 

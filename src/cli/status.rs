@@ -88,6 +88,7 @@ pub async fn run(args: &StatusArgs, paths: &JackinPaths) -> anyhow::Result<()> {
 
 // ── Level 0 — workspace summary ─────────────────────────────────────────────
 
+#[allow(clippy::too_many_lines)]
 async fn run_level0(
     args: &StatusArgs,
     paths: &JackinPaths,
@@ -181,10 +182,7 @@ async fn run_level0(
         .max()
         .unwrap_or(9)
         .max(9);
-    println!(
-        "  {:<ws_width$}  {:<9}  {}",
-        "workspace", "instances", "state"
-    );
+    println!("  {:<ws_width$}  {:<9}  state", "workspace", "instances");
     println!("  {}", "─".repeat(ws_width + 2 + 9 + 2 + 30));
 
     for (ws_name, total, running, stopped) in &filtered {
@@ -195,7 +193,7 @@ async fn run_level0(
         } else {
             format!("{stopped} stopped")
         };
-        println!("  {:<ws_width$}  {:<9}  {}", ws_name, total, state);
+        println!("  {ws_name:<ws_width$}  {total:<9}  {state}");
     }
 
     let _total_instances: usize = filtered.iter().map(|(_, t, _, _)| t).sum();
@@ -308,22 +306,19 @@ async fn run_level1(
         .unwrap_or(4)
         .max(4);
 
-    println!(
-        "  {:<id_width$}  {:<role_width$}  {:<8}  {}",
-        "instance", "role", "state", "pr"
-    );
+    println!("  {:<id_width$}  {:<role_width$}  {:<8}  pr", "instance", "role", "state");
     println!(
         "  {}",
         "─".repeat(id_width + 2 + role_width + 2 + 8 + 2 + 10)
     );
 
     for (entry, state) in &rows {
+        // "—" for pr: Level 2 detail query needed for that
         println!(
-            "  {:<id_width$}  {:<role_width$}  {:<8}  {}",
+            "  {:<id_width$}  {:<role_width$}  {:<8}  —",
             entry.instance_id,
             entry.role_key,
             state.short_label(),
-            "—", // PR info requires Level 2 detail query
         );
     }
 
@@ -335,6 +330,7 @@ async fn run_level1(
 
 // ── Level 2 — full instance detail ───────────────────────────────────────────
 
+#[allow(clippy::too_many_lines)]
 async fn run_level2(
     workspace: &str,
     instance_id: &str,
@@ -389,20 +385,18 @@ async fn run_level2(
     if format == OutputFormat::Json {
         let agents_value = agents_json
             .as_ref()
-            .map(|a| serde_json::to_value(a).unwrap_or(serde_json::Value::Null))
-            .unwrap_or(serde_json::Value::Null);
-        let pr_value = pr_info
-            .as_ref()
-            .map(|p| {
-                serde_json::json!({
-                    "number": p.number,
-                    "title": p.title,
-                    "url": p.url,
-                    "ci_status": p.ci_status,
-                    "ci_failing_check": p.ci_failing_check,
-                })
+            .map_or(serde_json::Value::Null, |a| {
+                serde_json::to_value(a).unwrap_or(serde_json::Value::Null)
+            });
+        let pr_value = pr_info.as_ref().map_or(serde_json::Value::Null, |p| {
+            serde_json::json!({
+                "number": p.number,
+                "title": p.title,
+                "url": p.url,
+                "ci_status": p.ci_status,
+                "ci_failing_check": p.ci_failing_check,
             })
-            .unwrap_or(serde_json::Value::Null);
+        });
         let envelope = serde_json::json!({
             "schema_version": "v1",
             "instances": [{
@@ -445,8 +439,8 @@ async fn run_level2(
     // Agent table.
     if let Some(agents) = &agents_json {
         println!(
-            "  {:<12}  {:<10}  {:<14}  {:<20}  {:<20}  {}",
-            "codename", "agent", "provider", "started", "exited", "status"
+            "  {:<12}  {:<10}  {:<14}  {:<20}  {:<20}  status",
+            "codename", "agent", "provider", "started", "exited"
         );
         println!("  {}", "─".repeat(83));
 
@@ -462,10 +456,7 @@ async fn run_level2(
                 a.agent.as_deref().unwrap_or("shell"),
                 a.provider.as_deref().unwrap_or("—"),
                 compact_ts(&a.started_at),
-                a.exited_at
-                    .as_deref()
-                    .map(compact_ts)
-                    .unwrap_or_else(|| "—".to_string()),
+                a.exited_at.as_deref().map_or_else(|| "—".to_string(), compact_ts),
                 a.status,
             );
         }
@@ -493,15 +484,12 @@ struct PrInfo {
 impl PrInfo {
     fn ci_display(&self) -> String {
         match self.ci_status.as_str() {
-            "passing" | "success" => format!("✓ passing"),
+            "passing" | "success" => "✓ passing".to_string(),
             "pending" => "⏳ pending".to_string(),
-            "failing" | "failure" | "error" => {
-                if let Some(check) = &self.ci_failing_check {
-                    format!("✗ failing — {check}")
-                } else {
-                    "✗ failing".to_string()
-                }
-            }
+            "failing" | "failure" | "error" => self
+                .ci_failing_check
+                .as_ref()
+                .map_or_else(|| "✗ failing".to_string(), |check| format!("✗ failing — {check}")),
             _ => "—".to_string(),
         }
     }
@@ -530,9 +518,8 @@ async fn fetch_pr_info(docker: &impl DockerApi, container_name: &str) -> Option<
 }
 
 fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
-    let checks = match rollup.as_array() {
-        Some(a) => a,
-        None => return ("—".to_string(), None),
+    let Some(checks) = rollup.as_array() else {
+        return ("—".to_string(), None);
     };
     if checks.is_empty() {
         return ("—".to_string(), None);

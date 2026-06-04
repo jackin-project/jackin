@@ -1,17 +1,19 @@
 /// First-run onboarding wizard.
 ///
-/// Triggered when `jackin console` is invoked with no existing config and
-/// an interactive TTY. Runs pre-flight checks, asks a few setup questions,
-/// writes a starter `~/.config/jackin/config.toml`, and explains how to run
-/// a role so the operator can use `jackin load` immediately.
+/// Triggered when `jackin console` is invoked with no existing config and an
+/// interactive TTY. Runs pre-flight checks, asks a few setup questions, writes
+/// a starter `~/.config/jackin/config.toml`, and explains how to run a role.
+use std::io::{self, Write as _};
+
 use owo_colors::OwoColorize;
 
 use crate::paths::JackinPaths;
 
-/// Run the first-run onboarding wizard on stderr (the console TUI has not
-/// opened yet). Returns `Ok(())` if setup completed; the caller proceeds to
-/// launch the console normally. Returns `Err` only on unrecoverable I/O.
-pub async fn run(paths: &JackinPaths) -> anyhow::Result<()> {
+/// Run the first-run onboarding wizard.
+///
+/// Called before the console TUI opens. Returns `Ok(())` on success.
+#[allow(clippy::too_many_lines)]
+pub fn run(paths: &JackinPaths) -> anyhow::Result<()> {
     println!();
     println!("{}", "Welcome to jackin'!".bold());
     println!(
@@ -46,10 +48,8 @@ pub async fn run(paths: &JackinPaths) -> anyhow::Result<()> {
     );
     println!("   Press Enter to use the current directory.");
     let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "~".to_string());
+        .map_or_else(|_| "~".to_string(), |p| p.to_string_lossy().into_owned());
     print!("   Workspace [{}]: ", cwd.dimmed());
-    use std::io::{self, Write as _};
     io::stdout().flush().ok();
 
     let mut workspace_input = String::new();
@@ -57,7 +57,7 @@ pub async fn run(paths: &JackinPaths) -> anyhow::Result<()> {
     let workspace_dir = {
         let trimmed = workspace_input.trim();
         if trimmed.is_empty() {
-            cwd.clone()
+            cwd
         } else {
             trimmed.to_string()
         }

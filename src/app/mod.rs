@@ -201,7 +201,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 use std::io::IsTerminal;
                 std::io::stdout().is_terminal()
             } {
-                crate::cli::wizard::run(&paths).await?;
+                crate::cli::wizard::run(&paths)?;
                 // Re-load the config the wizard wrote before proceeding.
                 config = AppConfig::load_or_init(&paths)?;
             }
@@ -1564,7 +1564,7 @@ fn print_dry_run_plan(
     let mount_lines: Vec<String> = workspace
         .mounts
         .iter()
-        .map(|m| format!("  {}  <-  {}  ({})", m.dst, m.src, m.isolation.to_string()))
+        .map(|m| format!("  {}  <-  {}  ({})", m.dst, m.src, m.isolation))
         .collect();
 
     if format == "json" {
@@ -1594,11 +1594,8 @@ fn print_dry_run_plan(
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
         println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
-        let role_display = if let Some(branch) = role_branch {
-            format!("{} (branch: {branch})", class.to_string())
-        } else {
-            class.to_string().to_string()
-        };
+        let role_display = role_branch
+            .map_or_else(|| class.to_string(), |branch| format!("{class} (branch: {branch})"));
         println!("Role:       {role_display}");
         println!("Agent:      {agent_slug}");
         if rebuild {

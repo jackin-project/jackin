@@ -29,7 +29,7 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::E001 => "E001",
             Self::E002 => "E002",
@@ -60,7 +60,7 @@ pub struct UserMessage {
 }
 
 impl UserMessage {
-    fn new(code: ErrorCode, headline: &'static str, what_to_try: &'static str) -> Self {
+    const fn new(code: ErrorCode, headline: &'static str, what_to_try: &'static str) -> Self {
         Self {
             code,
             headline,
@@ -69,7 +69,7 @@ impl UserMessage {
         }
     }
 
-    fn with_detail(mut self, detail: &'static str) -> Self {
+    const fn with_detail(mut self, detail: &'static str) -> Self {
         self.more_detail = Some(detail);
         self
     }

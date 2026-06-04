@@ -19,7 +19,7 @@ pub enum CheckStatus {
 }
 
 impl CheckStatus {
-    pub fn symbol(self) -> &'static str {
+    pub const fn symbol(self) -> &'static str {
         match self {
             Self::Ok => "ok  ",
             Self::Warn => "warn",
@@ -94,7 +94,7 @@ pub enum CheckName {
 }
 
 impl CheckName {
-    pub fn all() -> &'static [Self] {
+    pub const fn all() -> &'static [Self] {
         &[
             Self::DockerDaemon,
             Self::DockerVersion,
@@ -112,7 +112,7 @@ impl CheckName {
     }
 
     /// Minimal set of checks run as a pre-flight gate before `load` / `hardline`.
-    pub fn preflight_required() -> &'static [Self] {
+    pub const fn preflight_required() -> &'static [Self] {
         &[
             Self::DockerDaemon,
             Self::DiskSpace,
@@ -264,7 +264,7 @@ fn check_config_dir(config_dir: &Path) -> CheckResult {
     // Check writability by attempting a temp file.
     let probe = config_dir.join(".jackin_probe");
     match std::fs::write(&probe, b"") {
-        Ok(_) => {
+        Ok(()) => {
             let _ = std::fs::remove_file(&probe);
             CheckResult::ok(
                 "config_dir",
@@ -395,17 +395,15 @@ async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckRe
     // The managed label string; same value as runtime::naming::LABEL_MANAGED.
     const MANAGED: &str = "jackin.managed=true";
 
-    let docker = match BollardDockerClient::connect() {
-        Ok(d) => d,
-        Err(_) => return CheckResult::skip("orphaned_containers", "Docker unavailable"),
+    let Ok(docker) = BollardDockerClient::connect() else {
+        return CheckResult::skip("orphaned_containers", "Docker unavailable");
     };
-    let containers = match docker.list_containers(&[MANAGED], true).await {
-        Ok(c) => c,
-        Err(_) => return CheckResult::skip("orphaned_containers", "Could not list containers"),
+    let Ok(containers) = docker.list_containers(&[MANAGED], true).await else {
+        return CheckResult::skip("orphaned_containers", "Could not list containers");
     };
-    let index = match crate::instance::manifest::InstanceIndex::read_or_rebuild(&paths.data_dir) {
-        Ok(i) => i,
-        Err(_) => return CheckResult::skip("orphaned_containers", "Could not read instance index"),
+    let Ok(index) = crate::instance::manifest::InstanceIndex::read_or_rebuild(&paths.data_dir)
+    else {
+        return CheckResult::skip("orphaned_containers", "Could not read instance index");
     };
     let known: std::collections::HashSet<&str> = index
         .instances
@@ -439,16 +437,13 @@ fn check_stale_isolation(paths: &crate::paths::JackinPaths) -> CheckResult {
     if let Ok(entries) = std::fs::read_dir(state_dir) {
         for entry in entries.flatten() {
             let iso = entry.path().join("isolation.json");
-            if iso.exists() {
-                if let Ok(content) = std::fs::read_to_string(&iso) {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if let Some(path) = val.get("worktree_path").and_then(|v| v.as_str()) {
-                            if !std::path::Path::new(path).exists() {
-                                stale += 1;
-                            }
-                        }
-                    }
-                }
+            if iso.exists()
+                && let Ok(content) = std::fs::read_to_string(&iso)
+                && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
+                && let Some(path) = val.get("worktree_path").and_then(|v| v.as_str())
+                && !std::path::Path::new(path).exists()
+            {
+                stale += 1;
             }
         }
     }
