@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "../operator-cli-hygiene",
-    "../jackin-join-and-debug-bundle"
+    "../jackin-join-and-debug-bundle",
+    "../agent-tab-codenames"
   ]
 }
