@@ -7911,13 +7911,13 @@ plugins = []
 [docker]
 dind = "none"
 "#;
-        let (run_cmd, runner, _temp) = run_load_core_with_manifest(
+        let (result, runner, _temp) = run_load_core_with_manifest(
             &[],
             Some(crate::runtime::docker_profile::DockerSecurityProfile::Standard),
             Some(manifest),
-            false,
         )
         .await;
+        let run_cmd = result.unwrap();
         assert!(
             !runner.recorded.iter().any(|c| c.contains("jackin.kind=dind")),
             "role dind=none must suppress DinD under standard profile; got: {:?}",
@@ -7953,24 +7953,7 @@ capabilities_add = ["MADE_UP_CAPABILITY"]
     /// min_profile conflict: role declares min="standard", launch uses "hardened" → error.
     #[tokio::test]
     async fn min_profile_conflict_is_detected() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "jk-agent-smith".to_string(),
-        ]);
-        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
-        std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
-        // Role requires standard; we'll launch under hardened.
-        std::fs::write(
-            repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha5"
+        let manifest = r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -7978,22 +7961,12 @@ plugins = []
 
 [docker]
 min_profile = "standard"
-"#,
-        ).unwrap();
-        let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let err = load_role(
-            &paths,
-            &mut config,
-            &selector,
-            &workspace,
-            &docker,
-            &mut runner,
-            &LoadOptions {
-                docker_profile: Some(crate::runtime::docker_profile::DockerSecurityProfile::Hardened),
-                ..LoadOptions::default()
-            },
-        ).await.unwrap_err();
+"#;
+        let (err, _temp) = run_load_with_manifest_expecting_err(
+            manifest,
+            Some(crate::runtime::docker_profile::DockerSecurityProfile::Hardened),
+        )
+        .await;
         assert!(
             err.to_string().contains("min_profile"),
             "expected min_profile conflict error, got: {err}"
@@ -8173,22 +8146,20 @@ plugins = []
         env_entries: &[(&str, &str)],
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
     ) -> (String, FakeRunner, tempfile::TempDir) {
-        run_load_core_with_manifest(env_entries, profile, None, false).await
+        let (result, runner, temp) = run_load_core_with_manifest(env_entries, profile, None).await;
+        let run_cmd = result.unwrap();
+        (run_cmd, runner, temp)
     }
 
-    /// Full scaffold. `manifest_toml = Some(s)` overrides the default manifest.
-    /// `expect_err = true` calls `unwrap_err()` instead of `unwrap()` and returns
-    /// an empty run_cmd string (the error is returned as `runner.recorded[0]`-style
-    /// inspection is not needed; callers inspect the anyhow error instead via the
-    /// returned runner's panic message — but actually we need to return the error).
-    ///
-    /// For tests that expect an error, call `run_load_core_expecting_err` below.
+    /// Shared scaffold. `manifest_toml = Some(s)` overrides the default manifest.
+    /// Returns `(anyhow::Result<String>, FakeRunner, TempDir)` where the `String`
+    /// is the matched `docker run` command on success. Callers use `.unwrap()` for
+    /// the success path or `.unwrap_err()` for the error path.
     async fn run_load_core_with_manifest(
         env_entries: &[(&str, &str)],
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
         manifest_toml: Option<&str>,
-        _expect_err: bool,
-    ) -> (String, FakeRunner, tempfile::TempDir) {
+    ) -> (anyhow::Result<String>, FakeRunner, tempfile::TempDir) {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -8226,7 +8197,7 @@ plugins = []
         .unwrap();
         let workspace = repo_workspace(&repo_dir);
         let docker = crate::docker_client::FakeDockerClient::default();
-        load_role(
+        let load_result = load_role(
             &paths,
             &mut config,
             &selector,
@@ -8238,14 +8209,15 @@ plugins = []
                 ..LoadOptions::default()
             },
         )
-        .await
-        .unwrap();
-        let run_cmd = runner
-            .recorded
-            .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
-            .unwrap()
-            .clone();
+        .await;
+        let run_cmd = load_result.map(|_| {
+            runner
+                .recorded
+                .iter()
+                .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+                .unwrap()
+                .clone()
+        });
         (run_cmd, runner, temp)
     }
 
@@ -8262,43 +8234,14 @@ plugins = []
         (run_cmd, temp)
     }
 
-    /// Like `run_load_core_with_manifest` but expects `load_role` to return an error.
+    /// Convenience wrapper: expects `load_role` to fail, returns the error.
     async fn run_load_with_manifest_expecting_err(
         manifest_toml: &str,
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
     ) -> (anyhow::Error, tempfile::TempDir) {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "jk-agent-smith".to_string(),
-        ]);
-        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
-        std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
-        std::fs::write(repo_dir.join("jackin.role.toml"), manifest_toml).unwrap();
-        let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let err = load_role(
-            &paths,
-            &mut config,
-            &selector,
-            &workspace,
-            &docker,
-            &mut runner,
-            &LoadOptions {
-                docker_profile: profile,
-                ..LoadOptions::default()
-            },
-        )
-        .await
-        .unwrap_err();
-        (err, temp)
+        let (result, _, temp) =
+            run_load_core_with_manifest(&[], profile, Some(manifest_toml)).await;
+        (result.unwrap_err(), temp)
     }
 
     #[tokio::test]
