@@ -207,7 +207,9 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         Err(e) => {
             let _ = std::fs::remove_file(&tmp_archive);
             return Err(e).with_context(|| {
-                format!("fetching or verifying signed capsule manifest for jackin-capsule {version}")
+                format!(
+                    "fetching or verifying signed capsule manifest for jackin-capsule {version}"
+                )
             });
         }
     };
@@ -337,12 +339,10 @@ fn rekor_verification_keys()
     static KEYS: std::sync::OnceLock<std::collections::BTreeMap<String, CosignVerificationKey>> =
         std::sync::OnceLock::new();
     KEYS.get_or_init(|| {
-        let der = BASE64
-            .decode(SIGSTORE_REKOR_PUB_KEY_B64)
-            .expect(
-                "SIGSTORE_REKOR_PUB_KEY_B64 is malformed base64; \
+        let der = BASE64.decode(SIGSTORE_REKOR_PUB_KEY_B64).expect(
+            "SIGSTORE_REKOR_PUB_KEY_B64 is malformed base64; \
                  update the constant from trust_root/prod/trusted_root.json in sigstore-rs",
-            );
+        );
         let key = CosignVerificationKey::try_from_der(&der).expect(
             "SIGSTORE_REKOR_PUB_KEY_B64 decoded to invalid SPKI DER; \
              verify the key matches logId wNI9atQG... in trusted_root.json",
