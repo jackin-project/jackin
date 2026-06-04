@@ -20,6 +20,7 @@ pub(super) async fn handle_purge(
     connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
 ) -> Result<()> {
     let PurgeArgs { selector, all } = args;
+    crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), paths).await?;
     let docker = connect_docker()?;
     if let Some(container) = resolve_instance_reference(paths, &selector)? {
         if all {

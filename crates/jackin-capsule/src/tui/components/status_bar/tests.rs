@@ -9,7 +9,7 @@ fn tab_click_region_width_matches_layout() {
     // cell is 10 cols wide; the region is stable regardless of
     // the agent state.
     let mut bar = StatusBar::new();
-    let tab = Tab::new_single("Claude", 1);
+    let tab = Tab::new_single("Claude", 1, "test");
     let tabs = vec![tab];
     let states = vec![(1u64, VisibleAgentState::Blocked)];
     let mut buf = Vec::new();
@@ -31,9 +31,9 @@ fn refresh_click_regions_matches_raw_render_regions() {
     // them inline. Both must agree exactly, or a click after a Ratatui frame
     // lands on the wrong tab. Cover several widths incl. an overflow case.
     let tabs = vec![
-        Tab::new_single("Claude", 1),
-        Tab::new_single("Codex", 2),
-        Tab::new_single("OpenCode", 3),
+        Tab::new_single("Claude", 1, "test"),
+        Tab::new_single("Codex", 2, "test"),
+        Tab::new_single("OpenCode", 3, "test"),
     ];
     let states = vec![
         (1u64, VisibleAgentState::Blocked),
@@ -161,7 +161,7 @@ fn prefix_mode_follows_visible_mux_mode() {
 #[test]
 fn active_tab_emits_row1_underline() {
     let mut bar = StatusBar::new();
-    let tabs = vec![Tab::new_single("Claude", 1)];
+    let tabs = vec![Tab::new_single("Claude", 1, "test")];
     let mut buf = Vec::new();
     bar.render(&mut buf, 80, &tabs, 0, &[], None, false);
     let s = String::from_utf8_lossy(&buf);

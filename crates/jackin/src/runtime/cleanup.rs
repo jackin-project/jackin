@@ -10,7 +10,7 @@ use crate::docker::CommandRunner;
 use crate::docker_client::{DockerApi, RemoveImageOutcome};
 use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
-use crate::prune_output;
+use jackin_tui::prune_output;
 use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
 

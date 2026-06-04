@@ -93,9 +93,30 @@ pub(super) async fn handle(
             );
             Ok(())
         }
-        WorkspaceCommand::List => {
+        WorkspaceCommand::List(list_args) => {
             let workspaces = config.list_workspaces();
-            if workspaces.is_empty() {
+            let json_format = list_args.format == "json";
+
+            if json_format {
+                let data: Vec<serde_json::Value> = workspaces
+                    .iter()
+                    .map(|(name, ws)| {
+                        serde_json::json!({
+                            "name": name,
+                            "workdir": ws.workdir,
+                            "mounts": ws.mounts.len(),
+                            "allowed_roles": ws.allowed_roles,
+                            "default_role": ws.default_role,
+                            "default_agent": ws.resolved_agent().slug(),
+                        })
+                    })
+                    .collect();
+                let envelope = serde_json::json!({
+                    "schema_version": "v1",
+                    "data": data,
+                });
+                println!("{}", serde_json::to_string_pretty(&envelope)?);
+            } else if workspaces.is_empty() {
                 println!("No workspaces configured.");
                 println!();
                 println!("Add one with:");
@@ -143,9 +164,39 @@ pub(super) async fn handle(
             }
             Ok(())
         }
-        WorkspaceCommand::Show { name } => {
-            let workspace = config.require_workspace(&name)?;
-            print!("{}", super::render_workspace_show(config, &name, workspace));
+        WorkspaceCommand::Show(show_args) => {
+            let name = &show_args.name;
+            let workspace = config.require_workspace(name)?;
+            if crate::cli::format::OutputFormat::parse(&show_args.fmt.format)
+                == crate::cli::format::OutputFormat::Json
+            {
+                let mounts: Vec<serde_json::Value> = workspace
+                    .mounts
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "src": m.src,
+                            "dst": m.dst,
+                            "readonly": m.readonly,
+                            "isolation": m.isolation.to_string(),
+                        })
+                    })
+                    .collect();
+                let envelope = serde_json::json!({
+                    "schema_version": "v1",
+                    "data": {
+                        "name": name,
+                        "workdir": workspace.workdir,
+                        "mounts": mounts,
+                        "allowed_roles": workspace.allowed_roles,
+                        "default_role": workspace.default_role,
+                        "default_agent": workspace.resolved_agent().slug(),
+                    }
+                });
+                println!("{}", serde_json::to_string_pretty(&envelope)?);
+            } else {
+                print!("{}", super::render_workspace_show(config, name, workspace));
+            }
             Ok(())
         }
         WorkspaceCommand::Edit {

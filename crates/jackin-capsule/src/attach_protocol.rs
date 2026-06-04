@@ -41,6 +41,7 @@ pub(crate) async fn perform_handshake(
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
+    history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
 ) {
     // Bound the handshake reads. A client that opens the socket and
@@ -75,6 +76,7 @@ pub(crate) async fn perform_handshake(
             first[0],
             sessions_snapshot,
             tabs_snapshot,
+            history_snapshot,
             active_tab,
         )
         .await;

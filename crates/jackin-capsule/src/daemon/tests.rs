@@ -99,7 +99,7 @@ fn single_pane_tab_mux() -> Multiplexer {
 fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     let mut mux = test_mux(24, 80);
     mux.resize(rows, cols);
-    mux.tabs.push(Tab::new_single("Shell", 1));
+    mux.tabs.push(Tab::new_single("Shell", 1, "test"));
     mux
 }
 
@@ -395,7 +395,7 @@ fn refresh_tab_labels_preserves_provider_suffix() {
     let mut mux = test_mux(24, 80);
     let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);
     mux.sessions.insert(1, session);
-    mux.tabs.push(Tab::new_single("Claude", 1));
+    mux.tabs.push(Tab::new_single("Claude", 1, "test"));
 
     mux.refresh_tab_labels();
 
@@ -412,7 +412,7 @@ fn split_metadata_inherits_focused_provider() {
         .map(|p| p.env_overrides.clone())
         .unwrap_or_default();
     mux.sessions.insert(1, session);
-    mux.tabs.push(Tab::new_single("Claude (Z.AI)", 1));
+    mux.tabs.push(Tab::new_single("Claude (Z.AI)", 1, "test"));
 
     let (agent, env, provider) = mux.focused_spawn_metadata();
 
@@ -423,7 +423,7 @@ fn split_metadata_inherits_focused_provider() {
 
 fn split_tab_mux() -> Multiplexer {
     let mut mux = test_mux(24, 80);
-    let mut tab = Tab::new_single("Shell", 1);
+    let mut tab = Tab::new_single("Shell", 1, "test");
     assert!(tab.tree.split_h(1, 2, SplitPosition::After));
     mux.tabs.push(tab);
     mux
@@ -2602,7 +2602,7 @@ fn apply_action_open_rename_tab_pushes_dialog() {
 #[test]
 fn apply_action_switch_tab_moves_active_tab() {
     let mut mux = single_pane_tab_mux();
-    mux.tabs.push(Tab::new_single("Shell", 2));
+    mux.tabs.push(Tab::new_single("Shell", 2, "test"));
     let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
 
     mux.apply_action(Action::SwitchTab(1));
@@ -2613,7 +2613,7 @@ fn apply_action_switch_tab_moves_active_tab() {
 #[test]
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
-    mux.tabs.push(Tab::new_single("Shell", 2));
+    mux.tabs.push(Tab::new_single("Shell", 2, "test"));
     let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
     let col = (1..mux.term_cols)
         .find(|col| mux.status_bar.tab_at_col(*col) == Some(1))

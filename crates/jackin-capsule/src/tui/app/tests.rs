@@ -216,7 +216,7 @@ fn cursor_visibility_requires_live_focused_pane() {
 
 #[test]
 fn visible_panes_mark_unfocused_split_bodies_inactive() {
-    let mut tab = Tab::new_single("tab", 1);
+    let mut tab = Tab::new_single("tab", 1, "test");
     tab.tree = PaneTree::HSplit {
         left: Box::new(PaneTree::Leaf(1)),
         right: Box::new(PaneTree::Leaf(2)),
@@ -234,7 +234,7 @@ fn visible_panes_mark_unfocused_split_bodies_inactive() {
 
 #[test]
 fn zoomed_visible_pane_uses_whole_content_rect() {
-    let tab = Tab::new_single("tab", 1);
+    let tab = Tab::new_single("tab", 1, "test");
     let panes = visible_panes_for_layout(Rect::new(1, 0, 10, 20), Some(1), Some(1), Some(&tab));
 
     assert_eq!(panes.len(), 1);

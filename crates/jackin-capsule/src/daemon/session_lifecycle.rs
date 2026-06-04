@@ -58,6 +58,7 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let tab_ids = self.tabs[self.active_tab].tree.all_ids();
+        let closed_codename = self.tabs[self.active_tab].codename.clone();
         crate::clog!(
             "action: close_focused_tab tab_idx={} pane_count={}",
             self.active_tab,
@@ -70,6 +71,7 @@ impl Multiplexer {
             self.pane_body_caches.remove(&id);
         }
         self.tabs.remove(self.active_tab);
+        self.retire_codename(&closed_codename);
         if self.active_tab >= self.tabs.len() {
             self.active_tab = self.tabs.len().saturating_sub(1);
         }
@@ -137,7 +139,9 @@ impl Multiplexer {
                 // id and the operator sees a `Done` tab they
                 // cannot interact with.
                 let was_active = tab_idx == self.active_tab;
+                let closed_codename = self.tabs[tab_idx].codename.clone();
                 self.tabs.remove(tab_idx);
+                self.retire_codename(&closed_codename);
                 if was_active {
                     // Move to the tab on the left when it exists;
                     // otherwise stay at index 0 (the leftmost tab
@@ -229,6 +233,7 @@ impl Multiplexer {
         agent: Option<&str>,
         provider_label: Option<&str>,
         env_passthrough: &[(String, String)],
+        codename: &str,
     ) -> SessionLaunch {
         let cwd = self.workdir.as_path();
         match agent {
@@ -241,13 +246,41 @@ impl Multiplexer {
                         self.model_for_agent(slug),
                         env_passthrough,
                         cwd,
+                        codename,
                     ),
                 }
             }
             None => SessionLaunch {
                 label: crate::tui::app::visible_agent_label(None, None),
-                cmd: build_shell_command(env_passthrough, cwd),
+                cmd: build_shell_command(env_passthrough, cwd, codename),
             },
+        }
+    }
+
+    /// Pick the next available codename and record it as live.
+    /// Increments `wordlist_offset` so consecutive tabs get different words.
+    pub(super) fn pick_next_codename(&mut self) -> String {
+        let codename = crate::wordlist::pick_codename(
+            &self.codename_live,
+            &self.codename_retired,
+            self.wordlist_offset,
+        );
+        self.wordlist_offset = self.wordlist_offset.wrapping_add(1);
+        codename
+    }
+
+    /// Move a closed tab's codename from `live` to `retired` (so it is never
+    /// reused this container lifetime) and stamp the matching history record.
+    pub(super) fn retire_codename(&mut self, codename: &str) {
+        self.codename_live.remove(codename);
+        self.codename_retired.insert(codename.to_string());
+        if let Some(record) = self
+            .agent_history
+            .iter_mut()
+            .rev()
+            .find(|r| r.codename == codename)
+        {
+            record.exited_at = Some(chrono::Utc::now());
         }
     }
 
@@ -311,6 +344,7 @@ impl Multiplexer {
         // under typical limits, but well past the size any operator
         // can usefully navigate.
         self.ensure_capacity_for_new_session(true)?;
+        let codename = self.pick_next_codename();
         // Mirror split_focused_into: resize_panes below reflows every
         // pane's interior rect, and the new tab swaps the visible
         // content. Drop any in-flight gesture anchored to a now-stale
@@ -319,7 +353,12 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent.as_deref(), provider_label, &env_passthrough);
+        let launch = self.session_launch(
+            agent.as_deref(),
+            provider_label,
+            &env_passthrough,
+            &codename,
+        );
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
@@ -335,12 +374,31 @@ impl Multiplexer {
         let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
         if self.tabs.is_empty() {
-            self.tabs.push(Tab::new_single(tab_label, id));
+            self.tabs
+                .push(Tab::new_single(tab_label, id, codename.clone()));
             self.active_tab = 0;
         } else {
-            self.tabs.push(Tab::new_single(tab_label, id));
+            self.tabs
+                .push(Tab::new_single(tab_label, id, codename.clone()));
             self.active_tab = self.tabs.len() - 1;
         }
+        self.codename_live.insert(codename.clone());
+        // Use the explicit provider label when given; otherwise infer the default
+        // provider from the agent slug so the registry always shows a meaningful value.
+        let provider = provider_label
+            .map(str::to_string)
+            .or_else(|| match agent.as_deref() {
+                Some("claude") => Some("anthropic".to_string()),
+                Some("codex") => Some("openai".to_string()),
+                _ => None,
+            });
+        self.agent_history.push(AgentRecord {
+            codename,
+            agent: agent.clone(),
+            provider,
+            started_at: chrono::Utc::now(),
+            exited_at: None,
+        });
         // Reflow so the new pane's PTY gets the correct interior
         // dimensions (outer rect minus border rows/cols). Without
         // this, the session keeps its initial `content_rows ×

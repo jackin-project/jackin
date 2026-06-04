@@ -7,6 +7,8 @@
     "capsule",
     "adrs",
     "tui",
-    "research-watchlist"
+    "security-implementation",
+    "research-watchlist",
+    "(errors)"
   ]
 }

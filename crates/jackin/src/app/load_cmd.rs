@@ -42,7 +42,10 @@ pub(super) async fn handle_load(
         force,
         agent,
         role_branch,
+        dry_run,
+        format,
     } = args;
+    crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), paths).await?;
     let docker = connect_docker()?;
     let cwd = std::env::current_dir()?;
 
@@ -76,6 +79,17 @@ pub(super) async fn handle_load(
 
     let resolved_workspace =
         resolve_load_workspace(config, &class, &cwd, workspace_input, &ad_hoc_mounts)?;
+
+    if dry_run {
+        return print_dry_run_plan(
+            &class,
+            &resolved_workspace,
+            agent.as_ref(),
+            role_branch.as_deref(),
+            rebuild,
+            &format,
+        );
+    }
 
     let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
     opts.force = force;
@@ -296,6 +310,7 @@ pub(super) async fn handle_hardline(
         shell,
     } = args;
     let mut runner = ShellRunner { debug };
+    crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
     let docker = connect_docker()?;
     // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
     // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
@@ -389,6 +404,7 @@ pub(super) async fn handle_eject(
         purge,
     } = args;
     let mut runner = ShellRunner { debug };
+    crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), paths).await?;
     let docker = connect_docker()?;
     let containers = if let Some(container) = resolve_instance_reference(paths, &selector)? {
         if all {
@@ -439,12 +455,83 @@ pub(super) async fn handle_eject(
     result
 }
 
+/// Print the resolved load plan for `--dry-run` and exit without launching.
+fn print_dry_run_plan(
+    class: &RoleSelector,
+    workspace: &crate::workspace::ResolvedWorkspace,
+    agent: Option<&crate::agent::Agent>,
+    role_branch: Option<&str>,
+    rebuild: bool,
+    format: &str,
+) -> Result<()> {
+    let agent_slug = agent
+        .map(|a| a.slug().to_string())
+        .or_else(|| workspace.default_agent.map(|a| a.slug().to_string()))
+        .unwrap_or_else(|| "claude".to_string());
+
+    let mount_lines: Vec<String> = workspace
+        .mounts
+        .iter()
+        .map(|m| format!("  {}  <-  {}  ({})", m.dst, m.src, m.isolation))
+        .collect();
+
+    if format == "json" {
+        let mounts: Vec<serde_json::Value> = workspace
+            .mounts
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "host_src": m.src,
+                    "container_dest": m.dst,
+                    "isolation": m.isolation.to_string(),
+                })
+            })
+            .collect();
+        let plan = serde_json::json!({
+            "schema_version": "v1",
+            "data": {
+                "workspace": workspace.label,
+                "workdir": workspace.workdir,
+                "role": class.to_string(),
+                "role_branch": role_branch,
+                "agent": agent_slug,
+                "rebuild": rebuild,
+                "mounts": mounts,
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&plan)?);
+    } else {
+        println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
+        let role_display = role_branch.map_or_else(
+            || class.to_string(),
+            |branch| format!("{class} (branch: {branch})"),
+        );
+        println!("Role:       {role_display}");
+        println!("Agent:      {agent_slug}");
+        if rebuild {
+            println!("Rebuild:    yes");
+        }
+        if mount_lines.is_empty() {
+            println!("Mounts:     none");
+        } else {
+            println!("Mounts ({}):", mount_lines.len());
+            for line in &mount_lines {
+                println!("{line}");
+            }
+        }
+        println!();
+        println!("No changes made. Use `jackin load` to execute.");
+    }
+    Ok(())
+}
+
 pub(super) async fn handle_exile(
     paths: &JackinPaths,
     debug: bool,
     connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
 ) -> Result<()> {
     let mut runner = ShellRunner { debug };
+    crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), paths).await?;
     let docker = connect_docker()?;
     let names = runtime::list_managed_role_names(&docker).await?;
     let result: anyhow::Result<()> = async {

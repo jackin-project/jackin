@@ -149,4 +149,30 @@ impl Multiplexer {
             })
             .collect()
     }
+
+    /// Snapshot the agent history for the control-channel `Agents` query.
+    /// Active agents have `exited_at == None`; exited agents have a timestamp.
+    pub(super) fn agent_registry_snapshot(
+        &self,
+    ) -> Vec<jackin_protocol::control::AgentRegistryEntry> {
+        self.agent_history
+            .iter()
+            .map(|r| jackin_protocol::control::AgentRegistryEntry {
+                codename: r.codename.clone(),
+                agent: r.agent.clone(),
+                provider: r.provider.clone(),
+                started_at: r.started_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                exited_at: r
+                    .exited_at
+                    .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+                status: if r.exited_at.is_some() {
+                    "exited".to_string()
+                } else {
+                    "active".to_string()
+                },
+                // is_self is determined client-side from JACKIN_AGENT_CODENAME.
+                is_self: false,
+            })
+            .collect()
+    }
 }

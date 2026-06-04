@@ -1237,6 +1237,7 @@ pub fn build_agent_command(
     model: Option<&str>,
     env_passthrough: &[(String, String)],
     cwd: &Path,
+    codename: &str,
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
     for arg in agent_model_args(agent, model) {
@@ -1246,6 +1247,7 @@ pub fn build_agent_command(
         cmd.env(k, v);
     }
     cmd.env("JACKIN_AGENT", agent);
+    cmd.env("JACKIN_AGENT_CODENAME", codename);
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
@@ -1265,12 +1267,17 @@ fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
 /// Build a CommandBuilder for an interactive shell session.
 ///
 /// See `build_agent_command` for the `cwd` rationale.
-pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path) -> CommandBuilder {
+pub fn build_shell_command(
+    env_passthrough: &[(String, String)],
+    cwd: &Path,
+    codename: &str,
+) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/bin/zsh");
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
     cmd.env_remove("JACKIN_AGENT");
+    cmd.env("JACKIN_AGENT_CODENAME", codename);
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd

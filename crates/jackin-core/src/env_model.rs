@@ -13,6 +13,12 @@ pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVE
 pub const JACKIN_CONTAINER_NAME_ENV_NAME: &str = "JACKIN_CONTAINER_NAME";
 pub const JACKIN_INSTANCE_ID_ENV_NAME: &str = "JACKIN_INSTANCE_ID";
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
+/// Unique human-readable codename assigned to a Capsule tab at creation.
+///
+/// E.g. `"badger"`, `"falcon"`; injected into every process spawned in that
+/// tab. Stable across agent restarts and context resets — it is a tab property,
+/// not a process property — and never reused within a container lifetime.
+pub const JACKIN_AGENT_CODENAME_ENV_NAME: &str = "JACKIN_AGENT_CODENAME";
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
@@ -38,6 +44,7 @@ pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_CONTAINER_NAME_ENV_NAME, None),
     (JACKIN_INSTANCE_ID_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
+    (JACKIN_AGENT_CODENAME_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
     (JACKIN_WORKDIR_ENV_NAME, None),
     (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, None),

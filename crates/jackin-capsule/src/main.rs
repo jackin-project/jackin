@@ -63,6 +63,18 @@ connecting as a client.",
             }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
+            Some("agents") => {
+                let json_format = args.iter().any(|a| a == "--format=json")
+                    || args
+                        .windows(2)
+                        .any(|w| w[0] == "--format" && w[1] == "json");
+                let format = if json_format {
+                    client::AgentsFormat::Json
+                } else {
+                    client::AgentsFormat::Human
+                };
+                client::run_agents(format).await
+            }
             Some("runtime-setup") => runtime_setup::run(),
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
@@ -107,7 +119,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -145,8 +157,8 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "runtime-setup" | "prepare-commit-msg" | "--version" | "-V"
-            | "--help" | "-h",
+            "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version"
+            | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.

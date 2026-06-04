@@ -12,6 +12,7 @@ fn reserved_runtime_env_vars_covers_every_previously_reserved_name() {
         "JACKIN_CONTAINER_NAME",
         "JACKIN_INSTANCE_ID",
         "JACKIN_AGENT", // injected per agent session — agent slug (claude/codex/amp)
+        "JACKIN_AGENT_CODENAME", // unique per-tab codename, never reused in container lifetime
         "JACKIN_ROLE",  // runtime-owned role selector key
         "JACKIN_GIT_COAUTHOR_TRAILER",
         "JACKIN_GIT_DCO",
@@ -35,6 +36,7 @@ fn is_reserved_accepts_all_sentinel_names() {
         "JACKIN_CONTAINER_NAME",
         "JACKIN_INSTANCE_ID",
         "JACKIN_AGENT",
+        "JACKIN_AGENT_CODENAME",
         "JACKIN_ROLE",
         "JACKIN_GIT_COAUTHOR_TRAILER",
         "JACKIN_GIT_DCO",

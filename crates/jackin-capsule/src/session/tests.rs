@@ -347,7 +347,7 @@ fn focus_swap_reset_leaves_client_owned_modes_alone() {
 #[test]
 fn build_agent_command_overrides_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_string(), "claude".to_string())];
-    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"));
+    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
@@ -358,7 +358,7 @@ fn build_agent_command_overrides_stale_agent_env() {
 #[test]
 fn build_agent_command_uses_stable_pane_term() {
     let env = vec![("TERM".to_string(), "xterm-ghostty".to_string())];
-    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"));
+    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("TERM").and_then(|value| value.to_str()),
@@ -369,7 +369,7 @@ fn build_agent_command_uses_stable_pane_term() {
 #[test]
 fn build_agent_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_string(), "24bit".to_string())];
-    let cmd = build_agent_command("claude", None, &env, Path::new("/workspace"));
+    let cmd = build_agent_command("claude", None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
@@ -380,7 +380,7 @@ fn build_agent_command_advertises_truecolor() {
 #[test]
 fn build_shell_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_string(), "false".to_string())];
-    let cmd = build_shell_command(&env, Path::new("/workspace"));
+    let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
@@ -413,7 +413,7 @@ fn agent_model_args_match_cli_contracts() {
 #[test]
 fn build_shell_command_removes_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_string(), "claude".to_string())];
-    let cmd = build_shell_command(&env, Path::new("/workspace"));
+    let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
 
     assert!(cmd.get_env("JACKIN_AGENT").is_none());
 }

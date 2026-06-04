@@ -319,6 +319,66 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
     if let Some(sel) = view.selection {
         apply_selection_highlight(frame.buffer_mut(), &sel);
     }
+
+    // Tab hover tooltip: codename pill painted one row below the hovered tab
+    // cell, overlaid after pane bodies so it reads as a contextual label.
+    // Hover enter/leave triggers a full redraw (see update_hover_for_mouse),
+    // so the overlaid row is repainted clean when the operator moves away.
+    if let Some(idx) = view.hovered_tab
+        && let Some(tab) = view.tabs.get(idx)
+    {
+        apply_tab_codename_tooltip(
+            frame.buffer_mut(),
+            view.tabs,
+            view.active_tab,
+            view.sessions_state,
+            view.prefix_mode,
+            view.term_cols,
+            idx,
+            &tab.codename,
+        );
+    }
+}
+
+/// Paint the hovered tab's codename as a dark-bg + phosphor-green pill on the
+/// row directly below the tab strip, left-aligned with the tab cell. Ratatui
+/// `Buffer::set_string` clips to the buffer area, so an out-of-range column or
+/// a too-long codename cannot overflow the frame.
+#[allow(clippy::too_many_arguments)]
+fn apply_tab_codename_tooltip(
+    buf: &mut ratatui::buffer::Buffer,
+    tabs: &[Tab],
+    active_tab: usize,
+    sessions_state: &[(u64, VisibleAgentState)],
+    prefix_mode: crate::tui::components::status_bar::PrefixMode,
+    cols: u16,
+    hovered_idx: usize,
+    codename: &str,
+) {
+    use ratatui::style::{Modifier, Style};
+    let plan = crate::tui::components::status_bar::status_bar_plan(
+        cols,
+        tabs,
+        active_tab,
+        sessions_state,
+        prefix_mode,
+    );
+    let Some(cell) = plan.cells.get(hovered_idx) else {
+        return;
+    };
+    // Row index 2 (0-based): one row below the tab strip (row 0) and the
+    // active-tab underline (row 1).
+    let tooltip_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
+    let pill = format!(" {codename} ");
+    buf.set_string(
+        cell.start_col0,
+        tooltip_row,
+        &pill,
+        Style::default()
+            .bg(jackin_tui::theme::TAB_BG_INACTIVE)
+            .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD),
+    );
 }
 
 /// Format a spawn-failure banner: save cursor → jump to row 1, col 1

@@ -27,3 +27,4 @@ pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.
 pub mod tui;
+pub mod wordlist;

@@ -21,6 +21,7 @@ impl Multiplexer {
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return Ok(());
         };
+        let tab_codename = tab.codename.clone();
         let from_id = tab.focused_id;
         let content_rect = content_rect(self.content_rows, self.term_cols);
         let from_rect = tab
@@ -36,7 +37,12 @@ impl Multiplexer {
         };
         let (spawn_rows, spawn_cols) = split_spawn_inner_size(split_geometry, from_rect);
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent_slug.as_deref(), provider_label, &env_passthrough);
+        let launch = self.session_launch(
+            agent_slug.as_deref(),
+            provider_label,
+            &env_passthrough,
+            &tab_codename,
+        );
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,

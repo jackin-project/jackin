@@ -30,7 +30,10 @@ fn status_bar_renders_without_tabs() {
 
 #[test]
 fn status_bar_renders_shared_tab_underline() {
-    let tabs = [Tab::new_single("shell", 1), Tab::new_single("agent", 2)];
+    let tabs = [
+        Tab::new_single("shell", 1, "test"),
+        Tab::new_single("agent", 2, "test"),
+    ];
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal

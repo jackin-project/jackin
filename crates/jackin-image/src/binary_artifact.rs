@@ -69,8 +69,18 @@ pub fn is_executable_file(path: &Path) -> bool {
 ///
 /// Synchronous: a multi-MB read parks the calling thread, so callers on an
 /// async launch path wrap this in `tokio::task::spawn_blocking`.
-pub fn hash_file_sha256(path: &Path) -> Result<String> {
+/// Encode a SHA-256 digest as a lowercase 64-character hex string.
+pub fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
     use std::fmt::Write as _;
+    let bytes = digest.as_ref();
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}
+
+pub fn hash_file_sha256(path: &Path) -> Result<String> {
     let mut file = std::fs::File::open(path)
         .with_context(|| format!("opening {} for hashing", path.display()))?;
     let mut hasher = Sha256::new();
@@ -84,12 +94,7 @@ pub fn hash_file_sha256(path: &Path) -> Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        let _ = write!(hex, "{byte:02x}");
-    }
-    Ok(hex)
+    Ok(sha256_hex(hasher.finalize()))
 }
 
 /// Parse the first whitespace-delimited token of a `.sha256` manifest as a

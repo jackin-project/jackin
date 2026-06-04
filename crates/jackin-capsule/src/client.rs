@@ -59,6 +59,9 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Status request")
         }
+        ServerMsg::AgentRegistry { .. } => {
+            anyhow::bail!("daemon replied with AgentRegistry for Status request")
+        }
     };
     println!("Sessions: {}", sessions.len());
     for s in &sessions {
@@ -109,14 +112,118 @@ pub async fn run_snapshot() -> Result<()> {
         ServerMsg::SessionList { .. } => {
             anyhow::bail!("daemon replied with SessionList for Snapshot request")
         }
+        ServerMsg::AgentRegistry { .. } => {
+            anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
+        }
     };
     let payload = serde_json::json!({
         "tabs": tabs,
         "active_tab": active_tab,
     });
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+/// Format for `jackin-capsule agents` output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentsFormat {
+    Human,
+    Json,
+}
+
+/// Query the daemon for the agent registry and render it.
+///
+/// `--format json` emits the registry as a JSON array.
+/// Human format renders a table with a `← you` annotation on the caller's row.
+pub async fn run_agents(format: AgentsFormat) -> Result<()> {
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+
+    stream.write_all(&control_frame(&ClientMsg::Agents)).await?;
+
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+
+    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let records = match msg {
+        ServerMsg::AgentRegistry { records } => records,
+        ServerMsg::Unknown => {
+            anyhow::bail!(
+                "daemon replied with ServerMsg::Unknown for Agents — peer is newer than this CLI"
+            )
+        }
+        ServerMsg::SessionList { .. } => {
+            anyhow::bail!("daemon replied with SessionList for Agents request")
+        }
+        ServerMsg::Snapshot { .. } => {
+            anyhow::bail!("daemon replied with Snapshot for Agents request")
+        }
+    };
+
+    // Determine caller's own codename and annotate matching records.
+    let my_codename = std::env::var("JACKIN_AGENT_CODENAME").unwrap_or_default();
+    let mut records = records;
+    if !my_codename.is_empty() {
+        for r in &mut records {
+            r.is_self = r.codename == my_codename;
+        }
+    }
+
+    if format == AgentsFormat::Json {
+        println!("{}", serde_json::to_string_pretty(&records)?);
+        return Ok(());
+    }
+
+    print!("{}", jackin_tui::ansi::BRAND_BANNER);
+    println!("agent registry");
+    if let Some(r) = records.iter().find(|r| r.is_self) {
+        println!(
+            "\nYou are: {} ({} · {})",
+            r.codename,
+            r.agent.as_deref().unwrap_or("shell"),
+            r.provider.as_deref().unwrap_or("—"),
+        );
+    }
+
+    // Split active first, then exited — within each group sort by started_at.
+    let mut active: Vec<_> = records.iter().filter(|r| r.status == "active").collect();
+    let mut exited: Vec<_> = records.iter().filter(|r| r.status != "active").collect();
+    active.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+    exited.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+
+    println!();
     println!(
-        "{}",
-        serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string())
+        "  {:<12} {:<10} {:<14} {:<20} {:<20} status",
+        "codename", "agent", "provider", "started", "exited"
     );
+    println!("  {}", "─".repeat(83));
+
+    for r in active.iter().chain(exited.iter()) {
+        let you = if r.is_self { "  ← you" } else { "" };
+        println!(
+            "  {:<12} {:<10} {:<14} {:<20} {:<20} {}{}",
+            r.codename,
+            r.agent.as_deref().unwrap_or("shell"),
+            r.provider.as_deref().unwrap_or("—"),
+            // Trim the trailing 'Z' and 'T' for compact display
+            r.started_at.trim_end_matches('Z').replace('T', " "),
+            r.exited_at
+                .as_deref()
+                .unwrap_or("—")
+                .trim_end_matches('Z')
+                .replace('T', " "),
+            r.status,
+            you,
+        );
+    }
+
     Ok(())
 }

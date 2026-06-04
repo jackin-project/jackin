@@ -7,6 +7,7 @@
 //! Key invariant: at most one attach client is active at a time; a new
 //! `Hello` frame displaces the previous client.
 
+use chrono::{DateTime, Utc};
 /// The multiplexer daemon — runs as PID 1, manages sessions and clients.
 ///
 /// Architecture:
@@ -280,6 +281,32 @@ pub struct Multiplexer {
     /// components. The raw ANSI compositor remains as the fallback and partial
     /// update path while the remaining render migration proceeds.
     ratatui_terminal: ratatui::Terminal<crate::tui::socket_backend::SocketBackend>,
+    /// Codenames currently assigned to open tabs.
+    /// A codename in `codename_live` is NOT in `codename_retired`.
+    codename_live: HashSet<String>,
+    /// All codenames ever assigned in this container lifetime. Never shrinks.
+    /// A codename that moves from `live` to here on tab close is never
+    /// reassigned — prevents agents from confusing a new tab for a closed one.
+    codename_retired: HashSet<String>,
+    /// Append-only history of every tab ever opened. Never pruned.
+    agent_history: Vec<AgentRecord>,
+    /// Offset into the wordlist for the next codename pick, seeded once at
+    /// daemon construction from the current time subsecond nanos.
+    wordlist_offset: usize,
+}
+
+/// In-memory record of one tab ever opened in this container lifetime.
+/// The history is append-only and never pruned; it is the authoritative
+/// data source for `jackin-capsule agents` and the tab hover tooltip.
+#[derive(Debug, Clone)]
+pub struct AgentRecord {
+    pub codename: String,
+    /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
+    pub agent: Option<String>,
+    /// Provider label (e.g. `"Z.AI"`), or `None` when no provider selected.
+    pub provider: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub exited_at: Option<DateTime<Utc>>,
 }
 
 /// Three book-keeping fields for a background context lookup. They
@@ -446,6 +473,16 @@ impl Multiplexer {
                 crate::tui::socket_backend::SocketBackend::new(cols, rows),
             )
             .expect("SocketBackend::new never fails"),
+            codename_live: HashSet::new(),
+            codename_retired: HashSet::new(),
+            agent_history: Vec::new(),
+            wordlist_offset: {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos() as usize)
+                    .unwrap_or(42)
+            },
         }
     }
 
@@ -668,6 +705,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let handshake_tx = handshake_tx.clone();
                 let sessions_snapshot = mux.session_infos();
                 let tabs_snapshot = mux.tab_snapshots();
+                let history_snapshot = mux.agent_registry_snapshot();
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
                 tokio::spawn(perform_handshake(
                     stream,
@@ -675,6 +713,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     handshake_tx,
                     sessions_snapshot,
                     tabs_snapshot,
+                    history_snapshot,
                     active_tab,
                 ));
             }

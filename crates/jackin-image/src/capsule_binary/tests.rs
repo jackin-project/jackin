@@ -68,3 +68,109 @@ fn linux_target_maps_arch() {
     assert_eq!(linux_target("amd64"), "x86_64-unknown-linux-gnu");
     assert_eq!(linux_target("x86_64"), "x86_64-unknown-linux-gnu");
 }
+
+#[test]
+fn base_download_url_dev_uses_preview_tag() {
+    let url = base_download_url("0.6.0-dev+bf7df07");
+    assert_eq!(
+        url,
+        "https://github.com/jackin-project/jackin/releases/download/preview"
+    );
+}
+
+#[test]
+fn base_download_url_preview_uses_preview_tag() {
+    let url = base_download_url("0.6.0-preview.411+bf7df07");
+    assert_eq!(
+        url,
+        "https://github.com/jackin-project/jackin/releases/download/preview"
+    );
+}
+
+#[test]
+fn base_download_url_stable_uses_version_tag() {
+    let url = base_download_url("0.6.0");
+    assert_eq!(
+        url,
+        "https://github.com/jackin-project/jackin/releases/download/v0.6.0"
+    );
+}
+
+#[test]
+fn rekor_keys_decode_and_contain_expected_id() {
+    let keys = rekor_verification_keys();
+    assert_eq!(keys.len(), 1, "expected exactly one Rekor key");
+    assert!(
+        keys.contains_key(SIGSTORE_REKOR_KEY_ID),
+        "expected key ID {SIGSTORE_REKOR_KEY_ID} not found in decoded map"
+    );
+    // Confirm the key variant is ECDSA P-256, matching Sigstore production Rekor.
+    let key = keys.get(SIGSTORE_REKOR_KEY_ID).unwrap();
+    assert!(
+        matches!(
+            key,
+            sigstore::crypto::CosignVerificationKey::ECDSA_P256_SHA256_ASN1(_)
+        ),
+        "expected Rekor key to be ECDSA_P256_SHA256_ASN1 variant, got: {key:?}"
+    );
+}
+
+#[test]
+fn is_preview_version_matches_dev_and_preview_suffixes() {
+    assert!(is_preview_version("0.6.0-dev+bf7df07"));
+    assert!(is_preview_version("0.6.0-preview.411+bf7df07"));
+    // Any string containing "-dev" is preview (substring match by design).
+    assert!(is_preview_version("0.6.0-developer"));
+    assert!(!is_preview_version("0.6.0"));
+    // "-preview1" lacks the required trailing dot — not a preview channel version.
+    assert!(!is_preview_version("0.6.0-preview1"));
+}
+
+#[test]
+fn is_allowed_signer_san_accepts_release_and_preview_workflows() {
+    // Accepted: release.yml with tag ref.
+    assert!(is_allowed_signer_san(
+        "https://github.com/jackin-project/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
+    ));
+    // Accepted: preview.yml with branch ref.
+    assert!(is_allowed_signer_san(
+        "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@refs/heads/main"
+    ));
+    // Rejected: different workflow file in the same repo.
+    assert!(!is_allowed_signer_san(
+        "https://github.com/jackin-project/jackin/.github/workflows/evil.yml@refs/heads/main"
+    ));
+    // Rejected: correct workflow but in a different repository.
+    assert!(!is_allowed_signer_san(
+        "https://github.com/attacker/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
+    ));
+    // Rejected: partial path match (no trailing @ref).
+    assert!(!is_allowed_signer_san(
+        "https://github.com/jackin-project/jackin/.github/workflows/release.yml"
+    ));
+    // Rejected: empty string.
+    assert!(!is_allowed_signer_san(""));
+}
+
+#[test]
+fn format_exit_detail_produces_expected_output() {
+    // Both streams present.
+    assert_eq!(
+        format_exit_detail("out text", "err text"),
+        "stdout: out text\nstderr: err text"
+    );
+    // Only stdout.
+    assert_eq!(format_exit_detail("out text", ""), "stdout: out text");
+    // Only stderr.
+    assert_eq!(format_exit_detail("", "err text"), "stderr: err text");
+    // Both empty (signal/crash).
+    assert_eq!(
+        format_exit_detail("", ""),
+        "(no output — possible signal/crash)"
+    );
+    // Whitespace-only streams treated as empty.
+    assert_eq!(
+        format_exit_detail("  \n  ", ""),
+        "(no output — possible signal/crash)"
+    );
+}
