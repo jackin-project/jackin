@@ -4,6 +4,7 @@
     "workspaces",
     "mounts",
     "parallel-agents",
+    "parallel-agent-coordination",
     "environment-variables",
     "authentication",
     "tmux",

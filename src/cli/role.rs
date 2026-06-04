@@ -62,6 +62,18 @@ pub struct LoadArgs {
     /// for the full capability grant model.
     #[arg(long, value_name = "PROFILE", value_parser = parse_docker_profile)]
     pub docker_profile: Option<crate::runtime::DockerSecurityProfile>,
+    /// Print the resolved launch plan (workspace, role, mounts, auth decisions,
+    /// derived image) and exit without spawning any containers.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Output format for `--dry-run` (`human` or `json`)
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        default_value = "human",
+        requires = "dry_run"
+    )]
+    pub format: String,
 }
 
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {

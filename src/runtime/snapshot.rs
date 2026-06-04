@@ -131,9 +131,11 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::SessionList { .. } => {
             bail!("daemon replied with SessionList; expected Snapshot")
         }
-        // `Unknown` is a forward-compat catch-all for unrecognised variants that
-        // arrive from a newer daemon. Any future variants that don't match the
-        // arms above also fall through here via the `#[serde(other)]` sink.
+        ServerMsg::AgentRegistry { .. } => {
+            bail!("daemon replied with AgentRegistry; expected Snapshot")
+        }
+        // `Unknown` (the `#[serde(other)]` sink) and any future variants from a
+        // newer daemon that don't match the arms above fall through here.
         _ => bail!("daemon replied with an unexpected ServerMsg variant; peer may be newer"),
     }
 }

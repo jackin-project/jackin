@@ -1,4 +1,4 @@
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use std::str::FromStr;
 
 use super::{BANNER, HELP_STYLES};
@@ -18,6 +18,26 @@ fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+}
+
+/// Shared args for read-only workspace subcommands that support `--format`.
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct WorkspaceFormatArgs {
+    /// Output format (`human` or `json`)
+    #[arg(long, value_name = "FORMAT", default_value = "human")]
+    pub format: String,
+}
+
+/// Args for `jackin workspace list`
+pub type WorkspaceListArgs = WorkspaceFormatArgs;
+
+/// Args for `jackin workspace show`
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct WorkspaceShowArgs {
+    /// Name of the workspace to display
+    pub name: String,
+    #[command(flatten)]
+    pub fmt: WorkspaceFormatArgs,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -79,7 +99,7 @@ Examples:
     },
     /// List all saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    List,
+    List(WorkspaceListArgs),
     /// Display details of a saved workspace
     #[command(
         before_help = BANNER,
@@ -88,10 +108,7 @@ Examples:
 Examples:
   jackin workspace show my-app"
     )]
-    Show {
-        /// Name of the workspace to display
-        name: String,
-    },
+    Show(WorkspaceShowArgs),
     /// Modify an existing workspace
     #[command(
         before_help = BANNER,
