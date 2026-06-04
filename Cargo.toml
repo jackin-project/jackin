@@ -75,6 +75,14 @@ bollard = { version = "0.21", features = ["aws-lc-rs"] }
 futures-util = "0.3"
 fast-down = { version = "5.0", features = ["fast-puller", "file", "reqwest-tls"] }
 reqwest = { version = "0.13", default-features = false }
+# Sigstore Rust client for cosign bundle verification of capsule-manifest.json.
+# Pre-1.0 (0.14.x) but the only canonical option for in-process keyless bundle
+# verification without a `cosign` system dep. Alternatives evaluated: shell out
+# to `cosign` CLI (requires system install), GitHub Attestations API via `gh`
+# (requires `gh` on PATH). Selected for hermetic operation with no system dep.
+sigstore = { version = "0.14", default-features = false, features = ["cosign"] }
+base64 = "0.22"
+x509-cert = { version = "0.2", default-features = false, features = ["pem"] }
 
 [build-dependencies]
 jackin-build-meta = { path = "crates/jackin-build-meta" }
