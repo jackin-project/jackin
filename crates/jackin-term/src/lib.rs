@@ -30,3 +30,4 @@ pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
 pub use snapshot::{GridSnapshot, SnapCell};
+pub use wire::WireEmitter;

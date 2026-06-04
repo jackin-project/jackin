@@ -21,14 +21,30 @@ use crate::cell::{Attrs, Cell, Color};
 use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
 
-/// Mouse protocol modes (matching the vt100 coupling surface).
+/// Mouse protocol modes (matching the vt100 coupling surface, DEC modes 1000/1002/1003).
+///
+/// Variants match vt100's naming for drop-in compatibility:
+/// - `Press` = mode 1000 (report button press only)
+/// - `PressRelease` = mode 1002 (report press, release, and button motion — vt100 `ButtonMotion`)
+/// - `ButtonMotion` = mode 1002 alias (added for vt100 compat — identical to `PressRelease`)
+/// - `AnyEvent` = mode 1003 (report all motion — vt100 `AnyMotion`)
+/// - `AnyMotion` = mode 1003 alias (added for vt100 compat — identical to `AnyEvent`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseProtocolMode {
     #[default]
     None,
+    /// Mode 1000: report button press only.
     Press,
+    /// Mode 1002: report press + release + motion while button held.
+    /// Alias: `ButtonMotion` (vt100 name).
     PressRelease,
+    /// Mode 1002 (vt100 name): identical to `PressRelease`.
+    ButtonMotion,
+    /// Mode 1003: report all pointer motion.
+    /// Alias: `AnyMotion` (vt100 name).
     AnyEvent,
+    /// Mode 1003 (vt100 name): identical to `AnyEvent`.
+    AnyMotion,
 }
 
 /// Mouse protocol encodings (matching the vt100 coupling surface).
@@ -189,6 +205,36 @@ impl DamageGrid {
     /// Grid dimensions `(rows, cols)`.
     pub fn size(&self) -> (u16, u16) {
         (self.rows, self.cols)
+    }
+
+    /// Scroll affordance metrics for rendering the scrollbar chrome.
+    ///
+    /// Returns `(occupied_rows, viewport_rows, viewport_cols, cursor_row, cursor_col)`.
+    /// Used by `view.rs::screen_scroll_affordance_metrics` to compute the scroll
+    /// thumb position and dimensions for the focused pane's scrollbar chrome.
+    ///
+    /// `occupied_rows` is the number of non-blank rows in the current visible screen
+    /// (first row whose all cells are blank, counting from the bottom). `0` means the
+    /// full viewport is occupied.
+    #[must_use]
+    pub fn scroll_affordance_metrics(&self) -> (u16, u16, u16, u16, u16) {
+        let screen = if self.alt_screen {
+            &self.alternate
+        } else {
+            &self.primary
+        };
+        // Count non-blank rows from the top (first empty row from bottom gives extent).
+        let occupied = screen
+            .iter()
+            .rposition(|row| row.iter().any(|cell| !cell.contents.is_empty()))
+            .map_or(0, |last| (last + 1) as u16);
+        (
+            occupied,
+            self.rows,
+            self.cols,
+            self.cursor_row,
+            self.cursor_col,
+        )
     }
 
     /// Return scrollback rows starting at `offset` lines from the live tail.
@@ -488,6 +534,22 @@ impl DamageGrid {
             (Some(9), Some(msg)) => {
                 self.passthrough
                     .push(PassthroughEvent::Notification(msg.to_string()));
+            }
+            // OSC 8: hyperlink — emit for capsule to apply URI-scheme safety filter.
+            (Some(8), _) => {
+                let id = params
+                    .get(1)
+                    .and_then(|b| std::str::from_utf8(b).ok())
+                    .unwrap_or("")
+                    .trim_start_matches("id=")
+                    .to_string();
+                let uri = params
+                    .get(2)
+                    .and_then(|b| std::str::from_utf8(b).ok())
+                    .unwrap_or("")
+                    .to_string();
+                self.passthrough
+                    .push(PassthroughEvent::Hyperlink { id, uri });
             }
             _ => {}
         }
@@ -926,16 +988,19 @@ impl DamageGrid {
                     MouseProtocolMode::None
                 };
             }
+            // Mode 1002: button-press + release + motion while button held.
+            // Use ButtonMotion (vt100 name) so tui/input.rs can match without conversion.
             1002 => {
                 self.mouse_mode = if enabled {
-                    MouseProtocolMode::PressRelease
+                    MouseProtocolMode::ButtonMotion
                 } else {
                     MouseProtocolMode::None
                 };
             }
+            // Mode 1003: any motion (vt100 AnyMotion).
             1003 => {
                 self.mouse_mode = if enabled {
-                    MouseProtocolMode::AnyEvent
+                    MouseProtocolMode::AnyMotion
                 } else {
                     MouseProtocolMode::None
                 };

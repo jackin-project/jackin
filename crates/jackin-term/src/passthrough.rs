@@ -28,6 +28,12 @@ pub enum PassthroughEvent {
     FocusEvents(bool),
     /// CSI `?2004h` / `?2004l`: bracketed paste enable/disable.
     BracketedPaste(bool),
+    /// OSC 8: clickable hyperlink (id, uri).
+    ///
+    /// `id` is the link id (empty = anonymous), `uri` is the target URI.
+    /// An empty `uri` ends the hyperlink (equivalent to OSC 8;;ST).
+    /// The capsule applies a URI-scheme safety filter before forwarding.
+    Hyperlink { id: String, uri: String },
     /// Unhandled CSI — forwarded raw for passthrough.
     UnhandledCsi(Vec<u8>),
     /// Capsule-specific: clear the scrollback buffer (CSI 3J).
@@ -75,6 +81,16 @@ impl PassthroughEvent {
             } else {
                 b"\x1b[?2004l".to_vec()
             }),
+            // OSC 8 hyperlink — emit if uri is non-empty (else close hyperlink).
+            Self::Hyperlink { id, uri } => {
+                if uri.is_empty() {
+                    // Close hyperlink: OSC 8 ; ; ST
+                    Some(b"\x1b]8;;\x07".to_vec())
+                } else {
+                    // Open hyperlink: OSC 8 ; id ; uri ST
+                    Some(format!("\x1b]8;{id};{uri}\x07").into_bytes())
+                }
+            }
             // Raw pass-through — emit as-is.
             Self::UnhandledCsi(bytes) => Some(bytes.clone()),
             // Capsule-internal instruction; no outer-terminal output.
