@@ -43,7 +43,7 @@ Each Claude instance picks a unique name for attribution. Check this list before
 | Defect 46 Phase A.0 (canonical console reconcile) | **[DONE in 5e3146ba]** | Two-role analysis: jackin-console=generic, jackin/console=root-specific; no deletion |
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
-| Defect 47.6 (OTLP export) | **[OBSIDIAN WORKING]** | tracing-opentelemetry + OTLP exporter behind `otlp` feature flag |
+| Defect 47.6 (OTLP export) | **[DONE by Obsidian in 8a186f45]** | otlp feature in jackin-diagnostics; double-gated (compile + env); BatchSpanProcessor |
 | Defect 46 acceptance gates | **[DONE by Obsidian]** | All gates green: fmt, clippy --workspace, tests 538+pass, docs (repo-links, roadmap-sidebar, tsc, bun test). 4 pre-existing flaky excluded. Smoke gate remains (operator run). |
 
 ---
