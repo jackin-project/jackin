@@ -410,15 +410,20 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
     }
 
     // Memory values must fit in i64 for the Bollard/Docker API boundary.
-    for field in ["memory", "memory_reservation"] {
-        let bytes_opt = if field == "memory" { memory_bytes } else { reservation_bytes };
-        if let Some(bytes) = bytes_opt {
-            if bytes > i64::MAX as u64 {
-                errors.push(GrantValidationError::ValueOutOfRange {
-                    field,
-                    reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
-                });
-            }
+    if let Some(bytes) = memory_bytes {
+        if bytes > i64::MAX as u64 {
+            errors.push(GrantValidationError::ValueOutOfRange {
+                field: "memory",
+                reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
+            });
+        }
+    }
+    if let Some(bytes) = reservation_bytes {
+        if bytes > i64::MAX as u64 {
+            errors.push(GrantValidationError::ValueOutOfRange {
+                field: "memory_reservation",
+                reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
+            });
         }
     }
 
@@ -666,6 +671,17 @@ pub fn validate_effective_grants(grants: &EffectiveGrants) -> Vec<GrantValidatio
     // validation on each DockerGrants would not catch the combination.
     if grants.user == "root" && grants.sudo {
         errors.push(GrantValidationError::RootAndSudo);
+    }
+    // memory_reservation > memory can emerge from cross-source merging: each
+    // source passes per-source validation independently, but after apply_grants
+    // raises each field to its maximum the merged result may violate the constraint.
+    if let (Some(res), Some(mem)) = (grants.memory_reservation_bytes, grants.memory_bytes) {
+        if res > mem {
+            errors.push(GrantValidationError::MemoryReservationExceedsMemory {
+                reservation: res,
+                memory: mem,
+            });
+        }
     }
     errors
 }

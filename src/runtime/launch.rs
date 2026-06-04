@@ -2418,6 +2418,32 @@ async fn load_role_with(
             apparmor_info.profile,
             apparmor_info.layer,
         );
+        // Validate config and workspace grants BEFORE applying them.
+        // `apply_grants` (called inside `resolve_effective_grants`) requires
+        // validated inputs per its doc comment; invalid strings would be silently
+        // skipped otherwise.
+        {
+            let mut all_errors: Vec<String> = Vec::new();
+            if let Some(ref grants) = config.docker.grants {
+                all_errors.extend(
+                    super::docker_profile::validate_grants(grants)
+                        .into_iter()
+                        .map(|e| format!("  • [config] {e}")),
+                );
+            }
+            if let Some(ws_grants) =
+                workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref())
+            {
+                all_errors.extend(
+                    super::docker_profile::validate_grants(ws_grants)
+                        .into_iter()
+                        .map(|e| format!("  • [workspace] {e}")),
+                );
+            }
+            if !all_errors.is_empty() {
+                anyhow::bail!("docker grants validation failed:\n{}", all_errors.join("\n"));
+            }
+        }
         let mut effective_grants_early = super::docker_profile::resolve_effective_grants(
             resolved_profile_early.0,
             config.docker.grants.as_ref(),
@@ -2584,43 +2610,17 @@ async fn load_role_with(
             );
         }
 
-        // Validate explicit grants from all sources before any container work starts.
-        // Aggregate errors across config and workspace so the operator sees everything at once.
-        {
-            let mut all_errors: Vec<String> = Vec::new();
-            if let Some(ref grants) = config.docker.grants {
-                all_errors.extend(
-                    super::docker_profile::validate_grants(grants)
-                        .into_iter()
-                        .map(|e| format!("  • [config] {e}")),
-                );
-            }
-            if let Some(ws_grants) =
-                workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref())
-            {
-                all_errors.extend(
-                    super::docker_profile::validate_grants(ws_grants)
-                        .into_iter()
-                        .map(|e| format!("  • [workspace] {e}")),
-                );
-            }
-            if !all_errors.is_empty() {
-                anyhow::bail!("docker grants validation failed:\n{}", all_errors.join("\n"));
-            }
-        }
         // Validate cross-source invariants on the merged effective grants.
-        // (Per-source validate_grants cannot catch combinations that only emerge
-        // after config + workspace grants are merged together.)
-        {
-            let merged_errors = super::docker_profile::validate_effective_grants(&effective_grants_early);
-            if !merged_errors.is_empty() {
-                let msg = merged_errors
-                    .iter()
-                    .map(|e| format!("  • [merged] {e}"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                anyhow::bail!("docker grants validation failed:\n{msg}");
-            }
+        // Per-source validate_grants (run above) cannot catch combinations
+        // that only emerge after config + workspace grants are merged.
+        let merged_errors = super::docker_profile::validate_effective_grants(&effective_grants_early);
+        if !merged_errors.is_empty() {
+            let msg = merged_errors
+                .iter()
+                .map(|e| format!("  • [merged] {e}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::bail!("docker grants validation failed:\n{msg}");
         }
 
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
