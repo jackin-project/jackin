@@ -276,6 +276,24 @@ pub fn stories() -> Vec<Story> {
             7,
             story_save_discard_focus_save,
         ),
+        Story::new(
+            "save-discard/focus-discard",
+            "Save/discard dialog — Discard focused",
+            "SaveDiscardDialog",
+            "Dirty exit with Discard pre-selected (destructive focus state).",
+            54,
+            7,
+            story_save_discard_focus_discard,
+        ),
+        Story::new(
+            "scrollable-panel/scrolled",
+            "Scrollable panel scrolled",
+            "ScrollablePanel",
+            "Mount list scrolled down with vertical thumb visible on the border.",
+            54,
+            8,
+            story_scrollable_panel_scrolled,
+        ),
     ]
 }
 
@@ -555,6 +573,40 @@ fn story_save_discard_focus_save(frame: &mut Frame<'_>, area: Rect) {
     let mut state = SaveDiscardState::new("Save workspace changes before leaving?");
     state.focus = SaveDiscardFocus::Save;
     render_save_discard_dialog(frame, area, &state);
+}
+
+fn story_save_discard_focus_discard(frame: &mut Frame<'_>, area: Rect) {
+    let mut state = SaveDiscardState::new("Discard all uncommitted changes?");
+    state.focus = SaveDiscardFocus::Discard;
+    render_save_discard_dialog(frame, area, &state);
+}
+
+fn story_scrollable_panel_scrolled(frame: &mut Frame<'_>, area: Rect) {
+    let lines = vec![
+        Line::from("repo               /workspace/jackin-project/jackin                       rw"),
+        Line::from("github-cli         /jackin/host/config/gh                             ro"),
+        Line::from("codex              /jackin/codex                                      ro"),
+        Line::from("claude             /jackin/claude                                     ro"),
+        Line::from("cache              /jackin/host/cache/cargo                           rw"),
+        Line::from("socket             /jackin/run/jackin.sock                            rw"),
+        Line::from("role-manifest      /workspace/jackin.role.toml                         ro"),
+        Line::from("diagnostics        /jackin/state/diagnostics/jk-run-3d7e23             rw"),
+        Line::from("ssh                /jackin/host/ssh                                   ro"),
+        Line::from("op-session         /jackin/host/config/op                             ro"),
+        Line::from("dind               /var/run/docker.sock                               rw"),
+        Line::from("certs              /jackin/host/certs                                 ro"),
+    ];
+    let mut scroll_x = 0;
+    let mut scroll_y = 4; // scrolled past the first 4 rows — thumb visible
+    render_scrollable_block(
+        frame,
+        area,
+        lines,
+        &mut scroll_x,
+        &mut scroll_y,
+        true,
+        Some("Global mounts (scrolled)"),
+    );
 }
 
 #[cfg(test)]

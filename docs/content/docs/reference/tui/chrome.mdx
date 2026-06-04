@@ -241,6 +241,16 @@ The mechanism is a single host-side guard, `HostScreen` (<RepoFile path="crates/
 
 The in-container capsule client terminal adapter (<RepoFile path="crates/jackin-capsule/src/tui/terminal.rs" />) would otherwise toggle its **own** alternate screen (`?1049h`/`?1049l`) over the `docker exec` channel, so detaching it would pop the operator back to the cooked terminal even though the host still holds a screen. The launch flow passes `JACKIN_HOST_ALT_SCREEN=1` on the capsule `docker exec` (the `host_alt_screen_exec_flag` helper in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />) whenever it owns the screen; the client then skips its `?1049h` enter (keeping the `clear + home` so it draws fresh over the loading frame) and drops the `?1049l` from its detach reset, leaving the host guard to leave the screen once at the very end. Standalone capsule invocations (`jackin hardline`) do not set the env, so the client manages its own screen exactly as before.
 
+### Capsule resize: full erase + cache invalidation
+
+On every resize the capsule daemon must emit a full-screen erase (`\x1b[2J`) and invalidate all cached geometry before composing the next frame. This prevents stale cells from prior-geometry frames from persisting. The three required operations — in order — are:
+
+1. **Full-screen erase.** `compose_full_frame` emits `\x1b[2J` whenever the event is `Resize`, `SplitClose`, or `LayoutChange`. This is non-negotiable even on steady-state frames that would otherwise avoid the erase optimization.
+2. **Cache invalidation.** `resize()` calls `pane_body_caches.clear()` and `dirty_panes.clear()` so every pane repaints from scratch at the new geometry.
+3. **SIGWINCH coalescing.** Consecutive `ClientFrame::Resize` events are drained with `try_recv()` so a SIGWINCH storm is collapsed to a single resize event, bounding the erase + repaint to one frame per storm.
+
+Any layout/lifecycle change — pane close, tab close, split, zoom, dialog open/close — must request a full repaint via the same path. Do not add a new "mark dirty" path that bypasses these three steps.
+
 ### Modal supersede vs stack
 
 Two distinct modal-open patterns exist; they must not be confused:
