@@ -278,6 +278,46 @@ impl DamageGrid {
         &self.scrollback[start..end]
     }
 
+    /// Dump a scrollback VIEW as a [`GridSnapshot`]: the scrollback rows at
+    /// `offset` as a top prefix, then the live screen rows filling the rest of
+    /// the `viewport_rows`. `offset == 0` (or empty scrollback) returns the
+    /// live `dump()`. This is the snapshot the capsule's Ratatui pane-body
+    /// widget renders when the operator has scrolled up — the Ratatui parallel
+    /// of `render::pane_snapshot_from_damagegrid_with_scrollback`, kept here so
+    /// it composes the same prefix/tail layout from one place.
+    #[must_use]
+    pub fn dump_scrollback_view(
+        &self,
+        offset: usize,
+        viewport_rows: u16,
+    ) -> crate::snapshot::GridSnapshot {
+        let live = self.dump();
+        if offset == 0 {
+            return live;
+        }
+        let rows_to_draw = viewport_rows.min(self.rows);
+        let sb = self.scrollback_rows_at_offset(offset, rows_to_draw as usize);
+        if sb.is_empty() {
+            return live;
+        }
+        let prefix = sb.len().min(rows_to_draw as usize);
+        let mut cells: Vec<Vec<crate::snapshot::SnapCell>> =
+            Vec::with_capacity(rows_to_draw as usize);
+        for sb_row in sb.iter().take(prefix) {
+            cells.push(sb_row.iter().map(crate::snapshot::SnapCell::from).collect());
+        }
+        for live_row in live.cells.iter().take(rows_to_draw as usize - prefix) {
+            cells.push(live_row.clone());
+        }
+        crate::snapshot::GridSnapshot {
+            rows: rows_to_draw,
+            cols: self.cols,
+            cursor: live.cursor,
+            alternate_screen: live.alternate_screen,
+            cells,
+        }
+    }
+
     /// Resize the grid. Marks all rows dirty.
     pub fn set_size(&mut self, rows: u16, cols: u16) {
         self.rows = rows;
@@ -1256,4 +1296,30 @@ fn resize_grid(grid: &[Vec<Cell>], rows: u16, cols: u16) -> Vec<Vec<Cell>> {
         }
     }
     new
+}
+
+#[cfg(test)]
+mod scrollback_view_tests {
+    use super::DamageGrid;
+
+    #[test]
+    fn dump_scrollback_view_offset_zero_matches_live() {
+        let mut g = DamageGrid::new(2, 8, 100);
+        g.process(b"abc\r\ndef\r\nghi");
+        let view = g.dump_scrollback_view(0, 2);
+        assert_eq!(view.cells, g.dump().cells);
+    }
+
+    #[test]
+    fn dump_scrollback_view_shows_scrolled_history() {
+        let mut g = DamageGrid::new(2, 8, 100);
+        for i in 0..6 {
+            g.process(format!("line{i}\r\n").as_bytes());
+        }
+        assert!(g.scrollback_len() > 0, "scrollback should have filled");
+        let view = g.dump_scrollback_view(2, 2);
+        assert_eq!(view.cells.len(), 2);
+        // The scrolled-up view differs from the live tail — it shows history.
+        assert_ne!(view.cells, g.dump().cells);
+    }
 }

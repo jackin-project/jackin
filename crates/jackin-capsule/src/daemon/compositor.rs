@@ -197,13 +197,20 @@ impl Multiplexer {
                     .map(|s| (pane.id, session_display_title(s)))
             })
             .collect();
-        // Phase 5: use GridSnapshot from DamageGrid for pane bodies in Ratatui frame.
+        // Pane bodies as GridSnapshots. A pane the operator has scrolled up in
+        // (scrollback_offset != 0) is dumped as a scrollback VIEW so the
+        // Ratatui body shows history instead of the live tail — the parallel of
+        // the raw path's render_snapshot scrollback branch.
         let pane_screens: Vec<(u64, jackin_term::GridSnapshot)> = panes
             .iter()
             .filter_map(|pane| {
-                self.sessions
-                    .get(&pane.id)
-                    .map(|s| (pane.id, s.shadow_grid.dump()))
+                self.sessions.get(&pane.id).map(|s| {
+                    (
+                        pane.id,
+                        s.shadow_grid
+                            .dump_scrollback_view(s.scrollback_offset, pane.inner.rows),
+                    )
+                })
             })
             .collect();
 
