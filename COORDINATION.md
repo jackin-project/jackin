@@ -2,6 +2,10 @@
 
 **Single source of truth.** Read and update this file before claiming work.
 
+**Agent identities** (unique names, not A/B):
+- **Verdant** — secondary session; specializes in jackin-term, docs, Phase 2 dispatch collapses
+- (primary session name TBD by that agent)
+
 **Deprecated files (superseded by this file, do not use):** `.claude/agent-coordination.md` and `.claude/AGENT_COORDINATION.md` are local-only (gitignored) stub files that redirect here. `AGENT-COORDINATION.md` was deleted. This `COORDINATION.md` is the only one that matters.
 
 ## Agent names
