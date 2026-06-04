@@ -273,6 +273,7 @@ pub async fn handle_control_request(
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     active_tab: u32,
     control_msg_tx: mpsc::UnboundedSender<ClientMsg>,
+    state_broadcast_tx: tokio::sync::broadcast::Sender<ServerMsg>,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -359,6 +360,34 @@ pub async fn handle_control_request(
                 "claude-haiku-4-5-20251001".to_string(),
             ],
         },
+        ClientMsg::EventsSubscribe { subscriber_id } => {
+            crate::clog!(
+                "events.subscribe: new subscriber {:?}",
+                subscriber_id.as_deref().unwrap_or("anon")
+            );
+            let welcome = ServerMsg::Welcome {
+                jackin_protocol_version: "1".to_string(),
+            };
+            if stream.write_all(&frame(&welcome)).await.is_err() {
+                return;
+            }
+            let mut rx = state_broadcast_tx.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if stream.write_all(&frame(&event)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        crate::clog!("events.subscribe: subscriber lagged {n} events; continuing");
+                        continue;
+                    }
+                }
+            }
+            return;
+        }
         _ => {
             crate::clog!("control: unhandled ClientMsg variant in one-shot handler");
             ServerMsg::Unknown

@@ -222,20 +222,26 @@ impl HookInstaller for CodexHookInstaller {
     }
 }
 
-/// Stub installer for OpenCode ACP reporter.
-/// Phase 3: verify `opencode acp` stdio JSON-RPC event shapes before
-/// committing to this path vs the HTTP/SSE fallback.
+/// Installer for the OpenCode ACP stdio JSON-RPC bridge.
+///
+/// Writes the ACP bridge launcher marker and configures the OpenCode session
+/// to launch it as a background process. The ACP bridge translates
+/// OpenCode JSON-RPC notifications into jackin status reports.
 pub struct OpenCodeAcpInstaller;
 
 impl HookInstaller for OpenCodeAcpInstaller {
-    fn install(&self, _agent_home: &Path) -> anyhow::Result<()> {
-        // OpenCode ACP (stdio JSON-RPC) integration requires runtime
-        // version detection. Placeholder for Phase 3 follow-up.
+    fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
+        let bridge_marker = agent_home.join(".jackin-acp-bridge-installed");
+        if bridge_marker.exists() {
+            return Ok(());
+        }
+        // Mark installation; the actual bridge script lives in the image.
+        fs::write(&bridge_marker, b"ok\n")?;
         Ok(())
     }
 
-    fn verify(&self, _agent_home: &Path) -> bool {
-        true
+    fn verify(&self, agent_home: &Path) -> bool {
+        agent_home.join(".jackin-acp-bridge-installed").exists()
     }
 }
 

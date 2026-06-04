@@ -82,6 +82,9 @@ pub struct Multiplexer {
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    /// Broadcast sender for agent state change events. Control clients that
+    /// send EventsSubscribe receive from the paired receiver.
+    state_broadcast_tx: tokio::sync::broadcast::Sender<jackin_protocol::control::ServerMsg>,
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
@@ -592,6 +595,7 @@ impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (state_broadcast_tx, _) = tokio::sync::broadcast::channel(256);
         let content_rows = rows
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS);
@@ -642,6 +646,7 @@ impl Multiplexer {
             env_passthrough,
             event_tx,
             event_rx,
+            state_broadcast_tx,
             zoomed: None,
             input_parser,
             detach_requested: false,
@@ -1851,6 +1856,16 @@ impl Multiplexer {
         )?;
         let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
+        let _ = self.state_broadcast_tx.send(
+            jackin_protocol::control::ServerMsg::AgentStateChanged {
+                session_id: id,
+                effective: "unknown".to_string(),
+                seen: true,
+                source: "spawn".to_string(),
+                revision: 0,
+                reason: Some("spawned".to_string()),
+            }
+        );
         if let Some(ref agent) = self.sessions[&id].agent {
             self.token_monitor.register_session(id, agent);
         }
@@ -1948,6 +1963,16 @@ impl Multiplexer {
             self.event_tx.clone(),
         )?;
         self.sessions.insert(new_id, session);
+        let _ = self.state_broadcast_tx.send(
+            jackin_protocol::control::ServerMsg::AgentStateChanged {
+                session_id: new_id,
+                effective: "unknown".to_string(),
+                seen: true,
+                source: "spawn".to_string(),
+                revision: 0,
+                reason: Some("spawned".to_string()),
+            }
+        );
         if let Some(ref agent) = self.sessions[&new_id].agent {
             self.token_monitor.register_session(new_id, agent);
         }
@@ -3145,6 +3170,7 @@ impl Multiplexer {
         self.refresh_tab_labels();
 
         let states = self.snapshot_session_states();
+        let stuck = self.snapshot_stuck_sessions();
         let token_snap = self
             .active_focused_id()
             .and_then(|id| self.token_monitor.token_snapshots.get(&id));
@@ -3154,6 +3180,7 @@ impl Multiplexer {
             &self.tabs,
             self.active_tab,
             &states,
+            &stuck,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
             token_snap,
@@ -3317,6 +3344,16 @@ impl Multiplexer {
                         raw,
                         agent
                     );
+                    let _ = self.state_broadcast_tx.send(
+                        jackin_protocol::control::ServerMsg::AgentStateChanged {
+                            session_id: id,
+                            effective: new_state.label().to_string(),
+                            seen: session.status.seen,
+                            source: "screen-detector".to_string(),
+                            revision: session.status.revision,
+                            reason: None,
+                        }
+                    );
                 }
             // Drain any buffered shell integration marker from the last PTY parse pass.
             if let Some(mark) = session.take_shell_mark() {
@@ -3337,16 +3374,84 @@ impl Multiplexer {
                             mark,
                             new_state
                         );
+                        let _ = self.state_broadcast_tx.send(
+                            jackin_protocol::control::ServerMsg::AgentStateChanged {
+                                session_id: id,
+                                effective: new_state.label().to_string(),
+                                seen: session.status.seen,
+                                source: "screen-detector".to_string(),
+                                revision: session.status.revision,
+                                reason: None,
+                            }
+                        );
                     }
                 }
             }
+
+            // Cursor-position probe for stuck detection.
+            const PROBE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
+            if session.state() == crate::protocol::control::AgentState::Working
+                && session.last_output_at.elapsed() > std::time::Duration::from_secs(240)
+                && !session.cursor_probe_pending
+                && session
+                    .cursor_probe_sent_at
+                    .map(|t| t.elapsed() > PROBE_COOLDOWN)
+                    .unwrap_or(true)
+            {
+                crate::cdebug!("session {id}: sending cursor probe (no output for 4m)");
+                session.cursor_probe_pending = true;
+                session.cursor_probe_sent_at = Some(std::time::Instant::now());
+                crate::session::Session::probe_cursor_position(session.input_tx.clone());
+            }
+
+            // Drain CPR response flag set by feed_pty / check_for_cpr_response.
+            if session.cursor_probe_responded {
+                session.cursor_probe_responded = false;
+                let _ = session.apply_raw_state(crate::agent_status::AgentRawState::CursorProbeOk);
+            }
+
+            // Probe timeout → signal blocked.
+            if session.cursor_probe_pending
+                && session
+                    .cursor_probe_sent_at
+                    .map(|t| t.elapsed() > std::time::Duration::from_secs(2))
+                    .unwrap_or(false)
+            {
+                session.cursor_probe_pending = false;
+                session.cursor_probe_sent_at = None;
+                let _ = session
+                    .apply_raw_state(crate::agent_status::AgentRawState::CursorProbeTimeout);
+            }
+
+            // Stuck detection: Working with no output for > 5 minutes.
+            const STUCK_WARNING_THRESHOLD: std::time::Duration =
+                std::time::Duration::from_secs(300);
+            if session.state() == crate::protocol::control::AgentState::Working
+                && session.last_output_at.elapsed() > STUCK_WARNING_THRESHOLD
+            {
+                if session.stuck_since.is_none() {
+                    session.stuck_since = Some(std::time::Instant::now());
+                    crate::clog!("session {id}: stuck warning threshold reached");
+                }
+            } else {
+                session.stuck_since = None;
+            }
         }
+    }
+
+    fn snapshot_stuck_sessions(&self) -> std::collections::HashSet<u64> {
+        self.sessions
+            .iter()
+            .filter(|(_, s)| s.stuck_since.is_some())
+            .map(|(&id, _)| id)
+            .collect()
     }
 
     fn compose_chrome_hover_frame(&mut self) -> Vec<u8> {
         self.refresh_tab_labels();
         let mut buf = b"\x1b7".to_vec();
         let states = self.snapshot_session_states();
+        let stuck = self.snapshot_stuck_sessions();
         let token_snap = self
             .active_focused_id()
             .and_then(|id| self.token_monitor.token_snapshots.get(&id));
@@ -3356,6 +3461,7 @@ impl Multiplexer {
             &self.tabs,
             self.active_tab,
             &states,
+            &stuck,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
             token_snap,
@@ -3611,6 +3717,16 @@ impl Multiplexer {
                                 crate::clog!(
                                     "session {session_id}: hook report {raw_state} → {new_state:?}"
                                 );
+                                let _ = self.state_broadcast_tx.send(
+                                    jackin_protocol::control::ServerMsg::AgentStateChanged {
+                                        session_id,
+                                        effective: new_state.label().to_string(),
+                                        seen: session.status.seen,
+                                        source: "hook".to_string(),
+                                        revision: session.status.revision,
+                                        reason: None,
+                                    }
+                                );
                             }
                         }
                         session.hook_authority =
@@ -3863,6 +3979,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     tabs_snapshot,
                     active_tab,
                     control_msg_tx.clone(),
+                    mux.state_broadcast_tx.clone(),
                 ));
             }
 
@@ -4332,6 +4449,7 @@ async fn perform_handshake(
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
     active_tab: u32,
     control_msg_tx: mpsc::UnboundedSender<crate::protocol::control::ClientMsg>,
+    state_broadcast_tx: tokio::sync::broadcast::Sender<crate::protocol::control::ServerMsg>,
 ) {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
@@ -4367,6 +4485,7 @@ async fn perform_handshake(
             tabs_snapshot,
             active_tab,
             control_msg_tx,
+            state_broadcast_tx,
         )
         .await;
         drop(client_permit);

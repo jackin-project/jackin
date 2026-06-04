@@ -721,6 +721,19 @@ pub struct Session {
     /// Number of active subagents. While > 0, PostToolUse-equivalent events
     /// must not clear a Blocked state.
     pub subagent_count: u32,
+    /// Whether a CSI 6n cursor-position probe has been sent and we're waiting
+    /// for the `\x1b[row;colR` response. Set to true when a probe is issued
+    /// for stuck detection; cleared when a CPR response arrives in the PTY
+    /// output stream or on timeout.
+    pub cursor_probe_pending: bool,
+    pub cursor_probe_sent_at: Option<std::time::Instant>,
+    /// Set by `check_for_cpr_response` when a CPR response arrives. Drained
+    /// by the daemon on the next tick to feed `CursorProbeOk` into the
+    /// status machine.
+    pub cursor_probe_responded: bool,
+    /// When the session first became a stuck candidate (Working with no
+    /// output and cursor probe timed out). `None` when not stuck.
+    pub stuck_since: Option<std::time::Instant>,
 }
 
 pub enum SessionEvent {
@@ -1227,6 +1240,10 @@ impl Session {
                 sequence: crate::agent_status::sequence::SequenceTracker::new(),
                 child_pid: child_pid.map(|p| p as u32),
                 subagent_count: 0,
+                cursor_probe_pending: false,
+                cursor_probe_sent_at: None,
+                cursor_probe_responded: false,
+                stuck_since: None,
             },
             sid,
         ))
@@ -1360,6 +1377,44 @@ impl Session {
         }
     }
 
+    /// Send a `CSI 6n` (DECXCPR) cursor-position request to the PTY.
+    /// Used for stuck diagnostics — if the cursor responds, the agent is
+    /// reachable; if it times out, the PTY may be blocked.
+    ///
+    /// Fire-and-forget: the response `\x1b[<row>;<col>R` arrives through the
+    /// PTY read stream as normal output. The daemon recognises CPR responses
+    /// via the `cursor_probe_pending` flag checked in `check_for_cpr_response`.
+    pub fn probe_cursor_position(input_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>) {
+        let _ = input_tx.send(b"\x1b[6n".to_vec());
+    }
+
+    /// Check if `bytes` contains a cursor position report (CPR) response
+    /// `\x1b[<row>;<col>R`. Called before feeding bytes to the VT parser so the
+    /// raw escape is visible. Sets `cursor_probe_responded` when found and
+    /// `cursor_probe_pending` is true.
+    pub fn check_for_cpr_response(&mut self, bytes: &[u8]) -> bool {
+        if !self.cursor_probe_pending {
+            return false;
+        }
+        for i in 0..bytes.len().saturating_sub(4) {
+            if bytes[i] == b'\x1b' && bytes[i + 1] == b'[' {
+                let rest = &bytes[i + 2..];
+                if let Some(end) = rest.iter().position(|&b| b == b'R') {
+                    let inner = &rest[..end];
+                    if inner.contains(&b';')
+                        && inner.iter().all(|b| b.is_ascii_digit() || *b == b';')
+                    {
+                        self.cursor_probe_pending = false;
+                        self.cursor_probe_sent_at = None;
+                        self.cursor_probe_responded = true;
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Current effective runtime status. Derived from the status machine —
     /// the single source of truth for what this session is doing.
     pub fn state(&self) -> AgentState {
@@ -1433,6 +1488,7 @@ impl Session {
         );
         let was_alternate = self.parser.screen().alternate_screen();
         let was_scrolled = self.scrollback_offset != 0;
+        self.check_for_cpr_response(bytes);
         for &byte in bytes {
             let (screen_rows, _) = self.parser.screen().size();
             let actions = self.inline_scroll_region_tracker.advance(byte, screen_rows);
@@ -1832,6 +1888,10 @@ impl Session {
             sequence: crate::agent_status::sequence::SequenceTracker::new(),
             child_pid: None,
             subagent_count: 0,
+            cursor_probe_pending: false,
+            cursor_probe_sent_at: None,
+            cursor_probe_responded: false,
+            stuck_since: None,
         }
     }
 }

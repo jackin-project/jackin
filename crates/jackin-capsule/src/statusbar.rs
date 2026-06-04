@@ -177,6 +177,7 @@ impl StatusBar {
         tabs: &[Tab],
         active_tab: usize,
         sessions_state: &[(u64, AgentState)],
+        stuck_sessions: &std::collections::HashSet<u64>,
         hovered_tab: Option<usize>,
         menu_hovered: bool,
         token_snapshot: Option<&crate::token_monitor::ProviderUsageSnapshot>,
@@ -209,7 +210,7 @@ impl StatusBar {
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let (name, glyph) = tab_label(tab, sessions_state);
+                let (name, glyph) = tab_label(tab, sessions_state, stuck_sessions);
                 (name, glyph, i == active_tab)
             })
             .collect();
@@ -444,8 +445,6 @@ enum TabGlyph {
     /// `Unknown` — `·`, mid-gray: state not yet determined (normal at startup).
     Unknown,
     /// `Stuck` — `!`, amber: "expected progress, none arrived" (diagnostic overlay).
-    /// Wired in Phase 4 when stuck detection is complete.
-    #[allow(dead_code)]
     Stuck,
 }
 
@@ -453,18 +452,25 @@ enum TabGlyph {
 /// the full display label by reserving the sep + glyph slots; the
 /// glyph is painted separately so its colour can differ from the
 /// surrounding tab foreground.
-fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
+fn tab_label(
+    tab: &Tab,
+    states: &[(u64, AgentState)],
+    stuck_sessions: &std::collections::HashSet<u64>,
+) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
     let state_of = |target: AgentState| {
         ids.iter()
             .any(|id| states.iter().any(|(sid, st)| sid == id && *st == target))
     };
-    // Roll-up priority: Blocked(4) > Done(3) > Working(2) > Unknown(0) > Idle/None
+    let any_stuck = ids.iter().any(|id| stuck_sessions.contains(id));
+    // Roll-up priority: Blocked(4) > Done(3) > Stuck(2.5) > Working(2) > Unknown(0) > Idle/None
     // Unknown renders as a subtle mid-gray dot — not alarming, common at startup.
     let glyph = if state_of(AgentState::Blocked) {
         TabGlyph::Blocked
     } else if state_of(AgentState::Done) {
         TabGlyph::Done
+    } else if any_stuck {
+        TabGlyph::Stuck
     } else if state_of(AgentState::Working) {
         TabGlyph::Working
     } else if state_of(AgentState::Unknown) {
@@ -638,12 +644,12 @@ mod tests {
         let tabs = vec![tab];
         let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &states, None, false, None);
+        bar.render(&mut buf, 80, &tabs, 0, &states, &std::collections::HashSet::new(), None, false, None);
         let (start, end) = bar.tab_regions[0];
         assert_eq!(end - start, 10);
         // Re-rendering with no state must keep the same width.
         let mut buf2 = Vec::new();
-        bar.render(&mut buf2, 80, &tabs, 0, &[], None, false, None);
+        bar.render(&mut buf2, 80, &tabs, 0, &[], &std::collections::HashSet::new(), None, false, None);
         let (s2, e2) = bar.tab_regions[0];
         assert_eq!(e2 - s2, 10);
         assert_eq!((s2, e2), (start, end));
@@ -687,7 +693,7 @@ mod tests {
     fn idle_hint_is_rendered() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, false, None);
+        bar.render(&mut buf, 80, &[], 0, &[], &std::collections::HashSet::new(), None, false, None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("☰Menu"), "menu hint missing: {s:?}");
         assert!(
@@ -709,7 +715,7 @@ mod tests {
     fn idle_hint_hover_uses_lifted_button_chrome() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, true, None);
+        bar.render(&mut buf, 80, &[], 0, &[], &std::collections::HashSet::new(), None, true, None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains(" ☰Menu "), "menu hint should be padded: {s:?}");
         assert!(
@@ -723,7 +729,7 @@ mod tests {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, false, None);
+        bar.render(&mut buf, 80, &[], 0, &[], &std::collections::HashSet::new(), None, false, None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("prefix…"), "prefix hint missing: {s:?}");
         assert!(
@@ -737,7 +743,7 @@ mod tests {
         let mut bar = StatusBar::new();
         let tabs = vec![Tab::new_single("Claude", 1)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &[], None, false, None);
+        bar.render(&mut buf, 80, &tabs, 0, &[], &std::collections::HashSet::new(), None, false, None);
         let s = String::from_utf8_lossy(&buf);
         // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
         assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");
