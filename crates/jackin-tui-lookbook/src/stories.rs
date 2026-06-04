@@ -129,7 +129,7 @@ pub fn stories() -> Vec<Story> {
             "ConfirmDialog",
             "Destructive workspace-delete confirmation.",
             48,
-            7,
+            8, // 2 borders + 1 leading + 2 prompt lines + 1 spacer + 1 buttons + 1 trailing
             story_confirm_default,
         ),
         Story::new(
@@ -138,7 +138,7 @@ pub fn stories() -> Vec<Story> {
             "ConfirmDialog",
             "Role-source trust confirmation with structured role and repository fields.",
             70,
-            11,
+            13, // 2 borders + 1 leading + 1 prompt + 1 sep + 2 rows + 1 sep + 2 notes + 1 spacer + 1 buttons + 1 trailing
             story_confirm_role_trust,
         ),
         Story::new(
@@ -147,7 +147,7 @@ pub fn stories() -> Vec<Story> {
             "ErrorDialog",
             "Launch failure modal with acknowledged OK action.",
             62,
-            9,
+            10, // 2 borders + 1 leading + 2-3 body rows + 1 spacer + 1 button + 1 trailing
             story_error_default,
         ),
         Story::new(
@@ -156,7 +156,7 @@ pub fn stories() -> Vec<Story> {
             "SaveDiscardDialog",
             "Dirty workspace editor exit with Cancel focused by default.",
             54,
-            7,
+            7, // 2 borders + 1 leading + 1 prompt + 1 spacer + 1 buttons + 1 trailing
             story_save_discard_default,
         ),
         Story::new(
@@ -165,7 +165,7 @@ pub fn stories() -> Vec<Story> {
             "StatusPopup",
             "Non-interactive role-resolution progress popup.",
             48,
-            7,
+            7, // 2 borders + 1 leading + 1 message + 1 spacer + 1 please-wait + 1 trailing
             story_status_popup_default,
         ),
         Story::new(
