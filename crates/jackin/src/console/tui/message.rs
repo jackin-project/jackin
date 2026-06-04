@@ -499,6 +499,12 @@ fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bo
     editor.active_field = FieldFocus::Row(plan.active_row);
     editor.tab_scroll_x = plan.tab_scroll_x;
     editor.tab_scroll_y = plan.tab_scroll_y;
+    // Tab-switch returns focus to the tab bar; clear per-tab scroll focus so
+    // the previously-focused content block does not show a stale green border.
+    if focus_tab_bar {
+        editor.workspace_mounts_scroll_focused = false;
+        editor.tab_content_scroll_focused = false;
+    }
     if plan.clear_auth_kind {
         editor.auth_selected_kind = None;
     }
@@ -540,6 +546,14 @@ const fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab
     let plan = settings_tab_move_plan(settings.active_tab, delta, focus_tab_bar);
     settings.active_tab = plan.active_tab;
     settings.tab_bar_focused = plan.tab_bar_focused;
+    // Tab-switch returns focus to the tab bar; clear per-tab scroll focus so
+    // the previously-focused content block does not show a stale green border.
+    if focus_tab_bar {
+        settings.mounts.scroll_focused = false;
+        settings.env.scroll_focused = false;
+        settings.auth.scroll_focused = false;
+        settings.trust.scroll_focused = false;
+    }
 }
 
 fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
