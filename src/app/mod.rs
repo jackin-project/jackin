@@ -963,9 +963,12 @@ pub async fn run(cli: Cli) -> Result<()> {
                 }
                 Ok(())
             }
-            WorkspaceCommand::Show { name, format } => {
-                let workspace = config.require_workspace(&name)?;
-                if format == "json" {
+            WorkspaceCommand::Show(show_args) => {
+                let name = &show_args.name;
+                let workspace = config.require_workspace(name)?;
+                if crate::cli::format::OutputFormat::parse(&show_args.fmt.format)
+                    == crate::cli::format::OutputFormat::Json
+                {
                     let mounts: Vec<serde_json::Value> = workspace
                         .mounts
                         .iter()
@@ -991,7 +994,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     });
                     println!("{}", serde_json::to_string_pretty(&envelope)?);
                 } else {
-                    print!("{}", render_workspace_show(&config, &name, workspace));
+                    print!("{}", render_workspace_show(&config, name, workspace));
                 }
                 Ok(())
             }

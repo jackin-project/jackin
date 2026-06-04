@@ -56,7 +56,7 @@ pub struct UserMessage {
     pub code: ErrorCode,
     pub headline: &'static str,
     pub what_to_try: &'static str,
-    pub more_detail: Option<&'static str>,
+    pub more_detail: Option<String>,
 }
 
 impl UserMessage {
@@ -69,8 +69,8 @@ impl UserMessage {
         }
     }
 
-    const fn with_detail(mut self, detail: &'static str) -> Self {
-        self.more_detail = Some(detail);
+    fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.more_detail = Some(detail.into());
         self
     }
 
@@ -85,7 +85,7 @@ impl UserMessage {
         );
         eprintln!("  {}", "→ what to try:".yellow());
         eprintln!("    {}", self.what_to_try);
-        if let Some(detail) = self.more_detail {
+        if let Some(detail) = self.more_detail.as_deref() {
             eprintln!("  {}", "→ more detail:".dimmed());
             eprintln!("    {}", detail.dimmed());
         }
@@ -168,13 +168,13 @@ impl JackinError {
                 ErrorCode::E002,
                 "Docker version too old",
                 "Upgrade Docker to the latest stable release.",
-            ).with_detail(Box::leak(format!("Found {found}, need ≥{required}").into_boxed_str())),
+            ).with_detail(format!("Found {found}, need ≥{required}")),
 
             Self::OutOfDiskSpace { path } => UserMessage::new(
                 ErrorCode::E003,
                 "Out of disk space for image build",
                 "Run `jackin prune` or `docker system prune` to reclaim space.",
-            ).with_detail(Box::leak(format!("Filesystem containing {path} is nearly full.").into_boxed_str())),
+            ).with_detail(format!("Filesystem containing {path} is nearly full.")),
 
             Self::RoleManifestInvalid { .. } => UserMessage::new(
                 ErrorCode::E004,
@@ -186,31 +186,31 @@ impl JackinError {
                 ErrorCode::E005,
                 "Role manifest version is not supported by this jackin binary",
                 "Upgrade jackin (`brew upgrade jackin`) or pin the role to a compatible manifest version.",
-            ).with_detail(Box::leak(format!("Manifest declares version {version}.").into_boxed_str())),
+            ).with_detail(format!("Manifest declares version {version}.")),
 
             Self::RoleSourceNotTrusted { role } => UserMessage::new(
                 ErrorCode::E006,
                 "Role source is not in the trusted list",
                 "Run `jackin config trust add <role>` to trust this role, or verify the source URL is correct.",
-            ).with_detail(Box::leak(format!("Role: {role}").into_boxed_str())),
+            ).with_detail(format!("Role: {role}")),
 
             Self::WorkspaceNotFound { name } => UserMessage::new(
                 ErrorCode::E007,
                 "Workspace not found",
                 "Run `jackin workspace list` to see saved workspaces, or `jackin workspace create` to add one.",
-            ).with_detail(Box::leak(format!("No workspace named {name:?}.").into_boxed_str())),
+            ).with_detail(format!("No workspace named {name:?}.")),
 
             Self::WorkspaceConfigVersionUnsupported { version } => UserMessage::new(
                 ErrorCode::E008,
                 "Workspace config version is not supported",
                 "Upgrade jackin to read this config version.",
-            ).with_detail(Box::leak(format!("Config declares version {version}.").into_boxed_str())),
+            ).with_detail(format!("Config declares version {version}.")),
 
             Self::ContainerNameConflict { name } => UserMessage::new(
                 ErrorCode::E009,
                 "Container name already in use",
                 "Run `jackin prune` to remove stale containers, or `docker rm <name>` to remove the specific one.",
-            ).with_detail(Box::leak(format!("Container: {name}").into_boxed_str())),
+            ).with_detail(format!("Container: {name}")),
 
             Self::DindHealthCheckFailed { .. } => UserMessage::new(
                 ErrorCode::E010,
@@ -222,7 +222,7 @@ impl JackinError {
                 ErrorCode::E011,
                 "Port conflict on DinD TLS port",
                 "Another process is using the DinD TLS port. Stop it or configure a different port.",
-            ).with_detail(Box::leak(format!("Port {port} is in use.").into_boxed_str())),
+            ).with_detail(format!("Port {port} is in use.")),
 
             Self::GhAuthFailed => UserMessage::new(
                 ErrorCode::E012,
@@ -246,7 +246,7 @@ impl JackinError {
                 ErrorCode::E015,
                 "Worktree materialization conflict",
                 "Run `jackin prune isolation` to clean up stale worktrees, then re-run.",
-            ).with_detail(Box::leak(format!("Conflict at: {path}").into_boxed_str())),
+            ).with_detail(format!("Conflict at: {path}")),
         }
     }
 }

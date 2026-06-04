@@ -1,9 +1,10 @@
 use clap::Args;
 use owo_colors::OwoColorize;
 
+use crate::cli::BANNER;
 use crate::cli::format::OutputFormat;
 use crate::paths::JackinPaths;
-use crate::preflight::{CheckName, CheckStatus, run_check};
+use crate::preflight::{CheckName, CheckResult, CheckStatus, run_check};
 
 /// `jackin doctor` — run pre-flight health checks and print a status table.
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -14,30 +15,32 @@ pub struct DoctorArgs {
     pub format: String,
 }
 
-impl DoctorArgs {
-    pub fn output_format(&self) -> OutputFormat {
-        if self.format == "json" {
-            OutputFormat::Json
-        } else {
-            OutputFormat::Human
-        }
-    }
-}
-
 pub async fn run(args: &DoctorArgs, paths: &JackinPaths) -> anyhow::Result<()> {
-    let checks = CheckName::all();
-    let format = args.output_format();
+    let format = OutputFormat::parse(&args.format);
+    let results = gather_check_results(CheckName::all(), paths).await;
 
     if format == OutputFormat::Json {
-        return run_json(checks, paths).await;
+        let json_rows: Vec<_> = results
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "name": r.name,
+                    "status": r.status.symbol().trim(),
+                    "message": r.message,
+                    "hint": r.hint,
+                })
+            })
+            .collect();
+        let envelope = serde_json::json!({ "schema_version": "v1", "data": json_rows });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+        return Ok(());
     }
 
-    print!("{}", jackin_tui::ansi::BRAND_BANNER);
+    print!("{BANNER}");
     println!("doctor\n");
 
     let mut any_fail = false;
-    for &check in checks {
-        let result = run_check(check, paths).await;
+    for result in &results {
         let status_str = match result.status {
             CheckStatus::Ok => result.status.symbol().green().to_string(),
             CheckStatus::Warn => result.status.symbol().yellow().to_string(),
@@ -66,21 +69,10 @@ pub async fn run(args: &DoctorArgs, paths: &JackinPaths) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_json(checks: &[CheckName], paths: &JackinPaths) -> anyhow::Result<()> {
-    let mut results = Vec::new();
+async fn gather_check_results(checks: &[CheckName], paths: &JackinPaths) -> Vec<CheckResult> {
+    let mut results = Vec::with_capacity(checks.len());
     for &check in checks {
-        let r = run_check(check, paths).await;
-        results.push(serde_json::json!({
-            "name": r.name,
-            "status": r.status.symbol().trim(),
-            "message": r.message,
-            "hint": r.hint,
-        }));
+        results.push(run_check(check, paths).await);
     }
-    let envelope = serde_json::json!({
-        "schema_version": "v1",
-        "data": results,
-    });
-    println!("{}", serde_json::to_string_pretty(&envelope)?);
-    Ok(())
+    results
 }

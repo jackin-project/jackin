@@ -34,7 +34,10 @@ pub use config::{
 };
 pub use logs::LogsArgs;
 pub use prune::PruneCommand;
-pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
+pub use workspace::{
+    WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand, WorkspaceFormatArgs,
+    WorkspaceShowArgs,
+};
 
 /// Operator's CLI for orchestrating AI coding roles in isolated containers
 ///

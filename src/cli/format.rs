@@ -21,6 +21,13 @@ where
     pub data: T,
 }
 
+impl OutputFormat {
+    /// Parse a `--format` flag value. Anything other than `"json"` returns `Human`.
+    pub fn parse(s: &str) -> Self {
+        if s == "json" { Self::Json } else { Self::Human }
+    }
+}
+
 impl<T: Serialize> OutputEnvelope<T> {
     pub const SCHEMA_V1: &'static str = "v1";
 

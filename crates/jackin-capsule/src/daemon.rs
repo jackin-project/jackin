@@ -3406,20 +3406,13 @@ impl Multiplexer {
         #[allow(clippy::collapsible_if)]
         if let Some(HoverTarget::Tab(idx)) = self.hover_target {
             if let Some(tab) = self.tabs.get(idx) {
-                let codename = tab.codename.clone();
-                let record = self
-                    .agent_history
-                    .iter()
-                    .rev()
-                    .find(|r| r.codename == codename)
-                    .cloned();
                 let col_start = self
                     .status_bar
                     .tab_regions
                     .get(idx)
                     .map(|&(s, _)| s)
                     .unwrap_or(0);
-                buf.extend_from_slice(&render_tab_tooltip(codename, record, col_start));
+                buf.extend_from_slice(&render_tab_tooltip(&tab.codename, col_start));
             }
         }
         buf.extend_from_slice(b"\x1b8");
@@ -4868,7 +4861,7 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 /// Positioned at screen row 2 (1-indexed), left-aligned with `col_start`.
 /// Uses a single-line Unicode border, ~30 chars wide.
 /// Painted with ANSI absolute cursor positioning; caller wraps in ESC-7/ESC-8.
-fn render_tab_tooltip(codename: String, _record: Option<AgentRecord>, col_start: u16) -> Vec<u8> {
+fn render_tab_tooltip(codename: &str, col_start: u16) -> Vec<u8> {
     // Codename label: dark bg (TAB_BG_INACTIVE 30,30,30) + phosphor green text + bold.
     // Reads as a contextual label in jackin's color language without duplicating the
     // brand pill (which is green bg + black text). Row 3 leaves one blank line of

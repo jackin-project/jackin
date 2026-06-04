@@ -16,6 +16,7 @@ where
     results
 }
 
+use crate::cli::BANNER;
 use crate::cli::format::OutputFormat;
 use crate::docker_client::{BollardDockerClient, ContainerState, DockerApi};
 use crate::instance::manifest::InstanceIndex;
@@ -67,11 +68,7 @@ pub struct StatusArgs {
 
 impl StatusArgs {
     pub fn output_format(&self) -> OutputFormat {
-        if self.format == "json" {
-            OutputFormat::Json
-        } else {
-            OutputFormat::Human
-        }
+        OutputFormat::parse(&self.format)
     }
 }
 
@@ -140,7 +137,7 @@ async fn run_level0(
         workspaces.into_iter().collect();
     sorted_ws.sort_by(|a, b| a.0.cmp(&b.0));
 
-    print!("{}", jackin_tui::ansi::BRAND_BANNER);
+    print!("{BANNER}");
     println!("fleet status\n");
 
     // Check container states in parallel using tokio::join_all for all instances.
