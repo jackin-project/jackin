@@ -4,9 +4,9 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Paragraph, Widget},
+    widgets::{HighlightSpacing, List, ListItem, ListState, Paragraph, StatefulWidget, Widget},
 };
 
 use crate::{
@@ -263,7 +263,34 @@ pub fn render_selected_lines_in_area(
     let viewport = usize::from(area.height);
     let total = lines.len();
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
-    render_lines_with_offset_in_area(frame, area, lines, offset);
+
+    if selected.is_some() {
+        // Use List so the selected row gets a full-width background fill — same
+        // pattern as SelectList and the workspace sidebar.
+        let highlight = Style::default()
+            .bg(crate::theme::PHOSPHOR_GREEN)
+            .fg(crate::theme::PHOSPHOR_DARK)
+            .add_modifier(Modifier::BOLD);
+        let items: Vec<ListItem<'_>> = lines.into_iter().map(ListItem::new).collect();
+        let mut state = ListState::default()
+            .with_offset(offset as usize)
+            .with_selected(selected);
+        let list = List::new(items)
+            .highlight_style(highlight)
+            .highlight_spacing(HighlightSpacing::Never);
+        StatefulWidget::render(list, area, frame.buffer_mut(), &mut state);
+        if is_scrollable(total, viewport) {
+            render_vertical_scrollbar_in_area(
+                frame,
+                vertical_list_scrollbar_area(area),
+                total,
+                viewport,
+                offset,
+            );
+        }
+    } else {
+        render_lines_with_offset_in_area(frame, area, lines, offset);
+    }
 }
 
 pub fn render_lines_with_offset_in_area(
