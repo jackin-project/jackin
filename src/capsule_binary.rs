@@ -368,13 +368,17 @@ struct CapsuleManifest {
 /// 3. Verify the blob signature via `Client::verify_blob`.
 /// 4. Require the certificate SAN to be the `release.yml` or `preview.yml`
 ///    signing workflow in `jackin-project/jackin`.
-/// 5. Parse the verified manifest JSON and extract the SHA256 for `arch`.
+/// 5. Validate the manifest `version` field: assert equality for stable releases;
+///    log for preview (host and capsule build versions legitimately differ on the
+///    rolling preview channel).
+/// 6. Parse the verified manifest JSON and extract the SHA256 for `arch`.
 ///
 /// Failure is a hard abort — no warn-and-continue fallback.
 async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String> {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use sigstore::cosign::bundle::SignedArtifactBundle;
+    // CosignCapabilities is the trait that defines verify_blob; must be in scope.
     use sigstore::cosign::{Client, CosignCapabilities};
 
     let manifest_url = format!("{base_url}/capsule-manifest.json");
