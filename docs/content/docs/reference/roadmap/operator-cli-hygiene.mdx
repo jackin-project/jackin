@@ -268,34 +268,23 @@ This needs brainstorming on UX. Key questions to research:
 
 ## Implementation Phases
 
-### Phase 1 — `jackin doctor`
+### Phase 1 — `jackin doctor` ✓ shipped
 
-- Add `Command::Doctor(DoctorArgs)` to <RepoFile path="src/cli/mod.rs" />.
-- Create <RepoFile path="src/cli/doctor.rs" /> with `pub async fn run(args: DoctorArgs) -> Result<()>`.
-- Create `src/diagnostics/checks.rs` with one async function per check, returning `CheckResult { name, status, hint }`.
-- The pre-flight wrapper is a function `preflight(required_checks: &[CheckName]) -> Result<()>` used by `load`, `hardline`, etc.
-- Snapshot test the human output.
+`jackin doctor` runs 12 pre-flight checks (Docker daemon, disk space, directories, capsule cache, `gh` auth, `op` CLI, `mise`, clock skew, orphaned containers, stale isolation files) and prints a one-line status per check. The pre-flight subset (Docker daemon + disk + config dirs) runs automatically before `load`, `hardline`, `eject`, `exile`, and `purge`. Operator details are in the [`jackin doctor`](/commands/doctor/) command reference.
 
-### Phase 2 — `jackin status` + `--format json`
+### Phase 2 — `jackin status` + `--format json` ✓ shipped
 
-- Add `Command::Status(StatusArgs)` and `Command::Ps` alias to <RepoFile path="src/cli/mod.rs" />.
-- Create <RepoFile path="src/cli/format.rs" /> with `enum OutputFormat { Human, Json }` and `OutputEnvelope<T>`.
-- Reuse instance discovery from <RepoFile path="src/runtime/discovery.rs" />. CPU/MEM via Docker stats.
-- Sweep subcommands for `--format json` support, starting with `workspace list`.
+`jackin status` / `jackin ps` provides a three-level fleet overview: workspace summary, instance list (with PR number), and full instance detail (branch, PR title + URL, CI status, per-agent codename table). `--format json` is available on `status`, `doctor`, `workspace list`, and `workspace show`. Operator details are in the [`jackin status`](/commands/status/) command reference.
 
-### Phase 3 — `jackin load --dry-run`
+Deferred from this phase: uptime seconds, CPU%, and memory in the status output (requires extending the `DockerApi` trait for `StartedAt` and stats); `--filter agent=` and `--detail` agent counts at Level 0 are flags that exist but do not yet query per-container agent counts.
 
-- Add `dry_run: bool` to `LoadOptions` and the `LoadArgs` clap struct.
-- Thread a `DryRun` mode through `load_role_with` — short-circuit before each external side effect.
-- Collect the resolved plan into a `LoadPlan` struct; render via `OutputFormat`.
+### Phase 3 — `jackin load --dry-run` ✓ shipped
 
-### Phase 4 — `JackinError`
+`jackin load --dry-run` prints the resolved plan (workspace, role, agent, mounts) and exits without spawning containers. `--format json` makes it scriptable. Documented in [`jackin load`](/commands/load/).
 
-- Create <RepoFile path="src/error.rs" /> with `enum JackinError` and `impl JackinError::user_message(&self) -> UserMessage`.
-- Convert known `anyhow::bail!` sites at module boundaries.
-- In `main.rs`, downcast and render friendly block with fallback.
-- Open `docs/content/docs/reference/errors/` with one page per code.
-- Snapshot test friendly output.
+### Phase 4 — `JackinError` ✓ shipped
+
+<RepoFile path="src/error.rs" /> defines `JackinError` with 15 variants (E001–E015), each mapping to a `UserMessage` with a stable error code, headline, and remediation hint. `main.rs` downcasts to `JackinError` for structured output and falls back to `{error:#}` for unrecognized errors. `E001` (Docker daemon unreachable) fires from the preflight path. Error reference pages live under `/reference/errors/`.
 
 ### Phase 5 — First-run wizard (deferred — needs design)
 

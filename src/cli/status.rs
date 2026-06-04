@@ -375,7 +375,9 @@ async fn run_level2(
         None
     };
 
-    // Fetch git branch (only when running).
+    // Fetch git branch (only when running). .ok() is intentional: exec failure
+    // is a transient or expected case (container just confirmed up but git not
+    // available), and GIT_BRANCH_CMD already suppresses git errors with `2>/dev/null`.
     let branch: Option<String> = if is_running {
         docker
             .exec_capture(container_name, &["sh", "-c", GIT_BRANCH_CMD])
