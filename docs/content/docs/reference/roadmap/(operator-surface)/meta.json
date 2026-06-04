@@ -4,6 +4,6 @@
   "pages": [
     "../operator-cli-hygiene",
     "../jackin-join-and-debug-bundle",
-    "../agent-tab-codenames"
+    "../agent-codenames"
   ]
 }
