@@ -494,6 +494,25 @@ impl vte::Perform for DamageGrid {
         let p1 = p.get(1).copied().unwrap_or(0);
 
         match action {
+            // Insert Characters (ICH) — insert n blank chars at cursor, shift right.
+            '@' => {
+                let n = p0.max(1) as usize;
+                let row = self.cursor_row as usize;
+                let col = self.cursor_col as usize;
+                let cols = self.cols as usize;
+                let grid = self.active_grid();
+                let row_cells = &mut grid[row];
+                // Shift existing chars right, dropping any that fall off the end.
+                let end = cols.min(row_cells.len());
+                for c in (col..end.saturating_sub(n)).rev() {
+                    row_cells[c + n] = row_cells[c].clone();
+                }
+                // Fill inserted cells with blanks.
+                for cell in row_cells.iter_mut().take((col + n).min(end)).skip(col) {
+                    *cell = Cell::default();
+                }
+                self.dirty.mark_row(self.cursor_row);
+            }
             // Cursor Up.
             'A' => {
                 let n = p0.max(1);
@@ -649,6 +668,8 @@ impl vte::Perform for DamageGrid {
                 }
             }
             // Set Scrolling Region.
+            // DECSTBM: Set Top and Bottom Margins (scroll region).
+            // After setting the scroll region, cursor is homed to (0, 0).
             'r' => {
                 let top = p0.saturating_sub(1);
                 let bottom = if p1 == 0 {
@@ -659,7 +680,14 @@ impl vte::Perform for DamageGrid {
                 if top < bottom {
                     self.scroll_top = top;
                     self.scroll_bottom = bottom;
+                } else {
+                    // Invalid region: reset to full screen.
+                    self.scroll_top = 0;
+                    self.scroll_bottom = self.rows.saturating_sub(1);
                 }
+                // VT100 spec: cursor is positioned at the upper-left after DECSTBM.
+                self.cursor_row = 0;
+                self.cursor_col = 0;
             }
             // Save Cursor.
             's' => {
@@ -682,6 +710,24 @@ impl vte::Perform for DamageGrid {
 
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, byte: u8) {
         match byte {
+            // ESC M — Reverse Index (RI): move cursor up one row.
+            // If cursor is at the top margin, scroll content DOWN one row instead.
+            b'M' => {
+                if self.cursor_row == self.scroll_top {
+                    // Scroll down: insert blank row at scroll_top, remove from scroll_bottom.
+                    let top = self.scroll_top as usize;
+                    let bottom = self.scroll_bottom as usize;
+                    let cols = self.cols;
+                    let grid = self.active_grid();
+                    if bottom < grid.len() {
+                        grid.remove(bottom);
+                    }
+                    grid.insert(top, blank_row(cols));
+                    self.dirty.mark_all();
+                } else {
+                    self.cursor_row = self.cursor_row.saturating_sub(1);
+                }
+            }
             // DECSC — save cursor.
             b'7' => {
                 self.saved_cursor_row = self.cursor_row;
