@@ -162,6 +162,22 @@ RUN set -euxo pipefail && \\
             }
         }
     }
+
+    /// Per-agent behavioral dispatch via the [`AgentRuntime`] trait.
+    ///
+    /// Returns the adapter that encapsulates all behavioral logic for this
+    /// agent. Phase 2 will migrate all match-arm dispatch sites to call
+    /// `agent.runtime().<method>()` instead of matching on `agent` directly.
+    pub fn runtime(self) -> &'static dyn runtime::AgentRuntime {
+        use runtime::adapters;
+        match self {
+            Self::Claude => &adapters::ClaudeRuntime,
+            Self::Codex => &adapters::CodexRuntime,
+            Self::Amp => &adapters::AmpRuntime,
+            Self::Kimi => &adapters::KimiRuntime,
+            Self::Opencode => &adapters::OpencodeRuntime,
+        }
+    }
 }
 
 impl fmt::Display for Agent {
@@ -193,6 +209,9 @@ impl FromStr for Agent {
         }
     }
 }
+
+pub mod adapters;
+pub mod runtime;
 
 #[cfg(test)]
 mod auth_table_tests;

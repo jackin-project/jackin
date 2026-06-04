@@ -1,0 +1,62 @@
+//! Claude Code adapter.
+
+use crate::auth::AuthForwardMode;
+use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
+
+use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
+
+pub struct ClaudeRuntime;
+
+impl crate::agent::runtime::private::Sealed for ClaudeRuntime {}
+
+impl AgentRuntime for ClaudeRuntime {
+    fn slug(&self) -> &'static str {
+        "claude"
+    }
+
+    fn label(&self) -> &'static str {
+        "Claude"
+    }
+
+    fn install_block(&self, source: &str) -> String {
+        format!(
+            "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /tmp/jackin-agent-binaries
+COPY --chown=agent:agent {source} /tmp/jackin-agent-binaries/claude
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    chmod 0755 /tmp/jackin-agent-binaries/claude && \\
+    /tmp/jackin-agent-binaries/claude install && \\
+    claude --version
+"
+        )
+    }
+
+    fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
+        match mode {
+            AuthForwardMode::ApiKey => Some("ANTHROPIC_API_KEY"),
+            AuthForwardMode::OAuthToken => Some(CLAUDE_OAUTH_TOKEN_ENV),
+            AuthForwardMode::Sync | AuthForwardMode::Ignore => None,
+        }
+    }
+
+    fn supported_modes(&self) -> &'static [AuthForwardMode] {
+        &[
+            AuthForwardMode::Sync,
+            AuthForwardMode::ApiKey,
+            AuthForwardMode::OAuthToken,
+            AuthForwardMode::Ignore,
+        ]
+    }
+
+    fn state_paths(&self) -> AgentStatePaths {
+        AgentStatePaths {
+            // Claude stores credentials in ~/.claude/ (directory) + ~/.claude.json.
+            credential_dir: ".claude",
+            credential_file: None, // directory-based: .credentials.json + ~/.claude.json
+            folder_env_var: Some("CLAUDE_CONFIG_DIR"),
+        }
+    }
+}

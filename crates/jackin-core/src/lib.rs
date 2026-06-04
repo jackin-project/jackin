@@ -20,7 +20,11 @@ pub mod paths;
 pub mod runner;
 pub mod selector;
 
-pub use agent::{Agent, ParseAgentError};
+pub use agent::{
+    Agent, ParseAgentError,
+    adapters::registry as agent_runtime_registry,
+    runtime::{AgentRuntime, AgentStatePaths},
+};
 pub use auth::AuthForwardMode;
 pub use docker::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
