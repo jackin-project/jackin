@@ -7,9 +7,9 @@ use jackin_tui::{
     HintSpan,
     components::{
         ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, ErrorPopupState, Panel, PanelFocus,
-        SaveDiscardFocus, SaveDiscardState, SelectListState,
-        StatusFooterHover, TabStrip, TextInputState, panel_body_area, render_brand_header,
-        render_confirm_dialog, render_container_info, render_error_dialog, render_filter_input,
+        SaveDiscardFocus, SaveDiscardState, SelectListState, StatusFooterHover, TabStrip,
+        TextInputState, panel_body_area, render_brand_header, render_confirm_dialog,
+        render_container_info, render_error_dialog, render_filter_input,
         render_save_discard_dialog, render_scrollable_block, render_select_list,
         render_status_footer, render_status_popup, render_text_input, render_wrapped_hint_bar,
     },

@@ -133,7 +133,11 @@ impl DebugInfo {
         }
         if let Some(path) = self.diagnostics_log_path {
             let href = format!("file://{path}");
-            rows.push(ContainerInfoRow::new("Diagnostics log", path).copyable().hyperlink(href));
+            rows.push(
+                ContainerInfoRow::new("Diagnostics log", path)
+                    .copyable()
+                    .hyperlink(href),
+            );
         }
         ContainerInfoState::new("Debug info", rows)
     }

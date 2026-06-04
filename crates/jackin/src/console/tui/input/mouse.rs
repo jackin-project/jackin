@@ -326,11 +326,7 @@ fn container_info_copyable_row_at(
 
 /// Brighten the hovered copyable row in the Debug info dialog (link hover cue),
 /// mirroring the launch cockpit. No-op unless that modal is open.
-fn update_container_info_hover(
-    state: &mut ManagerState<'_>,
-    mouse: MouseEvent,
-    term_size: Rect,
-) {
+fn update_container_info_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
     let Some(modal @ Modal::ContainerInfo { .. }) = state.list_modal.as_ref() else {
         return;
     };
@@ -338,13 +334,9 @@ fn update_container_info_hover(
     let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
         return;
     };
-    let hovered = jackin_tui::components::container_info_copy_payload_at(
-        area,
-        info,
-        mouse.column,
-        mouse.row,
-    )
-    .map(|(row, _)| row);
+    let hovered =
+        jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
+            .map(|(row, _)| row);
     info.set_hovered_row(hovered);
 }
 
