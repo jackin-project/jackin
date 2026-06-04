@@ -22,7 +22,8 @@
 
 | Checklist item | Status | Notes |
 |---|---|---|
-| Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | **[AGENT-A WORKING]** | B.1 schema done; B.2 provisioning next |
+| Defect 46 Phase B.1 (auth schema + resolver) | **[DONE]** | sync_source_dir field + resolve_sync_source_dir + 4 tests |
+| Defect 46 Phase B.2-B.5 (provisioning + UX) | AVAILABLE | B.2 uses state_paths() from AgentRuntime adapter |
 | Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Decision: `crates/jackin/src/console/` is canonical |
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
