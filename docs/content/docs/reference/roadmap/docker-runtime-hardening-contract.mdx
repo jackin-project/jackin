@@ -28,12 +28,35 @@ The current model is coherent but broad:
 
 That is already better than a normal development container with the host Docker socket mounted. But it is not the same thing as a hardened sandbox. This roadmap item defines the Docker-side hardening path before jackin' adds any new backend family.
 
+## Design Philosophy: Capability Grants, Not Restrictions
+
+jackin' is intentionally a no-interruption autonomous agent environment. The agent binaries run with maximum bypass: `claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, `amp --dangerously-allow-all`. This is not a weakness — it is the product's reason for existing. An agent that stops to ask permission for every file write is not useful.
+
+The Docker container IS the sandbox. The agent is free inside it. The operator controls what the container can do, not what the agent chooses to do inside the container. These are the same outcome — if the container has no outbound network, it does not matter that the agent might try to exfiltrate data, because the packet never leaves.
+
+This shapes the entire design of the profile system:
+
+> **Capability grants, not restrictions.** A container starts from a minimal locked baseline. The operator (or role) explicitly grants what they need. The profile is a named bundle of grants. Explicit grants can extend any profile. The result is: "this container is exactly as capable as I allowed it to be — nothing more."
+
+This is different from the alternative approach (start permissive, optionally restrict), which has the failure mode of "I thought I restricted X but I forgot to add the flag." A grant model fails safe: if you forget to grant something, it does not work, and the operator knows immediately what to add. A restriction model fails open: if you forget to restrict something, the capability is silently available.
+
+**Practical implications:**
+- `compat` is a full-grant profile — it is what you opt into when you need everything, not the default
+- `locked` is the starting point for any use case where you want tight control
+- profiles are bundles of grants for common use cases; explicit grants compose with any profile
+- a role declares minimum grants it requires; the operator can grant more but cannot grant less than the role needs
+- the session contract output tells the operator exactly what was granted and what was not
+
+**The agent bypass flags are not configurable** — they are immutable inside the container. The Docker boundary is the only enforceable isolation layer. This is correct: jackin' is not trying to sandbox the agent from itself; it is trying to sandbox the container from the host. The operator's trust model is "I trust the agent to do its job within the limits I set on the container."
+
 ## Thesis
 
-The next security step should be:
+The next step should be:
 
 > Keep Docker as the default runtime, but make Docker launches managed by jackin'
-> run under an explicit, auditable hardening contract.
+> run under an explicit, auditable capability-grant contract. The container has
+> exactly the capabilities it was granted — network, Docker, privilege, filesystem
+> access, and resources — and no more.
 
 This is different from:
 
@@ -41,8 +64,9 @@ This is different from:
 - claiming hardened containers equal hypervisor isolation
 - forking Docker or owning a custom runtime
 - silently changing host Docker, host firewall, or host config
+- restricting what the agent binary itself chooses to do inside the container (it runs with full bypass; the container boundary is the enforcement layer)
 
-Docker remains the packaging and execution substrate. jackin' becomes the policy layer that chooses, applies, reports, and tests a safe Docker posture.
+Docker remains the packaging and execution substrate. jackin' becomes the grant policy layer that chooses, applies, reports, and tests a precise Docker capability posture.
 
 ## Source Material
 
@@ -104,138 +128,457 @@ A read of the launch path on the docs/docker-hardening-orbstack-backend branch (
 
 | Concern | Location | Current value |
 |---|---|---|
-| Role container `docker run` flag assembly | <RepoFile path="src/runtime/launch.rs" /> | No `--cap-add` / `--cap-drop`, no `--security-opt seccomp=`, no `--security-opt apparmor=`, no `--security-opt no-new-privileges`, no `--read-only`, no `--tmpfs`, no `--pids-limit`, no `--memory*`. Docker defaults apply implicitly. |
-| DinD sidecar start | <RepoFile path="src/runtime/launch.rs" /> | `--privileged`. TLS cert dir at `DOCKER_TLS_CERTDIR=/certs` with `DOCKER_TLS_SAN=DNS:<dind-name>`. Cert volume bound per launch. No rotation. |
-| Workspace mount string builder | <RepoFile path="src/runtime/launch.rs" /> | Translates `MaterializedWorkspace` to `-v src:dst[:ro]`. `:ro` already enforced at the kernel layer. |
-| Per-instance metadata struct | <RepoFile path="src/instance/manifest.rs" /> | `InstanceManifest` (schema v1) carries `DockerResources { role_container, dind_container, network, certs_volume }` plus session history. Docker-shaped today; the [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) umbrella tracks the move to a backend-neutral shape. |
+| Role container `docker run` flag assembly | <RepoFile path="src/runtime/launch.rs" /> `launch_role_runtime` fn, `run_args` vec starting at line 790 | No `--cap-add` / `--cap-drop`, no `--security-opt seccomp=`, no `--security-opt apparmor=`, no `--security-opt no-new-privileges`, no `--read-only`, no `--tmpfs`, no `--pids-limit`, no `--memory*`. Docker defaults apply implicitly. The socket-dir bind mount (`-v <socket_dir>:/jackin/run`) is appended last at line 1007–1008 immediately before the image argument. |
+| DinD sidecar start | <RepoFile path="src/runtime/launch.rs" /> `dind_args` vec at lines 690–711 | `--privileged`. TLS cert dir at `DOCKER_TLS_CERTDIR=/certs` with `DOCKER_TLS_SAN=DNS:<dind-name>`. Cert volume bound per launch. No rotation. |
+| Docker execution path — role container | <RepoFile path="src/runtime/launch.rs" /> line 1018 + <RepoFile path="src/docker.rs" /> `ShellRunner` | Role container is launched via **CLI subprocess** `docker run -d`. Flags are a `Vec<&str>` built in `launch_role_runtime`. The Bollard API path (`create_container` + `start_container` in <RepoFile path="src/docker_client.rs" />) is only used by tests and restore paths — not the primary production launch. All security flags must be added to both paths to stay in sync. |
+| Bollard `HostConfig` for `ContainerSpec` | <RepoFile path="src/docker_client.rs" /> line 539 | `HostConfig { network_mode, binds, privileged, ..Default::default() }`. No `cap_add`, `cap_drop`, `security_opt`, `memory`, `nano_cpus`, `pids_limit`, or `read_only_rootfs`. |
+| `LaunchContext` struct | <RepoFile path="src/runtime/launch.rs" /> lines 548–578 | Carries `container_name`, `image`, `network`, `dind`, `selector`, `agent_display_name`, `workspace`, `state`, `git`, `debug`, agents, capsule config, `resolved_env`, `github_env`, `paths`. No security profile field. |
+| `LoadOptions` struct | <RepoFile path="src/runtime/launch.rs" /> lines 35–76 | Carries `debug`, `rebuild`, `force`, `op_runner`, `host_env`, `agent`, `role_branch`, `restore_container_base`, `restore_role_source_git`, `provider`. No docker profile override field. |
+| `WorkspaceConfig` struct | <RepoFile path="src/workspace/mod.rs" /> lines 45–94+ | Carries `version`, `workdir`, `mounts`, `allowed_roles`, `default_role`, `default_agent`, `last_role`, `env`, `roles`, `keep_awake`, `claude`, `codex`, `amp`, `kimi`, `opencode`. No docker security field. |
+| `DockerConfig` in `AppConfig` | <RepoFile path="src/config/mod.rs" /> `DockerConfig` struct | Only carries `mounts: DockerMounts`. No default profile, no resource defaults, no security options. |
+| `RoleManifest` struct | <RepoFile path="src/manifest/mod.rs" /> lines 11–43 | Fields: `version`, `dockerfile`, `published_image`, `identity`, `agents`, `claude`, `codex`, `amp`, `kimi`, `opencode`, `hooks`, `env`. No `docker`, `min_profile`, or `requires_inner_engine` field. |
+| Per-instance metadata struct | <RepoFile path="src/instance/manifest.rs" /> `DockerResources` at lines 88–93 | `{ role_container, dind_container, network, certs_volume }`. Pure name record for cleanup/restore. No active profile recorded. |
+| Network creation | <RepoFile path="src/docker_client.rs" /> `create_network` at line 576 | `NetworkCreateRequest { name, labels, ..Default::default() }`. No `internal: true`, no subnet isolation. External egress is open by default. |
+| Container user | <RepoFile path="docker/construct/Dockerfile" /> line 113 | `useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent` + `echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent`. The `agent` user has unconditional passwordless `sudo`. No `--user` flag on `docker run` — image's `USER agent` directive governs. **`NOPASSWD:ALL` sudo is incompatible with `--security-opt no-new-privileges`** (sudo needs setuid root to escalate; `no-new-privileges` prevents that escalation). Any role using `sudo` must stay on `compat` or replace `sudo` calls with file capabilities on specific binaries in the role Dockerfile. |
 | Operator env / `op://` resolution | <RepoFile path="src/operator_env.rs" /> | `resolve_operator_env` runs at launch only; resolved values become `-e` flags. No re-resolution on `hardline` or agent restart. |
-| Telemetry hook | <RepoFile path="src/tui/mod.rs" /> | `debug_log!(category, …)` macro, gated on `JACKIN_DEBUG=1`. There is no separate `clog!` macro yet; the hard-rule two-tier model in <RepoFile path="AGENTS.md" /> is met today through `debug_log!` alone. Any "profile chosen", "capability dropped", "AppArmor unavailable", etc. lines should emit through `debug_log!("launch", …)` until/unless a `clog!` tier is added. |
-| Backend selection CLI | (none) | No `--backend`, no `--docker-profile`, no `--sandbox-mode` flag exists today. This whole contract is the first introduction of those flags. |
+| Telemetry hook | <RepoFile path="src/tui/mod.rs" /> lines 172–179 | `debug_log!(category, …)` macro, gated on `DEBUG_MODE: AtomicBool` via `is_debug_mode()`. Format + allocation skipped entirely when off. No separate `clog!` macro yet; the two-tier model in AGENTS.md is met through `debug_log!` alone. New profile-related telemetry emits via `debug_log!("launch", …)`. |
+| Backend selection CLI | (none) | No `--docker-profile` flag exists. The `clap` definition (`LoadArgs` struct) lives in <RepoFile path="src/cli/role.rs" />; that is where `--docker-profile <PROFILE>` will be added. |
+| Schema versions | <RepoFile path="src/config/migrations.rs" /> lines 7–8, <RepoFile path="src/manifest/migrations.rs" /> line 6 | `CURRENT_CONFIG_VERSION = "v1alpha5"`, `CURRENT_WORKSPACE_VERSION = "v1alpha5"`, `CURRENT_MANIFEST_VERSION = "v1alpha4"`. |
 
 The pattern is consistent: jackin' inherits Docker defaults end-to-end. That is the starting baseline for every profile below — `compat` is "what already runs".
 
 The gaps:
 
-| Gap | Why it matters |
+| Gap | Why it matters | Practical severity |
+|---|---|---|
+| Privileged DinD | The sidecar still needs broad privileges today. A DinD compromise has higher blast radius than the role container alone. **While DinD is privileged, capability drops on the role container are largely circumventable** — the agent can run `docker run --privileged` against DinD to regain any dropped capability. | High — structural |
+| Agent launch bypasses | Every agent binary is launched with its maximum-bypass flag: `claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, `amp --dangerously-allow-all`, `kimi --yolo`. This is intentional design (jackin' is a no-interruption environment), but it means the agent process itself does not enforce its own sandboxing. The Docker boundary is the only enforceable line. | High — by design |
+| `NOPASSWD:ALL` sudo | The `agent` user has unconditional passwordless sudo (Dockerfile line 113). This is incompatible with `--security-opt no-new-privileges`. Until every `sudo` call site is replaced with file capabilities, `standard` profile cannot harden the privilege-escalation surface. | High — blocks Phase 2 |
+| No named security profile | Operators cannot choose "maximum compatibility" versus "harden this launch." | Medium |
+| No capability policy | Docker defaults are implicit. jackin' does not yet drop capabilities according to role needs. Drops only matter under `hardened` with DinD disabled. | Low-Medium |
+| No read-only root contract | The role image filesystem is currently mutable during the session. Read-only root is incompatible with `apt install` at runtime (package extraction writes to `/usr/lib/`, `/usr/bin/`, etc., which cannot be tmpfs). Real only for purpose-built pre-installed-everything images. | Medium for restricted roles |
+| No resource budget by default | Parallel agents can exhaust CPU, memory, PID count, or file descriptors. This is the most universally useful hardening item — no compatibility issues with any workflow. | High — easy win |
+| Open egress by default | Agents can exfiltrate anything they can read from mounted paths or credentials. With DinD active, inner containers also have egress. | High for sensitive repos |
+| Mixed enforcement quality | Docker Desktop, OrbStack, Linux Docker, rootless Docker, and remote Docker differ. The launch output does not yet call those differences out. | Medium |
+
+## User Perspective and Practical Impact
+
+This section evaluates each hardening control from the operator's actual usage pattern and answers the question: what does this give a real user and when?
+
+### The baseline user and their workflow
+
+jackin' operators are developers who run AI coding agents against their local or worktree-isolated repositories. The daily workflow is `jackin console` → pick workspace → pick role → agent launches and works autonomously in the background. The operator does not supervise every command. This is by design: jackin' is deliberately a no-interruption, full-permission environment. The agents run with `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox` / `--dangerously-allow-all` at the entrypoint level — these are not flags operators can override per-session. The agents have full shell access plus Docker access via DinD.
+
+**The threat the operator actually cares about** is: "I left an AI agent running against my codebase overnight. What is it allowed to touch that it should not be?" The answer today is: anything in mounted paths, any outbound network, anything in the DinD Docker daemon. The operator wants to reduce that surface without abandoning the reason they use jackin' (autonomous, fast, effective agents).
+
+### Per-control user impact
+
+**Resource limits — `standard` profile, Phase 2**
+
+Impact: universally useful. Zero compatibility breakage. Prevents one agent from exhausting host memory, CPU, or PID table and degrading other containers or the host machine. The operator running three or four agents in parallel against different repos today has no protection against one agent hitting a runaway loop. A declared `memory_max = "8G"` + `pids = 2048` prevents OOM cascades and fork bombs. This is the item with the best effort-to-impact ratio.
+
+**Host Docker socket guard — Phase 1**
+
+Impact: regression test prevents the single most dangerous mistake. The hard rule already exists; the test just makes it machine-enforceable. If a future change accidentally mounts `/var/run/docker.sock` into the role container, the test fails before merge. No user-visible change; pure safety net.
+
+**DinD TLS cert lifecycle — Phase A**
+
+Impact: makes the current security posture auditable. The certs already die with the launch (per-launch generation today, confirmed in code). Emitting `debug_log!("dind", "TLS certs generated, …")` + storing under `/jackin/run/<instance>/dind-certs/` makes this visible and testable. Low effort, real signal for debugging auth issues.
+
+**DinD-free roles — Phase D / `hardened` profile**
+
+Impact: the highest-value item in the entire contract for roles that genuinely do not need Docker. A code review role, a documentation agent, or a read-only analysis role does not need DinD. Skipping the sidecar eliminates the largest blast-radius component: the privileged container that can reach the host kernel on Linux. Without DinD, capability drops on the role container become genuinely meaningful rather than circumventable.
+
+**Who does this help?** Role authors who build purpose-specific restricted roles. The two current built-in roles (`agent-smith` and `the-architect`) both need DinD for Testcontainers, Docker Compose, and inner build workflows. A future `reviewer` or `researcher` role that only reads code and calls the model API does not. The `requires_inner_engine = false` manifest field is what enables that use case.
+
+**`no-new-privileges` — Phase 2, blocked by sudo audit**
+
+Impact when unblocked: prevents the agent from gaining new privileges through setuid/setgid binaries or file capabilities beyond what the container was started with. Marginal benefit while DinD is active (agent can `docker run --privileged` to regain capabilities). Real benefit under `hardened` with DinD disabled. Currently blocked by `NOPASSWD:ALL` sudo in the base image — enabling it today would silently break `apt install`, tool scripts that call `sudo`, and `gh auth` operations that need elevated file access.
+
+**Capability drops — Phase 4, `hardened` profile only**
+
+Impact: only meaningful under `hardened` + DinD disabled. Under `compat`/`standard` with DinD active, a determined agent can run `docker run --privileged` against the DinD daemon and regain any dropped cap inside that inner container. The 8-cap minimum set (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `SETFCAP`, `KILL`) is a good starting hypothesis for roles that do not need `MKNOD` (device nodes), `NET_RAW` (raw sockets/ping), `SYS_CHROOT` (chroot calls), or `AUDIT_WRITE` (kernel audit log). Dropping `NET_RAW` is safe for most coding workflows since modern kernels allow ICMP via `ping_group_range` without it.
+
+**Read-only root — Phase 4, `hardened` profile only**
+
+Impact: eliminates the class of attacks where the agent modifies its own runtime binaries or system libraries mid-session. But it is incompatible with `apt install` at runtime: `dpkg` extracts package files to `/usr/bin/`, `/usr/lib/`, `/usr/share/`, etc., which are image-layer paths and cannot be tmpfs without losing the pre-installed binary tree. The tmpfs preset covers `/var/cache/apt/archives/` (download cache) and `/var/lib/dpkg/` (package database), so `apt-get update` works and `apt-get download` works, but `apt install` (extraction step) fails on a read-only root.
+
+**Who does this help?** Roles that are fully pre-built: everything the agent needs is installed in the image at `docker build` time, and the agent never runs `apt install` during a session. For those roles, `--read-only` is meaningful. For the current built-in roles that call `apt install` in hooks or during tasks, `hardened` is incompatible. This is acceptable — `hardened` is an opt-in, and the role's `min_profile = "standard"` declares incompatibility cleanly.
+
+**Network egress — Phase 5**
+
+Impact: high, but the hardest to get right. Blocking outbound connections prevents credential exfiltration over the network — the most realistic post-compromise attack. The complication is DinD: a role container whose egress is blocked can still create inner containers via DinD with unrestricted networking unless the DinD daemon itself is also egress-limited. Any implementation that only filters the role container must explicitly report `partial` enforcement to avoid giving operators false confidence. Under `locked` with DinD disabled, a network deny policy is fully enforceable at the Docker bridge layer.
+
+**`locked` profile — when is it useful?**
+
+The `locked` profile as designed (no DinD, no writable mounts, read-only root, network deny except agent API, no persistent auth) is only usable for a narrow but real class of roles: **pure read-only analysis agents**. An agent that reads code from a `:ro` mount, calls its model API, and outputs analysis (as terminal text or by writing to a single explicitly-writable output path) fits `locked`. Examples: a PR reviewer that reads a diff and posts a comment via the `gh` CLI (but `gh` needs auth, which needs persistent state — so `locked` would need an explicit auth exception), a code quality scanner that reads source and emits a report.
+
+In practice: `locked` is too restrictive for any current built-in role and for most user-authored roles today. Its value is as a future target for specialized read-only roles. Document it clearly so role authors understand what they're designing toward.
+
+**The honest one-sentence summary for users:** The most impactful near-term items are (1) resource limits on `standard`, and (2) `requires_inner_engine = false` enabling DinD-free roles under `hardened`. Everything else is either blocked by the sudo audit, only relevant for purpose-built restricted roles, or largely theater while DinD remains privileged. The hardening contract makes sense structurally but its Phase 2 deliverable (resource limits) is what most operators will actually experience; Phases 3–5 are for specialized roles.
+
+## Capability Taxonomy
+
+Six independent capability dimensions define the full grant space. Each dimension has discrete tiers. A profile bundles a choice across all six. Explicit grants extend any profile on specific dimensions.
+
+### Dimension 1 — Network
+
+| Tier | Docker mechanism | What the agent can do |
+|---|---|---|
+| `none` | `--network none` | No IP connectivity at all. Only Unix sockets within the container. Cannot reach model API. Only useful for offline filesystem-analysis roles. |
+| `api_only` | In-container iptables/ipset allowlist (see below) — requires `NET_ADMIN`+`NET_RAW` implicitly granted | Only explicitly allowlisted domains. Agent can do its job but cannot exfiltrate to arbitrary URLs. Enforcement degrades to `open` with warning if `api_only` is requested but iptables implementation is unavailable. |
+| `open` | Default bridge network with external route | Full outbound internet access. No restrictions. |
+
+**`api_only` implementation — in-container iptables.** The Anthropic upstream devcontainer (see [Devcontainer Parity](/reference/roadmap/devcontainer-parity/)) ships a working reference: `init-firewall.sh` sets default DROP policy on OUTPUT, then adds an `ipset` of allowed domains seeded from live DNS lookups. jackin' would ship its own version as a runtime hook with a jackin-specific default allowlist — described below. This approach requires `CAP_NET_ADMIN` and `CAP_NET_RAW` on the role container; these caps are **implicitly granted** as prerequisites whenever `network = "api_only"` is selected, even under `hardened`/`locked` profiles that otherwise drop `NET_RAW`. This is not a contradiction: without these two caps, the iptables-based allowlist cannot be installed and the network grant cannot be enforced.
+
+**`api_only` implementation sketch for jackin' (jackin-aware, configurable):**
+
+```sh
+#!/bin/bash
+# /jackin/runtime/init-firewall.sh — runs at container start under api_only network grant
+# Requires: NET_ADMIN + NET_RAW capabilities, iptables, ipset, jq, curl
+set -euo pipefail
+
+ipset create allowed-domains hash:net maxelem 65536
+
+# Agent model API endpoints — auto-populated from resolved JACKIN_ALLOWED_DOMAINS env var
+# (set by jackin host based on configured agents + operator allow list)
+for domain in $(echo "$JACKIN_ALLOWED_DOMAINS" | tr ',' '\n'); do
+    for ip in $(dig +short "$domain" | grep -E '^[0-9]'); do
+        ipset add allowed-domains "$ip" 2>/dev/null || true
+    done
+done
+
+# Apply: default DROP on OUTPUT, allow loopback, established, DNS, allowlisted
+iptables -P OUTPUT DROP
+iptables -A OUTPUT -o lo -j ACCEPT
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+iptables -A OUTPUT -m set --match-set allowed-domains dst -j ACCEPT
+
+# Self-test (log only; does not abort if --debug not set)
+if ! curl -sf --max-time 5 https://api.github.com/zen &>/dev/null; then
+    echo "[jackin firewall] WARNING: api.github.com unreachable — check DNS lookup succeeded" >&2
+fi
+```
+
+`JACKIN_ALLOWED_DOMAINS` is assembled by the host CLI at launch from: (a) all configured agent API endpoints for the selected agents, (b) `github.com` + `api.github.com` if gh auth is forwarded, (c) any operator-declared `network.allow` entries, (d) any role-declared `network.allow` entries. It is injected as a comma-separated env var before the firewall init runs.
+
+**Default jackin allowlist by agent** (seeded into `JACKIN_ALLOWED_DOMAINS`):
+- Claude: `api.anthropic.com` (or `ANTHROPIC_BASE_URL` hostname for Z.AI/MiniMax/Kimi providers)
+- Codex: OpenAI API base hostname (from Codex config)
+- Amp: `ampcode.com`
+- Kimi: Kimi service endpoints (from `~/.kimi-code/config.toml`)
+- OpenCode: configured provider hostname
+- All agents: `github.com`, `api.github.com` (if gh auth forwarded)
+- Operator additions: `network.allow = ["registry.npmjs.org", "pypi.org", "crates.io"]` in config/workspace
+
+**The `api_only` tier is fully configurable** — the operator can add or remove domains. jackin does not force a single fixed allowlist (unlike the Anthropic devcontainer which hard-codes Anthropic-specific endpoints). The operator who wants npm access adds `registry.npmjs.org`; the operator who wants strictly model-API-only removes even `github.com`. The default is a reasonable starting point, not the only option.
+
+**Enforcement quality note:** When DinD is active, inner containers created via DinD have their own network path that bypasses the role container's iptables rules. Session contract must report `partial` enforcement in this case. Under `locked`/`hardened` where DinD is disabled, enforcement is full.
+
+Minimum for any agent to function: network must reach at least the agent's model API endpoint. Per-agent required endpoints: `api.anthropic.com` (Claude, or `ANTHROPIC_BASE_URL` override for Z.AI/MiniMax/Kimi via provider system), OpenAI API (Codex), `ampcode.com` (Amp), Kimi service endpoints, configured provider for OpenCode.
+
+### Dimension 2 — Inner Docker (DinD)
+
+| Tier | Docker primitive | What the agent can do |
+|---|---|---|
+| `none` | No DinD sidecar started; `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`, `JACKIN_DIND_HOSTNAME`, `TESTCONTAINERS_HOST_OVERRIDE` env vars NOT injected; no certs volume | No Docker CLI, no `docker build`, no Docker Compose, no Testcontainers. Agent cannot run any inner containers. |
+| `rootless` | `docker:dind-rootless` sidecar (no `--privileged`), cgroup v2 required | Docker available but daemon runs unprivileged. Most Compose/build workflows work. Kernel exploits inside the sidecar do not reach the host as easily as privileged DinD. |
+| `privileged` | `docker:dind --privileged` (current default) | Full Docker daemon including `docker run --privileged`, `docker run -v /:/host`. On Linux hosts, privileged DinD is approximately root + kernel namespace access. On macOS (Docker Desktop/OrbStack), escaping reaches the VM, not macOS directly. |
+
+When `inner_docker = "none"` and `requires_inner_engine` is absent or `false` in the role manifest, the entire DinD sidecar block (lines 675–724 in `launch_role_runtime`) is skipped. No cert volume, no DinD container, no five DinD env vars.
+
+### Dimension 3 — User Privilege
+
+| Tier | What the agent can do | Mechanism |
+|---|---|---|
+| `agent` (no sudo, no-new-privs) | Runs as `agent` user with no privilege escalation path. `sudo` fails. Cannot `apt install`. Cannot write to `/usr/`. | Remove `NOPASSWD:ALL` from Dockerfile; `--security-opt no-new-privileges` |
+| `agent_scoped_sudo` | Runs as `agent`; sudo allowed ONLY for an explicit allowlist of commands. E.g. sudo permitted for `/jackin/runtime/init-firewall.sh` and nothing else. | `/etc/sudoers.d/agent: agent ALL=(root) NOPASSWD: /jackin/runtime/init-firewall.sh` + `no-new-privileges` on the remaining process tree |
+| `agent_with_sudo` | Runs as `agent`; can sudo any command. Can `apt install`, system writes, arbitrary privilege. Current default. | `NOPASSWD:ALL` in `/etc/sudoers.d/agent` (Dockerfile line 113); no `no-new-privileges` |
+| `root` | Full root inside the container. | `--user root` on `docker run` |
+
+**The scoped sudo tier** (`agent_scoped_sudo`) is directly inspired by the Anthropic devcontainer, which scopes sudo to exactly one command: `sudo /usr/local/bin/init-firewall.sh`. jackin' equivalent: sudo scoped to `/jackin/runtime/init-firewall.sh` (needed for `api_only` network enforcement) plus any additional commands the role or operator explicitly names. The `network = "api_only"` grant **implicitly selects `agent_scoped_sudo`** minimum (firewall init must run with elevated privilege). The operator can layer `agent_with_sudo` on top if broader sudo is also needed.
+
+This makes the privilege grant composable: `network = "api_only"` + default user tier → scoped sudo for firewall init only. `network = "api_only"` + `sudo = true` → open sudo AND firewall init.
+
+`agent_with_sudo` is the current default. `agent` and `agent_scoped_sudo` are both blocked by the unconditional `NOPASSWD:ALL` in the base image until the sudo audit (Open Question #5) is resolved. `root` is an explicit operator opt-in.
+
+### Dimension 4 — Filesystem
+
+| Tier | What the agent can do | Docker mechanism |
+|---|---|---|
+| `read_only` | Cannot write to container root filesystem (image layer). Can write to bind-mounted paths (workspace `:rw`, `/jackin/state`, agent home mounts) and tmpfs paths. Cannot `apt install` — package extraction targets image-layer paths. | `--read-only` + tmpfs preset entries |
+| `writable` | Full read-write container root filesystem. `apt install`, modifying system libraries, writing anywhere. Current default. | No `--read-only` flag |
+
+Note: `--read-only` applies only to the overlay image layer. Bind-mounted paths (workspace mounts, `/jackin/run`, `/jackin/state`, agent home credential dirs) are always writable if mounted `:rw` regardless of `--read-only`. Workspace mounts have their own per-mount `readonly` flag independent of this dimension.
+
+### Dimension 5 — Resources
+
+Explicit numeric budgets. No profile provides `unlimited` — every profile should have at least a soft ceiling.
+
+| Field | Docker flag | Purpose |
+|---|---|---|
+| `memory_high` | `--memory-reservation` | Soft ceiling; triggers throttling before OOM-kill |
+| `memory_max` | `--memory` | Hard ceiling; OOM-kill if exceeded |
+| `cpus` | `--cpus` | CPU share quota |
+| `pids` | `--pids-limit` | Fork bomb prevention; also limits inner container spawning |
+| `nofile` | `--ulimit nofile=N:N` | Open file descriptor limit |
+
+Profile defaults provide sensible starting values; role manifest and workspace can override.
+
+### Dimension 6 — Linux Capabilities
+
+Only meaningful under `inner_docker = "none"` (otherwise the agent can regain any cap via `docker run --privileged` against DinD). Default profile values:
+
+| Tier | Capability set |
 |---|---|
-| Privileged DinD | The sidecar still needs broad privileges today. A DinD compromise has higher blast radius than the role container alone. |
-| No named security profile | Operators cannot choose "maximum compatibility" versus "harden this launch." |
-| No capability policy | Docker defaults are implicit. jackin' does not yet drop capabilities according to role needs. |
-| No read-only root contract | The role image filesystem is currently mutable during the session. |
-| No resource budget by default | Parallel agents can exhaust CPU, memory, PID count, or file descriptors. |
-| Open egress by default | Agents can exfiltrate anything they can read from mounted paths or credentials. |
-| Mixed enforcement quality | Docker Desktop, OrbStack, Linux Docker, rootless Docker, and remote Docker differ. The launch output does not yet call those differences out. |
+| `default_set` | Docker's 14-cap default; no explicit `--cap-add`/`--cap-drop`. Applied under `compat`, `standard`. |
+| `minimum_set` | `--cap-drop=ALL --cap-add {CHOWN,DAC_OVERRIDE,FOWNER,FSETID,SETUID,SETGID,SETFCAP,KILL}` — 8 caps. Applied under `hardened`, `locked`. |
+| `custom` | Explicit per-cap additions via `capabilities.add = ["NET_RAW"]` in role manifest. Added on top of the profile's base cap set. |
+
+## Explicit Capability Grants
+
+Profiles are bundles for common cases. Explicit grants let operators and role authors extend any profile on specific dimensions without choosing a more permissive profile for everything.
+
+Operator-level grants (in `~/.config/jackin/config.toml` or workspace config):
+
+```toml
+[docker]
+default_profile = "hardened"
+
+[docker.grants]
+inner_docker = "rootless"           # allow rootless DinD even under hardened
+root_access = true                  # run as root instead of agent user
+network = "open"                    # open egress even under hardened
+system_writes = true                # writable root filesystem even under hardened
+sudo = true                         # agent_with_sudo (full sudo) even under hardened
+resource_override = { memory_max = "32G", cpus = 8.0 }
+
+[docker.grants.network]
+mode = "api_only"                   # use iptables allowlist
+allow = ["registry.npmjs.org", "pypi.org"]   # add domains beyond the default agent-endpoint set
+```
+
+Role-level declarations (in `jackin.role.toml`):
+
+```toml
+[docker]
+min_profile = "standard"
+requires_inner_engine = "rootless"    # "none" | "rootless" | "privileged"
+
+[capabilities]
+sudo = true                   # requires agent_with_sudo user tier
+net_raw = true                # requires CAP_NET_RAW (for tcpdump/nmap roles, beyond the implicit NET_RAW granted by api_only)
+system_writes = true          # requires writable filesystem tier
+
+[network]
+min_mode = "api_only"         # role requires at least api_only network; open also satisfies
+allow = ["crates.io", "static.crates.io"]   # role-declared extra domains added to JACKIN_ALLOWED_DOMAINS
+```
+
+**Profile + grant composition rule:** take the profile's per-dimension tier, apply any explicit grants that elevate a dimension, apply implicit cap dependencies (e.g. `api_only` → `NET_ADMIN`+`NET_RAW`), and report the resulting per-dimension effective grant in the session contract. The session contract shows the effective grant set — not just the profile name — so the operator sees exactly what the container can do.
+
+**Conflict resolution:** if an operator grant and a role requirement conflict (operator says `network = "none"`, role declares `network.min_mode = "api_only"`), the launch fails with a clear message: `"role requires network = api_only or higher; workspace override sets network = none — add [docker.grants.network] mode = 'api_only' to your workspace config or choose a less restrictive profile"`. Silent downgrade is never acceptable — the operator must always know what they granted.
+
+**The jackin' philosophy here:** Anthropic's devcontainer hard-codes one fixed allowlist for one fixed use case. jackin' ships the same mechanism but makes every component configurable: the profile sets the baseline, explicit grants add dimensions, the network allow list is assembled from role + operator + agent-endpoint sources, and the operator can always see the result in the session contract before committing. Nobody is forced into one experience — the tool adapts to what the operator actually needs.
+
+## Codebase Map
+
+Every file and location that must be touched to implement this contract, organized by what each file owns. Implementors should read these files before writing code.
+
+### Primary implementation sites
+
+**<RepoFile path="src/runtime/launch.rs" />** — The entire launch orchestration. This is where profile-aware flags are injected.
+
+- `LoadOptions` struct (lines 35–76): add `docker_profile: Option<DockerSecurityProfile>` for CLI override.
+- `LaunchContext` struct (lines 548–578): add `profile: DockerSecurityProfile` field so `launch_role_runtime` reads it without needing a new parameter.
+- `launch_role_runtime` fn (line 622): the only place where `run_args` for the role container and `dind_args` for the sidecar are assembled. All capability drops, seccomp options, `no-new-privileges`, `--read-only`, `--tmpfs`, resource limits, and DinD skipping happen here.
+  - DinD args vec: lines 690–711. The `--privileged` flag is at line 697. Profile gating (skip DinD under `hardened`/`locked` when `requires_inner_engine = false`) applies here.
+  - Role container `run_args` vec: starts at line 790. Security flags insert between the base flags block (line 809) and the first `-e` block (line 815). Resource limits insert before the image argument (line 1013).
+  - Socket-dir bind mount: line 1007–1008 appends `-v <socket_dir>:/jackin/run`. This is already a bind mount (not tmpfs) — the writable-path tmpfs preset must **not** include `/jackin/run` since the bind mount already provides write access.
+- Profile precedence resolution: should live in a helper called from `load_role_with`, reading CLI > workspace > role `min_profile` > global default.
+
+**<RepoFile path="src/docker_client.rs" />** — Bollard API wrapper. Must stay in sync with the CLI path.
+
+- `ContainerSpec` struct (lines 85–96): add security fields — `cap_add: Vec<String>`, `cap_drop: Vec<String>`, `security_opt: Vec<String>`, `memory: Option<i64>`, `nano_cpus: Option<i64>`, `pids_limit: Option<i64>`, `read_only_rootfs: Option<bool>`, `tmpfs: Option<HashMap<String, String>>`.
+- `create_container` impl (line 526), `HostConfig` construction (line 539): wire all new `ContainerSpec` fields into `HostConfig`.
+- `create_network` (line 576): add `internal: Option<bool>` to the `create_network` API to support `locked` network isolation.
+
+**<RepoFile path="src/config/mod.rs" />** — Operator-level config.
+
+- `DockerConfig` struct: extend with `default_profile: Option<DockerSecurityProfile>` (the global fallback profile).
+- New `DockerResourceDefaults` struct: default `memory_max`, `memory_high`, `cpus`, `pids`, `nofile` values for `standard`/`hardened`/`locked` profiles when a role declares no limits.
+- `AppConfig` itself does not need structural changes beyond the `DockerConfig` extension.
+
+**<RepoFile path="src/workspace/mod.rs" />** — Workspace-level config.
+
+- `WorkspaceConfig` struct (line 45): add `docker: Option<WorkspaceDockerConfig>` where `WorkspaceDockerConfig` carries an optional `profile: Option<DockerSecurityProfile>` override and optional `resources` override.
+
+**<RepoFile path="src/manifest/mod.rs" />** — Role manifest.
+
+- `RoleManifest` struct (line 11): add `min_profile: Option<DockerSecurityProfile>` (roles that need sudo or privileged workflows declare `min_profile = "compat"`), and `requires_inner_engine: Option<bool>` (roles that do not need DinD declare `false` to opt out of the sidecar under `hardened`/`locked`).
+
+**New file: `src/runtime/docker_profile.rs`** — Houses the `DockerSecurityProfile` enum, per-dimension grant types, effective grant resolution, and all grant-to-flags translation logic.
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DockerSecurityProfile {
+    #[default]
+    Compat,    // max capability; explicit opt-in for full-privilege workflows
+    Standard,  // typical dev work; eventual default
+    Hardened,  // DinD-free, read-only root, api_only network, no sudo
+    Locked,    // minimal; model API + read-only workspace only
+}
+
+// Per-dimension grant types — each dimension can be overridden independently
+pub enum NetworkGrant { None, ApiOnly, Open }
+pub enum InnerDockerGrant { None, Rootless, Privileged }
+pub enum UserGrant { Agent, AgentWithSudo, Root }
+pub enum FilesystemGrant { ReadOnly, Writable }
+pub struct ResourceGrant { pub memory_max: Option<u64>, pub cpus: Option<f64>, pub pids: Option<i64>, pub nofile: Option<u64> }
+
+pub struct EffectiveGrants {
+    pub network: NetworkGrant,
+    pub inner_docker: InnerDockerGrant,
+    pub user: UserGrant,
+    pub filesystem: FilesystemGrant,
+    pub resources: ResourceGrant,
+    pub extra_caps: Vec<String>,      // explicit CAP_* additions beyond profile's cap set
+    pub no_new_privileges: bool,
+}
+```
+
+`PartialOrd`/`Ord` on `DockerSecurityProfile` lets the precedence check be `max(workspace_profile, role_min_profile)`.
+
+This module provides:
+- `fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants` — returns the bundle for a named profile.
+- `fn apply_explicit_grants(base: EffectiveGrants, overrides: &DockerGrants) -> EffectiveGrants` — applies per-dimension overrides from `[docker.grants]` config.
+- `fn resolve_effective_grants(profile, workspace_grants, role_requires, host_caps) -> Result<EffectiveGrants, GrantConflict>` — full resolution pipeline; returns `Err(GrantConflict)` if operator restricts below role minimum.
+- `fn to_docker_flags(grants: &EffectiveGrants) -> Vec<String>` — emits all Docker CLI flags for `run_args`.
+- `fn to_host_config(grants: &EffectiveGrants) -> HostConfig` — emits Bollard `HostConfig` for the test path.
+- `fn dind_enabled(grants: &EffectiveGrants) -> bool` — whether the DinD sidecar block should run.
+- `fn dind_privileged(grants: &EffectiveGrants) -> bool` — whether `--privileged` goes on the DinD args.
+
+### Migration sites
+
+**<RepoFile path="src/config/migrations.rs" />** — `CURRENT_CONFIG_VERSION = "v1alpha5"`, `CURRENT_WORKSPACE_VERSION = "v1alpha5"`. Both bump to `v1alpha6` when `DockerConfig.default_profile` and `WorkspaceDockerConfig` land. They land in the same PR (one bump per file kind per PR). Fixture dirs: `tests/fixtures/migrations/config/from-v1alpha5/` and `tests/fixtures/migrations/workspace/from-v1alpha5/`.
+
+**<RepoFile path="src/manifest/migrations.rs" />** — `CURRENT_MANIFEST_VERSION = "v1alpha4"`. Bumps to `v1alpha5` when `min_profile` and `requires_inner_engine` land in `RoleManifest`. Fixture dir: `tests/fixtures/migrations/manifest/from-v1alpha4/`.
+
+### Secondary files
+
+**<RepoFile path="docker/construct/Dockerfile" />** — The `NOPASSWD:ALL` sudo line (line 113) is incompatible with `--security-opt no-new-privileges`. For the base image to support `standard` profile without breaking every built-in agent, either: (a) drop `NOPASSWD:ALL` and replace each sudo call site with file capabilities in the Dockerfile, or (b) keep it and require roles that need `standard` to rebuild without it. Audit the full list of `sudo` call sites in the base image before deciding. Note that the built-in agents (claude, codex, amp, kimi, opencode) themselves may call `sudo` during tool execution — that call chain must be audited before `no-new-privileges` can be the default.
+
+**<RepoFile path="docker/runtime/entrypoint.sh" />** — Reads `JACKIN_DEBUG`, dispatches per-agent launch. No structural changes needed for Phase 1–2. Phase 4 (read-only root) may require explicit tmpfs paths to exist before `jackin-capsule runtime-setup` runs.
+
+**<RepoFile path="src/tui/mod.rs" />** — `debug_log!` macro (lines 172–179). No changes needed; all new profile telemetry emits through this existing macro.
+
+### Test files requiring updates
+
+All existing tests that call `load_role` / `load_role_with` via `LoadOptions::default()` will continue to pass (default profile = `compat`, no behavior change). New tests that exercise specific profiles should pass explicit `LoadOptions { docker_profile: Some(DockerSecurityProfile::Hardened), ..Default::default() }`.
+
+Tests in `launch.rs` that assert specific `run_args` contents (there are many — search for `run_args` or `docker run` in the test section starting at line 5200) will need updating if any default args change.
 
 ## Security Profiles
 
-Introduce a profile enum that applies to Docker launches before any alternative backend ships.
+Profiles are named bundles of capability grants across the six dimensions (network, inner Docker, user privilege, filesystem, resources, Linux capabilities). They exist for convenience — instead of specifying every dimension individually, an operator picks a profile that matches their intent. Explicit grants can extend any profile on specific dimensions.
 
-Suggested operator-facing values:
+**The ordering is ascending capability, not descending restriction.** `locked` is the starting point for tightly controlled use cases. `compat` is what you opt into when you need everything. The default profile for a fresh install is `compat` until the sudo audit and compatibility matrix are resolved; the intended eventual default is `standard`.
 
-```text
-compat
-standard
-hardened
-locked
-```
-
-Suggested CLI and config shape:
+CLI and config shape:
 
 ```sh
 jackin load the-architect . --docker-profile standard
 jackin load reviewer . --docker-profile hardened
 jackin load researcher . --docker-profile locked
+jackin load fullstack . --docker-profile compat
 ```
 
 ```toml
-[runtime.docker]
+[docker]
 default_profile = "standard"
 
-[workspaces.my-service.runtime.docker]
+[workspaces.my-service.docker]
 profile = "hardened"
 ```
 
-The exact schema should be finalized with the broader runtime config design. If this touches `AppConfig`, `WorkspaceConfig`, or `RoleManifest`, the schema migration rules in <RepoFile path="AGENTS.md" /> apply.
+### `locked` — minimal, tightly controlled
 
-### `compat`
+Purpose: analysis, review, investigation, or any role where the operator wants maximum confidence about what the agent can and cannot do. The agent can read, think, and call its model API. Everything else requires an explicit grant.
 
-Purpose: preserve today's behavior for roles that need maximum compatibility.
+| Dimension | Default grant | What agent can do |
+|---|---|---|
+| Network | `api_only` | Reach configured model API endpoint only. No arbitrary outbound. |
+| Inner Docker | `none` | No `docker` CLI, no DinD sidecar. |
+| User privilege | `agent` (no sudo, `no-new-privileges`) | Runs as `agent` user; cannot escalate. No `apt install`. |
+| Filesystem | `read_only` | Cannot write outside bind-mounted paths. No system writes. |
+| Resources | strict: `memory_max=4G, cpus=2.0, pids=512` | Hard ceiling. |
+| Linux capabilities | minimum 8-cap set | No `MKNOD`, `NET_RAW`, `SYS_CHROOT`, etc. |
 
-Expected controls:
+**Who uses `locked`?** Roles purpose-built for read-only analysis. A PR reviewer that reads diffs and calls the model. A code quality scanner that emits a report. An agent that reads documentation and answers questions. Any role where the operator's guarantee is "this agent cannot change anything on my machine or reach the internet beyond its model API."
 
-| Control | Contract |
-|---|---|
-| DinD | Current TLS-authenticated privileged DinD sidecar allowed. |
-| Capabilities | Docker defaults. |
-| Seccomp | Docker default profile where available. |
-| AppArmor/SELinux | Docker default host policy where available. |
-| Root filesystem | Writable role container root. |
-| Network | Per-agent network with outbound access. |
-| Resource limits | None unless declared by role/operator. |
-| Auth | Current configured auth forwarding modes. |
+**What `locked` requires from the image:** all tools the agent needs must be pre-installed in the role Dockerfile at build time. No runtime `apt install`. No `sudo`. The role's `min_profile` must be `"locked"`.
 
-This profile should be explicit. It is useful for roles that install packages, run complex Docker/Compose flows, debug low-level tooling, or need to match the current proof-of-concept exactly.
+### `hardened` — restricted, DinD-disabled by default
 
-### `standard`
+Purpose: untrusted or unfamiliar role repos, long autonomous runs, and roles that need to do real coding work but do not need inner Docker workflows.
 
-Purpose: become the eventual default once compatibility testing passes.
+| Dimension | Default grant | What agent can do |
+|---|---|---|
+| Network | `api_only` + `github.com` | Model API + GitHub. No other outbound. |
+| Inner Docker | `none` (override with `requires_inner_engine = "rootless"`) | No DinD by default. Roles that need Docker declare it. |
+| User privilege | `agent` (no sudo, `no-new-privileges`) | No sudo. Pre-installed toolchains only. |
+| Filesystem | `read_only` + tmpfs preset | Writable workspace mounts + tmpfs system paths. No image-layer writes. |
+| Resources | generous: `memory_max=16G, cpus=4.0, pids=2048` | Enough for typical Rust/Node/Python builds. |
+| Linux capabilities | minimum 8-cap set | Defense-in-depth when DinD is disabled. |
 
-Expected controls:
+**Who uses `hardened`?** An agent running against a repo from an unfamiliar source. A long-running autonomous agent where the operator wants network egress limited to the model and GitHub. A role that does all its work through pre-installed tools and does not need to install packages at runtime. When DinD is not needed and the role's image is purpose-built, this profile provides the strongest practical guarantee available while still allowing real coding tasks.
 
-| Control | Contract |
-|---|---|
-| DinD | Private daemon remains, but transport must be TLS or a private socket. Privileged status is reported. |
-| Capabilities | Keep Docker defaults initially, then move to a tested minimal set when known safe. |
-| Seccomp | Docker default required where the backend supports it. |
-| AppArmor/SELinux | Default profile required on Linux hosts that expose it. |
-| `no-new-privileges` | Enabled for the role container unless a role declares incompatibility. |
-| Root filesystem | Writable for V1; read-only evaluated under `hardened`. |
-| Network | Per-agent network; no host Docker socket; egress mode reported. |
-| Resource limits | Apply declared role/operator limits; warn when absent on multi-agent launches. |
-| Auth | Current modes allowed, but launch contract reports where credentials land. |
+**What `hardened` requires from the image:** same as `locked` — all tools pre-installed. No sudo. If DinD is needed, the role must declare `requires_inner_engine = "rootless"` (cgroup v2 host required) or `"privileged"` (explicit operator grant).
 
-This profile should minimize surprise without breaking normal agent work.
+### `standard` — typical dev work
 
-### `hardened`
+Purpose: the intended eventual default for everyday coding agent sessions once the sudo audit is resolved. Real dev work: editing files, running tests, installing npm/pip/cargo packages, git push, GitHub CLI.
 
-Purpose: suspicious repos, unfamiliar dependencies, long-running autonomous
-agents, and review/audit roles that do not need broad runtime mutation.
+| Dimension | Default grant | What agent can do |
+|---|---|---|
+| Network | `open` | Full outbound. Agent can reach any URL. |
+| Inner Docker | `rootless` (cgroup v2) or `privileged` (cgroup v1 / no rootless support) | DinD for Docker-based workflows. |
+| User privilege | `agent_with_sudo` (blocked by sudo audit until resolved) | `sudo apt install`, package installs, system writes. |
+| Filesystem | `writable` | Full read-write container root. |
+| Resources | moderate: `memory_max=16G, cpus=4.0, pids=2048` | **Required** even if declared by role/workspace. Warn if absent on multi-agent launches. |
+| Linux capabilities | Docker 14-cap default | Drops are deferred until test matrix confirms minimum safe set for `standard`. |
 
-Expected controls:
+**Who uses `standard`?** The operator who trusts the role repo (e.g. built by their team or one of the built-in roles) and wants full dev capability with resource protection. This is jackin's intended everyday profile.
 
-| Control | Contract |
-|---|---|
-| DinD | Disabled by default unless the role explicitly requires Docker workflows. If enabled, prefer rootless DinD or a non-privileged alternative. |
-| Capabilities | Start from `--cap-drop=ALL`, then add back the validated jackin' minimum (see Capability Minimum Set below): `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `SETFCAP`, `KILL`. Add `NET_RAW` only behind an opt-in `network.allow_raw_sockets`. Drop `MKNOD`, `SYS_CHROOT`, `SETPCAP`, `NET_BIND_SERVICE`, `AUDIT_WRITE` from the Docker default. Drop more once role-specific tests confirm. |
-| Seccomp | Docker default at minimum; custom profile research allowed only after compatibility data exists. |
-| AppArmor/SELinux | Required where available; launch fails or downgrades with explicit operator confirmation if unavailable. |
-| `no-new-privileges` | Required. |
-| Root filesystem | `--read-only` with explicit tmpfs/write mounts (see Read-Only Root Tmpfs Preset below): `/tmp`, `/run`, `/var/run`, `/var/tmp`, `/var/cache`, `/var/log`, `/var/lib/apt/lists`, `/var/cache/apt/archives`, `/var/lib/dpkg`, `$HOME/.cache`, `/jackin/run`, plus jackin'-owned state mounts. |
-| User | Non-root role process required. |
-| Network | Egress policy required: deny or allowlist. If not enforceable, fail before launch unless operator downgrades. |
-| Resource limits | Memory, CPU, PID, and nofile limits required from role defaults, workspace defaults, or CLI overrides. |
-| Auth | Prefer process-env injection or future brokered credentials over persisted copied auth. |
+**Current blocker for making `standard` the default:** the `NOPASSWD:ALL` sudo audit (Open Question #5). Until the base image drops unconditional sudo, `standard` cannot enable `no-new-privileges`, which means the user privilege grant cannot be tightened from `agent_with_sudo`. The eventual `standard` default enables `no-new-privileges` once that audit is done.
 
-This profile is allowed to reject roles. A role that needs broad Docker access or mutable system state can use `standard` or `compat`.
+### `compat` — maximum compatibility, today's behavior
 
-### `locked`
+Purpose: roles that need everything: privileged DinD, writable system, sudo, open network, no resource limits. The explicit "I know what I'm doing, give the agent everything" profile. The current default behavior before this contract ships.
 
-Purpose: code review, documentation, read-only investigation, or "look but do
-not touch" agent sessions.
+| Dimension | Default grant | What agent can do |
+|---|---|---|
+| Network | `open` | Full outbound. |
+| Inner Docker | `privileged` | Privileged DinD sidecar. |
+| User privilege | `agent_with_sudo` | `NOPASSWD:ALL` passwordless sudo. |
+| Filesystem | `writable` | Full read-write root. |
+| Resources | none | No limits. Parallel agents can exhaust host. |
+| Linux capabilities | Docker 14-cap default | No drops. |
 
-Expected controls:
+**Who uses `compat`?** Roles with complex Docker workflows (Docker Compose, Testcontainers, multi-stage `docker build`), roles that run `apt install` during sessions, roles that need privileged operations inside the container, and any operator who wants exact parity with today's behavior. `compat` must be explicitly declared — it is not the intended default after `standard` is validated.
 
-| Control | Contract |
-|---|---|
-| DinD | Disabled. |
-| Workspace writes | No writable host mounts unless explicitly listed. |
-| Root filesystem | Read-only. |
-| Network | Deny by default. Allowlist only with explicit operator-visible rules. |
-| Auth | No copied persistent auth by default. |
-| Resource limits | Required. |
-| Process sandbox | Strongly recommended once available. |
+**Explicit compat grant:** An operator can also grant `compat` behavior on specific dimensions without taking the whole profile:
 
-This is the first profile that can meaningfully support "safe-ish read-only agent" workflows without a new backend.
+```toml
+[docker]
+default_profile = "standard"
+
+[docker.grants]
+inner_docker = "privileged"   # grant privileged DinD on top of standard
+```
 
 ## Control Matrix
 
@@ -257,6 +600,8 @@ This is the first profile that can meaningfully support "safe-ish read-only agen
 | Credential location | env/file/brokered auth | Future | Coordinate with [Container credential exposure](/reference/roadmap/container-credential-exposure/) and [Host bridge](/reference/roadmap/host-bridge/). |
 
 ### Capability Minimum Set
+
+**Critical constraint: capability drops on the role container are only meaningful under `hardened` profile with DinD disabled.** Under `compat` and `standard` (where DinD is active), the agent process has `DOCKER_HOST` pointing to a privileged DinD sidecar. Even if `CAP_NET_RAW` is dropped from the role container, the agent can run `docker run --privileged` against the DinD daemon and get the full capability set inside an inner container. Capability dropping is therefore a defense-in-depth measure for the `hardened` profile where DinD is absent, not a meaningful constraint for `compat`/`standard` with DinD active. This does not make it worthless — defense-in-depth against prompt injection attacks that try to exploit specific syscalls directly is real — but operators should not treat capability drops as a primary security boundary unless DinD is disabled.
 
 Docker's 14-cap default is the upper bound. The validated jackin' starting set, derived from common role workflows during the May 2026 research pass, is:
 
@@ -298,20 +643,26 @@ The minimum writable-path inventory for `--read-only` with `--tmpfs`, derived fr
 /var/cache                 — apt/dpkg/pip
 /var/log                   — process logs that some tools (rsyslogd, systemd-journald, agents) write
 /var/lib/apt/lists         — apt-get update writes here
-/var/cache/apt/archives    — apt-get install downloads here
+/var/cache/apt/archives    — apt-get install downloads here (download phase only)
 /var/lib/dpkg              — dpkg state, including /var/lib/dpkg/lock-frontend
 $HOME/.cache               — pip, cargo, npm, fastly tools
-/jackin/run                — per the container path convention
 ```
 
 Each path becomes a `--tmpfs <path>:rw,nosuid,nodev,size=<sized>` flag. Sizes need profile-level defaults plus a per-role override. `/tmp` and `$HOME/.cache` are the largest expected consumers (npm/yarn cache, pip wheel cache).
 
+**`apt install` is NOT compatible with read-only root.** The download phase (`apt-get download`, fetching `.deb` files) works because it only writes to `/var/cache/apt/archives/` and `/var/lib/dpkg/`. The extraction phase (`dpkg --unpack` + `dpkg --configure`) writes to `/usr/bin/`, `/usr/lib/`, `/usr/share/`, `/etc/`, and other FHS paths under the image layer. These paths are not in the tmpfs preset because making them tmpfs would shadow the pre-installed binary tree and make tools installed at `docker build` time invisible. Therefore, under `--read-only`, `apt install <pkg>` fails when `dpkg` tries to extract to `/usr/`. This is an expected and accepted tradeoff for `hardened` — roles that need `apt install` at runtime declare `min_profile = "compat"` or `min_profile = "standard"`. Only roles that pre-install everything in the role Dockerfile can use `hardened` with read-only root.
+
+**Shell history and runtime home paths.** The `agent` user's home directory (`/home/agent/`) has several subdirectories that are bind mounts (agent credential files seeded by `jackin-capsule runtime-setup`) and several that are image-layer paths (oh-my-zsh, `.zshrc`, `.config/`, etc.). Under `--read-only`, shell history (`~/.zsh_history`, `~/.bash_history`), zsh session files (`~/.zsh_sessions/`), and oh-my-zsh update markers will fail to write. These need either a tmpfs entry (acceptable for ephemeral zsh session state) or a bind mount (for persistent history). Shell history persistence as a feature is deferred — see [Devcontainer Parity Finding 4](/reference/roadmap/devcontainer-parity/) and [Déjà Vu](/reference/roadmap/deja-vu/) for the full discussion. For Phase 4 read-only root, the minimum fix is adding these to the tmpfs preset so container startup does not break: `$HOME/.zsh_sessions`, `$HOME/.zsh_history`, `$HOME/.bash_history`. An explicit audit of every write target in `$HOME` is required before Phase 4 ships.
+
+**`jackin-capsule runtime-setup` writes under read-only root.** The capsule runtime setup (in `crates/jackin-capsule/src/runtime_setup.rs`) writes auth credential files (`~/.claude/`, `~/.claude.json`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`, `~/.kimi-code/`, `~/.local/share/opencode/`) and git hook markers (`/jackin/state/container-init.done`, `/jackin/state/git-hooks/`). All of these are on bind-mounted paths (either the per-container home state volume or `/jackin/state/`), so they are writable regardless of `--read-only`. No capsule changes needed for read-only root support.
+
 Paths that should NOT be tmpfs even under `hardened`:
 
-- jackin'-owned persistent state mounts (under `/jackin/state/` and any agent-home state) — these are explicit volume mounts, not tmpfs.
-- Workspace mounts — these are bind mounts from the host, not tmpfs.
+- jackin'-owned persistent state mounts (under `/jackin/state/` and any agent-home state bind mounts) — explicit volume mounts, already writable.
+- `/jackin/run` — already a bind mount at `launch.rs:1007–1008`; adding it as tmpfs would shadow the bind mount. Do not include in the tmpfs preset.
+- Workspace mounts — bind mounts from the host, not tmpfs.
 
-Under `locked` the inventory is smaller because the agent is not expected to install packages: `/tmp`, `/run`, `/var/run`, `/jackin/run` only.
+Under `locked` the inventory is smaller because the agent is not expected to install packages: `/tmp`, `/run`, `/var/run` only (plus the shell history entries).
 
 ### Cgroup Detection
 
@@ -558,34 +909,73 @@ Host matrix:
 
 ### Phase 1 — contract-only refactor
 
-- Add a `DockerSecurityProfile` internal enum with `compat` as the only active behavior.
-- Add launch/session contract reporting for current Docker settings.
-- Update docs to describe the current profile honestly.
-- Add tests that assert the host Docker socket is never mounted.
+Goal: establish the grant model types in code, add host-socket regression test, add telemetry, and report current settings — no behavior change. Every launch acts as `compat` regardless of requested profile.
 
-### Phase 2 — resource and `no-new-privileges`
+- Create `src/runtime/docker_profile.rs` with `DockerSecurityProfile` enum, per-dimension grant types (`NetworkGrant`, `InnerDockerGrant`, `UserGrant`, `FilesystemGrant`, `ResourceGrant`), `EffectiveGrants` struct, and all resolution/translation functions. In Phase 1, all resolution functions return `compat`-equivalent flags regardless of input profile.
+- Add `docker_profile: Option<DockerSecurityProfile>` to `LoadOptions` in <RepoFile path="src/runtime/launch.rs" /> (lines 35–76).
+- Add `profile: DockerSecurityProfile` to `LaunchContext` in <RepoFile path="src/runtime/launch.rs" /> (lines 548–578). Populate it from `load_role_with` using the precedence rule: CLI > workspace > role `min_profile` > global default.
+- Add `default_profile: Option<DockerSecurityProfile>` to `DockerConfig` in <RepoFile path="src/config/mod.rs" />. Schema bump: `CURRENT_CONFIG_VERSION` `v1alpha5` → `v1alpha6`. New workspace field: `docker: Option<WorkspaceDockerConfig>` with `profile: Option<DockerSecurityProfile>`. Schema bump: `CURRENT_WORKSPACE_VERSION` `v1alpha5` → `v1alpha6`.
+- Add `min_profile: Option<DockerSecurityProfile>` to `RoleManifest` in <RepoFile path="src/manifest/mod.rs" />. Schema bump: `CURRENT_MANIFEST_VERSION` `v1alpha4` → `v1alpha5`. Both `min_profile` and `requires_inner_engine` (Phase 3) can land in this single bump.
+- Add `--docker-profile <PROFILE>` CLI flag to `LoadArgs` in <RepoFile path="src/cli/role.rs" />. The parsed value flows into `LoadOptions.docker_profile`.
+- Add host-socket regression test: in `launch.rs` test section, assert that no `run_args` or `ContainerSpec.binds` entry contains `docker.sock`. This test must fail if a future change accidentally mounts the host socket.
+- Emit `debug_log!("launch", "profile_selected profile={} source={}", profile, source)` in `launch_role_runtime` after profile resolution.
+- Emit `debug_log!("launch", "host_socket_check passed=yes")` after the above assertion.
+- Update docs to describe the `compat` default honestly in the session contract output section.
 
-- Wire declared resource limits into Docker container creation.
-- Add `no-new-privileges` to `standard` after compatibility testing.
-- Report missing resource budgets during multi-agent launches.
+### Phase 2 — resource limits and `no-new-privileges`
+
+Goal: wire declared resource limits into Docker flags; add `no-new-privileges` to `standard` after base-image sudo audit.
+
+- Add `DockerResourceLimits` struct to `src/runtime/docker_profile.rs`: `memory_max: Option<u64>`, `memory_high: Option<u64>`, `cpus: Option<f64>`, `pids: Option<i64>`, `nofile: Option<u64>`.
+- In `launch_role_runtime`, read resolved limits from role manifest `[resources]` (tracked in [Declarative resource limits](/reference/roadmap/declarative-resource-limits/)) and translate to Docker flags via the helper in `docker_profile.rs`:
+  - `--memory <memory_max>` for `memory_max`
+  - `--memory-reservation <memory_high>` for `memory_high`
+  - `--cpus <cpus>` for `cpus`
+  - `--pids-limit <pids>` for `pids`
+  - `--ulimit nofile=<nofile>:<nofile>` for `nofile`
+- Detect cgroup version at launch (run `stat -fc %T /sys/fs/cgroup/` or read `/proc/self/cgroup`) and emit `debug_log!("launch", "cgroup_version v={}")`. On v1 hosts under `hardened`/`locked`, fail-close; under `standard`, downgrade `memory_high` and emit a warning.
+- Add `--security-opt no-new-privileges` to `standard`+ profiles **after** completing Open Question #5 (sudo audit). Until the audit is done, emit `debug_log!("launch", "no_new_privileges enforced=no reason=sudo-audit-pending")` but do not add the flag.
+- Report missing resource budgets: if `standard`/`hardened`/`locked` and no limits declared, emit a `clog!`-tier warning (or `debug_log!` until `clog!` lands) so the operator sees it at launch.
+- Update `ContainerSpec` in <RepoFile path="src/docker_client.rs" /> to carry the same resource fields and wire them into `HostConfig` so tests stay in sync with production.
 
 ### Phase 3 — rootless DinD and DinD-free roles
 
-- Prototype `docker:dind-rootless`.
-- Add a role/runtime capability flag for inner Docker requirements.
-- Skip DinD for roles that do not need it under `hardened` and `locked`.
+Goal: reduce DinD blast radius; let roles opt out of the sidecar entirely.
+
+- Add `requires_inner_engine: Option<bool>` to `RoleManifest` (lands in the same `v1alpha5` bump as `min_profile` from Phase 1).
+- In `launch_role_runtime`, skip the DinD sidecar block (lines 690–716) when `profile >= hardened && !requires_inner_engine`. Emit `debug_log!("launch", "dind enabled=no reason=profile-hardened-no-inner-engine-required")`.
+- Prototype `docker:dind-rootless`: swap the `docker:dind` image for `docker:dind-rootless` on cgroup v2 hosts under `standard`. Drop `--privileged` from `dind_args`. Evaluate against the compatibility test matrix. Do not make it the default until all rows in the matrix pass.
+- Add the DinD cert path note: emit `debug_log!("dind", "TLS certs generated, lifetime=launch, path=/jackin/run/<instance>/dind-certs/")`. Verify cert volume is stored under `/jackin/run/` per the container path convention — the bind mount at `launch.rs:1007` already mounts the socket dir; certs need their own subdirectory under the same base.
 
 ### Phase 4 — read-only root and capability policy
 
-- Build the read-only root filesystem writable-path inventory.
-- Add read-only root to `hardened`.
-- Start with capability reporting, then move to capability dropping once tests identify the minimum safe set for common roles.
+Goal: lock down the role container filesystem and drop unnecessary Linux capabilities.
+
+- In `launch_role_runtime`, after the base flags block (line 809), insert capability flags for `hardened`/`locked` via the `capability_flags()` helper:
+  ```
+  --cap-drop=ALL
+  --cap-add CHOWN
+  --cap-add DAC_OVERRIDE
+  --cap-add FOWNER
+  --cap-add FSETID
+  --cap-add SETUID
+  --cap-add SETGID
+  --cap-add SETFCAP
+  --cap-add KILL
+  ```
+- Insert `--read-only` for `hardened`/`locked`.
+- Insert `--tmpfs` entries for the read-only root tmpfs preset. Each entry uses `rw,nosuid,nodev`. **Do not include `/jackin/run`** (already a bind mount). Note: `/jackin/state` is also already a bind mount and must not appear in the tmpfs list. The tmpfs list for `hardened` is: `/tmp`, `/run`, `/var/run`, `/var/tmp`, `/var/cache`, `/var/log`, `/var/lib/apt/lists`, `/var/cache/apt/archives`, `/var/lib/dpkg`, `/home/agent/.cache`. Sizes need profile defaults + per-role overrides.
+- Emit the full capability telemetry lines defined in the Telemetry Surface section.
+- Run the compatibility test matrix against the 8-cap minimum set. If a built-in agent workflow fails, either add the required cap with a documented reason or accept that `hardened` rejects that workflow.
+- Update `ContainerSpec` in <RepoFile path="src/docker_client.rs" /> with `cap_add`, `cap_drop`, `security_opt`, `read_only_rootfs`, `tmpfs` fields and wire them into `HostConfig`.
 
 ### Phase 5 — network and credential enforcement
 
-- Connect profile defaults to network egress policy.
-- Report partial enforcement when DinD or inner containers are uncovered.
-- Integrate future credential broker/proxy work so stricter profiles can avoid persistent copied tokens.
+Goal: connect profile defaults to the network egress policy; integrate credential broker work.
+
+- In `create_network` (<RepoFile path="src/docker_client.rs" /> line 576): add `internal: Option<bool>` parameter. For `locked`, pass `internal: true` (blocks external egress at the Docker network layer). For `standard`/`hardened`, keep `internal: false` but ensure egress policy from [Network egress policy](/reference/roadmap/network-egress-policy/) is applied.
+- Report partial enforcement when DinD or inner containers are not covered by the network policy. The `locked` profile's `--network none` equivalent is `internal: true` on the bridge — verify inner containers created by DinD (if DinD is enabled under `standard`) inherit the same restriction or emit a `partial` enforcement warning.
+- Integrate credential posture with [Container credential exposure](/reference/roadmap/container-credential-exposure/): under `hardened`/`locked`, prefer env-only injection over file copies. Emit a `debug_log!("launch", "credential_posture …")` line per agent auth type.
 
 ## Telemetry Surface
 
@@ -616,38 +1006,72 @@ Roles build their own images, today on the host Docker engine. The build phase i
 
 This contract introduces three new config surfaces. Per the rules in <RepoFile path="AGENTS.md" />, each lands with a `CURRENT_*_VERSION` bump:
 
-| Surface | File kind | Type touched | Action |
-|---|---|---|---|
-| `[runtime.docker] default_profile = "..."` | `config.toml` | `AppConfig` | bump `CURRENT_CONFIG_VERSION`, add fixture under `tests/fixtures/migrations/config/from-<predecessor>/`, re-bake every existing `after.toml`, add Schema Versions entry. |
-| `[workspaces.X.runtime.docker] profile = "..."` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`, same fixture + bake procedure. |
-| `[runtime.docker] requires_inner_engine = false` | `jackin.role.toml` | `RoleManifest` | bump `CURRENT_MANIFEST_VERSION`, same fixture + bake procedure. |
+| Surface | File kind | Type touched | Current version | Target version | Action |
+|---|---|---|---|---|---|
+| `[docker] default_profile = "..."` | `config.toml` | `AppConfig` → `DockerConfig` | `v1alpha5` (<RepoFile path="src/config/migrations.rs" /> line 7) | `v1alpha6` | bump `CURRENT_CONFIG_VERSION`, add fixture `tests/fixtures/migrations/config/from-v1alpha5/`, re-bake all existing `after.toml`s, add Schema Versions entry. |
+| `[workspaces.X.docker] profile = "..."` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | `v1alpha5` (<RepoFile path="src/config/migrations.rs" /> line 8) | `v1alpha6` | bump `CURRENT_WORKSPACE_VERSION`, fixture `tests/fixtures/migrations/workspace/from-v1alpha5/`, same bake + entry procedure. Config and workspace versions track together; one PR bumps both to `v1alpha6`. |
+| `[docker] min_profile = "..."` and `[docker] requires_inner_engine = false` | `jackin.role.toml` | `RoleManifest` | `v1alpha4` (<RepoFile path="src/manifest/migrations.rs" /> line 6) | `v1alpha5` | bump `CURRENT_MANIFEST_VERSION`, fixture `tests/fixtures/migrations/manifest/from-v1alpha4/`, same bake + entry procedure. |
 
-All three additions are additive (new optional fields with serde defaults), so the bump can be a single PR per surface. The "one schema version bump per PR" rule in AGENTS.md still applies: each version transition is one PR.
+All three additions are additive (new optional fields with serde defaults), so each bump is a single migration step. The "one schema version bump per PR" rule in AGENTS.md still applies: each version transition is one PR. The config+workspace bump is one PR (both go to `v1alpha6`); the manifest bump is a separate PR (goes to `v1alpha5`).
+
+The exact TOML shape for the role manifest fields:
+
+```toml
+# jackin.role.toml — new optional fields
+[docker]
+min_profile = "compat"          # default: "standard"; roles needing sudo declare "compat"
+requires_inner_engine = false   # default: true; roles that don't need DinD declare false
+```
+
+The exact TOML shape for the workspace override:
+
+```toml
+# ~/.config/jackin/workspaces/<name>.toml — new optional section
+[docker]
+profile = "hardened"
+```
+
+The exact TOML shape for the global config default:
+
+```toml
+# ~/.config/jackin/config.toml — new optional field under [docker]
+[docker]
+default_profile = "standard"
+```
 
 ## Decided In This Pass
 
 These are the V1 defaults the contract commits to. Code work that implements them does not need to re-debate the choice:
 
-- Profile enum is `compat | standard | hardened | locked`.
-- Capability minimum hypothesis for `hardened`: 8 caps (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `SETFCAP`, `KILL`). Drop the other six Docker defaults. Validate against the test matrix before promoting to `standard`.
-- `no-new-privileges` is required under `standard` and above; `sudo`-using roles either declare `min_profile = "compat"` or set `setcap cap_setuid,cap_setgid+ep` on the privileged binaries in the role Dockerfile.
-- Masked-paths default stays on for all profiles; `systempaths=unconfined` is allowed only under `compat` and reported in the launch contract.
-- Read-only root tmpfs preset has a concrete writable-path list (see Read-Only Root Tmpfs Preset). Profile defaults wire it in; per-role overrides are allowed.
-- Cgroup v2 required for `hardened`/`locked`; v1 hosts degrade `standard` with a `debug_log!` warning and fail-closed for stricter profiles.
+- **Model: capability grants, not restrictions.** Profiles are capability bundles. `locked` is the tightest; `compat` grants everything. Explicit `[docker.grants]` extend any profile on specific dimensions. Operators grant up, not restrict down.
+- Profile enum is `locked | hardened | standard | compat` (ordered ascending capability). The conceptual default from the user's perspective is `locked` as the starting point; the practical default while `standard` is not yet validated is `compat`.
+- **`compat` is the initial default for all launches** until the sudo audit (Open Question #5) is resolved and the compatibility test matrix passes. `standard` becomes the default after that. Phase 1 ships only the enum + `compat`-only behavior — no functional change for any user, just bookkeeping.
+- **Profile + explicit grant composition:** take the profile's per-dimension tier, apply any explicit grants that elevate a dimension, report the effective per-dimension grant in the session contract. Conflict (operator restricts a dimension below what a role declares minimum) = launch failure with a named-conflict message.
+- **Ascending-capability interpretation:** `locked` is not "locked down from compat"; it is "explicitly granted only what's needed for model-API-only agent work." The operator who adds `inner_docker = "privileged"` to a `locked` profile is granting one dimension beyond the locked bundle, not weakening a restriction.
+- Capability minimum hypothesis for `hardened`/`locked`: 8 caps (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `SETFCAP`, `KILL`). Caps only matter when DinD is disabled — under `hardened`/`locked`, DinD is `none` by default. Validate against the test matrix before the 8-cap set is considered confirmed.
+- `no-new-privileges` is required under `hardened` and `locked`. Under `standard` it is the goal but blocked by the sudo audit. Under `compat` it is not applied.
+- `locked` and `hardened` default network grant is `api_only`. `api_only` requires the allowlist proxy implementation (tracked in [Network egress policy](/reference/roadmap/network-egress-policy/)). Until that is implemented, `locked`/`hardened` network grant degrades to `open` with a visible warning in the session contract — launching with an unimplemented grant is better than refusing to launch.
+- Masked-paths default stays on for all profiles; `systempaths=unconfined` allowed only under `compat` and reported.
+- Read-only root: only for `locked`/`hardened`, only for purpose-built images (pre-installed tools, no runtime `apt install`). The `apt install` + read-only root conflict is a feature: if the role needs `apt install`, it declares `min_profile = "standard"` and gets a writable root.
+- Cgroup v2 required for rootless DinD under `hardened`/`standard`; privileged DinD falls back on cgroup v1 for `standard`/`compat`. `hardened` fails-closed on cgroup v1 if rootless DinD is the only option and rootless fails.
 - DinD TLS certs regenerate per launch under `/jackin/run/<instance>/dind-certs/`. No CA rotation under V1 — certs already die with the launch.
-- `locked` allows network egress only to the **configured agent runtime's API endpoint** (Claude/Codex/Amp/Kimi/OpenCode endpoints declared in the role manifest), plus any operator-allowlisted hosts. Without that exception, `locked` is unusable because the agent cannot reach its model API.
-- Host Docker socket exclusion is a hard rule already; the contract makes it a launch-time guard plus regression test.
-- The contract is Docker-only; Kubernetes gets its own profile vocabulary because pod-level controls differ structurally (no DinD, PodSecurityPolicy/PSA, NetworkPolicy CRDs).
-- Profile selection precedence: CLI flag > workspace override > role manifest `min_profile` > global default. CLI cannot relax below `min_profile` without explicit operator override.
+- Host Docker socket exclusion is a hard rule; the contract adds a launch-time regression test.
+- Profile selection precedence: CLI flag > workspace override > role manifest `min_profile` > global default. CLI cannot go below `min_profile` without explicit operator grant override.
+- **The implementation priority order, grounded in user impact:** (1) resource limits (`standard` profile, Phase 2) — universally useful, zero compatibility issues, real protection for parallel agent users; (2) DinD-free roles (`requires_inner_engine = "none"`, Phase 3) — enables `hardened`/`locked` to be meaningful; (3) read-only root + capability minimum set (Phase 4) — for purpose-built roles after DinD is disabled; (4) network allowlist (`api_only` tier, Phase 5) — completes the `locked` profile's network grant. Phase 1 is infrastructure only.
 
 ## Open Before Implementation Can Start
 
 These need answers before Phase 1 code work begins:
 
 1. **Test fixture matrix.** Which exact agent runtimes + workflows are the acceptance set? (claude-code, codex, amp, kimi, opencode × `apt install build-essential`, `npm install <pkg-with-native-deps>`, `pip install <wheel>`, `cargo build`, `git clone+push`, `docker build` in-DinD, Compose, Testcontainers, `gh pr create`). Without this, "validate the cap set" has no objective answer.
-2. **`min_profile` field shape.** Role manifest needs a way to say "I need at least `compat`" or "I am `locked`-compatible". Open: enum vs ordered list vs constraint expression. Lowest-friction choice: an ordered enum field, default `standard`.
-3. **AppArmor on macOS launch contract.** What exact text does jackin' print under `standard` when running on Docker Desktop or OrbStack? Current code does not know which backend Docker is using; needs a probe (`docker info | grep "Operating System"`) at launch.
+2. **`min_profile` field shape.** Role manifest needs a way to say "I need at least `compat`" or "I am `locked`-compatible". Open: enum vs ordered list vs constraint expression. Lowest-friction choice: an ordered enum field, default `standard`. The `DockerSecurityProfile` enum in `src/runtime/docker_profile.rs` (see Codebase Map) should derive `PartialOrd`/`Ord` so precedence is `max(workspace_override, role_min_profile)`.
+3. **AppArmor on macOS launch contract.** What exact text does jackin' print under `standard` when running on Docker Desktop or OrbStack? Current code does not know which backend Docker is using; needs a probe (`docker info --format '{{.OperatingSystem}}'` or `docker info --format '{{.SecurityOptions}}'`) at launch. The probe result flows into the session contract output and the `debug_log!("launch", "apparmor available={} layer=…")` telemetry line. The `clap` definition for `--docker-profile` will live in `LoadArgs` in <RepoFile path="src/cli/role.rs" />.
 4. **Sysbox host-install policy.** Sysbox needs a host-side runtime registration that violates the "never mutate host silently" rule. Either operator-confirmed opt-in install or hard-skip on hosts without Sysbox. Decide which before Phase C.
+5. **`NOPASSWD:ALL` sudo audit.** Before `no-new-privileges` can be applied to any built-in agent runtime, audit every `sudo` call site in <RepoFile path="docker/construct/Dockerfile" /> and all role Dockerfiles. The base image adds `NOPASSWD:ALL` at line 113. With `--security-opt no-new-privileges`, `sudo` fails because setuid elevation is blocked at the kernel level (`sudo: effective uid is not 0, is sudo installed setuid root?`). Resolution path: identify each privileged binary that roles need and replace the `sudo` call with a file capability (`setcap cap_setuid,cap_setgid+ep <binary>`) in the role Dockerfile. Until the audit is complete, `standard` profile cannot safely enable `no-new-privileges` for built-in agent images. Custom role authors who control their own Dockerfile can opt in earlier by declaring `min_profile = "standard"` after removing `sudo` from their image.
+6. **Two-Docker-path sync policy.** The production role container uses the CLI subprocess path (`run_args: Vec<&str>` in `launch_role_runtime`); the Bollard `ContainerSpec` / `create_container` path is used by tests and restore code. Both must be kept in sync. Decide whether to: (a) keep both paths and add `ContainerSpec` security fields mirroring the CLI path (more maintenance, but tests can exercise security config), or (b) have the Bollard path defer to the same helper that builds CLI flags (eliminates duplication). Option (b) is cleaner but requires refactoring the Bollard path to accept a pre-built `HostConfig` rather than a `ContainerSpec`. Option (a) is the lower-risk Phase 1 choice.
+7. **`/jackin/run` tmpfs exclusion.** The socket-dir bind mount `-v <socket_dir>:/jackin/run` is appended at `launch.rs:1007–1008` and provides write access to `/jackin/run` through the bind mount, not a tmpfs. The read-only root tmpfs preset listed above correctly excludes `/jackin/run`. Confirm before Phase 4 that no other path under `/jackin/` needs an explicit tmpfs entry — the bind mounts for `/jackin/state`, `/jackin/claude/`, `/jackin/codex/` etc. already provide write access to those subtrees.
+8. **$HOME write-path audit required before read-only root.** The `agent` user's home directory mixes bind-mount paths (writable regardless of `--read-only`) and image-layer paths (blocked under `--read-only`). Before Phase 4 ships, enumerate every runtime write target under `/home/agent/` that is NOT a bind mount: shell history (`.zsh_history`, `.bash_history`), zsh session files (`.zsh_sessions/`), oh-my-zsh update markers, any `.gitconfig` local overrides, and `.local/share/mise/` shim paths if `mise` activates at runtime. Each needs either a tmpfs entry or a per-container state bind mount. `jackin-capsule runtime-setup` writes are all on bind-mount paths (`.claude/`, `.codex/`, `.local/share/amp/`, etc.) and are fine.
+9. **Agent bypass flags are not configurable per profile.** Every agent binary is launched with its maximum-bypass flag in <RepoFile path="docker/runtime/entrypoint.sh" /> (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, `amp --dangerously-allow-all`, `kimi --yolo`, `opencode` with `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'`). These are hard-coded in the entrypoint — not configurable per Docker profile. Any security model that assumes the agent binary enforces its own sandboxing is incorrect. The Docker boundary is the only enforceable isolation layer. This is intentional design (jackin' is a no-interruption autonomous environment), but it must be stated clearly in the session contract output so operators understand the trust model: they are trusting the Docker isolation, not the agent's own permission system.
 
 ## Risks and Design Traps
 
@@ -657,6 +1081,39 @@ These need answers before Phase 1 code work begins:
 - Filtering only the role container's network while inner DinD containers still have open egress.
 - Treating Docker Desktop, OrbStack, and Linux Docker as if they expose the same security controls.
 - Mutating host Docker daemon settings to make a profile pass.
+- **CLI path and Bollard path diverging.** Security flags are built in two separate places (`run_args` vec in `launch_role_runtime` for production, `HostConfig` in `create_container` for the Bollard path). If one is updated and the other is not, tests pass against a different security posture than production runs. Enforce this via a shared `docker_profile.rs` helper that both paths call, or add an integration test that exercises both paths with an explicit non-default profile.
+- **`NOPASSWD:ALL` sudo + `no-new-privileges` silent failure.** If `standard` profile enables `no-new-privileges` before the base image removes `NOPASSWD:ALL` sudo, every `sudo` call inside the container silently fails with a non-obvious error. This is worse than the feature not being there — the container starts successfully but tools that call `sudo` (apt, dpkg post-installs, npm scripts) fail at runtime with confusing permission errors. The `standard` profile must not enable `no-new-privileges` until the base-image audit in Open Question #5 is resolved.
+- **Profile precedence not enforced before launch.** If the precedence logic (`CLI > workspace > role min_profile > global default`) is only applied after some early-exit path (e.g., image not found, trust gate rejection), operators may see an inconsistent profile in logs vs what actually ran. Resolve the effective profile once at the start of `load_role_with` and record it in `LaunchContext` before any early exits.
+- **`docker info` probe adds latency to every launch.** The AppArmor / cgroup version probe requires a `docker info` call which can take 100–500 ms on some Docker Desktop configurations. Cache the result per-session or run it in parallel with the image pull check.
+- **`run_args` tests brittle to flag ordering.** Many existing tests (search `docker run` in `launch.rs` test section starting ~line 5200) assert exact `run_args` contents. Adding new security flags changes arg ordering and will break these tests. Budget time for test updates in each phase.
+- **`/jackin/run` bind-mount before read-only flag.** Docker processes bind mounts and the `--read-only` flag together. The socket-dir bind mount at `launch.rs:1008` must remain a bind mount (not tmpfs) even under `hardened` because the capsule daemon socket lives there. Confirm that Docker's behavior with `--read-only` + explicit bind mounts does not prevent writes to those bind-mount paths (it does not — `--read-only` applies only to the image layer, not bind mounts — but document this explicitly so future maintainers don't add an unnecessary tmpfs entry for `/jackin/run`).
+- **DinD cert volume and `--read-only`.** The DinD sidecar mounts its cert volume at `/certs/client` (from `launch.rs:688`). The role container mounts the same volume read-only at `/certs/client:ro`. Under `hardened`, the DinD sidecar itself is disabled by default, so this is moot. Under `standard`, the cert volume mount at `/certs/client:ro` in the role container is already read-only — no change needed there.
+
+## Lessons from Anthropic's Claude Code Devcontainer
+
+The [devcontainer-parity](/reference/roadmap/devcontainer-parity/) roadmap item documents a side-by-side analysis of jackin' construct vs the upstream [anthropics/claude-code `.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer). Several of those findings directly inform this contract. Key extractions:
+
+**What the upstream devcontainer proves works (and jackin' makes configurable instead of fixed):**
+
+| Upstream choice | What it solves | jackin' equivalent | jackin' difference |
+|---|---|---|---|
+| `iptables`/`ipset` OUTPUT allowlist in `init-firewall.sh` | Prevents arbitrary outbound from agent | `network = "api_only"` tier in capability taxonomy | Configurable: operator adds/removes domains; default list is assembled from configured agent endpoints; fully toggleable per profile/workspace/role |
+| `--cap-add=NET_ADMIN --cap-add=NET_RAW` in `devcontainer.json` | Required for iptables init | Implicit cap grants when `network = "api_only"` is selected | Surfaced in session contract; not hidden; reverts to default cap set if `api_only` is not selected |
+| Sudo scoped to `/usr/local/bin/init-firewall.sh` only | Firewall init needs root; agent should not | `agent_scoped_sudo` user privilege tier; `network = "api_only"` implicitly selects it | Fully toggleable; operator can layer `sudo = true` on top for broader sudo if the role needs it |
+| Hard-coded allowlist (Anthropic endpoints, GitHub, npm, Sentry, VS Code) | Catches 90% of real Claude Code use cases | Per-session assembled `JACKIN_ALLOWED_DOMAINS` from agent endpoints + operator config + role config | Not hard-coded; adapts to which agents are running and what packages/services the role needs |
+| Named Docker volumes for `~/.claude` and shell history | State survives container recreation | `~/.jackin/data/{name}/home/.claude` bind mount (existing). Shell history persistence is a separate concern — see note below. | `~/.claude` bind mount already survives container recreation and eject. Shell history and **agent conversation history** are different in importance: conversation history is tracked by [Déjà Vu](/reference/roadmap/deja-vu/). |
+| Default DROP OUTPUT policy before allowlist is applied | Fail-safe: if script fails, no traffic leaves | Same posture: iptables -P OUTPUT DROP runs before any ipset additions | Same semantics; if firewall init fails, container should surface the error (jackin-capsule can detect exit status) |
+
+**What the upstream devcontainer does NOT do that jackin' provides:**
+- DinD for inner Docker workflows
+- Per-agent namespaced networks (each agent isolated)
+- Provider routing (Z.AI, MiniMax, Kimi via provider system)
+- Multi-agent, workspace-level configuration
+- Configurable profiles instead of a fixed setup
+
+**Key philosophical difference:** the upstream devcontainer makes one set of choices for one use case (Claude Code in VS Code/Codespaces). Those choices are correct for that use case. jackin' operators have different use cases — some want `open` network for unrestricted development, some want `api_only` for suspicious repos, some want `none` for offline analysis. jackin does not force a single experience; it provides the mechanism and lets the operator choose. The upstream devcontainer is a valuable proof of concept for the `api_only` + `agent_scoped_sudo` combination specifically.
+
+**The `init-firewall.sh` approach is the V1 implementation of `api_only`.** It is simpler than a proxy sidecar (no additional container, no TLS interception), proven in production use at Anthropic's scale, and directly implementable as a jackin runtime hook. The proxy sidecar approach (tracked in [Network egress policy](/reference/roadmap/network-egress-policy/)) is the V2 implementation that covers non-HTTP protocols and provides connection logs.
 
 ## Related Files
 

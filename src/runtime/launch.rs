@@ -73,6 +73,10 @@ pub struct LoadOptions {
     /// redirect). When set, the first attach carries the provider's env
     /// overrides and label into the capsule's initial spawn.
     pub provider: Option<jackin_protocol::Provider>,
+    /// Docker security profile override for this launch. Takes precedence
+    /// over the workspace and global config defaults. `None` defers to the
+    /// resolved config default (currently always `Compat`).
+    pub docker_profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
 }
 
 impl LoadOptions {
@@ -575,6 +579,11 @@ struct LaunchContext<'a> {
     /// returns, by which time the container has stopped and the
     /// `keep_awake` count is back to zero.
     paths: &'a JackinPaths,
+    /// Resolved Docker security profile for this launch. Determines which
+    /// capability grants are applied to the role container and DinD sidecar.
+    /// Phase 1: all profiles produce identical `Compat`-equivalent flags;
+    /// profile-specific flag generation lands in Phase 2–4.
+    profile: crate::runtime::docker_profile::DockerSecurityProfile,
 }
 
 fn capsule_config(
@@ -643,7 +652,13 @@ async fn launch_role_runtime(
         resolved_env,
         github_env,
         paths,
+        profile,
     } = ctx;
+
+    crate::debug_log!(
+        "launch",
+        "docker_profile selected={profile} container={container_name}",
+    );
 
     let certs_volume = dind_certs_volume(container_name);
 
@@ -1010,6 +1025,19 @@ async fn launch_role_runtime(
         "launch",
         "prepared host socket dir {socket_dir_str} (0o700) and Capsule config for bind-mount at /jackin/run",
     );
+    // Safety invariant: the host Docker socket must never be passed into the
+    // role container. The agent must only reach Docker via the DinD sidecar
+    // over TLS. This check fires in the hot path so any future change that
+    // accidentally adds the socket mount fails loudly before the container
+    // starts rather than silently violating the isolation boundary.
+    debug_assert!(
+        !run_args.iter().any(|a| a.contains("docker.sock")),
+        "host Docker socket must never be mounted into the role container; \
+         use the DinD sidecar path instead; offending args: {:?}",
+        run_args,
+    );
+    crate::debug_log!("launch", "host_socket_check passed=yes container={container_name}");
+
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
     // daemon uses it only to choose the first tab; per-session
@@ -2217,6 +2245,7 @@ async fn load_role_with(
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
             paths,
+            profile: super::docker_profile::resolve_profile(opts.docker_profile),
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
         let mut cleanup = LoadCleanup::new(
@@ -7025,6 +7054,117 @@ plugins = []
         let (run_cmd, _temp) = run_load_with_env(&[]).await;
         assert!(!run_cmd.contains("NO_PROXY="));
         assert!(!run_cmd.contains("no_proxy="));
+    }
+
+    // ── Docker security profile — host socket guard ───────────────────────────
+
+    /// The host Docker socket must never be mounted into the role container.
+    /// Agents reach Docker exclusively through the per-instance DinD sidecar
+    /// over TLS. This test is the machine-enforceable form of the hard rule
+    /// documented in AGENTS.md and the Docker Runtime Hardening Contract.
+    #[tokio::test]
+    async fn role_container_never_mounts_host_docker_socket() {
+        let (run_cmd, _temp) = run_load_with_env(&[]).await;
+        assert!(
+            !run_cmd.contains("docker.sock"),
+            "role container must never receive the host Docker socket; \
+             agents access Docker only through the DinD sidecar over TLS; \
+             offending run command: {run_cmd}",
+        );
+    }
+
+    /// Phase 1: `--docker-profile <X>` is accepted and does not alter the
+    /// produced run command. All profiles resolve to identical `Compat`-
+    /// equivalent flags until Phase 2–4 wire per-dimension behavior.
+    #[tokio::test]
+    async fn docker_profile_flag_accepted_and_produces_valid_launch() {
+        for profile in [
+            crate::runtime::docker_profile::DockerSecurityProfile::Locked,
+            crate::runtime::docker_profile::DockerSecurityProfile::Hardened,
+            crate::runtime::docker_profile::DockerSecurityProfile::Standard,
+            crate::runtime::docker_profile::DockerSecurityProfile::Compat,
+        ] {
+            let (run_cmd, _temp) = run_load_with_profile(profile).await;
+            // Each profile produces a valid docker run invocation.
+            assert!(
+                run_cmd.contains("docker run -d"),
+                "profile {profile} did not produce a docker run command",
+            );
+            assert!(
+                run_cmd.contains("jackin.kind=role"),
+                "profile {profile} run command missing jackin.kind=role label",
+            );
+            // No security flags injected in Phase 1 (all profiles = compat).
+            assert!(
+                !run_cmd.contains("--cap-drop"),
+                "profile {profile} unexpectedly added --cap-drop in Phase 1",
+            );
+            assert!(
+                !run_cmd.contains("--read-only"),
+                "profile {profile} unexpectedly added --read-only in Phase 1",
+            );
+            assert!(
+                !run_cmd.contains("no-new-privileges"),
+                "profile {profile} unexpectedly added no-new-privileges in Phase 1",
+            );
+        }
+    }
+
+    async fn run_load_with_profile(
+        profile: crate::runtime::docker_profile::DockerSecurityProfile,
+    ) -> (String, tempfile::TempDir) {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let mut config = config;
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &LoadOptions {
+                docker_profile: Some(profile),
+                ..LoadOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .unwrap()
+            .clone();
+        (run_cmd, temp)
     }
 
     async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {

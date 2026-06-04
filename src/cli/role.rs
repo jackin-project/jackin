@@ -56,11 +56,24 @@ pub struct LoadArgs {
     /// it merges to the default branch.
     #[arg(long)]
     pub role_branch: Option<String>,
+    /// Docker security profile for this launch (locked, hardened, standard,
+    /// compat). Overrides the workspace and global config defaults.
+    /// See <https://jackin.tailrocks.com/reference/roadmap/docker-runtime-hardening-contract/>
+    /// for the full capability grant model.
+    #[arg(long, value_name = "PROFILE", value_parser = parse_docker_profile)]
+    pub docker_profile: Option<crate::runtime::DockerSecurityProfile>,
 }
 
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+}
+
+fn parse_docker_profile(
+    s: &str,
+) -> Result<crate::runtime::DockerSecurityProfile, String> {
+    s.parse()
+        .map_err(|e: crate::runtime::docker_profile::ParseProfileError| e.to_string())
 }
 
 /// Reattach to a running role's session

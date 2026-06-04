@@ -3,6 +3,7 @@ pub mod build_log;
 mod caffeinate;
 mod cleanup;
 mod discovery;
+pub mod docker_profile;
 mod exit_summary;
 mod identity;
 mod image;
@@ -35,6 +36,7 @@ pub(crate) use self::discovery::list_role_names;
 pub use self::discovery::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
+pub use self::docker_profile::{DockerSecurityProfile, resolve_profile};
 pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
 pub(crate) use self::repo_cache::{RepoError, normalize_github_url};
