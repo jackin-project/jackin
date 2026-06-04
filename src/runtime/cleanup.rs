@@ -132,20 +132,19 @@ pub async fn eject_role(
         docker.remove_container(container_name).await?;
     }
 
-    // Volume and network are independent of each other once containers are gone.
-    let (r3, r4) = tokio::join!(
-        docker.remove_volume(&certs_volume),
-        docker.remove_network(&network),
-    );
-    r3?;
-    r4?;
+    // Remove the network. The certs dir is under the socket dir (removed
+    // below by remove_socket_dir), so no separate Docker volume to remove.
+    // For backward compatibility: if certs_volume looks like a Docker volume
+    // name (not a host path), try to remove it — old instances used named volumes.
+    let certs_is_volume_name = !certs_volume.contains('/');
+    if certs_is_volume_name && dind_was_started {
+        // Old-format named volume — best-effort removal.
+        let _ = docker.remove_volume(&certs_volume).await;
+    }
+    docker.remove_network(&network).await?;
 
-    // Best-effort host-side socket dir cleanup. Same reason as
-    // purge_container_filesystem above: the daemon socket and the
-    // bind-mounted Capsule launch config live under
-    // ~/.jackin/sockets/<container>/ and must be removed alongside the
-    // docker-side teardown so re-launching the same container basename
-    // does not inherit stale state.
+    // Host-side socket dir cleanup: removes the daemon socket, Capsule launch
+    // config, AND the dind-certs/ subdirectory (new convention) in one shot.
     remove_socket_dir(paths, container_name);
 
     Ok(())

@@ -730,10 +730,38 @@ async fn launch_role_runtime(
         // `DNS:<name>` form that openssl's `subjectAltName` section expects.
         // Without the prefix, openssl aborts with `v2i_GENERAL_NAME_ex: missing
         // value` and DinD never comes up.
-        let certs_dind_mount = format!("{certs_volume}:/certs/client");
+        // Store TLS certs under the socket dir so `purge` removes them with
+        // the rest of the per-instance runtime state. Per container-path
+        // convention all jackin-owned runtime state lives under `/jackin/run/`.
+        let socket_dir_host = paths.jackin_home.join("sockets").join(container_name);
+        let dind_certs_dir_host = socket_dir_host.join("dind-certs");
+        std::fs::create_dir_all(&dind_certs_dir_host).with_context(|| {
+            format!(
+                "creating dind certs dir {}",
+                dind_certs_dir_host.display()
+            )
+        })?;
+        let dind_certs_dir_str = dind_certs_dir_host.to_str().ok_or_else(|| {
+            anyhow::anyhow!(
+                "dind certs dir {} contains non-UTF-8 bytes",
+                dind_certs_dir_host.display()
+            )
+        })?;
+        // DinD sidecar: certs dir mounted at `/jackin/run/dind-certs` so that
+        // `DOCKER_TLS_CERTDIR=/jackin/run/dind-certs` produces
+        // `ca/`, `server/`, `client/` subdirs under that path.
+        let certs_dind_mount = format!("{dind_certs_dir_str}:/jackin/run/dind-certs");
         let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
-        // TODO Phase 3: use `docker:dind-rootless` when grants.dind == Rootless and
-        // cgroup v2 is detected. For now all DinD grants use privileged.
+        let dind_mode = match grants.dind {
+            super::docker_profile::DindGrant::Rootless => "rootless",
+            _ => "privileged",
+        };
+        let dind_image = if grants.dind == super::docker_profile::DindGrant::Rootless {
+            "docker:dind-rootless"
+        } else {
+            "docker:dind"
+        };
+        // TODO Phase 3: only start rootless DinD on confirmed cgroup v2 hosts.
         let dind_args: Vec<&str> = vec![
             "run",
             "-d",
@@ -749,17 +777,17 @@ async fn launch_role_runtime(
             "--label",
             &role_label,
             "-e",
-            "DOCKER_TLS_CERTDIR=/certs",
+            "DOCKER_TLS_CERTDIR=/jackin/run/dind-certs",
             "-e",
             &dind_tls_san,
             "-v",
             &certs_dind_mount,
-            "docker:dind",
+            dind_image,
         ];
         crate::debug_log!(
             "launch",
-            "dind enabled=yes mode=privileged container={dind} \
-             tls_certs=per-launch lifetime=launch",
+            "dind enabled=yes mode={dind_mode} container={dind} \
+             tls_certs_path={dind_certs_dir_str} lifetime=launch",
         );
         let run_dind = runner.run("docker", &dind_args, None, &docker_run_opts);
         if let Some(progress) = steps.progress_mut() {
@@ -822,7 +850,19 @@ async fn launch_role_runtime(
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
-    let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
+    // Certs live at /jackin/run/dind-certs (via the socket-dir bind mount).
+    // The :ro flag on this bind mount is defensive — jackin-capsule and the
+    // agent should never write to the certs dir; only the DinD sidecar writes there.
+    let socket_dir_str_for_certs = paths
+        .jackin_home
+        .join("sockets")
+        .join(container_name)
+        .to_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_default();
+    let certs_agent_mount = format!(
+        "{socket_dir_str_for_certs}/dind-certs:/jackin/run/dind-certs:ro"
+    );
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -1046,7 +1086,7 @@ async fn launch_role_runtime(
             "-e",
             "DOCKER_TLS_VERIFY=1",
             "-e",
-            "DOCKER_CERT_PATH=/certs/client",
+            "DOCKER_CERT_PATH=/jackin/run/dind-certs/client",
             "-e",
             &dind_hostname,
             "-e",
@@ -2348,7 +2388,7 @@ async fn load_role_with(
         // Check role manifest min_profile against the resolved profile.
         // The profile must be >= the role's declared minimum (more capable
         // than or equal to what the role requires).
-        if let Some(min) = validated_repo.manifest.min_profile {
+        if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile) {
             if resolved_profile_early.0 < min {
                 let active = resolved_profile_early.0;
                 anyhow::bail!(
@@ -2363,7 +2403,7 @@ async fn load_role_with(
         // Apply role-declared dind requirement: if role declares dind and
         // the effective grants don't enable it, raise to the declared level.
         // (Role can only raise, not lower, the profile's dind grant.)
-        if let Some(role_dind) = validated_repo.manifest.dind {
+        if let Some(role_dind) = validated_repo.manifest.docker.as_ref().and_then(|d| d.dind) {
             if effective_grants_early.dind < role_dind {
                 crate::debug_log!(
                     "launch",
@@ -2379,11 +2419,30 @@ async fn load_role_with(
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);
             }
         }
+        // Apply role-level network_allow and capabilities_add from manifest [docker].
+        if let Some(ref docker_cfg) = validated_repo.manifest.docker {
+            if !docker_cfg.network_allow.is_empty() {
+                for host in &docker_cfg.network_allow {
+                    if !effective_grants_early.allowed_hosts.contains(host) {
+                        effective_grants_early.allowed_hosts.push(host.clone());
+                    }
+                }
+            }
+            if !docker_cfg.capabilities_add.is_empty() {
+                let role_grants = super::docker_profile::DockerGrants {
+                    capabilities_add: docker_cfg.capabilities_add.clone(),
+                    ..Default::default()
+                };
+                effective_grants_early =
+                    super::docker_profile::apply_grants(effective_grants_early, &role_grants);
+            }
+        }
+
         // `requires_inner_engine = false`: role declares it does not need DinD.
         // Under hardened/locked (where DinD is already None by default) this is
         // a no-op. Under standard/compat (where DinD would normally be enabled),
         // this overrides the profile and disables DinD for this role.
-        if validated_repo.manifest.requires_inner_engine == Some(false)
+        if validated_repo.manifest.docker.as_ref().and_then(|d| d.requires_inner_engine) == Some(false)
             && effective_grants_early.dind != super::docker_profile::DindGrant::None
         {
             crate::debug_log!(
@@ -7380,7 +7439,7 @@ plugins = []
 
         // TLS cert verification also via docker.exec_capture
         assert!(docker_recorded.iter().any(|call| {
-            call.contains(&format!("docker exec {dind} test -f /certs/client/ca.pem"))
+            call.contains(&format!("docker exec {dind} test -f /jackin/run/dind-certs/client/ca.pem"))
         }));
         let _ = dind_start_runner;
     }
@@ -7442,11 +7501,11 @@ plugins = []
             .find(|call| call.contains(&format!("docker run -d --name {dind}")))
             .unwrap();
         assert!(
-            dind_cmd.contains("DOCKER_TLS_CERTDIR=/certs"),
-            "DinD must enable TLS cert generation"
+            dind_cmd.contains("DOCKER_TLS_CERTDIR=/jackin/run/dind-certs"),
+            "DinD must use /jackin/run/dind-certs per container path convention"
         );
         assert!(
-            dind_cmd.contains(&format!("{certs_volume}:/certs/client")),
+            dind_cmd.contains(&format!("dind-certs:/jackin/run/dind-certs")),
             "DinD must mount cert volume"
         );
         // DinD's auto-generated server cert must include the container name as a
@@ -7483,11 +7542,11 @@ plugins = []
             "role must verify TLS"
         );
         assert!(
-            run_cmd.contains("DOCKER_CERT_PATH=/certs/client"),
-            "role must know cert path"
+            run_cmd.contains("DOCKER_CERT_PATH=/jackin/run/dind-certs/client"),
+            "role must know cert path at /jackin/run/dind-certs/client"
         );
         assert!(
-            run_cmd.contains(&format!("{certs_volume}:/certs/client:ro")),
+            run_cmd.contains(&format!("dind-certs:/jackin/run/dind-certs:ro")),
             "role must mount cert volume read-only"
         );
     }

@@ -781,15 +781,20 @@ pub(super) async fn wait_for_dind(
     .await
     .with_context(|| format!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))?;
 
+    // Certs are now stored at /jackin/run/dind-certs/ (socket-dir convention).
     match docker
-        .exec_capture(dind_name, &["test", "-f", "/certs/client/ca.pem"])
+        .exec_capture(
+            dind_name,
+            &["test", "-f", "/jackin/run/dind-certs/client/ca.pem"],
+        )
         .await
     {
         Ok(_) => {}
         Err(e) if e.to_string().contains("exited with code") => {
             anyhow::bail!(
-                "DinD TLS client certificates not found on volume {certs_volume} — \
-                 the DinD sidecar may have started without generating certificates"
+                "DinD TLS client certificates not found at /jackin/run/dind-certs/ \
+                 in sidecar {dind_name} — the DinD sidecar may have started without \
+                 generating certificates (check DOCKER_TLS_CERTDIR is set correctly)"
             );
         }
         Err(e) => return Err(e.context(format!("checking TLS cert presence in {dind_name}"))),
@@ -1711,7 +1716,7 @@ mod tests {
                 String::new(),
             ])),
             fail_with: vec![(
-                "test -f /certs/client/ca.pem".to_string(),
+                "test -f /jackin/run/dind-certs/client/ca.pem".to_string(),
                 "exec in jk-agent-smith-dind exited with code 1: ".to_string(),
             )],
             ..Default::default()
@@ -1806,11 +1811,11 @@ mod tests {
 
     #[tokio::test]
     async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
-        // docker info succeeds on first attempt; test -f /certs/client/ca.pem also succeeds.
+        // docker info succeeds on first attempt; test -f /jackin/run/dind-certs/client/ca.pem also succeeds.
         let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 String::new(), // docker info
-                String::new(), // test -f /certs/client/ca.pem
+                String::new(), // test -f /jackin/run/dind-certs/client/ca.pem
             ])),
             ..Default::default()
         };
