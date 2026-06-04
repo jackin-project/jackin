@@ -132,7 +132,7 @@ There is no shared dialog body-layout helper enforcing symmetric top/bottom inse
 - [x] Fix `ErrorDialog`: add the trailing spacer row so the `OK` button sits one row above the bottom border.
 - [x] Fix `SaveDiscardDialog`: collapse the **two** trailing spacer rows to exactly one.
 - [x] Fix `StatusPopup`: add the trailing spacer so the `Please wait` row moves up one row off the bottom border (and confirm it has exactly one leading spacer + one content spacer like the rest).
-- [ ] Fix the `Mount destination` choice dialog: it has **neither** a leading nor a trailing spacer (content flush to top, buttons flush to bottom) — add both.
+- [x] Fix the `Mount destination` choice dialog: it has **neither** a leading nor a trailing spacer (content flush to top, buttons flush to bottom) — add both.
 - [ ] Apply the same symmetric inset to every other dialog found in the scan — fix the whole class in one pass, not just the screenshotted dialogs.
 - [ ] Record the dialog symmetric-vertical-padding rule in [TUI Design Decisions](/reference/tui/dialogs/) so new dialogs inherit it.
 - [ ] Regenerate SVGs and confirm symmetric top/bottom spacing across every dialog preview.
@@ -348,7 +348,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [ ] Inventory every selectable-list renderer: workspace sidebar (canonical), `select_list.rs`, file browser, workdir/role/github pickers, op-picker lists, the lookbook stories sidebar (Defect 1), and any list in a dialog. `rg -n "highlight_style|render_select_list|render_selected_lines|highlight_symbol|ListItem::new" crates/*/src`.
 - [x] Make the shared list component paint a **full-width** selection background (extend `render_selected_lines` to pad the selected line to `area.width`, or route these lists through the ratatui `List` highlight path) so the highlight fills the row.
 - [x] Converge every list — including the in-dialog file browser and the pickers — on the shared full-width-selection style. Fix the whole class; do not leave the sidebar as the only full-width one.
-- [ ] Keep it consistent with Defects 1 & 16 interplay: the full-width highlight coexists with the scrollbar (Defect 1) and the focus border (Defect 9) without visual conflict.
+- [x] Keep it consistent with Defects 1 & 16 interplay: the full-width highlight coexists with the scrollbar (Defect 1) and the focus border (Defect 9) without visual conflict.
 - [ ] Record the "selection highlight is always full row width" rule in [TUI Design Decisions](/reference/tui/navigation/) (or visual-design), referencing the workspace sidebar as the canonical example.
 - [ ] Regenerate lookbook SVGs for `SelectList` so the full-width selection is visible and regression-covered.
 
@@ -561,9 +561,9 @@ The lookbook is the regression surface; many components/states are unexercised, 
 ## Testing & regression coverage
 
 - [ ] Unit-test the focus-owner exclusivity (`FocusOwner` can only name one owner; border + `▸` derive from it) so Defects 9/18/19 cannot regress.
-- [ ] Snapshot/format tests for dialog vertical layout (Defect 5) — assert leading spacer, single trailing spacer, button row position — across every dialog.
+- [x] Snapshot/format tests for dialog vertical layout (Defect 5) — assert leading spacer, single trailing spacer, button row position — across every dialog.
 - [ ] Tests for modal input routing (Defect 22): a chip click while a modal is open does not mutate the modal; a click outside dismisses (Defect 11); a click inside with no target is swallowed.
-- [ ] Tests for `↓`/`⇥` enter-content equivalence (Defect 20) and click-to-focus content (Defect 17).
+- [x] Tests for `↓`/`⇥` enter-content equivalence (Defect 20) and click-to-focus content (Defect 17).
 - [ ] Lookbook `--check` SVG drift gate wired into the existing docs/CI checks.
 
 ---
@@ -716,7 +716,7 @@ The program is done when:
 **Tasks:**
 - [x] Add a shared empty-state render (dim, centered placeholder) to the list/select component and route every list through it.
 - [x] Audit every list/picker (workspace list, role/agent/provider pickers, file browser, settings tables, capsule pickers, lookbook lists) for the missing empty state; fix the whole class.
-- [ ] Distinguish "genuinely empty" vs "filtered to nothing" copy where useful.
+- [x] Distinguish "genuinely empty" vs "filtered to nothing" copy where useful.
 - [ ] Add a lookbook story for the empty + filtered-empty states.
 
 ---
