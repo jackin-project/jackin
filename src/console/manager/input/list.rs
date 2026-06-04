@@ -157,7 +157,7 @@ pub(super) fn handle_list_key(
                         );
                     // The host config does not prove what env the already-running
                     // Capsule daemon captured. Offer provider choices only from
-                    // daemon-owned flows that know `ZAI_API_KEY` exists there.
+                    // daemon-owned flows that know the provider keys exist in the container.
                     let providers = Vec::new();
                     state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
@@ -876,10 +876,7 @@ mod tests {
     }
 
     fn provider_choices() -> Vec<jackin_protocol::Provider> {
-        vec![
-            jackin_protocol::Provider::Anthropic,
-            jackin_protocol::Provider::Zai,
-        ]
+        vec![jackin_protocol::Provider::Zai]
     }
 
     #[test]
@@ -930,7 +927,7 @@ mod tests {
         };
         assert_eq!(picker.context, "jackin-demo-architect");
         assert_eq!(picker.agent, crate::agent::Agent::Claude);
-        assert_eq!(picker.providers().len(), 2);
+        assert_eq!(picker.providers().len(), 1);
         assert_eq!(picker.selected(), 0);
     }
 

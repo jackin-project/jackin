@@ -171,9 +171,18 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
+    /// Resolved Anthropic API key (`ANTHROPIC_API_KEY`) from the operator env.
+    /// Drives Anthropic as a selectable provider for non-Claude agents (e.g.
+    /// OpenCode) that cannot use the Claude subscription and require an explicit
+    /// key. For Claude Code, Anthropic is always available via subscription.
+    anthropic_api_key: Option<String>,
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
+    /// Resolved MiniMax API key (`MINIMAX_API_KEY`) from the operator env.
+    minimax_key: Option<String>,
+    /// Resolved Kimi Code API key (`KIMI_CODE_API_KEY`) from the operator env.
+    kimi_key: Option<String>,
     /// Cached at construction for the hot polling path. The only
     /// mutation after that is `gh_available` flipping false → true when
     /// a background PR lookup succeeds, so a startup PATH /
@@ -582,7 +591,16 @@ impl Multiplexer {
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS);
         let agents = launch_config.supported_agents();
+        let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
         let zai_key = std::env::var("ZAI_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let minimax_key = std::env::var("MINIMAX_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let kimi_key = std::env::var("KIMI_CODE_API_KEY")
             .ok()
             .filter(|value| !value.is_empty());
 
@@ -644,7 +662,10 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
+            anthropic_api_key,
             zai_key,
+            minimax_key,
+            kimi_key,
         }
     }
 
@@ -1504,17 +1525,23 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
-                let token = self.zai_key.as_deref().filter(|value| !value.is_empty());
                 let resolved_env = match jackin_protocol::Provider::from_label(&provider_label) {
                     Some(provider) => {
-                        // Token is resolved here (not on the wire) from the
-                        // container's ZAI_API_KEY; the host only sends the label.
-                        if provider == jackin_protocol::Provider::Zai && token.is_none() {
+                        // Token is resolved here from the container env; the host only sends the label.
+                        let token = self.token_for_provider(provider);
+                        if token.is_none() && provider != jackin_protocol::Provider::Anthropic {
                             crate::clog!(
-                                "spawn: provider Z.AI selected but ZAI_API_KEY unresolved in container; session falls back to the agent's default auth"
+                                "spawn: provider {:?} selected but key unresolved in container; session falls back to agent's default auth",
+                                provider.label()
                             );
                         }
-                        provider.env_overrides(token)
+                        // env_overrides is the Anthropic-compatible surface for Claude Code.
+                        // Codex routes via ~/.codex/config.toml; OpenCode via opencode.json.
+                        if slug == "claude" {
+                            provider.env_overrides(token)
+                        } else {
+                            Vec::new()
+                        }
                     }
                     None => {
                         crate::clog!(
@@ -1529,11 +1556,27 @@ impl Multiplexer {
         }
     }
 
-    /// Providers selectable for `agent`. An empty vec means only the
-    /// default provider is available and no picker step is needed; a
-    /// non-empty vec always has 2+ entries (enforced by the catalog).
+    /// Providers selectable for `agent`. An empty vec means only the agent's
+    /// native auth is available and no routing is needed. A single-entry vec
+    /// means one alt provider, which the caller routes through directly (no
+    /// picker). 2+ entries drive the provider picker.
     fn providers_for_agent(&self, agent: Option<&str>) -> Vec<jackin_protocol::Provider> {
-        jackin_protocol::Provider::available_for(agent.unwrap_or_default(), self.zai_key.is_some())
+        jackin_protocol::Provider::available_for(
+            agent.unwrap_or_default(),
+            self.anthropic_api_key.is_some(),
+            self.zai_key.is_some(),
+            self.minimax_key.is_some(),
+            self.kimi_key.is_some(),
+        )
+    }
+
+    fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
+        match provider {
+            jackin_protocol::Provider::Anthropic => self.anthropic_api_key.as_deref(),
+            jackin_protocol::Provider::Zai => self.zai_key.as_deref(),
+            jackin_protocol::Provider::Minimax => self.minimax_key.as_deref(),
+            jackin_protocol::Provider::Kimi => self.kimi_key.as_deref(),
+        }
     }
 
     fn session_launch(
@@ -1549,14 +1592,19 @@ impl Multiplexer {
                     Some(p) => format!("{} ({})", capitalize(slug), p),
                     None => capitalize(slug),
                 };
+                // For OpenCode, use provider/model format when a provider is
+                // selected; fall back to the manifest model otherwise.
+                let model = if slug == "opencode" {
+                    provider_label
+                        .and_then(jackin_protocol::Provider::from_label)
+                        .and_then(jackin_protocol::Provider::opencode_model)
+                        .or_else(|| self.model_for_agent(slug))
+                } else {
+                    self.model_for_agent(slug)
+                };
                 SessionLaunch {
                     label,
-                    cmd: build_agent_command(
-                        slug,
-                        self.model_for_agent(slug),
-                        env_passthrough,
-                        cwd,
-                    ),
+                    cmd: build_agent_command(slug, model, env_passthrough, cwd),
                 }
             }
             None => SessionLaunch {
@@ -1604,16 +1652,31 @@ impl Multiplexer {
             }
             DialogAction::SpawnAgent { agent, intent } => {
                 let providers = self.providers_for_agent(agent.as_deref());
-                if providers.len() > 1 {
-                    // Multiple providers available — push ProviderPicker
-                    // on top so the operator chooses before spawning.
-                    self.dialog_push(Dialog::new_provider_picker(agent, providers, intent));
-                } else {
-                    // Zero or one provider — spawn immediately without
-                    // a picker step (operator experience unchanged when
-                    // Z.AI is not configured).
-                    self.dialog_clear();
-                    self.dispatch_spawn_intent(agent, intent);
+                match providers.as_slice() {
+                    // Multiple providers — push ProviderPicker so the operator
+                    // chooses before spawning.
+                    [_, _, ..] => {
+                        self.dialog_push(Dialog::new_provider_picker(agent, providers, intent));
+                    }
+                    // Exactly one alt provider — route through it directly
+                    // (no picker), matching the single-option launch path.
+                    [only] => {
+                        let provider = *only;
+                        self.dialog_clear();
+                        let env_overrides =
+                            provider.env_overrides(self.token_for_provider(provider));
+                        self.dispatch_spawn_intent_with_provider(
+                            agent,
+                            intent,
+                            &env_overrides,
+                            Some(provider.label()),
+                        );
+                    }
+                    // No alt provider — spawn on the agent's native auth.
+                    [] => {
+                        self.dialog_clear();
+                        self.dispatch_spawn_intent(agent, intent);
+                    }
                 }
             }
             DialogAction::SpawnAgentWithProvider {
@@ -1622,8 +1685,8 @@ impl Multiplexer {
                 intent,
             } => {
                 self.dialog_clear();
-                // Token resolved here from the container's ZAI_API_KEY.
-                let env_overrides = provider.env_overrides(self.zai_key.as_deref());
+                // Token resolved here from the container's provider-specific key env var.
+                let env_overrides = provider.env_overrides(self.token_for_provider(provider));
                 self.dispatch_spawn_intent_with_provider(
                     agent,
                     intent,
@@ -5920,6 +5983,36 @@ mod tests {
                 initial_provider: None,
             },
         )
+    }
+
+    #[test]
+    fn token_for_provider_dispatches_each_key() {
+        use jackin_protocol::Provider;
+        let mut mux = test_mux(24, 80);
+        mux.anthropic_api_key = Some("anthropic-tok".to_string());
+        mux.zai_key = Some("zai-tok".to_string());
+        mux.minimax_key = Some("minimax-tok".to_string());
+        mux.kimi_key = Some("kimi-tok".to_string());
+        // Each provider must resolve to its own key — a copy-paste swap here
+        // would route a session through the wrong backend and fail auth.
+        assert_eq!(
+            mux.token_for_provider(Provider::Anthropic),
+            Some("anthropic-tok")
+        );
+        assert_eq!(mux.token_for_provider(Provider::Zai), Some("zai-tok"));
+        assert_eq!(
+            mux.token_for_provider(Provider::Minimax),
+            Some("minimax-tok")
+        );
+        assert_eq!(mux.token_for_provider(Provider::Kimi), Some("kimi-tok"));
+
+        let mut empty = test_mux(24, 80);
+        empty.anthropic_api_key = None;
+        empty.zai_key = None;
+        empty.minimax_key = None;
+        empty.kimi_key = None;
+        assert_eq!(empty.token_for_provider(Provider::Minimax), None);
+        assert_eq!(empty.token_for_provider(Provider::Kimi), None);
     }
 
     fn single_pane_tab_mux() -> Multiplexer {

@@ -946,10 +946,12 @@ impl SettingsState<'_> {
         AppConfig::validate_global_mount_rows(&self.mounts.pending)?;
         validate_settings_env(&self.env.pending, &self.trust.pending)?;
         for row in &self.auth.pending {
-            if row.kind == crate::console::manager::auth_kind::AuthKind::Zai
-                && row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
+            if row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
+                && let Some(env_key) = row
+                    .kind
+                    .required_env_var(crate::console::manager::auth_kind::AuthMode::ApiKey)
             {
-                self.env.pending.env.remove("ZAI_API_KEY");
+                self.env.pending.env.remove(env_key);
             }
         }
         let mut editor = crate::config::ConfigEditor::open(paths)?;
@@ -1011,10 +1013,11 @@ impl SettingsState<'_> {
                     };
                     editor.set_global_github_auth_forward(mode);
                 }
-                crate::console::manager::auth_kind::AuthKind::Zai => {
-                    // Z.AI auth is env-only; the credential lives in env_vars and
-                    // is written via the env block path above — no auth_forward
-                    // config block to commit here.
+                crate::console::manager::auth_kind::AuthKind::Zai
+                | crate::console::manager::auth_kind::AuthKind::Minimax => {
+                    // Provider-credential kinds are env-only; the credential lives in
+                    // env_vars and is written via the env block path above — no
+                    // auth_forward config block to commit here.
                 }
             }
         }
@@ -1160,6 +1163,7 @@ impl SettingsAuthState {
             crate::console::manager::auth_kind::AuthKind::Opencode,
             crate::console::manager::auth_kind::AuthKind::Github,
             crate::console::manager::auth_kind::AuthKind::Zai,
+            crate::console::manager::auth_kind::AuthKind::Minimax,
         ]
         .into_iter()
         .map(|kind| SettingsAuthRow {
@@ -1184,6 +1188,16 @@ impl SettingsAuthState {
                 }
                 crate::console::manager::auth_kind::AuthKind::Zai => {
                     if config.env.contains_key("ZAI_API_KEY") {
+                        crate::console::manager::auth_kind::AuthMode::ApiKey
+                    } else {
+                        crate::console::manager::auth_kind::AuthMode::Ignore
+                    }
+                }
+                crate::console::manager::auth_kind::AuthKind::Minimax => {
+                    if config
+                        .env
+                        .contains_key(crate::env_model::MINIMAX_API_KEY_ENV_NAME)
+                    {
                         crate::console::manager::auth_kind::AuthMode::ApiKey
                     } else {
                         crate::console::manager::auth_kind::AuthMode::Ignore

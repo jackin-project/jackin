@@ -87,6 +87,15 @@ pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 /// `AuthKind::Zai` env-only auth kind and gates the Z.AI provider picker.
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
 
+/// `MiniMax` Token Plan API key env var. Carries the credential for the
+/// `AuthKind::Minimax` env-only auth kind and gates the `MiniMax` provider picker.
+pub const MINIMAX_API_KEY_ENV_NAME: &str = "MINIMAX_API_KEY";
+
+/// Kimi API key for `AuthKind::Kimi`. Covers both the Kimi Code CLI runtime
+/// agent (`api_key` mode) and routing Claude Code to Kimi's endpoint.
+/// A single key from the Kimi Code Console covers both uses.
+pub const KIMI_CODE_API_KEY_ENV_NAME: &str = "KIMI_CODE_API_KEY";
+
 /// Primary GitHub token env var. `gh` reads this preferentially.
 pub const GH_TOKEN_ENV_NAME: &str = "GH_TOKEN";
 
