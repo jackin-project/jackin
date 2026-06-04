@@ -179,31 +179,46 @@ fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<Aut
         AuthKind::Claude => {
             layer.set_claude_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
+                    .map(|auth_forward| AgentAuthConfig {
+                        auth_forward,
+                        ..AgentAuthConfig::default()
+                    }),
             );
         }
         AuthKind::Codex => {
             layer.set_codex_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
+                    .map(|auth_forward| AgentAuthConfig {
+                        auth_forward,
+                        ..AgentAuthConfig::default()
+                    }),
             );
         }
         AuthKind::Amp => {
             layer.set_amp_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
+                    .map(|auth_forward| AgentAuthConfig {
+                        auth_forward,
+                        ..AgentAuthConfig::default()
+                    }),
             );
         }
         AuthKind::Kimi => {
             layer.set_kimi_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
+                    .map(|auth_forward| AgentAuthConfig {
+                        auth_forward,
+                        ..AgentAuthConfig::default()
+                    }),
             );
         }
         AuthKind::Opencode => {
             layer.set_opencode_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
+                    .map(|auth_forward| AgentAuthConfig {
+                        auth_forward,
+                        ..AgentAuthConfig::default()
+                    }),
             );
         }
         AuthKind::Github => {

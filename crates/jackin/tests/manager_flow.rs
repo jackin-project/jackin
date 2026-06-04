@@ -3022,6 +3022,7 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let over = WorkspaceRoleOverride {
         claude: Some(jackin::config::AgentAuthConfig {
             auth_forward: jackin::config::AuthForwardMode::Ignore,
+            ..Default::default()
         }),
         ..Default::default()
     };
@@ -3054,9 +3055,11 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
     let over = WorkspaceRoleOverride {
         claude: Some(jackin::config::AgentAuthConfig {
             auth_forward: jackin::config::AuthForwardMode::Ignore,
+            ..Default::default()
         }),
         codex: Some(jackin::config::AgentAuthConfig {
             auth_forward: jackin::config::AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         ..Default::default()
     };
@@ -3105,9 +3108,11 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     let over = WorkspaceRoleOverride {
         claude: Some(jackin::config::AgentAuthConfig {
             auth_forward: jackin::config::AuthForwardMode::Ignore,
+            ..Default::default()
         }),
         codex: Some(jackin::config::AgentAuthConfig {
             auth_forward: jackin::config::AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         ..Default::default()
     };
@@ -3270,6 +3275,7 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
     ws.claude = Some(jackin::config::AgentAuthConfig {
         auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        ..Default::default()
     });
     ws.env.insert(
         "ANTHROPIC_API_KEY".into(),

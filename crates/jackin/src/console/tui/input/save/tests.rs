@@ -77,12 +77,14 @@ fn apply_auth_forward_diff_persists_amp_workspace_and_role_modes() {
     let mut pending = original.clone();
     pending.amp = Some(crate::config::AgentAuthConfig {
         auth_forward: crate::config::AuthForwardMode::ApiKey,
+        ..Default::default()
     });
     pending.roles.insert(
         "smith".into(),
         crate::workspace::WorkspaceRoleOverride {
             amp: Some(crate::config::AgentAuthConfig {
                 auth_forward: crate::config::AuthForwardMode::Ignore,
+                ..Default::default()
             }),
             ..Default::default()
         },

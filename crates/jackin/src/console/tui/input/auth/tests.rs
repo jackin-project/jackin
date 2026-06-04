@@ -223,6 +223,7 @@ fn auth_form_reset_clears_workspace_layer_mode() {
     };
     editor.pending.claude = Some(AgentAuthConfig {
         auth_forward: AuthForwardMode::ApiKey,
+        ..Default::default()
     });
     open_auth_form_modal(editor, &cfg);
     // Tab through to Reset and Enter.
@@ -394,6 +395,7 @@ fn auth_form_save_persists_role_layer_into_pending() {
         WorkspaceRoleOverride {
             claude: Some(crate::config::AgentAuthConfig {
                 auth_forward: AuthForwardMode::Sync,
+                ..Default::default()
             }),
             ..Default::default()
         },

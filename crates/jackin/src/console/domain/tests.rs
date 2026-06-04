@@ -253,6 +253,7 @@ fn workspace_auth_mode_and_credential_reads_workspace_layers() {
     let mut workspace = WorkspaceConfig {
         claude: Some(crate::config::AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         github: Some(GithubAuthConfig {
             auth_forward: GithubAuthMode::Token,

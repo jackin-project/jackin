@@ -17,15 +17,24 @@ fn cfg_claude(
 ) -> AppConfig {
     let mut cfg = AppConfig::default();
     if let Some(m) = global {
-        cfg.claude = Some(AgentAuthConfig { auth_forward: m });
+        cfg.claude = Some(AgentAuthConfig {
+            auth_forward: m,
+            ..Default::default()
+        });
     }
     let mut ws_cfg = WorkspaceConfig::default();
     if let Some(m) = ws {
-        ws_cfg.claude = Some(AgentAuthConfig { auth_forward: m });
+        ws_cfg.claude = Some(AgentAuthConfig {
+            auth_forward: m,
+            ..Default::default()
+        });
     }
     if let Some(m) = ws_role {
         let over = WorkspaceRoleOverride {
-            claude: Some(AgentAuthConfig { auth_forward: m }),
+            claude: Some(AgentAuthConfig {
+                auth_forward: m,
+                ..Default::default()
+            }),
             ..Default::default()
         };
         ws_cfg.roles.insert("smith".to_string(), over);
@@ -123,6 +132,7 @@ fn codex_isolated_from_claude_global() {
     let cfg = AppConfig {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         // codex unset
         ..AppConfig::default()
@@ -138,6 +148,7 @@ fn codex_uses_codex_layer() {
     let cfg = AppConfig {
         codex: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         ..AppConfig::default()
     };
@@ -152,6 +163,7 @@ fn amp_uses_amp_layer() {
     let cfg = AppConfig {
         amp: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         ..AppConfig::default()
     };

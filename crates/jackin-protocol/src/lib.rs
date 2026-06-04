@@ -163,8 +163,7 @@ impl Provider {
             .iter()
             .filter(|&&p| {
                 let a = p.adapter();
-                a.supports_agent(agent_slug)
-                    && (!a.needs_key_for_agent(agent_slug) || has_key(p))
+                a.supports_agent(agent_slug) && (!a.needs_key_for_agent(agent_slug) || has_key(p))
             })
             .copied()
             .collect();

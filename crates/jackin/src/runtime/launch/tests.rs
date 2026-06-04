@@ -5234,15 +5234,11 @@ async fn build_mode_resolution_populates_all_3_layers() {
     use crate::workspace::WorkspaceConfig;
 
     let ws = WorkspaceConfig {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-        }),
+        claude: Some(AgentAuthConfig { auth_forward: AuthForwardMode::ApiKey,  ..Default::default() }),
         ..WorkspaceConfig::default()
     };
     let mut cfg = AppConfig {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Sync,
-        }),
+        claude: Some(AgentAuthConfig { auth_forward: AuthForwardMode::Sync,  ..Default::default() }),
         ..AppConfig::default()
     };
     cfg.workspaces.insert("proj".into(), ws);
@@ -5266,9 +5262,7 @@ async fn build_mode_resolution_role_override_wins() {
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 
     let ro = WorkspaceRoleOverride {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::OAuthToken,
-        }),
+        claude: Some(AgentAuthConfig { auth_forward: AuthForwardMode::OAuthToken,  ..Default::default() }),
         ..Default::default()
     };
     let mut ws = WorkspaceConfig::default();

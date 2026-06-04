@@ -840,6 +840,7 @@ fn run_revoke_clears_slot_mode_and_expiry_cache() {
     let mut ws = cfg.workspaces.get("proj").unwrap().clone();
     ws.claude = Some(jackin_config::AgentAuthConfig {
         auth_forward: AuthForwardMode::OAuthToken,
+        ..Default::default()
     });
     ws.env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),
@@ -938,6 +939,7 @@ fn run_doctor_hashes_literal_token_not_placeholder() {
     let mut ws = workspace("proj");
     ws.claude = Some(jackin_config::AgentAuthConfig {
         auth_forward: AuthForwardMode::OAuthToken,
+        ..Default::default()
     });
     ws.env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),
@@ -1015,6 +1017,7 @@ fn run_revoke_with_runner_delete_op_item_calls_writer_with_parsed_uuids() {
     let mut ws = cfg.workspaces.get("proj").unwrap().clone();
     ws.claude = Some(jackin_config::AgentAuthConfig {
         auth_forward: AuthForwardMode::OAuthToken,
+        ..Default::default()
     });
     ws.env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),
@@ -1056,6 +1059,7 @@ fn run_revoke_with_runner_delete_op_item_on_literal_slot_bails() {
     let mut ws = cfg.workspaces.get("proj").unwrap().clone();
     ws.claude = Some(jackin_config::AgentAuthConfig {
         auth_forward: AuthForwardMode::OAuthToken,
+        ..Default::default()
     });
     ws.env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),
@@ -1092,6 +1096,7 @@ fn run_revoke_with_runner_delete_op_item_failure_does_not_save_config() {
     let mut ws = cfg.workspaces.get("proj").unwrap().clone();
     ws.claude = Some(jackin_config::AgentAuthConfig {
         auth_forward: AuthForwardMode::OAuthToken,
+        ..Default::default()
     });
     ws.env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),

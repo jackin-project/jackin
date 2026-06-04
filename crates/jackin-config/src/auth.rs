@@ -8,15 +8,29 @@
 use jackin_core::{AuthForwardMode, EnvValue};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 /// Per-agent auth configuration wrapper.
 ///
-/// Carries `auth_forward` mode at any layer of the resolver.
+/// Carries `auth_forward` mode and optional sync source folder at any layer
+/// of the resolver.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct AgentAuthConfig {
     #[serde(default)]
     pub auth_forward: AuthForwardMode,
+    /// Optional override for the host folder `sync` reads credentials from.
+    ///
+    /// `None` = inherit from the next lower layer → global → per-agent hardcoded
+    /// default.  The folder path is stored as the operator chose it; provisioning
+    /// joins it with the adapter's relative credential entry via `state_paths()`.
+    ///
+    /// **Precedence** (most-specific wins): workspace-role → workspace → global →
+    /// per-agent hardcoded.  An absent value at a layer means "inherit from below."
+    ///
+    /// Introduced in Defect 46 Phase B (auth-sync-source-folder roadmap item).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_source_dir: Option<PathBuf>,
 }
 
 /// Controls how the host's `gh` auth state reaches role containers.

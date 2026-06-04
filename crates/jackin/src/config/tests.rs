@@ -670,7 +670,10 @@ fn agent_auth_config_serializes_canonical_names() {
         (AuthForwardMode::OAuthToken, "oauth_token"),
         (AuthForwardMode::Ignore, "ignore"),
     ] {
-        let cfg = AgentAuthConfig { auth_forward: mode };
+        let cfg = AgentAuthConfig {
+            auth_forward: mode,
+            ..Default::default()
+        };
         let s = toml::to_string(&cfg).expect("serialize must succeed");
         assert!(
             s.contains(&format!("auth_forward = \"{expected}\"")),
@@ -732,6 +735,7 @@ fn reject_codex_oauth_token_field_at_app_config_layer() {
 fn agent_auth_config_serializes_without_extraneous_fields() {
     let cfg = AgentAuthConfig {
         auth_forward: AuthForwardMode::Sync,
+        ..Default::default()
     };
     let s = toml::to_string(&cfg).unwrap();
     assert!(

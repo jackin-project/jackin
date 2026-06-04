@@ -121,6 +121,7 @@ fn role_with_override_renders_collapsed_header_then_sentinel() {
     let over = WorkspaceRoleOverride {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::Ignore,
+            ..Default::default()
         }),
         ..Default::default()
     };
@@ -164,9 +165,11 @@ fn role_with_override_when_expanded_emits_kind_rows() {
     let over = WorkspaceRoleOverride {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::Ignore,
+            ..Default::default()
         }),
         codex: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         ..Default::default()
     };
@@ -247,6 +250,7 @@ fn workspace_source_surfaces_when_global_requires_credential() {
     let config = AppConfig {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         ..AppConfig::default()
     };

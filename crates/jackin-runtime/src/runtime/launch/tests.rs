@@ -5245,12 +5245,14 @@ async fn build_mode_resolution_populates_all_3_layers() {
     let ws = WorkspaceConfig {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
         }),
         ..WorkspaceConfig::default()
     };
     let mut cfg = AppConfig {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::Sync,
+            ..Default::default()
         }),
         ..AppConfig::default()
     };
@@ -5277,6 +5279,7 @@ async fn build_mode_resolution_role_override_wins() {
     let ro = WorkspaceRoleOverride {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::OAuthToken,
+            ..Default::default()
         }),
         ..Default::default()
     };

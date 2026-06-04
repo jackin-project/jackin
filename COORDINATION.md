@@ -1,65 +1,88 @@
 # Parallel Agent Coordination — `feature/tui-architecture`
 
-Shared status board for Claude agents running in parallel on this branch.
-**Read this before claiming any item. Update immediately when starting/finishing.**
+This is the **single source of truth** for coordinating parallel Claude Code agents on this branch.
+**Always read and update this file before claiming or releasing work.**
+
+> **Other coordination files (AGENT-COORDINATION.md, .claude/*.md) are superseded by this one.**
+> Keep this as the only coordination file going forward.
+
+---
 
 ## Protocol
 
-1. **Pull before claiming** — run `git pull` to sync, then check this file.
-2. **Claim before starting** — write `[AGENT-A WORKING]` or `[AGENT-B WORKING]` + note, commit + push immediately.
-3. **Release when done** — write `[DONE in <commit>]`, commit + push.
-4. **Never edit files the other agent has unstaged** — `git status` shows in-progress work.
-5. **Prefer small, fast commits** — push after every logical unit so the other agent can `git pull` and see progress.
+1. **Pull before claiming** — `git pull --ff-only` to sync, then re-read this file.
+2. **Claim before coding** — add `[AGENT-X WORKING]` + one-line note to the table below.
+3. **Commit + push the claim** — `git add COORDINATION.md && git commit -m "chore: claim <item>" && git push`.
+4. If push fails (parallel conflict): pull, re-read, pick a different item.
+5. **Release when done** — replace `[AGENT-X WORKING]` with `[DONE in <commit>]`, push.
+6. **Avoid files the other agent has unstaged** — `git status` shows in-progress work.
+7. **Prefer small, atomic commits** — push after every logical unit so the other agent can pull and see progress.
 
-## Current claims (update before pushing)
+---
+
+## Current claims
 
 | Checklist item | Status | Notes |
 |---|---|---|
-| Defect 45 Phase 4 (PageList memory model) | AVAILABLE | Heavy optimization; benchmark-driven |
-| Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Depends on Phase 4 |
-| Defect 46 Phase 3 (serde newtype collapse) | **[AGENT-B WORKING]** | Parser-only; adapter-driven validation |
-| Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Judgement call, do after Phase 3 |
-| Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Docs decision + codebase map update |
-| Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | AVAILABLE | Sequence after Phase 3 |
-| Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR split point |
+| Defect 45 Phase 4 (PageList memory model) | **[DONE in f7088721]** | CompactString + wire-minimal emit + dump() |
+| Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Depends on Phase 4 gate (real session smoke) |
+| Defect 46 Phase 2 (dispatch migration) | **[DONE in 2c8cdb37+]** | auth_forward_for(), make_agent_runtime_state(), parse_version() |
+| Defect 46 Phase 3 (serde newtype collapse) | **[DONE in 5991a106]** | CodexAuthConfig etc. removed; WorkspaceConfig::validate_auth_modes() added |
+| Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Judgement call; do after Phase B |
+| Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Decision already made = `crates/jackin/src/console/` |
+| Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | AVAILABLE | sync_source_dir schema + provisioning + UX |
+| Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR-split point |
 | Defect 46 acceptance gates | AVAILABLE | Green gates + smoke tests |
 
-## Completed this session (chronological)
+---
 
-| Commit | What | Who |
-|---|---|---|
-| `d8a08f68` | Defect 46 Phase 1 — AgentRuntime trait + sealed adapters | Agent |
-| `6a97caf6` | Defect 45 Phase 0 baseline + Defect 46 Phase 0 ledger | Agent |
-| `846a87fa` | #523 MiniMax/Kimi provider catalog ported | Agent |
-| `4930c2fe` | Defect 46 Phase 2 + Defect 42 debug capsule build | Agent |
-| `ca76d9d5` | Defects 36/37 docs + Phase 2 partial | Agent |
-| `0186e6e8` | Defect 47.5 per-stage timings + run summary | Agent |
-| `74f21014` | Defect 47.4 eprintln → tracing events | Agent |
-| `09c22614` | Defect 47.1 tracing infrastructure | Agent |
-| `875d542e` | Defect 44 erase-to-EOL resize fix | Agent |
-| `5c293822` | Defects 40/41 ANSI encoder rule + container lifecycle events | Agent |
-| `2cbd0fc8` | Defects 38/39 Debug info dialog + hint-to-chip spacer | Agent |
-| `ce3986c9` | Defect 46 Phase 0 close-out | Agent-B |
-| `62fb7ddd` | Defect 45 Phase 1-2 — differential harness + DamageGrid v0 | Agent |
-| `720e18e8` | Defect 45 Phase 2 complete — DamageGrid wired | Agent |
-| `6088787f` | Defect 45 Phase 3 — capsule feature flag | Agent |
-| `f6b795fd` | Defect 45 Phase 3 — feature flag scaffold | Agent |
-| `cd106ca2` | Defect 43 — spawn_blocking for blocking calls | Agent |
-| `c0591f46` | Phase 2 — parse_version + version_check consolidation | Agent |
-| `480ec132` | Checklist: Phase 3 + lib.rs status | Agent |
-| `2c8cdb37` | Phase 2 auth-forward + Phase A.1 ProviderAdapter registry | Agent |
+## Completed this session (reverse-chronological)
 
-## Active file ownership (avoid editing these)
+| Commit | What |
+|---|---|
+| `5991a106` | Phase 3 — fix .0.auth_forward refs + WorkspaceConfig::validate_auth_modes |
+| `f7088721` | jackin-term Phase 4 — wire-minimal emit + attribution |
+| `180f7110` | jackin-term — dump() snapshot + GridSnapshot |
+| `1e4da536` | jackin-term Phase 4 — CompactString per-cell alloc elimination |
+| `9ead2dad` | coordination: claim Phase 3 |
+| `14a1e3c5` | Defect 43 docs — async architecture in architecture.mdx |
+| `b26f310e` | coordination + checklist: Phase A.1 done |
+| `2c8cdb37` | Phase 2 auth-forward + auth_forward_for() accessors |
+| `480ec132` | Checklist Phase 3 + lib.rs status |
+| `6088787f` | jackin-term Phase 3 — capsule feature flag wired |
+| `720e18e8` | jackin-term Phase 2 — DamageGrid wired as harness left model |
+| `c0591f46` | Phase 2 — parse_version + version_check consolidation |
+| `cd106ca2` | Defect 43 — spawn_blocking for blocking calls |
+| `62fb7ddd` | jackin-term Phase 1-2 — harness + DamageGrid v0 |
+| `ce3986c9` | Phase 0 close-out |
+| `ca76d9d5` | Defects 36/37 docs + Phase 2 partial |
+| `4930c2fe` | Phase 2 dispatch + Defect 42 debug capsule build |
+| `846a87fa` | #523 MiniMax/Kimi provider catalog port |
+| `d8a08f68` | Phase 1 — AgentRuntime trait + sealed adapters |
 
-| File | Claimed by | Purpose |
-|---|---|---|
-| `crates/jackin-config/src/auth.rs` | Agent-B | Phase 3: collapsing per-agent newtypes |
-| `crates/jackin-config/src/app_config.rs` | Agent-B | Phase 3: field type changes |
-| `crates/jackin-runtime/src/instance/auth.rs` | Agent-B | Phase 3: provisioning uses adapter |
+---
+
+## Safe zones (low conflict risk)
+
+| Area | Why safe |
+|---|---|
+| `crates/jackin-term/src/` | Isolated new crate |
+| `docs/content/docs/reference/` | Docs; pick non-overlapping sections |
+| `crates/jackin-diagnostics/` | Stable; not being modified |
+
+## Current conflict zones (check before touching)
+
+| File / Area | Status |
+|---|---|
+| `crates/jackin-config/src/auth.rs` | sync_source_dir field added (uncommitted) — Phase B in progress |
+| All test files with `AgentAuthConfig { ... }` | double-comma fixes applied (uncommitted) |
+
+---
 
 ## Notes
 
-- Both agents share the same git working tree. Commits are visible immediately after push.
-- Priority order per checklist: Phase 3 → Phase B → Phase 4 → Phase 5 → acceptance gates.
-- Defect 47.6 (OTLP) is the natural PR-split point — do it last or defer.
-- `cargo test --workspace --lib` must stay green at all times; run before committing.
+- Both agents share the **same git working tree** — commits are visible immediately after `git push`.
+- Priority: Phase B → Phase A.0 → Phase 4 → Phase 5 → acceptance gates.
+- Defect 47.6 (OTLP) is the natural PR-split point — defer if this PR is getting large.
+- `cargo test --workspace --lib` must stay green; run before every commit.
+- **Do NOT create more coordination files** — this is the only one.
