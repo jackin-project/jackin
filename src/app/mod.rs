@@ -444,6 +444,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             all,
             purge,
         }) => {
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
             let docker = connect_docker()?;
             let containers = if let Some(container) = resolve_instance_reference(&paths, &selector)?
             {
@@ -495,6 +496,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Exile => {
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
             let docker = connect_docker()?;
             let names = runtime::list_managed_role_names(&docker).await?;
             let result: anyhow::Result<()> = async {
@@ -964,9 +966,32 @@ pub async fn run(cli: Cli) -> Result<()> {
                 }
                 Ok(())
             }
-            WorkspaceCommand::Show { name } => {
+            WorkspaceCommand::Show { name, format } => {
                 let workspace = config.require_workspace(&name)?;
-                print!("{}", render_workspace_show(&config, &name, workspace));
+                if format == "json" {
+                    let mounts: Vec<serde_json::Value> = workspace.mounts.iter().map(|m| {
+                        serde_json::json!({
+                            "src": m.src,
+                            "dst": m.dst,
+                            "readonly": m.readonly,
+                            "isolation": m.isolation.to_string(),
+                        })
+                    }).collect();
+                    let envelope = serde_json::json!({
+                        "schema_version": "v1",
+                        "data": {
+                            "name": name,
+                            "workdir": workspace.workdir,
+                            "mounts": mounts,
+                            "allowed_roles": workspace.allowed_roles,
+                            "default_role": workspace.default_role,
+                            "default_agent": workspace.resolved_agent().slug(),
+                        }
+                    });
+                    println!("{}", serde_json::to_string_pretty(&envelope)?);
+                } else {
+                    print!("{}", render_workspace_show(&config, &name, workspace));
+                }
                 Ok(())
             }
             WorkspaceCommand::Edit {
@@ -1406,6 +1431,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             }
         },
         Command::Purge(PurgeArgs { selector, all }) => {
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
             let docker = connect_docker()?;
             if let Some(container) = resolve_instance_reference(&paths, &selector)? {
                 if all {

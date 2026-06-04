@@ -99,6 +99,9 @@ Examples:
     Show {
         /// Name of the workspace to display
         name: String,
+        /// Output format (`human` or `json`)
+        #[arg(long, value_name = "FORMAT", default_value = "human")]
+        format: String,
     },
     /// Modify an existing workspace
     #[command(
