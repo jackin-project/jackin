@@ -86,7 +86,7 @@ For non-trivial code changes, structure the PR's "Verify locally" section by int
 - **Checkout** — copy-pasteable commands to fetch and check out the PR.
 - **Static Checks** — only checks that are relevant and expected to be run locally.
 - **Rust Tests** — focused or full Rust test commands that validate the changed behavior.
-- **Schema Migration Smoke** — only for PRs that bump a versioned schema. Config/workspace migrations copy real state owned by jackin' into the PR-scoped dirs, then run the PR binary against the copy. Role manifest migrations copy a role repo into the PR test directory, then migrate the copy.
+- **Schema Migration Smoke** — only for PRs that bump a versioned schema. Config/workspace migrations copy only the operator's real `~/.config/jackin` into the PR-scoped config dir, keep `JACKIN_HOME_DIR` empty and PR-scoped, then run the PR binary against the copied config. Role manifest migrations copy a role repo into the PR test directory, then migrate the copy.
 - **Docs Checks** — automated `bun` commands from `docs/` that validate the rendered docs project, repo links, TypeScript, and docs test suite.
 - **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
 

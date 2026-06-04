@@ -136,10 +136,10 @@ filter speaks for itself.>
 
 <Keep this subsection when the PR bumps `CURRENT_CONFIG_VERSION`,
 `CURRENT_WORKSPACE_VERSION`, or `CURRENT_MANIFEST_VERSION`; drop it otherwise.
-For config/workspace migrations, copy the operator's real state owned by jackin'
-into the PR-scoped dirs from Checkout first, then run the PR binary against
-those copies. This validates the real local shape without mutating live
-`~/.config/jackin` or `~/.jackin`.>
+For config/workspace migrations, copy only the operator's real
+`~/.config/jackin` into the PR-scoped config dir from Checkout first, then run
+the PR binary against that copy. Keep `JACKIN_HOME_DIR` empty and PR-scoped so
+the smoke path cannot read or mutate live `~/.jackin` state.>
 
 ```sh
 rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"
@@ -150,11 +150,7 @@ else
   mkdir -p "$JACKIN_CONFIG_DIR"
 fi
 
-if [ -d "$HOME/.jackin" ]; then
-  cp -a "$HOME/.jackin" "$JACKIN_HOME_DIR"
-else
-  mkdir -p "$JACKIN_HOME_DIR"
-fi
+mkdir -p "$JACKIN_HOME_DIR"
 
 jackin workspace list --debug
 rg 'version = "<CURRENT_CONFIG_OR_WORKSPACE_VERSION>"' "$JACKIN_CONFIG_DIR"
@@ -162,8 +158,9 @@ rg 'version = "<CURRENT_CONFIG_OR_WORKSPACE_VERSION>"' "$JACKIN_CONFIG_DIR"
 
 Expected: the PR binary loads and migrates the copied config/workspace files
 successfully; the `rg` command prints the copied files with the new version.
-The operator's live `~/.config/jackin` and `~/.jackin` trees are not touched
-because every command runs with the Checkout block's PR-scoped env vars.
+The operator's live `~/.config/jackin` is only read for the initial copy, and
+live `~/.jackin` is not copied or read; every command runs with the Checkout
+block's PR-scoped env vars.
 
 ### Docs checks
 
