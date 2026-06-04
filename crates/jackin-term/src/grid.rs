@@ -460,6 +460,10 @@ impl DamageGrid {
                 self.passthrough
                     .push(PassthroughEvent::CwdChanged(uri.to_string()));
             }
+            (Some(9), Some(msg)) => {
+                self.passthrough
+                    .push(PassthroughEvent::Notification(msg.to_string()));
+            }
             _ => {}
         }
     }
@@ -852,12 +856,25 @@ impl DamageGrid {
         match mode {
             // Show/hide cursor.
             25 => self.hide_cursor = !enabled,
-            // Application/normal cursor keys.
-            1 => self.application_cursor = enabled,
+            // Application/normal cursor keys — emit for passthrough.
+            1 => {
+                self.application_cursor = enabled;
+                self.passthrough
+                    .push(PassthroughEvent::ApplicationCursorKeys(enabled));
+            }
             // Alternate screen (simple form, no cursor save).
             47 => self.set_alt_screen(enabled),
-            // Bracketed paste.
-            2004 => self.bracketed_paste = enabled,
+            // Focus events — emit for passthrough.
+            1004 => {
+                self.passthrough
+                    .push(PassthroughEvent::FocusEvents(enabled));
+            }
+            // Bracketed paste — emit for passthrough.
+            2004 => {
+                self.bracketed_paste = enabled;
+                self.passthrough
+                    .push(PassthroughEvent::BracketedPaste(enabled));
+            }
             // Alternate screen (save/restore cursor).
             // Mode 1047: switch only (no cursor save/restore).
             // Mode 1049: save cursor before entering alt screen, restore after leaving.
