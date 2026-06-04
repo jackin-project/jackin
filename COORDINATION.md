@@ -42,7 +42,7 @@ Each Claude instance picks a unique name for attribution. Check this list before
 | Defect 46 Phase B.3 (console UX: Source folder row) | **[DONE in 831dd99d]** | FileBrowserState show_hidden + auth row UX |
 | Defect 46 Phase A.0 (canonical console reconcile) | **[DONE in 5e3146ba]** | Two-role analysis: jackin-console=generic, jackin/console=root-specific; no deletion |
 | Defect 46 Phase 4 (collapse parallel struct fields) | **[VERDANT — evaluated: keep named fields]** | map reads worse; named fields stay; decision documented |
-| Defect 45 Phase 5 (delete vt100, typed passthrough) | **[VERDANT WORKING]** | Removing vt100 dep, feature flag, RowSnapshot/PaneBodyCache |
+| Defect 45 Phase 5 (delete vt100, typed passthrough) | BLOCKED on smoke gate 1013 | PassthroughEvents typed ✓, feature flag ✓; deletion needs operator smoke to confirm zero ghosting |
 | Defect 47.6 (OTLP export) | **[DONE by Obsidian in 8a186f45]** | otlp feature in jackin-diagnostics; double-gated (compile + env); BatchSpanProcessor |
 | Defect 46 acceptance gates | **[DONE by Obsidian]** | All gates green: fmt, clippy --workspace, tests 538+pass, docs (repo-links, roadmap-sidebar, tsc, bun test). 4 pre-existing flaky excluded. Smoke gate remains (operator run). |
 
