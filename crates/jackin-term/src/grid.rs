@@ -299,8 +299,8 @@ impl DamageGrid {
                 grid[bottom] = blank_row(cols);
             }
         }
-        for r in top..=bottom {
-            self.dirty.mark_row(r as u16);
+        for r in top as u16..=bottom as u16 {
+            self.dirty.mark_row(r);
         }
     }
 
@@ -363,11 +363,15 @@ impl DamageGrid {
                 }
                 grid[cursor_row][0..=cursor_col.min(cols_usize - 1)].fill(Cell::default());
             }
-            2 | 3 => {
-                if mode == 3 {
-                    self.scrollback.clear();
-                    self.scrollback_offset = 0;
+            2 => {
+                let grid = self.active_grid();
+                for row in grid.iter_mut().take(rows) {
+                    *row = blank_row(cols_u16);
                 }
+            }
+            3 => {
+                self.scrollback.clear();
+                self.scrollback_offset = 0;
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
                     *row = blank_row(cols_u16);
@@ -559,9 +563,8 @@ impl vte::Perform for DamageGrid {
                 for c in col..cols.saturating_sub(n) {
                     row_cells[c] = row_cells.get(c + n).cloned().unwrap_or_default();
                 }
-                for cell in row_cells.iter_mut().skip(cols.saturating_sub(n)).take(n) {
-                    *cell = Cell::default();
-                }
+                let tail_start = cols.saturating_sub(n);
+                row_cells[tail_start..cols].fill(Cell::default());
                 self.dirty.mark_row(self.cursor_row);
             }
             // Scroll Up.
@@ -590,11 +593,8 @@ impl vte::Perform for DamageGrid {
                 let row = self.cursor_row as usize;
                 let col = self.cursor_col as usize;
                 let grid = self.active_grid();
-                let row_len = grid[row].len();
-                let count = (col + n).min(row_len).saturating_sub(col);
-                for cell in grid[row].iter_mut().skip(col).take(count) {
-                    *cell = Cell::default();
-                }
+                let end = (col + n).min(grid[row].len());
+                grid[row][col..end].fill(Cell::default());
                 self.dirty.mark_row(self.cursor_row);
             }
             // Cursor Vertical Absolute.
