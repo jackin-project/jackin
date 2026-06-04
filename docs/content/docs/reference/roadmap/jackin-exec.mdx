@@ -56,16 +56,16 @@ When toggled to `on_demand = true`, jackin' serializes to the table form. This c
 
 ## Rust Type Changes
 
-Two changes in <RepoFile path="src/operator_env.rs" />:
+All changes in <RepoFile path="src/operator_env.rs" />.
 
 ### 1. New `Extended` variant in `EnvValue`
 
 ```rust
 #[serde(untagged)]
 pub enum EnvValue {
-    OpRef(OpRef),       // discriminated by `op` field
+    OpRef(OpRef),       // discriminated by `op` field — must stay first
     Extended(Extended), // NEW — discriminated by `value` field
-    Plain(String),      // scalar fallback
+    Plain(String),      // scalar fallback — must stay last
 }
 ```
 
@@ -73,29 +73,77 @@ pub enum EnvValue {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Extended {
-    pub value: String,         // supports "$VAR" / "${VAR}" expansion and literal
-    // Always true in practice — the Extended table form implies on-demand.
-    // Written explicitly so the TOML is self-documenting.
+    pub value: String,
     #[serde(default = "return_true")]
     pub on_demand: bool,
 }
 ```
 
-Serde untagged discrimination order:
-1. `OpRef` — needs `op` field → plain scalars and `{ value = ... }` tables skip
-2. `Extended` — needs `value` field → plain scalars skip
-3. `Plain(String)` — scalar fallback
-
-Every existing config parses identically. `{ value = "..." }` without `on_demand` defaults to `true` via `#[serde(default = "return_true")]`. In practice, the config editor always writes `on_demand = true` explicitly for clarity.
-
-`return_true` helper (add in <RepoFile path="src/operator_env.rs" />):
 ```rust
 fn return_true() -> bool { true }
 ```
 
-**`Extended { on_demand: false }` runtime behavior**: if an `Extended` value somehow ends up with `on_demand = false` (e.g. operator edits TOML manually), it is treated as always-available — resolved at launch using `dispatch_plain` exactly like `Plain`. The config editor prevents this state by converting back to `Plain(String)` when toggling off, but the runtime must be defensive.
+Serde untagged discrimination order:
+1. `OpRef` has `#[serde(deny_unknown_fields)]` — rejects `{ value = ... }` (unknown field) → falls through
+2. `Extended` has `#[serde(deny_unknown_fields)]` — rejects anything without `value` field → falls through
+3. `Plain(String)` — scalar fallback
 
-`Extended.value` is resolved using the same `dispatch_plain` function already used for `Plain` — `$VAR` / `${VAR}` expansion is automatic. For `on_demand = true` `Extended` values with `$VAR`, the host.sock request sends `kind: "env"` with the var name; for literals it sends `kind: "literal"` and the host returns the value verbatim (no actual host call needed, but the protocol is uniform).
+`{ value = "..." }` without `on_demand` defaults to `true` (via `return_true`). In practice, always written explicitly for clarity.
+
+**Exhaustive match methods — must add `Extended` arm to all of them:**
+
+```rust
+// as_persisted_str(): returns the unexpanded source string
+EnvValue::Extended(e) => e.value.as_str(),
+
+// as_display_str(): same — display the value string
+EnvValue::Extended(e) => e.value.as_str(),
+```
+
+**`resolve_env_value` function (lines 40-62) — new arm:**
+
+```rust
+EnvValue::Extended(e) => {
+    if e.on_demand {
+        // on_demand=true: never resolved at launch; filtered out before
+        // container env injection (see is_on_demand() below).
+        // This arm should not be reached during normal launch.
+        Err(anyhow::anyhow!("{layer_label} env var {var_name:?}: on_demand var reached resolve_env_value — this is a bug"))
+    } else {
+        // on_demand=false: treat as Plain
+        dispatch_plain(layer_label, var_name, &e.value, host_env)
+    }
+}
+```
+
+**New method on `EnvValue` — used by launch to skip on-demand vars:**
+
+```rust
+impl EnvValue {
+    /// Returns true if this env var should NOT be injected at container launch.
+    /// on_demand vars are resolved at exec time via jackin-capsule exec instead.
+    pub fn is_on_demand(&self) -> bool {
+        match self {
+            Self::OpRef(r) => r.on_demand,
+            Self::Extended(e) => e.on_demand,
+            Self::Plain(_) => false,
+        }
+    }
+}
+```
+
+In <RepoFile path="src/runtime/launch.rs" />, the env build loop that produces `-e KEY=VALUE` flags must skip `on_demand` vars:
+
+```rust
+// Before building -e flags, filter out on_demand vars:
+let launch_env = resolved_env.vars.iter()
+    .filter(|(_, v)| !v.is_on_demand())
+    // ... existing rest of loop
+```
+
+On-demand vars are still read from the workspace config (to build `JACKIN_EXEC_BINDINGS`), but they are not passed as `-e` flags to `docker run`.
+
+`Extended { on_demand: false }` runtime behavior: treated as always-available, resolves via `dispatch_plain` at launch. Config editor prevents this state by converting back to `Plain(String)` when toggling off, but the runtime arm above handles it defensively.
 
 ### 2. Add `on_demand` to `OpRef`
 
@@ -191,19 +239,38 @@ On error, capsule sends `ExecDenied` to the agent — no command is executed.
 
 `/usr/local/bin/jackin-exec` → symlink to `/jackin/runtime/jackin-capsule`. Created via `RUN ln -sf` in <RepoFile path="src/derived_image.rs" />. No separate binary, no separate release artifact.
 
-When capsule is invoked as `jackin-exec` (argv[0] check) or with `exec` as first arg, it routes to the exec subcommand:
+When capsule is invoked as `jackin-exec` (argv[0] check) or with `exec` as first arg, it routes to the exec subcommand. The dispatch in `main.rs` (after the PID-1 and prepare-commit-msg checks):
 
 ```rust
-Some("exec") | None if invoked_as_jackin_exec(&args) => exec::run(&args).await
+Some("exec") | None if invoked_as_jackin_exec(&args) => exec::run(&args).await,
 ```
+
+`invoked_as_jackin_exec` function body (follows the pattern of `invoked_as_prepare_commit_msg_hook` at line 91):
+
+```rust
+fn invoked_as_jackin_exec(args: &[String]) -> bool {
+    args.first()
+        .and_then(|a| std::path::Path::new(a).file_name())
+        .is_some_and(|n| n == "jackin-exec")
+}
+```
+
+The `None` branch (no subcommand, but invoked as `jackin-exec`) makes `jackin-exec <command> [args...]` work — `args[0]` is `jackin-exec`, remaining args are the command.
 
 **New control protocol variants in <RepoFile path="crates/jackin-protocol/src/control.rs" />:**
 
+`ClientMsg` and `ServerMsg` both have an `#[serde(other)]` `Unknown` sink variant **that must remain last**. Insert new variants **before** `Unknown`:
+
 ```rust
-ExecCommand { command: String, args: Vec<String> }      // added to ClientMsg
-ExecResult { exit_code: i32, stdout: String, stderr: String, redacted_count: u32 }  // ServerMsg
-ExecDenied { reason: String }                           // ServerMsg
+// In ClientMsg — add before Unknown:
+ExecCommand { command: String, args: Vec<String> }
+
+// In ServerMsg — add before Unknown:
+ExecResult { exit_code: i32, stdout: Vec<u8>, stderr: Vec<u8>, redacted_count: u32 }
+ExecDenied { reason: String }
 ```
+
+`stdout`/`stderr` are `Vec<u8>` not `String` — command output is not guaranteed UTF-8. **Cap at 1 MiB each** (2 MiB total, well within the 4 MiB control channel payload limit). If the command produces more, truncate and append `\n[output truncated — use JACKIN_DEBUG for full output]`. The implementer must buffer the child's stdout/stderr in the daemon, enforcing this limit as data arrives.
 
 ## Output Filtering
 
@@ -243,10 +310,31 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 - <RepoFile path="src/operator_env.rs" /> — add `Extended` variant to `EnvValue`; add `on_demand: bool` to `OpRef`; add `return_true` helper
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — add `exec` subcommand dispatch + argv[0] detection
 - <RepoFile path="crates/jackin-protocol/src/control.rs" /> — add `ExecCommand`, `ExecResult`, `ExecDenied`
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — dispatch `ExecCommand`; push picker onto existing `dialog_stack` (`Vec<Dialog>` at line 78; `dialog_push()` at line 832; input routed via `dispatch_to_dialog_top()` at line 2678; render via existing backdrop+overlay path at line 3087 — new picker is a new `Dialog` variant, not new infrastructure); connect to `/jackin/run/host.sock` for resolution; inject temp env vars; output filtering
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — dispatch `ExecCommand`; push a new `Dialog::ExecPicker(ExecPickerState)` variant onto the existing `dialog_stack` (`Vec<Dialog>` at line 78; `dialog_push()` at line 832; input routed via `dispatch_to_dialog_top()` at line 2678; render via existing backdrop+overlay path at line 3087). `ExecPickerState` shape:
+
+  ```rust
+  pub struct ExecPickerState {
+      pub command: String,
+      pub args: Vec<String>,
+      pub items: Vec<ExecPickerItem>,
+      pub cursor: usize,
+  }
+
+  pub struct ExecPickerItem {
+      pub name: String,       // env var name e.g. "GH_TOKEN"
+      pub display: String,    // OpRef.path or Extended.value — human label
+      pub kind: ExecItemKind,
+      pub source: String,     // op:// URI, $VAR name, or literal
+      pub selected: bool,
+  }
+
+  pub enum ExecItemKind { Op, Env, Literal }
+  ```
+
+  When `ExecCommand` arrives: build `ExecPickerState` from workspace on-demand vars (read from the capsule's loaded config), push onto dialog_stack. Dialog handles Space=toggle, ↑↓=cursor, Enter=confirm (read selected items → connect to `/jackin/run/host.sock` → resolve → inject → execute), Esc=cancel (send `ExecDenied`). Connect to host.sock; inject resolved values as env vars on the `CommandBuilder`; output filter; send `ExecResult`.
 - <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — route `ExecCommand` in control dispatcher
 - <RepoFile path="src/config/migrations.rs" /> — bump `CURRENT_WORKSPACE_VERSION` to `v1alpha6`; `noop_migration` step
-- <RepoFile path="src/runtime/launch.rs" /> — start host.sock listener; inject `JACKIN_EXEC_BINDINGS` env var
+- <RepoFile path="src/runtime/launch.rs" /> — in `load_role_with` (the main launch function), BEFORE the call to `reconnect_or_create_session_with_focus()`: spawn the host.sock listener as `tokio::spawn(exec_host::start_listener(host_sock_path, on_demand_vars))`. The listener runs for the session duration alongside the blocking `docker exec -it` call that immediately follows. Also: filter `is_on_demand()` vars from the `-e` flags, and inject `JACKIN_EXEC_BINDINGS=name1,name2,...` as an always-available env var
 - <RepoFile path="src/derived_image.rs" /> — `RUN ln -sf /jackin/runtime/jackin-capsule /usr/local/bin/jackin-exec`
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — use `JACKIN_EXEC_BINDINGS` for system prompt block
 - Add `tests/fixtures/migrations/workspace/from-v1alpha5/` — `meta.toml`, `before.toml`, `after.toml`

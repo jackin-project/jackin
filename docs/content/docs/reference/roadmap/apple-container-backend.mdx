@@ -128,23 +128,45 @@ pub struct AppleContainerResources {
 
 The current `InstanceManifest` in <RepoFile path="src/instance/manifest.rs" /> has a hardcoded `pub docker: DockerResources` field (not a tagged union). `DockerResources` has four fields: `role_container: String`, `dind_container: String`, `network: String`, `certs_volume: String`.
 
-The `BackendResources` tagged union that replaces it:
+The `BackendResources` enum that replaces `DockerResources`:
 
 ```rust
+// Use untagged — no "kind" field needed, discrimination by struct shape.
+// AppleContainerResources has container_name; DockerResources has role_container.
+// These field sets are disjoint, so untagged discrimination is unambiguous.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum BackendResources {
-    Docker(DockerResources),
-    AppleContainer(AppleContainerResources),
+    AppleContainer(AppleContainerResources), // discriminated by container_name field
+    Docker(DockerResources),                  // discriminated by role_container field — must be last
 }
 ```
 
-**Backward-compat for existing instance manifests**: existing manifest JSON files on disk have `"docker": { "role_container": ..., "dind_container": ..., "network": ..., "certs_volume": ... }` without a `"kind"` field. Adding a `"kind"` discriminator via `#[serde(tag = "kind")]` means old manifests fail to deserialize. Two options:
+**Backward-compat without a custom deserializer**: the `InstanceManifest.docker` field is renamed to `backend` in Rust, but keeps the old JSON key name via `#[serde(alias)]`:
 
-- **Option A (recommended)**: keep the field named `docker` in JSON via `#[serde(rename = "docker")]` but change the Rust type to `BackendResources`. Old manifests lack `"kind"` → deserialize fails → catch error in `InstanceManifest::read()` and fall back to the Docker variant by reading the raw `docker` field directly.
-- **Option B**: rename field from `docker` to `backend`, handle old manifests with a custom deserializer that tries `backend` first, falls back to `docker`.
+```rust
+// In InstanceManifest:
+#[serde(rename = "backend", alias = "docker")]
+pub backend: BackendResources,
+```
 
-Either way: `InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the AGENTS.md sense — no `CURRENT_INSTANCE_VERSION` fixture chain required. Add `manifest_version: u32` field (currently `INSTANCE_MANIFEST_VERSION = 1`) and increment to `2` when the tagged union lands, so `InstanceManifest::read()` can branch on the version field for graceful migration.
+Old manifests on disk have `"docker": { "role_container": ..., "dind_container": ..., ... }`. Serde reads the `"docker"` key (via alias), tries `AppleContainerResources` (fails — no `container_name`), then tries `DockerResources` (succeeds). No custom deserializer needed.
+
+New Docker manifests serialize as `"backend": { "role_container": ... }`. New Apple Container manifests serialize as `"backend": { "container_name": ... }`.
+
+**`NewInstanceManifest` also needs updating** — it also has `pub docker: DockerResources` (non-optional). All call sites must be updated:
+
+```rust
+// Before:
+NewInstanceManifest { ..., docker: DockerResources { role_container, dind_container, network, certs_volume } }
+
+// After:
+NewInstanceManifest { ..., backend: BackendResources::Docker(DockerResources { role_container, dind_container, network, certs_volume }) }
+```
+
+Search for `NewInstanceManifest {` and `docker: DockerResources {` to find all call sites. There are approximately 12 in <RepoFile path="src/app/context.rs" /> and related files.
+
+**`INSTANCE_MANIFEST_VERSION`**: already named `version` in the struct (field: `pub version: u32`, constant: `INSTANCE_MANIFEST_VERSION = 1`). Increment `INSTANCE_MANIFEST_VERSION` to `2` — do NOT add a new `manifest_version` field. The existing `version` field is the manifest version.
 
 ### Docker Client Architecture Note
 
@@ -241,11 +263,55 @@ Run on a real macOS 26 ARM machine with apple/container v0.11.0+. This phase is 
 - Report DNS enforcement state
 - Fail-closed if required caps are not available
 
+## AppleContainerApi Trait (Phase 1)
+
+Phase 1 adds `src/apple_container_client.rs`. Unlike <RepoFile path="src/docker_client.rs" /> which uses the **bollard** crate (typed async Rust API), Apple Container has no Rust API — all operations shell out to the `container` CLI using `tokio::process::Command`. The trait shape for the apple-container backend:
+
+```rust
+#[async_trait::async_trait]
+pub trait AppleContainerApi {
+    async fn run_container(&self, name: &str, spec: &AppleContainerSpec) -> anyhow::Result<()>;
+    async fn exec_attach(&self, name: &str) -> anyhow::Result<tokio::process::Child>;
+    async fn stop_container(&self, name: &str) -> anyhow::Result<()>;
+    async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
+    async fn inspect_container(&self, name: &str) -> anyhow::Result<Option<AppleContainerInfo>>;
+    async fn list_containers(&self, label_prefix: &str) -> anyhow::Result<Vec<AppleContainerInfo>>;
+}
+
+pub struct AppleContainerSpec {
+    pub image: String,
+    pub env: Vec<(String, String)>,        // (-e KEY=VALUE flags)
+    pub mounts: Vec<(PathBuf, PathBuf)>,   // (-v host:container flags)
+    pub caps_add: Vec<String>,             // (--cap-add flags)
+}
+
+pub struct AppleContainerInfo {
+    pub name: String,
+    pub status: String,  // "running", "stopped", etc. — parsed from `container ps` output
+}
+```
+
+All methods shell out to `container run`, `container exec -it`, `container stop`, `container rm`, `container ps` respectively. `exec_attach` returns the child process handle so the caller can pipe stdio (mirrors how `docker exec -it` is handled in the Docker backend via `runner.run`).
+
+## Schema Version Sequencing
+
+These two features require separate PRs for each schema version bump (AGENTS.md one-bump-per-PR rule):
+
+| PR | Schema change | Source version | Target version |
+|---|---|---|---|
+| jackin-exec | `CURRENT_WORKSPACE_VERSION` | `v1alpha5` | `v1alpha6` |
+| apple-container | `CURRENT_WORKSPACE_VERSION` | `v1alpha6` (after jackin-exec merges) | `v1alpha7` |
+| apple-container | `CURRENT_CONFIG_VERSION` | `v1alpha5` | `v1alpha6` |
+
+The apple-container `CURRENT_CONFIG_VERSION` bump and `CURRENT_WORKSPACE_VERSION` bump can land in the same PR (one version transition per type per PR is allowed; they are independent constants).
+
+If Docker hardening PR #528 merges to `main` before jackin-exec opens, `CURRENT_WORKSPACE_VERSION` will already be `v1alpha6`, so jackin-exec targets `v1alpha6 → v1alpha7` and apple-container targets `v1alpha7 → v1alpha8`. The implementing agent must check the current value of `CURRENT_WORKSPACE_VERSION` in <RepoFile path="src/config/migrations.rs" /> when the PR is opened and target the next version.
+
 ## Open Before Implementation Can Start
 
-1. **Phase 0 must complete** (empirical, no code) — answers whether rootless DinD works
-2. **`JACKIN_CAPSULE_FORCE_DAEMON` patch** — small code change in capsule, should land before Phase 0 testing so the test is representative
-3. **`BackendResources` enum design** — Phase 1 is the natural place but the shape above should be reviewed against the full instance manifest before starting
+1. **`JACKIN_CAPSULE_FORCE_DAEMON` patch** (its own tiny PR or commit, not part of Phase 0) — one line change in <RepoFile path="crates/jackin-capsule/src/main.rs" /> line 22. Must land before Phase 0 smoke testing. Phase 0 is empirical-only AFTER this patch is in place.
+2. **Phase 0 empirical smoke testing** — requires macOS 26 ARM hardware with `apple/container` v0.11.0+ installed. No code lands during Phase 0. Results answer whether rootless DinD works inside apple/container VMs.
+3. **`BackendResources` serde approach** — now specified above (untagged + alias). Implementing agent should confirm `AppleContainerResources.container_name` field does not overlap with any `DockerResources` field before coding.
 
 ## Related Files
 
