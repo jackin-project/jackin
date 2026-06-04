@@ -38,6 +38,14 @@ The driving case is an operator with **two accounts for the same agent**: a pers
 
 Add an optional per-agent **source-folder override** to the auth config, resolved with the same layering as the mode, consumed by the provisioning path, and selected in the console with the existing directory picker taught to show hidden folders. The default (no override) preserves today's hardcoded paths exactly.
 
+### Non-goals — nothing about current behavior changes
+
+This is purely additive. The existing auth model is untouched:
+
+- **Sync stays the default mode.** An agent the operator never configures is in Sync today and remains in Sync — no mode default changes.
+- **The default source stays the hardcoded per-agent folder.** With no override set (the state of every existing config), `sync` reads exactly the folders it reads today (`~/.claude`, `~/.codex/auth.json`, …). No existing config behaves differently after this lands.
+- **The only new capability is choosing a different source folder.** Everything else — when sync runs, what it copies, how it mounts, the read-only host contract — is unchanged. The feature adds one optional field and one console row; it removes and alters nothing.
+
 ### Schema (versioned)
 
 Add an optional field to `AgentAuthConfig` (and the GitHub equivalent if GitHub is in scope — see Open questions):
