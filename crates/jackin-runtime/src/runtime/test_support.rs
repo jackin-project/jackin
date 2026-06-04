@@ -6,6 +6,28 @@
 use jackin_core::{CommandRunner, RunOptions};
 use std::collections::VecDeque;
 
+/// Pre-install all binary test stubs (agent binaries + jackin-capsule) so that
+/// `load_role` calls in tests never fall through to network downloads regardless
+/// of how the `cfg!(test)` flag is resolved in each dependency compilation unit.
+///
+/// Call this once per test that calls `load_role` or any function that internally
+/// invokes `ensure_available`.
+#[cfg(any(test, feature = "test-support"))]
+pub fn install_all_test_stubs(paths: &jackin_core::paths::JackinPaths) {
+    use jackin_core::agent::Agent;
+    for agent in &[
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Amp,
+        Agent::Kimi,
+        Agent::Opencode,
+    ] {
+        jackin_image::agent_binary::install_test_stub(paths, *agent)
+            .expect("install agent binary test stub");
+    }
+    jackin_image::capsule_binary::install_test_stub(paths).expect("install capsule test stub");
+}
+
 #[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,

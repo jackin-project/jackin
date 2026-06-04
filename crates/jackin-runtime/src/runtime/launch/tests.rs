@@ -67,6 +67,7 @@ fn write_indexed_manifest(paths: &JackinPaths, manifest: &InstanceManifest) {
 fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
     std::fs::write(run.command_output_path("docker-build"), "docker failed").unwrap();
 
@@ -97,6 +98,7 @@ fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
 fn derived_image_cli_error_preserves_original_without_docker_output() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
 
     let error = anyhow::anyhow!("preparing capsule binary failed");
@@ -408,6 +410,7 @@ async fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() 
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -471,6 +474,7 @@ async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -544,6 +548,7 @@ async fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -599,6 +604,7 @@ async fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() 
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -653,6 +659,7 @@ async fn agent_mounts_for_codex_synced_includes_auth_json() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -714,6 +721,7 @@ async fn agent_mounts_for_codex_host_missing_omits_auth_json() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -764,6 +772,7 @@ async fn agent_mounts_for_amp_synced_includes_secrets_json() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -826,6 +835,7 @@ async fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -1469,6 +1479,7 @@ fn deny_trust(_: &RoleSelector, _: &jackin_config::RoleSource) -> anyhow::Result
 async fn load_namespaced_agent_registers_source_and_trusts_on_accept() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     let mut runner =
@@ -1581,6 +1592,7 @@ plugins = ["code-review@claude-plugins-official"]
 async fn load_namespaced_agent_aborts_when_trust_declined() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("evil-org"), "backdoor");
     let mut runner = FakeRunner::for_load_agent([String::new(), String::new()]);
@@ -1638,6 +1650,7 @@ plugins = []
 async fn load_agent_injects_configured_mounts() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
     let mut runner =
         FakeRunner::for_load_agent(["false 0 false".to_string(), "false 0 false".to_string()]);
@@ -1718,6 +1731,7 @@ trusted = true
 async fn load_agent_runs_attached_without_runtime_plugins_mount() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -1802,6 +1816,7 @@ plugins = ["code-review@claude-plugins-official"]
 async fn load_agent_launches_codex_from_workspace_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -1903,6 +1918,7 @@ model = "gpt-5"
 async fn load_agent_launches_codex_without_openai_key() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -1978,6 +1994,7 @@ struct LoadAgentFixture {
 fn load_agent_fixture(manifest_body: &str) -> LoadAgentFixture {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -2153,6 +2170,7 @@ agents = ["codex"]
 fn console_resolution_fixture() -> ConsoleResolutionFixture {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -2353,6 +2371,7 @@ async fn console_agent_resolution_propagates_git_failure() {
 async fn load_agent_uses_resolved_workspace_mounts_and_workdir() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -2428,6 +2447,7 @@ plugins = []
 async fn load_agent_passes_host_uid_and_gid_to_docker_build() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -2514,6 +2534,7 @@ plugins = []
 async fn load_agent_omits_pull_flag_in_normal_workspace_build() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -2564,6 +2585,7 @@ plugins = []
 async fn load_agent_passes_pull_flag_when_rebuild() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -2617,6 +2639,7 @@ plugins = []
 async fn load_agent_passes_pull_flag_with_published_image() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -2675,6 +2698,7 @@ async fn load_agent_uses_prebuilt_when_construct_version_matches() {
     // Dockerfile's pinned tag, the pre-built image is used (no staleness).
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     // Capture queue (after preamble): [label value for CONSTRUCT_VERSION]
@@ -2729,6 +2753,7 @@ async fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
     // the Dockerfile's pinned tag, jackin falls back to workspace mode.
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     // Capture queue (after preamble): [stale label value from published image]
@@ -2793,6 +2818,7 @@ async fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
     // working without forcing a full workspace rebuild on every launch.
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     // Empty inspect_image_labels queue → no construct label → no mismatch.
@@ -2856,6 +2882,7 @@ plugins = []
 async fn load_agent_ignores_published_image_when_rebuild() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -2908,6 +2935,7 @@ plugins = []
 async fn load_agent_rolls_back_runtime_on_attached_run_failure() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner {
@@ -2994,6 +3022,7 @@ plugins = ["code-review@claude-plugins-official"]
 async fn load_agent_checks_dind_readiness() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3072,6 +3101,7 @@ plugins = []
 async fn load_agent_configures_dind_with_tls() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3179,6 +3209,7 @@ plugins = []
 async fn load_agent_adds_dind_to_no_proxy_when_proxy_is_configured() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.env.insert(
         "HTTPS_PROXY".to_string(),
@@ -3297,6 +3328,8 @@ async fn load_agent_omits_no_proxy_when_no_proxy_env_declared() {
 async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     for (k, v) in entries {
         config.env.insert(
@@ -3370,6 +3403,7 @@ async fn append_no_proxy_host_is_idempotent() {
 async fn load_agent_sets_display_name_label() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3427,6 +3461,7 @@ plugins = []
 async fn load_agent_emits_keep_awake_label_when_workspace_opted_in() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3490,6 +3525,7 @@ plugins = []
 async fn load_agent_omits_keep_awake_label_when_workspace_opted_out() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3552,6 +3588,7 @@ plugins = []
 async fn load_agent_sets_claude_env_to_jackin() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3612,6 +3649,7 @@ plugins = []
 async fn load_agent_writes_instance_manifest() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3675,6 +3713,7 @@ plugins = []
 async fn load_agent_passes_debug_flag_when_enabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3733,6 +3772,7 @@ plugins = []
 async fn load_agent_injects_coauthor_trailer_env_when_enabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.git.coauthor_trailer = true;
     let selector = RoleSelector::new(None, "agent-smith");
@@ -3785,6 +3825,7 @@ plugins = []
 async fn load_agent_omits_coauthor_trailer_env_when_disabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -3836,6 +3877,7 @@ plugins = []
 async fn load_agent_injects_dco_env_when_enabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.git.dco = true;
     let selector = RoleSelector::new(None, "agent-smith");
@@ -3894,6 +3936,7 @@ async fn load_options_for_launch_carries_debug() {
 async fn render_exit_clears_universe_marker_only_when_no_instances_remain() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct);
     let marker = paths.data_dir.join("universe-since");
@@ -3910,6 +3953,7 @@ async fn render_exit_clears_universe_marker_only_when_no_instances_remain() {
 async fn render_exit_preserves_universe_marker_when_instances_remain() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct);
     let marker = paths.data_dir.join("universe-since");
@@ -3934,6 +3978,7 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
 async fn render_exit_preserves_universe_marker_when_running_list_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct);
     let marker = paths.data_dir.join("universe-since");
@@ -3953,6 +3998,7 @@ async fn render_exit_preserves_universe_marker_when_running_list_fails() {
 async fn load_agent_injects_global_operator_env_literal() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     // Seed a config.toml with a global operator env map.
@@ -4025,6 +4071,7 @@ plugins = []
 async fn load_agent_keeps_zai_secret_out_of_capsule_config() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     std::fs::write(
@@ -4116,6 +4163,7 @@ plugins = []
 async fn load_agent_injects_mise_trusted_paths_for_any_workspace() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     std::fs::write(
@@ -4226,6 +4274,7 @@ async fn load_agent_operator_env_overrides_manifest_env() {
     // manifest-default not present) are unchanged.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     std::fs::write(
@@ -4304,6 +4353,7 @@ plugins = []
 async fn load_agent_injects_host_ref_operator_env() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     // No process-env mutation anywhere — the host env for the
@@ -4394,6 +4444,7 @@ async fn load_agent_injects_op_cli_resolved_value() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     let bin_dir = temp.path().join("fake-bin");
@@ -4496,6 +4547,7 @@ plugins = []
 async fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // inspect returns NotFound (empty queue)
     let docker = crate::runtime::test_support::FakeDockerClient::default();
@@ -4531,6 +4583,7 @@ async fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
 async fn claim_container_name_docker_unavailable_errors() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let docker = crate::runtime::test_support::FakeDockerClient {
         fail_with: vec![(
@@ -4552,6 +4605,7 @@ async fn claim_container_name_docker_unavailable_errors() {
 async fn claim_container_name_running_collision_tries_another_unique_name() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // First inspect → Running (occupied), second → NotFound (claimed)
     let docker = crate::runtime::test_support::FakeDockerClient {
@@ -4591,6 +4645,7 @@ async fn claim_container_name_running_collision_tries_another_unique_name() {
 async fn claim_container_name_clean_exit_removes_and_reclaims() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // Stopped with exit_code=0, oom_killed=false → remove and reclaim
     let docker = crate::runtime::test_support::FakeDockerClient {
@@ -4622,6 +4677,7 @@ async fn claim_container_name_clean_exit_removes_and_reclaims() {
 async fn claim_container_name_crashed_collision_tries_another_unique_name() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // Stopped with exit_code=1 → skip (no rm), then NotFound → claim
     let docker = crate::runtime::test_support::FakeDockerClient {
@@ -4654,6 +4710,7 @@ async fn claim_container_name_crashed_collision_tries_another_unique_name() {
 async fn claim_container_name_saved_workspace_includes_workspace_component() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let (name, _lock) = claim_container_name(&paths, Some("my-workspace"), &selector, &docker)
@@ -4672,6 +4729,7 @@ async fn claim_container_name_saved_workspace_includes_workspace_component() {
 async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -4698,6 +4756,7 @@ async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
 async fn running_matching_instance_does_not_block_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -4725,6 +4784,7 @@ async fn running_matching_instance_does_not_block_fresh_load() {
 async fn stopped_matching_instance_does_not_block_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -4755,6 +4815,7 @@ async fn stopped_matching_instance_does_not_block_fresh_load() {
 async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let manifest = workspace_manifest(
         container_name,
@@ -4785,6 +4846,7 @@ async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
 async fn running_related_instance_does_not_block_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let manifest = workspace_manifest(
         container_name,
@@ -4812,6 +4874,7 @@ async fn running_related_instance_does_not_block_fresh_load() {
 async fn stopped_related_instance_does_not_block_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let manifest = workspace_manifest(
         container_name,
@@ -4842,6 +4905,7 @@ async fn stopped_related_instance_does_not_block_fresh_load() {
 async fn related_restore_candidates_ignore_finished_instances() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let mut manifest = workspace_manifest(
         container_name,
@@ -4934,6 +4998,7 @@ async fn related_restore_load_options_use_manifest_source_ref_and_agent() {
 async fn supersede_restore_candidates_updates_manifest_and_index() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -4955,6 +5020,7 @@ async fn supersede_restore_candidates_updates_manifest_and_index() {
 async fn restore_candidate_label_includes_manifest_and_mount_state() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let mut manifest = workspace_manifest(
         container_name,
@@ -4996,6 +5062,7 @@ async fn restore_candidate_label_includes_manifest_and_mount_state() {
 async fn record_instance_attach_outcome_updates_manifest() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -5022,6 +5089,7 @@ async fn record_instance_attach_outcome_updates_manifest() {
 async fn record_running_attach_outcome_restores_running_status() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let mut manifest = workspace_manifest(
         container_name,

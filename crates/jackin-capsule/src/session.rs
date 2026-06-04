@@ -1257,26 +1257,28 @@ impl Session {
     /// also consults `mouse_protocol_mode()` so press-only programs
     /// do not receive motion events.
     pub fn mouse_enabled(&self) -> bool {
+        // Phase 5: use DamageGrid for mouse mode state.
         !matches!(
-            self.parser.screen().mouse_protocol_mode(),
-            vt100::MouseProtocolMode::None
+            self.shadow_grid.mouse_protocol_mode(),
+            jackin_term::MouseProtocolMode::None
         )
     }
 
     pub fn mouse_protocol_encoding(&self) -> vt100::MouseProtocolEncoding {
+        // Phase 5 TODO: migrate callers to jackin_term::MouseProtocolEncoding.
         self.parser.screen().mouse_protocol_encoding()
     }
 
     pub fn mouse_protocol_mode(&self) -> vt100::MouseProtocolMode {
+        // Phase 5 TODO: migrate callers to jackin_term::MouseProtocolMode.
         self.parser.screen().mouse_protocol_mode()
     }
 
     /// True when the session enabled DEC private mode `?1004` (focus
-    /// event reporting). Daemon-facing accessor so the multiplexer
-    /// does not have to reach through `parser.callbacks()` at every
-    /// focus-swap / FocusIn / FocusOut decision site.
+    /// event reporting).
     pub fn focus_events_enabled(&self) -> bool {
-        self.parser.callbacks().focus_events()
+        // Phase 5: use DamageGrid for focus events state.
+        self.shadow_grid.focus_events()
     }
 
     pub fn screen(&self) -> &vt100::Screen {
@@ -1502,19 +1504,19 @@ impl Session {
     ///
     /// When the `jackin-term` feature is active, also drains the shadow grid's
     /// typed `PassthroughEvent`s and encodes them to bytes. This validates parity
-    /// between the two models (Phase 5 will replace OscCapture entirely with the
-    /// typed stream once the smoke gate passes).
+    /// Drain raw passthrough bytes.
+    ///
+    /// Uses OscCapture (vt100) as the primary source — it handles kitty keyboard
+    /// stack and other complex CSI sequences that DamageGrid doesn't yet capture.
+    /// DamageGrid passthrough events are drained and discarded (avoiding buffer growth).
+    ///
+    /// Phase 5 follow-up: port kitty keyboard stack to DamageGrid's PassthroughEvent
+    /// then switch to DamageGrid as the sole source.
     pub fn drain_passthrough(&mut self) -> Vec<Vec<u8>> {
-        let out = self.parser.callbacks_mut().drain();
-        // Always drain the DamageGrid's PassthroughEvents (Phase 5 — always-on).
-        // Dropped to avoid double-forwarding — OscCapture still produces raw bytes.
-        let _ = self
-            .shadow_grid
-            .drain_passthrough()
-            .into_iter()
-            .filter_map(|ev| ev.encode())
-            .collect::<Vec<_>>();
-        out
+        // Also drain DamageGrid to keep its buffer clear.
+        let _ = self.shadow_grid.drain_passthrough();
+        // OscCapture remains authoritative until kitty kb stack is ported.
+        self.parser.callbacks_mut().drain()
     }
 
     /// Compare current vt100 mode state against the last observed
@@ -1526,7 +1528,8 @@ impl Session {
     /// the outer terminal stops wrapping clipboard content.
     pub fn drain_mode_transitions(&mut self) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
-        let cur_bracketed = self.parser.screen().bracketed_paste();
+        // Phase 5: use DamageGrid's bracketed_paste() instead of vt100 screen.
+        let cur_bracketed = self.shadow_grid.bracketed_paste();
         if cur_bracketed != self.bracketed_paste_active {
             out.push(if cur_bracketed {
                 b"\x1b[?2004h".to_vec()
