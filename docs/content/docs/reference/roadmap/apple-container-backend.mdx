@@ -40,7 +40,7 @@ let is_pid1 = std::process::id() == 1
     || std::env::var("JACKIN_CAPSULE_FORCE_DAEMON").is_ok();
 ```
 
-The Apple Container backend launch path sets `JACKIN_CAPSULE_FORCE_DAEMON=1` as a container env var at launch time. This must be validated in Phase 0: does SIGTERM propagation, exit-code visibility, and Ctrl+C passthrough all still work correctly when capsule is not PID 1?
+The Apple Container backend launch path passes `-e JACKIN_CAPSULE_FORCE_DAEMON=1` as a flag to `container run` — not as a static `ENV` in the derived Dockerfile. Setting it in the Dockerfile would break the Docker backend where capsule IS PID 1 and client-mode invocations (e.g. `jackin-capsule status`) must not enter daemon mode. The env var must be injected only when launching via the `apple-container` backend path. This must be validated in Phase 0: does SIGTERM propagation, exit-code visibility, and Ctrl+C passthrough all still work correctly when capsule is not PID 1?
 
 ## Architecture
 

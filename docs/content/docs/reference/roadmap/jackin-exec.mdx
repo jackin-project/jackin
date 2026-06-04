@@ -131,7 +131,7 @@ After Enter: capsule sends the selected refs to the host process → host resolv
 
 On-demand credentials are resolved at exec time, not at container launch. Capsule (inside the container) calls back to the host to resolve credentials.
 
-**Phase 1 mechanism**: `jackin load` host process stays running for the lifetime of the session. It listens on a Unix socket at `~/.jackin/sockets/<container>/host.sock`, bind-mounted into the container at `/jackin/run/host.sock`. When the operator confirms the picker, capsule connects to this socket and sends a resolution request (list of refs to resolve). The host process runs `op read` for 1Password refs and reads env vars from the host environment. Values are sent back. Capsule injects them ephemerally and executes.
+**Phase 1 mechanism**: `jackin load` host process stays running for the lifetime of the session. After `docker run -d` starts the container detached, the host immediately calls `docker exec -it` (via `reconnect_or_create_session_with_focus()` in <RepoFile path="src/runtime/attach.rs" />) which **blocks for the entire session**. The host.sock listener runs as a separate `tokio::spawn` task alongside this blocking exec — both share the same tokio runtime. The socket path `~/.jackin/sockets/<container>/host.sock` is bind-mounted into the container at `/jackin/run/host.sock`. When capsule sends a resolution request, the host task reads it, runs `op read` for each 1Password ref, reads host env vars, writes values back. Capsule injects them ephemerally and executes.
 
 **This is the Phase 1 ad-hoc design.** The host process listening on a socket is not a daemon — it is the `jackin load` process staying alive. Future migration: the jackin' daemon ([Host bridge](/reference/roadmap/host-bridge/), [jackin' daemon](/reference/roadmap/jackin-daemon/)) will handle all credential resolution requests from all running containers. The per-process host.sock approach will be retired when the daemon ships.
 
@@ -191,7 +191,7 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 - <RepoFile path="src/operator_env.rs" /> — add `Extended` variant to `EnvValue`; add `on_demand: bool` to `OpRef`; add `return_true` helper
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — add `exec` subcommand dispatch + argv[0] detection
 - <RepoFile path="crates/jackin-protocol/src/control.rs" /> — add `ExecCommand`, `ExecResult`, `ExecDenied`
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — dispatch `ExecCommand`; render picker overlay; connect to `/jackin/run/host.sock` for resolution; inject temp env vars; output filtering
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — dispatch `ExecCommand`; push picker onto existing `dialog_stack` (`Vec<Dialog>` at line 78; `dialog_push()` at line 832; input routed via `dispatch_to_dialog_top()` at line 2678; render via existing backdrop+overlay path at line 3087 — new picker is a new `Dialog` variant, not new infrastructure); connect to `/jackin/run/host.sock` for resolution; inject temp env vars; output filtering
 - <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — route `ExecCommand` in control dispatcher
 - <RepoFile path="src/config/migrations.rs" /> — bump `CURRENT_WORKSPACE_VERSION` to `v1alpha6`; `noop_migration` step
 - <RepoFile path="src/runtime/launch.rs" /> — start host.sock listener; inject `JACKIN_EXEC_BINDINGS` env var
