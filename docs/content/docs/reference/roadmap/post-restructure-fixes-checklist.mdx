@@ -73,10 +73,10 @@ Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run th
 **Canonical pattern to converge on:** one shared status-footer representation — white hint row + right-aligned run-id chip, red debug chip in debug mode — rendered identically by console, launch, capsule, and the lookbook story.
 
 **Tasks:**
-- [ ] Scan repo-wide for every status-bar / status-footer renderer: `rg -l "status_footer|StatusFooter|status_bar|StatusBar|render_status_footer|right_debug" crates/*/src`. Enumerate `status_footer.rs`, the capsule `status_bar.rs`, the launch surface, and the console — confirm which is canonical and which have drifted.
-- [ ] Update the lookbook `StatusFooter` story (`story_status_footer_launch_progress` in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" />) to call the canonical `render_status_footer` so the preview is the real widget, including the red debug chip variant.
-- [ ] Converge any drifted status-bar renderer on the shared representation so console, launch, capsule, and lookbook paint the identical bar (fix the whole class).
-- [ ] Record the status-bar layout rule (white hint row + right-aligned run-id chip; red debug chip in debug mode; chip is bottom-right) in [TUI Design Decisions](/reference/tui/chrome/) so the surfaces cannot drift again.
+- [x] Scan repo-wide for every status-bar / status-footer renderer: `rg -l "status_footer|StatusFooter|status_bar|StatusBar|render_status_footer|right_debug" crates/*/src`. Enumerate `status_footer.rs`, the capsule `status_bar.rs`, the launch surface, and the console — confirm which is canonical and which have drifted.
+- [x] Update the lookbook `StatusFooter` story (`story_status_footer_launch_progress` in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" />) to call the canonical `render_status_footer` so the preview is the real widget, including the red debug chip variant.
+- [~] Converge any drifted status-bar renderer on the shared representation so console, launch, capsule, and lookbook paint the identical bar (fix the whole class). StatusFooter.right_debug now uses DANGER_RED (Defect 12); render_debug_bar also uses DANGER_RED; visual parity achieved. Code deduplication (folding render_debug_bar into StatusFooter) remains.
+- [x] Record the status-bar layout rule (white hint row + right-aligned run-id chip; red debug chip in debug mode; chip is bottom-right) in [TUI Design Decisions](/reference/tui/chrome/) so the surfaces cannot drift again.
 
 ---
 
