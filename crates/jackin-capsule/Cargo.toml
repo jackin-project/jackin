@@ -30,13 +30,17 @@ tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros"
 crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process", "inotify"] }
-# Pinned git fork of `vt100`. Upstream (doy/vt100-rust) is the
-# canonical crates.io publish but its `Callbacks` trait predates the
-# OSC + unhandled-CSI surface the multiplexer needs; the fork carries
-# patches that are not yet merged upstream (`set_window_title`,
-# `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`).
-# Replace with the upstream crate as soon as those PRs land. Tracked
-# in TODO.md under `vt100-rust-fork`.
+# Pinned git fork of `vt100`. The fork's ONLY delta over the canonical
+# crates.io `vt100` (doy/vt100-rust 0.16.2) is `Screen::clear_scrollback()`,
+# used by `clear_scrollback_and_request_screen_clear` in session.rs and the
+# focused-pane handler in daemon.rs. The four OSC/CSI callbacks named in the
+# old comment (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`,
+# `unhandled_csi`) **already shipped** in vt100 0.16.2 (January 2025) — those
+# are NOT what the fork adds. The `clear_scrollback` patch is submitted upstream
+# as doy/vt100-rust PR #31 ("Support clearing scrollback", May 22 2026) but
+# the upstream is effectively stalled (last substantive merge April 2023, 10+
+# open PRs unmerged). This fork is therefore permanent until `jackin-term`
+# (Defect 45) replaces vt100 entirely, or PR #31 merges. Tracked in TODO.md.
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 vte = "0.15"
 url = "2"
