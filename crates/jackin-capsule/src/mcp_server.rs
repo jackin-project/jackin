@@ -224,22 +224,29 @@ pub async fn run() -> Result<()> {
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Err(e) => JsonRpcResponse::err(Value::Null, -32700, format!("parse error: {e}")),
+            Err(e) => Some(JsonRpcResponse::err(
+                Value::Null,
+                -32700,
+                format!("parse error: {e}"),
+            )),
             Ok(req) => dispatch(req).await,
         };
 
-        let mut out = serde_json::to_string(&response)?;
-        out.push('\n');
-        stdout.write_all(out.as_bytes()).await?;
-        stdout.flush().await?;
+        if let Some(resp) = response {
+            let mut out = serde_json::to_string(&resp)?;
+            out.push('\n');
+            stdout.write_all(out.as_bytes()).await?;
+            stdout.flush().await?;
+        }
     }
 
     Ok(())
 }
 
-async fn dispatch(req: JsonRpcRequest) -> JsonRpcResponse {
+/// Returns `None` for JSON-RPC notifications (no response required by spec).
+async fn dispatch(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
     match req.method.as_str() {
-        "initialize" => JsonRpcResponse::ok(
+        "initialize" => Some(JsonRpcResponse::ok(
             req.id,
             json!({
                 "protocolVersion": PROTOCOL_VERSION,
@@ -251,22 +258,26 @@ async fn dispatch(req: JsonRpcRequest) -> JsonRpcResponse {
                     "version": SERVER_VERSION
                 }
             }),
-        ),
-        "notifications/initialized" | "initialized" => {
-            // Notification — no response needed, but we send a no-op.
-            JsonRpcResponse::ok(req.id, json!(null))
+        )),
+        "notifications/initialized" | "notifications/cancelled" => {
+            // Notifications must not receive a response per JSON-RPC 2.0 spec.
+            None
         }
-        "tools/list" => JsonRpcResponse::ok(
+        "tools/list" => Some(JsonRpcResponse::ok(
             req.id,
             json!({
                 "tools": [tool_schema()]
             }),
-        ),
+        )),
         "tools/call" => {
             let result = handle_tool_call(&req.params).await;
-            JsonRpcResponse::ok(req.id, result)
+            Some(JsonRpcResponse::ok(req.id, result))
         }
-        "ping" => JsonRpcResponse::ok(req.id, json!({})),
-        other => JsonRpcResponse::err(req.id, -32601, format!("method not found: {other}")),
+        "ping" => Some(JsonRpcResponse::ok(req.id, json!({}))),
+        other => Some(JsonRpcResponse::err(
+            req.id,
+            -32601,
+            format!("method not found: {other}"),
+        )),
     }
 }

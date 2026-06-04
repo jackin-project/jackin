@@ -110,16 +110,9 @@ pub async fn eject_role(
     );
 
     if is_apple_container {
-        // Apple Container eject: stop and remove via `container` CLI.
-        crate::debug_log!(
-            "apple-container",
-            "container_state action=stop name={container_name}"
-        );
-        let _ = super::apple_container::stop(container_name).await;
-        crate::debug_log!(
-            "apple-container",
-            "container_state action=rm name={container_name}"
-        );
+        // Apple Container eject: remove() stops then deletes atomically.
+        // Calling stop() separately first would swallow its error before remove()
+        // runs, which could leave the container stopped-but-not-removed on failure.
         let _ = super::apple_container::remove(container_name).await;
         remove_socket_dir(paths, container_name);
         return Ok(());

@@ -19,6 +19,7 @@
 use anyhow::{Context as _, Result, bail};
 use std::path::PathBuf;
 
+use crate::apple_container_client::AppleContainerApi as _;
 use crate::instance::{
     AppleContainerResources, BackendResources, InstanceManifest, NewInstanceManifest,
 };
@@ -364,39 +365,15 @@ pub async fn launch(
 }
 
 /// Check whether an apple/container container is currently running.
-/// Uses `container ps` (running only, no --all) to test for presence.
+/// Delegates to `AppleContainerClient::list_containers` which owns all
+/// JSON parsing for `container ps` output.
 async fn is_container_running(container_name: &str) -> bool {
-    // `container ps` without --all shows only running containers.
-    // If the container name appears in the output, it is running.
-    let output = tokio::process::Command::new("container")
-        .args(["ps", "--format", "json"])
-        .output()
-        .await;
-    match output {
-        Ok(o) if o.status.success() => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            // Look for the container name in the output. Parse as JSON array
-            // if possible, otherwise fall back to string search.
-            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&stdout) {
-                arr.iter().any(|item| {
-                    item.get("name").and_then(|v| v.as_str()) == Some(container_name)
-                        || item.get("Name").and_then(|v| v.as_str()) == Some(container_name)
-                })
-            } else {
-                // Fallback: newline-delimited JSON or plain text
-                stdout.lines().any(|line| {
-                    if let Ok(item) = serde_json::from_str::<serde_json::Value>(line) {
-                        item.get("name").and_then(|v| v.as_str()) == Some(container_name)
-                            || item.get("Name").and_then(|v| v.as_str()) == Some(container_name)
-                    } else {
-                        // Plain text fallback: container name appears on a line
-                        line.split_whitespace().any(|w| w == container_name)
-                    }
-                })
-            }
-        }
-        _ => false,
-    }
+    crate::apple_container_client::AppleContainerClient::new()
+        .list_containers(container_name)
+        .await
+        .ok()
+        .map(|v| v.iter().any(|c| c.name == container_name && c.is_running()))
+        .unwrap_or(false)
 }
 
 /// Reconnect to a stopped or running apple/container container.

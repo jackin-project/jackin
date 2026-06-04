@@ -219,11 +219,12 @@ async fn resolve_one(r: &ExecCredRef) -> Result<String> {
             resolve_op(&r.source).await
         }
         "env" => {
-            let var_name = r
-                .source
-                .trim_start_matches('$')
-                .trim_start_matches('{')
-                .trim_end_matches('}');
+            // Strip leading `$`, optional `{`, and trailing `}` to extract the var name.
+            let src = r.source.as_str();
+            let var_name = src
+                .strip_prefix('$')
+                .map(|s| s.trim_matches('{').trim_matches('}'))
+                .unwrap_or(src);
             std::env::var(var_name).with_context(|| format!("host env var {var_name:?} is not set"))
         }
         "literal" => Ok(r.source.clone()),
