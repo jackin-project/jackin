@@ -206,12 +206,14 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         Ok(sha) => sha,
         Err(e) => {
             let _ = std::fs::remove_file(&tmp_archive);
-            return Err(e);
+            return Err(e).with_context(|| {
+                format!("fetching or verifying signed capsule manifest for jackin-capsule {version}")
+            });
         }
     };
 
-    // Verify the published SHA-256. The CI pipeline emits `<asset>.sha256`
-    // alongside every archive; a mismatch means a tampered or partial release.
+    // Verify the attested SHA-256 from the signed manifest against the downloaded archive.
+    // A mismatch means the archive does not match what CI signed.
     // Hashing a multi-MB archive parks the tokio worker; run it on the
     // blocking pool so concurrent launch / TUI tasks keep progressing.
     let archive_for_hash = tmp_archive.clone();
@@ -262,8 +264,19 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     //     contiguous ASCII runs.
     let is_preview = is_preview_version(version);
     if let Err(e) = verify_version(&tmp, version, is_preview).await {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
+        if let Err(cleanup_err) = std::fs::remove_file(&tmp) {
+            crate::debug_log!(
+                "capsule_binary",
+                "failed to remove partial jackin-capsule at {}: {cleanup_err}",
+                tmp.display()
+            );
+        }
+        return Err(e).with_context(|| {
+            format!(
+                "version verification failed for downloaded jackin-capsule {version} at {}",
+                tmp.display()
+            )
+        });
     }
     std::fs::rename(&tmp, dest)
         .with_context(|| format!("failed to move jackin-capsule to {}", dest.display()))?;
@@ -312,9 +325,9 @@ const SIGSTORE_REKOR_KEY_ID: &str = "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0
 
 /// The embedded Rekor key decoded into a verification key, keyed by its log ID.
 ///
-/// Decoded once and cached: the key is a compile-time constant, so a decode
-/// failure is a build-time mistake, not a runtime condition — hence `expect`
-/// rather than a propagated error.
+/// Decoded once and cached: the key is a compile-time constant we own, so a
+/// decode failure is a programming error — hence `expect` rather than a
+/// propagated error.
 fn rekor_verification_keys()
 -> &'static std::collections::BTreeMap<String, sigstore::crypto::CosignVerificationKey> {
     use base64::Engine as _;
@@ -326,16 +339,22 @@ fn rekor_verification_keys()
     KEYS.get_or_init(|| {
         let der = BASE64
             .decode(SIGSTORE_REKOR_PUB_KEY_B64)
-            .expect("embedded Sigstore Rekor key is valid base64");
-        let key = CosignVerificationKey::try_from_der(&der)
-            .expect("embedded Sigstore Rekor key is a valid SPKI DER key");
+            .expect(
+                "SIGSTORE_REKOR_PUB_KEY_B64 is malformed base64; \
+                 update the constant from trust_root/prod/trusted_root.json in sigstore-rs",
+            );
+        let key = CosignVerificationKey::try_from_der(&der).expect(
+            "SIGSTORE_REKOR_PUB_KEY_B64 decoded to invalid SPKI DER; \
+             verify the key matches logId wNI9atQG... in trusted_root.json",
+        );
         std::collections::BTreeMap::from([(SIGSTORE_REKOR_KEY_ID.to_string(), key)])
     })
 }
 
-/// The verified `capsule-manifest.json` payload: per-Linux-target SHA-256 digests.
+/// The verified `capsule-manifest.json` payload: version string and per-Linux-target SHA-256 digests.
 #[derive(serde::Deserialize)]
 struct CapsuleManifest {
+    version: String,
     targets: std::collections::HashMap<String, String>,
 }
 
@@ -376,9 +395,7 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     let bundle_text = bundle_result
         .with_context(|| format!("fetching capsule manifest bundle at {bundle_url}"))?;
 
-    // Verify Rekor Signed Entry Timestamp against the embedded production Rekor key.
-    // `manifest_text.as_bytes()` is the exact byte sequence the CI step signed — do
-    // NOT parse-then-re-serialize before this call.
+    // Verify the Rekor Signed Entry Timestamp — proves the bundle was logged at signing time.
     let manifest_bytes = manifest_text.as_bytes();
 
     let bundle = SignedArtifactBundle::new_verified(&bundle_text, rekor_verification_keys())
@@ -392,7 +409,9 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     )
     .context("certificate in bundle is not valid UTF-8")?;
 
-    // Verify blob signature against the certificate's public key.
+    // Verify the blob signature against the certificate's public key.
+    // `manifest_bytes` must be the exact bytes the CI step signed — do NOT
+    // parse-then-re-serialize `manifest_text` before this call.
     Client::verify_blob(&cert_pem, &bundle.base64_signature, manifest_bytes)
         .with_context(|| {
             format!(
@@ -406,10 +425,10 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
 
     // Confirm the certificate SAN is exactly one of the two signing workflows
     // (release.yml for tagged releases, preview.yml for rolling main builds).
-    // The Rekor SET verification above guarantees the cert was logged at signing time;
-    // Rekor enforces Fulcio-issued certs, so the SAN is the OIDC identity Fulcio issued
-    // to. Tightening to the specific workflow files prevents any other workflow in the
-    // repo from producing a valid manifest bundle.
+    // The Rekor SET above proves the bundle was logged; verify_blob above proves
+    // the cert's key signed these exact bytes; this SAN check pins the signer
+    // identity to the specific workflow files, preventing any other workflow in
+    // the repo from producing a valid manifest bundle.
     let san = extract_cert_san_url(&cert_pem)?;
     anyhow::ensure!(
         san.starts_with("https://github.com/jackin-project/jackin/.github/workflows/release.yml@")
@@ -425,9 +444,29 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
         "capsule manifest signature verified for {version} linux/{arch}: signer = {san}"
     );
 
-    // Parse the verified manifest and return the SHA256 for this arch.
+    // Parse the verified manifest, bind its version, and return the SHA256 for this arch.
     let manifest: CapsuleManifest =
         serde_json::from_str(&manifest_text).context("parsing verified capsule-manifest.json")?;
+
+    // For stable releases the manifest URL already embeds the version, but validating
+    // the signed field closes a downgrade window on the preview channel (one rolling
+    // tag, manifest always overwritten). For preview the host version is a -dev or
+    // -preview. build and may legitimately differ from the capsule build version, so
+    // we log it rather than assert equality.
+    if is_preview_version(version) {
+        crate::debug_log!(
+            "capsule_binary",
+            "signed capsule manifest version: {} (host version: {version})",
+            manifest.version
+        );
+    } else {
+        anyhow::ensure!(
+            manifest.version == version,
+            "signed capsule manifest carries version {:?} but expected {version:?}; \
+             the release asset may have been replaced or the manifest is stale",
+            manifest.version
+        );
+    }
 
     let target = linux_target(arch);
     let sha = manifest
@@ -512,6 +551,13 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
             .output()
             .await
             .context("failed to run jackin-capsule --version")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "jackin-capsule --version exited with {}: {stderr}",
+                output.status
+            );
+        }
         let stdout = String::from_utf8_lossy(&output.stdout);
         if is_preview {
             if !stdout.contains(ASSET_PREFIX) {
@@ -555,7 +601,7 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
                 binary.display()
             );
         }
-        let _ = expected;
+        let _expected = expected;
         Ok(())
     }
 }
@@ -638,5 +684,42 @@ mod tests {
         assert_eq!(linux_target("arm64"), "aarch64-unknown-linux-gnu");
         assert_eq!(linux_target("amd64"), "x86_64-unknown-linux-gnu");
         assert_eq!(linux_target("x86_64"), "x86_64-unknown-linux-gnu");
+    }
+
+    #[test]
+    fn base_download_url_dev_uses_preview_tag() {
+        let url = base_download_url("0.6.0-dev+bf7df07");
+        assert_eq!(
+            url,
+            "https://github.com/jackin-project/jackin/releases/download/preview"
+        );
+    }
+
+    #[test]
+    fn base_download_url_preview_uses_preview_tag() {
+        let url = base_download_url("0.6.0-preview.411+bf7df07");
+        assert_eq!(
+            url,
+            "https://github.com/jackin-project/jackin/releases/download/preview"
+        );
+    }
+
+    #[test]
+    fn base_download_url_stable_uses_version_tag() {
+        let url = base_download_url("0.6.0");
+        assert_eq!(
+            url,
+            "https://github.com/jackin-project/jackin/releases/download/v0.6.0"
+        );
+    }
+
+    #[test]
+    fn rekor_keys_decode_and_contain_expected_id() {
+        let keys = rekor_verification_keys();
+        assert_eq!(keys.len(), 1, "expected exactly one Rekor key");
+        assert!(
+            keys.contains_key(SIGSTORE_REKOR_KEY_ID),
+            "expected key ID {SIGSTORE_REKOR_KEY_ID} not found in decoded map"
+        );
     }
 }
