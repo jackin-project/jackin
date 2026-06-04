@@ -147,6 +147,10 @@ impl Multiplexer {
         }
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
+        // Reset the ratatui double-buffer so the next compose_full_frame
+        // redraws every cell from scratch, preventing stale cells from the
+        // removed pane from showing through (Defect 29 — layout-change repaint).
+        let _ = self.ratatui_terminal.clear();
     }
 
     pub(super) fn resize_panes(&mut self) {
