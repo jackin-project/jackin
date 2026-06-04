@@ -297,7 +297,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Add hover color + hand pointer to every clickable that lacks it — starting with the debug chip (`render_debug_bar` must take hover state, lift the chip color, and emit `POINTER_HAND`), then every other element from the inventory. Fix the whole class in one pass.
 - [x] Ensure `POINTER_HAND` is emitted on hover-enter and `POINTER_DEFAULT` on hover-leave consistently, so the cursor never sticks as a hand after leaving a target.
 - [ ] DRY: remove any per-element duplicated hover/pointer logic in favor of the shared helper (hard DRY rule in <RepoFile path="AGENTS.md" />).
-- [ ] Confirm/extend the rule in [TUI Navigation](/reference/tui/navigation/): every clickable element, on every surface, shows both the hand pointer and a hover color change — no exceptions.
+- [x] Confirm/extend the rule in [TUI Navigation](/reference/tui/navigation/): every clickable element, on every surface, shows both the hand pointer and a hover color change — no exceptions. Rule already documented in navigation.mdx; debug chip now compliant.
 - [ ] Add/adjust lookbook stories + interactors so the hover affordance (color shift) is visible and regression-covered for the shared clickable components.
 
 ---
@@ -366,8 +366,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Trace the click-to-focus path for the editor and settings stages in `update_scroll_focus` (and its `*_scroll_focus_plan` helpers) in <RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" /> and <RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" /> / `screens/settings/update.rs`. Confirm focus only transfers on overflow.
 - [x] Add click-to-enter-content for interactive tab panels: a left-click inside a tab content block transfers interaction focus to it (the same state `⇥`/`↓` produces), independent of overflow, for **every** tab in settings (General, Mounts, Environments, Auth, Trust) and the workspace editor tabs.
 - [x] Keep the focus signals coupled (border + `▸`/cursor + hint bar) per the existing hard rule — clicking must update all of them together.
-- [ ] Scan for any other tabbed/interactive container with the same overflow-gated focus bug and fix it too (fix the whole class). `rg -n "scroll_focus|scroll_focused|enter content|tab_content" crates/*/src`.
-- [ ] Confirm the rule text in [TUI Design Decisions](/reference/tui/chrome/) already covers "interactive panels are focusable by click regardless of overflow"; tighten if the implementation guidance is ambiguous.
+- [x] Scan for any other tabbed/interactive container with the same overflow-gated focus bug and fix it too (fix the whole class). `rg -n "scroll_focus|scroll_focused|enter content|tab_content" crates/*/src`. Scanned; editor + settings are the only tabbed containers; both fixed.
+- [x] Confirm the rule text in [TUI Design Decisions](/reference/tui/chrome/) already covers "interactive panels are focusable by click regardless of overflow"; tighten if the implementation guidance is ambiguous. Confirmed: chrome.mdx states forms/dialogs/pickers/tab panels are focusable because they accept keys, not because they overflow.
 
 ---
 
