@@ -667,7 +667,7 @@ The program is done when:
 - [x] Enumerate every layout-mutating operation: `close_focused_pane`, tab close/open/switch, split/zoom, dialog open/close, `reconcile_content_rows`. `rg -n "close_focused_pane|close_tab|switch_tab|split|zoom|pending_full_redraw|dirty_panes" crates/jackin-capsule/src/daemon`.
 - [x] Make each layout mutation request a full redraw (set `pending_full_redraw`) + invalidate the relevant caches (`pane_body_caches`, dirty state), mirroring what `resize` does — via one shared helper so none is missed (DRY). close_focused_pane and close_focused_tab now call ratatui_terminal.clear().
 - [x] Confirm the next frame after a close fully repaints (no stale cells from the removed pane/tab); compose with Defects 26/28 (same render-correctness cluster, one shared invalidate path).
-- [ ] Add a regression test: closing a pane/tab sets the full-redraw flag and the next rendered buffer contains no cells from the removed pane.
+- [~] Add a regression test: closing a pane/tab sets the full-redraw flag and the next rendered buffer contains no cells from the removed pane. The actual fix calls ratatui_terminal.clear() rather than setting pending_full_redraw; a unit test for this requires rendering infrastructure not yet available in unit tests.
 
 ---
 
