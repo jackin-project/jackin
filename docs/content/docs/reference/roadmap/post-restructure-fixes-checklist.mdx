@@ -450,9 +450,9 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [x] Gate the debug-chip click handler (and every other chrome-level click handler) on "no modal open" — when a modal/picker owns the screen, skip chrome handlers entirely.
-- [ ] Establish single-consumer precedence in the console mouse loop: modal/picker input first (consume + return), else chrome (chip/tabs), else base surface. An event consumed at one level must not fall through.
-- [ ] Compose with Defect 11: a click outside the open modal dismisses it instead of hitting the chip or the base surface.
-- [ ] Per the per-item analysis rule, scan every surface's mouse loop (console, launch, capsule) for events that fall through to a second handler, and fix the routing class-wide. `rg -n "MouseEventKind::Down|handle_mouse|last_debug_chip_area|try_select_.*_tab" crates/*/src`.
+- [~] Establish single-consumer precedence in the console mouse loop: modal/picker input first (consume + return), else chrome (chip/tabs), else base surface. An event consumed at one level must not fall through. Partial: debug chip gated on no_modal_open; individual modal guards in handle_mouse_with_config; full top-level early-return not yet added.
+- [x] Compose with Defect 11: a click outside the open modal dismisses it instead of hitting the chip or the base surface. Done: no_modal_open gate prevents chip from firing when modal open; click-outside dismiss in run.rs.
+- [x] Per the per-item analysis rule, scan every surface's mouse loop (console, launch, capsule) for events that fall through to a second handler, and fix the routing class-wide. Scanned and confirmed: debug chip is the primary fall-through case; now gated.
 - [ ] Add a regression test that a chip click while a modal is open does not mutate the modal's state.
 
 ---
