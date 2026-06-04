@@ -36,7 +36,6 @@ impl From<Color> for ColorKey {
     }
 }
 
-#[cfg(feature = "jackin-term")]
 impl From<jackin_term::Color> for ColorKey {
     fn from(c: jackin_term::Color) -> Self {
         match c {
@@ -434,7 +433,6 @@ fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
 ///
 /// Used by the `jackin-term` feature path to build `RowSnapshot` from `DamageGrid::cell()`.
 /// Mirrors `snapshot_screen_row` exactly — the two functions must stay in sync.
-#[cfg(feature = "jackin-term")]
 pub(crate) fn snapshot_damagegrid_row(
     grid: &jackin_term::DamageGrid,
     row: u16,
@@ -471,7 +469,6 @@ pub(crate) fn snapshot_damagegrid_row(
 /// Build a full-screen snapshot from a `DamageGrid`.
 ///
 /// Mirrors `pane_snapshot_with_scrollback_prefix` for the `jackin-term` path.
-#[cfg(feature = "jackin-term")]
 pub(crate) fn pane_snapshot_from_damagegrid(
     grid: &jackin_term::DamageGrid,
     rect_rows: u16,
@@ -485,7 +482,6 @@ pub(crate) fn pane_snapshot_from_damagegrid(
         .collect()
 }
 
-#[cfg(feature = "jackin-term")]
 fn cell_attrs_damagegrid(cell: &jackin_term::Cell) -> Attrs {
     Attrs {
         fg: ColorKey::from(cell.fgcolor()),

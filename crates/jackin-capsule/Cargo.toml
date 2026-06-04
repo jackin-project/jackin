@@ -43,10 +43,11 @@ nix = { version = "0.31", features = ["term", "signal", "process", "inotify"] }
 # (Defect 45) replaces vt100 entirely, or PR #31 merges. Tracked in TODO.md.
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 vte = "0.15"
-# jackin-term: owned terminal model, gated by the `jackin-term` feature flag.
-# Phase 3 of Defect 45: route session.rs through DamageGrid when enabled.
-# Default: disabled — vt100 fork remains the active model until parity is proven.
-jackin-term = { path = "../jackin-term", optional = true }
+# jackin-term: owned terminal model (Phase 5 — always active).
+# The `jackin-term` feature flag is now a no-op preserved for CI compatibility;
+# the crate is a normal dependency and DamageGrid is the primary model.
+# vt100 remains for scrollback + OscCapture until Phase 5 deletion is complete.
+jackin-term = { path = "../jackin-term" }
 url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
@@ -63,11 +64,9 @@ name = "pane_body"
 harness = false
 
 [features]
-# Enable the jackin-term DamageGrid as the terminal model instead of the vt100 fork.
-# Run CI with both: `cargo test -p jackin-capsule` (off) and
-#   `cargo test -p jackin-capsule --features jackin-term` (on).
-# Phase 3 goal: both pass with zero behavioral regression.
-jackin-term = ["dep:jackin-term"]
+# jackin-term feature preserved as a no-op for CI compatibility.
+# The jackin-term crate is now a normal (non-optional) dependency.
+jackin-term = []
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
