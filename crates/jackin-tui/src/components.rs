@@ -4,6 +4,7 @@ pub mod brand_header;
 pub mod button_strip;
 pub mod confirm_dialog;
 pub mod container_info;
+pub mod dialog_layout;
 pub mod error_dialog;
 pub mod filter_input;
 pub mod hint_bar;
@@ -28,6 +29,7 @@ pub use container_info::{
     hyperlink_overlay as container_info_hyperlink_overlay, render_container_info,
     required_height as container_info_required_height,
 };
+pub use dialog_layout::{dialog_inner_chunks, dialog_inner_height};
 pub use error_dialog::{
     ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,
 };
