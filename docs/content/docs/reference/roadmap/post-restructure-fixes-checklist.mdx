@@ -384,7 +384,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Fix every block where `▸` is missing while focused or present while unfocused. Confirmed-missing examples (all five settings tabs, focused): **General** (now correct), **Mounts** (`+ Add mount` row), **Environments** (op rows + `+ Add environment variable`), **Auth** (agent rows), **Trust** (role rows). Also workspace editor tabs, pickers, file browser, capsule dialogs, and the lookbook lists. Fix the whole class.
 - [ ] Header rows are not selectable: where a tab has a column-header row (Mounts, Environments, Trust show `Destination…`, `Role  Trust  Git`, etc.), the `▸` must appear on the selected **data** row, never on the header. Confirm the cursor never lands on a header/non-selectable row.
 - [ ] Where `show_cursor` is computed independently of focus, refactor so a single focus value drives both the border and `▸` (enforce the "identical expressions" rule structurally, e.g. derive both from one `focused` bool).
-- [ ] (Observation to verify) the settings hint bar in the focused state reads `↑↓ navigate   ↑↓ navigate · ␣ toggle   ⇧Tab tab bar` — `↑↓ navigate` appears twice. Confirm whether the focused-content hint is duplicated and fix if so.
+- [x] (Observation to verify) the settings hint bar in the focused state reads `↑↓ navigate   ↑↓ navigate · ␣ toggle   ⇧Tab tab bar` — `↑↓ navigate` appears twice. Confirm whether the focused-content hint is duplicated and fix if so. Fixed: settings_general_row_footer_items() now returns only [␣ toggle]; regression test added.
 - [ ] Confirm the rule in [TUI Design Decisions](/reference/tui/chrome/) ("`▸` and green border are inseparable") is honored everywhere after the sweep.
 
 ---
