@@ -5,7 +5,9 @@
 /// mode, bracketed paste, alt-screen) or that the rendered output
 /// reproduces it. These are the regressions the hand-rolled `vte`
 /// emulator could not satisfy.
-use jackin_capsule::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, render_pane};
+use jackin_capsule::tui::render::{
+    PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, PaneRightEdge, render_pane,
+};
 use vt100::{MouseProtocolEncoding, MouseProtocolMode, Parser};
 
 #[test]
@@ -71,7 +73,16 @@ fn render_pane_includes_content_at_offset() {
     let mut p = Parser::new(3, 10, 0);
     p.process(b"hello");
     let mut buf = Vec::new();
-    render_pane(p.screen(), 2, 4, 3, 10, PaneBodyDim::Normal, &mut buf);
+    render_pane(
+        p.screen(),
+        2,
+        4,
+        3,
+        10,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     let s = String::from_utf8_lossy(&buf);
     assert!(s.contains("hello"));
     assert!(s.contains("\x1b[3;5H")); // dest_row=2, dest_col=4 → 1-based 3,5
@@ -82,7 +93,16 @@ fn render_pane_skips_wide_continuation_cells() {
     let mut p = Parser::new(2, 10, 0);
     p.process("表x".as_bytes());
     let mut buf = Vec::new();
-    render_pane(p.screen(), 0, 0, 2, 10, PaneBodyDim::Normal, &mut buf);
+    render_pane(
+        p.screen(),
+        0,
+        0,
+        2,
+        10,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     let s = String::from_utf8_lossy(&buf);
     assert!(s.contains("表x"));
     assert!(!s.contains("表 x"));
@@ -94,11 +114,29 @@ fn small_vt_update_emits_partial_pane_body_redraw() {
     p.process(b"row-one\r\nrow-two\r\nrow-three");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(p.screen(), 2, 3, 4, 16, PaneBodyDim::Normal, &mut buf);
+    cache.render_full(
+        p.screen(),
+        2,
+        3,
+        4,
+        16,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     buf.clear();
 
     p.process(b"\x1b[2;1HROW-TWO");
-    let stats = cache.render_partial(p.screen(), 2, 3, 4, 16, PaneBodyDim::Normal, &mut buf);
+    let stats = cache.render_partial(
+        p.screen(),
+        2,
+        3,
+        4,
+        16,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
 
     assert_eq!(stats.mode, PaneBodyRenderMode::Partial);
     assert_eq!(stats.changed_rows, vec![1]);

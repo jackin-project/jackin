@@ -28,7 +28,16 @@ fn render_pane_offsets_cursor_to_origin() {
     let mut parser = Parser::new(3, 10, 0);
     parser.process(b"hi");
     let mut buf = Vec::new();
-    render_pane(parser.screen(), 4, 2, 3, 10, PaneBodyDim::Normal, &mut buf);
+    render_pane(
+        parser.screen(),
+        4,
+        2,
+        3,
+        10,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     let s = String::from_utf8_lossy(&buf);
     // Render must start by writing to row 5 col 3 (1-based after the
     // dest_row=4, dest_col=2 offset) — not row 1 col 1 which would
@@ -51,6 +60,7 @@ fn inactive_pane_dim_uses_light_ansi_dim_only() {
         1,
         10,
         PaneBodyDim::Inactive,
+        PaneRightEdge::TerminalEdge,
         &mut buf,
     );
     let out = String::from_utf8_lossy(&buf);
@@ -68,7 +78,16 @@ fn pane_cache_first_render_is_full_and_tracks_every_visible_row() {
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
 
-    let stats = cache.render_partial(parser.screen(), 10, 20, 3, 8, PaneBodyDim::Normal, &mut buf);
+    let stats = cache.render_partial(
+        parser.screen(),
+        10,
+        20,
+        3,
+        8,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
 
     assert_eq!(stats.mode, PaneBodyRenderMode::Full);
     assert_eq!(stats.changed_rows, vec![0, 1, 2]);
@@ -84,11 +103,29 @@ fn pane_cache_emits_only_changed_rows_after_warmup() {
     parser.process(b"alpha\r\nbeta\r\ngamma");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(parser.screen(), 0, 0, 3, 12, PaneBodyDim::Normal, &mut buf);
+    cache.render_full(
+        parser.screen(),
+        0,
+        0,
+        3,
+        12,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     buf.clear();
 
     parser.process(b"\x1b[2;1Hbravo");
-    let stats = cache.render_partial(parser.screen(), 0, 0, 3, 12, PaneBodyDim::Normal, &mut buf);
+    let stats = cache.render_partial(
+        parser.screen(),
+        0,
+        0,
+        3,
+        12,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
 
     assert_eq!(stats.mode, PaneBodyRenderMode::Partial);
     assert_eq!(stats.changed_rows, vec![1]);
@@ -105,11 +142,29 @@ fn pane_cache_partial_rows_reset_styles_independently() {
     parser.process(b"\x1b[31mred\x1b[0m\r\nplain");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(parser.screen(), 0, 0, 2, 16, PaneBodyDim::Normal, &mut buf);
+    cache.render_full(
+        parser.screen(),
+        0,
+        0,
+        2,
+        16,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     buf.clear();
 
     parser.process(b"\x1b[1;1H\x1b[32mgreen\x1b[0m");
-    let stats = cache.render_partial(parser.screen(), 0, 0, 2, 16, PaneBodyDim::Normal, &mut buf);
+    let stats = cache.render_partial(
+        parser.screen(),
+        0,
+        0,
+        2,
+        16,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
 
     assert_eq!(stats.changed_rows, vec![0]);
     let s = String::from_utf8_lossy(&buf);
@@ -124,11 +179,29 @@ fn pane_cache_handles_wide_characters_without_dirtying_continuations() {
     parser.process("表x\r\nsame".as_bytes());
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(parser.screen(), 0, 0, 2, 10, PaneBodyDim::Normal, &mut buf);
+    cache.render_full(
+        parser.screen(),
+        0,
+        0,
+        2,
+        10,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     buf.clear();
 
     parser.process("\x1b[1;3Hy".as_bytes());
-    let stats = cache.render_partial(parser.screen(), 0, 0, 2, 10, PaneBodyDim::Normal, &mut buf);
+    let stats = cache.render_partial(
+        parser.screen(),
+        0,
+        0,
+        2,
+        10,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
 
     assert_eq!(stats.changed_rows, vec![0]);
     let s = String::from_utf8_lossy(&buf);
@@ -142,13 +215,104 @@ fn pane_cache_partial_ansi_serialization_covers_rgb_and_background() {
     parser.process(b"plain");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(parser.screen(), 0, 0, 1, 8, PaneBodyDim::Normal, &mut buf);
+    cache.render_full(
+        parser.screen(),
+        0,
+        0,
+        1,
+        8,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
     buf.clear();
 
     parser.process(b"\x1b[1;1H\x1b[38;2;1;2;3;48;5;4;1mX");
-    let stats = cache.render_partial(parser.screen(), 0, 0, 1, 8, PaneBodyDim::Normal, &mut buf);
+    let stats = cache.render_partial(
+        parser.screen(),
+        0,
+        0,
+        1,
+        8,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
 
     assert_eq!(stats.changed_rows, vec![0]);
     let s = String::from_utf8_lossy(&buf);
     assert!(s.contains("\x1b[0;1;38;2;1;2;3;44mX"));
+}
+
+// Defect 44 regression: after a resize to a narrower width, rows rendered
+// at the new (narrower) geometry must emit \x1b[K so stale cells from the
+// previous wider layout are erased. The erase fires only when the pane
+// extends to the terminal's right edge (PaneRightEdge::TerminalEdge).
+#[test]
+fn resize_shrink_emits_erase_to_eol_for_terminal_edge_pane() {
+    let mut parser = Parser::new(2, 20, 0);
+    parser.process(b"hello world twenty!!"); // fills the full 20-col row
+
+    let mut cache = PaneBodyCache::default();
+    let mut buf = Vec::new();
+    // First render at 20 cols to populate the cache.
+    cache.render_full(
+        parser.screen(),
+        0,
+        0,
+        2,
+        20,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
+    buf.clear();
+
+    // Simulate resize to 10 cols: snapshot at the narrower width.  The
+    // narrow screen would only show "hello worl" (first 10 chars).
+    // render_full (triggered by invalid cache dimensions) must emit \x1b[K
+    // after each row so the stale right 10 cols are cleared.
+    let mut parser2 = Parser::new(2, 10, 0);
+    parser2.process(b"hello worl");
+
+    let stats = cache.render_full(
+        parser2.screen(),
+        0,
+        0,
+        2,
+        10,
+        PaneBodyDim::Normal,
+        PaneRightEdge::TerminalEdge,
+        &mut buf,
+    );
+    let s = String::from_utf8_lossy(&buf);
+    assert_eq!(stats.mode, PaneBodyRenderMode::Full);
+    // Each rendered row must contain \x1b[K (erase to EOL) for terminal-edge panes.
+    let erase_count = s.matches("\x1b[K").count();
+    assert!(
+        erase_count >= 1,
+        "expected \\x1b[K in narrow-pane output to clear stale right-edge cells; got: {s:?}"
+    );
+}
+
+#[test]
+fn interior_pane_does_not_emit_erase_to_eol() {
+    let mut parser = Parser::new(2, 10, 0);
+    parser.process(b"hello");
+    let mut buf = Vec::new();
+    render_pane(
+        parser.screen(),
+        0,
+        0,
+        2,
+        10,
+        PaneBodyDim::Normal,
+        PaneRightEdge::Interior,
+        &mut buf,
+    );
+    let s = String::from_utf8_lossy(&buf);
+    assert!(
+        !s.contains("\x1b[K"),
+        "interior pane must not emit \\x1b[K to avoid clobbering adjacent pane content"
+    );
 }

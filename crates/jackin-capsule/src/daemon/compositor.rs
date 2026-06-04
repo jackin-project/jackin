@@ -313,7 +313,13 @@ impl Multiplexer {
                 }
                 let before = buf.len();
                 let cache = self.pane_body_caches.entry(pane.id).or_default();
-                let stats = render_capsule_pane_body_snapshot(&mut buf, cache, pane, body_snapshot);
+                let stats = render_capsule_pane_body_snapshot(
+                    &mut buf,
+                    cache,
+                    pane,
+                    body_snapshot,
+                    self.term_cols,
+                );
                 pane_rows_emitted += stats.rows_emitted;
                 pane_body_bytes += buf.len() - before;
                 if pane.focused {
@@ -526,8 +532,13 @@ impl Multiplexer {
                 title = Some(session_display_title(session));
                 let before = buf.len();
                 let cache = self.pane_body_caches.entry(pane.id).or_default();
-                let stats =
-                    render_capsule_pane_body_partial(&mut buf, cache, pane, session.screen());
+                let stats = render_capsule_pane_body_partial(
+                    &mut buf,
+                    cache,
+                    pane,
+                    session.screen(),
+                    self.term_cols,
+                );
                 if stats.mode == PaneBodyRenderMode::Full {
                     return self.compose_full_frame(pane_cache_miss_redraw_reason());
                 }

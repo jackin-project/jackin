@@ -12,7 +12,7 @@ use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
 use crate::tui::layout::Tab;
 use crate::tui::render::{
-    PaneBodyCache, PaneBodyRenderStats, RowSnapshot, draw_scrollbar, fill_screen,
+    PaneBodyCache, PaneBodyRenderStats, PaneRightEdge, RowSnapshot, draw_scrollbar, fill_screen,
 };
 use crate::tui::selection::{SelectionState, paint_selection_highlight};
 use ratatui::{Frame, layout::Rect as RatatuiRect};
@@ -81,11 +81,20 @@ pub(crate) fn render_capsule_pane_chrome(
     );
 }
 
+pub(crate) fn pane_right_edge(pane: &VisiblePane, term_cols: u16) -> PaneRightEdge {
+    if pane.inner.col.saturating_add(pane.inner.cols) >= term_cols {
+        PaneRightEdge::TerminalEdge
+    } else {
+        PaneRightEdge::Interior
+    }
+}
+
 pub(crate) fn render_capsule_pane_body_snapshot(
     buf: &mut Vec<u8>,
     cache: &mut PaneBodyCache,
     pane: &VisiblePane,
     snapshot: Vec<RowSnapshot>,
+    term_cols: u16,
 ) -> PaneBodyRenderStats {
     cache.render_full_snapshot(
         snapshot,
@@ -94,6 +103,7 @@ pub(crate) fn render_capsule_pane_body_snapshot(
         pane.inner.rows,
         pane.inner.cols,
         pane.body_dim,
+        pane_right_edge(pane, term_cols),
         buf,
     )
 }
@@ -103,6 +113,7 @@ pub(crate) fn render_capsule_pane_body_partial(
     cache: &mut PaneBodyCache,
     pane: &VisiblePane,
     screen: &vt100::Screen,
+    term_cols: u16,
 ) -> PaneBodyRenderStats {
     cache.render_partial(
         screen,
@@ -111,6 +122,7 @@ pub(crate) fn render_capsule_pane_body_partial(
         pane.inner.rows,
         pane.inner.cols,
         pane.body_dim,
+        pane_right_edge(pane, term_cols),
         buf,
     )
 }

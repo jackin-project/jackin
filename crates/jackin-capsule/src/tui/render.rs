@@ -148,10 +148,13 @@ impl PaneBodyCache {
         rect_rows: u16,
         rect_cols: u16,
         dim: PaneBodyDim,
+        right_edge: PaneRightEdge,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
-        self.render_full_from_snapshot(snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, buf)
+        self.render_full_from_snapshot(
+            snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -163,9 +166,12 @@ impl PaneBodyCache {
         rect_rows: u16,
         rect_cols: u16,
         dim: PaneBodyDim,
+        right_edge: PaneRightEdge,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
-        self.render_full_from_snapshot(snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, buf)
+        self.render_full_from_snapshot(
+            snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -177,10 +183,19 @@ impl PaneBodyCache {
         rect_rows: u16,
         rect_cols: u16,
         dim: PaneBodyDim,
+        right_edge: PaneRightEdge,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
-        render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
+        render_snapshot_rows(
+            &snapshot,
+            &changed_rows,
+            dest_row,
+            dest_col,
+            dim,
+            right_edge,
+            buf,
+        );
         self.rows = rect_rows;
         self.cols = rect_cols;
         self.dim = dim;
@@ -202,15 +217,20 @@ impl PaneBodyCache {
         rect_rows: u16,
         rect_cols: u16,
         dim: PaneBodyDim,
+        right_edge: PaneRightEdge,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         if !self.valid || self.rows != rect_rows || self.cols != rect_cols || self.dim != dim {
-            return self.render_full(screen, dest_row, dest_col, rect_rows, rect_cols, dim, buf);
+            return self.render_full(
+                screen, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
+            );
         }
 
         let next = pane_snapshot(screen, rect_rows, rect_cols);
         if next.len() != self.snapshot.len() {
-            return self.render_full(screen, dest_row, dest_col, rect_rows, rect_cols, dim, buf);
+            return self.render_full(
+                screen, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
+            );
         }
 
         let changed_rows: Vec<u16> = next
@@ -219,7 +239,15 @@ impl PaneBodyCache {
             .enumerate()
             .filter_map(|(idx, (new_row, old_row))| (new_row != old_row).then_some(idx as u16))
             .collect();
-        render_snapshot_rows(&next, &changed_rows, dest_row, dest_col, dim, buf);
+        render_snapshot_rows(
+            &next,
+            &changed_rows,
+            dest_row,
+            dest_col,
+            dim,
+            right_edge,
+            buf,
+        );
         self.snapshot = next;
 
         PaneBodyRenderStats {
@@ -233,6 +261,7 @@ impl PaneBodyCache {
 /// Render the screen at `(dest_row, dest_col)` into `buf`, clipped to
 /// `(rect_rows, rect_cols)`. Coordinates are 0-based. Inactive (unfocused
 /// multi-pane) panes get a light ANSI-dim cue.
+#[allow(clippy::too_many_arguments)]
 pub fn render_pane(
     screen: &Screen,
     dest_row: u16,
@@ -240,11 +269,12 @@ pub fn render_pane(
     rect_rows: u16,
     rect_cols: u16,
     dim: PaneBodyDim,
+    right_edge: PaneRightEdge,
     buf: &mut Vec<u8>,
 ) {
     let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
     let rows: Vec<u16> = (0..snapshot.len() as u16).collect();
-    render_snapshot_rows(&snapshot, &rows, dest_row, dest_col, dim, buf);
+    render_snapshot_rows(&snapshot, &rows, dest_row, dest_col, dim, right_edge, buf);
 }
 
 /// Paint the scrollbar thumb onto the pane's right border column
@@ -389,17 +419,35 @@ fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
     snapshot_screen_row(screen, row, cols_to_draw)
 }
 
+/// Whether this pane's right edge reaches the terminal's right boundary.
+///
+/// When true, `\x1b[K` (erase to end of terminal line) is safe to emit after
+/// each row — it erases stale cells from any previous wider layout without
+/// touching adjacent pane content. When false (left pane in a horizontal
+/// split), `\x1b[K` would erase the right neighbour's content and must be
+/// suppressed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PaneRightEdge {
+    /// Pane extends to the terminal's right margin — `\x1b[K` is safe.
+    TerminalEdge,
+    /// Pane is left/interior in a horizontal split — `\x1b[K` would clobber
+    /// adjacent pane content; suppress it.
+    Interior,
+}
+
 fn render_snapshot_rows(
     snapshot: &[RowSnapshot],
     rows: &[u16],
     dest_row: u16,
     dest_col: u16,
     dim: PaneBodyDim,
+    right_edge: PaneRightEdge,
     buf: &mut Vec<u8>,
 ) {
     if rows.is_empty() {
         return;
     }
+    let erase_to_eol = right_edge == PaneRightEdge::TerminalEdge;
     for &row_idx in rows {
         let Some(row) = snapshot.get(row_idx as usize) else {
             continue;
@@ -415,6 +463,14 @@ fn render_snapshot_rows(
                 last_emitted = true;
             }
             buf.extend_from_slice(cell.contents.as_bytes());
+        }
+        // Erase from the cursor (end of pane content) to end of terminal
+        // line so stale cells from a previous wider layout cannot survive
+        // a resize or a split change (Defect 44). Only safe when the pane's
+        // right edge reaches the terminal boundary; interior panes in
+        // horizontal splits suppress it to avoid erasing adjacent content.
+        if erase_to_eol {
+            buf.extend_from_slice(b"\x1b[K");
         }
     }
     buf.extend_from_slice(b"\x1b[0m");
