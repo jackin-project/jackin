@@ -286,6 +286,40 @@ pub struct AppConfig {
     pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
+    /// Global runtime backend configuration. Controls which container
+    /// runtime jackin' uses by default. Introduced in v1alpha6.
+    #[serde(default, skip_serializing_if = "RuntimeConfig::is_default")]
+    pub runtime: RuntimeConfig,
+}
+
+/// Global runtime backend configuration stored under `[runtime]` in config.toml.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeConfig {
+    /// Default backend for all `jackin load` / `jackin console` invocations.
+    /// `"docker"` (default) uses the existing Docker+DinD backend.
+    /// `"apple-container"` uses the Apple Container backend (macOS 26 ARM,
+    /// requires Phase 0 validation to complete first).
+    #[serde(default = "RuntimeConfig::default_backend")]
+    pub default_backend: String,
+}
+
+impl RuntimeConfig {
+    pub fn default_backend() -> String {
+        "docker".to_string()
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.default_backend == "docker"
+    }
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            default_backend: Self::default_backend(),
+        }
+    }
 }
 
 impl Default for AppConfig {
@@ -303,6 +337,7 @@ impl Default for AppConfig {
             docker: DockerConfig::default(),
             git: GitConfig::default(),
             workspaces: BTreeMap::new(),
+            runtime: RuntimeConfig::default(),
         }
     }
 }

@@ -3303,6 +3303,7 @@ ZAI_API_KEY = "secret"
             opencode: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: Default::default(),
         };
         let mut e = EditorState::new_edit("ws".into(), ws);
         e.active_tab = EditorTab::Mounts;

@@ -104,6 +104,26 @@ pub struct WorkspaceConfig {
     pub github: Option<crate::config::GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
+    /// Per-workspace runtime backend configuration. When set, overrides the
+    /// global `[runtime] default_backend` from config.toml. Introduced in v1alpha7.
+    #[serde(default, skip_serializing_if = "WorkspaceRuntimeConfig::is_default")]
+    pub runtime: WorkspaceRuntimeConfig,
+}
+
+/// Per-workspace runtime backend override stored under `[workspaces.X.runtime]`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceRuntimeConfig {
+    /// Backend override for this workspace. `None` means "use the global default".
+    /// `Some("apple-container")` uses the Apple Container backend for this workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+}
+
+impl WorkspaceRuntimeConfig {
+    pub fn is_default(&self) -> bool {
+        self.backend.is_none()
+    }
 }
 
 impl Default for WorkspaceConfig {
@@ -126,6 +146,7 @@ impl Default for WorkspaceConfig {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: Default::default(),
         }
     }
 }
@@ -811,6 +832,7 @@ isolation = "clone"
             opencode: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: Default::default(),
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

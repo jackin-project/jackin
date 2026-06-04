@@ -170,7 +170,7 @@ Search for `NewInstanceManifest {` and `docker: DockerResources {` to find all c
 
 ### Docker Client Architecture Note
 
-<RepoFile path="src/docker_client.rs" /> uses **bollard** — a typed async Rust API client for Docker, not a CLI shell-out. All Docker lifecycle calls (create container, start, stop, remove, network, volumes) go through bollard's `Docker` trait. The Apple Container backend **cannot** use bollard. It must **shell out to the `container` CLI** (`container run`, `container exec`, `container stop`, `container rm`). The Apple Container client module (`src/apple_container_client.rs`) will use `tokio::process::Command` for all lifecycle calls — a fundamentally different pattern from `docker_client.rs`. This means the `DockerApi` trait in `docker_client.rs` is NOT reusable for Apple Container; a new `AppleContainerApi` trait is needed.
+<RepoFile path="src/docker_client.rs" /> uses **bollard** — a typed async Rust API client for Docker, not a CLI shell-out. All Docker lifecycle calls (create container, start, stop, remove, network, volumes) go through bollard's `Docker` trait. The Apple Container backend **cannot** use bollard. It must **shell out to the `container` CLI** (`container run`, `container exec`, `container stop`, `container rm`). The Apple Container client module (<RepoFile path="src/apple_container_client.rs" />) will use `tokio::process::Command` for all lifecycle calls — a fundamentally different pattern from `docker_client.rs`. This means the `DockerApi` trait in `docker_client.rs` is NOT reusable for Apple Container; a new `AppleContainerApi` trait is needed.
 
 ## Schema Migration Footprint
 
@@ -265,7 +265,7 @@ Run on a real macOS 26 ARM machine with apple/container v0.11.0+. This phase is 
 
 ## AppleContainerApi Trait (Phase 1)
 
-Phase 1 adds `src/apple_container_client.rs`. Unlike <RepoFile path="src/docker_client.rs" /> which uses the **bollard** crate (typed async Rust API), Apple Container has no Rust API — all operations shell out to the `container` CLI using `tokio::process::Command`. The trait shape for the apple-container backend:
+Phase 1 adds <RepoFile path="src/apple_container_client.rs" />. Unlike <RepoFile path="src/docker_client.rs" /> which uses the **bollard** crate (typed async Rust API), Apple Container has no Rust API — all operations shell out to the `container` CLI using `tokio::process::Command`. The trait shape for the apple-container backend:
 
 ```rust
 #[async_trait::async_trait]

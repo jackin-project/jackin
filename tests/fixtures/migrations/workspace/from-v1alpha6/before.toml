@@ -1,4 +1,4 @@
-version = "v1alpha7"
+version = "v1alpha6"
 workdir = "/workspace/app"
 
 [[mounts]]
@@ -7,5 +7,3 @@ dst = "/workspace/app"
 
 [env]
 PUBLIC_ENDPOINT = "https://api.example.com"
-API_KEY = { op = "op://Work/app-api/key", path = "Work/app-api/key", account = "WORK123" }
-BUILD_ENV = "${BUILD_ENV}"

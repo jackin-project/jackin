@@ -2256,6 +2256,7 @@ mod subpanel_padding_tests {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: Default::default(),
         }
     }
 

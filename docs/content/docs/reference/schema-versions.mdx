@@ -24,13 +24,59 @@ The split-workspace layout described in [Configuration File](/reference/configur
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha5` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha5` | jackin | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha6` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha7` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha4` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### Config `v1alpha6` — 2026-06-04
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha5/meta.toml" /> |
+
+Adds optional `[runtime]` section with `default_backend = "docker"` field. Enables the operator to switch to `"apple-container"` (Apple Container backend for macOS 26 ARM). Noop migration — existing config files parse unchanged; the field defaults to `"docker"`.
+
+**Before** (v1alpha5):
+```toml
+version = "v1alpha5"
+```
+
+**After** (v1alpha6):
+```toml
+version = "v1alpha6"
+```
+
+### Workspace `v1alpha7` — 2026-06-04
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
+
+Adds optional `[workspaces.X.runtime]` section with `backend` field for per-workspace Apple Container backend override. Noop migration — existing workspace files parse unchanged; the field is omitted when unset.
+
+**Before** (v1alpha6):
+```toml
+version = "v1alpha6"
+workdir = "/workspace/app"
+```
+
+**After** (v1alpha7):
+```toml
+version = "v1alpha7"
+workdir = "/workspace/app"
+```
+
+### Workspace `v1alpha6` — 2026-06-04
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Workspace (`workspaces/<name>.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-v1alpha5/meta.toml" /> |
+
+Adds `on_demand` flag to `OpRef` and new `Extended { value, on_demand }` variant in `EnvValue` for on-demand credential injection via `jackin-exec`. Noop migration — existing workspace files parse unchanged.
 
 ### Workspace `v1alpha5` — 2026-05-26
 
