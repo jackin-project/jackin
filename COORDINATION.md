@@ -23,7 +23,8 @@
 | Checklist item | Status | Notes |
 |---|---|---|
 | Defect 46 Phase B.1 (auth schema + resolver) | **[DONE]** | sync_source_dir field + resolve_sync_source_dir + 4 tests |
-| Defect 46 Phase B.2 (provisioning: sync_source_dir → credential copy) | **[AGENT-B WORKING]** | Wiring sync_source_dirs through provision_*_slot in instance.rs |
+| Defect 46 Phase B.2 (provisioning) | **[DONE in b0bb21fe]** | PrepareResolvers + sync_source_dir through all provision_*_slot fns |
+| Defect 46 Phase B.3 (console UX: Source folder row) | **[AGENT-A WORKING]** | FileBrowserState show_hidden + auth row UX |
 | Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Decision: `crates/jackin/src/console/` is canonical |
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
