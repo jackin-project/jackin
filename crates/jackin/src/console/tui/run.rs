@@ -695,6 +695,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                     ms,
                                     crate::console::tui::ManagerMessage::OpenListContainerInfo {
                                         state: jackin_console::tui::components::container_info::debug_run_info_state(
+                                            env!("JACKIN_VERSION"),
                                             run.run_id(),
                                             log_path,
                                         ),

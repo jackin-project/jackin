@@ -35,6 +35,7 @@ pub fn initial_view() -> LaunchView {
         failure_copied: None,
         container_info_open: false,
         container_info_copied: None,
+        container_info_hover: None,
     }
 }
 
@@ -111,15 +112,20 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         LaunchMessage::ContainerInfoOpened => {
             view.container_info_open = true;
             view.container_info_copied = None;
+            view.container_info_hover = None;
             view.footer_hover.right = false;
         }
         LaunchMessage::ContainerInfoClosed => {
             view.container_info_open = false;
             view.container_info_copied = None;
+            view.container_info_hover = None;
             view.footer_hover.right = false;
         }
         LaunchMessage::ContainerInfoCopied(row) => {
             view.container_info_copied = Some(row);
+        }
+        LaunchMessage::ContainerInfoHovered(row) => {
+            view.container_info_hover = row;
         }
     }
     UpdateResult::redraw()

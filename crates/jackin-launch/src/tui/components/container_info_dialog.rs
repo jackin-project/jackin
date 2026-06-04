@@ -2,7 +2,7 @@
 
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
-    ContainerInfoRow, ContainerInfoState, container_info_required_height, render_container_info,
+    ContainerInfoState, DebugInfo, container_info_required_height, render_container_info,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -18,38 +18,29 @@ pub fn launch_container_info_state(
     jackin_version: &'static str,
 ) -> ContainerInfoState {
     let identity = view.identity.as_ref();
-    let mut rows = vec![
-        ContainerInfoRow::new(
-            "Container ID",
+    // The launch surface knows the container/role/agent/target on top of what
+    // the console already showed. Build from the shared accumulating model so
+    // row order, labels, and copy affordances match every other surface.
+    let info = DebugInfo {
+        jackin_version: Some(jackin_version.to_string()),
+        container_id: Some(
             identity
                 .and_then(|identity| identity.container.as_deref())
-                .unwrap_or("loading..."),
-        )
-        .copyable()
-        .emphasised(),
-        ContainerInfoRow::new("jackin version", jackin_version),
-    ];
-    if let Some(identity) = identity {
-        rows.push(ContainerInfoRow::new("Role", &identity.role));
-        rows.push(ContainerInfoRow::new("Agent", &identity.agent));
-        rows.push(ContainerInfoRow::new("Target", &identity.target_label));
-    }
-    if debug_mode {
-        rows.push(
-            ContainerInfoRow::new("Run ID", run_id)
-                .copyable()
-                .emphasised(),
-        );
-        rows.push(
-            ContainerInfoRow::new("Diagnostics log", run_log_path)
-                .copyable()
-                .hyperlink(format!("file://{run_log_path}")),
-        );
-    }
-    let mut state = ContainerInfoState::new("Debug info", rows);
+                .unwrap_or("loading...")
+                .to_string(),
+        ),
+        role: identity.map(|identity| identity.role.clone()),
+        agent: identity.map(|identity| identity.agent.clone()),
+        target: identity.map(|identity| identity.target_label.clone()),
+        run_id: debug_mode.then(|| run_id.to_string()),
+        diagnostics_log_path: debug_mode.then(|| run_log_path.to_string()),
+        capsule_version: None,
+    };
+    let mut state = info.into_state();
     if let Some(row) = view.container_info_copied {
         state.mark_copied(row);
     }
+    state.set_hovered_row(view.container_info_hover);
     state
 }
 

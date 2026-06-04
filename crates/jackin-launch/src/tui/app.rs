@@ -108,6 +108,9 @@ pub struct LaunchView {
     pub container_info_open: bool,
     /// Last copied row in the container info dialog.
     pub container_info_copied: Option<usize>,
+    /// Row in the container info dialog the pointer is hovering (a copyable
+    /// value), driving the link hover-colour change.
+    pub container_info_hover: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

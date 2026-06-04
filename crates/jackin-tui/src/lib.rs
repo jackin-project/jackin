@@ -131,7 +131,22 @@ pub const TAB_BG_ACTIVE_HOVER: Rgb = Rgb::new(58, 58, 58);
 /// Link/clickable foreground used on the white bottom status bar (the
 /// container/instance-id chip) by both the in-container multiplexer and the
 /// host loading screen, so a clickable id reads the same on both surfaces.
+/// Reserved for clickable text on a *light* (white) background, where the
+/// dark-surface `LINK_FG` cyan would have too little contrast.
 pub const LINK_BLUE: Rgb = Rgb::new(0, 80, 180);
+
+/// Copyable / clickable value foreground on a *dark* dialog surface. Used by
+/// every "Debug info" row whose value can be clicked to copy (paths, IDs) so
+/// the affordance reads identically across the console, launch cockpit, and
+/// capsule. Cyan, not blue: distinct from the brand-green focus colour and
+/// readable on the black dialog backdrop. Always paired with an underline so
+/// the value reads as a link per the W3C native-link convention.
+pub const LINK_FG: Rgb = Rgb::new(0, 200, 200);
+
+/// Hover foreground for a copyable value — a brighter cyan than [`LINK_FG`].
+/// The colour shift on pointer hover is the visible feedback that the value is
+/// interactive (W3C native-link hover behaviour).
+pub const LINK_FG_HOVER: Rgb = Rgb::new(130, 240, 240);
 
 /// Burnt orange marking debug-mode chrome — the run-id chip on the status
 /// bar renders in this so the operator can tell at a glance they are inside

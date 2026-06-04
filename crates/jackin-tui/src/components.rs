@@ -28,7 +28,8 @@ pub use confirm_dialog::{
     required_height as confirm_required_height, width_pct as confirm_width_pct,
 };
 pub use container_info::{
-    ContainerInfoRow, ContainerInfoState, copy_payload_at as container_info_copy_payload_at,
+    ContainerInfoRow, ContainerInfoState, DebugInfo,
+    copy_payload_at as container_info_copy_payload_at,
     hyperlink_overlay as container_info_hyperlink_overlay, render_container_info,
     required_height as container_info_required_height,
 };

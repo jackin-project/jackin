@@ -13,7 +13,7 @@ use crate::ModalOutcome;
 use crate::ansi;
 use crate::components::dialog_layout::render_dialog_shell;
 use crate::components::panel::{Panel, PanelFocus};
-use crate::theme::{LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{LINK_FG, LINK_FG_HOVER, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct ContainerInfoRow {
@@ -70,11 +70,81 @@ impl ContainerInfoRow {
     }
 }
 
+/// Accumulating model for the shared "Debug info" dialog.
+///
+/// The same dialog is shown on every surface — the console manager, the launch
+/// cockpit, and the in-container capsule — and gains rows as the corresponding
+/// facts become known: the console knows only the run; launch additionally
+/// knows the container id, role, agent, and target; the capsule additionally
+/// knows its own binary version. Each surface fills the fields it knows and
+/// calls [`DebugInfo::into_state`]; absent fields are simply omitted, so the
+/// row set grows as the operator moves console → launch → capsule while the
+/// ordering, labels, copy affordances, and styling stay identical.
+///
+/// Version strings are passed in as data because the canonical values live in
+/// build-time env vars (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`) that are
+/// only in scope in the binary crates. Pass the exact string `jackin --version`
+/// / `jackin-capsule --version` print so the dialog never disagrees with the CLI.
+#[derive(Debug, Clone, Default)]
+pub struct DebugInfo {
+    /// `jackin --version` output. Shown as the `jackin` row.
+    pub jackin_version: Option<String>,
+    /// `jackin-capsule --version` output. Shown as the `jackin-capsule` row
+    /// (capsule surface only).
+    pub capsule_version: Option<String>,
+    /// Container name, once one has been assigned (launch onward).
+    pub container_id: Option<String>,
+    pub role: Option<String>,
+    pub agent: Option<String>,
+    /// Working directory / target label.
+    pub target: Option<String>,
+    /// Bare run id (`jk-run-xxxxxx`) — never the log path.
+    pub run_id: Option<String>,
+    /// Absolute path to the run's diagnostics JSONL. Rendered copyable with a
+    /// `file://` hyperlink; the bare run id goes in [`Self::run_id`] instead.
+    pub diagnostics_log_path: Option<String>,
+}
+
+impl DebugInfo {
+    /// Build the dialog state in canonical row order, omitting unknown fields.
+    #[must_use]
+    pub fn into_state(self) -> ContainerInfoState {
+        let mut rows = Vec::new();
+        if let Some(container_id) = self.container_id {
+            rows.push(ContainerInfoRow::new("Container ID", container_id).copyable());
+        }
+        if let Some(version) = self.jackin_version {
+            rows.push(ContainerInfoRow::new("jackin", version));
+        }
+        if let Some(version) = self.capsule_version {
+            rows.push(ContainerInfoRow::new("jackin-capsule", version));
+        }
+        if let Some(role) = self.role {
+            rows.push(ContainerInfoRow::new("Role", role));
+        }
+        if let Some(agent) = self.agent {
+            rows.push(ContainerInfoRow::new("Agent", agent));
+        }
+        if let Some(target) = self.target {
+            rows.push(ContainerInfoRow::new("Target", target));
+        }
+        if let Some(run_id) = self.run_id {
+            rows.push(ContainerInfoRow::new("Run ID", run_id).copyable());
+        }
+        if let Some(path) = self.diagnostics_log_path {
+            let href = format!("file://{path}");
+            rows.push(ContainerInfoRow::new("Diagnostics log", path).copyable().hyperlink(href));
+        }
+        ContainerInfoState::new("Debug info", rows)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ContainerInfoState {
     title: String,
     rows: Vec<ContainerInfoRow>,
     copied_row: Option<usize>,
+    hovered_row: Option<usize>,
     /// Vertical scroll offset (in rows) for when content overflows the dialog area.
     pub scroll_y: u16,
 }
@@ -86,6 +156,7 @@ impl ContainerInfoState {
             title: title.into(),
             rows,
             copied_row: None,
+            hovered_row: None,
             scroll_y: 0,
         }
     }
@@ -118,6 +189,18 @@ impl ContainerInfoState {
     #[must_use]
     pub const fn copied_row(&self) -> Option<usize> {
         self.copied_row
+    }
+
+    /// Set the row index the pointer is hovering (a copyable value), or `None`.
+    /// Drives the link hover-colour change. Callers feed this from a mouse-move
+    /// hit-test via [`copy_payload_at`], which returns the row index.
+    pub fn set_hovered_row(&mut self, row: Option<usize>) {
+        self.hovered_row = row;
+    }
+
+    #[must_use]
+    pub const fn hovered_row(&self) -> Option<usize> {
+        self.hovered_row
     }
 }
 
@@ -168,6 +251,7 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
                 row,
                 label_width,
                 state.copied_row == Some(offset + idx),
+                state.hovered_row == Some(offset + idx),
             )),
             row_area,
         );
@@ -207,9 +291,14 @@ pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
         let Some(href) = row.href() else {
             continue;
         };
+        let link = if state.hovered_row == Some(idx) {
+            crate::LINK_FG_HOVER
+        } else {
+            crate::LINK_FG
+        };
         ansi::move_to(&mut out, rect.y, rect.x);
         ansi::emit_osc8_open(&mut out, href);
-        ansi::fg(&mut out, crate::LINK_BLUE);
+        ansi::fg(&mut out, link);
         out.extend_from_slice(b"\x1b[1;4m");
         out.extend_from_slice(
             crate::take_display_cols(row.value(), usize::from(rect.width)).as_bytes(),
@@ -265,20 +354,29 @@ fn value_rects(area: Rect, state: &ContainerInfoState) -> Vec<(usize, Rect)> {
         .collect()
 }
 
-fn container_info_line(row: &ContainerInfoRow, label_width: usize, copied: bool) -> Line<'static> {
+fn container_info_line(
+    row: &ContainerInfoRow,
+    label_width: usize,
+    copied: bool,
+    hovered: bool,
+) -> Line<'static> {
     let label_style = crate::theme::DIM;
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let mut value_style = Style::default().fg(if row.href.is_some() {
-        LINK_BLUE
+    // A copyable value (with or without an href) is a clickable link: it reads
+    // in LINK_FG cyan and underlined, brightening to LINK_FG_HOVER on hover.
+    // Non-copyable emphasised values stay brand-green; plain values stay white.
+    let clickable = row.copyable || row.href.is_some();
+    let mut value_style = Style::default().fg(if clickable {
+        if hovered { LINK_FG_HOVER } else { LINK_FG }
     } else if row.emphasised {
         PHOSPHOR_GREEN
     } else {
         WHITE
     });
-    if row.emphasised || row.copyable || row.href.is_some() {
+    if row.emphasised || clickable {
         value_style = value_style.add_modifier(Modifier::BOLD);
     }
-    if row.href.is_some() {
+    if clickable {
         value_style = value_style.add_modifier(Modifier::UNDERLINED);
     }
     let mut spans = vec![

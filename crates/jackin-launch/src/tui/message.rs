@@ -34,4 +34,5 @@ pub enum LaunchMessage {
     ContainerInfoOpened,
     ContainerInfoClosed,
     ContainerInfoCopied(usize),
+    ContainerInfoHovered(Option<usize>),
 }

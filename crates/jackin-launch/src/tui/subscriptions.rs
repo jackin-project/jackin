@@ -150,8 +150,20 @@ fn handle_cockpit_mouse_move(
     col: u16,
     row: u16,
     terminal: &dyn LaunchHostTerminal,
+    jackin_version: &'static str,
 ) {
     if v.container_info_open {
+        // Hover over a copyable value brightens it (link hover feedback) and
+        // switches the pointer to the clickable shape.
+        let state =
+            launch_container_info_state(v, run_id, "", terminal.is_debug_mode(), jackin_version);
+        let rect = launch_container_info_rect(area, &state);
+        let hover = jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
+            .map(|(idx, _)| idx);
+        if hover != v.container_info_hover {
+            let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoHovered(hover));
+            terminal.set_pointer_shape(hover.is_some());
+        }
         return;
     }
     if let Some(failure) = v.failure.as_ref() {
@@ -231,7 +243,15 @@ pub fn handle_cockpit_input(
                     );
                 }
                 MouseEventKind::Moved => {
-                    handle_cockpit_mouse_move(&mut v, area, run_id, m.column, m.row, terminal);
+                    handle_cockpit_mouse_move(
+                        &mut v,
+                        area,
+                        run_id,
+                        m.column,
+                        m.row,
+                        terminal,
+                        jackin_version,
+                    );
                 }
                 MouseEventKind::ScrollUp if v.build_log_open => {
                     update_build_log_scroll(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
