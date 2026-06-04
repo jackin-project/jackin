@@ -83,12 +83,21 @@ fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         " {} ",
         jackin_tui::shorten_home(&state.cwd.display().to_string())
     );
-    // File browser is a modal picker — always active when visible — so its
-    // border must be PHOSPHOR_GREEN (RULE 1: focus-visible border).
-    let block = Panel::new()
-        .title(title.as_str())
-        .focus(PanelFocus::Focused)
-        .block();
+    // File browser is normally the active modal (PHOSPHOR_GREEN border). When a
+    // child dialog (Git repo prompt) is stacked on top, the file browser becomes
+    // a background modal and must use the inactive border so exactly one bright
+    // border is visible (Defect 9 — one-bright-border rule).
+    let block = if state.pending_git_prompt.is_some() {
+        jackin_tui::components::modal_block_inactive().title(ratatui::text::Span::styled(
+            title.clone(),
+            jackin_tui::theme::BOLD_WHITE,
+        ))
+    } else {
+        Panel::new()
+            .title(title.as_str())
+            .focus(PanelFocus::Focused)
+            .block()
+    };
 
     let selected = state.list_state.selected;
     let highlight_style = Style::default()
