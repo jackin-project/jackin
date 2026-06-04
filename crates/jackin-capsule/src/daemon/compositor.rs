@@ -229,6 +229,15 @@ impl Multiplexer {
         let mut buf = Vec::with_capacity(65536);
         self.append_outer_terminal_title(&mut buf);
         buf.extend_from_slice(b"\x1b[?25l");
+        // For geometry-changing events, emit a real screen erase before painting
+        // so the outer terminal does not show stale cells from the previous layout.
+        // Sent atomically with the full repaint so there is no visible blank flash.
+        if matches!(
+            reason,
+            FullRedrawReason::Resize | FullRedrawReason::SplitClose | FullRedrawReason::LayoutChange
+        ) {
+            buf.extend_from_slice(b"\x1b[2J");
+        }
 
         // A modal dialog takes over the whole screen: paint an opaque
         // black backdrop so the panes and chrome behind it are fully
