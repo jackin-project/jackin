@@ -15,7 +15,7 @@ pub enum DockerSecurityProfile {
     /// Purpose-built read-only analysis roles. Highest confidence in
     /// container boundary.
     Locked,
-    /// Restricted — no DinD by default, api_only network, no sudo, read-only
+    /// Restricted — no DinD by default, allowlist network, no sudo, read-only
     /// root. For untrusted repos or long autonomous runs where inner Docker
     /// is not needed.
     Hardened,

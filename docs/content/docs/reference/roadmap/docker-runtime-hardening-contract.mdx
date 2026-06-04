@@ -1129,24 +1129,67 @@ Host matrix:
 
 ## Implementation Phases
 
-### Phase 1 — contract-only refactor
+### Phase 1 — contract-only refactor ✅ Shipped in PR #528
 
-Goal: establish the grant model types in code, add host-socket regression test, add telemetry, and report current settings — no behavior change. Every launch acts as `compat` regardless of requested profile.
+Goal: establish the `DockerSecurityProfile` enum, wire `--docker-profile` CLI flag through the launch pipeline, add host-socket regression test and telemetry. No Docker behavior changes — every launch acts as `compat` regardless of requested profile.
 
-- Create <RepoFile path="src/runtime/docker_profile.rs" /> with `DockerSecurityProfile` enum, per-dimension grant types (`NetworkGrant`, `InnerDockerGrant`, `UserGrant`, `FilesystemGrant`, `ResourceGrant`), `EffectiveGrants` struct, and all resolution/translation functions. In Phase 1, all resolution functions return `compat`-equivalent flags regardless of input profile.
-- Add `docker_profile: Option<DockerSecurityProfile>` to `LoadOptions` in <RepoFile path="src/runtime/launch.rs" /> (lines 35–76).
-- Add `profile: DockerSecurityProfile` to `LaunchContext` in <RepoFile path="src/runtime/launch.rs" /> (lines 548–578). Populate it from `load_role_with` using the precedence rule: CLI > workspace > role `min_profile` > global default.
-- Add `default_profile: Option<DockerSecurityProfile>` to `DockerConfig` in <RepoFile path="src/config/mod.rs" />. Schema bump: `CURRENT_CONFIG_VERSION` `v1alpha5` → `v1alpha6`. New workspace field: `docker: Option<WorkspaceDockerConfig>` with `profile: Option<DockerSecurityProfile>`. Schema bump: `CURRENT_WORKSPACE_VERSION` `v1alpha5` → `v1alpha6`.
-- Add `min_profile: Option<DockerSecurityProfile>` to `RoleManifest` in <RepoFile path="src/manifest/mod.rs" />. Schema bump: `CURRENT_MANIFEST_VERSION` `v1alpha4` → `v1alpha5`. Both `min_profile` and `requires_inner_engine` (Phase 3) can land in this single bump.
-- Add `--docker-profile <PROFILE>` CLI flag to `LoadArgs` in <RepoFile path="src/cli/role.rs" />. The parsed value flows into `LoadOptions.docker_profile`.
-- Add host-socket regression test: in `launch.rs` test section, assert that no `run_args` or `ContainerSpec.binds` entry contains `docker.sock`. This test must fail if a future change accidentally mounts the host socket.
-- Emit `debug_log!("launch", "profile_selected profile={} source={}", profile, source)` in `launch_role_runtime` after profile resolution.
-- Emit `debug_log!("launch", "host_socket_check passed=yes")` after the above assertion.
-- Update docs to describe the `compat` default honestly in the session contract output section.
+**Delivered:**
+- <RepoFile path="src/runtime/docker_profile.rs" /> — `DockerSecurityProfile` enum (`Locked | Hardened | Standard | Compat`) with `PartialOrd`/`Ord` (ascending capability), `FromStr`/`Display`, serde, `ParseProfileError` with full valid-values message, `resolve_profile(cli_override)` (CLI-only in Phase 1).
+- `LoadOptions.docker_profile: Option<DockerSecurityProfile>` — in-memory, no schema bump.
+- `LaunchContext.profile: DockerSecurityProfile` — populated via `resolve_profile(opts.docker_profile)`.
+- `--docker-profile <PROFILE>` CLI flag on `jackin load` via `parse_docker_profile` in <RepoFile path="src/cli/role.rs" />, wired through <RepoFile path="src/app/mod.rs" />.
+- `debug_log!("launch", "docker_profile selected={} container={}")` telemetry.
+- `debug_assert!` + `debug_log!("launch", "host_socket_check passed=yes")` before every container start.
+- Regression test `role_container_never_mounts_host_docker_socket` — fails if any future change mounts `/var/run/docker.sock`.
+- Regression test `docker_profile_flag_accepted_and_produces_valid_launch` — verifies all four profiles are accepted and produce no Phase-1-premature security flags.
 
-### Phase 2 — resource limits and `no-new-privileges`
+**Deferred to Phase 2** (intentionally not in Phase 1 — schema migrations and grant types belong with the implementation that uses them):
+- Per-dimension grant types (`NetworkGrant`, `DindGrant`, `UserGrant`, `FilesystemGrant`, `ResourceGrant`, `EffectiveGrants`) — added in Phase 2 alongside the code that uses them.
+- `DockerConfig.default_profile` field, `WorkspaceDockerConfig`, schema bumps — added in Phase 2.
+- `RoleManifest.min_profile` + `dind` fields, manifest schema bump — added in Phase 3.
+- `resolve_profile()` reading from config/workspace — Phase 2, after schema fields exist.
 
-Goal: wire declared resource limits into Docker flags; add `no-new-privileges` to `standard` after base-image sudo audit.
+### Phase 2 — schema + grants struct + resource limits
+
+Goal: make profiles actually read from config/workspace; add the full `DockerGrants` struct; wire resource limits into Docker flags. The schema for all grant fields lands here so operators can write configs immediately, even while enforcement of individual dimensions rolls out in Phases 3–5.
+
+- **`DockerGrants` struct** in <RepoFile path="src/runtime/docker_profile.rs" /> — 12 fields exactly matching the `[docker.grants]` TOML spec:
+  ```rust
+  pub struct DockerGrants {
+      pub network: Option<NetworkGrant>,           // "none" | "allowlist" | "open"
+      pub allowed_hosts: Vec<String>,              // validated at launch
+      pub dind: Option<DindGrant>,                 // "none" | "rootless" | "privileged"
+      pub user: Option<String>,                    // "agent" | "root" | custom
+      pub sudo: Option<bool>,
+      pub system_writes: Option<bool>,
+      pub memory: Option<String>,                  // "4G", "512M" — parsed to bytes at launch
+      pub memory_reservation: Option<String>,
+      pub cpus: Option<f64>,
+      pub pids: Option<i64>,
+      pub nofile: Option<u64>,
+      pub capabilities_add: Vec<String>,           // validated against VALID_CAPABILITIES at launch
+  }
+  ```
+- **Per-dimension grant enums** in <RepoFile path="src/runtime/docker_profile.rs" />:
+  ```rust
+  pub enum NetworkGrant { None, Allowlist, Open }
+  pub enum DindGrant { None, Rootless, Privileged }
+  ```
+- **`EffectiveGrants` struct** — resolved per-dimension result after merging profile defaults with explicit grants. Used by `to_docker_flags()` to produce `run_args` entries.
+- **`VALID_CAPABILITIES`** — `&[&str]` const with all 39 cap names (without `CAP_` prefix). Used by grant validation.
+- **Validation functions** (all called at launch before any container starts):
+  - `validate_grants(grants: &DockerGrants) -> Result<(), GrantError>` — checks user+sudo conflict, unknown caps, memory_reservation ≤ memory, parseable size strings.
+  - `parse_memory_bytes(s: &str) -> Result<u64, GrantError>` — parses `"4G"`, `"512M"`, `"2048K"`.
+- **`DockerConfig.default_profile`** + `DockerConfig.grants: Option<DockerGrants>` in <RepoFile path="src/config/mod.rs" />. Config schema bump: `v1alpha5 → v1alpha6` (noop migration; rebake 5 config `after.toml` + `meta.toml` pairs; new `tests/fixtures/migrations/config/from-v1alpha5/` fixture).
+- **`WorkspaceDockerConfig { profile: Option<DockerSecurityProfile>, grants: Option<DockerGrants> }`** + `WorkspaceConfig.docker: Option<WorkspaceDockerConfig>`. Workspace schema bump: `v1alpha5 → v1alpha6` (noop migration; same rebake + fixture procedure; both config and workspace land in one PR at the same version).
+- **`resolve_profile()`** updated to read full precedence chain: CLI > workspace > config default > `Compat`.
+- **Resource limits** translated to Docker flags in `launch_role_runtime`: `--memory`, `--memory-reservation`, `--cpus`, `--pids-limit`, `--ulimit nofile=N:N`.
+- **Cgroup detection** at launch: `stat -fc %T /sys/fs/cgroup/` → emit `debug_log!("launch", "cgroup_version v={}")`. On v1 hosts under `hardened`/`locked`, fail-close; under `standard`, downgrade `memory_reservation` with a warning.
+- **`no-new-privileges` stub**: add the flag path in code, emit `debug_log!("launch", "no_new_privileges enforced=no reason=sudo-audit-pending")`. Do not actually add `--security-opt no-new-privileges` until Open Question #5 (sudo audit) is resolved.
+- **`ContainerSpec`** in <RepoFile path="src/docker_client.rs" /> extended with resource fields to keep the Bollard test path in sync.
+- **Schema-versions doc entry** for `v1alpha6` in <RepoFile path="docs/content/docs/reference/schema-versions.mdx" />.
+
+### Phase 3 — rootless DinD and DinD-free roles
 
 - Add `DockerResourceLimits` struct to <RepoFile path="src/runtime/docker_profile.rs" />: `memory: Option<u64>`, `memory_reservation: Option<u64>`, `cpus: Option<f64>`, `pids: Option<i64>`, `nofile: Option<u64>`.
 - In `launch_role_runtime`, read resolved limits from role manifest `[resources]` (tracked in [Declarative resource limits](/reference/roadmap/declarative-resource-limits/)) and translate to Docker flags via the helper in `docker_profile.rs`:
