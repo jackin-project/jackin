@@ -220,13 +220,24 @@ impl Widget for SelectList<'_> {
             .render(list_area, buf);
             return;
         }
+        let viewport_cols = usize::from(list_area.width);
         let items: Vec<ListItem<'_>> = self
             .state
             .filtered
             .iter()
             .map(|&item| {
+                let label = &self.state.items[item];
+                // Truncate labels wider than the viewport with an ellipsis so wide
+                // rows are legible rather than silently clipping at the border.
+                let truncated = if crate::display_cols(label) > viewport_cols {
+                    let mut s = crate::take_display_cols(label, viewport_cols.saturating_sub(1));
+                    s.push('…');
+                    std::borrow::Cow::Owned(s)
+                } else {
+                    std::borrow::Cow::Borrowed(label.as_str())
+                };
                 ListItem::new(Line::from(Span::styled(
-                    self.state.items[item].clone(),
+                    truncated.into_owned(),
                     Style::default().fg(WHITE),
                 )))
             })
