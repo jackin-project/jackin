@@ -47,14 +47,17 @@ impl Multiplexer {
     /// renderer — the legacy raw-ANSI `compose_full_frame` has been removed.
     pub(super) fn compose_full_redraw(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         self.dirty_panes.clear();
-        // Reset Ratatui's double-buffer so the next draw is a full repaint.
-        // Terminal::clear() routes through SocketBackend::clear_region(All),
-        // which emits `\x1b[2J\x1b[H` — every full frame therefore starts from
-        // a wiped screen, so chrome from a prior geometry (the raw-ANSI bottom
-        // bar the diff cannot track) is never orphaned. The erase is sent
-        // atomically with the immediately-following full repaint, so there is
-        // no visible blank flash.
-        let _ = self.ratatui_terminal.clear();
+        // Only wipe the screen for geometry-changing causes (see
+        // FullRedrawReason::forces_screen_clear). Terminal::clear() routes
+        // through SocketBackend::clear_region(All) → `\x1b[2J\x1b[H`; doing that
+        // on every full frame (focus swap, tab switch, scroll, zoom, dialog
+        // open/close) is what makes the screen flicker on every interaction.
+        // For same-geometry causes the SocketBackend diff repaints changed cells
+        // precisely and the raw bottom chrome is rewritten in place each frame,
+        // so no clear is needed.
+        if reason.forces_screen_clear() {
+            let _ = self.ratatui_terminal.clear();
+        }
         let Some(ratatui_output) = self.compose_ratatui_frame() else {
             // compose_ratatui_frame only returns None if the Ratatui draw
             // itself errored — effectively impossible with SocketBackend. Skip
