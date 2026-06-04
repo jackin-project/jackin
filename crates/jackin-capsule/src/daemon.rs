@@ -3386,7 +3386,8 @@ impl Multiplexer {
             self.status_bar.instance_id_label(),
             self.hover_target,
         );
-        // Tab hover tooltip: render a small info box below the hovered tab cell.
+        // Tab hover tooltip: render codename below the hovered tab cell.
+        #[allow(clippy::collapsible_if)]
         if let Some(HoverTarget::Tab(idx)) = self.hover_target {
             if let Some(tab) = self.tabs.get(idx) {
                 let codename = tab.codename.clone();
@@ -4851,62 +4852,18 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 /// Positioned at screen row 2 (1-indexed), left-aligned with `col_start`.
 /// Uses a single-line Unicode border, ~30 chars wide.
 /// Painted with ANSI absolute cursor positioning; caller wraps in ESC-7/ESC-8.
-fn render_tab_tooltip(codename: String, record: Option<AgentRecord>, col_start: u16) -> Vec<u8> {
-    // Content lines: codename, agent, provider, started, exited/active.
-    let agent = record
-        .as_ref()
-        .and_then(|r| r.agent.as_deref())
-        .unwrap_or("shell");
-    let provider = record
-        .as_ref()
-        .and_then(|r| r.provider.as_deref())
-        .unwrap_or("—");
-    let started = record
-        .as_ref()
-        .map(|r| r.started_at.format("%H:%M:%S").to_string())
-        .unwrap_or_else(|| "—".to_string());
-    let exited = record
-        .as_ref()
-        .and_then(|r| r.exited_at)
-        .map(|t| t.format("%H:%M:%S").to_string())
-        .unwrap_or_else(|| "active".to_string());
-
-    let lines = [
-        format!(" {} ", codename),
-        format!(" {} · {} ", agent, provider),
-        format!(" ↑ {} ", started),
-        format!(" ↓ {} ", exited),
-    ];
-
-    let width = lines.iter().map(|l| l.len()).max().unwrap_or(10).max(10) as u16;
-    let border_top = format!("╭{}╮", "─".repeat(width as usize));
-    let border_bot = format!("╰{}╯", "─".repeat(width as usize));
-
-    // Status bar is row 1; tooltip starts at row 2 (1-indexed ANSI rows).
+fn render_tab_tooltip(codename: String, _record: Option<AgentRecord>, col_start: u16) -> Vec<u8> {
+    // Show only the codename — one word, one line, no borders.
+    // Row 2 (1-indexed) is the branch context bar row, directly below the tab strip.
+    // Align with the left edge of the hovered tab cell (col_start is 0-indexed).
     let tooltip_row = 2u16;
-    // col_start is 0-indexed screen column; ANSI columns are 1-indexed.
     let col = col_start + 1;
 
     let mut buf = Vec::new();
-    // Tooltip background: dim to distinguish from pane content.
-    buf.extend_from_slice(b"\x1b[2m");
-
-    let move_to = |row: u16, col: u16| -> Vec<u8> { format!("\x1b[{};{}H", row, col).into_bytes() };
-
-    buf.extend_from_slice(&move_to(tooltip_row, col));
-    buf.extend_from_slice(border_top.as_bytes());
-
-    for (i, line) in lines.iter().enumerate() {
-        buf.extend_from_slice(&move_to(tooltip_row + 1 + i as u16, col));
-        // Left border, padded content, right border
-        let padded = format!("{:<width$}", line, width = width as usize);
-        buf.extend_from_slice(format!("│{}│", padded).as_bytes());
-    }
-
-    buf.extend_from_slice(&move_to(tooltip_row + 1 + lines.len() as u16, col));
-    buf.extend_from_slice(border_bot.as_bytes());
-
-    buf.extend_from_slice(b"\x1b[0m"); // reset dim
+    // Dim + underline so the label reads as a transient tag, not pane text.
+    buf.extend_from_slice(format!("\x1b[2;4m\x1b[{tooltip_row};{col}H").as_bytes());
+    buf.extend_from_slice(codename.as_bytes());
+    buf.extend_from_slice(b"\x1b[0m");
     buf
 }
 

@@ -363,8 +363,8 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
 
     println!();
     println!(
-        "  {:<12} {:<10} {:<14} {:<20} {:<20} {}",
-        "codename", "agent", "provider", "started", "exited", "status"
+        "  {:<12} {:<10} {:<14} {:<20} {:<20} status",
+        "codename", "agent", "provider", "started", "exited"
     );
     println!("  {}", "─".repeat(83));
 
