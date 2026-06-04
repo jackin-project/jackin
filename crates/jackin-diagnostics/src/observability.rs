@@ -1,114 +1,60 @@
-//! Structured observability: `tracing` subscriber and `JackinDiagnosticsLayer`.
+//! `tracing` subscriber setup for optional OTLP export.
 //!
-//! PR 1 (Defect 47.1) — wires the `tracing` subscriber alongside the existing
-//! `RunDiagnostics::write()` path. Call-site churn is zero — `compact()`,
-//! `stage()`, `debug()` continue to write JSONL directly and additionally emit
-//! `tracing` events for correlated spans.
-//!
-//! Defect 47.6 (OTLP) — when compiled with `--features otlp` AND
-//! `JACKIN_OTLP_ENDPOINT` is set at runtime, an additional
-//! `tracing-opentelemetry` layer exports spans to the specified OTLP/HTTP
-//! endpoint. No opentelemetry crates are present in the default build.
+//! Diagnostic events are recorded to the run JSONL by [`crate::RunDiagnostics`]
+//! directly — that file is the only sink for the firehose. Diagnostic output
+//! must never reach the operator's screen, neither the full-screen TUI nor plain
+//! CLI commands, so no `fmt` layer writes to stdout/stderr. The `tracing` events
+//! emitted alongside each JSONL write exist only to feed the optional OTLP
+//! exporter, installed when compiled with `--features otlp` and
+//! `JACKIN_OTLP_ENDPOINT` is set at runtime. No opentelemetry crates are present
+//! in the default build.
 
-use std::io::{self, Write};
-
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::fmt::MakeWriter;
-use tracing_subscriber::prelude::*;
-
-/// stderr `MakeWriter` that drops bytes while a rich TUI owns the terminal.
+/// Install the global `tracing` subscriber.
 ///
-/// The fmt layer streams every `tracing` event; without this guard those events
-/// land on the alternate screen the console / launch cockpit draws to and
-/// corrupt the frame. `RunDiagnostics::write` records the same events to the
-/// run JSONL unconditionally and before the `tracing` event fires, so dropping
-/// the terminal copy loses nothing — it only honours the same
-/// `rich_terminal_owned()` guard the `emit_compact_line` / `emit_debug_line`
-/// paths already respect.
-pub(crate) struct GuardedStderr;
-
-pub(crate) struct GuardedStderrWriter(io::Stderr);
-
-impl<'a> MakeWriter<'a> for GuardedStderr {
-    type Writer = GuardedStderrWriter;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        GuardedStderrWriter(io::stderr())
-    }
-}
-
-impl Write for GuardedStderrWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if crate::terminal::rich_terminal_owned() {
-            return Ok(buf.len());
-        }
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        if crate::terminal::rich_terminal_owned() {
-            return Ok(());
-        }
-        self.0.flush()
-    }
-}
-
-/// Initialize the global `tracing` subscriber.
+/// Default build: installs nothing — diagnostic events live only in the run
+/// JSONL written by [`crate::RunDiagnostics`], so `tracing` events have no
+/// terminal sink and never stream over the operator's screen. With
+/// `--features otlp` and `JACKIN_OTLP_ENDPOINT` set, installs an OTLP export
+/// layer.
 ///
-/// Builds a `registry()` with two layers (three when `otlp` feature + env set):
-///
-/// 1. **Compact stderr layer** — `info!` in normal mode, `debug!` when
-///    `debug` is true.  Reproduces the two-tier `clog!`/`cdebug!` contract
-///    from the `AGENTS.md` rule: always-on lifecycle events at `info`, verbose
-///    firehose at `debug` gated by `JACKIN_DEBUG`.
-/// 2. **`JackinDiagnosticsLayer`** — intercepts `tracing` events and records
-///    them alongside the existing JSONL file (future: becomes the sole writer).
-/// 3. **OTLP exporter** (optional) — when compiled with `--features otlp` and
-///    `JACKIN_OTLP_ENDPOINT` is set at runtime, exports spans to an
-///    OpenTelemetry-compatible collector (e.g. Jaeger, Tempo, Honeycomb).
-///
-/// Returns `Ok(())` when the subscriber is installed; returns an error if the
-/// global default is already set (e.g. in tests that call this twice).
+/// Returns `Ok(())` on success; the OTLP path returns an error if the global
+/// subscriber is already set (e.g. a test that installs twice).
+// `allow`, not `expect`: the body is trivially const only in the default
+// (no-otlp) build; the otlp build does non-const setup, so the lint fires in one
+// cfg and not the other and a single non-const signature is required.
+#[allow(clippy::missing_const_for_fn)]
 pub fn init_tracing(debug: bool) -> anyhow::Result<()> {
-    let level = if debug { "debug" } else { "info" };
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .compact()
-        .with_target(false)
-        .with_writer(GuardedStderr)
-        .with_filter(EnvFilter::new(level));
-
     #[cfg(feature = "otlp")]
     {
         if let Some(endpoint) = std::env::var("JACKIN_OTLP_ENDPOINT")
             .ok()
             .filter(|s| !s.is_empty())
         {
-            return init_tracing_with_otlp(debug, fmt_layer, &endpoint);
+            return init_tracing_with_otlp(debug, &endpoint);
         }
     }
 
-    // Default path: fmt layer only (no opentelemetry deps at runtime).
-    let _ = debug; // suppress unused-variable warning on the non-otlp path
-    tracing_subscriber::registry()
-        .with(fmt_layer)
-        .try_init()
-        .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"))
+    // Default path: no terminal subscriber. Diagnostic events are file-only via
+    // RunDiagnostics::write; installing a fmt layer here would stream the
+    // firehose over the operator's screen, which is forbidden in both TUI and
+    // CLI modes.
+    let _ = debug;
+    Ok(())
 }
 
-/// Install the tracing subscriber with an additional OTLP export layer.
+/// Install the tracing subscriber with an OTLP export layer.
 ///
 /// Only compiled when `--features otlp` is active AND `JACKIN_OTLP_ENDPOINT`
-/// is set at runtime.  The function is entirely absent from default builds so
-/// there is zero link-time cost.
+/// is set at runtime. The function is entirely absent from default builds so
+/// there is zero link-time cost. No `fmt` layer is attached: OTLP export is a
+/// separate sink from the operator's screen, which stays free of the firehose.
 #[cfg(feature = "otlp")]
-fn init_tracing_with_otlp(
-    debug: bool,
-    fmt_layer: impl tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
-    endpoint: &str,
-) -> anyhow::Result<()> {
+fn init_tracing_with_otlp(debug: bool, endpoint: &str) -> anyhow::Result<()> {
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::trace::SdkTracerProvider;
+    use tracing_subscriber::EnvFilter;
+    use tracing_subscriber::prelude::*;
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_http()
@@ -125,8 +71,7 @@ fn init_tracing_with_otlp(
 
     let level = if debug { "debug" } else { "info" };
     tracing_subscriber::registry()
-        .with(fmt_layer)
-        .with(otel_layer.with_filter(tracing_subscriber::EnvFilter::new(level)))
+        .with(otel_layer.with_filter(EnvFilter::new(level)))
         .try_init()
         .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"))
 }

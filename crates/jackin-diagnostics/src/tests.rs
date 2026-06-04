@@ -296,29 +296,6 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     );
 }
 
-#[test]
-fn guarded_stderr_drops_writes_while_rich_terminal_owns_screen() {
-    use std::io::Write as _;
-    use tracing_subscriber::fmt::MakeWriter as _;
-
-    let _lock = DEBUG_BUFFER_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    set_rich_surface_active(false);
-    set_host_screen_owned(false);
-
-    // While a TUI owns the alternate screen the fmt layer's bytes must be
-    // swallowed so `tracing` events never corrupt the frame; the run JSONL
-    // still records them via `RunDiagnostics::write`.
-    set_host_screen_owned(true);
-    let payload = b"DEBUG [jackin debug tui] mouse spew\n";
-    let mut owned = crate::observability::GuardedStderr.make_writer();
-    let written = owned.write(payload).unwrap();
-    assert_eq!(written, payload.len(), "owned screen must consume and drop");
-    owned.flush().unwrap();
-    set_host_screen_owned(false);
-}
-
 // ── terminal.rs tests ────────────────────────────────────────────────────────
 
 #[test]
