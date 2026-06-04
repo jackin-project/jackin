@@ -270,6 +270,8 @@ pub enum GrantValidationError {
     MemoryReservationExceedsMemory { reservation: u64, memory: u64 },
     /// A size string could not be parsed.
     UnparsableSize { field: &'static str, value: String },
+    /// A numeric field is outside its valid range (e.g. `pids <= 0`, memory > i64::MAX).
+    ValueOutOfRange { field: &'static str, reason: &'static str },
 }
 
 impl std::fmt::Display for GrantValidationError {
@@ -301,6 +303,10 @@ impl std::fmt::Display for GrantValidationError {
                 f,
                 "cannot parse {value:?} as a size for grants.{field} — \
                  use format \"512M\", \"4G\", \"32G\""
+            ),
+            Self::ValueOutOfRange { field, reason } => write!(
+                f,
+                "grants.{field} is out of range: {reason}"
             ),
         }
     }
@@ -403,13 +409,14 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
         }
     }
 
-    // Validate memory values fit in i64 for the Bollard/Docker API boundary.
-    for (field, bytes_opt) in [("memory", memory_bytes), ("memory_reservation", reservation_bytes)] {
+    // Memory values must fit in i64 for the Bollard/Docker API boundary.
+    for field in ["memory", "memory_reservation"] {
+        let bytes_opt = if field == "memory" { memory_bytes } else { reservation_bytes };
         if let Some(bytes) = bytes_opt {
             if bytes > i64::MAX as u64 {
-                errors.push(GrantValidationError::UnparsableSize {
+                errors.push(GrantValidationError::ValueOutOfRange {
                     field,
-                    value: format!("{bytes}B (exceeds i64::MAX, too large for Docker API)"),
+                    reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
                 });
             }
         }
@@ -419,9 +426,9 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
     // disable the limit that hardened/locked profiles are designed to enforce.
     if let Some(pids) = grants.pids {
         if pids <= 0 {
-            errors.push(GrantValidationError::UnparsableSize {
+            errors.push(GrantValidationError::ValueOutOfRange {
                 field: "pids",
-                value: format!("{pids} (must be > 0; omit the field for no limit)"),
+                reason: "must be > 0; omit the field to remove the limit",
             });
         }
     }
@@ -646,6 +653,21 @@ pub fn resolve_profile(
         return (p, ProfileSource::Config);
     }
     (DockerSecurityProfile::default(), ProfileSource::Default)
+}
+
+/// Validate a fully-resolved [`EffectiveGrants`] for cross-source invariants
+/// that per-source [`validate_grants`] cannot catch.
+///
+/// Returns a list of all violations. An empty list means the grants are valid.
+pub fn validate_effective_grants(grants: &EffectiveGrants) -> Vec<GrantValidationError> {
+    let mut errors = Vec::new();
+    // user="root" + sudo=true can emerge from cross-source merging (e.g.
+    // config sets sudo=true, workspace sets user="root") even though per-source
+    // validation on each DockerGrants would not catch the combination.
+    if grants.user == "root" && grants.sudo {
+        errors.push(GrantValidationError::RootAndSudo);
+    }
+    errors
 }
 
 /// Resolve the effective profile and apply grants, returning the merged
@@ -1304,20 +1326,25 @@ mod tests {
 
     // ── Test gap fixes ────────────────────────────────────────────────────────
 
+    /// Extract the path component from every `--tmpfs <path>:opts` pair in a flags vec.
+    fn tmpfs_paths_from_flags<'a>(flags: &'a [String]) -> Vec<&'a str> {
+        flags
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                *i > 0 && flags.get(*i - 1).map(|f| f == "--tmpfs").unwrap_or(false)
+            })
+            .map(|(_, v)| v.split(':').next().unwrap_or(""))
+            .collect()
+    }
+
     /// locked tmpfs: minimal set only (no package-manager paths).
     #[test]
     fn locked_tmpfs_is_minimal_subset() {
         let grants = profile_base_grants(DockerSecurityProfile::Locked);
-        // system_writes=false → read-only root; flags include --read-only + tmpfs entries.
         let flags = readonly_root_flags(DockerSecurityProfile::Locked, &grants);
         assert!(flags.contains(&"--read-only".to_string()), "locked must be read-only");
-        // Minimal paths present — check in the tmpfs mount values (odd-indexed args).
-        let tmpfs_values: Vec<&str> = flags
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i > 0 && flags.get(*i - 1).map(|f| f == "--tmpfs").unwrap_or(false))
-            .map(|(_, v)| v.split(':').next().unwrap_or(""))
-            .collect();
+        let tmpfs_values = tmpfs_paths_from_flags(&flags);
         assert!(tmpfs_values.contains(&"/tmp"), "locked must have /tmp tmpfs");
         assert!(tmpfs_values.contains(&"/run"), "locked must have /run tmpfs");
         // Package-manager paths absent from locked.
@@ -1334,12 +1361,7 @@ mod tests {
     fn hardened_tmpfs_includes_extra_paths() {
         let grants = profile_base_grants(DockerSecurityProfile::Hardened);
         let flags = readonly_root_flags(DockerSecurityProfile::Hardened, &grants);
-        let tmpfs_values: Vec<&str> = flags
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i > 0 && flags.get(*i - 1).map(|f| f == "--tmpfs").unwrap_or(false))
-            .map(|(_, v)| v.split(':').next().unwrap_or(""))
-            .collect();
+        let tmpfs_values = tmpfs_paths_from_flags(&flags);
         for path in TMPFS_PATHS_HARDENED_EXTRA {
             assert!(
                 tmpfs_values.contains(path),
@@ -1438,8 +1460,8 @@ mod tests {
         let errors = validate_grants(&grants);
         assert!(!errors.is_empty(), "pids = -1 should be an error");
         assert!(
-            matches!(&errors[0], GrantValidationError::UnparsableSize { field, .. } if *field == "pids"),
-            "error should be UnparsableSize for pids"
+            matches!(&errors[0], GrantValidationError::ValueOutOfRange { field, .. } if *field == "pids"),
+            "error should be ValueOutOfRange for pids"
         );
     }
 

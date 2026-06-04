@@ -1413,8 +1413,9 @@ async fn launch_role_runtime(
             .await;
         if let Err(e) = firewall_result {
             // Firewall failed — the container is running with open egress.
-            // Emit a visible warning (not just debug) and update the env var
-            // so the session contract reflects actual enforcement, not intended.
+            // Emit a visible warning so the operator sees the degraded state.
+            // Note: JACKIN_NETWORK_ENFORCEMENT is set at `docker run` time; it
+            // cannot be updated post-launch (/proc/1/environ is read-only).
             crate::debug_log!(
                 "launch",
                 "network allowlist install failed (degraded to open): {e}",
@@ -1427,23 +1428,6 @@ async fn launch_role_runtime(
                      /jackin/runtime/init-firewall.sh and NET_ADMIN/NET_RAW are available.",
                 ),
             );
-            // Update the in-container enforcement label to reflect reality.
-            // We do this by appending a correcting env var after the container starts.
-            let _ = runner
-                .run(
-                    "docker",
-                    &[
-                        "exec",
-                        container_name,
-                        "sh",
-                        "-c",
-                        "echo JACKIN_NETWORK_ENFORCEMENT=degraded-install-failed \
-                         >> /proc/1/environ 2>/dev/null || true",
-                    ],
-                    None,
-                    &docker_run_opts,
-                )
-                .await;
         }
     }
 
@@ -2624,14 +2608,19 @@ async fn load_role_with(
                 anyhow::bail!("docker grants validation failed:\n{}", all_errors.join("\n"));
             }
         }
-        // Cross-source invariant: user="root" (workspace) + sudo=true (config) can
-        // merge into an invalid combination that per-source validation misses.
-        if effective_grants_early.user == "root" && effective_grants_early.sudo {
-            anyhow::bail!(
-                "docker grants validation failed:\n  \
-                 • [merged] grants.user = \"root\" and grants.sudo = true are mutually exclusive \
-                 across config and workspace sources"
-            );
+        // Validate cross-source invariants on the merged effective grants.
+        // (Per-source validate_grants cannot catch combinations that only emerge
+        // after config + workspace grants are merged together.)
+        {
+            let merged_errors = super::docker_profile::validate_effective_grants(&effective_grants_early);
+            if !merged_errors.is_empty() {
+                let msg = merged_errors
+                    .iter()
+                    .map(|e| format!("  • [merged] {e}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                anyhow::bail!("docker grants validation failed:\n{msg}");
+            }
         }
 
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
@@ -7953,11 +7942,14 @@ min_profile = "standard"
             capabilities_add: vec!["CAP_TOTALLY_FAKE".to_string()],
             ..Default::default()
         });
-        // Workspace: user+sudo conflict.
-        let workspace_name = "test-ws";
-        config.workspaces.insert(workspace_name.to_string(), {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        // Workspace label must match repo_workspace()'s label (repo_dir.display()).
+        let workspace_label = repo_dir.display().to_string();
+        config.workspaces.insert(workspace_label.clone(), {
             let mut ws = crate::workspace::WorkspaceConfig::default();
             ws.workdir = "/workspace".to_string();
+            // Workspace: user+sudo conflict (will appear as [workspace] in merged error).
             ws.docker = Some(crate::workspace::WorkspaceDockerConfig {
                 grants: Some(crate::runtime::docker_profile::DockerGrants {
                     user: Some("root".to_string()),
@@ -7968,7 +7960,6 @@ min_profile = "standard"
             });
             ws
         });
-        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -7976,7 +7967,6 @@ min_profile = "standard"
             String::new(),
             "jk-agent-smith".to_string(),
         ]);
-        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
         std::fs::write(
@@ -7999,10 +7989,15 @@ plugins = []
             &LoadOptions::default(),
         ).await.unwrap_err();
         let msg = err.to_string();
-        // Both errors must appear in the same bail message.
+        // Config error: unknown cap.
         assert!(
-            msg.contains("[config]") || msg.contains("CAP_TOTALLY_FAKE"),
-            "config error should be in message: {msg}"
+            msg.contains("CAP_TOTALLY_FAKE"),
+            "config error (unknown cap) must appear in message: {msg}"
+        );
+        // Workspace error: user+sudo conflict.
+        assert!(
+            msg.contains("[workspace]") || msg.contains("user") || msg.contains("sudo"),
+            "workspace error (user+sudo) must appear in message: {msg}"
         );
     }
 
@@ -8099,69 +8094,20 @@ plugins = []
     async fn run_load_with_profile(
         profile: crate::runtime::docker_profile::DockerSecurityProfile,
     ) -> (String, tempfile::TempDir) {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "jk-agent-smith".to_string(),
-        ]);
-        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
-        std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(
-            repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:0.1-trixie\n",
-        )
-        .unwrap();
-        std::fs::write(
-            repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-"#,
-        )
-        .unwrap();
-        let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let mut config = config;
-        load_role(
-            &paths,
-            &mut config,
-            &selector,
-            &workspace,
-            &docker,
-            &mut runner,
-            &LoadOptions {
-                docker_profile: Some(profile),
-                ..LoadOptions::default()
-            },
-        )
-        .await
-        .unwrap();
-        let run_cmd = runner
-            .recorded
-            .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
-            .unwrap()
-            .clone();
+        let (run_cmd, _, temp) =
+            run_load_core(&[], Some(profile)).await;
         (run_cmd, temp)
     }
 
-    /// Returns `(role_run_cmd, runner, tempdir)` — exposes the full runner so
-    /// callers can inspect DinD commands, not just the role container command.
-    async fn run_load_and_capture_all_commands(
-        entries: &[(&str, &str)],
+    /// Shared scaffolding for all run_load_* test helpers. Returns `(role_run_cmd, runner, tempdir)`.
+    async fn run_load_core(
+        env_entries: &[(&str, &str)],
+        profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
     ) -> (String, FakeRunner, tempfile::TempDir) {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        for (k, v) in entries {
+        for (k, v) in env_entries {
             config.env.insert(
                 (*k).to_string(),
                 crate::operator_env::EnvValue::Plain((*v).to_string()),
@@ -8201,7 +8147,10 @@ plugins = []
             &workspace,
             &docker,
             &mut runner,
-            &LoadOptions::default(),
+            &LoadOptions {
+                docker_profile: profile,
+                ..LoadOptions::default()
+            },
         )
         .await
         .unwrap();
@@ -8214,63 +8163,16 @@ plugins = []
         (run_cmd, runner, temp)
     }
 
+    /// Returns `(role_run_cmd, runner, tempdir)` — exposes the full runner so
+    /// callers can inspect DinD commands, not just the role container command.
+    async fn run_load_and_capture_all_commands(
+        entries: &[(&str, &str)],
+    ) -> (String, FakeRunner, tempfile::TempDir) {
+        run_load_core(entries, None).await
+    }
+
     async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let mut config = AppConfig::load_or_init(&paths).unwrap();
-        for (k, v) in entries {
-            config.env.insert(
-                (*k).to_string(),
-                crate::operator_env::EnvValue::Plain((*v).to_string()),
-            );
-        }
-        let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "jk-agent-smith".to_string(),
-        ]);
-
-        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
-        std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(
-            repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:0.1-trixie\n",
-        )
-        .unwrap();
-        std::fs::write(
-            repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-"#,
-        )
-        .unwrap();
-
-        let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        load_role(
-            &paths,
-            &mut config,
-            &selector,
-            &workspace,
-            &docker,
-            &mut runner,
-            &LoadOptions::default(),
-        )
-        .await
-        .unwrap();
-
-        let run_cmd = runner
-            .recorded
-            .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
-            .unwrap()
-            .clone();
+        let (run_cmd, _, temp) = run_load_core(entries, None).await;
         (run_cmd, temp)
     }
 
