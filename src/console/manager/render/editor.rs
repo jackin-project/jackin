@@ -985,10 +985,11 @@ fn resolve_panel_mode(
         }
         AuthKind::Zai | AuthKind::Minimax => {
             // Env-only provider kinds: mode derived from whether the key is
-            // present in the effective env at this layer.
+            // present in the effective env at this layer. A missing ApiKey env
+            // mapping must fail loudly, not silently alias onto Z.AI's key.
             let env_key = kind
                 .required_env_var(AuthMode::ApiKey)
-                .unwrap_or("ZAI_API_KEY");
+                .expect("env-only provider AuthKind must define an ApiKey env var");
             let key_present = crate::operator_env::lookup_operator_env_raw(
                 cfg,
                 (!role.is_empty()).then_some(role),
@@ -1511,7 +1512,7 @@ fn explicit_workspace_mode(
         AuthKind::Zai | AuthKind::Minimax => {
             let env_key = kind
                 .required_env_var(AuthMode::ApiKey)
-                .unwrap_or("ZAI_API_KEY");
+                .expect("env-only provider AuthKind must define an ApiKey env var");
             if ws.env.contains_key(env_key) {
                 Some(AuthMode::ApiKey)
             } else {

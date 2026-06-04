@@ -1556,9 +1556,10 @@ impl Multiplexer {
         }
     }
 
-    /// Providers selectable for `agent`. An empty vec means only the
-    /// default provider is available and no picker step is needed; a
-    /// non-empty vec always has 2+ entries (enforced by the catalog).
+    /// Providers selectable for `agent`. An empty vec means only the agent's
+    /// native auth is available and no routing is needed. A single-entry vec
+    /// means one alt provider, which the caller routes through directly (no
+    /// picker). 2+ entries drive the provider picker.
     fn providers_for_agent(&self, agent: Option<&str>) -> Vec<jackin_protocol::Provider> {
         jackin_protocol::Provider::available_for(
             agent.unwrap_or_default(),
@@ -5982,6 +5983,36 @@ mod tests {
                 initial_provider: None,
             },
         )
+    }
+
+    #[test]
+    fn token_for_provider_dispatches_each_key() {
+        use jackin_protocol::Provider;
+        let mut mux = test_mux(24, 80);
+        mux.anthropic_api_key = Some("anthropic-tok".to_string());
+        mux.zai_key = Some("zai-tok".to_string());
+        mux.minimax_key = Some("minimax-tok".to_string());
+        mux.kimi_key = Some("kimi-tok".to_string());
+        // Each provider must resolve to its own key — a copy-paste swap here
+        // would route a session through the wrong backend and fail auth.
+        assert_eq!(
+            mux.token_for_provider(Provider::Anthropic),
+            Some("anthropic-tok")
+        );
+        assert_eq!(mux.token_for_provider(Provider::Zai), Some("zai-tok"));
+        assert_eq!(
+            mux.token_for_provider(Provider::Minimax),
+            Some("minimax-tok")
+        );
+        assert_eq!(mux.token_for_provider(Provider::Kimi), Some("kimi-tok"));
+
+        let mut empty = test_mux(24, 80);
+        empty.anthropic_api_key = None;
+        empty.zai_key = None;
+        empty.minimax_key = None;
+        empty.kimi_key = None;
+        assert_eq!(empty.token_for_provider(Provider::Minimax), None);
+        assert_eq!(empty.token_for_provider(Provider::Kimi), None);
     }
 
     fn single_pane_tab_mux() -> Multiplexer {
