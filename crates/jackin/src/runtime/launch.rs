@@ -531,6 +531,7 @@ pub(super) fn capsule_config(
     clippy::too_many_lines,
     reason = "pending extraction — tracked in codebase-readability roadmap"
 )]
+#[tracing::instrument(skip_all, fields(container = %ctx.container_name))]
 pub(super) async fn launch_role_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,

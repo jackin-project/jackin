@@ -100,6 +100,7 @@ pub async fn resolve_supported_agents_for_console(
     clippy::too_many_arguments,
     reason = "pending extraction — tracked in codebase-readability roadmap"
 )]
+#[tracing::instrument(skip_all, fields(role = %selector.name))]
 pub(crate) async fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
