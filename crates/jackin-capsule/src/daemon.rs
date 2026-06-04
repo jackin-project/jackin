@@ -1953,7 +1953,16 @@ impl Multiplexer {
             self.active_tab = self.tabs.len() - 1;
         }
         self.codename_live.insert(codename.clone());
-        let provider = provider_label.map(str::to_string);
+        // Use the explicit provider label when given; otherwise infer the default
+        // provider from the agent slug so the registry always shows a meaningful value.
+        let provider = provider_label
+            .map(str::to_string)
+            .or_else(|| match agent.as_deref() {
+                Some("claude") | Some("amp") => Some("anthropic".to_string()),
+                Some("codex") => Some("openai".to_string()),
+                Some("kimi") => Some("kimi".to_string()),
+                _ => None,
+            });
         let agent_name = agent.clone();
         self.agent_history.push(AgentRecord {
             codename,
