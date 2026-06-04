@@ -55,6 +55,11 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
                            binary_artifact + version_check  → core, config, manifest, docker, diagnostics
         jackin-runtime     runtime + instance + isolation  → core, config, env, manifest, docker, image, diagnostics
         jackin-console     generic console UI + effects-as-data   → core, config, tui, diagnostics
+                           (reusable TUI components: AuthKind, auth-panel form, screens/editor,
+                            screens/settings, agent-choice, provider-choice, mount display, op picker)
+                           NOTE: jackin (Tier 5) provides the root integration layer in
+                           crates/jackin/src/console/ — this is the root-specific wiring (AppConfig
+                           bindings, domain functions, run loop); NOT a duplicate, a complement.
         jackin-launch      launch progress UI                     → protocol, tui
         jackin-capsule     in-container TUI (its own binary)      → core, tui, protocol
         jackin-term        owned terminal model (vte parser + DamageGrid + WireEmitter) → (no workspace deps)
