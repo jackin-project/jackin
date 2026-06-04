@@ -193,3 +193,34 @@ mod tests {
         );
     }
 }
+
+/// Minimal dialog shell: renders backdrop + bordered block + returns the inner area.
+///
+/// This is the structural skeleton that all dialogs share:
+/// 1. Clear the dialog area (hide the background content)  
+/// 2. Render the modal block (focused PHOSPHOR_GREEN border + title)
+/// 3. Return the inner area for the caller to render content
+///
+/// Callers use `dialog_inner_chunks(inner, content_rows)` to lay out the
+/// canonical five slots within the returned inner area.
+#[must_use]
+pub fn render_dialog_shell<'a>(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    title: Option<&'a str>,
+) -> ratatui::layout::Rect {
+    use crate::components::panel::{Panel, PanelFocus, modal_block};
+    use ratatui::widgets::Widget;
+
+    ratatui::widgets::Clear.render(area, frame.buffer_mut());
+
+    let block = if let Some(t) = title {
+        Panel::new().title(t).focus(PanelFocus::Focused).block()
+    } else {
+        modal_block()
+    };
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    inner
+}
