@@ -2,7 +2,7 @@
 title: "Terminal Emulation Crate (jackin-term)"
 ---
 
-**Status**: open — research and design proposal. This item is a **verification plan**, not a build commitment. Its job is to gather the real numbers and facts that decide one binary question: *do we implement a jackin'-owned terminal-model crate, or do we drop the idea and stay on `vt100`?* Nothing here is built until the verification below returns "yes".
+**Status**: open — **build decided** (operator directive, June 2026). The earlier framing below treated this as a cost-gated verification ("only build if a perf wall is proven"). The operator has since set the gate differently: **cost, time, and maintenance are explicitly not constraints; the goal is quality — speed, stability, clarity — and if owning the layer best serves that goal, we build it.** The decision is therefore: **build `jackin-term`, owning the whole terminal model except the parser (depend on `vte`), behind a differential test harness.** The experiments below are retained but **demoted from go/no-go gate to validation + optimization guidance** — they prove the built crate beats `vt100` and point the optimizer at the real walls; they do not grant permission to start. The executable plan lives in the [post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 45), which depends on this item.
 
 ## TL;DR
 
@@ -72,6 +72,79 @@ Independent of maintenance, `vt100`'s implementation has structural costs in the
 - Its grid is `Vec<Row>` of fat cells; scroll rotates rows; scrollback is a separate concern. Fine, but not the cache-friendly ring buffer the fast engines use.
 
 Whether any of this *matters* for the capsule's actual workload is **unknown and unmeasured** — which is the central thing the verification plan exists to settle.
+
+## Usage-grounded analysis (deep dive — corrects the framing above)
+
+A pass over what the capsule **actually** calls from `vt100` changes the conclusion materially. The single most important fact:
+
+> **The capsule does not use `vt100`'s emit stage at all.** `rg "contents_diff|contents_formatted" crates/jackin-capsule/src` returns **nothing**. The "diff two full `Screen`s and serialize to escapes" path — the thing the survey calls `vt100`'s defining strength and the reason GPU engines "don't fit" — is **dead code for us**. We replaced it long ago with our own snapshot + diff + emit in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />.
+
+### What we genuinely use `vt100` for (the real coupling surface)
+
+A replacement must satisfy exactly this, and nothing more:
+
+1. **Parser** — `Parser::process(bytes)` (a `vte`-class state machine: UTF-8, wide chars, CSI/OSC/DEC modes).
+2. **A readable cell grid** — `Screen::cell(row, col)` → `Cell::contents()`, `is_wide()`, `is_wide_continuation()`, `has_contents()`, fg/bg/attrs (`render.rs::snapshot_screen_row`, `cell_attrs`).
+3. **Geometry + modes** — `Screen::size()`, `alternate_screen()`, `screen_mut().set_size()`.
+4. **Scrollback** — `screen_mut().set_scrollback(n)` + a filled count; the capsule layers its own `scrollback_offset` / inline-scrollback bookkeeping on top (<RepoFile path="crates/jackin-capsule/src/session.rs" />).
+5. **`Callbacks`** — OSC/title/clipboard/`unhandled_csi` passthrough + the fork's `clear_scrollback()`.
+6. **Mouse-mode enums** — `vt100::MouseProtocolMode` / `MouseProtocolEncoding` (<RepoFile path="crates/jackin-capsule/src/tui/input.rs" />).
+
+That is a **grid + parser + passthrough** dependency, not an emit dependency.
+
+### Where our time and allocations actually go (the true hot path)
+
+Every render tick (33 ms, `RENDER_TICK_INTERVAL`) the focused pane runs:
+
+- `pane_snapshot` → `snapshot_screen_row` for **every row**, calling `screen.cell(r, c)` across the **whole rect** and building a fresh `Vec<RowSnapshot>` — **O(rows × cols) per frame** even on a partial redraw, because `PaneBodyCache::render_partial` rebuilds the full snapshot before diffing it (<RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> ~line 211).
+- **Per non-blank cell: `cell.contents().to_string()`** — a heap `String` allocation per cell, per frame; blanks allocate via `" ".repeat(width)`. A tall pane = thousands of `String`s allocated and dropped every 33 ms even when three lines changed.
+- Then an O(grid) row-by-row diff against the cached snapshot, and finally an **O(Δ) emit** (`render_snapshot_rows`).
+
+So the real cost is **per-cell snapshot rebuild + per-cell `String` alloc + full-grid diff**, recomputed from scratch each frame. `vt100`'s internal full-screen compare is *not* in the path (we never call it); the redundant full-grid work is in **our** `render.rs`, because `vt100` exposes **no damage information**, forcing us to re-read and re-diff the entire grid to discover what changed.
+
+### What this does to the build-vs-buy reasoning
+
+- **The roadmap's "Justification B win 1" (O(grid) → O(Δ) present) is real, but the O(grid) cost is in our snapshot/diff layer, not `vt100`'s emit.** The lever is **source-recorded damage** (mark cells dirty as `Parser::process` mutates them) so the renderer walks only dirty spans and never rebuilds the full snapshot. This is the single biggest, most certain win, and it is an architecture change regardless of which crate backs the grid.
+- **"Win 2" (zero per-frame alloc) is concrete and visible right now:** the per-cell `cell.contents().to_string()` is the alloc storm. A packed cell (interned grapheme + style id) read straight into a reused emit buffer removes it.
+- **The survey disqualifies Alacritty/Rio for "having no diff-to-escape emit" — but that disqualifier does not apply to us, because we do not use `vt100`'s emit either.** We already own the emit (`render_snapshot_rows`). What we actually need from a grid is the two things `vt100` lacks and **`alacritty_terminal` has**: **line/cell-level damage tracking** and a **packed, cache-friendly cell** in a ring-buffer grid. That reframes the candidate set: adopting `alacritty_terminal` purely as the **grid + damage source** (keeping our own emit and passthrough) is a legitimate "buy" path the original survey dismissed for the wrong reason.
+- **Our `RowSnapshot` + `PaneBodyCache` layer is itself a hand-rolled damage tracker** — a worse one, because it reconstructs damage by full re-read instead of recording it at mutation time. Whatever we adopt or build, that layer is what gets absorbed/deleted.
+
+### Refined candidate framing (grounded in our usage)
+
+| Need (from the coupling surface) | `vt100` (fork) | `alacritty_terminal` | `termwiz` | Own `jackin-term` |
+| --- | --- | --- | --- | --- |
+| `vte`-class parser | ✓ (own SM) | ✓ (`vte`) | ✓ (own) | ✓ (depend on `vte`) |
+| Readable cell grid | ✓ | ✓ | ✓ | ✓ |
+| **Damage exposed to consumer** | **✗ (the real gap)** | **✓ line-level** | ✓ (`Change`) | ✓ source-recorded |
+| Packed / low-alloc cells | ✗ (`String` per cell) | ✓ | partial | ✓ goal |
+| OSC/CSI passthrough hooks we need | ✓ (forked) | weaker / GPU-shaped | ✓ | ✓ first-class |
+| Diff-to-escape emit | ✓ (**unused by us**) | ✗ (**don't need**) | ✓ (**don't need**) | n/a (ours) |
+| Stable public API | fork-pinned | **no stability guarantee** | published (`wezterm-term` not) | ours |
+
+The honest reading: the **emit row is irrelevant** to our decision; the **damage + packed-cell rows** are what matter, and there `vt100` is the weakest option and `alacritty_terminal` is unexpectedly strong. The verification must therefore add an explicit *"adopt `alacritty_terminal` as grid+damage, keep our emit"* spike alongside the `termwiz` buy-gate — the original plan omitted it.
+
+### Recommended implementation shape (if "build" wins)
+
+The build is **smaller than the survey implies**, because we keep our emit and only replace the grid+damage:
+
+```text
+vte (depend)                       ← parse: bytes → Perform events
+   ▼
+DamageGrid (build)                 ← packed Cell (style id + interned grapheme),
+   │  - dirty set recorded AS           ring-buffer rows, scrollback in-store;
+   │    Perform mutates the grid        record dirty (row, col-span) at write time
+   ▼
+PassthroughEvents (build)          ← typed: title/clipboard/kitty/focus/OSC7/
+   │                                   csi/scrollback (supersede vt100 Callbacks)
+   ▼
+[ OUR existing emit, kept ]        ← render_snapshot_rows, now fed dirty spans
+                                      instead of a full re-read; erase-to-EOL fix
+                                      from Defect 44 lands here too
+```
+
+The capsule-facing API nouns are already known from the coupling surface: `process(bytes)`, `cell(r,c)`, `size()`/`set_size()`, `alternate_screen()`, `set_scrollback()`, a `dirty_spans()` iterator (the new capability), and a typed passthrough stream. Building to that surface is a drop-in for `session.rs` + a deletion of most of `render.rs`'s snapshot/cache machinery.
+
+**Net:** the concept is *more* attractive than the original page argued, but for a *different reason* — not "vt100's emit is slow" (we don't use it) but "vt100 hides damage and allocates per cell, forcing an O(grid)+alloc-storm rebuild every frame in our code." And the cheapest route to test the upside may be adopting `alacritty_terminal`'s grid, not building from scratch. Everything below stays gated on the experiments; this section only sharpens *what to measure and which candidate to spike*.
 
 ## The concept we want to test
 
@@ -193,6 +266,30 @@ This is the heart of the proposal. `jackin-term` is not "yet another terminal em
 | **`avt`** (asciinema) | Full-screen `dump()` **serialization** of a screen to text/escapes. | A snapshot/record primitive that feeds the [terminal observation](/reference/roadmap/terminal-observation-automation/) item. | **Re-implement the small piece** when that surface needs it. |
 | **Rio (`copa`)** | **SIMD UTF-8 validation** with runtime CPU-feature detection (`simdutf8`). | Parse-throughput headroom *if* profiling ever shows a parse wall. | **Optional borrow** (likely unnecessary; `vte` already handles UTF-8). |
 
+### Store / borrow / concept — the full survey (build-decided framing)
+
+Now that the decision is **build**, every project is classified by **how** we take from it, into three precise buckets:
+
+- **DEPEND** — take the actual Rust crate as a dependency, unchanged. Reserved for the canonical, stable, correct pieces it would be malpractice to rewrite.
+- **STORE** — re-implement a **data-structure / memory model** in Rust inside `jackin-term`, with attribution. These are the "how the grid is laid out in memory" ideas.
+- **BORROW** — re-implement an **algorithm / technique / discipline** in Rust. These are the "how the grid behaves" ideas.
+- **REFERENCE** — never code from it directly; use it as a **correctness oracle or benchmark target** (differential tests, conformance, "are we as fast as X").
+
+| Project | Lang | Bucket | The specific thing we take | Why it serves the quality goal |
+| --- | --- | --- | --- | --- |
+| **`vte`** (Alacritty) | Rust | **DEPEND** | The Williams-state-machine parser + `Perform` trait. The *only* core dependency. | Byte-level VT correctness is a solved, canonical, multi-maintained problem. Rewriting it adds bug surface with zero quality upside and violates the "don't hand-roll parsers" rule. Stability *comes from* depending here. |
+| **Ghostty** (`libghostty`) | Zig (MIT) | **STORE** | `PageList`: pooled arena pages (doubly-linked, drawn from a pre-heated `MemoryPool`); `RefCountedSet` style/hyperlink interning; grapheme side-map; `OffsetBuf` offset-addressing; serial+pin invalidation. | Best-in-field memory economy: near-zero per-cell allocation, cheap huge scrollback, relocatable pages that make a multi-session arena real and session teardown O(1). This is the answer to our per-cell `String` alloc storm. |
+| **Alacritty** (`alacritty_terminal`) | Rust | **STORE** + **REFERENCE** | The ring-buffer `Storage`/`Grid`: O(1) scroll via row rotation, packed cache-friendly `Cell`, **line-level damage flags**. | A simpler, proven packing if Ghostty's pages are over-engineered for our pane sizes. Also the **reference grid** to differential-test against — it's the closest-correct Rust grid with damage. |
+| **`vt100`** (doy) | Rust | **BORROW** + **REFERENCE** | The **re-emit idea** (`contents_diff`/`contents_formatted`: minimal escape bytes between two states) and the `Callbacks` interception shape. | Proof the diff-to-escape approach is right; the *baseline our `WireDiff` must beat*. We re-implement it **damage-driven** (not full-screen compare) and use stock `vt100` as the **differential oracle** for grid correctness during the parity phase. |
+| **Zellij** (`OutputBuffer`) | Rust | **BORROW** + **REFERENCE** | The **damage-tracked ANSI emit discipline**: record dirty cells/attrs at mutation, emit ANSI only for what changed since the last character. Aram Drevekenin's [perf write-up](https://poor.dev/blog/performance/) is a field report on this exact stage. | Independent production proof that `vte` + own-grid + damage-emit is fast and correct — *our exact architecture*. The closest prior art; the best reference target for both design and benchmarks. |
+| **libvterm** (LeoNerd) | C | **BORROW** + **REFERENCE** | The **damage-callback discipline** and an exhaustive **VT-coverage checklist** (DEC private modes, mouse encodings, query/report responses, scroll regions). | The correctness spec for "what state and passthrough must be first-class so nothing silently drops." A 15-year-maintained model neovim/emacs-vterm embed — the conformance bar. Never linked (non-Rust). |
+| **`termwiz`** / `wezterm-term` | Rust | **REFERENCE** | The `Surface`/`Change` diff-emit **API ergonomics** and emit completeness. | A "how should a Rust diff-emit API *feel*" reference, and a secondary differential oracle. Not a dependency (`wezterm-term` unpublished; heavy tree). |
+| **`avt`** (asciinema) | Rust | **BORROW** | Full-screen `dump()` serialization of a grid to text/escapes. | The snapshot/record primitive for the [terminal observation](/reference/roadmap/terminal-observation-automation/) item — a small, self-contained piece we re-implement when that surface needs it. |
+| **Rio** (`copa`) | Rust | **BORROW (optional)** | SIMD UTF-8 validation with runtime CPU-feature detection. | Parse-throughput headroom *only if* profiling ever shows a parse wall (unlikely — `vte` already handles UTF-8). Held in reserve. |
+| **tmux** | C | **REFERENCE** | Battle-tested grid + redraw heuristics; decades of edge-case handling. | Behavioral oracle for "what does a real multiplexer do here" (resize, alt-screen, scroll regions). Never linked. |
+
+**The concept that emerges, stated plainly:** `jackin-term` is **`vte` (depend) + a Ghostty-memory-model damage grid (store) + Zellij/libvterm damage discipline (borrow) + a `vt100`-idea-but-damage-driven `WireDiff` emit (borrow), validated against `vt100`/Alacritty/`termwiz` as oracles (reference).** It is not "a new terminal emulator" — it is the **one missing reusable piece** (minimal-byte re-emission of a PTY screen to a host terminal, damage-driven, zero-alloc) assembled from the single best answer each project already proved, re-implemented in Rust so the whole pipeline is one coherent, owned, harness-guarded unit. Nobody ships this as a crate; that gap is the crate's reason to exist.
+
 ### Prior art for the use case — and why the niche is still open
 
 We are explicitly not the first to need this. The *use case* — a terminal multiplexer that re-emits a pane to a host terminal — has three notable solvers:
@@ -301,6 +398,8 @@ Per the pure-Rust constraint, the **only** adopt-instead-of-build candidate with
 If `termwiz` does not clear the gate, the choice is build vs. drop, decided by the matrix below — and "build" means a pure-Rust `jackin-term` that re-implements the best borrowed ideas (Ghostty's memory model, libvterm's damage discipline, vt100's emit) natively, with no foreign binding.
 
 ## The decision matrix
+
+> **Superseded by the operator's build directive (June 2026).** The matrix below was written for a **cost-gated** decision (build only if a perf wall is proven). The operator has changed the gate: quality is the goal, cost is not a constraint, and owning the layer best serves quality + stability — so the chosen action is **Build `jackin-term`** regardless of which perf-wall row the experiments land on. The matrix is kept as the record of *why each alternative loses on its own terms*: `termwiz` stays a reference (heavy tree, `wezterm-term` unpublished), staying on `vt100` loses on the dead-fork + hidden-damage + per-cell-alloc grounds, and "drop" is off the table because the resize-ghost bug class (Defect 44) is itself a structural argument for one owned damage grid. Read the rows as "here is what we are *not* doing, and why," not as an open question.
 
 After the experiments, the action is determined — not argued:
 
