@@ -440,7 +440,8 @@ async fn published_image_is_stale(
         .is_some_and(|stored| stored != dockerfile_version)
 }
 
-#[expect(clippy::type_complexity)]
+// Phase 2: collapsed from 5-arm match to AgentRuntime adapter dispatch.
+// Mirrors the jackin-runtime version (crates/jackin-runtime/src/runtime/image.rs).
 async fn extract_agent_version(
     paths: &JackinPaths,
     image: &str,
@@ -448,37 +449,7 @@ async fn extract_agent_version(
     debug: bool,
     runner: &mut impl CommandRunner,
 ) {
-    let (display, parse, store): (
-        &str,
-        for<'a> fn(&'a str) -> Option<&'a str>,
-        fn(&JackinPaths, &str, &str),
-    ) = match agent {
-        crate::agent::Agent::Claude => (
-            "Claude",
-            version_check::parse_claude_version,
-            version_check::store_image_version,
-        ),
-        crate::agent::Agent::Opencode => (
-            "OpenCode",
-            version_check::parse_opencode_version,
-            version_check::store_opencode_version,
-        ),
-        crate::agent::Agent::Codex => (
-            "Codex",
-            version_check::parse_codex_version,
-            version_check::store_codex_version,
-        ),
-        crate::agent::Agent::Amp => (
-            "Amp",
-            version_check::parse_amp_version,
-            version_check::store_amp_version,
-        ),
-        crate::agent::Agent::Kimi => (
-            "Kimi",
-            version_check::parse_kimi_version,
-            version_check::store_kimi_version,
-        ),
-    };
+    let runtime = agent.runtime();
     let slug = agent.slug();
     let Ok(raw) = runner
         .capture(
@@ -491,7 +462,10 @@ async fn extract_agent_version(
         if debug {
             crate::tui::emit_debug_line(
                 "image",
-                &format!("could not probe {display} version from {image}; version check skipped"),
+                &format!(
+                    "could not probe {} version from {image}; version check skipped",
+                    runtime.label()
+                ),
             );
         }
         return;
@@ -501,10 +475,10 @@ async fn extract_agent_version(
         return;
     }
     if debug {
-        crate::tui::emit_debug_line("image", &format!("{display} {version}"));
+        crate::tui::emit_debug_line("image", &format!("{} {version}", runtime.label()));
     }
-    if let Some(semver) = parse(version) {
-        store(paths, image, semver);
+    if let Some(semver) = runtime.parse_version(version) {
+        version_check::store_version(paths, agent, image, semver);
     } else if debug {
         crate::tui::emit_debug_line(
             "image",
