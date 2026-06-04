@@ -651,7 +651,7 @@ The program is done when:
 - [ ] If it is a diff/stale-cell issue, add `cdebug!` telemetry to `SocketBackend` capturing per-frame changed-cell ranges and the dialog rect, reproduce, and localize where stale cells originate (composes with Defects 26/27 — same capsule render-correctness cluster).
 - [x] Ensure dialog/picker renders fully cover their rect each frame (clear the dialog interior before drawing) so a reflow cannot leave stale text behind it. Confirmed: render_capsule_raw_dialog_overlay calls fill_screen() with DIALOG_BACKDROP before rendering the dialog, clearing all cells including the dialog interior.
 - [x] Verify the fix against filter reflow (typing in the picker filter changes row content/positions) — the most likely trigger of stale cells. Verified: the Defect 28 fix (bare section labels) is deterministic — filter reflow changes which agents appear but the section headers always use the bare label; fill_screen() clears the entire screen before each dialog redraw prevents stale cells.
-- [ ] Add a regression test: rendering the agent picker (with and without a filter) produces a buffer whose section rows contain each label exactly once.
+- [x] Add a regression test: rendering the agent picker (with and without a filter) produces a buffer whose section rows contain each label exactly once. Added agent_picker_section_labels_are_bare_not_dash_padded test in dialog/tests.rs.
 
 ---
 
