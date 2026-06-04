@@ -297,11 +297,9 @@ This needs brainstorming on UX. Key questions to research:
 - Open `docs/content/docs/reference/errors/` with one page per code.
 - Snapshot test friendly output.
 
-### Phase 5 — First-run wizard
+### Phase 5 — First-run wizard (deferred — needs design)
 
-- Detect first-run inside the console entry point.
-- Design the rich TUI wizard flow (brainstorming + research).
-- Implement using `dialoguer` or ratatui-based prompts.
+Deferred. `jackin console` already provides a clear flow for creating a workspace via its interactive picker; a separate wizard would duplicate that path without a clear advantage. The open questions below (auth setup, monorepo support, team config sharing) must be answered before any implementation makes sense. Do not implement this phase until the UX flow is fully designed.
 
 ## Open Questions
 

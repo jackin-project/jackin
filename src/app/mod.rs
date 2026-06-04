@@ -87,7 +87,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
-    let is_first_run = !paths.config_file.exists();
     let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
@@ -196,15 +195,6 @@ pub async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Console(ConsoleArgs {}) => {
-            // First-run wizard: no existing config + interactive TTY.
-            if is_first_run && {
-                use std::io::IsTerminal;
-                std::io::stdout().is_terminal()
-            } {
-                crate::cli::wizard::run(&paths)?;
-                // Re-load the config the wizard wrote before proceeding.
-                config = AppConfig::load_or_init(&paths)?;
-            }
             let cwd = std::env::current_dir()?;
             let mut in_place = ConsoleInPlaceHandler {
                 paths: paths.clone(),

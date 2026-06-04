@@ -26,7 +26,6 @@ pub mod logs;
 pub mod prune;
 pub mod role;
 pub mod status;
-pub mod wizard;
 pub mod workspace;
 
 pub use config::{
