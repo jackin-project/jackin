@@ -26,8 +26,8 @@ agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
 [docker]
 min_profile = "standard"          # refuse to run under locked/hardened
-requires_inner_engine = true      # needs DinD (default; omit for same result)
-network_allow = ["crates.io"]     # extra hosts for allowlist network mode
+# dind absent = DinD controlled by operator profile (default)
+allowed_hosts = ["crates.io"]      # extra hosts for allowlist network mode
 
 [identity]
 name = "The Architect"
@@ -303,9 +303,8 @@ Declare Docker security requirements for this role. All fields are optional — 
 | Field | Type | Description |
 |---|---|---|
 | `min_profile` | string | Minimum security profile this role requires. Launch fails if the active profile is below this value. Valid values: `locked`, `hardened`, `standard`, `compat`. |
-| `requires_inner_engine` | bool | `false` = role declares it does not need Docker-in-Docker. jackin' skips the DinD sidecar even under profiles that would normally enable it (e.g. `standard`). Omit or set `true` to leave DinD controlled by the operator profile. |
-| `dind` | string | Minimum DinD tier the role requires when it needs inner Docker: `none`, `rootless`, or `privileged`. Only meaningful when `requires_inner_engine` is omitted or `true`. |
-| `network_allow` | array of strings | Extra hosts/IPs merged into `JACKIN_ALLOWED_HOSTS` when the operator's network grant is `allowlist`. Each entry is a domain, IPv4/IPv6 CIDR, wildcard subdomain (`*.example.com`), or `domain:port`. |
+| `dind` | string | DinD tier this role needs: `"none"` = skip DinD entirely (even under `standard`/`compat`), `"rootless"` = requires rootless DinD, `"privileged"` = requires privileged DinD. Omit = DinD controlled by operator profile. |
+| `allowed_hosts` | array of strings | Extra hosts/IPs merged into `JACKIN_ALLOWED_HOSTS` when the operator's network grant is `allowlist`. Same format as `[docker.grants] allowed_hosts` in config. Each entry is a domain, IPv4/IPv6 CIDR, wildcard subdomain (`*.example.com`), or `domain:port`. |
 | `capabilities_add` | array of strings | Linux capabilities to add beyond the profile's base set (`--cap-add`). Each entry is a cap name without `CAP_` prefix, case-insensitive (e.g. `"NET_RAW"`, `"SYS_PTRACE"`). Validated against the full list at launch — unknown names fail loudly. |
 
 **Profile ordering (ascending capability):** `locked < hardened < standard < compat`. `min_profile = "standard"` means the role refuses to run under `locked` or `hardened`.
@@ -320,7 +319,7 @@ dockerfile = "Dockerfile"
 min_profile = "standard"
 dind = "rootless"
 capabilities_add = ["SYS_PTRACE"]
-network_allow = ["registry.npmjs.org", "crates.io", "static.crates.io"]
+allowed_hosts = ["registry.npmjs.org", "crates.io", "static.crates.io"]
 ```
 
 ```toml title="jackin.role.toml — pure read-only analysis role"
@@ -329,7 +328,7 @@ dockerfile = "Dockerfile"
 
 [docker]
 min_profile = "locked"
-requires_inner_engine = false
+dind = "none"  # skip DinD sidecar
 ```
 
 ```toml title="jackin.role.toml — role that doesn't need DinD under any profile"
@@ -337,7 +336,7 @@ version = "v1alpha5"
 dockerfile = "Dockerfile"
 
 [docker]
-requires_inner_engine = false
+dind = "none"  # skip DinD sidecar
 ```
 
 **Validation errors at launch:**

@@ -1255,7 +1255,7 @@ async fn launch_role_runtime(
 
     if grants.network == super::docker_profile::NetworkGrant::Allowlist {
         // Assemble JACKIN_ALLOWED_HOSTS from: auto agent endpoints + operator
-        // config allowed_hosts + role network_allow.
+        // config allowed_hosts + role allowed_hosts (both named consistently).
         let mut allowed: Vec<String> = Vec::new();
 
         // Auto agent endpoints.
@@ -2451,10 +2451,10 @@ async fn load_role_with(
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);
             }
         }
-        // Apply role-level network_allow and capabilities_add from manifest [docker].
+        // Apply role-level allowed_hosts and capabilities_add from manifest [docker].
         if let Some(ref docker_cfg) = validated_repo.manifest.docker {
-            if !docker_cfg.network_allow.is_empty() {
-                for host in &docker_cfg.network_allow {
+            if !docker_cfg.allowed_hosts.is_empty() {
+                for host in &docker_cfg.allowed_hosts {
                     if !effective_grants_early.allowed_hosts.contains(host) {
                         effective_grants_early.allowed_hosts.push(host.clone());
                     }
@@ -2468,22 +2468,21 @@ async fn load_role_with(
                 effective_grants_early =
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);
             }
-        }
-
-        // `requires_inner_engine = false`: role declares it does not need DinD.
-        // Under hardened/locked (where DinD is already None by default) this is
-        // a no-op. Under standard/compat (where DinD would normally be enabled),
-        // this overrides the profile and disables DinD for this role.
-        if validated_repo.manifest.docker.as_ref().and_then(|d| d.requires_inner_engine) == Some(false)
-            && effective_grants_early.dind != super::docker_profile::DindGrant::None
-        {
-            crate::debug_log!(
-                "launch",
-                "role declares requires_inner_engine=false; disabling DinD \
-                 (was {:?})",
-                effective_grants_early.dind,
-            );
-            effective_grants_early.dind = super::docker_profile::DindGrant::None;
+            // Manifest dind = "none": role explicitly opts out of DinD.
+            // Unlike grants (which only raise), a role declaring dind = "none"
+            // always disables the sidecar — it knows it doesn't need inner Docker.
+            // Under hardened/locked (already None by default) this is a no-op.
+            // Under standard/compat (DinD normally enabled) this skips the sidecar.
+            if docker_cfg.dind == Some(super::docker_profile::DindGrant::None)
+                && effective_grants_early.dind != super::docker_profile::DindGrant::None
+            {
+                crate::debug_log!(
+                    "launch",
+                    "role declares dind=none; disabling DinD (was {:?})",
+                    effective_grants_early.dind,
+                );
+                effective_grants_early.dind = super::docker_profile::DindGrant::None;
+            }
         }
 
         // Lock dind_started AFTER role manifest adjustments.

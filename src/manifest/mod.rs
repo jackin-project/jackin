@@ -67,22 +67,20 @@ pub struct ManifestDockerConfig {
     /// a clear conflict message. Absent = accepts any profile.
     #[serde(default)]
     pub min_profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
-    /// Whether this role requires a Docker-in-Docker engine inside the sandbox.
-    /// `false` = role declares it does not need DinD; jackin' skips the sidecar
-    /// under `hardened`/`locked` profiles (and any profile where DinD is not
-    /// already enabled by operator grants). `true` or absent = DinD controlled
-    /// by profile + operator grants.
-    #[serde(default)]
-    pub requires_inner_engine: Option<bool>,
-    /// DinD tier the role requires when it needs inner Docker.
-    /// Absent = DinD tier controlled entirely by profile + operator grants.
+    /// DinD tier this role needs:
+    /// - `"none"` — role explicitly opts out of DinD; jackin' skips the sidecar
+    ///   even under profiles that would normally enable it (e.g. `standard`).
+    /// - `"rootless"` — role requires at least rootless DinD.
+    /// - `"privileged"` — role requires privileged DinD.
+    /// Absent = DinD controlled entirely by profile + operator grants.
     #[serde(default)]
     pub dind: Option<crate::runtime::docker_profile::DindGrant>,
-    /// Role-level allowed hosts merged into `JACKIN_ALLOWED_HOSTS` when
-    /// `network = "allowlist"` is active. Each entry is a domain, CIDR,
+    /// Extra allowed hosts merged into `JACKIN_ALLOWED_HOSTS` when
+    /// `network = "allowlist"` is active. Same format as `[docker.grants]
+    /// allowed_hosts` in config/workspace. Each entry is a domain, CIDR,
     /// wildcard subdomain, or `domain:port`.
     #[serde(default)]
-    pub network_allow: Vec<String>,
+    pub allowed_hosts: Vec<String>,
     /// Linux capabilities to add beyond the profile's base set. Each name
     /// omits the `CAP_` prefix and is case-insensitive. Validated against
     /// `VALID_CAPABILITIES` at launch time.

@@ -189,7 +189,7 @@ Impact: makes the current security posture auditable. The certs already die with
 
 Impact: the highest-value item in the entire contract for roles that genuinely do not need Docker. A code review role, a documentation agent, or a read-only analysis role does not need DinD. Skipping the sidecar eliminates the largest blast-radius component: the privileged container that can reach the host kernel on Linux. Without DinD, capability drops on the role container become genuinely meaningful rather than circumventable.
 
-**Who does this help?** Role authors who build purpose-specific restricted roles. The two current built-in roles (`agent-smith` and `the-architect`) both need DinD for Testcontainers, Docker Compose, and inner build workflows. A future `reviewer` or `researcher` role that only reads code and calls the model API does not. The `requires_inner_engine = false` manifest field is what enables that use case.
+**Who does this help?** Role authors who build purpose-specific restricted roles. The two current built-in roles (`agent-smith` and `the-architect`) both need DinD for Testcontainers, Docker Compose, and inner build workflows. A future `reviewer` or `researcher` role that only reads code and calls the model API does not. The `dind = "none"` manifest field is what enables that use case.
 
 **`no-new-privileges` — Phase 2, blocked by sudo audit**
 
@@ -215,7 +215,7 @@ The `locked` profile as designed (no DinD, no writable mounts, read-only root, n
 
 In practice: `locked` is too restrictive for any current built-in role and for most user-authored roles today. Its value is as a future target for specialized read-only roles. Document it clearly so role authors understand what they're designing toward.
 
-**The honest one-sentence summary for users:** The most impactful near-term items are (1) resource limits on `standard`, and (2) `requires_inner_engine = false` enabling DinD-free roles under `hardened`. Everything else is either blocked by the sudo audit, only relevant for purpose-built restricted roles, or largely theater while DinD remains privileged. The hardening contract makes sense structurally but its Phase 2 deliverable (resource limits) is what most operators will actually experience; Phases 3–5 are for specialized roles.
+**The honest one-sentence summary for users:** The most impactful near-term items are (1) resource limits on `standard`, and (2) `dind = "none"` enabling DinD-free roles under `hardened`. Everything else is either blocked by the sudo audit, only relevant for purpose-built restricted roles, or largely theater while DinD remains privileged. The hardening contract makes sense structurally but its Phase 2 deliverable (resource limits) is what most operators will actually experience; Phases 3–5 are for specialized roles.
 
 ## Capability Taxonomy
 
