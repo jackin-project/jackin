@@ -262,12 +262,17 @@ async fn read_payload_lazy(
 }
 
 /// Handle a one-shot control request and close the connection.
+///
+/// State-mutating messages (`ReportAgentState`, `HeartbeatAgentAuthority`,
+/// `ClearAgentAuthority`) are forwarded through `control_msg_tx` to the
+/// daemon's main event loop for processing; no reply is written for those.
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
     sessions: Vec<SessionInfo>,
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     active_tab: u32,
+    control_msg_tx: mpsc::UnboundedSender<ClientMsg>,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -276,6 +281,17 @@ pub async fn handle_control_request(
             return;
         }
     };
+    // State-mutating messages are forwarded to the daemon's main event loop
+    // rather than handled inline; they need no reply.
+    if matches!(
+        msg,
+        ClientMsg::ReportAgentState { .. }
+            | ClientMsg::HeartbeatAgentAuthority { .. }
+            | ClientMsg::ClearAgentAuthority { .. }
+    ) {
+        let _ = control_msg_tx.send(msg);
+        return;
+    }
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
@@ -285,6 +301,50 @@ pub async fn handle_control_request(
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
             ServerMsg::Unknown
         }
+        ClientMsg::WaitSessionStatus {
+            session_id,
+            ref target_statuses,
+            ..
+        } => {
+            // One-shot synchronous check — returns immediately against the
+            // current snapshot. Full blocking-wait semantics (subscription)
+            // are a future phase; this satisfies the "returns immediately if
+            // already satisfied" criterion.
+            let current = sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .map(|s| s.state.label().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let outcome = if sessions.iter().any(|s| s.id == session_id) {
+                if target_statuses.contains(&current) {
+                    "satisfied"
+                } else {
+                    "timeout"
+                }
+            } else {
+                "not_found"
+            };
+            crate::cdebug!(
+                "session {session_id}: WaitSessionStatus outcome={outcome} effective={current}"
+            );
+            ServerMsg::SessionStatusResult {
+                session_id,
+                effective: current,
+                revision: 0,
+                outcome: outcome.to_string(),
+            }
+        }
+        ClientMsg::SessionReadVisible { session_id, .. } => {
+            // Visible text read is not yet implemented; return empty lines.
+            ServerMsg::SessionVisibleText {
+                session_id,
+                lines: vec![],
+            }
+        }
+        _ => {
+            crate::clog!("control: unhandled ClientMsg variant in one-shot handler");
+            ServerMsg::Unknown
+        }
     };
     // Bound the reply write so a peer that disappeared between request
     // decode and reply write cannot wedge this task forever holding the
@@ -292,8 +352,8 @@ pub async fn handle_control_request(
     // socket write; anything slower is the peer being unresponsive.
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s"),
     }
 }
 

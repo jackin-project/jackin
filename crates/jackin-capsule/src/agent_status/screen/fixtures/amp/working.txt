@@ -1,0 +1,2 @@
+  Running tool: bash
+  esc to cancel

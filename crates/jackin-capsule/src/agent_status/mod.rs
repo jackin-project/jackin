@@ -28,8 +28,25 @@
 //! 3. No changes to the state machine, `daemon.rs`, or `session.rs`.
 
 pub mod detectors;
+pub mod hook_installer;
+pub mod process;
+pub mod sequence;
 
 use crate::protocol::AgentState;
+
+/// Authoritative state report from a trusted in-container reporter.
+/// Stored per session; cleared on process exit or explicit `ClearAgentAuthority`.
+#[derive(Debug, Clone)]
+pub struct HookAuthority {
+    pub source_id: String,
+    pub agent_label: String,
+    pub raw_state: String,
+    pub seq: u64,
+    pub ts_ns: u64,
+    pub message: Option<String>,
+    /// Timestamp when this authority was last updated or heartbeated.
+    pub last_seen: std::time::Instant,
+}
 
 /// A raw observation from one detection source. This is what detectors,
 /// OSC parsers, hook events, and process probes produce. The state machine

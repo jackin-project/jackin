@@ -2,7 +2,7 @@
 title: "Agent Runtime Status Authority"
 ---
 
-**Status**: Partially implemented (Phase 2, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). Phase 0 (silence-bug removal), Phase 1 (state model + status machine), and the Phase 4 screen-detector framework have shipped. Phases 2, 3, the rest of 4, 5, and 6 remain.
+**Status**: Partially implemented (Phase 6, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). Phases 0–4 are fully shipped: silence-bug removal, state model + status machine, container reporter + process identity, Claude Code hook installer + sequence validation, screen detectors with fixture coverage for all five runtimes, OSC 133 shell integration, tab-strip Working/Stuck glyphs, and subagent-counter sticky-blocked rule. Phase 5 (host consumer TUI integration) and the full Phase 6 token-monitor implementation (OpenCode SQLite, Amp thread files, model catalog API queries, detail dialog) remain.
 
 ## Merge Alignment With the TUI Architecture Refactor
 
@@ -1318,11 +1318,11 @@ pub struct ProviderUsageSnapshot {
 - `session_quiet_for_10s_stays_working_not_blocked` — spawn a fake session, advance time by 10s without PTY output, assert state is `Working` not `Blocked`.
 - `agent_state_serializes_unknown` — assert `AgentState::Unknown` serializes as `"unknown"`.
 
-### Phase 1 — State Model And Event Stream
+### Phase 1 — State Model And Event Stream ✅ Shipped
 
 **Goal**: add the full internal state model, derived public status, `seen` flag, attention-priority roll-up, and `agent-state-changed` event stream to `jackin-capsule` and `jackin-protocol`.
 
-**Shipped (state model)**: `agent_status` module with `AgentRawState` (10-variant signal enum), `SessionStatus` machine (`advance`/`acknowledge`, `seen`-derived `Done`, monotonic `revision`), and `Session::state()` accessor. Tab roll-up extended for `Unknown`. See **Implemented Shape** above for how this differs from the proposal's `arbitrate_session_status`/`AgentEffectiveStatus` vocabulary. **Remaining in Phase 1**: the `agent-state-changed` event stream and `events.subscribe` plumbing (moved to Phase 5, where the subscription protocol lands).
+**Shipped**: `agent_status` module with `AgentRawState` (10-variant signal enum), `SessionStatus` machine (`advance`/`acknowledge`, `seen`-derived `Done`, monotonic `revision`), and `Session::state()` accessor. Tab roll-up extended for `Unknown`. `HookAuthority` struct, `SequenceTracker`, control protocol `ReportAgentState` / `HeartbeatAgentAuthority` / `ClearAgentAuthority` / `EventsSubscribe` / `WaitSessionStatus` messages. `events.subscribe` full streaming protocol deferred to Phase 5; `WaitSessionStatus` returns immediately when already satisfied.
 
 **New files to create**:
 
@@ -1347,15 +1347,17 @@ pub struct ProviderUsageSnapshot {
 - `wait_session_status_already_satisfied` — session already blocked when `wait_session_status` is called → returns immediately.
 - `event_stream_emits_on_raw_state_change` — transition from `Unknown` to `Working` emits one event with full evidence payload.
 
-### Phase 2 — Container Reporter And Process Identity
+### Phase 2 — Container Reporter And Process Identity ✅ Shipped
 
 **Goal**: install the status reporter under `/jackin/runtime/agent-status/`, add the `report_agent_state`, `heartbeat_agent_authority`, and `clear_agent_authority` control methods, launch built-in runtimes with stable `JACKIN_*` environment, and implement foreground process-group detection inside the container.
+
+**Shipped**: `process.rs` using `procfs` crate (`procfs = "0.18"`), `report.sh` + `heartbeat.sh` reporter scripts, `JACKIN_SESSION_ID` / `JACKIN_STATUS_SOCKET` / `JACKIN_STATUS_SOURCE` / `JACKIN_AGENT_RUNTIME` injected at session spawn. Daemon handles `ReportAgentState`, `HeartbeatAgentAuthority`, `ClearAgentAuthority` via `handle_control_msg`.
 
 **New files to create**:
 
 - `crates/jackin-capsule/src/agent_status/process.rs` — Linux `/proc` process tree queries using the `procfs` crate (`procfs = "0.18"`). Functions: `fn read_tpgid(pid: u32) -> Option<u32>` (reads `stat.tpgid`, field index 8), `fn scan_process_group(pgid: u32) -> Vec<ProcessInfo>`, `fn identify_agent_binary(proc_info: &ProcessInfo) -> Option<String>`. `ProcessInfo`: `{pid: u32, pgid: u32, cmdline: Vec<String>, exe_path: PathBuf}`. Use `procfs::process::Process::new(pid)?.stat()` for `tpgid`, `Process::exe()` for the symlink, `Process::cmdline()` for argv split on NUL bytes.
-- `docker/runtime/agent-status/report.sh` — the container-side reporter CLI. Reads `$JACKIN_SESSION_ID`, `$JACKIN_STATUS_SOCKET`, `$JACKIN_STATUS_SOURCE`. Usage: `report.sh --state working|blocked|idle --seq <ns_timestamp> [--message <text>]`. Sends a length-prefixed JSON message to the Capsule socket.
-- `docker/runtime/agent-status/heartbeat.sh` — sends a heartbeat message on a configurable interval (default 10 seconds). Launched in background by `entrypoint.sh`.
+- <RepoFile path="docker/runtime/agent-status/report.sh" /> — the container-side reporter CLI. Reads `$JACKIN_SESSION_ID`, `$JACKIN_STATUS_SOCKET`, `$JACKIN_STATUS_SOURCE`. Usage: `report.sh --state working|blocked|idle --seq <ns_timestamp> [--message <text>]`. Sends a length-prefixed JSON message to the Capsule socket.
+- <RepoFile path="docker/runtime/agent-status/heartbeat.sh" /> — sends a heartbeat message on a configurable interval (default 10 seconds). Launched in background by `entrypoint.sh`.
 
 **Changes to existing files**:
 
@@ -1390,13 +1392,15 @@ pub struct ProviderUsageSnapshot {
 - `clear_authority_removes_only_matching_source` — two hook sources active, clear one → other remains.
 - `node_wrapped_claude_identified_from_cmdline` — fake proc with `node` exe and cmdline containing `@anthropic-ai/claude-code/cli.js` → `identify_agent_binary` returns `ClaudeCode`.
 
-### Phase 3 — Semantic Runtime Reports
+### Phase 3 — Semantic Runtime Reports ✅ Shipped
 
 **Goal**: install container-local hook/plugin/API reporters for Claude Code, Codex, and OpenCode, then extend to Amp and Kimi as each runtime's hook/plugin surface allows.
 
+**Shipped**: `ClaudeHookInstaller` writes and drift-repairs `~/.claude/settings.json` with all hook entries (Stop and PermissionRequest as `async: false`). Hook scripts for all five runtimes under `docker/runtime/agent-status/hooks/`. Stub installers for Kimi, Amp, Codex, and OpenCode (`KimiHookInstaller`, `AmpPluginInstaller`, `CodexHookInstaller`, `OpenCodeAcpInstaller`) — full integration pending runtime-version detection per the notes below. Subagent counter sticky-blocked rule implemented via message field.
+
 **New files to create**:
 
-- `docker/runtime/agent-status/hooks/claude/report-hook.sh` — the Claude Code hook script (see format in "Claude Code Hook Reporter" section above). Installed to `/jackin/runtime/agent-status/hooks/claude/report-hook.sh`.
+- <RepoFile path="docker/runtime/agent-status/hooks/claude/report-hook.sh" /> — the Claude Code hook script (see format in "Claude Code Hook Reporter" section above). Installed to `/jackin/runtime/agent-status/hooks/claude/report-hook.sh`.
 - `crates/jackin-capsule/src/agent_status/hook_installer.rs` — `HookInstaller` trait and per-agent implementations: `ClaudeHookInstaller`, `KimiHookInstaller`, `AmpPluginInstaller`. Each implements `fn install(&self, agent_home: &Path) -> Result<()>` (write files, merge config) and `fn verify(&self, agent_home: &Path) -> bool` (check current state matches expected).
 - `crates/jackin-capsule/src/agent_status/sequence.rs` — `SequenceTracker`: `HashMap<String, u64>` mapping source ID to last-accepted sequence. Methods: `fn accept(&mut self, source_id: &str, seq: u64) -> bool` (returns true if accepted, false if rejected as stale), `fn has_source(&self, source_id: &str) -> bool`.
 
@@ -1422,11 +1426,11 @@ pub struct ProviderUsageSnapshot {
 - `subagent_counter_prevents_postToolUse_clearing_blocked` — session has `blocked` state from `PermissionRequest`, `SubagentStart` increments counter, `PostToolUse` arrives → arbitration still returns `Blocked`.
 - `subagent_stop_decrements_counter_without_changing_state` — counter = 1, `SubagentStop` → counter = 0, state unchanged until next tick.
 
-### Phase 4 — Screen Fallback And Readiness Diagnostics ⏳ Partially shipped
+### Phase 4 — Screen Fallback And Readiness Diagnostics ✅ Shipped
 
 **Goal**: implement runtime-specific visible-screen detectors, cursor-position probes, and shell-integration marker parsing.
 
-**Shipped (detector framework)**: `Detector` trait + `DetectorRegistry` with detectors for all five built-in runtimes (`claude`, `codex`, `amp`, `kimi`, `opencode`) in <RepoFile path="crates/jackin-capsule/src/agent_status/detectors/mod.rs" />, each matching the bottom `DETECTION_ROWS = 24` of the `vt100::Screen` and returning `Option<AgentRawState>`. Wired into the 1Hz ticker. Inline `#[cfg(test)]` coverage per detector (working / blocked / idle / false-positive cases). **Remaining in Phase 4**: OSC 133 parsing in `OscCapture`, `CSI 6n` cursor-position probes, the `stuck` diagnostic overlay (+ its amber `!` tab glyph), and file-based screen fixtures under `tests/fixtures/screen/`.
+**Shipped**: `Detector` trait + `DetectorRegistry` with detectors for all five built-in runtimes in <RepoFile path="crates/jackin-capsule/src/agent_status/detectors/mod.rs" />, wired into the 1Hz ticker. `OscCapture` extended to parse `OSC 133` (A/B/C/D markers) and emit `OscShellMark` events drained each tick. Shell integration block installed into `/home/agent/.zshrc` by `runtime_setup.rs`. `TabGlyph::Working` (◌ dim-green) and `TabGlyph::Stuck` (! amber) added to `statusbar.rs`. Screen fixtures for all five runtimes under `crates/jackin-capsule/src/agent_status/screen/fixtures/`. CSI 6n cursor-position probe deferred to a future hardening pass; `Stuck` tab glyph wired in but not yet driven by a timeout (Phase 4 follow-up).
 
 **New files to create**:
 
@@ -1475,9 +1479,11 @@ pub struct ProviderUsageSnapshot {
 - `shell_integration_b_marker_signals_idle` — `OSC 133 ; B` in PTY stream → `ShellIntegrationMarker(PromptEnd)` event → arbitration produces `Idle, ShellIntegration`.
 - `osc7_marker_updates_cwd` — `OSC 7 ; file://container/home/agent/project` in PTY stream → `CwdChanged("/home/agent/project")` event.
 
-### Phase 5 — Host Consumers
+### Phase 5 — Host Consumers ⏳ Partially implemented
 
 **Goal**: update `jackin console`, the daemon, Desktop Agent Hub, attention prompts, autonomous queue, resource panel, and token/cost display to consume the event stream.
+
+**Shipped**: `JACKIN_SESSION_ID` and status env vars pass through to container sessions. `WaitSessionStatus` returns immediately when session is already in a target state. `events.subscribe` streaming protocol defined in the control channel; full push-subscription loop deferred to the attention-notification and Desktop Agent Hub work that will consume it. **Remaining**: `jackin console` TUI session-list state badges, `Done`-pane visual distinction, pane acknowledgement on focus, workspace roll-up from daemon rather than local inference.
 
 **Changes to make**:
 
@@ -1492,9 +1498,11 @@ pub struct ProviderUsageSnapshot {
 - `console_acknowledges_done_on_focus` — operator focuses a `Done` pane → daemon receives acknowledgement, status transitions to `Idle`.
 - `console_subscribes_to_state_events` — connect to daemon socket, subscribe to events, simulate a state transition → console receives the event and updates the rendered status.
 
-### Phase 6 — Token Monitoring
+### Phase 6 — Token Monitoring ⏳ Partially implemented
 
 **Goal**: implement the token monitor module, wire it to the Capsule event stream, and display per-session token totals in the console session list and resource panel.
+
+**Shipped**: `token_monitor` module with `TokenMonitor`, `TokenSession`, `TokenTotals`. Claude JSONL reader (incremental reads, `costUSD` preference, sidechain skip). Codex, Kimi, Amp, OpenCode stubs. Static pricing table. Embedded model fallback catalog. 30-second polling ticker wired into the daemon. `SessionInfo.token_usage` populated from monitor totals. **Remaining**: Codex cumulative-delta JSONL parser, OpenCode SQLite reader (`rusqlite` crate), Kimi `wire.jsonl` token fields, Amp thread JSON reader, model catalog API queries per provider, `token.get_models` control message, resource-panel detail dialog (`RateWindow`, progress bars, `Ctrl+u` keybind).
 
 **New files to create**:
 

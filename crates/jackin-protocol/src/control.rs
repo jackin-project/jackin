@@ -15,6 +15,50 @@ pub enum ClientMsg {
     Status,
     /// Request the tab/pane tree snapshot.
     Snapshot,
+    /// Runtime reporter sends raw agent state for one session.
+    ReportAgentState {
+        session_id: u64,
+        source_id: String,
+        agent_label: String,
+        /// Raw state: "working", "blocked", "idle", "unknown"
+        raw_state: String,
+        /// Monotonic sequence number (nanosecond timestamp as u64).
+        seq: u64,
+        /// Nanoseconds since UNIX epoch.
+        ts_ns: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    /// Runtime reporter heartbeat — confirms source is still alive.
+    HeartbeatAgentAuthority {
+        session_id: u64,
+        source_id: String,
+        seq: u64,
+    },
+    /// Runtime reporter releases its authority (exits or goes stale).
+    ClearAgentAuthority {
+        session_id: u64,
+        source_id: String,
+    },
+    /// Subscribe to agent state change events. After this message the
+    /// connection becomes a persistent streaming channel.
+    EventsSubscribe {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        subscriber_id: Option<String>,
+    },
+    /// Block until a session reaches one of the target statuses.
+    WaitSessionStatus {
+        session_id: u64,
+        target_statuses: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_ms: Option<u64>,
+    },
+    /// Read visible pane text for debugging.
+    SessionReadVisible {
+        session_id: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rows: Option<u16>,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -34,9 +78,55 @@ pub enum ServerMsg {
         tabs: Vec<TabSnapshot>,
         active_tab: u32,
     },
+    /// Pushed to subscribed clients on every effective-status change.
+    AgentStateChanged {
+        session_id: u64,
+        /// Effective status: "working", "blocked", "done", "idle", "unknown"
+        effective: String,
+        seen: bool,
+        /// Authority source description
+        source: String,
+        revision: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// Response to WaitSessionStatus — the current state at the time the wait resolved.
+    SessionStatusResult {
+        session_id: u64,
+        effective: String,
+        revision: u64,
+        /// "satisfied", "timeout", "not_found"
+        outcome: String,
+    },
+    /// Response to SessionReadVisible.
+    SessionVisibleText {
+        session_id: u64,
+        lines: Vec<String>,
+    },
+    /// Welcome frame sent to every connecting client.
+    Welcome {
+        jackin_protocol_version: String,
+    },
+    /// Error response.
+    Error {
+        code: String,
+        message: String,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenUsageSummary {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +136,8 @@ pub struct SessionInfo {
     pub agent: Option<String>,
     pub state: AgentState,
     pub active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<TokenUsageSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

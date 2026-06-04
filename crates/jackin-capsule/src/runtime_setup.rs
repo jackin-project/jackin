@@ -28,6 +28,51 @@ pub fn run() -> Result<()> {
     run_agent_setup()
 }
 
+/// Install OSC 133 + OSC 7 shell integration into /home/agent/.zshrc.
+/// This enables shell-command boundary detection without relying on the
+/// terminal emulator's shell integration support.
+fn install_shell_integration() -> anyhow::Result<()> {
+    let zshrc_path = std::path::Path::new("/home/agent/.zshrc");
+
+    const INTEGRATION_MARKER: &str = "# [jackin shell integration]";
+    const INTEGRATION_BLOCK: &str = "# [jackin shell integration]\n\
+# OSC 133 + OSC 7 markers for agent runtime status detection.\n\
+_si_urlencode() {\n\
+  local s=\"${1//[^a-zA-Z0-9\\/_~!$&\\'()*+,;=:@-]/%}\"\n\
+  printf '%s' \"$s\"\n\
+}\n\
+_si_osc7() {\n\
+  printf '\\033]7;file://%s%s\\033\\\\' \"${HOST:-localhost}\" \"$(_si_urlencode \"${PWD}\")\"\n\
+}\n\
+_si_precmd() {\n\
+  local ec=$?\n\
+  printf '\\033]133;D;%d\\007' \"${ec}\"\n\
+  printf '\\033]133;A\\007'\n\
+  _si_osc7\n\
+}\n\
+_si_preexec() {\n\
+  printf '\\033]133;B\\007'\n\
+  printf '\\033]133;C\\007'\n\
+}\n\
+autoload -Uz add-zsh-hook 2>/dev/null || true\n\
+add-zsh-hook precmd  _si_precmd  2>/dev/null || true\n\
+add-zsh-hook preexec _si_preexec 2>/dev/null || true\n\
+add-zsh-hook chpwd   _si_osc7    2>/dev/null || true\n\
+# [/jackin shell integration]";
+
+    let existing = std::fs::read_to_string(zshrc_path).unwrap_or_default();
+    if existing.contains(INTEGRATION_MARKER) {
+        return Ok(());
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(zshrc_path)?;
+    writeln!(file, "\n{INTEGRATION_BLOCK}")?;
+    Ok(())
+}
+
 fn run_container_init_once() -> Result<()> {
     let marker = Path::new(CONTAINER_INIT_MARKER);
     if marker.exists() {
@@ -43,6 +88,9 @@ fn run_container_init_once() -> Result<()> {
     }
 
     println!("[entrypoint] running container init...");
+    if let Err(e) = install_shell_integration() {
+        eprintln!("[entrypoint] warning: shell integration install failed: {e:#}");
+    }
 
     if let Some(name) = nonempty_env("GIT_AUTHOR_NAME") {
         run_command("git", &["config", "--global", "user.name", &name])?;
@@ -174,7 +222,59 @@ fn run_agent_setup() -> Result<()> {
         "kimi" => setup_kimi(),
         "opencode" => setup_opencode(),
         other => bail!("unknown JACKIN_AGENT: {other}"),
+    }?;
+    if let Some(agent) = nonempty_env("JACKIN_AGENT") {
+        if let Err(e) = install_status_reporter_hooks(&agent) {
+            eprintln!("[entrypoint] warning: failed to install status reporter hooks: {e:#}");
+        }
     }
+    Ok(())
+}
+
+/// Install the jackin status reporter assets into the container-local agent homes.
+///
+/// Calls each runtime's hook installer to write/repair hook configuration.
+/// Called from `run_agent_setup` for agent sessions.
+pub fn install_status_reporter_hooks(agent: &str) -> anyhow::Result<()> {
+    use crate::agent_status::hook_installer::{
+        AmpPluginInstaller, ClaudeHookInstaller, CodexHookInstaller, HookInstaller,
+        KimiHookInstaller, OpenCodeAcpInstaller,
+    };
+    let home = Path::new("/home/agent");
+    match agent {
+        "claude" => {
+            let installer = ClaudeHookInstaller::default();
+            if !installer.verify(home) {
+                installer.install(home)?;
+            }
+        }
+        "kimi" => {
+            let installer = KimiHookInstaller;
+            if !installer.verify(home) {
+                installer.install(home)?;
+            }
+        }
+        "amp" => {
+            let installer = AmpPluginInstaller;
+            if !installer.verify(home) {
+                installer.install(home)?;
+            }
+        }
+        "codex" => {
+            let installer = CodexHookInstaller;
+            if !installer.verify(home) {
+                installer.install(home)?;
+            }
+        }
+        "opencode" => {
+            let installer = OpenCodeAcpInstaller;
+            if !installer.verify(home) {
+                installer.install(home)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn setup_claude() -> Result<()> {

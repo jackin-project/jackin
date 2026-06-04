@@ -362,6 +362,16 @@ impl StatusBar {
                 buf.extend_from_slice("·".as_bytes());
                 buf.extend_from_slice(restore_fg.as_bytes());
             }
+            TabGlyph::Working => {
+                buf.extend_from_slice(b"\x1b[38;2;0;80;18m"); // #005012 PHOSPHOR_DARK
+                buf.extend_from_slice("◌".as_bytes());
+                buf.extend_from_slice(restore_fg.as_bytes());
+            }
+            TabGlyph::Stuck => {
+                buf.extend_from_slice(b"\x1b[38;2;255;170;0m"); // #ffaa00 AMBER
+                buf.push(b'!');
+                buf.extend_from_slice(restore_fg.as_bytes());
+            }
         }
         buf.push(b' '); // right pad — matches the left pad for symmetry
         buf.extend_from_slice(RESET.as_bytes());
@@ -389,12 +399,18 @@ impl StatusBar {
 enum TabGlyph {
     /// `Working` / `Idle` — single space placeholder.
     None,
+    /// `Working` — `◌`, phosphor green dim: "active work in progress".
+    Working,
     /// `Done` — `○`, phosphor green: "finished, come look".
     Done,
     /// `Blocked` — `●`, bright red: "waiting for operator" (highest urgency).
     Blocked,
     /// `Unknown` — `·`, mid-gray: state not yet determined (normal at startup).
     Unknown,
+    /// `Stuck` — `!`, amber: "expected progress, none arrived" (diagnostic overlay).
+    /// Wired in Phase 4 when stuck detection is complete.
+    #[allow(dead_code)]
+    Stuck,
 }
 
 /// Resolve the base name + state glyph for a tab. The caller builds
@@ -407,12 +423,14 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
         ids.iter()
             .any(|id| states.iter().any(|(sid, st)| sid == id && *st == target))
     };
-    // Roll-up priority: Blocked(4) > Done(3) > Stuck(2.5) > Working/Idle/Unknown
+    // Roll-up priority: Blocked(4) > Done(3) > Working(2) > Unknown(0) > Idle/None
     // Unknown renders as a subtle mid-gray dot — not alarming, common at startup.
     let glyph = if state_of(AgentState::Blocked) {
         TabGlyph::Blocked
     } else if state_of(AgentState::Done) {
         TabGlyph::Done
+    } else if state_of(AgentState::Working) {
+        TabGlyph::Working
     } else if state_of(AgentState::Unknown) {
         TabGlyph::Unknown
     } else {

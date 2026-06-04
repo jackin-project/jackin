@@ -31,6 +31,24 @@ use vt100::{Callbacks, Screen};
 use crate::agent_status::AgentRawState;
 use crate::protocol::AgentState;
 
+/// Shell integration markers from OSC 133 sequences.
+///
+/// These are emitted by shell `precmd`/`preexec` hooks when shell
+/// integration is installed into `/home/agent/.zshrc`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OscShellMark {
+    /// `OSC 133 ; A` — prompt start (shell about to draw prompt).
+    PromptStart,
+    /// `OSC 133 ; B` — prompt end / start of command input.
+    PromptEnd,
+    /// `OSC 133 ; C` — pre-execution (user pressed Enter, before output).
+    PreExec,
+    /// `OSC 133 ; D` — command finished with optional exit code.
+    CommandFinished {
+        exit_code: Option<i32>,
+    },
+}
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Lines of scrollback every PTY session retains. ~1.5 MB worst-case
@@ -62,6 +80,12 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "MINIMAX_API_KEY",
     // Kimi key — serves both the Kimi Code runtime agent and the Kimi Claude Code provider.
     "KIMI_CODE_API_KEY",
+    // Agent runtime status env vars — set by the daemon at spawn time and
+    // forwarded into the container so hook scripts and reporters can read them.
+    "JACKIN_SESSION_ID",
+    "JACKIN_STATUS_SOCKET",
+    "JACKIN_STATUS_SOURCE",
+    "JACKIN_AGENT_RUNTIME",
 ];
 
 /// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile
@@ -368,6 +392,9 @@ pub struct OscCapture {
     /// when the agent has not set an `OSC 2` of its own, matching
     /// zellij's "Shell title shows cwd" convention.
     pub(crate) cwd: Option<String>,
+    /// Most recently captured OSC 133 shell integration marker. Checked by
+    /// the daemon on the next tick to feed into the status machine.
+    pub(crate) shell_mark: Option<OscShellMark>,
 }
 
 impl OscCapture {
@@ -381,7 +408,12 @@ impl OscCapture {
             focus_events: false,
             modify_other_keys: None,
             cwd: None,
+            shell_mark: None,
         }
+    }
+
+    pub fn take_shell_mark(&mut self) -> Option<OscShellMark> {
+        self.shell_mark.take()
     }
 
     pub fn drain(&mut self) -> Vec<Vec<u8>> {
@@ -454,6 +486,33 @@ impl Callbacks for OscCapture {
 
     fn unhandled_osc(&mut self, _: &mut Screen, params: &[&[u8]]) {
         let ps: &[u8] = params.first().copied().unwrap_or(&[]);
+        // OSC 133 — shell integration markers. FTCS sequences:
+        //   OSC 133 ; A → prompt start
+        //   OSC 133 ; B → prompt end
+        //   OSC 133 ; C → pre-execution
+        //   OSC 133 ; D ; <exit_code> → command finished
+        // Capture into `shell_mark` for status machine. Never forward to host
+        // (host would misinterpret container shell boundaries as its own).
+        if ps == b"133" {
+            let letter = params.get(1).copied().unwrap_or(&[]);
+            let mark = match letter {
+                b"A" => Some(OscShellMark::PromptStart),
+                b"B" => Some(OscShellMark::PromptEnd),
+                b"C" => Some(OscShellMark::PreExec),
+                b"D" => {
+                    let exit_code = params
+                        .get(2)
+                        .and_then(|p| std::str::from_utf8(p).ok())
+                        .and_then(|s| s.parse::<i32>().ok());
+                    Some(OscShellMark::CommandFinished { exit_code })
+                }
+                _ => None,
+            };
+            if mark.is_some() {
+                self.shell_mark = mark;
+            }
+            return;
+        }
         // OSC 7 — current working directory. Shells emit
         // `\x1b]7;file://<host>/<percent-encoded-path>\x07` on
         // every prompt. Capture into `self.cwd` for the pane-title
@@ -652,6 +711,16 @@ pub struct Session {
     /// freshly-split pane does not paint a stray blinking cursor
     /// inside an otherwise empty rectangle.
     pub received_output: bool,
+    /// Hook/API reporter authority for this session. `None` when no reporter
+    /// has registered itself. Set by `ReportAgentState` control messages.
+    pub hook_authority: Option<crate::agent_status::HookAuthority>,
+    /// Per-reporter sequence tracking. Prevents stale/replayed reports.
+    pub sequence: crate::agent_status::sequence::SequenceTracker,
+    /// Child process PID (set at spawn from `child.process_id()`).
+    pub child_pid: Option<u32>,
+    /// Number of active subagents. While > 0, PostToolUse-equivalent events
+    /// must not clear a Blocked state.
+    pub subagent_count: u32,
 }
 
 pub enum SessionEvent {
@@ -942,7 +1011,7 @@ impl Session {
         label: impl Into<String>,
         agent: Option<String>,
         provider: Option<SessionProvider>,
-        cmd: CommandBuilder,
+        mut cmd: CommandBuilder,
         rows: u16,
         cols: u16,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
@@ -960,6 +1029,10 @@ impl Session {
         let master = pair.master;
         let slave = pair.slave;
 
+        let sid = next_id();
+        // Stamp the session ID so hook scripts can read JACKIN_SESSION_ID.
+        cmd.env("JACKIN_SESSION_ID", sid.to_string());
+
         let mut child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
@@ -975,8 +1048,6 @@ impl Session {
         let master_for_write = Arc::clone(&master);
 
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-
-        let sid = next_id();
         let event_tx_output = event_tx.clone();
         let event_tx_exit = event_tx.clone();
         let event_tx_writer_err = event_tx.clone();
@@ -1152,6 +1223,10 @@ impl Session {
                 inline_scroll_region_tracker: InlineScrollRegionTracker::new(rows),
                 bracketed_paste_active: false,
                 received_output: false,
+                hook_authority: None,
+                sequence: crate::agent_status::sequence::SequenceTracker::new(),
+                child_pid: child_pid.map(|p| p as u32),
+                subagent_count: 0,
             },
             sid,
         ))
@@ -1558,6 +1633,11 @@ impl Session {
         }
     }
 
+    /// Drain any buffered shell integration marker from the OSC parser.
+    pub fn take_shell_mark(&mut self) -> Option<OscShellMark> {
+        self.parser.callbacks_mut().take_shell_mark()
+    }
+
     /// Drain the OSC / unhandled-CSI byte sequences the parser captured
     /// during the last `feed_pty` call. The daemon forwards these to
     /// the attached client only when this session owns the focused
@@ -1748,6 +1828,10 @@ impl Session {
             inline_scroll_region_tracker: InlineScrollRegionTracker::new(size.0),
             bracketed_paste_active: false,
             received_output: true,
+            hook_authority: None,
+            sequence: crate::agent_status::sequence::SequenceTracker::new(),
+            child_pid: None,
+            subagent_count: 0,
         }
     }
 }
