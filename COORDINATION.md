@@ -52,6 +52,9 @@ Each Claude instance picks a unique name for attribution. Check this list before
 
 | Commit | What |
 |---|---|
+| `781c3b5d` | Phase 5 — remove vt100 from Ratatui + partial render paths |
+| `c1f91ec4` | Phase 5 — PaneBodyWidget migrated from vt100::Screen to GridSnapshot |
+| `7fb4b46e` | Phase 5 — migrate mouse protocol types from vt100 to jackin_term |
 | `f2477e1b` | jackin-term — scrollback_rows_at_offset + PassthroughEvent::encode |
 | `d1c991c3` | jackin-term — golden wire-emit + round-trip property tests (lines 999-1000) |
 | `7dbf5704` | Phase 2 — collapse 5-arm match in legacy jackin/runtime/image.rs |

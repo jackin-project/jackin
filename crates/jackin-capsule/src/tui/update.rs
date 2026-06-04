@@ -209,10 +209,6 @@ pub(crate) fn resize_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::Resize
 }
 
-pub(crate) fn pane_cache_miss_redraw_reason() -> FullRedrawReason {
-    FullRedrawReason::PaneCacheMiss
-}
-
 pub(crate) fn session_exit_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::SessionExit
 }
