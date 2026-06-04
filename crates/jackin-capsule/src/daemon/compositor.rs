@@ -317,6 +317,13 @@ impl Multiplexer {
                         },
                     );
                 }
+                // Position (or hide) the operator's cursor at the focused pane's
+                // live VT cursor. Ratatui's draw hides the cursor by default and
+                // the SocketBackend never repositions it, so without this append
+                // the blinking cursor is absent in every Ratatui frame. No-ops
+                // while a dialog is open (cursor stays hidden).
+                let focused_pane_rect = panes.iter().find(|p| p.focused).map(|p| p.inner);
+                self.append_cursor_state(&mut output, focused_id, focused_pane_rect);
                 Some(output)
             }
             Err(e) => {
