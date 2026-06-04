@@ -33,6 +33,7 @@ All implementation landed on this branch. Operator and contributor detail now li
 
   If verification regresses, `JACKIN_CAPSULE_BIN=/path/to/jackin-capsule` unblocks launches while a fix lands.
 - **Rekor key rotation.** The embedded `SIGSTORE_REKOR_PUB_KEY_B64` in <RepoFile path="src/capsule_binary.rs" /> must be updated when Sigstore rotates the production Rekor signing key (announced at blog.sigstore.dev).
+- **Rekor body-hash cross-check (known residual).** `SignedArtifactBundle::new_verified` verifies the Rekor Signed Entry Timestamp signature but does not decode the log entry body to confirm the entry covers `manifest_bytes` specifically. `Client::verify_blob` binds the content via ECDSA, so an attacker must break the ECDSA chain to substitute a different manifest — the practical risk is low. A future hardening pass should extract `spec.data.hash.value` from the decoded Rekor payload body and compare it against `sha256(manifest_bytes)` to close the transparency gap. Tracked here because fixing it requires inspecting the sigstore-rs 0.14 internal payload structure or upgrading to an API version that exposes it.
 
 This item retires once the first signed release has shipped and the end-to-end verification gate has passed.
 

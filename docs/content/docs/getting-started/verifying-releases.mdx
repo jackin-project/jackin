@@ -6,7 +6,7 @@ Every jackin' release publishes signed artifacts alongside the binaries. This pa
 
 ## What you need to do
 
-Nothing. When jackin' downloads `jackin-capsule` at launch it automatically verifies a signed manifest before accepting the binary. The verification is silent and transparent — you only notice it if something is wrong (in which case the launch aborts with an error message).
+Nothing. When jackin' downloads `jackin-capsule` for the first time (or after clearing the cache), it automatically verifies a signed manifest before accepting and caching the binary. Subsequent launches reuse the already-verified cached binary. The verification is silent and transparent — you only notice it if something is wrong (in which case the launch aborts with an error message).
 
 The verification tools described below are for operators who want to audit a download themselves, integrate jackin' into a supply chain policy, or confirm the integrity of any release asset manually.
 
