@@ -145,7 +145,7 @@ jobs:
         run: |
           cargo build -p jackin-capsule --bin jackin-capsule
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
-      - run: cargo nextest run --all-features --color=always
+      - run: cargo nextest run --workspace --all-features --color=always
 
   msrv:
     needs: changes

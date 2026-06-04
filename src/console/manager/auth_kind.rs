@@ -35,6 +35,9 @@ pub enum AuthKind {
     /// Z.AI / GLM Coding Plan — env-only kind. No `auth_forward` config
     /// block; credential lives purely as `ZAI_API_KEY` in `[env]`.
     Zai,
+    /// `MiniMax` Token Plan — env-only provider credential. Distinct from
+    /// agent runtimes; credential lives as `MINIMAX_API_KEY` in `[env]`.
+    Minimax,
 }
 
 impl AuthKind {
@@ -50,6 +53,7 @@ impl AuthKind {
             Self::Opencode => "OpenCode",
             Self::Github => "GitHub CLI",
             Self::Zai => "Z.AI",
+            Self::Minimax => "MiniMax",
         }
     }
 
@@ -70,7 +74,7 @@ impl AuthKind {
                 &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
             }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
-            Self::Zai => &[AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Zai | Self::Minimax => &[AuthMode::ApiKey, AuthMode::Ignore],
         }
     }
 
@@ -85,10 +89,11 @@ impl AuthKind {
             (Self::Claude, AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
             (Self::Codex, AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, AuthMode::ApiKey) => Some("AMP_API_KEY"),
-            (Self::Kimi, AuthMode::ApiKey) => Some("KIMI_API_KEY"),
+            (Self::Kimi, AuthMode::ApiKey) => Some(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME),
             (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(crate::env_model::ZAI_API_KEY_ENV_NAME),
+            (Self::Minimax, AuthMode::ApiKey) => Some(crate::env_model::MINIMAX_API_KEY_ENV_NAME),
             _ => None,
         }
     }
@@ -119,7 +124,7 @@ impl AuthKind {
             Self::Amp => Some(Agent::Amp),
             Self::Kimi => Some(Agent::Kimi),
             Self::Opencode => Some(Agent::Opencode),
-            Self::Github | Self::Zai => None,
+            Self::Github | Self::Zai | Self::Minimax => None,
         }
     }
 
@@ -133,10 +138,19 @@ impl AuthKind {
             Self::Claude => ro.claude.is_some(),
             Self::Codex => ro.codex.is_some(),
             Self::Amp => ro.amp.is_some(),
-            Self::Kimi => ro.kimi.is_some(),
+            // Kimi serves both runtime agent (typed block) and provider (env key).
+            Self::Kimi => {
+                ro.kimi.is_some()
+                    || ro
+                        .env
+                        .contains_key(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+            }
             Self::Opencode => ro.opencode.is_some(),
             Self::Github => ro.github.is_some(),
             Self::Zai => ro.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
+            Self::Minimax => ro
+                .env
+                .contains_key(crate::env_model::MINIMAX_API_KEY_ENV_NAME),
         }
     }
 }
@@ -318,7 +332,7 @@ mod tests {
     fn kimi_required_env_vars_match_runtime_table() {
         assert_eq!(
             AuthKind::Kimi.required_env_var(AuthMode::ApiKey),
-            Some("KIMI_API_KEY")
+            Some(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
         );
         assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Sync), None);
         assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Ignore), None);
@@ -502,5 +516,55 @@ mod tests {
         assert!(AuthKind::Codex.role_override_present(&ro));
         assert!(AuthKind::Amp.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
+    }
+
+    #[test]
+    fn minimax_label_and_env_var() {
+        assert_eq!(AuthKind::Minimax.label(), "MiniMax");
+        assert_eq!(
+            AuthKind::Minimax.required_env_var(AuthMode::ApiKey),
+            Some(crate::env_model::MINIMAX_API_KEY_ENV_NAME)
+        );
+        assert_eq!(AuthKind::Minimax.required_env_var(AuthMode::Ignore), None);
+        assert_eq!(
+            AuthKind::Minimax.supported_modes(),
+            &[AuthMode::ApiKey, AuthMode::Ignore]
+        );
+        assert_eq!(AuthKind::Minimax.agent(), None);
+    }
+
+    #[test]
+    fn kimi_label_and_env_var() {
+        assert_eq!(AuthKind::Kimi.label(), "Kimi");
+        assert_eq!(
+            AuthKind::Kimi.required_env_var(AuthMode::ApiKey),
+            Some(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+        );
+        assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Ignore), None);
+        // Kimi is a runtime agent kind — supports sync as well as api_key/ignore.
+        assert!(AuthKind::Kimi.supported_modes().contains(&AuthMode::Sync));
+        assert!(AuthKind::Kimi.supported_modes().contains(&AuthMode::ApiKey));
+        // Kimi maps to the runtime Agent::Kimi.
+        assert_eq!(AuthKind::Kimi.agent(), Some(crate::agent::Agent::Kimi));
+    }
+
+    #[test]
+    fn role_override_present_minimax_and_kimi() {
+        let mut ro = crate::config::WorkspaceRoleOverride::default();
+        assert!(!AuthKind::Minimax.role_override_present(&ro));
+        assert!(!AuthKind::Kimi.role_override_present(&ro));
+        ro.env.insert(
+            crate::env_model::MINIMAX_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("mk".into()),
+        );
+        assert!(AuthKind::Minimax.role_override_present(&ro));
+        assert!(!AuthKind::Kimi.role_override_present(&ro));
+        // Kimi override present via env key (api_key mode).
+        ro.env.insert(
+            crate::env_model::KIMI_CODE_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("kk".into()),
+        );
+        assert!(AuthKind::Minimax.role_override_present(&ro));
+        assert!(AuthKind::Kimi.role_override_present(&ro));
     }
 }

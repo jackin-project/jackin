@@ -983,14 +983,18 @@ fn resolve_panel_mode(
             let mode = crate::config::resolve_github_mode(cfg, workspace, role);
             AuthMode::from_github(mode)
         }
-        AuthKind::Zai => {
-            // Z.AI has no auth_forward block; mode is derived from whether
-            // ZAI_API_KEY is present in the effective env at this layer.
+        AuthKind::Zai | AuthKind::Minimax => {
+            // Env-only provider kinds: mode derived from whether the key is
+            // present in the effective env at this layer. A missing ApiKey env
+            // mapping must fail loudly, not silently alias onto Z.AI's key.
+            let env_key = kind
+                .required_env_var(AuthMode::ApiKey)
+                .expect("env-only provider AuthKind must define an ApiKey env var");
             let key_present = crate::operator_env::lookup_operator_env_raw(
                 cfg,
                 (!role.is_empty()).then_some(role),
                 Some(workspace),
-                "ZAI_API_KEY",
+                env_key,
             )
             .is_some();
             if key_present {
@@ -1505,8 +1509,11 @@ fn explicit_workspace_mode(
             .github
             .as_ref()
             .map(|g| AuthMode::from_github(g.auth_forward)),
-        AuthKind::Zai => {
-            if ws.env.contains_key("ZAI_API_KEY") {
+        AuthKind::Zai | AuthKind::Minimax => {
+            let env_key = kind
+                .required_env_var(AuthMode::ApiKey)
+                .expect("env-only provider AuthKind must define an ApiKey env var");
+            if ws.env.contains_key(env_key) {
                 Some(AuthMode::ApiKey)
             } else {
                 None
@@ -1533,7 +1540,8 @@ fn auth_source_value<'a>(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode
-        | AuthKind::Zai => agent_env_source_value(synthesized, workspace_name, role, env_name),
+        | AuthKind::Zai
+        | AuthKind::Minimax => agent_env_source_value(synthesized, workspace_name, role, env_name),
     }
 }
 
