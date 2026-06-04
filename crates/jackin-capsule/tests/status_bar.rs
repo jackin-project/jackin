@@ -59,7 +59,10 @@ fn active_tab_background_differs_from_brand_pill() {
 #[test]
 fn hovered_tab_uses_lifted_background() {
     let mut bar = StatusBar::new();
-    let tabs = vec![Tab::new_single("Codex", 7, "test"), Tab::new_single("Shell", 8, "test")];
+    let tabs = vec![
+        Tab::new_single("Codex", 7, "test"),
+        Tab::new_single("Shell", 8, "test"),
+    ];
     let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(1));
     assert!(
         s.contains("\x1b[48;2;48;48;48m"),
@@ -70,7 +73,10 @@ fn hovered_tab_uses_lifted_background() {
 #[test]
 fn active_tab_hover_uses_lifted_graphite_background() {
     let mut bar = StatusBar::new();
-    let tabs = vec![Tab::new_single("Codex", 7, "test"), Tab::new_single("Shell", 8, "test")];
+    let tabs = vec![
+        Tab::new_single("Codex", 7, "test"),
+        Tab::new_single("Shell", 8, "test"),
+    ];
     let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(0));
     assert!(
         s.contains("\x1b[48;2;58;58;58m"),

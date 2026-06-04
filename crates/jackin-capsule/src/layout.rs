@@ -654,7 +654,11 @@ pub struct Tab {
 }
 
 impl Tab {
-    pub fn new_single(label: impl Into<String>, session_id: u64, codename: impl Into<String>) -> Self {
+    pub fn new_single(
+        label: impl Into<String>,
+        session_id: u64,
+        codename: impl Into<String>,
+    ) -> Self {
         Self {
             auto_label: label.into(),
             custom_label: None,

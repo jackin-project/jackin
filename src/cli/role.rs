@@ -61,7 +61,12 @@ pub struct LoadArgs {
     #[arg(long)]
     pub dry_run: bool,
     /// Output format for `--dry-run` (`human` or `json`)
-    #[arg(long, value_name = "FORMAT", default_value = "human", requires = "dry_run")]
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        default_value = "human",
+        requires = "dry_run"
+    )]
     pub format: String,
 }
 

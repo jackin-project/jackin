@@ -40,19 +40,39 @@ pub struct CheckResult {
 
 impl CheckResult {
     fn ok(name: &'static str, msg: impl Into<String>) -> Self {
-        Self { name, status: CheckStatus::Ok, message: msg.into(), hint: None }
+        Self {
+            name,
+            status: CheckStatus::Ok,
+            message: msg.into(),
+            hint: None,
+        }
     }
 
     fn warn(name: &'static str, msg: impl Into<String>, hint: impl Into<String>) -> Self {
-        Self { name, status: CheckStatus::Warn, message: msg.into(), hint: Some(hint.into()) }
+        Self {
+            name,
+            status: CheckStatus::Warn,
+            message: msg.into(),
+            hint: Some(hint.into()),
+        }
     }
 
     fn fail(name: &'static str, msg: impl Into<String>, hint: impl Into<String>) -> Self {
-        Self { name, status: CheckStatus::Fail, message: msg.into(), hint: Some(hint.into()) }
+        Self {
+            name,
+            status: CheckStatus::Fail,
+            message: msg.into(),
+            hint: Some(hint.into()),
+        }
     }
 
     fn skip(name: &'static str, msg: impl Into<String>) -> Self {
-        Self { name, status: CheckStatus::Skip, message: msg.into(), hint: None }
+        Self {
+            name,
+            status: CheckStatus::Skip,
+            message: msg.into(),
+            hint: None,
+        }
     }
 }
 
@@ -103,10 +123,7 @@ impl CheckName {
 }
 
 /// Run a single check and return its result.
-pub async fn run_check(
-    check: CheckName,
-    paths: &crate::paths::JackinPaths,
-) -> CheckResult {
+pub async fn run_check(check: CheckName, paths: &crate::paths::JackinPaths) -> CheckResult {
     match check {
         CheckName::DockerDaemon => check_docker_daemon().await,
         CheckName::DockerVersion => check_docker_version().await,
@@ -231,10 +248,7 @@ fn check_disk_space(paths: &crate::paths::JackinPaths) -> CheckResult {
             ),
             "Run `jackin prune` or `docker system prune` to reclaim space",
         ),
-        Some(bytes) => CheckResult::ok(
-            "disk_space",
-            format!("{} MiB free", bytes / 1_048_576),
-        ),
+        Some(bytes) => CheckResult::ok("disk_space", format!("{} MiB free", bytes / 1_048_576)),
         None => CheckResult::skip("disk_space", "Could not determine disk space"),
     }
 }
@@ -252,7 +266,10 @@ fn check_config_dir(config_dir: &Path) -> CheckResult {
     match std::fs::write(&probe, b"") {
         Ok(_) => {
             let _ = std::fs::remove_file(&probe);
-            CheckResult::ok("config_dir", format!("{} exists and is writable", config_dir.display()))
+            CheckResult::ok(
+                "config_dir",
+                format!("{} exists and is writable", config_dir.display()),
+            )
         }
         Err(e) => CheckResult::fail(
             "config_dir",
@@ -268,7 +285,11 @@ fn check_jackin_dir(data_dir: &Path) -> CheckResult {
         return CheckResult::warn(
             "jackin_dir",
             format!("{} does not exist", jackin_dir.display()),
-            format!("Run: mkdir -p {} && chmod 700 {}", jackin_dir.display(), jackin_dir.display()),
+            format!(
+                "Run: mkdir -p {} && chmod 700 {}",
+                jackin_dir.display(),
+                jackin_dir.display()
+            ),
         );
     }
     CheckResult::ok("jackin_dir", format!("{} exists", jackin_dir.display()))
@@ -300,9 +321,7 @@ fn check_gh_auth() -> CheckResult {
         .args(["auth", "status"])
         .output()
     {
-        Ok(out) if out.status.success() => {
-            CheckResult::ok("gh_auth", "gh CLI authenticated")
-        }
+        Ok(out) if out.status.success() => CheckResult::ok("gh_auth", "gh CLI authenticated"),
         Ok(_) => CheckResult::warn(
             "gh_auth",
             "gh CLI not authenticated",
@@ -317,9 +336,7 @@ fn check_op_cli() -> CheckResult {
         .args(["account", "list", "--format=json"])
         .output()
     {
-        Ok(out) if out.status.success() => {
-            CheckResult::ok("op_cli", "1Password CLI signed in")
-        }
+        Ok(out) if out.status.success() => CheckResult::ok("op_cli", "1Password CLI signed in"),
         Ok(_) => CheckResult::skip(
             "op_cli",
             "op CLI not signed in (only needed if workspaces reference op:// secrets)",
@@ -405,7 +422,11 @@ async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckRe
     } else {
         CheckResult::warn(
             "orphaned_containers",
-            format!("{} orphaned container(s): {}", orphans.len(), orphans.join(", ")),
+            format!(
+                "{} orphaned container(s): {}",
+                orphans.len(),
+                orphans.join(", ")
+            ),
             "Run `jackin prune orphaned` to remove them",
         )
     }

@@ -27,10 +27,7 @@ pub async fn run(paths: &JackinPaths) -> anyhow::Result<()> {
             println!("   {} Docker is reachable.", "✓".green().bold());
         }
         Err(e) => {
-            println!(
-                "   {} Docker is not reachable: {e:#}",
-                "✗".red().bold()
-            );
+            println!("   {} Docker is not reachable: {e:#}", "✗".red().bold());
             println!(
                 "   {}",
                 "Start Docker Desktop, OrbStack, or run `colima start`, then re-run.".yellow()
@@ -59,13 +56,21 @@ pub async fn run(paths: &JackinPaths) -> anyhow::Result<()> {
     io::stdin().read_line(&mut workspace_input).ok();
     let workspace_dir = {
         let trimmed = workspace_input.trim();
-        if trimmed.is_empty() { cwd.clone() } else { trimmed.to_string() }
+        if trimmed.is_empty() {
+            cwd.clone()
+        } else {
+            trimmed.to_string()
+        }
     };
     println!("   → {}", workspace_dir.green());
     println!();
 
     // Step 3 — Show available roles.
-    println!("{}  Recommended starter role: {}", "3.".bold(), "jackin-project/jackin-agent-smith".green());
+    println!(
+        "{}  Recommended starter role: {}",
+        "3.".bold(),
+        "jackin-project/jackin-agent-smith".green()
+    );
     println!(
         "   {}",
         "You can add more roles after setup with `jackin config trust add <role>`.".dimmed()
@@ -88,8 +93,12 @@ dst  = "/home/agent/work"
 isolation = "shared"
 "#
     );
-    std::fs::write(&paths.config_file, &starter_config)
-        .map_err(|e| anyhow::anyhow!("Failed to write starter config to {}: {e:#}", paths.config_file.display()))?;
+    std::fs::write(&paths.config_file, &starter_config).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to write starter config to {}: {e:#}",
+            paths.config_file.display()
+        )
+    })?;
     println!(
         "   {} Written to {}",
         "✓".green().bold(),

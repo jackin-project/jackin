@@ -369,7 +369,11 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     println!("  {}", "─".repeat(83));
 
     for r in active.iter().chain(exited.iter()) {
-        let you = if r.codename == my_codename { "  ← you" } else { "" };
+        let you = if r.codename == my_codename {
+            "  ← you"
+        } else {
+            ""
+        };
         println!(
             "  {:<12} {:<10} {:<14} {:<20} {:<20} {}{}",
             r.codename,
@@ -377,7 +381,11 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
             r.provider.as_deref().unwrap_or("—"),
             // Trim the trailing 'Z' and 'T' for compact display
             r.started_at.trim_end_matches('Z').replace('T', " "),
-            r.exited_at.as_deref().unwrap_or("—").trim_end_matches('Z').replace('T', " "),
+            r.exited_at
+                .as_deref()
+                .unwrap_or("—")
+                .trim_end_matches('Z')
+                .replace('T', " "),
             r.status,
             you,
         );

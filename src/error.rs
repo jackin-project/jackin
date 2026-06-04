@@ -60,12 +60,13 @@ pub struct UserMessage {
 }
 
 impl UserMessage {
-    fn new(
-        code: ErrorCode,
-        headline: &'static str,
-        what_to_try: &'static str,
-    ) -> Self {
-        Self { code, headline, what_to_try, more_detail: None }
+    fn new(code: ErrorCode, headline: &'static str, what_to_try: &'static str) -> Self {
+        Self {
+            code,
+            headline,
+            what_to_try,
+            more_detail: None,
+        }
     }
 
     fn with_detail(mut self, detail: &'static str) -> Self {
@@ -76,7 +77,12 @@ impl UserMessage {
     /// Render the friendly block to stderr.
     pub fn render(&self) {
         use owo_colors::OwoColorize;
-        eprintln!("{} [{}] {}", "error:".red().bold(), self.code.as_str(), self.headline);
+        eprintln!(
+            "{} [{}] {}",
+            "error:".red().bold(),
+            self.code.as_str(),
+            self.headline
+        );
         eprintln!("  {}", "→ what to try:".yellow());
         eprintln!("    {}", self.what_to_try);
         if let Some(detail) = self.more_detail {

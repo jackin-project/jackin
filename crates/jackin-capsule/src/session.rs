@@ -1816,7 +1816,11 @@ fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
 /// Build a CommandBuilder for an interactive shell session.
 ///
 /// See `build_agent_command` for the `cwd` rationale.
-pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path, codename: &str) -> CommandBuilder {
+pub fn build_shell_command(
+    env_passthrough: &[(String, String)],
+    cwd: &Path,
+    codename: &str,
+) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/bin/zsh");
     for (k, v) in env_passthrough {
         cmd.env(k, v);

@@ -30,8 +30,7 @@ const GIT_BRANCH_CMD: &str =
     "git -C \"$JACKIN_WORKDIR\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown";
 
 /// Command for getting PR info including CI status. Requires `gh` and `GH_TOKEN`.
-const GH_PR_CMD: &str =
-    "gh pr view --json number,title,url,statusCheckRollup 2>/dev/null";
+const GH_PR_CMD: &str = "gh pr view --json number,title,url,statusCheckRollup 2>/dev/null";
 
 /// `jackin status` — three-level fleet overview.
 ///
@@ -68,7 +67,11 @@ pub struct StatusArgs {
 
 impl StatusArgs {
     pub fn output_format(&self) -> OutputFormat {
-        if self.format == "json" { OutputFormat::Json } else { OutputFormat::Human }
+        if self.format == "json" {
+            OutputFormat::Json
+        } else {
+            OutputFormat::Human
+        }
     }
 }
 
@@ -142,22 +145,29 @@ async fn run_level0(
     let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new(); // (name, total, running, stopped)
     for (ws_name, entries) in &sorted_ws {
         let states = tokio_join_all(
-            entries.iter().map(|e| docker.inspect_container_state(&e.container_base))
-        ).await;
-        let running = states.iter().filter(|s| matches!(s, ContainerState::Running)).count();
+            entries
+                .iter()
+                .map(|e| docker.inspect_container_state(&e.container_base)),
+        )
+        .await;
+        let running = states
+            .iter()
+            .filter(|s| matches!(s, ContainerState::Running))
+            .count();
         let stopped = entries.len() - running;
         workspace_rows.push((ws_name.clone(), entries.len(), running, stopped));
     }
 
     // Apply --state filter.
     let state_filter = args.state.as_deref();
-    let filtered: Vec<_> = workspace_rows.iter().filter(|(_, _, running, stopped)| {
-        match state_filter {
+    let filtered: Vec<_> = workspace_rows
+        .iter()
+        .filter(|(_, _, running, stopped)| match state_filter {
             Some("running") => *running > 0,
             Some("stopped") => *stopped > 0,
             _ => true,
-        }
-    }).collect();
+        })
+        .collect();
 
     if filtered.is_empty() {
         println!("No workspaces found.");
@@ -165,7 +175,12 @@ async fn run_level0(
     }
 
     // Column widths.
-    let ws_width = filtered.iter().map(|(n, _, _, _)| n.len()).max().unwrap_or(9).max(9);
+    let ws_width = filtered
+        .iter()
+        .map(|(n, _, _, _)| n.len())
+        .max()
+        .unwrap_or(9)
+        .max(9);
     println!(
         "  {:<ws_width$}  {:<9}  {}",
         "workspace", "instances", "state"
@@ -217,10 +232,13 @@ async fn run_level1(
     format: OutputFormat,
 ) -> anyhow::Result<()> {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
-    let instances: Vec<_> = index.instances.iter().filter(|e| {
-        e.workspace_name.as_deref() == Some(workspace)
-            || e.workspace_label == workspace
-    }).collect();
+    let instances: Vec<_> = index
+        .instances
+        .iter()
+        .filter(|e| {
+            e.workspace_name.as_deref() == Some(workspace) || e.workspace_label == workspace
+        })
+        .collect();
 
     if instances.is_empty() {
         anyhow::bail!("no instances found for workspace {workspace:?}");
@@ -228,28 +246,36 @@ async fn run_level1(
 
     // Gather state for each instance.
     let states = tokio_join_all(
-        instances.iter().map(|e| docker.inspect_container_state(&e.container_base))
-    ).await;
+        instances
+            .iter()
+            .map(|e| docker.inspect_container_state(&e.container_base)),
+    )
+    .await;
 
     // Apply state filter.
     let state_filter = args.state.as_deref();
-    let rows: Vec<_> = instances.iter().zip(states.iter()).filter(|(_, s)| {
-        match state_filter {
+    let rows: Vec<_> = instances
+        .iter()
+        .zip(states.iter())
+        .filter(|(_, s)| match state_filter {
             Some("running") => matches!(s, ContainerState::Running),
             Some("stopped") => !matches!(s, ContainerState::Running),
             _ => true,
-        }
-    }).collect();
+        })
+        .collect();
 
     if format == OutputFormat::Json {
-        let json_rows: Vec<_> = rows.iter().map(|(e, s)| {
-            serde_json::json!({
-                "instance_id": e.instance_id,
-                "workspace": workspace,
-                "role": e.role_key,
-                "state": s.short_label(),
+        let json_rows: Vec<_> = rows
+            .iter()
+            .map(|(e, s)| {
+                serde_json::json!({
+                    "instance_id": e.instance_id,
+                    "workspace": workspace,
+                    "role": e.role_key,
+                    "state": s.short_label(),
+                })
             })
-        }).collect();
+            .collect();
         let envelope = serde_json::json!({
             "schema_version": "v1",
             "workspace": workspace,
@@ -259,17 +285,37 @@ async fn run_level1(
         return Ok(());
     }
 
-    let running = rows.iter().filter(|(_, s)| matches!(s, ContainerState::Running)).count();
-    println!("{workspace}   {} instance{}  ·  {running} running\n", rows.len(), if rows.len() == 1 { "" } else { "s" });
+    let running = rows
+        .iter()
+        .filter(|(_, s)| matches!(s, ContainerState::Running))
+        .count();
+    println!(
+        "{workspace}   {} instance{}  ·  {running} running\n",
+        rows.len(),
+        if rows.len() == 1 { "" } else { "s" }
+    );
 
-    let id_width = rows.iter().map(|(e, _)| e.instance_id.len()).max().unwrap_or(11).max(11);
-    let role_width = rows.iter().map(|(e, _)| e.role_key.len()).max().unwrap_or(4).max(4);
+    let id_width = rows
+        .iter()
+        .map(|(e, _)| e.instance_id.len())
+        .max()
+        .unwrap_or(11)
+        .max(11);
+    let role_width = rows
+        .iter()
+        .map(|(e, _)| e.role_key.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
 
     println!(
         "  {:<id_width$}  {:<role_width$}  {:<8}  {}",
         "instance", "role", "state", "pr"
     );
-    println!("  {}", "─".repeat(id_width + 2 + role_width + 2 + 8 + 2 + 10));
+    println!(
+        "  {}",
+        "─".repeat(id_width + 2 + role_width + 2 + 8 + 2 + 10)
+    );
 
     for (entry, state) in &rows {
         println!(
@@ -277,7 +323,7 @@ async fn run_level1(
             entry.instance_id,
             entry.role_key,
             state.short_label(),
-            "—",  // PR info requires Level 2 detail query
+            "—", // PR info requires Level 2 detail query
         );
     }
 
@@ -299,8 +345,7 @@ async fn run_level2(
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
     let entry = index.instances.iter().find(|e| {
         e.instance_id == instance_id
-            && (e.workspace_name.as_deref() == Some(workspace)
-                || e.workspace_label == workspace)
+            && (e.workspace_name.as_deref() == Some(workspace) || e.workspace_label == workspace)
     });
 
     let entry = entry.ok_or_else(|| {
@@ -312,20 +357,21 @@ async fn run_level2(
     let is_running = matches!(state, ContainerState::Running);
 
     // Fetch agents registry (only when running).
-    let agents_json: Option<Vec<jackin_protocol::control::AgentRegistryEntry>> =
-        if is_running {
-            let output = docker
-                .exec_capture(container_name, &["sh", "-c", JACKIN_AGENTS_CMD])
-                .await
-                .ok();
-            output.and_then(|s| serde_json::from_str(&s).ok())
-        } else {
-            None
-        };
+    let agents_json: Option<Vec<jackin_protocol::control::AgentRegistryEntry>> = if is_running {
+        let output = docker
+            .exec_capture(container_name, &["sh", "-c", JACKIN_AGENTS_CMD])
+            .await
+            .ok();
+        output.and_then(|s| serde_json::from_str(&s).ok())
+    } else {
+        None
+    };
 
     // Fetch git branch (only when running).
     let branch: Option<String> = if is_running {
-        docker.exec_capture(container_name, &["sh", "-c", GIT_BRANCH_CMD]).await
+        docker
+            .exec_capture(container_name, &["sh", "-c", GIT_BRANCH_CMD])
+            .await
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty() && s != "unknown")
@@ -341,14 +387,22 @@ async fn run_level2(
     };
 
     if format == OutputFormat::Json {
-        let agents_value = agents_json.as_ref().map(|a| serde_json::to_value(a).unwrap_or(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null);
-        let pr_value = pr_info.as_ref().map(|p| serde_json::json!({
-            "number": p.number,
-            "title": p.title,
-            "url": p.url,
-            "ci_status": p.ci_status,
-            "ci_failing_check": p.ci_failing_check,
-        })).unwrap_or(serde_json::Value::Null);
+        let agents_value = agents_json
+            .as_ref()
+            .map(|a| serde_json::to_value(a).unwrap_or(serde_json::Value::Null))
+            .unwrap_or(serde_json::Value::Null);
+        let pr_value = pr_info
+            .as_ref()
+            .map(|p| {
+                serde_json::json!({
+                    "number": p.number,
+                    "title": p.title,
+                    "url": p.url,
+                    "ci_status": p.ci_status,
+                    "ci_failing_check": p.ci_failing_check,
+                })
+            })
+            .unwrap_or(serde_json::Value::Null);
         let envelope = serde_json::json!({
             "schema_version": "v1",
             "instances": [{
@@ -368,15 +422,15 @@ async fn run_level2(
     // Human output.
     println!(
         "\n{}   {} / {}   {}",
-        entry.instance_id, workspace, entry.role_key, state.short_label()
+        entry.instance_id,
+        workspace,
+        entry.role_key,
+        state.short_label()
     );
     println!();
 
     // Branch / PR / CI block.
-    println!(
-        "  branch   {}",
-        branch.as_deref().unwrap_or("—")
-    );
+    println!("  branch   {}", branch.as_deref().unwrap_or("—"));
     if let Some(pr) = &pr_info {
         println!("  pr       #{}  {}", pr.number, pr.title);
         println!("  url      {}", pr.url);
@@ -408,7 +462,10 @@ async fn run_level2(
                 a.agent.as_deref().unwrap_or("shell"),
                 a.provider.as_deref().unwrap_or("—"),
                 compact_ts(&a.started_at),
-                a.exited_at.as_deref().map(compact_ts).unwrap_or_else(|| "—".to_string()),
+                a.exited_at
+                    .as_deref()
+                    .map(compact_ts)
+                    .unwrap_or_else(|| "—".to_string()),
                 a.status,
             );
         }
@@ -463,7 +520,13 @@ async fn fetch_pr_info(docker: &impl DockerApi, container_name: &str) -> Option<
     // Aggregate statusCheckRollup into a single ci_status.
     let (ci_status, ci_failing_check) = aggregate_ci_status(&value["statusCheckRollup"]);
 
-    Some(PrInfo { number, title, url, ci_status, ci_failing_check })
+    Some(PrInfo {
+        number,
+        title,
+        url,
+        ci_status,
+        ci_failing_check,
+    })
 }
 
 fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
@@ -478,13 +541,19 @@ fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
     let mut any_pending = false;
     let mut all_pass = true;
     for check in checks {
-        let conclusion = check.get("conclusion").and_then(|v| v.as_str()).unwrap_or("");
+        let conclusion = check
+            .get("conclusion")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let status = check.get("status").and_then(|v| v.as_str()).unwrap_or("");
         match conclusion {
             "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" => {
                 all_pass = false;
                 if failing_check.is_none() {
-                    failing_check = check.get("name").and_then(|v| v.as_str()).map(str::to_string);
+                    failing_check = check
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
                 }
             }
             "SUCCESS" | "NEUTRAL" | "SKIPPED" => {}

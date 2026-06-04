@@ -37,9 +37,7 @@ pub enum ServerMsg {
         active_tab: u32,
     },
     /// Agent registry: every tab ever opened in this container lifetime.
-    AgentRegistry {
-        records: Vec<AgentRegistryEntry>,
-    },
+    AgentRegistry { records: Vec<AgentRegistryEntry> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,

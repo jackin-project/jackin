@@ -39,7 +39,9 @@ async fn main() -> Result<()> {
             Some("snapshot") => client::run_snapshot().await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
-                    || args.windows(2).any(|w| w[0] == "--format" && w[1] == "json");
+                    || args
+                        .windows(2)
+                        .any(|w| w[0] == "--format" && w[1] == "json");
                 let format = if json_format {
                     client::AgentsFormat::Json
                 } else {
@@ -129,7 +131,8 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version" | "-V",
+            "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version"
+            | "-V",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.

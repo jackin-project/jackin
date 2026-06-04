@@ -22,6 +22,9 @@ impl<T: Serialize> OutputEnvelope<T> {
     pub const SCHEMA_V1: &'static str = "v1";
 
     pub fn v1(data: T) -> Self {
-        Self { schema_version: Self::SCHEMA_V1, data }
+        Self {
+            schema_version: Self::SCHEMA_V1,
+            data,
+        }
     }
 }

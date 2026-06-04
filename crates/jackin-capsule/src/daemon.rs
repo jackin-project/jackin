@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 /// The multiplexer daemon — runs as PID 1, manages sessions and clients.
 ///
 /// Architecture:
@@ -13,7 +14,6 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
-use chrono::{DateTime, Utc};
 #[cfg(target_os = "linux")]
 use std::ffi::OsStr;
 use std::io::Read;
@@ -1438,7 +1438,12 @@ impl Multiplexer {
         self.codename_live.remove(&closed_codename);
         self.codename_retired.insert(closed_codename.clone());
         // Mark the history record as exited.
-        if let Some(record) = self.agent_history.iter_mut().rev().find(|r| r.codename == closed_codename) {
+        if let Some(record) = self
+            .agent_history
+            .iter_mut()
+            .rev()
+            .find(|r| r.codename == closed_codename)
+        {
             record.exited_at = Some(Utc::now());
         }
         if self.active_tab >= self.tabs.len() {
@@ -1509,7 +1514,12 @@ impl Multiplexer {
                 self.tabs.remove(tab_idx);
                 self.codename_live.remove(&closed_codename);
                 self.codename_retired.insert(closed_codename.clone());
-                if let Some(record) = self.agent_history.iter_mut().rev().find(|r| r.codename == closed_codename) {
+                if let Some(record) = self
+                    .agent_history
+                    .iter_mut()
+                    .rev()
+                    .find(|r| r.codename == closed_codename)
+                {
                     record.exited_at = Some(Utc::now());
                 }
                 if was_active {
@@ -1639,8 +1649,14 @@ impl Multiplexer {
                 agent: r.agent.clone(),
                 provider: r.provider.clone(),
                 started_at: r.started_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-                exited_at: r.exited_at.map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
-                status: if r.exited_at.is_some() { "exited".to_string() } else { "active".to_string() },
+                exited_at: r
+                    .exited_at
+                    .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+                status: if r.exited_at.is_some() {
+                    "exited".to_string()
+                } else {
+                    "active".to_string()
+                },
             })
             .collect()
     }
@@ -1907,7 +1923,12 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent.as_deref(), provider_label, &env_passthrough, &codename);
+        let launch = self.session_launch(
+            agent.as_deref(),
+            provider_label,
+            &env_passthrough,
+            &codename,
+        );
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
@@ -1923,10 +1944,12 @@ impl Multiplexer {
         let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
         if self.tabs.is_empty() {
-            self.tabs.push(Tab::new_single(tab_label, id, codename.clone()));
+            self.tabs
+                .push(Tab::new_single(tab_label, id, codename.clone()));
             self.active_tab = 0;
         } else {
-            self.tabs.push(Tab::new_single(tab_label, id, codename.clone()));
+            self.tabs
+                .push(Tab::new_single(tab_label, id, codename.clone()));
             self.active_tab = self.tabs.len() - 1;
         }
         self.codename_live.insert(codename.clone());
@@ -2012,7 +2035,12 @@ impl Multiplexer {
             ),
         };
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent_slug.as_deref(), provider_label, &env_passthrough, &tab_codename);
+        let launch = self.session_launch(
+            agent_slug.as_deref(),
+            provider_label,
+            &env_passthrough,
+            &tab_codename,
+        );
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
@@ -3362,8 +3390,18 @@ impl Multiplexer {
         if let Some(HoverTarget::Tab(idx)) = self.hover_target {
             if let Some(tab) = self.tabs.get(idx) {
                 let codename = tab.codename.clone();
-                let record = self.agent_history.iter().rev().find(|r| r.codename == codename).cloned();
-                let col_start = self.status_bar.tab_regions.get(idx).map(|&(s, _)| s).unwrap_or(0);
+                let record = self
+                    .agent_history
+                    .iter()
+                    .rev()
+                    .find(|r| r.codename == codename)
+                    .cloned();
+                let col_start = self
+                    .status_bar
+                    .tab_regions
+                    .get(idx)
+                    .map(|&(s, _)| s)
+                    .unwrap_or(0);
                 buf.extend_from_slice(&render_tab_tooltip(codename, record, col_start));
             }
         }
@@ -4815,10 +4853,23 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 /// Painted with ANSI absolute cursor positioning; caller wraps in ESC-7/ESC-8.
 fn render_tab_tooltip(codename: String, record: Option<AgentRecord>, col_start: u16) -> Vec<u8> {
     // Content lines: codename, agent, provider, started, exited/active.
-    let agent = record.as_ref().and_then(|r| r.agent.as_deref()).unwrap_or("shell");
-    let provider = record.as_ref().and_then(|r| r.provider.as_deref()).unwrap_or("—");
-    let started = record.as_ref().map(|r| r.started_at.format("%H:%M:%S").to_string()).unwrap_or_else(|| "—".to_string());
-    let exited = record.as_ref().and_then(|r| r.exited_at).map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_else(|| "active".to_string());
+    let agent = record
+        .as_ref()
+        .and_then(|r| r.agent.as_deref())
+        .unwrap_or("shell");
+    let provider = record
+        .as_ref()
+        .and_then(|r| r.provider.as_deref())
+        .unwrap_or("—");
+    let started = record
+        .as_ref()
+        .map(|r| r.started_at.format("%H:%M:%S").to_string())
+        .unwrap_or_else(|| "—".to_string());
+    let exited = record
+        .as_ref()
+        .and_then(|r| r.exited_at)
+        .map(|t| t.format("%H:%M:%S").to_string())
+        .unwrap_or_else(|| "active".to_string());
 
     let lines = [
         format!(" {} ", codename),

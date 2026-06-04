@@ -105,7 +105,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             format,
         }) => {
             // Pre-flight: ensure Docker is reachable and directories exist.
-            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths)
+                .await?;
             let docker = connect_docker()?;
             let cwd = std::env::current_dir()?;
 
@@ -196,7 +197,10 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Console(ConsoleArgs {}) => {
             // First-run wizard: no existing config + interactive TTY.
-            if is_first_run && { use std::io::IsTerminal; std::io::stdout().is_terminal() } {
+            if is_first_run && {
+                use std::io::IsTerminal;
+                std::io::stdout().is_terminal()
+            } {
                 crate::cli::wizard::run(&paths).await?;
                 // Re-load the config the wizard wrote before proceeding.
                 config = AppConfig::load_or_init(&paths)?;
@@ -357,7 +361,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             shell,
         }) => {
             // Pre-flight: ensure Docker is reachable and directories exist.
-            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths)
+                .await?;
             let docker = connect_docker()?;
             // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
             // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
@@ -444,7 +449,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             all,
             purge,
         }) => {
-            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths)
+                .await?;
             let docker = connect_docker()?;
             let containers = if let Some(container) = resolve_instance_reference(&paths, &selector)?
             {
@@ -496,7 +502,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Exile => {
-            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths)
+                .await?;
             let docker = connect_docker()?;
             let names = runtime::list_managed_role_names(&docker).await?;
             let result: anyhow::Result<()> = async {
@@ -969,14 +976,18 @@ pub async fn run(cli: Cli) -> Result<()> {
             WorkspaceCommand::Show { name, format } => {
                 let workspace = config.require_workspace(&name)?;
                 if format == "json" {
-                    let mounts: Vec<serde_json::Value> = workspace.mounts.iter().map(|m| {
-                        serde_json::json!({
-                            "src": m.src,
-                            "dst": m.dst,
-                            "readonly": m.readonly,
-                            "isolation": m.isolation.to_string(),
+                    let mounts: Vec<serde_json::Value> = workspace
+                        .mounts
+                        .iter()
+                        .map(|m| {
+                            serde_json::json!({
+                                "src": m.src,
+                                "dst": m.dst,
+                                "readonly": m.readonly,
+                                "isolation": m.isolation.to_string(),
+                            })
                         })
-                    }).collect();
+                        .collect();
                     let envelope = serde_json::json!({
                         "schema_version": "v1",
                         "data": {
@@ -1431,7 +1442,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             }
         },
         Command::Purge(PurgeArgs { selector, all }) => {
-            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths)
+                .await?;
             let docker = connect_docker()?;
             if let Some(container) = resolve_instance_reference(&paths, &selector)? {
                 if all {
@@ -1525,12 +1537,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                 }
             }
         },
-        Command::Doctor(args) => {
-            crate::cli::doctor::run(&args, &paths).await
-        }
-        Command::Status(args) => {
-            crate::cli::status::run(&args, &paths).await
-        }
+        Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
+        Command::Status(args) => crate::cli::status::run(&args, &paths).await,
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
@@ -1556,14 +1564,7 @@ fn print_dry_run_plan(
     let mount_lines: Vec<String> = workspace
         .mounts
         .iter()
-        .map(|m| {
-            format!(
-                "  {}  <-  {}  ({})",
-                m.dst,
-                m.src,
-                m.isolation.to_string()
-            )
-        })
+        .map(|m| format!("  {}  <-  {}  ({})", m.dst, m.src, m.isolation.to_string()))
         .collect();
 
     if format == "json" {

@@ -16,7 +16,11 @@ pub struct DoctorArgs {
 
 impl DoctorArgs {
     pub fn output_format(&self) -> OutputFormat {
-        if self.format == "json" { OutputFormat::Json } else { OutputFormat::Human }
+        if self.format == "json" {
+            OutputFormat::Json
+        } else {
+            OutputFormat::Human
+        }
     }
 }
 
