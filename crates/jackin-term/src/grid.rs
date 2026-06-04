@@ -135,6 +135,35 @@ impl DamageGrid {
         self.passthrough.drain()
     }
 
+    /// Dump the current screen state as a `GridSnapshot`.
+    ///
+    /// The snapshot is a complete, owned copy of the active grid — primary or
+    /// alternate — plus cursor position and screen-mode flags. Use it for:
+    /// - Acceptance tests that assert exact screen state.
+    /// - Terminal observation (feeds the [terminal observation roadmap item]).
+    /// - Debugging: `snap.to_text()` gives the visual contents as a string.
+    ///
+    /// Concept borrowed from `avt` (MIT, Marcin Kulik / asciinema). Implementation
+    /// is our own — `avt` is not a dependency. Attribution in `snapshot.rs`.
+    pub fn dump(&self) -> crate::snapshot::GridSnapshot {
+        let screen = if self.alt_screen {
+            &self.alternate
+        } else {
+            &self.primary
+        };
+        let cells = screen
+            .iter()
+            .map(|row| row.iter().map(crate::snapshot::SnapCell::from).collect())
+            .collect();
+        crate::snapshot::GridSnapshot {
+            rows: self.rows,
+            cols: self.cols,
+            cursor: (self.cursor_row, self.cursor_col),
+            alternate_screen: self.alt_screen,
+            cells,
+        }
+    }
+
     // ── Coupling-surface accessors (matching vt100 API) ───────────────────────
 
     /// Grid dimensions `(rows, cols)`.

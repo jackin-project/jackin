@@ -22,8 +22,10 @@ pub mod cell;
 pub mod damage;
 pub mod grid;
 pub mod passthrough;
+pub mod snapshot;
 
 pub use cell::{Attrs, Cell, Color};
 pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
+pub use snapshot::{GridSnapshot, SnapCell};
