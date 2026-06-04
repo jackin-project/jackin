@@ -325,3 +325,26 @@ jackin' is built in Rust. The runtime dependencies, grouped by what they own, ma
 The project targets **Rust edition 2024** with a current MSRV of **1.94** (see `rust-version` in <RepoFile path="Cargo.toml" />) and `unsafe_code = "forbid"` at the crate root. Clippy lints are configured with `correctness` and `suspicious` set to `deny` and `complexity`/`style`/`perf`/`pedantic`/`nursery` set to `warn` — see <RepoFile path="Cargo.toml" /> for the full lint table.
 
 When this list drifts from <RepoFile path="Cargo.toml" />, <RepoFile path="Cargo.toml" /> wins. Update both in the same PR.
+
+## Async architecture and the "no blocking on the render thread" rule
+
+Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/jackin-capsule/src/main.rs`) run on a **`current_thread` Tokio runtime**. The render/event loop and all spawned tasks share a single OS thread. This is intentional:
+
+- The host CLI holds `!Send` terminal raw-mode state and signal handlers that must stay on the OS main thread.
+- The capsule daemon's multiplexer loop, PTY readers, and socket accept loop communicate via `mpsc` channels — the single-thread model prevents data races without locking.
+
+**Rule: no blocking syscall on the tokio runtime thread.** Any call that can block for more than a few microseconds must be offloaded. Two mechanisms:
+
+| Call type | Mechanism |
+|---|---|
+| Subprocess execution (git, gh, op) that is a one-shot output read | `tokio::task::spawn_blocking` |
+| Long-running subprocess with output streaming | `tokio::process::Command` + `lines()` |
+| CPU-bound work (hashing, compression) | `tokio::task::spawn_blocking` |
+| File I/O in a hot async path | `tokio::fs` or `spawn_blocking` |
+| Sleep / poll wait | `tokio::time::sleep` — never `std::thread::sleep` |
+
+`spawn_blocking` works on the `current_thread` runtime — it uses Tokio's separate blocking thread pool, so the runtime thread keeps polling the render task while the blocking work runs elsewhere.
+
+**Known open sites (Defect 43).** A small number of blocking calls remain in the provisioning path. The highest-priority one is `RoleState::prepare` in <RepoFile path="crates/jackin-runtime/src/instance.rs" />, which runs `gh` CLI, macOS keychain (`security`), and filesystem copies directly on the async provisioning task — and is therefore the most likely rain-freeze cause when git auth or 1Password are involved. Wrap it in `spawn_blocking` and clone the necessary inputs for the closure. Subsequent conversions: `op_cli.rs` poll loops, and any remaining `std::process::Command` in async-reachable paths.
+
+**Parallelism: `try_join!` for independent stages.** The launch pipeline in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> already uses `tokio::join!` for some independent steps. The pattern is `try_join!(stage_a, stage_b)` for stages with no data dependency, so they run concurrently while the render task keeps ticking. Each stage emits its own `stage_started` / `stage_done` events to the progress channel; the shared-state mutex in `SharedView` handles out-of-order updates already. Extending this to more stage groups is incremental and safe.
