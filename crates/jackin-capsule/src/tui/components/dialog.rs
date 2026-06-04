@@ -2006,12 +2006,18 @@ fn render_filter_input(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, filter
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-/// No-matches state — leave the body blank, same as the host
-/// `Select Role` picker. The empty space below the filter row IS the
-/// empty state; an inline `(no matches)` placeholder breaks that
-/// visual contract. Operator dismisses with Esc or pops filter
-/// characters with Backspace until items reappear.
-fn render_no_matches_row(_buf: &mut Vec<u8>, _row: u16, _col: u16, _width: u16) {}
+/// Render a dim centered "no matches" placeholder when the picker filter
+/// returns no items — consistent with the host console pickers (Defect 32).
+fn render_no_matches_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16) {
+    use std::io::Write as _;
+    let text = "no matches";
+    let text_len = text.len() as u16;
+    let x = col.saturating_add(width.saturating_sub(text_len) / 2);
+    jackin_tui::ansi::move_to(buf, row, x);
+    jackin_tui::ansi::fg(buf, jackin_tui::PHOSPHOR_DIM);
+    let _ = write!(buf, "{text}");
+    buf.extend_from_slice(jackin_tui::ansi::RESET.as_bytes());
+}
 
 /// Render one row of a palette/picker list at `(row, col)` spanning
 /// `width-2` columns. Mirrors the console TUI sidebar style: selected
