@@ -84,6 +84,7 @@ pub(crate) fn handle_mouse_with_config(
         update_tab_hover(state, mouse);
         update_list_row_hover(state, mouse, term_size);
         update_row_hover(state, mouse, term_size);
+        update_container_info_hover(state, mouse, term_size);
         return super::InputOutcome::Continue;
     }
 
@@ -321,6 +322,30 @@ fn container_info_copyable_row_at(
     let area = modal_outer_rect(modal, term_size);
     jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
         .is_some()
+}
+
+/// Brighten the hovered copyable row in the Debug info dialog (link hover cue),
+/// mirroring the launch cockpit. No-op unless that modal is open.
+fn update_container_info_hover(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) {
+    let Some(modal @ Modal::ContainerInfo { .. }) = state.list_modal.as_ref() else {
+        return;
+    };
+    let area = modal_outer_rect(modal, term_size);
+    let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
+        return;
+    };
+    let hovered = jackin_tui::components::container_info_copy_payload_at(
+        area,
+        info,
+        mouse.column,
+        mouse.row,
+    )
+    .map(|(row, _)| row);
+    info.set_hovered_row(hovered);
 }
 
 /// Whether the pointer is inside the Settings → Trust content area (a click
