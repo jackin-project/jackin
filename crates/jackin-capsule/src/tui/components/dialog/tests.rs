@@ -800,3 +800,26 @@ fn info_box_value_row_clickable_tracks_alternate_offset() {
         5,
     ));
 }
+
+#[test]
+fn agent_picker_section_labels_are_bare_not_dash_padded() {
+    // Defect 28 regression: section labels must be bare text ("agents", "shells")
+    // not "── agents ──". render_separator adds the surrounding dashes; if the
+    // label already contains them, the output doubles.
+    let d = picker(vec!["claude"]);
+    let snapshot = d.to_ratatui_snapshot(None, None, false);
+    use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, PickerItem};
+    if let DialogRatatuiSnapshot::FilterPicker { items, .. } = snapshot {
+        for item in &items {
+            if let PickerItem::Section(label) = item {
+                assert!(
+                    !label.contains("──"),
+                    "section label must be bare text, not dash-padded: {label:?}"
+                );
+                assert!(!label.is_empty(), "section label must not be empty");
+            }
+        }
+    } else {
+        panic!("expected FilterPicker snapshot");
+    }
+}
