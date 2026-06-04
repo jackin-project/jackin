@@ -181,6 +181,9 @@ impl Multiplexer {
         self.term_cols = cols;
         self.content_rows = available_content_rows(self.term_rows);
         self.resize_panes();
+        // Invalidate pane body caches — their geometry is now stale.
+        self.pane_body_caches.clear();
+        self.dirty_panes.clear(); // pending_full_redraw will repaint everything
         self.ratatui_terminal.backend_mut().resize(cols, rows);
         // A size change invalidates Ratatui's previous-buffer geometry. Clear
         // only the double-buffer state; SocketBackend::clear() deliberately
