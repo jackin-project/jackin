@@ -6,8 +6,7 @@ use super::{
     focus_change_redraw_reason, hover_frame_plan, palette_route_redraw_reason,
     pane_data_redraw_reason, partial_frame_plan, prefix_full_redraw_reason, resize_redraw_reason,
     selection_change_redraw_reason, selection_start_redraw_reason, session_exit_redraw_reason,
-    status_change_redraw_reason, unsafe_partial_fallback_redraw_reason,
-    wheel_scrollback_redraw_reason,
+    status_change_redraw_reason, wheel_scrollback_redraw_reason,
 };
 use crate::tui::components::dialog::{DialogAction, PickerIntent};
 use crate::tui::input::{ArrowDir, PrefixCommand};
@@ -201,14 +200,10 @@ fn lifecycle_redraw_reasons_use_visible_update_vocabulary() {
 }
 
 #[test]
-fn wheel_and_partial_fallback_redraw_reasons_use_visible_update_vocabulary() {
+fn wheel_redraw_reason_uses_visible_update_vocabulary() {
     assert_eq!(
         wheel_scrollback_redraw_reason(),
         FullRedrawReason::ScrollbackMovement
-    );
-    assert_eq!(
-        unsafe_partial_fallback_redraw_reason(),
-        FullRedrawReason::UnsafePartial
     );
 }
 

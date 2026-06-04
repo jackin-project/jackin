@@ -8,7 +8,7 @@ Read this file before opening, updating, or merging a pull request.
 
 PR rules are split by audience to avoid duplication:
 
-- **This file** is the **shared** PR flow — body-shape spec, Verify-locally template, isolation-env-var decision rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Both humans and agents start here.
+- **This file** is the **shared** PR flow — body-shape spec, Verify-locally template, mandatory isolation env-var rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Both humans and agents start here.
 - [`.github/AGENTS.md`](.github/AGENTS.md) is the **agent-only extras** — per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration-vs-merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Agents read this in addition to the shared file; the `.github/CLAUDE.md` include makes Claude Code auto-load it whenever working under `.github/`.
 
 When agent-only and shared rules cover the same topic (e.g. "include a Verify-locally section"), the shared rule states the *what* and the agent-only rule states the agent-specific *how/when/who*.
@@ -104,6 +104,8 @@ mise trust
 mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
+export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
 which jackin
 ```
 
@@ -115,7 +117,11 @@ eval "$(cargo run --bin build-jackin-capsule -- --export)"
 
 The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches may have been force-pushed after explicit operator approval (DCO amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at - so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
 
-The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path. For `crates/jackin-capsule/` PRs, keep the separate `eval "$(cargo run --bin build-jackin-capsule -- --export)"` fence after the checkout block so every later `jackin console` / `jackin load` uses the freshly built capsule binary through `JACKIN_CAPSULE_BIN`; drop that fence for non-capsule PRs.
+The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path.
+
+The `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` exports are mandatory in the Checkout block. A PR binary can run schema migrations, write workspace files, cache roles, and create runtime state; those writes must land in PR-specific directories, not in the operator's live `~/.config/jackin` or `~/.jackin` trees. Keeping the exports in Checkout makes every later Static Checks, Rust Tests, User Smoke, and Documentation command inherit the isolated roots. Replace `<PR_NUMBER>` with the actual PR number. After verification the directories can be deleted with `rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"`.
+
+For `crates/jackin-capsule/` PRs, keep the separate `eval "$(cargo run --bin build-jackin-capsule -- --export)"` fence after the checkout block so every later `jackin console` / `jackin load` uses the freshly built capsule binary through `JACKIN_CAPSULE_BIN`; drop that fence for non-capsule PRs.
 
 #### Static Checks
 
@@ -155,7 +161,6 @@ If the PR needs a different validation flow, replace the final example commands 
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
 
 - **Checkout** — copy-pasteable commands to fetch and check out the PR.
-- **Isolation** — env vars that redirect state/config away from the operator's live data, when the PR touches code that reads or writes those paths.
 - **Static Checks** — only checks that are relevant and expected to be run locally.
 - **Rust Tests** — focused or full `cargo` / `cargo nextest` commands that validate the changed Rust behavior.
 - **Docs Checks** — automated `bun` commands from `docs/` that validate the rendered docs project, repo links, TypeScript, and docs test suite.
@@ -199,29 +204,12 @@ Three env vars let the operator test a PR without touching their live config or 
 | `JACKIN_HOME_DIR` | `~/.jackin` | data/, roles/, cache/ |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | construct image used for role validation and launch |
 
-**Include an `### Isolation` section in the PR body when the PR touches any of:**
-
-- `src/paths.rs` — path resolution itself
-- `src/config/` — config schema, migrations, or on-disk layout
-- `src/manifest/` — role-manifest schema or migrations
-- Any versioned schema type (`AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`)
-- Runtime state layout under `~/.jackin/` — instance manifests, index, agent home structure, cache layout
-- `docker/construct/` or `docker-bake.hcl` — construct image changes (include `JACKIN_CONSTRUCT_IMAGE` then)
-
-**Do not add an Isolation section when the PR is:**
-
-- Docs-only (`.mdx`, `astro.config.ts`, `docs/**`)
-- Roadmap updates, CI changes (except construct image CI), dependency bumps
-- Pure refactors, tests, or rule changes that do not alter any on-disk or in-memory shape that has already been stored
-
-The Isolation section must appear immediately after the Checkout section and before Static Checks. Use the PR number as the suffix so two PRs can be tested in parallel on the same machine without their state directories colliding:
+`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. Use the PR number as the suffix so two PRs can be tested in parallel on the same machine without their state directories colliding:
 
 ```sh
 export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
 export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
 ```
-
-Replace `<PR_NUMBER>` with the actual PR number (e.g. `326`). After verification the directories can be deleted with `rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"`.
 
 For construct image PRs, add the build step and the override export:
 

@@ -5,7 +5,7 @@
 //! highlight overlay that the compositor writes on top of pane bodies.
 
 use crate::tui::layout::{Rect, local_mouse_position};
-use crate::tui::render::{PaneBodyDim, RowSnapshot, render_row_range_inverse};
+use crate::tui::render::RowSnapshot;
 
 /// Active mouse text selection on a pane. Held until the operator
 /// releases the mouse button or the pane resizes.
@@ -109,40 +109,6 @@ pub(crate) fn move_selection_end(sel: &mut SelectionState, row: u16, col: u16) {
     let clamped_col = col.clamp(inner.col, inner.col + inner.cols.saturating_sub(1));
     sel.end_row = clamped_row - inner.row;
     sel.end_col = clamped_col - inner.col;
-}
-
-/// Paint an inverse-video highlight over every cell inside the
-/// selection rectangle. Emitted after pane-body rendering so the
-/// agent's content is preserved underneath — the operator sees the same
-/// glyphs but on a reversed colour pair, which is the universal
-/// "this is selected" cue.
-pub(crate) fn paint_selection_highlight(
-    buf: &mut Vec<u8>,
-    rows: &[RowSnapshot],
-    sel: &SelectionState,
-    dim: PaneBodyDim,
-) {
-    let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
-    let inner = sel.inner;
-    for r in start_row..=end_row {
-        let Some(row) = rows.get(usize::from(r)) else {
-            continue;
-        };
-        let from_col = if r == start_row { start_col } else { 0 };
-        let to_col = if r == end_row {
-            end_col
-        } else {
-            inner.cols.saturating_sub(1)
-        };
-        if to_col < from_col {
-            continue;
-        }
-        let abs_row = inner.row + r;
-        let abs_col = inner.col + from_col;
-        let _ =
-            std::io::Write::write_fmt(buf, format_args!("\x1b[{};{}H", abs_row + 1, abs_col + 1));
-        render_row_range_inverse(buf, row, from_col, to_col, dim);
-    }
 }
 
 #[cfg(test)]

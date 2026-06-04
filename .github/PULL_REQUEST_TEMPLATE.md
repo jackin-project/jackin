@@ -89,6 +89,8 @@ mise trust
 mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
+export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
 which jackin
 ```
 
@@ -102,15 +104,6 @@ Then build and export the jackin-capsule binary so the smoke steps below use it:
 
 ```sh
 eval "$(cargo run --bin build-jackin-capsule -- --export)"
-```
-
-### Isolation
-
-<Include when the PR touches config/state layout, path resolution, versioned schemas, runtime state under ~/.jackin/, or the construct image. Drop this section entirely for docs-only, roadmap, CI, or pure-refactor PRs. See PULL_REQUESTS.md § "Isolation env vars" for the full decision rule.>
-
-```sh
-export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
-export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
 ```
 
 <For construct image PRs only, also add:>

@@ -410,7 +410,7 @@ fn render_filter_picker(
             )),
             PickerItem::Item(label) => ratatui::widgets::ListItem::new(Line::from(Span::styled(
                 label.clone(),
-                Style::default().fg(WHITE),
+                Style::default().fg(PHOSPHOR_GREEN),
             ))),
         })
         .collect();

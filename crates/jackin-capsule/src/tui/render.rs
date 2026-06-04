@@ -6,39 +6,9 @@ use std::io::Write;
 
 use jackin_tui::ansi::{RESET, fg};
 
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub(crate) struct Attrs {
-    fg: ColorKey,
-    bg: ColorKey,
-    bold: bool,
-    dim: bool,
-    italic: bool,
-    underline: bool,
-    inverse: bool,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-enum ColorKey {
-    #[default]
-    Default,
-    Idx(u8),
-    Rgb(u8, u8, u8),
-}
-
-impl From<jackin_term::Color> for ColorKey {
-    fn from(c: jackin_term::Color) -> Self {
-        match c {
-            jackin_term::Color::Default => Self::Default,
-            jackin_term::Color::Idx(n) => Self::Idx(n),
-            jackin_term::Color::Rgb(r, g, b) => Self::Rgb(r, g, b),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CellSnapshot {
     pub(crate) contents: String,
-    attrs: Attrs,
     pub(crate) width: u16,
 }
 
@@ -57,24 +27,11 @@ impl RowSnapshot {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PaneBodyRenderMode {
-    Full,
-    Partial,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PaneBodyDim {
     #[default]
     Normal,
     Inactive,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PaneBodyRenderStats {
-    pub mode: PaneBodyRenderMode,
-    pub rows_emitted: usize,
-    pub changed_rows: Vec<u16>,
 }
 
 /// Cached visible pane body used to emit Zellij-style changed rows
@@ -85,124 +42,15 @@ pub struct PaneBodyCache {
     cols: u16,
     dim: PaneBodyDim,
     valid: bool,
-    snapshot: Vec<RowSnapshot>,
 }
 
 impl PaneBodyCache {
     pub fn invalidate(&mut self) {
         self.valid = false;
-        self.snapshot.clear();
     }
 
     pub fn is_valid_for(&self, rect_rows: u16, rect_cols: u16, dim: PaneBodyDim) -> bool {
         self.valid && self.rows == rect_rows && self.cols == rect_cols && self.dim == dim
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn render_full_snapshot(
-        &mut self,
-        snapshot: Vec<RowSnapshot>,
-        dest_row: u16,
-        dest_col: u16,
-        rect_rows: u16,
-        rect_cols: u16,
-        dim: PaneBodyDim,
-        right_edge: PaneRightEdge,
-        buf: &mut Vec<u8>,
-    ) -> PaneBodyRenderStats {
-        self.render_full_from_snapshot(
-            snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn render_full_from_snapshot(
-        &mut self,
-        snapshot: Vec<RowSnapshot>,
-        dest_row: u16,
-        dest_col: u16,
-        rect_rows: u16,
-        rect_cols: u16,
-        dim: PaneBodyDim,
-        right_edge: PaneRightEdge,
-        buf: &mut Vec<u8>,
-    ) -> PaneBodyRenderStats {
-        let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
-        render_snapshot_rows(
-            &snapshot,
-            &changed_rows,
-            dest_row,
-            dest_col,
-            dim,
-            right_edge,
-            buf,
-        );
-        self.rows = rect_rows;
-        self.cols = rect_cols;
-        self.dim = dim;
-        self.valid = true;
-        self.snapshot = snapshot;
-        PaneBodyRenderStats {
-            mode: PaneBodyRenderMode::Full,
-            rows_emitted: changed_rows.len(),
-            changed_rows,
-        }
-    }
-
-    /// Diff a freshly-built snapshot against the cached one and emit only
-    /// changed rows; falls back to a full repaint when geometry or
-    /// row-count diverges.
-    ///
-    /// Test-only: production drives the cache through `render_full_snapshot`
-    /// plus the compositor's `dirty_spans` wire path, which already emits
-    /// minimal updates. This method exercises the snapshot-diff fallback the
-    /// cache uses when no dirty-span information is available.
-    #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn render_partial_snapshot(
-        &mut self,
-        next: Vec<RowSnapshot>,
-        dest_row: u16,
-        dest_col: u16,
-        rect_rows: u16,
-        rect_cols: u16,
-        dim: PaneBodyDim,
-        right_edge: PaneRightEdge,
-        buf: &mut Vec<u8>,
-    ) -> PaneBodyRenderStats {
-        if !self.valid
-            || self.rows != rect_rows
-            || self.cols != rect_cols
-            || self.dim != dim
-            || next.len() != self.snapshot.len()
-        {
-            return self.render_full_from_snapshot(
-                next, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
-            );
-        }
-
-        let changed_rows: Vec<u16> = next
-            .iter()
-            .zip(&self.snapshot)
-            .enumerate()
-            .filter_map(|(idx, (new_row, old_row))| (new_row != old_row).then_some(idx as u16))
-            .collect();
-        render_snapshot_rows(
-            &next,
-            &changed_rows,
-            dest_row,
-            dest_col,
-            dim,
-            right_edge,
-            buf,
-        );
-        self.snapshot = next;
-
-        PaneBodyRenderStats {
-            mode: PaneBodyRenderMode::Partial,
-            rows_emitted: changed_rows.len(),
-            changed_rows,
-        }
     }
 }
 
@@ -294,16 +142,11 @@ pub(crate) fn snapshot_damagegrid_row(
             .filter(|c| c.is_wide)
             .map_or(1, |_| 2)
             .min(cols_to_draw - col);
-        let attrs = cell.map(cell_attrs_damagegrid).unwrap_or_default();
         let contents = match cell {
             Some(c) if c.has_contents() => c.contents().to_string(),
             _ => " ".repeat(width as usize),
         };
-        cells.push(CellSnapshot {
-            contents,
-            attrs,
-            width,
-        });
+        cells.push(CellSnapshot { contents, width });
         col += width;
     }
     RowSnapshot { cells }
@@ -365,139 +208,15 @@ fn snapshot_damagegrid_cells(cells: &[jackin_term::Cell], cols_to_draw: u16) -> 
             continue;
         }
         let width = if cell.is_wide { 2 } else { 1 }.min(cols_to_draw - col);
-        let attrs = cell_attrs_damagegrid(cell);
         let contents = if cell.has_contents() {
             cell.contents().to_string()
         } else {
             " ".repeat(width as usize)
         };
-        out.push(CellSnapshot {
-            contents,
-            attrs,
-            width,
-        });
+        out.push(CellSnapshot { contents, width });
         col += width;
     }
     RowSnapshot { cells: out }
-}
-
-fn cell_attrs_damagegrid(cell: &jackin_term::Cell) -> Attrs {
-    Attrs {
-        fg: ColorKey::from(cell.fgcolor()),
-        bg: ColorKey::from(cell.bgcolor()),
-        bold: cell.bold(),
-        dim: cell.dim(),
-        italic: cell.italic(),
-        underline: cell.underline(),
-        inverse: cell.inverse(),
-    }
-}
-
-/// Whether this pane's right edge reaches the terminal's right boundary.
-///
-/// When true, `\x1b[K` (erase to end of terminal line) is safe to emit after
-/// each row — it erases stale cells from any previous wider layout without
-/// touching adjacent pane content. When false (left pane in a horizontal
-/// split), `\x1b[K` would erase the right neighbour's content and must be
-/// suppressed.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PaneRightEdge {
-    /// Pane extends to the terminal's right margin — `\x1b[K` is safe.
-    TerminalEdge,
-    /// Pane is left/interior in a horizontal split — `\x1b[K` would clobber
-    /// adjacent pane content; suppress it.
-    Interior,
-}
-
-fn render_snapshot_rows(
-    snapshot: &[RowSnapshot],
-    rows: &[u16],
-    dest_row: u16,
-    dest_col: u16,
-    dim: PaneBodyDim,
-    right_edge: PaneRightEdge,
-    buf: &mut Vec<u8>,
-) {
-    if rows.is_empty() {
-        return;
-    }
-    let erase_to_eol = right_edge == PaneRightEdge::TerminalEdge;
-    for &row_idx in rows {
-        let Some(row) = snapshot.get(row_idx as usize) else {
-            continue;
-        };
-        write_cursor(buf, dest_row + row_idx, dest_col);
-        buf.extend_from_slice(b"\x1b[0m");
-        let mut last = Attrs::default();
-        let mut last_emitted = false;
-        for cell in &row.cells {
-            if !last_emitted || cell.attrs != last {
-                emit_sgr(buf, &cell.attrs, dim);
-                last = cell.attrs;
-                last_emitted = true;
-            }
-            buf.extend_from_slice(cell.contents.as_bytes());
-        }
-        // Erase from the cursor (end of pane content) to end of terminal
-        // line so stale cells from a previous wider layout cannot survive
-        // a resize or a split change (Defect 44). Only safe when the pane's
-        // right edge reaches the terminal boundary; interior panes in
-        // horizontal splits suppress it to avoid erasing adjacent content.
-        if erase_to_eol {
-            buf.extend_from_slice(b"\x1b[K");
-        }
-    }
-    buf.extend_from_slice(b"\x1b[0m");
-}
-
-fn write_cursor(buf: &mut Vec<u8>, row: u16, col: u16) {
-    let _ = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
-}
-
-fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: PaneBodyDim) {
-    buf.extend_from_slice(b"\x1b[0");
-    // Inactive (unfocused multi-pane) panes get a subtle ANSI dim; Amp's
-    // animated bottom-bar uses the same `a.dim` cell attribute.
-    if a.dim || dim != PaneBodyDim::Normal {
-        buf.extend_from_slice(b";2");
-    }
-    if a.bold {
-        buf.extend_from_slice(b";1");
-    }
-    if a.italic {
-        buf.extend_from_slice(b";3");
-    }
-    if a.underline {
-        buf.extend_from_slice(b";4");
-    }
-    if a.inverse {
-        buf.extend_from_slice(b";7");
-    }
-    emit_fg(buf, a.fg);
-    emit_bg(buf, a.bg);
-    buf.push(b'm');
-}
-
-pub(crate) fn render_row_range_inverse(
-    buf: &mut Vec<u8>,
-    row: &RowSnapshot,
-    from_col: u16,
-    to_col: u16,
-    dim: PaneBodyDim,
-) {
-    let mut last = Attrs::default();
-    let mut last_emitted = false;
-    for cell in row_range_cells(row, from_col, to_col) {
-        let mut attrs = cell.attrs;
-        attrs.inverse = !attrs.inverse;
-        if !last_emitted || attrs != last {
-            emit_sgr(buf, &attrs, dim);
-            last = attrs;
-            last_emitted = true;
-        }
-        buf.extend_from_slice(cell.contents.as_bytes());
-    }
-    buf.extend_from_slice(b"\x1b[0m");
 }
 
 fn row_range_cells(row: &RowSnapshot, from_col: u16, to_col: u16) -> Vec<CellSnapshot> {
@@ -525,86 +244,9 @@ fn row_range_cells(row: &RowSnapshot, from_col: u16, to_col: u16) -> Vec<CellSna
         let width = overlap_end.saturating_sub(overlap_start).saturating_add(1);
         cells.push(CellSnapshot {
             contents: " ".repeat(usize::from(width)),
-            attrs: cell.attrs,
             width,
         });
     }
     cells
 }
 
-/// Which SGR plane an emit targets. `Fg` uses the `3x`/`9x`/`38;…`
-/// family; `Bg` uses `4x`/`10x`/`48;…`. The two emit functions are
-/// parameterised over this so a future palette change moves once.
-#[derive(Clone, Copy)]
-enum SgrLayer {
-    Fg,
-    Bg,
-}
-
-impl SgrLayer {
-    const fn low(self) -> u8 {
-        match self {
-            Self::Fg => 3,
-            Self::Bg => 4,
-        }
-    }
-    const fn bright(self) -> u8 {
-        match self {
-            Self::Fg => 9,
-            Self::Bg => 10,
-        }
-    }
-    const fn truecolor(self) -> u8 {
-        match self {
-            Self::Fg => 38,
-            Self::Bg => 48,
-        }
-    }
-}
-
-fn emit_color(buf: &mut Vec<u8>, layer: SgrLayer, color: ColorKey) {
-    match color {
-        ColorKey::Default => {}
-        ColorKey::Idx(n) if n < 8 => {
-            let _ = write!(buf, ";{}{n}", layer.low());
-        }
-        ColorKey::Idx(n) if n < 16 => {
-            let _ = write!(buf, ";{}{}", layer.bright(), n - 8);
-        }
-        ColorKey::Idx(n) => {
-            let _ = write!(buf, ";{};5;{n}", layer.truecolor());
-        }
-        ColorKey::Rgb(r, g, b) => {
-            let _ = write!(buf, ";{};2;{r};{g};{b}", layer.truecolor());
-        }
-    }
-}
-
-fn emit_fg(buf: &mut Vec<u8>, color: ColorKey) {
-    emit_color(buf, SgrLayer::Fg, color);
-}
-
-fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
-    emit_color(buf, SgrLayer::Bg, color);
-}
-
-/// Paint the whole terminal with a solid background colour, fully hiding
-/// whatever was beneath. Used as the opaque backdrop behind modal dialogs.
-pub fn fill_screen(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, rgb: jackin_tui::Rgb) {
-    let jackin_tui::Rgb { r, g, b } = rgb;
-    // Emit the SGR (background color + reset) once before the loop, then only
-    // emit cursor-position escapes per row. Emitting SGR per-row created redundant
-    // escape sequences and made the buffer larger than necessary.
-    let _ = write!(buf, "\x1b[0;48;2;{r};{g};{b}m");
-    // Pre-build a row of spaces to avoid per-cell push inside the loop.
-    let spaces: Vec<u8> = vec![b' '; term_cols as usize];
-    for row in 0..term_rows {
-        let _ = write!(buf, "\x1b[{};1H", row + 1);
-        buf.extend_from_slice(&spaces);
-    }
-    // Reset SGR so subsequent renders start from a known state.
-    buf.extend_from_slice(b"\x1b[0m");
-}
-
-#[cfg(test)]
-mod tests;

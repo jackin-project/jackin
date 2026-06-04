@@ -228,14 +228,14 @@ fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
     mux.workdir = PathBuf::from("/workspace/jackin");
     mux.pull_request_context_branch = Some(branch("feat/capsule-pr-context-bar"));
 
-    let first = String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+    let first = String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
         .to_string();
     assert!(
         first.contains("\x1b]2;jackin · feat/capsule-pr-context-bar\x1b\\"),
         "first frame should set branch title: {first:?}"
     );
 
-    let second = String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+    let second = String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
         .to_string();
     assert!(
         !second.contains("\x1b]2;jackin · feat/capsule-pr-context-bar\x1b\\"),
@@ -244,7 +244,7 @@ fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
 
     mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
     let updated =
-        String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
             .to_string();
     assert!(
         updated.contains("\x1b]2;jackin · PR #436 · Surface PR context in Capsule\x1b\\"),
@@ -259,7 +259,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
     mux.workdir_context.default_branch = Some("main".to_string());
     mux.pull_request_context_branch = Some(branch("feat/a"));
 
-    let first = String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+    let first = String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
         .to_string();
     assert!(
         first.contains("\x1b]2;jackin · feat/a\x1b\\"),
@@ -268,7 +268,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
 
     mux.pull_request_context_branch = Some(branch("feat/b"));
     let switched =
-        String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
             .to_string();
     assert!(
         switched.contains("\x1b]2;jackin · feat/b\x1b\\"),
@@ -277,7 +277,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
 
     mux.pull_request_context_branch = Some(branch("main"));
     let default_branch =
-        String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
             .to_string();
     assert!(
         default_branch.contains("\x1b]2;jackin\x1b\\"),
@@ -443,12 +443,12 @@ fn resize_zero_zero_normalizes_to_default_dimensions() {
 fn resize_then_full_frame_repaints_with_new_geometry() {
     let mut mux = single_pane_tab_mux_with_size(24, 80);
     assert!(
-        !mux.compose_full_frame(FullRedrawReason::FirstAttach)
+        !mux.compose_full_redraw(FullRedrawReason::FirstAttach)
             .is_empty()
     );
 
     mux.resize(30, 100);
-    let frame = mux.compose_full_frame(FullRedrawReason::Resize);
+    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
 
     assert_eq!((mux.term_rows, mux.term_cols), (30, 100));
     assert!(
@@ -472,11 +472,11 @@ fn full_frame_repaints_pane_body_even_when_not_dirty() {
     session.feed_pty(b"\x1b[1;1HHELLO-PANE-BODY");
     mux.sessions.insert(1, session);
 
-    let first = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+    let first = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
     assert!(contains(&first), "first full frame must paint pane body");
 
     // No new PTY output: the damage tracker is now drained.
-    let second = mux.compose_full_frame(FullRedrawReason::DialogChange);
+    let second = mux.compose_full_redraw(FullRedrawReason::DialogChange);
     assert!(
         contains(&second),
         "second full frame over an idle pane must still repaint the body"
@@ -495,12 +495,13 @@ fn scan_emitted_frame_reports_geometry_fingerprint() {
 }
 
 #[test]
-fn geometry_changing_redraws_emit_screen_erase_others_do_not() {
-    // PR #495 regression: the bottom chrome (branch bar, debug chip) is raw
-    // ANSI the Ratatui SocketBackend diff cannot track. When a geometry change
-    // moves the chrome row, the previous geometry's chrome must be wiped with a
-    // real \x1b[2J or it is orphaned (empty pane cells never paint over it).
-    // first-attach follows the attach-time resize, so it clears too.
+fn full_redraw_always_emits_screen_erase() {
+    // Single-renderer invariant: every full frame goes through
+    // compose_full_redraw, which clears the Ratatui buffer
+    // (Terminal::clear -> SocketBackend::clear_region(All) -> `\x1b[2J\x1b[H`).
+    // That unconditional erase is what stops chrome from a prior geometry
+    // being orphaned — the raw-ANSI bottom bar the diff cannot track is wiped
+    // before every repaint, regardless of the redraw reason.
     let erase = b"\x1b[2J";
     let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
 
@@ -509,28 +510,13 @@ fn geometry_changing_redraws_emit_screen_erase_others_do_not() {
         FullRedrawReason::Resize,
         FullRedrawReason::SplitClose,
         FullRedrawReason::LayoutChange,
-    ] {
-        assert!(reason.clears_screen(), "{reason:?} must clear the screen");
-        let mut mux = single_pane_tab_mux_with_size(24, 80);
-        let frame = mux.compose_full_frame(reason);
-        assert!(contains(&frame), "{reason:?} full frame must emit \\x1b[2J");
-    }
-
-    for reason in [
         FullRedrawReason::StatusChange,
         FullRedrawReason::PaneCacheMiss,
         FullRedrawReason::ScrollbackMovement,
     ] {
-        assert!(
-            !reason.clears_screen(),
-            "{reason:?} must not clear the screen"
-        );
         let mut mux = single_pane_tab_mux_with_size(24, 80);
-        let frame = mux.compose_full_frame(reason);
-        assert!(
-            !contains(&frame),
-            "{reason:?} full frame must not emit \\x1b[2J (would flash on every tick)"
-        );
+        let frame = mux.compose_full_redraw(reason);
+        assert!(contains(&frame), "{reason:?} full frame must emit \\x1b[2J");
     }
 }
 
@@ -550,7 +536,7 @@ fn resize_shrink_then_grow_does_not_panic() {
     mux.resize(50, 200);
     assert_eq!((mux.term_rows, mux.term_cols), (50, 200));
     // Full repaint after growth must not be empty.
-    let frame = mux.compose_full_frame(FullRedrawReason::Resize);
+    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
     assert!(!frame.is_empty(), "grow must produce repaint");
 }
 
@@ -622,11 +608,11 @@ fn dialog_opaque_backdrop_hides_multiplexer_chrome() {
 
     fn assert_backdrop_opaque(mut mux: Multiplexer, context: &str) {
         let frame =
-            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::DialogChange))
+            String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::DialogChange))
                 .to_string();
 
         assert!(
-            frame.contains(jackin_tui::ansi::reset_rgb_bg(jackin_tui::DIALOG_BACKDROP)),
+            frame.contains(&jackin_tui::ansi::rgb_bg_dyn(jackin_tui::DIALOG_BACKDROP)),
             "{context} should paint an opaque black backdrop: {frame:?}"
         );
         assert!(
@@ -2152,7 +2138,7 @@ fn alt_screen_overflow_does_not_draw_scrollbar_without_retained_scrollback() {
     assert_eq!(session.scrollback_filled(), 0);
     mux.sessions.insert(1, session);
 
-    let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+    let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
     assert_no_scroll_thumb(&frame, "alt-screen pane without retained scrollback");
 }
 
@@ -2166,7 +2152,7 @@ fn normal_screen_panes_do_not_draw_scrollbar_when_grid_is_full_without_scrollbac
         }
         mux.sessions.insert(1, session);
 
-        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
         assert_no_scroll_thumb(
             &frame,
             &format!("normal-screen {pane_kind} pane with full grid but no scrollback"),
@@ -2183,7 +2169,7 @@ fn normal_screen_panes_do_not_draw_scrollbar_when_content_spans_viewport_without
         assert_eq!(session.scrollback_filled(), 0);
         mux.sessions.insert(1, session);
 
-        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
         assert_no_scroll_thumb(
             &frame,
             &format!(
@@ -2202,7 +2188,7 @@ fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollbac
         assert_eq!(session.scrollback_filled(), 0);
         mux.sessions.insert(1, session);
 
-        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
         assert_no_scroll_thumb(
             &frame,
             &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
@@ -2261,7 +2247,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
 fn pointer_shape_updates_for_clickable_top_chrome() {
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
     let tab_col = mux
@@ -2277,7 +2263,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
 
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
     let menu_col = mux
@@ -2617,7 +2603,7 @@ fn apply_action_open_rename_tab_pushes_dialog() {
 fn apply_action_switch_tab_moves_active_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2));
-    let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
 
     mux.apply_action(Action::SwitchTab(1));
 
@@ -2628,7 +2614,7 @@ fn apply_action_switch_tab_moves_active_tab() {
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2));
-    let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
     let col = (1..mux.term_cols)
         .find(|col| mux.status_bar.tab_at_col(*col) == Some(1))
         .expect("second tab should have a clickable column")
@@ -2642,7 +2628,7 @@ fn apply_action_status_bar_click_switches_tab() {
 #[test]
 fn apply_action_status_bar_double_click_opens_rename() {
     let mut mux = single_pane_tab_mux();
-    let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
     let col = (1..mux.term_cols)
         .find(|col| mux.status_bar.tab_at_col(*col) == Some(0))
         .expect("first tab should have a clickable column")
@@ -2808,7 +2794,7 @@ fn apply_action_focus_report_does_not_open_dialog() {
 fn apply_action_mouse_chrome_update_sets_pointer_shape() {
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
     let tab_col = mux
@@ -3039,9 +3025,9 @@ fn split_close_frame_contains_screen_erase() {
     // with \x1b[2J so stale cells from the removed pane are cleared.
     // compose_full_frame(SplitClose) is the path triggered after close_focused_pane/tab.
     let mut mux = single_pane_tab_mux_with_size(24, 80);
-    let _ = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+    let _ = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
 
-    let frame = mux.compose_full_frame(FullRedrawReason::SplitClose);
+    let frame = mux.compose_full_redraw(FullRedrawReason::SplitClose);
     assert!(!frame.is_empty(), "SplitClose must produce a repaint frame");
     // \x1b[2J is the screen-erase sequence required by the layout-change path.
     assert!(

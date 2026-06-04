@@ -11,7 +11,7 @@ use crate::ModalOutcome;
 use crate::components::FilterInput;
 use crate::components::panel::{Panel, PanelFocus};
 use crate::scroll::{cursor_follow_offset, full_cell_thumb, is_scrollable};
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
 
 #[derive(Debug)]
 pub struct SelectListState {
@@ -237,7 +237,7 @@ impl Widget for SelectList<'_> {
                 };
                 ListItem::new(Line::from(Span::styled(
                     label_str,
-                    Style::default().fg(WHITE),
+                    Style::default().fg(PHOSPHOR_GREEN),
                 )))
             })
             .collect();
@@ -271,15 +271,18 @@ pub fn render_picker_list(
     let viewport = usize::from(area.height);
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
 
-    // Use ratatui List so the selected row gets a full-width background fill.
+    // Canonical modal-list look (matches the legacy raw dialog 1:1): the whole
+    // list sits on the dark dialog surface, the selected row inverts to a
+    // PHOSPHOR_GREEN bar with black bold text and a `▸` cursor.
     let highlight = Style::default()
         .bg(PHOSPHOR_GREEN)
-        .fg(PHOSPHOR_DARK)
+        .fg(crate::theme::color(crate::BLACK))
         .add_modifier(Modifier::BOLD);
     let mut state = ListState::default()
         .with_offset(offset)
         .with_selected(selected);
     let list = List::new(items)
+        .style(Style::default().bg(crate::theme::DIALOG_SURFACE))
         .highlight_style(highlight)
         .highlight_symbol("\u{25b8} ") // ▸
         .highlight_spacing(HighlightSpacing::Always);

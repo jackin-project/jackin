@@ -297,16 +297,21 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha5`
+### `v1alpha6`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha5` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
+| `[claude].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
+| `[codex].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[amp].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
+| `[amp].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[kimi].auth_forward` | string | No | `v1alpha4` | `sync`, `api_key`, or `ignore` |
+| `[kimi].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[opencode].auth_forward` | string | No | `v1alpha3` | `sync`, `api_key`, or `ignore` |
+| `[opencode].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
 | `[github.env]` | table | No | `legacy` | Operator env values for GitHub token auth |
 | `[env]` | table | No | `legacy` | Global operator env layer |
@@ -340,11 +345,11 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha5`
+### `v1alpha6`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha5` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
@@ -359,18 +364,28 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `[[mounts]].isolation` | string | No | `legacy` | `shared`, `worktree`, or `clone`; legacy default is `shared` |
 | `[keep_awake].enabled` | bool | No | `legacy` | macOS keep-awake toggle |
 | `[claude].auth_forward` | string | No | `legacy` | Workspace Claude auth override |
+| `[claude].sync_source_dir` | string | No | `v1alpha6` | Workspace Claude host folder override for `sync` auth forwarding |
 | `[codex].auth_forward` | string | No | `legacy` | Workspace Codex auth override |
+| `[codex].sync_source_dir` | string | No | `v1alpha6` | Workspace Codex host folder override for `sync` auth forwarding |
 | `[amp].auth_forward` | string | No | `legacy` | Workspace Amp auth override |
+| `[amp].sync_source_dir` | string | No | `v1alpha6` | Workspace Amp host folder override for `sync` auth forwarding |
 | `[kimi].auth_forward` | string | No | `v1alpha4` | Workspace Kimi auth override |
+| `[kimi].sync_source_dir` | string | No | `v1alpha6` | Workspace Kimi host folder override for `sync` auth forwarding |
 | `[opencode].auth_forward` | string | No | `v1alpha3` | Workspace OpenCode auth override |
+| `[opencode].sync_source_dir` | string | No | `v1alpha6` | Workspace OpenCode host folder override for `sync` auth forwarding |
 | `[github].auth_forward` | string | No | `legacy` | Workspace GitHub auth override |
 | `[github.env]` | table | No | `legacy` | Workspace GitHub token env values; `op://` references carry the per-ref `account` since `v1alpha5` |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override; `op://` references carry the per-ref `account` since `v1alpha5` |
 | `[roles.<role>.claude].auth_forward` | string | No | `legacy` | Per-workspace, per-role Claude auth override |
+| `[roles.<role>.claude].sync_source_dir` | string | No | `v1alpha6` | Per-workspace, per-role Claude host folder override for `sync` auth forwarding |
 | `[roles.<role>.codex].auth_forward` | string | No | `legacy` | Per-workspace, per-role Codex auth override |
+| `[roles.<role>.codex].sync_source_dir` | string | No | `v1alpha6` | Per-workspace, per-role Codex host folder override for `sync` auth forwarding |
 | `[roles.<role>.amp].auth_forward` | string | No | `legacy` | Per-workspace, per-role Amp auth override |
+| `[roles.<role>.amp].sync_source_dir` | string | No | `v1alpha6` | Per-workspace, per-role Amp host folder override for `sync` auth forwarding |
 | `[roles.<role>.kimi].auth_forward` | string | No | `v1alpha4` | Per-workspace, per-role Kimi auth override |
+| `[roles.<role>.kimi].sync_source_dir` | string | No | `v1alpha6` | Per-workspace, per-role Kimi host folder override for `sync` auth forwarding |
 | `[roles.<role>.opencode].auth_forward` | string | No | `v1alpha3` | Per-workspace, per-role OpenCode auth override |
+| `[roles.<role>.opencode].sync_source_dir` | string | No | `v1alpha6` | Per-workspace, per-role OpenCode host folder override for `sync` auth forwarding |
 | `[roles.<role>.github].auth_forward` | string | No | `legacy` | Per-workspace, per-role GitHub auth override |
 | `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values; `op://` references carry the per-ref `account` since `v1alpha5` |
 

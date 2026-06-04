@@ -52,7 +52,9 @@ Every pull request created by an agent must include a copy-pasteable "Verify loc
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a PR-specific test directory (`$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>`) so the operator can inspect multiple PRs at once without checkout collisions. Use the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
-The canonical body shape, intent-split block list, and isolation-env-var decision rule live in [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) — read them first. The agent-specific extras below override or extend that shared content.
+The checkout block must export `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"` and `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"` immediately after the `PATH` export for every PR, even docs-only or pure-refactor PRs. Do not leave isolation as a separate optional section: a PR binary can migrate config or write runtime state before the operator notices, and shared live config can make older PR branches unusable after a newer schema branch has been tested.
+
+The canonical body shape, intent-split block list, and mandatory isolation env-var rule live in [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) — read them first. The agent-specific extras below override or extend that shared content.
 
 ## `jackin-capsule` PRs (hard rule)
 

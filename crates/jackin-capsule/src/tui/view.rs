@@ -6,15 +6,11 @@ use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
 };
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
-use crate::tui::components::dialog::{Dialog, GithubContextView};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
-use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
+use crate::tui::components::status_bar::draw_pane_box;
 use crate::tui::layout::Tab;
-use crate::tui::render::{
-    PaneBodyCache, PaneBodyRenderStats, PaneRightEdge, RowSnapshot, draw_scrollbar, fill_screen,
-};
-use crate::tui::selection::{SelectionState, paint_selection_highlight};
+use crate::tui::render::draw_scrollbar;
 use ratatui::{Frame, layout::Rect as RatatuiRect};
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
@@ -42,9 +38,8 @@ impl PaneScrollbar {
 
 /// Draw the pane box and optional scrollbar for one visible pane.
 ///
-/// Called identically from compose_full_frame and compose_partial_frame;
-/// lives here so both compositors stay in lock-step when the chrome rules
-/// change.
+/// Used by `compose_partial_frame` for the dirty-pane incremental path (the
+/// full-frame path renders pane borders via the Ratatui `PaneBorderWidget`).
 pub(crate) fn render_capsule_pane_chrome(
     buf: &mut Vec<u8>,
     pane: &VisiblePane,
@@ -79,100 +74,6 @@ pub(crate) fn render_capsule_pane_chrome(
         scrollbar.filled,
         pane.focused && highlight_focus,
     );
-}
-
-pub(crate) fn pane_right_edge(pane: &VisiblePane, term_cols: u16) -> PaneRightEdge {
-    if pane.inner.col.saturating_add(pane.inner.cols) >= term_cols {
-        PaneRightEdge::TerminalEdge
-    } else {
-        PaneRightEdge::Interior
-    }
-}
-
-pub(crate) fn render_capsule_pane_body_snapshot(
-    buf: &mut Vec<u8>,
-    cache: &mut PaneBodyCache,
-    pane: &VisiblePane,
-    snapshot: Vec<RowSnapshot>,
-    term_cols: u16,
-) -> PaneBodyRenderStats {
-    cache.render_full_snapshot(
-        snapshot,
-        pane.inner.row,
-        pane.inner.col,
-        pane.inner.rows,
-        pane.inner.cols,
-        pane.body_dim,
-        pane_right_edge(pane, term_cols),
-        buf,
-    )
-}
-
-pub(crate) fn render_capsule_selection_highlight(
-    buf: &mut Vec<u8>,
-    rows: &[RowSnapshot],
-    selection: &SelectionState,
-    dim: crate::tui::render::PaneBodyDim,
-) {
-    paint_selection_highlight(buf, rows, selection, dim);
-}
-
-
-pub(crate) struct CapsuleStatusBarFrame<'a> {
-    pub(crate) term_cols: u16,
-    pub(crate) tabs: &'a [Tab],
-    pub(crate) active_tab: usize,
-    pub(crate) session_states: &'a [(u64, VisibleAgentState)],
-    pub(crate) hover_target: Option<HoverTarget>,
-}
-
-pub(crate) fn render_capsule_status_bar(
-    buf: &mut Vec<u8>,
-    status_bar: &mut StatusBar,
-    view: CapsuleStatusBarFrame<'_>,
-) {
-    status_bar.render(
-        buf,
-        view.term_cols,
-        view.tabs,
-        view.active_tab,
-        view.session_states,
-        hovered_tab(view.hover_target),
-        hovered_menu(view.hover_target),
-    );
-}
-
-pub(crate) struct CapsuleRawDialogOverlay<'a> {
-    pub(crate) term_rows: u16,
-    pub(crate) term_cols: u16,
-    pub(crate) dialog: &'a Dialog,
-    pub(crate) copy_target_hovered: bool,
-    pub(crate) github: GithubContextView<'a>,
-}
-
-pub(crate) fn render_capsule_raw_dialog_overlay(
-    buf: &mut Vec<u8>,
-    view: CapsuleRawDialogOverlay<'_>,
-) {
-    fill_screen(
-        buf,
-        view.term_rows,
-        view.term_cols,
-        jackin_tui::DIALOG_BACKDROP,
-    );
-    view.dialog.render_with_hover(
-        buf,
-        view.term_rows,
-        view.term_cols,
-        view.copy_target_hovered,
-        Some(&view.github),
-    );
-    view.dialog
-        .render_footer_hint(buf, view.term_rows, view.term_cols, Some(&view.github));
-}
-
-pub(crate) fn render_capsule_dialog_backdrop(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
-    fill_screen(buf, term_rows, term_cols, jackin_tui::DIALOG_BACKDROP);
 }
 
 pub(crate) struct CapsuleBottomChrome<'a> {
@@ -373,6 +274,17 @@ fn apply_selection_highlight(
 }
 
 pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>) {
+    // A modal owns the whole screen: paint an opaque backdrop over the FULL
+    // frame (status bar included) so no multiplexer chrome shows behind it,
+    // then draw the dialog on top. Matches the legacy raw dialog overlay.
+    if view.dialog_open {
+        frame.render_widget(DialogBackdrop, frame.area());
+        if let Some((snapshot, rect)) = view.dialog_snapshot {
+            render_dialog_ratatui(frame, *rect, snapshot);
+        }
+        return;
+    }
+
     let status_area = RatatuiRect {
         x: 0,
         y: 0,
@@ -391,22 +303,6 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         },
         status_area,
     );
-
-    if view.dialog_open {
-        let content_area = RatatuiRect {
-            x: 0,
-            y: crate::tui::components::status_bar::STATUS_BAR_ROWS,
-            width: view.term_cols,
-            height: view
-                .term_rows
-                .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS),
-        };
-        frame.render_widget(DialogBackdrop, content_area);
-        if let Some((snapshot, rect)) = view.dialog_snapshot {
-            render_dialog_ratatui(frame, *rect, snapshot);
-        }
-        return;
-    }
 
     // Bottom chrome (hint row, separator pad, branch/PR bar) is NOT a Ratatui
     // widget: the caller appends it as raw ANSI after the Ratatui diff so a

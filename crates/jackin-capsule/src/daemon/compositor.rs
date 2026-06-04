@@ -8,12 +8,8 @@ use std::time::Instant;
 
 use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
 use crate::tui::view::{
-    CapsuleBottomChrome, CapsuleDialogBottomChrome, CapsuleRawDialogOverlay, CapsuleStatusBarFrame,
-    PaneScrollbar, grid_scroll_affordance_metrics, render_capsule_bottom_chrome,
-    render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
-    render_capsule_pane_body_snapshot, render_capsule_pane_chrome,
-    render_capsule_raw_dialog_overlay, render_capsule_selection_highlight,
-    render_capsule_status_bar,
+    CapsuleBottomChrome, CapsuleDialogBottomChrome, PaneScrollbar, grid_scroll_affordance_metrics,
+    render_capsule_bottom_chrome, render_capsule_dialog_bottom_chrome, render_capsule_pane_chrome,
 };
 
 use super::*;
@@ -98,45 +94,39 @@ impl Multiplexer {
     }
 
     /// Single entry point for every full frame, regardless of which path
-    /// requested it (initial pending-redraw, or a partial frame that
-    /// escalated to `PartialFramePlan::Full`). Routing *all* full frames
-    /// through here keeps one compositor in charge: the Ratatui
-    /// `SocketBackend` paints status + panes, and `compose_ratatui_frame`
-    /// appends the raw bottom chrome. The previous split — pending-redraw
-    /// via Ratatui, partial-escalation via raw `compose_full_frame` — left
-    /// the two compositors painting the same rows through shadow buffers
-    /// that did not know about each other, so neither erased the other's
-    /// output and stale chrome accumulated on resize.
+    /// requested it (initial pending-redraw, an interactive action, the chrome
+    /// ticker, or a partial frame that escalated to `PartialFramePlan::Full`).
+    /// Routing *all* full frames through here keeps one compositor in charge:
+    /// the Ratatui `SocketBackend` paints status + panes and `compose_ratatui_frame`
+    /// appends the raw bottom chrome + cursor. This is the only full-frame
+    /// renderer — the legacy raw-ANSI `compose_full_frame` has been removed.
     pub(super) fn compose_full_redraw(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         self.dirty_panes.clear();
-        // Reset Ratatui's internal double-buffer before a full redraw so the
-        // diff treats every cell as "changed". Without this, a layout change
-        // (e.g. tab close) leaves stale cells from the previous layout in the
-        // buffer; the diff skips them because their values happen to match new
-        // content at the same screen position, causing visible corruption.
-        // SocketBackend::clear() deliberately does NOT emit \x1b[2J so this
-        // reset is flicker-free — the next draw() sends every cell instead.
+        // Reset Ratatui's double-buffer so the next draw is a full repaint.
+        // Terminal::clear() routes through SocketBackend::clear_region(All),
+        // which emits `\x1b[2J\x1b[H` — every full frame therefore starts from
+        // a wiped screen, so chrome from a prior geometry (the raw-ANSI bottom
+        // bar the diff cannot track) is never orphaned. The erase is sent
+        // atomically with the immediately-following full repaint, so there is
+        // no visible blank flash.
         let _ = self.ratatui_terminal.clear();
-        if let Some(ratatui_output) = self.compose_ratatui_frame() {
-            crate::cdebug!(
-                "render: kind=full reason={} via=ratatui bytes={} clears_screen={}",
-                reason.as_str(),
-                ratatui_output.len(),
-                reason.clears_screen(),
-            );
-            let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-            self.append_outer_terminal_title(&mut out);
-            // Geometry-changing redraws wipe the previous layout first: the
-            // Ratatui diff cannot erase the raw-ANSI bottom chrome it never
-            // tracked, and SocketBackend::clear() omits the erase. Without this
-            // the prior geometry's branch bar / debug chip is orphaned.
-            if reason.clears_screen() {
-                out.extend_from_slice(b"\x1b[2J");
-            }
-            out.extend_from_slice(&ratatui_output);
-            return out;
-        }
-        self.compose_full_frame(reason)
+        let Some(ratatui_output) = self.compose_ratatui_frame() else {
+            // compose_ratatui_frame only returns None if the Ratatui draw
+            // itself errored — effectively impossible with SocketBackend. Skip
+            // the frame; the next tick repaints. (There is no raw fallback: the
+            // legacy compose_full_frame renderer has been removed.)
+            crate::clog!("compose_full_redraw: ratatui draw failed; skipping frame");
+            return Vec::new();
+        };
+        crate::cdebug!(
+            "render: kind=full reason={} via=ratatui bytes={}",
+            reason.as_str(),
+            ratatui_output.len(),
+        );
+        let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+        self.append_outer_terminal_title(&mut out);
+        out.extend_from_slice(&ratatui_output);
+        out
     }
 
     pub(super) fn append_outer_terminal_title(&mut self, buf: &mut Vec<u8>) {
@@ -154,14 +144,14 @@ impl Multiplexer {
 
     /// Compose a full frame using the Ratatui `SocketBackend`.
     ///
-    /// Renders chrome (status bar, pane bodies, pane borders) via the
-    /// `ratatui_terminal` double-buffer so only changed cells are sent over
-    /// the attach socket. This is the Ratatui-backed replacement for the
-    /// raw-ANSI `compose_full_frame`; currently used only for the non-dialog
-    /// case while dialog rendering remains on the raw-ANSI path.
+    /// Renders status bar, pane bodies, pane borders, selection, and the dialog
+    /// (when open) through the `ratatui_terminal` double-buffer so only changed
+    /// cells are sent over the attach socket, then appends the bottom chrome and
+    /// cursor as raw ANSI (neither rides the cell buffer). This is the capsule's
+    /// only renderer.
     ///
-    /// Returns the ANSI output to send to the attach client, or `None` if
-    /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
+    /// Returns the ANSI output to send to the attach client, or `None` if the
+    /// Ratatui terminal fails to draw (the caller then skips the frame).
     pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, render_capsule_ratatui_frame};
@@ -349,202 +339,10 @@ impl Multiplexer {
                 Some(output)
             }
             Err(e) => {
-                crate::clog!("compose_ratatui_frame: draw failed: {e}; falling back to raw ANSI");
+                crate::clog!("compose_ratatui_frame: draw failed: {e}; skipping frame");
                 None
             }
         }
-    }
-
-    pub(super) fn compose_full_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
-        let started = Instant::now();
-        let mut buf = Vec::with_capacity(65536);
-        self.append_outer_terminal_title(&mut buf);
-        buf.extend_from_slice(b"\x1b[?25l");
-        // For geometry-changing events, emit a real screen erase before painting
-        // so the outer terminal does not show stale cells from the previous layout.
-        // Sent atomically with the full repaint so there is no visible blank flash.
-        if reason.clears_screen() {
-            buf.extend_from_slice(b"\x1b[2J");
-        }
-
-        // A modal dialog takes over the whole screen: paint an opaque
-        // black backdrop so the panes and chrome behind it are fully
-        // hidden (not dimmed), then draw the dialog on top. The cursor
-        // stays hidden from the `?25l` above (append_cursor_state
-        // no-ops while a dialog is open).
-        if self.dialog_open() {
-            let github = self.github_context_view();
-            if let Some(dialog) = self.dialog_top() {
-                render_capsule_raw_dialog_overlay(
-                    &mut buf,
-                    CapsuleRawDialogOverlay {
-                        term_rows: self.term_rows,
-                        term_cols: self.term_cols,
-                        dialog,
-                        copy_target_hovered: self.hover_target
-                            == Some(HoverTarget::DialogCopyTarget),
-                        github,
-                    },
-                );
-            } else {
-                render_capsule_dialog_backdrop(&mut buf, self.term_rows, self.term_cols);
-            }
-            crate::cdebug!(
-                "render: kind=dialog reason={} bytes={} duration_us={}",
-                reason.as_str(),
-                buf.len(),
-                started.elapsed().as_micros()
-            );
-            return buf;
-        }
-
-        // Tab labels track the pane makeup. Done here (not on every
-        // spawn / split / remove) so the rule lives in one place.
-        self.refresh_tab_labels();
-
-        let states = self.snapshot_session_states();
-        render_capsule_status_bar(
-            &mut buf,
-            &mut self.status_bar,
-            CapsuleStatusBarFrame {
-                term_cols: self.term_cols,
-                tabs: &self.tabs,
-                active_tab: self.active_tab,
-                session_states: &states,
-                hover_target: self.hover_target,
-            },
-        );
-
-        let focused_id = self.active_focused_id();
-        let mut focused_pane_rect: Option<Rect> = None;
-        let panes = self.visible_panes();
-        let multi_pane = panes.len() > 1;
-        let zoomed = self.active_zoomed_id().is_some();
-        let mut pane_rows_emitted = 0usize;
-        let mut pane_body_bytes = 0usize;
-        let mut selection_paint = None;
-
-        for pane in &panes {
-            let mut scrollbar = PaneScrollbar::default();
-            let mut title = None;
-            let selection_for_pane = (!zoomed)
-                .then_some(())
-                .and_then(|()| self.selection.filter(|sel| sel.session_id == pane.id));
-            if let Some(session) = self.sessions.get_mut(&pane.id) {
-                scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
-                title = Some(session_display_title(session));
-                let before = buf.len();
-
-                // Phase 5: WireEmitter is the primary render path.
-                // Live view: this is a FULL frame, so emit every row
-                // (DirtySpans::All) — a dirty-span emit would paint nothing
-                // when the pane is unchanged, leaving whatever was on screen
-                // (dialog backdrop, prior-geometry cells) un-erased. The dialog
-                // -dismiss ghost was exactly this: closing the menu repainted
-                // via compose_full_frame, the idle pane had no dirty rows, and
-                // the backdrop survived. take_damagegrid_frame still drains the
-                // dirty tracker so the next partial frame skips these rows.
-                // Scrollback / selection: render_snapshot() handles both.
-                let pane_body_stats = if session.scrollback_offset == 0
-                    && selection_for_pane.is_none()
-                {
-                    let (snap, _drained) = session.take_damagegrid_frame();
-                    let mut emitter = jackin_term::WireEmitter::new();
-                    emitter.emit_pane(
-                        &snap,
-                        &jackin_term::DirtySpans::All,
-                        pane.inner.row,
-                        pane.inner.col,
-                    );
-                    buf.extend_from_slice(emitter.as_bytes());
-                    crate::tui::render::PaneBodyRenderStats {
-                        mode: crate::tui::render::PaneBodyRenderMode::Full,
-                        rows_emitted: snap.rows as usize,
-                        changed_rows: (0..snap.rows).collect(),
-                    }
-                } else {
-                    // Scrollback view or selection highlighting: use render_snapshot()
-                    // which uses DamageGrid scrollback rows where available.
-                    let body_snapshot = session.render_snapshot(pane.inner.rows, pane.inner.cols);
-                    if let Some(sel) = selection_for_pane {
-                        selection_paint = Some((body_snapshot.clone(), sel, pane.body_dim));
-                    }
-                    let cache = self.pane_body_caches.entry(pane.id).or_default();
-                    render_capsule_pane_body_snapshot(
-                        &mut buf,
-                        cache,
-                        pane,
-                        body_snapshot,
-                        self.term_cols,
-                    )
-                };
-
-                pane_rows_emitted += pane_body_stats.rows_emitted;
-                pane_body_bytes += buf.len() - before;
-                if pane.focused {
-                    focused_pane_rect = Some(pane.inner);
-                }
-            }
-            if let Some(title) = title {
-                // Always draw a pane box, even for the single-pane
-                // case — matches zellij's "every pane is framed"
-                // convention and gives the operator a reliable place
-                // to read the live `OSC 2` title.
-                render_capsule_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
-            }
-        }
-
-        if let Some((rows, sel, dim)) = selection_paint {
-            // Paint the selection highlight on top of pane content
-            // (but underneath the pane box so the inverse stops at
-            // the inner edge). The row snapshot is the exact content
-            // rendered above, including inline scrollback prefixes.
-            render_capsule_selection_highlight(&mut buf, &rows, &sel, dim);
-        }
-
-        let pull_request_loading = self.pull_request_context_loading();
-        // Compute the debug run-id once so we can pass &str to CapsuleBottomChrome.
-        let debug_run_id_owned: Option<String> = if crate::logging::debug_enabled() {
-            let diag = crate::container_context::resolve_container_diagnostics();
-            if diag.run_id.is_empty() {
-                None
-            } else {
-                Some(diag.run_id)
-            }
-        } else {
-            None
-        };
-        let scrollback_active = focused_id
-            .and_then(|id| self.sessions.get(&id))
-            .is_some_and(|s| s.scrollback_offset != 0);
-        render_capsule_bottom_chrome(
-            &mut buf,
-            CapsuleBottomChrome {
-                term_rows: self.term_rows,
-                term_cols: self.term_cols,
-                branch: self.context_bar_branch(),
-                pull_request: self.pull_request_context.as_deref(),
-                pull_request_loading,
-                instance_id_label: self.status_bar.instance_id_label(),
-                hover_target: self.hover_target,
-                scrollback_active,
-                debug_run_id: debug_run_id_owned.as_deref(),
-            },
-        );
-
-        self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
-
-        crate::cdebug!(
-            "render: kind=full reason={} panes={} rows={} pane_bytes={} bytes={} duration_us={}",
-            reason.as_str(),
-            panes.len(),
-            pane_rows_emitted,
-            pane_body_bytes,
-            buf.len(),
-            started.elapsed().as_micros()
-        );
-
-        buf
     }
 
     pub(super) fn compose_dialog_overlay_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
@@ -563,8 +361,12 @@ impl Multiplexer {
             out.extend_from_slice(&ratatui_output);
             return out;
         }
-        // Raw-ANSI fallback: only reached when the Ratatui terminal fails.
-        self.compose_full_frame(reason)
+        // No raw fallback: the Ratatui draw is effectively infallible with
+        // SocketBackend. Skip the frame on the impossible error; the next tick
+        // repaints.
+        crate::clog!("compose_dialog_overlay_frame: ratatui draw failed; skipping frame");
+        let _ = reason;
+        Vec::new()
     }
 
     pub(super) fn snapshot_session_states(&self) -> Vec<(u64, VisibleAgentState)> {
@@ -573,7 +375,6 @@ impl Multiplexer {
             .map(|(&id, s)| (id, visible_agent_state_from_protocol(s.state)))
             .collect()
     }
-
 
     pub(super) fn compose_partial_frame(&mut self, dirty_panes: HashSet<u64>) -> Vec<u8> {
         match partial_frame_plan(PartialFrameState {
@@ -585,17 +386,17 @@ impl Multiplexer {
         }) {
             PartialFramePlan::Empty => return Vec::new(),
             PartialFramePlan::OverlayDiff => {
-                // Prefer the Ratatui diff path so dialog state that hasn't
-                // changed produces an empty diff instead of a full fill_screen.
-                // The raw-ANSI fallback is kept for the (rare) case where the
-                // Ratatui terminal fails to draw.
+                // Ratatui diff path: unchanged dialog state produces an empty
+                // diff instead of a full repaint. No raw fallback — skip the
+                // frame on the impossible draw error.
                 if let Some(ratatui_output) = self.compose_ratatui_frame() {
                     let mut out = Vec::with_capacity(ratatui_output.len() + 64);
                     self.append_outer_terminal_title(&mut out);
                     out.extend_from_slice(&ratatui_output);
                     return out;
                 }
-                return self.compose_full_frame(unsafe_partial_fallback_redraw_reason());
+                crate::clog!("compose_partial_frame overlay: ratatui draw failed; skipping frame");
+                return Vec::new();
             }
             PartialFramePlan::Full(reason) => return self.compose_full_redraw(reason),
             PartialFramePlan::Partial => {}
