@@ -4853,17 +4853,19 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 /// Uses a single-line Unicode border, ~30 chars wide.
 /// Painted with ANSI absolute cursor positioning; caller wraps in ESC-7/ESC-8.
 fn render_tab_tooltip(codename: String, _record: Option<AgentRecord>, col_start: u16) -> Vec<u8> {
-    // Show only the codename — one word, one line, no borders.
-    // Row 2 (1-indexed) is the branch context bar row, directly below the tab strip.
-    // Align with the left edge of the hovered tab cell (col_start is 0-indexed).
-    let tooltip_row = 2u16;
+    // Codename pill: brand green background, black text, bold, space padding —
+    // matches the BRAND_BANNER style. Row 3 gives one blank row of spacing below
+    // the tab strip before the label appears. Col aligned with the tab cell's left edge.
+    let tooltip_row = 3u16;
     let col = col_start + 1;
-
     let mut buf = Vec::new();
-    // Dim + underline so the label reads as a transient tag, not pane text.
-    buf.extend_from_slice(format!("\x1b[2;4m\x1b[{tooltip_row};{col}H").as_bytes());
-    buf.extend_from_slice(codename.as_bytes());
-    buf.extend_from_slice(b"\x1b[0m");
+    // Brand green bg (0,255,65) + black fg + bold — same palette as the brand pill.
+    buf.extend_from_slice(
+        format!(
+            "\x1b[{tooltip_row};{col}H\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m {codename} \x1b[0m"
+        )
+        .as_bytes(),
+    );
     buf
 }
 
