@@ -3760,6 +3760,7 @@ impl Multiplexer {
                 state: s.state(),
                 active: Some(id) == focused,
                 token_usage: self.token_monitor.totals(id).map(|t| t.to_summary()),
+                agent_status_report: None,
             })
             .collect()
     }
@@ -3943,12 +3944,14 @@ impl Multiplexer {
                             label: session.label.clone(),
                             agent: session.agent.clone(),
                             state: session.state(),
+                            agent_status_report: None,
                         },
                         None => PaneSnapshot {
                             session_id: id,
                             label: "(missing)".to_string(),
                             agent: None,
                             state: crate::protocol::control::AgentState::Idle,
+                            agent_status_report: None,
                         },
                     })
                     .collect();
@@ -9056,6 +9059,7 @@ mod tests {
             state: AgentState::Blocked,
             active: true,
             token_usage: None,
+            agent_status_report: None,
         }];
         let current = sessions
             .iter()
@@ -9081,6 +9085,7 @@ mod tests {
             state: AgentState::Working,
             active: true,
             token_usage: None,
+            agent_status_report: None,
         }];
         let current = sessions
             .iter()
@@ -9128,6 +9133,7 @@ mod tests {
             state: AgentState::Working,
             active: true,
             token_usage: Some(summary.clone()),
+            agent_status_report: None,
         };
         assert!(info.token_usage.is_some());
         let usage = info.token_usage.unwrap();

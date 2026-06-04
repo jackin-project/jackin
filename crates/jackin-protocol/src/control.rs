@@ -232,6 +232,8 @@ pub struct SessionInfo {
     pub active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_usage: Option<TokenUsageSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_status_report: Option<crate::agent_status::AgentStatusReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,6 +253,8 @@ pub struct PaneSnapshot {
     /// `None` for shell sessions; the agent slug otherwise.
     pub agent: Option<String>,
     pub state: AgentState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_status_report: Option<crate::agent_status::AgentStatusReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

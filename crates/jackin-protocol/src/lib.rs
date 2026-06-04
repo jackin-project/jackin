@@ -7,6 +7,7 @@
 //! small constants that name the host↔Capsule runtime contract live
 //! here too so the two binaries cannot drift.
 
+pub mod agent_status;
 pub mod control;
 
 use serde::{Deserialize, Serialize};

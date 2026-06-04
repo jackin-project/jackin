@@ -31,6 +31,7 @@ pub mod arbitrate;
 pub mod detectors;
 pub mod hook_installer;
 pub mod process;
+pub mod seen;
 pub mod sequence;
 
 use crate::protocol::AgentState;
@@ -392,6 +393,30 @@ mod tests {
         // with WorkingVisible. State should remain Blocked.
         assert_eq!(s2.effective, AgentState::Blocked,
             "Blocked persists when daemon suppresses WorkingVisible (subagent guard active)");
+    }
+
+    #[test]
+    fn event_stream_emits_on_raw_state_change() {
+        // The state machine emits Some(new_state) only on real transitions.
+        // This verifies that a transition from Unknown → Working produces an
+        // event (Some), while a repeated Working → Working produces no event (None).
+        let mut s = SessionStatus::new();
+        assert_eq!(s.effective, AgentState::Unknown);
+
+        // First transition produces an event.
+        let event = s.advance(AgentRawState::WorkingVisible);
+        assert_eq!(event, Some(AgentState::Working),
+            "Unknown→Working should produce Some(Working) for broadcast");
+
+        // Same state again produces no event.
+        let no_event = s.advance(AgentRawState::WorkingVisible);
+        assert_eq!(no_event, None,
+            "Working→Working should produce None (no broadcast needed)");
+
+        // Transition to Blocked produces an event.
+        let blocked_event = s.advance(AgentRawState::BlockedVisible);
+        assert_eq!(blocked_event, Some(AgentState::Blocked),
+            "Working→Blocked should produce Some(Blocked)");
     }
 
     #[test]
