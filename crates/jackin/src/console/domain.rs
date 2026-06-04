@@ -1020,7 +1020,7 @@ pub(in crate::console) fn providers_for_launch(
     // auth) always pass — the adapter's needs_key_for_agent gate handles that case.
     let key = |env_var: &str| operator_key_present(config, workspace_name, role_selector, env_var);
     jackin_protocol::Provider::available_for(agent.slug(), |provider: jackin_protocol::Provider| {
-        provider.key_env_var().is_none_or(&key)
+        provider.adapter().key_env_var().is_none_or(&key)
     })
 }
 

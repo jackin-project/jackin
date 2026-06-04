@@ -9,12 +9,12 @@ use std::time::Instant;
 use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
 use crate::tui::view::{
     CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleDialogBottomChrome,
-    CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar, render_capsule_bottom_chrome,
-    render_capsule_chrome_hover_frame, render_capsule_dialog_backdrop,
-    render_capsule_dialog_bottom_chrome, render_capsule_pane_body_partial,
+    CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar, grid_scroll_affordance_metrics,
+    render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
+    render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
     render_capsule_pane_body_snapshot, render_capsule_pane_chrome,
     render_capsule_raw_dialog_overlay, render_capsule_selection_highlight,
-    render_capsule_status_bar, screen_scroll_affordance_metrics,
+    render_capsule_status_bar,
 };
 
 use super::*;
@@ -36,14 +36,15 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
         filled,
     };
     let metrics = if debug_enabled {
-        screen_scroll_affordance_metrics(session.screen(), viewport_rows, viewport_cols)
+        let snap = session.shadow_grid.dump();
+        grid_scroll_affordance_metrics(&snap, viewport_rows, viewport_cols)
     } else {
         None
     };
     crate::cdebug!(
         "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} first_occupied_row={} last_occupied_row={} vt_scrollback={} inline_scrollback={} scrollback_filled={} visible={} reason={}",
         session.agent,
-        session.screen().alternate_screen(),
+        session.shadow_grid.alternate_screen(),
         session.mouse_enabled(),
         viewport_rows,
         viewport_cols,
@@ -558,21 +559,17 @@ impl Multiplexer {
                 scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(session_display_title(session));
                 let before = buf.len();
-                let cache = self.pane_body_caches.entry(pane.id).or_default();
-                let stats = render_capsule_pane_body_partial(
-                    &mut buf,
-                    cache,
-                    pane,
-                    session.screen(),
-                    self.term_cols,
-                );
-                if stats.mode == PaneBodyRenderMode::Full {
-                    return self.compose_full_frame(pane_cache_miss_redraw_reason());
-                }
-                if stats.rows_emitted > 0 {
+                // Phase 5: dirty-pane incremental render uses WireEmitter
+                // (dirty_spans only, no PaneBodyCache snapshot diffing).
+                let (snap, spans) = session.take_damagegrid_frame();
+                let mut emitter = jackin_term::WireEmitter::new();
+                emitter.emit_pane(&snap, &spans, pane.inner.row, pane.inner.col);
+                buf.extend_from_slice(emitter.as_bytes());
+                let rows_count = emitter.as_bytes().len();
+                if rows_count > 0 {
                     panes_rendered += 1;
                 }
-                rows_emitted += stats.rows_emitted;
+                rows_emitted += snap.rows as usize;
                 pane_body_bytes += buf.len() - before;
             }
             if let Some(title) = title {
@@ -619,15 +616,15 @@ impl Multiplexer {
             if let (Some(fid), Some(rect)) = (focused_id, focused_pane_rect)
                 && let Some(session) = self.sessions.get(&fid)
             {
-                let screen = session.screen();
+                let snap = session.shadow_grid.dump();
                 if cursor_visible_for_state(CursorVisibilityState {
                     dialog_open: self.dialog_open(),
                     focused_pane_available: true,
                     focused_session_received_output: session.received_output,
                     scrollback_active: session.scrollback_offset != 0,
-                    agent_cursor_hidden: screen.hide_cursor(),
+                    agent_cursor_hidden: session.shadow_grid.hide_cursor(),
                 }) {
-                    let (vt_row, vt_col) = screen.cursor_position();
+                    let (vt_row, vt_col) = snap.cursor;
                     use std::io::Write as _;
                     let _ = write!(
                         buf,

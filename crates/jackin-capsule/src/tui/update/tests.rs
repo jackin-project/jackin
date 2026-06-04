@@ -4,10 +4,10 @@ use super::{
     action_frame_plan, dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
     drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
     focus_change_redraw_reason, hover_frame_plan, palette_route_redraw_reason,
-    pane_cache_miss_redraw_reason, pane_data_redraw_reason, partial_frame_plan,
-    prefix_full_redraw_reason, resize_redraw_reason, selection_change_redraw_reason,
-    selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
-    unsafe_partial_fallback_redraw_reason, wheel_scrollback_redraw_reason,
+    pane_data_redraw_reason, partial_frame_plan, prefix_full_redraw_reason, resize_redraw_reason,
+    selection_change_redraw_reason, selection_start_redraw_reason, session_exit_redraw_reason,
+    status_change_redraw_reason, unsafe_partial_fallback_redraw_reason,
+    wheel_scrollback_redraw_reason,
 };
 use crate::tui::components::dialog::{DialogAction, PickerIntent};
 use crate::tui::input::{ArrowDir, PrefixCommand};
@@ -209,10 +209,6 @@ fn wheel_and_partial_fallback_redraw_reasons_use_visible_update_vocabulary() {
     assert_eq!(
         unsafe_partial_fallback_redraw_reason(),
         FullRedrawReason::UnsafePartial
-    );
-    assert_eq!(
-        pane_cache_miss_redraw_reason(),
-        FullRedrawReason::PaneCacheMiss
     );
 }
 

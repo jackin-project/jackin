@@ -99,7 +99,7 @@ use crate::tui::message::{
     palette_toggle_route, pane_button_motion_action, prefix_command_action,
     status_bar_click_action,
 };
-use crate::tui::render::{PaneBodyCache, PaneBodyRenderMode};
+use crate::tui::render::PaneBodyCache;
 use crate::tui::selection::{
     SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,
     selection_was_dragged,
@@ -119,9 +119,9 @@ use crate::tui::update::{
     PartialFrameState, dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
     drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
     focus_change_redraw_reason, hover_frame_plan, palette_route_redraw_reason,
-    pane_cache_miss_redraw_reason, pane_data_redraw_reason, partial_frame_plan,
-    resize_redraw_reason, selection_change_redraw_reason, selection_start_redraw_reason,
-    session_exit_redraw_reason, status_change_redraw_reason, unsafe_partial_fallback_redraw_reason,
+    pane_data_redraw_reason, partial_frame_plan, resize_redraw_reason,
+    selection_change_redraw_reason, selection_start_redraw_reason, session_exit_redraw_reason,
+    status_change_redraw_reason, unsafe_partial_fallback_redraw_reason,
     wheel_scrollback_redraw_reason,
 };
 use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};

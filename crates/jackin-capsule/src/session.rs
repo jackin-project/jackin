@@ -1283,6 +1283,11 @@ impl Session {
         self.parser.screen()
     }
 
+    /// True when the terminal is in the alternate screen (DamageGrid source of truth).
+    pub fn alternate_screen(&self) -> bool {
+        self.shadow_grid.alternate_screen()
+    }
+
     /// Feed PTY bytes into the VT parser and update activity timestamps.
     pub fn feed_pty(&mut self, bytes: &[u8]) {
         if !bytes.is_empty() {

@@ -329,16 +329,20 @@ fn resolve_sync_source_dir_global_wins_when_nothing_else_set() {
 #[test]
 fn resolve_sync_source_dir_workspace_wins_over_global() {
     use std::path::PathBuf;
-    let mut cfg = AppConfig::default();
-    cfg.claude = Some(AgentAuthConfig {
-        auth_forward: AuthForwardMode::Sync,
-        sync_source_dir: Some(PathBuf::from("/global/claude")),
-    });
-    let mut ws = WorkspaceConfig::default();
-    ws.claude = Some(AgentAuthConfig {
-        auth_forward: AuthForwardMode::Sync,
-        sync_source_dir: Some(PathBuf::from("/workspace/claude")),
-    });
+    let mut cfg = AppConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(PathBuf::from("/global/claude")),
+        }),
+        ..AppConfig::default()
+    };
+    let mut ws = WorkspaceConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(PathBuf::from("/workspace/claude")),
+        }),
+        ..WorkspaceConfig::default()
+    };
     cfg.workspaces.insert("ws".into(), ws);
     assert_eq!(
         crate::config::resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "role"),
@@ -350,16 +354,20 @@ fn resolve_sync_source_dir_workspace_wins_over_global() {
 fn resolve_sync_source_dir_role_override_wins_over_workspace() {
     use std::path::PathBuf;
     let mut cfg = AppConfig::default();
-    let mut ws = WorkspaceConfig::default();
-    ws.claude = Some(AgentAuthConfig {
-        auth_forward: AuthForwardMode::Sync,
-        sync_source_dir: Some(PathBuf::from("/workspace/claude")),
-    });
-    let mut role_override = WorkspaceRoleOverride::default();
-    role_override.claude = Some(AgentAuthConfig {
-        auth_forward: AuthForwardMode::Sync,
-        sync_source_dir: Some(PathBuf::from("/role/claude")),
-    });
+    let mut ws = WorkspaceConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(PathBuf::from("/workspace/claude")),
+        }),
+        ..WorkspaceConfig::default()
+    };
+    let role_override = WorkspaceRoleOverride {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(PathBuf::from("/role/claude")),
+        }),
+        ..WorkspaceRoleOverride::default()
+    };
     ws.roles.insert("smith".into(), role_override);
     cfg.workspaces.insert("ws".into(), ws);
     assert_eq!(

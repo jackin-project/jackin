@@ -209,6 +209,10 @@ pub(crate) fn resize_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::Resize
 }
 
+pub(crate) fn pane_cache_miss_redraw_reason() -> FullRedrawReason {
+    FullRedrawReason::PaneCacheMiss
+}
+
 pub(crate) fn session_exit_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::SessionExit
 }
@@ -235,10 +239,6 @@ pub(crate) fn wheel_scrollback_redraw_reason() -> FullRedrawReason {
 
 pub(crate) fn unsafe_partial_fallback_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::UnsafePartial
-}
-
-pub(crate) fn pane_cache_miss_redraw_reason() -> FullRedrawReason {
-    FullRedrawReason::PaneCacheMiss
 }
 
 pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<FullRedrawReason> {

@@ -108,25 +108,6 @@ pub(crate) fn render_capsule_pane_body_snapshot(
     )
 }
 
-pub(crate) fn render_capsule_pane_body_partial(
-    buf: &mut Vec<u8>,
-    cache: &mut PaneBodyCache,
-    pane: &VisiblePane,
-    screen: &vt100::Screen,
-    term_cols: u16,
-) -> PaneBodyRenderStats {
-    cache.render_partial(
-        screen,
-        pane.inner.row,
-        pane.inner.col,
-        pane.inner.rows,
-        pane.inner.cols,
-        pane.body_dim,
-        pane_right_edge(pane, term_cols),
-        buf,
-    )
-}
-
 pub(crate) fn render_capsule_selection_highlight(
     buf: &mut Vec<u8>,
     rows: &[RowSnapshot],
@@ -437,12 +418,14 @@ pub(crate) struct ScrollAffordanceMetrics {
     pub(crate) last_occupied_row: Option<u16>,
 }
 
-pub(crate) fn screen_scroll_affordance_metrics(
-    screen: &vt100::Screen,
+/// DamageGrid-based scrollbar affordance metrics.
+/// Uses a `GridSnapshot` so the debug scrollbar path does not need `&vt100::Screen`.
+pub(crate) fn grid_scroll_affordance_metrics(
+    snap: &jackin_term::GridSnapshot,
     viewport_rows: u16,
     viewport_cols: u16,
 ) -> Option<ScrollAffordanceMetrics> {
-    let (screen_rows, screen_cols) = screen.size();
+    let (screen_rows, screen_cols) = (snap.rows, snap.cols);
     let rows = viewport_rows.min(screen_rows);
     let cols = viewport_cols.min(screen_cols);
     if rows == 0 || cols == 0 {
@@ -453,13 +436,16 @@ pub(crate) fn screen_scroll_affordance_metrics(
     let mut first_occupied_row = None;
     let mut last_occupied_row = None;
     for row in 0..rows {
-        if (0..cols).any(|col| screen.cell(row, col).is_some_and(|c| c.has_contents())) {
+        if (0..cols).any(|col| {
+            snap.cell(row, col)
+                .is_some_and(|c| !c.text.is_empty() && !c.is_wide_continuation)
+        }) {
             occupied_rows += 1;
             first_occupied_row.get_or_insert(row);
             last_occupied_row = Some(row);
         }
     }
-    let (cursor_row, cursor_col) = screen.cursor_position();
+    let (cursor_row, cursor_col) = snap.cursor;
 
     Some(ScrollAffordanceMetrics {
         screen_rows,
