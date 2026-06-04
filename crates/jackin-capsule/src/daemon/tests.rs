@@ -458,6 +458,26 @@ fn resize_then_full_frame_repaints_with_new_geometry() {
 }
 
 #[test]
+fn resize_shrink_then_grow_does_not_panic() {
+    // Defect 614/634 regression: rapid resize including shrink-to-floor and grow
+    // must not panic. Also verifies cache invalidation on each resize.
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    // Shrink to a small size (above normalize_size floor which is ~5 rows, 3 cols).
+    mux.resize(6, 4);
+    assert_eq!((mux.term_rows, mux.term_cols), (6, 4));
+    assert!(mux.pane_body_caches.is_empty(), "caches cleared on resize");
+    // Shrink to zero (normalized to defaults).
+    mux.resize(0, 0);
+    assert_eq!((mux.term_rows, mux.term_cols), (DEFAULT_ROWS, DEFAULT_COLS));
+    // Grow back.
+    mux.resize(50, 200);
+    assert_eq!((mux.term_rows, mux.term_cols), (50, 200));
+    // Full repaint after growth must not be empty.
+    let frame = mux.compose_full_frame(FullRedrawReason::Resize);
+    assert!(!frame.is_empty(), "grow must produce repaint");
+}
+
+#[test]
 fn initial_spawn_request_is_data_only_agent_or_shell() {
     assert_eq!(
         initial_spawn_request("codex", None),
