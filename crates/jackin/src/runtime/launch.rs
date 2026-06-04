@@ -511,23 +511,8 @@ pub(super) fn capsule_config(
     let mut models = std::collections::BTreeMap::new();
     for agent in manifest.supported_agents() {
         agents.push(agent.slug().to_string());
-        let model = match agent {
-            crate::agent::Agent::Claude => manifest
-                .claude
-                .as_ref()
-                .and_then(|cfg| cfg.model.as_deref()),
-            crate::agent::Agent::Codex => {
-                manifest.codex.as_ref().and_then(|cfg| cfg.model.as_deref())
-            }
-            crate::agent::Agent::Amp => None,
-            crate::agent::Agent::Kimi => {
-                manifest.kimi.as_ref().and_then(|cfg| cfg.model.as_deref())
-            }
-            crate::agent::Agent::Opencode => manifest
-                .opencode
-                .as_ref()
-                .and_then(|cfg| cfg.model.as_deref()),
-        };
+        // Phase 2: collapsed from 5-arm match using manifest.agent_model().
+        let model = manifest.agent_model(agent);
         if let Some(model) = model {
             models.insert(agent.slug().to_string(), model.to_string());
         }
@@ -2010,13 +1995,8 @@ fn render_auth_credential_missing(
         }
     }
 
-    let agent_title = match agent {
-        crate::agent::Agent::Claude => "Claude",
-        crate::agent::Agent::Codex => "Codex",
-        crate::agent::Agent::Amp => "Amp",
-        crate::agent::Agent::Kimi => "Kimi",
-        crate::agent::Agent::Opencode => "OpenCode",
-    };
+    // Phase 2: collapsed from 5-arm match using agent.runtime().label().
+    let agent_title = agent.runtime().label();
 
     let _ = writeln!(out);
     let _ = writeln!(out, "  Fix one of:");
