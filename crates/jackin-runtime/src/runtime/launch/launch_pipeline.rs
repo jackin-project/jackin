@@ -743,18 +743,41 @@ pub(crate) async fn load_role_with(
         // `manifest.supported_agents()` honors its own configured
         // `auth_forward`. Passing the selected agent's mode would wipe
         // sibling agents' durable state when modes diverge.
-        let resolve_supported_mode = |a: jackin_core::agent::Agent| {
-            jackin_config::resolve_mode(config, a, workspace_name_str, &role_key)
+        //
+        // RoleState::prepare is sync and may call `gh` CLI, macOS keychain
+        // (`security`), and filesystem copies. Wrap in spawn_blocking so the
+        // tokio render thread keeps polling the cockpit rain while auth runs.
+        // All inputs are cloned to satisfy the 'static + Send bound.
+        let (state, _auth_outcome) = {
+            let paths_owned = paths.clone();
+            let container_name_owned = container_name.clone();
+            let manifest_owned = validated_repo.manifest.clone();
+            let config_owned = config.clone();
+            let workspace_name_owned = workspace_name_str.to_string();
+            let role_key_owned = role_key.to_string();
+            let github_ctx_owned = github_ctx.clone();
+            tokio::task::spawn_blocking(move || {
+                let resolve_mode = |a: jackin_core::agent::Agent| {
+                    jackin_config::resolve_mode(
+                        &config_owned,
+                        a,
+                        &workspace_name_owned,
+                        &role_key_owned,
+                    )
+                };
+                RoleState::prepare(
+                    &paths_owned,
+                    &container_name_owned,
+                    &manifest_owned,
+                    &resolve_mode,
+                    &github_ctx_owned,
+                    &paths_owned.home_dir,
+                    agent,
+                )
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))??
         };
-        let (state, _auth_outcome) = RoleState::prepare(
-            paths,
-            &container_name,
-            &validated_repo.manifest,
-            &resolve_supported_mode,
-            &github_ctx,
-            &paths.home_dir,
-            agent,
-        )?;
         seed_codex_project_trust(&state, workspace)?;
 
         if agent != jackin_core::agent::Agent::Codex {
