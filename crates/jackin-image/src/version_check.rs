@@ -7,108 +7,80 @@
 use jackin_core::{Agent, JackinPaths};
 use std::path::PathBuf;
 
-/// File that records the Claude Code version baked into a given Docker image.
-fn image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
+/// Canonical cache path for a given agent + image combination.
+///
+/// All five per-agent path variants collapse here because the only difference
+/// between them was the agent slug embedded in the directory name.
+fn image_version_cache_path(paths: &JackinPaths, agent: Agent, image: &str) -> PathBuf {
     paths
         .cache_dir
-        .join(format!("image-claude-version/{image}"))
+        .join(format!("image-{}-version/{image}", agent.runtime().slug()))
 }
 
-/// File that records the `OpenCode` version baked into a given `Docker` image.
-fn opencode_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
-    paths
-        .cache_dir
-        .join(format!("image-opencode-version/{image}"))
-}
-
-/// File that records the Kimi version baked into a given Docker image.
-fn kimi_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
-    paths.cache_dir.join(format!("image-kimi-version/{image}"))
-}
-
-fn amp_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
-    paths.cache_dir.join(format!("image-amp-version/{image}"))
-}
-
-fn codex_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
-    paths.cache_dir.join(format!("image-codex-version/{image}"))
-}
-
-/// Read the Claude Code version we stored for a previously-built image.
-pub fn stored_image_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    let path = image_version_path(paths, image);
+/// Read the cached agent version we stored for a previously-built image.
+pub fn stored_version(paths: &JackinPaths, agent: Agent, image: &str) -> Option<String> {
+    let path = image_version_cache_path(paths, agent, image);
     std::fs::read_to_string(path)
         .ok()
         .map(|s| s.trim().to_string())
+}
+
+/// Persist the agent version that was just installed into an image.
+pub fn store_version(paths: &JackinPaths, agent: Agent, image: &str, version: &str) {
+    let path = image_version_cache_path(paths, agent, image);
+    let _ = write_cached(&path, version);
+}
+
+// ── Backward-compat shims — keep old names for callers and tests ──────────────
+
+/// Read the Claude Code version we stored for a previously-built image.
+pub fn stored_image_version(paths: &JackinPaths, image: &str) -> Option<String> {
+    stored_version(paths, Agent::Claude, image)
 }
 
 /// Persist the Claude Code version that was just installed into an image.
 pub fn store_image_version(paths: &JackinPaths, image: &str, version: &str) {
-    let path = image_version_path(paths, image);
-    let _ = write_cached(&path, version);
+    store_version(paths, Agent::Claude, image, version);
 }
 
 /// Read the `OpenCode` version we stored for a previously-built image.
 pub fn stored_opencode_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    let path = opencode_image_version_path(paths, image);
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
+    stored_version(paths, Agent::Opencode, image)
 }
 
 /// Persist the `OpenCode` version that was just installed into an image.
 pub fn store_opencode_version(paths: &JackinPaths, image: &str, version: &str) {
-    let path = opencode_image_version_path(paths, image);
-    let _ = write_cached(&path, version);
+    store_version(paths, Agent::Opencode, image, version);
 }
 
 /// Read the Kimi version we stored for a previously-built image.
 pub fn stored_kimi_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    let path = kimi_image_version_path(paths, image);
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
+    stored_version(paths, Agent::Kimi, image)
 }
 
 /// Persist the Kimi version that was just installed into an image.
 pub fn store_kimi_version(paths: &JackinPaths, image: &str, version: &str) {
-    let path = kimi_image_version_path(paths, image);
-    let _ = write_cached(&path, version);
+    store_version(paths, Agent::Kimi, image, version);
 }
 
 pub fn stored_amp_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    let path = amp_image_version_path(paths, image);
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
+    stored_version(paths, Agent::Amp, image)
 }
 
 pub fn store_amp_version(paths: &JackinPaths, image: &str, version: &str) {
-    let path = amp_image_version_path(paths, image);
-    let _ = write_cached(&path, version);
+    store_version(paths, Agent::Amp, image, version);
 }
 
 pub fn stored_codex_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    let path = codex_image_version_path(paths, image);
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
+    stored_version(paths, Agent::Codex, image)
 }
 
 pub fn store_codex_version(paths: &JackinPaths, image: &str, version: &str) {
-    let path = codex_image_version_path(paths, image);
-    let _ = write_cached(&path, version);
+    store_version(paths, Agent::Codex, image, version);
 }
 
 pub async fn needs_agent_update(paths: &JackinPaths, image: &str, agent: Agent) -> bool {
-    let installed = match agent {
-        Agent::Claude => stored_image_version(paths, image),
-        Agent::Codex => stored_codex_version(paths, image),
-        Agent::Amp => stored_amp_version(paths, image),
-        Agent::Kimi => stored_kimi_version(paths, image),
-        Agent::Opencode => stored_opencode_version(paths, image),
-    };
-    let Some(installed) = installed else {
+    let Some(installed) = stored_version(paths, agent, image) else {
         return false;
     };
     let Some(latest) = crate::agent_binary::latest_release(paths, agent).await else {
@@ -143,17 +115,19 @@ pub fn store_cache_bust(paths: &JackinPaths, image: &str, value: &str) {
     }
 }
 
+// ── Version-string parsers ────────────────────────────────────────────────────
+//
+// Each delegates to the corresponding `AgentRuntime::parse_version` adapter so
+// the parsing logic lives in one place (the adapter). The standalone public
+// functions are kept for backward compatibility with callers and tests.
+
 /// Extract a bare semver string from `claude --version` output.
 ///
 /// The command returns e.g. `"2.1.96 (Claude Code)"` but we only need the
 /// `"2.1.96"` portion to compare against the npm registry.  Returns `None`
 /// when the output doesn't look like a version string.
 pub fn parse_claude_version(raw: &str) -> Option<&str> {
-    let token = raw.split_whitespace().next()?;
-    if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
-        return None;
-    }
-    Some(token)
+    Agent::Claude.runtime().parse_version(raw)
 }
 
 /// Extract a bare semver string from `kimi --version` output.
@@ -161,16 +135,7 @@ pub fn parse_claude_version(raw: &str) -> Option<&str> {
 /// The command returns e.g. `"kimi 1.2.3"` but we only need the `"1.2.3"`
 /// portion. Returns `None` when the output doesn't look like a version string.
 pub fn parse_kimi_version(raw: &str) -> Option<&str> {
-    let mut tokens = raw.split_whitespace();
-    let first = tokens.next()?;
-    if first.split('.').count() >= 2 && first.starts_with(|c: char| c.is_ascii_digit()) {
-        return Some(first);
-    }
-    let second = tokens.next()?;
-    if second.split('.').count() >= 2 && second.starts_with(|c: char| c.is_ascii_digit()) {
-        return Some(second);
-    }
-    None
+    Agent::Kimi.runtime().parse_version(raw)
 }
 
 /// Extract a bare semver string from `opencode --version` output.
@@ -178,24 +143,15 @@ pub fn parse_kimi_version(raw: &str) -> Option<&str> {
 /// The command returns e.g. `"1.14.48"` or `"v1.14.48"`. Strip a leading `v`
 /// if present, then validate it looks like a semver.
 pub fn parse_opencode_version(raw: &str) -> Option<&str> {
-    let trimmed = raw.trim();
-    let token = trimmed.strip_prefix('v').unwrap_or(trimmed);
-    if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
-        return None;
-    }
-    Some(token)
+    Agent::Opencode.runtime().parse_version(raw)
 }
 
 pub fn parse_amp_version(raw: &str) -> Option<&str> {
-    raw.split_whitespace().find(|token| {
-        token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
-    })
+    Agent::Amp.runtime().parse_version(raw)
 }
 
 pub fn parse_codex_version(raw: &str) -> Option<&str> {
-    raw.split_whitespace().find(|token| {
-        token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
-    })
+    Agent::Codex.runtime().parse_version(raw)
 }
 
 /// Write content to a cache file, creating parent directories as needed.

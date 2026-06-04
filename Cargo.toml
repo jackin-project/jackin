@@ -14,10 +14,17 @@ members = [
     "crates/jackin-protocol",
     "crates/jackin-launch",
     "crates/jackin-runtime",
+    "crates/jackin-term",
     "crates/jackin-tui",
     "crates/jackin-tui-lookbook",
 ]
 resolver = "2"
+
+[workspace.package]
+version = "0.6.0-dev"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/jackin-project/jackin"
 
 [profile.dev]
 # Line tables only: ~30-50% smaller artifacts, faster link, stack traces still work.

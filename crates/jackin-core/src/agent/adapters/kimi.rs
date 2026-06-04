@@ -57,4 +57,18 @@ RUN set -euxo pipefail && \\
             folder_env_var: None,  // no standard folder env var
         }
     }
+
+    fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
+        // `kimi --version` returns e.g. "kimi 1.2.3"; try first token, then second.
+        let mut tokens = raw.split_whitespace();
+        let first = tokens.next()?;
+        if first.split('.').count() >= 2 && first.starts_with(|c: char| c.is_ascii_digit()) {
+            return Some(first);
+        }
+        let second = tokens.next()?;
+        if second.split('.').count() >= 2 && second.starts_with(|c: char| c.is_ascii_digit()) {
+            return Some(second);
+        }
+        None
+    }
 }

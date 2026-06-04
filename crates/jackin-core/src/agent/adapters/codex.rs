@@ -55,4 +55,10 @@ RUN set -euxo pipefail && \\
             folder_env_var: Some("CODEX_HOME"),
         }
     }
+
+    fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
+        raw.split_whitespace().find(|token| {
+            token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
+        })
+    }
 }

@@ -57,32 +57,9 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
     }
 
     for h in &supported {
-        match h {
-            Agent::Claude => {
-                if manifest.claude.is_none() {
-                    anyhow::bail!("[claude] table required when claude is in `agents`");
-                }
-            }
-            Agent::Codex => {
-                if manifest.codex.is_none() {
-                    anyhow::bail!("[codex] table required when codex is in `agents`");
-                }
-            }
-            Agent::Amp => {
-                if manifest.amp.is_none() {
-                    anyhow::bail!("[amp] table required when amp is in `agents`");
-                }
-            }
-            Agent::Kimi => {
-                if manifest.kimi.is_none() {
-                    anyhow::bail!("[kimi] table required when kimi is in `agents`");
-                }
-            }
-            Agent::Opencode => {
-                if manifest.opencode.is_none() {
-                    anyhow::bail!("[opencode] table required when opencode is in `agents`");
-                }
-            }
+        if !manifest.has_agent_config(*h) {
+            let slug = h.runtime().slug();
+            anyhow::bail!("[{slug}] table required when {slug} is in `agents`");
         }
     }
 

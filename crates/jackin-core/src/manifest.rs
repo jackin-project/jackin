@@ -62,6 +62,20 @@ impl RoleManifest {
         self.agents.clone().unwrap_or_else(|| vec![Agent::Claude])
     }
 
+    /// Returns `true` when the manifest has a `[<agent>]` table declared.
+    ///
+    /// Used by `jackin_manifest::validate` to check the agent/config-table
+    /// consistency rule without a per-caller match arm.
+    pub const fn has_agent_config(&self, agent: Agent) -> bool {
+        match agent {
+            Agent::Claude => self.claude.is_some(),
+            Agent::Codex => self.codex.is_some(),
+            Agent::Amp => self.amp.is_some(),
+            Agent::Kimi => self.kimi.is_some(),
+            Agent::Opencode => self.opencode.is_some(),
+        }
+    }
+
     /// Returns the per-agent model override from the manifest, if any.
     ///
     /// Collapses the five-arm `match agent { Agent::Claude => manifest.claude…, … }`

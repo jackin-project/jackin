@@ -55,6 +55,14 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// provisioning code (`instance/auth.rs`) uses these to locate and copy
     /// credentials into the role-state directory.
     fn state_paths(&self) -> AgentStatePaths;
+
+    /// Extract a bare semver string from the raw output of `<agent> --version`.
+    ///
+    /// Returns a subslice of `raw` that looks like a version token, or `None`
+    /// when the output doesn't match the expected format for this agent.
+    /// Used by `jackin_image::version_check` to normalize version strings
+    /// before caching them.
+    fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str>;
 }
 
 /// Host-side paths a single agent uses for credential storage.

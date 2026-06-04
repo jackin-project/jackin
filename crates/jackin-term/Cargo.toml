@@ -1,9 +1,12 @@
 [package]
 name = "jackin-term"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Owned terminal model for the jackin-capsule re-emitting PTY multiplexer. See README.md."
+license = "Apache-2.0"
+publish = false
 
 # jackin-term: owned terminal model for the jackin-capsule re-emitting PTY multiplexer.
 #
@@ -12,6 +15,7 @@ repository.workspace = true
 
 [lib]
 name = "jackin_term"
+path = "src/lib.rs"
 
 [dependencies]
 # vte: the canonical VT/ANSI parser. Never rebuilt — depend always.
@@ -21,6 +25,21 @@ vte = "0.15"
 unicode-width = "0.2"
 
 [dev-dependencies]
-# vt100 fork: differential oracle for the harness (Phase 1).
+# vt100 fork: differential oracle for the Phase 1 harness.
 # Do NOT use vt100 in production jackin-term code — it is a test dependency only.
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+mod_module_files = "deny"
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"

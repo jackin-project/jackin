@@ -59,4 +59,13 @@ RUN set -euxo pipefail && \\
             folder_env_var: Some("CLAUDE_CONFIG_DIR"),
         }
     }
+
+    fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
+        // `claude --version` returns e.g. "2.1.96 (Claude Code)"; take the first token.
+        let token = raw.split_whitespace().next()?;
+        if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
+            return None;
+        }
+        Some(token)
+    }
 }

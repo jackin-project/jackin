@@ -55,4 +55,14 @@ RUN set -euxo pipefail && \\
             folder_env_var: Some("XDG_DATA_HOME"),
         }
     }
+
+    fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
+        // `opencode --version` returns e.g. "1.14.48" or "v1.14.48".
+        let trimmed = raw.trim();
+        let token = trimmed.strip_prefix('v').unwrap_or(trimmed);
+        if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
+            return None;
+        }
+        Some(token)
+    }
 }
