@@ -88,3 +88,13 @@ Every row that begins with `+` is an add/create action and must render through t
 
 ---
 
+
+## Capsule ANSI color encoders: static allowlist vs dynamic runtime
+
+The capsule's ANSI renderer uses two flavors of the color-encoding helpers in <RepoFile path="crates/jackin-tui/src/lib.rs" />:
+
+- **`rgb_fg(color)` / `rgb_bg(color)` — `const fn`, compile-time only.** These return a `&'static str` from a fixed allowlist of named palette colors. An unlisted color is a **compile error** (not a runtime panic), which is the desired behavior for constant tables: if you add a named color to the palette and forget to add it to the allowlist, the build fails loudly. Use these for `const COLOR_NAME: &str = rgb_fg(PHOSPHOR_GREEN)` table entries.
+
+- **`rgb_fg_dyn(Rgb) -> String` / `rgb_bg_dyn(Rgb) -> String` — dynamic, runtime.** These emit the standard truecolor SGR sequence `\x1b[38;2;r;g;bm` / `\x1b[48;2;r;g;bm` for **any** `Rgb` value and never panic. Use these whenever the color value is not a compile-time constant — any place a color is chosen at runtime (e.g. the debug chip which is conditionally rendered with `DANGER_RED`).
+
+**Rule:** capsule render code must never call `rgb_fg` or `rgb_bg` with a value that is not a `const` palette constant. Any non-const color use must route through `rgb_fg_dyn` / `rgb_bg_dyn`. A `const` call with an unlisted color is a build error (correct!); a non-`const` call with an unlisted color is an exit-101 panic (bug!).

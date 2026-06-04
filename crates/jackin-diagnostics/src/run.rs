@@ -167,6 +167,75 @@ impl RunDiagnostics {
         true
     }
 
+    /// Emit a structured `container_started` event.
+    ///
+    /// Call this immediately after the `docker run -d` succeeds. Records the
+    /// container name and the host path of the capsule diagnostics log so an
+    /// agent reading the run JSONL can follow the pointer without knowing the
+    /// on-disk layout.
+    pub fn container_started(&self, container_name: &str, capsule_log_path: &str) {
+        let detail = serde_json::json!({
+            "container_name": container_name,
+            "capsule_log": capsule_log_path,
+        })
+        .to_string();
+        self.write(
+            "container_started",
+            &format!("container {container_name} started"),
+            Some(container_name),
+            Some(&detail),
+            None,
+        );
+    }
+
+    /// Emit a structured `container_exited` or `container_crash` event.
+    ///
+    /// Call this when the container exits non-normally (pre-attach crash,
+    /// OOM kill, or non-zero post-attach exit). For clean `exit 0` post-attach
+    /// shutdowns, no event is needed.
+    ///
+    /// `crash_evidence` is the last N lines of `docker logs` or the
+    /// `multiplexer.log` tail — passed in by the caller which already fetched
+    /// it for the user-facing error message. When `crash_evidence` is `Some`,
+    /// an additional `container_crash_log` event is written so the full cause
+    /// is self-contained in the run JSONL.
+    pub fn container_exited(
+        &self,
+        container_name: &str,
+        exit_code: i64,
+        oom_killed: bool,
+        capsule_log_path: &str,
+        crash_evidence: Option<&str>,
+    ) {
+        let detail = serde_json::json!({
+            "container_name": container_name,
+            "exit_code": exit_code,
+            "oom_killed": oom_killed,
+            "capsule_log": capsule_log_path,
+        })
+        .to_string();
+        let kind = if exit_code != 0 || oom_killed {
+            "container_crash"
+        } else {
+            "container_exited"
+        };
+        let msg = if oom_killed {
+            format!("container {container_name} OOM killed")
+        } else {
+            format!("container {container_name} exited (exit {exit_code})")
+        };
+        self.write(kind, &msg, Some(container_name), Some(&detail), None);
+        if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
+            self.write(
+                "container_crash_log",
+                evidence,
+                Some(container_name),
+                None,
+                None,
+            );
+        }
+    }
+
     fn write(
         &self,
         kind: &str,

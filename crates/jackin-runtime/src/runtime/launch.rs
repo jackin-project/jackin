@@ -922,6 +922,14 @@ pub(super) async fn launch_role_runtime(
     // which an interactive `jackin load` can spawn caffeinate.
     super::caffeinate::reconcile(paths, docker, runner).await;
 
+    // Emit a structured container_started event so the run JSONL points at
+    // the capsule log regardless of whether the session succeeds (Defect 41).
+    let capsule_log_path = capsule_multiplexer_log_path(paths, container_name);
+    let capsule_log_str = capsule_log_path.display().to_string();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.container_started(container_name, &capsule_log_str);
+    }
+
     // Pre-session safety check: if jackin-capsule exited immediately
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
@@ -959,8 +967,14 @@ pub(super) async fn launch_role_runtime(
         // and must propagate the real exec error so the operator sees
         // why the container vanished mid-session.
         let inspect = docker.inspect_container_state(container_name).await;
-        if let Some(diag) =
-            diagnose_with_state(runner, container_name, &inspect, ExitPhase::PostAttach).await
+        if let Some(diag) = diagnose_with_state(
+            runner,
+            container_name,
+            &inspect,
+            ExitPhase::PostAttach,
+            Some(&capsule_log_str),
+        )
+        .await
         {
             return Err(diag);
         }
@@ -1007,7 +1021,7 @@ async fn diagnose_premature_exit(
     phase: ExitPhase,
 ) -> Option<anyhow::Error> {
     let state = docker.inspect_container_state(container_name).await;
-    diagnose_with_state(runner, container_name, &state, phase).await
+    diagnose_with_state(runner, container_name, &state, phase, None).await
 }
 
 /// Same diagnostic logic as `diagnose_premature_exit` but with the
@@ -1019,6 +1033,7 @@ async fn diagnose_with_state(
     container_name: &str,
     state: &ContainerState,
     phase: ExitPhase,
+    capsule_log_path: Option<&str>,
 ) -> Option<anyhow::Error> {
     match state {
         // Default to letting the `docker exec` attempt proceed when state is
@@ -1078,7 +1093,7 @@ async fn diagnose_with_state(
                 ExitPhase::PreAttach => "exited before attach",
                 ExitPhase::PostAttach => "exited during session",
             };
-            let body = logs.map_or_else(
+            let body = logs.as_deref().map_or_else(
                 || {
                     format!(
                         "container {container_name} {phase_label} ({reason}) and produced no log output"
@@ -1090,6 +1105,17 @@ async fn diagnose_with_state(
                     )
                 },
             );
+            // Emit a structured container exit event with the crash evidence so
+            // the run JSONL is self-contained (Defect 41).
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.container_exited(
+                    container_name,
+                    (*exit_code).into(),
+                    *oom_killed,
+                    capsule_log_path.unwrap_or("(path unknown)"),
+                    logs.as_deref(),
+                );
+            }
             Some(anyhow::anyhow!(body))
         }
     }
@@ -1845,6 +1871,21 @@ pub(super) fn manifest_host_workdir_fingerprint(
             || crate::instance::manifest::host_path_fingerprint(&workspace.workdir),
             |mount| crate::instance::manifest::host_path_fingerprint(&mount.src),
         )
+}
+
+/// Host path of the capsule's `multiplexer.log` for a given container.
+///
+/// Layout: `<data_dir>/<container_name>/state/multiplexer.log`, matching
+/// the bind-mount declared in `agent_mounts`.
+pub(super) fn capsule_multiplexer_log_path(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> std::path::PathBuf {
+    paths
+        .data_dir
+        .join(container_name)
+        .join("state")
+        .join("multiplexer.log")
 }
 
 fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
