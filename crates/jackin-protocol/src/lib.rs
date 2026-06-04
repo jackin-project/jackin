@@ -182,6 +182,15 @@ impl Provider {
     pub fn opencode_model(self) -> Option<&'static str> {
         self.adapter().opencode_model()
     }
+
+    /// Env var that holds the API key for this provider, if any.
+    ///
+    /// Convenience wrapper around `self.adapter().key_env_var()` so callers
+    /// do not need to import the `ProviderAdapter` trait.
+    #[must_use]
+    pub fn key_env_var(self) -> Option<&'static str> {
+        self.adapter().key_env_var()
+    }
 }
 
 impl CapsuleConfig {

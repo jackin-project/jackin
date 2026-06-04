@@ -13,6 +13,22 @@ publish = false
 name = "jackin_diagnostics"
 path = "src/lib.rs"
 
+[features]
+# Enable the OpenTelemetry (OTLP) export layer.
+#
+# Gated twice:
+# 1. Compile-time: `--features otlp` (default build has zero opentelemetry deps)
+# 2. Runtime: `JACKIN_OTLP_ENDPOINT=http://…:4318` (no-op if unset even when compiled in)
+#
+# Usage: cargo build --features jackin-diagnostics/otlp
+# Then: JACKIN_OTLP_ENDPOINT=http://localhost:4318 cargo run --bin jackin -- console --debug
+otlp = [
+    "dep:opentelemetry",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry_sdk",
+    "dep:tracing-opentelemetry",
+]
+
 [dependencies]
 jackin-core = { path = "../jackin-core" }
 jackin-tui = { path = "../jackin-tui" }
@@ -25,6 +41,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 crossterm = "0.29"
 directories = "6.0"
+# OTLP export (optional — only compiled in with `--features otlp`)
+opentelemetry = { version = "0.28", optional = true }
+opentelemetry-otlp = { version = "0.28", features = ["http-proto", "reqwest-client", "reqwest-blocking-client"], optional = true }
+opentelemetry_sdk = { version = "0.28", features = ["rt-tokio"], optional = true }
+tracing-opentelemetry = { version = "0.29", optional = true }
 
 [dev-dependencies]
 tempfile = "3.20"

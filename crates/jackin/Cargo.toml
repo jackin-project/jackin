@@ -97,6 +97,10 @@ harness = false
 # `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
 # enable with `--features e2e` on a host with a reachable Docker daemon.
 e2e = []
+# `otlp` enables the OpenTelemetry OTLP export layer in jackin-diagnostics.
+# Runtime: set JACKIN_OTLP_ENDPOINT=http://<host>:4318 to activate.
+# Build:   cargo run --features otlp --bin jackin -- console --debug
+otlp = ["jackin-diagnostics/otlp"]
 
 [lints.rust]
 unsafe_code = "forbid"
