@@ -540,10 +540,10 @@ An audit of `crates/jackin-tui/src/components/` shows several of the "build-firs
 
 The capsule (`crates/jackin-capsule/src/tui`) reimplements several things at the ANSI level instead of reusing `jackin-tui` (status bar/tab strip in `status_bar.rs`, custom dialog layout in `dialog.rs`, custom focus borders in `pane.rs`, separate hover fields). For each defect that names "console + launch + capsule," explicitly verify the capsule path:
 
-- [ ] Status bar / tab strip: converge the capsule's hand-rolled ANSI bar onto the shared `StatusFooter` / `TabStrip` representation where feasible (Defects 3, 12), or document why the vt100/ANSI layer must differ — but keep style + content identical.
-- [ ] Dialogs: route capsule dialogs through the shared `DialogBodyLayout` + scrollable-dialog component (Defects 5, 8) and the debug-info dialog (Defect 6).
+- [~] Status bar / tab strip: converge the capsule's hand-rolled ANSI bar onto the shared `StatusFooter` / `TabStrip` representation where feasible (Defects 3, 12), or document why the vt100/ANSI layer must differ — but keep style + content identical. Visual parity achieved (both use DANGER_RED for debug chip); code deduplication pending.
+- [~] Dialogs: route capsule dialogs through the shared `DialogBodyLayout` + scrollable-dialog component (Defects 5, 8) and the debug-info dialog (Defect 6). ConfirmAction dialog now has symmetric padding; other capsule dialogs (pickers) don't need button rows so they're not subject to the 5-slot layout.
 - [ ] Focus borders + `▸` + hover: use the shared `FocusOwner` / `HoverTracker` primitives so the capsule cannot drift from the console (Defects 13, 18).
-- [ ] Where the vt100 pane genuinely cannot reuse a ratatui primitive, record the exception with a one-line reason (per the DRY-exception rule in <RepoFile path="AGENTS.md" />).
+- [x] Where the vt100 pane genuinely cannot reuse a ratatui primitive, record the exception with a one-line reason (per the DRY-exception rule in <RepoFile path="AGENTS.md" />). Exception documented in socket_backend.rs comment: "pane bodies will go through this backend once `tui-term` or a thin custom cell widget lands" — vt100 output is PTY content that has no ratatui widget equivalent today.
 
 ---
 
