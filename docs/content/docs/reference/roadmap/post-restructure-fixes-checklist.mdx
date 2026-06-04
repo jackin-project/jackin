@@ -169,10 +169,10 @@ Reference layout (capsule, debug):
 Same component, same style, same row formatting everywhere; surfaces and debug-mode only *add* rows. Adding a field later is a one-place change every surface inherits.
 
 **Tasks:**
-- [ ] Introduce (or promote) one shared "Container info" / debug-info dialog in `jackin-tui` with the two-axis additive content model (surface fields + debug-mode superset). Replace the console `debug_run_info_state` two-row state and the capsule's separate `container_info_dialog` with this one component (DRY — no per-surface dialog).
-- [ ] Implement the debug gate: non-debug shows the simpler container rows; `--debug` adds the diagnostics rows (Run ID, Run log path + contents, Docker build log pointer, …) as a superset — never fewer rows in debug.
+- [x] Introduce (or promote) one shared "Container info" / debug-info dialog in `jackin-tui` with the two-axis additive content model (surface fields + debug-mode superset). Replace the console `debug_run_info_state` two-row state and the capsule's separate `container_info_dialog` with this one component (DRY — no per-surface dialog).
+- [x] Implement the debug gate: non-debug shows the simpler container rows; `--debug` adds the diagnostics rows (Run ID, Run log path + contents, Docker build log pointer, …) as a superset — never fewer rows in debug.
 - [x] On open, paint the full-screen backdrop (Defect 10) so the dialog supersedes the entire screen — nothing else visible.
-- [ ] Base content on every surface: Run ID value, run log path, and the run log **contents** (read from the active run's `.jsonl`), in a scrollable body (Defect 8: `jackin_tui::scroll` + bottom-border `full_cell_thumb`, no scrollbar when it fits, `↑↓`/`J`/`K`/wheel).
+- [x] Base content on every surface: Run ID value, run log path, and the run log **contents** (read from the active run's `.jsonl`), in a scrollable body (Defect 8: `jackin_tui::scroll` + bottom-border `full_cell_thumb`, no scrollbar when it fits, `↑↓`/`J`/`K`/wheel).
 - [ ] Additive content: on capsule and launch, include the container ID and the started-container details; design the model so new fields are added in one place and inherited everywhere, never removed per surface.
 - [ ] Wire the run-id chip → this dialog on **every** surface that shows the chip (console, launch, capsule): `rg -n "status_footer_right_chip_rect|debug_bar_chip_area|last_debug_chip_area" crates/*/src`. In the capsule, **both** the container-ID chip and the (restored, Defect 12) red run-id chip open this same dialog.
 - [ ] Record the cross-screen debug-info-dialog contract (shared component, full-screen on open, additive content, scrollable, same style everywhere) in [TUI Design Decisions](/reference/tui/chrome/).
