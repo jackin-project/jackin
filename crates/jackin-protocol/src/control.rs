@@ -15,6 +15,12 @@ pub enum ClientMsg {
     Status,
     /// Request the tab/pane tree snapshot.
     Snapshot,
+    /// Run `command` with `args` inside the container, injecting any
+    /// on-demand credentials the operator selects in the picker dialog.
+    /// The daemon shows the picker, resolves selected credentials via
+    /// the host.sock callback, and replies with `ExecResult` or
+    /// `ExecDenied`. Must be placed before `Unknown`.
+    ExecCommand { command: String, args: Vec<String> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -34,6 +40,19 @@ pub enum ServerMsg {
         tabs: Vec<TabSnapshot>,
         active_tab: u32,
     },
+    /// Successful result of an `ExecCommand`. `stdout` and `stderr` are
+    /// lossy-UTF-8 strings (non-UTF-8 bytes replaced with U+FFFD),
+    /// capped at 1 MiB each. `redacted_count` is the number of secret
+    /// patterns replaced with `[redacted by jackin']` in the output.
+    ExecResult {
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+        redacted_count: u32,
+    },
+    /// The exec was denied — operator cancelled the picker, host.sock
+    /// was unavailable, or credential resolution failed.
+    ExecDenied { reason: String },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,

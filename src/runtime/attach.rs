@@ -619,15 +619,30 @@ pub async fn inspect_hardline_instance(
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);
     let dind_name = manifest.map_or_else(
         || format!("{container_name}-dind"),
-        |manifest| manifest.docker.dind_container.clone(),
+        |manifest| match &manifest.backend {
+            crate::instance::BackendResources::Docker(d) => d.dind_container.clone(),
+            crate::instance::BackendResources::AppleContainer(_) => {
+                format!("{container_name}-dind")
+            }
+        },
     );
     let network_name = manifest.as_ref().map_or_else(
         || format!("{container_name}-net"),
-        |manifest| manifest.docker.network.clone(),
+        |manifest| match &manifest.backend {
+            crate::instance::BackendResources::Docker(d) => d.network.clone(),
+            crate::instance::BackendResources::AppleContainer(_) => {
+                format!("{container_name}-net")
+            }
+        },
     );
     let certs_volume = manifest.as_ref().map_or_else(
         || dind_certs_volume(container_name),
-        |manifest| manifest.docker.certs_volume.clone(),
+        |manifest| match &manifest.backend {
+            crate::instance::BackendResources::Docker(d) => d.certs_volume.clone(),
+            crate::instance::BackendResources::AppleContainer(_) => {
+                dind_certs_volume(container_name)
+            }
+        },
     );
 
     let (role_container_state, dind_state_raw, network_result) = tokio::join!(
@@ -1007,12 +1022,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk-agent-smith",
-            docker: crate::instance::DockerResources {
+            backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
                 network: format!("{container_name}-net"),
                 certs_volume: format!("{container_name}-dind-certs"),
-            },
+            }),
         });
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -1070,12 +1085,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk-agent-smith",
-            docker: crate::instance::DockerResources {
+            backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
                 network: format!("{container_name}-net"),
                 certs_volume: format!("{container_name}-dind-certs"),
-            },
+            }),
         });
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -1143,12 +1158,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk-agent-smith",
-            docker: crate::instance::DockerResources {
+            backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
                 network: format!("{container_name}-net"),
                 certs_volume: format!("{container_name}-dind-certs"),
-            },
+            }),
         });
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -1378,12 +1393,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk-agent-smith",
-            docker: crate::instance::DockerResources {
+            backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
                 network: format!("{container_name}-net"),
                 certs_volume: format!("{container_name}-dind-certs"),
-            },
+            }),
         });
         manifest.mark_status(InstanceStatus::Crashed);
         let state_dir = paths.data_dir.join(container_name);
@@ -1419,12 +1434,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: Some("feature/role"),
             image_tag: "jk-agent-smith",
-            docker: crate::instance::DockerResources {
+            backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
                 network: format!("{container_name}-net"),
                 certs_volume: format!("{container_name}-dind-certs"),
-            },
+            }),
         });
         manifest.mark_status(InstanceStatus::PreservedDirty);
         manifest.last_attach_outcome = Some("exit:137".to_string());
@@ -1583,12 +1598,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk-agent-smith",
-            docker: crate::instance::DockerResources {
+            backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
                 network: format!("{container_name}-net"),
                 certs_volume: format!("{container_name}-dind-certs"),
-            },
+            }),
         });
         manifest
             .write(&paths.data_dir.join(container_name))

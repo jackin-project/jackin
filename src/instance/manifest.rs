@@ -92,6 +92,40 @@ pub struct DockerResources {
     pub certs_volume: String,
 }
 
+/// Resources owned by the `apple-container` backend for one jackin' instance.
+/// Discriminated from `DockerResources` by the `container_name` field
+/// (vs `role_container`) so `BackendResources` untagged serde works cleanly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppleContainerResources {
+    /// Name of the apple/container container: "jackin-<instance-id>"
+    pub container_name: String,
+    /// OCI image ref used to start the container.
+    pub role_image_ref: String,
+    /// Whether an inner Docker daemon (rootless DinD) is running.
+    pub inner_docker_enabled: bool,
+}
+
+/// Backend-specific resource handles. Discriminated by struct shape via
+/// `#[serde(untagged)]` — `AppleContainerResources` has `container_name`
+/// while `DockerResources` has `role_container` (disjoint field sets).
+///
+/// The `InstanceManifest.docker` field is renamed to `backend` in Rust
+/// and keeps the `"docker"` JSON key via `#[serde(alias = "docker")]`
+/// so existing manifests (which have `"docker": {...}`) still deserialize.
+/// Old manifests lack a `"kind"` discriminator — untagged serde handles
+/// this transparently by trying `AppleContainer` first (fails: no
+/// `container_name`), then `Docker` (succeeds: has `role_container`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BackendResources {
+    /// Apple Container backend (`apple-container`).
+    /// Discriminated by `container_name` field.
+    AppleContainer(AppleContainerResources),
+    /// Docker backend (default). Must remain last — `DockerResources`
+    /// is the backward-compat fallback for old manifests.
+    Docker(DockerResources),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceManifest {
     pub version: u32,
@@ -111,7 +145,10 @@ pub struct InstanceManifest {
     pub image_tag: String,
     pub status: InstanceStatus,
     pub last_attach_outcome: Option<String>,
-    pub docker: DockerResources,
+    /// Backend-specific resource handles. Serialized as `"backend"` but
+    /// also accepts the legacy `"docker"` key from old manifests.
+    #[serde(rename = "backend", alias = "docker")]
+    pub backend: BackendResources,
     #[serde(default)]
     pub sessions: Vec<SessionRecord>,
 }
@@ -147,7 +184,7 @@ pub struct NewInstanceManifest<'a> {
     pub role_source_git: &'a str,
     pub role_source_ref: Option<&'a str>,
     pub image_tag: &'a str,
-    pub docker: DockerResources,
+    pub backend: BackendResources,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -184,7 +221,7 @@ impl InstanceManifest {
             image_tag: input.image_tag.to_string(),
             status: InstanceStatus::Active,
             last_attach_outcome: None,
-            docker: input.docker,
+            backend: input.backend,
             sessions: Vec::new(),
         }
     }
@@ -611,12 +648,12 @@ mod tests {
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
             image_tag: "jk_org_agent",
-            docker: DockerResources {
+            backend: BackendResources::Docker(DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
-            },
+            }),
         })
     }
 
@@ -635,12 +672,12 @@ mod tests {
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
             image_tag: "jk_org_agent",
-            docker: DockerResources {
+            backend: BackendResources::Docker(DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
-            },
+            }),
         });
         manifest.mark_status(InstanceStatus::Running);
 
@@ -668,12 +705,12 @@ mod tests {
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
             image_tag: "jk_org_agent",
-            docker: DockerResources {
+            backend: BackendResources::Docker(DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
-            },
+            }),
         });
         manifest
             .write(&data_dir.join("jk-k7p9m2xq-workspace-agent"))
@@ -712,12 +749,12 @@ mod tests {
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
             image_tag: "jk_org_agent",
-            docker: DockerResources {
+            backend: BackendResources::Docker(DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
                 network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
-            },
+            }),
         });
 
         InstanceIndex::update_manifest(data_dir, &manifest).unwrap();

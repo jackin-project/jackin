@@ -1032,12 +1032,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: "jk-k7p9m2xq-myapp-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-myapp-agentsmith-dind".to_string(),
                 network: "jk-k7p9m2xq-myapp-agentsmith-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_string(),
-            },
+            }),
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
         manifest.write(&state_dir).unwrap();
@@ -1080,12 +1080,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: "jk-k7p9m2xq-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
                 network: "jk-k7p9m2xq-agentsmith-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
-            },
+            }),
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
         manifest.write(&state_dir).unwrap();
@@ -1123,12 +1123,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
                 network: format!("{container}-net"),
                 certs_volume: format!("{container}-dind-certs"),
-            },
+            }),
         });
         manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
         manifest.write(&paths.data_dir.join(container)).unwrap();
@@ -1167,12 +1167,12 @@ mod tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
                 network: format!("{container}-net"),
                 certs_volume: format!("{container}-dind-certs"),
-            },
+            }),
         });
         manifest.write(&paths.data_dir.join(container)).unwrap();
         let candidate = HardlineCandidate {

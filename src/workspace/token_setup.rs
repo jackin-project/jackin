@@ -625,7 +625,7 @@ pub fn run_revoke_with_runner(
                 op_writer.item_delete(&parts.item, &parts.vault, None)?;
                 true
             }
-            Some(EnvValue::Plain(_)) => {
+            Some(EnvValue::Extended(_) | EnvValue::Plain(_)) => {
                 anyhow::bail!(
                     "--delete-op-item requested but workspace {workspace:?} has a literal \
                      token slot (not an op:// reference); jackin does not know where the \
@@ -697,7 +697,7 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
     cli_vault.or_else(|| {
         prior.and_then(|v| match v {
             EnvValue::OpRef(r) => crate::operator_env::parse_op_reference(&r.op).map(|p| p.vault),
-            EnvValue::Plain(_) => None,
+            EnvValue::Extended(_) | EnvValue::Plain(_) => None,
         })
     })
 }
@@ -746,6 +746,7 @@ pub fn run_doctor_with_runner(
     .map(str::to_string);
     let token = match token_decl {
         EnvValue::Plain(t) => t.clone(),
+        EnvValue::Extended(e) => e.value.clone(),
         EnvValue::OpRef(r) => op_reader
             .read_with_account(&r.op, r.account.as_deref())
             .map_err(|e| anyhow::anyhow!("op read for {:?} failed: {e}", r.path))?,
@@ -757,7 +758,7 @@ pub fn run_doctor_with_runner(
         mode,
         op_ref: match token_decl {
             EnvValue::OpRef(r) => Some(r.clone()),
-            EnvValue::Plain(_) => None,
+            EnvValue::Extended(_) | EnvValue::Plain(_) => None,
         },
         op_account: account,
         token_sha256_prefix: prefix,
@@ -1150,6 +1151,7 @@ mod tests {
                     op: "op://_/_/_".into(),
                     path: "_/_/_".into(),
                     account: None,
+                    on_demand: false,
                 },
                 recorded_value: RefCell::new(None),
                 recorded_field_id: RefCell::new(None),
@@ -1296,6 +1298,7 @@ mod tests {
             op: "op://VID/IID/FID".into(),
             path: "Personal/jackin · proj · claude-token/token".into(),
             account: None,
+            on_demand: false,
         }
     }
 
@@ -1732,6 +1735,7 @@ mod tests {
                     op: "op://Other/Item/Field".into(),
                     path: "Other/Item/Field".into(),
                     account: None,
+                    on_demand: false,
                 }),
                 ..Default::default()
             },
@@ -1767,6 +1771,7 @@ mod tests {
                     op: "op://VID/IID/FID".into(),
                     path: "Personal/Existing/token".into(),
                     account: None,
+                    on_demand: false,
                 }),
                 ..Default::default()
             },
@@ -1875,6 +1880,7 @@ mod tests {
                     op: "op://Other/Item/Field".into(),
                     path: "Other/Item/Field".into(),
                     account: None,
+                    on_demand: false,
                 }),
                 ..Default::default()
             },
@@ -1953,6 +1959,7 @@ mod tests {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Item/token".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -1991,6 +1998,7 @@ mod tests {
             op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
             path: "Personal/jackin · proj · claude-token/token".into(),
             account: None,
+            on_demand: false,
         });
         assert_eq!(
             vault_for_rotate(None, Some(&prior)),
@@ -2008,6 +2016,7 @@ mod tests {
             op: "op://OldVault/ITEM/FIELD".into(),
             path: "OldVault/Item/token".into(),
             account: None,
+            on_demand: false,
         });
         assert_eq!(
             vault_for_rotate(Some("NewVault".into()), Some(&prior)),
@@ -2101,6 +2110,7 @@ mod tests {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Item/token".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -2128,6 +2138,7 @@ mod tests {
                 op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
                 path: "Personal/Item/token".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -2205,6 +2216,7 @@ mod tests {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Item/token".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -2273,6 +2285,7 @@ mod tests {
             op: "garbage-not-an-op-uri".into(),
             path: "Personal/Item/token".into(),
             account: None,
+            on_demand: false,
         };
         let writer = FakeOpWriter::new(bogus_ref);
         let reader = FakeOpReader::err("op read failed: bogus URI");

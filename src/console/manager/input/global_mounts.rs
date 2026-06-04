@@ -2489,6 +2489,7 @@ mod tests {
             op: "op://uuid/claude-vault".into(),
             path: "Personal/Claude/oauth-token".into(),
             account: None,
+            on_demand: false,
         };
         apply_op_picker_to_settings_auth_form_with_runner(
             &mut settings.auth,

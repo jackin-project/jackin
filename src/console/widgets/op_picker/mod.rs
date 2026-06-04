@@ -1437,6 +1437,7 @@ pub(crate) fn build_op_ref_on_commit(
         op,
         path,
         account: state.selected_account_id(),
+        on_demand: false,
     }
 }
 

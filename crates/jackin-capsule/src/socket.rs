@@ -262,12 +262,18 @@ async fn read_payload_lazy(
 }
 
 /// Handle a one-shot control request and close the connection.
+///
+/// `exec_tx` is `Some` when the daemon supports `ExecCommand` requests;
+/// it forwards the request into the daemon's event loop and awaits the
+/// outcome before writing the reply. When `None`, `ExecCommand` replies
+/// with `ExecDenied`.
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
     sessions: Vec<SessionInfo>,
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     active_tab: u32,
+    exec_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::exec::ExecRequest>>,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -276,9 +282,50 @@ pub async fn handle_control_request(
             return;
         }
     };
+
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
+        ClientMsg::ExecCommand { command, args } => {
+            match exec_tx {
+                None => ServerMsg::ExecDenied {
+                    reason: "exec not available (no daemon exec channel)".to_string(),
+                },
+                Some(tx) => {
+                    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+                    let req = crate::exec::ExecRequest {
+                        command,
+                        args,
+                        response_tx,
+                    };
+                    if tx.send(req).is_err() {
+                        ServerMsg::ExecDenied {
+                            reason: "daemon exec channel closed".to_string(),
+                        }
+                    } else {
+                        match response_rx.await {
+                            Ok(crate::exec::ExecOutcome::Result {
+                                exit_code,
+                                stdout,
+                                stderr,
+                                redacted_count,
+                            }) => ServerMsg::ExecResult {
+                                exit_code,
+                                stdout,
+                                stderr,
+                                redacted_count,
+                            },
+                            Ok(crate::exec::ExecOutcome::Denied { reason }) => {
+                                ServerMsg::ExecDenied { reason }
+                            }
+                            Err(_) => ServerMsg::ExecDenied {
+                                reason: "daemon dropped exec response channel".to_string(),
+                            },
+                        }
+                    }
+                }
+            }
+        }
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.
@@ -290,10 +337,11 @@ pub async fn handle_control_request(
     // decode and reply write cannot wedge this task forever holding the
     // attach-concurrency permit. 2 s is generous for a single localhost
     // socket write; anything slower is the peer being unresponsive.
+    let reply_type = std::mem::discriminant(&reply);
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed (reply={reply_type:?}): {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s (reply={reply_type:?})"),
     }
 }
 

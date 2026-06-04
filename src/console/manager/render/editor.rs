@@ -1224,7 +1224,7 @@ pub(in crate::console::manager) fn render_secrets_key_line(
     // that the row needs re-picking to upgrade to a pinned `OpRef`.
     let op_breadcrumb = match value {
         EnvValue::OpRef(r) => parse_path_breadcrumb(&r.path),
-        EnvValue::Plain(_) => None,
+        EnvValue::Extended(_) | EnvValue::Plain(_) => None,
     };
     let marker = if op_breadcrumb.is_some() {
         OP_MARKER
@@ -1275,6 +1275,7 @@ pub(in crate::console::manager) fn render_secrets_key_line(
     // explicit re-pick placeholder rather than leaking the UUID URI.
     let plain_str = match value {
         EnvValue::Plain(s) => s.as_str(),
+        EnvValue::Extended(e) => e.value.as_str(),
         EnvValue::OpRef(_) => OP_REF_REPICK_PLACEHOLDER,
     };
 
@@ -2382,6 +2383,7 @@ mod secrets_tab_render_tests {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2436,6 +2438,7 @@ mod secrets_tab_render_tests {
                 op: "op://Personal/API Keys/auth/secret_key".into(),
                 path: "Personal/API Keys/auth/secret_key".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2485,6 +2488,7 @@ mod secrets_tab_render_tests {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2534,6 +2538,7 @@ mod secrets_tab_render_tests {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2733,6 +2738,7 @@ mod secrets_tab_render_tests {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude[alexey@zhokhov.com]/security/auth token".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2782,6 +2788,7 @@ mod secrets_tab_render_tests {
                 op: "op://abc/def/fld?attribute=otp".into(),
                 path: "Private/GitHub/one-time password?attribute=otp".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2824,6 +2831,7 @@ mod secrets_tab_render_tests {
                 op: "op://abc/def/sec/fld?attribute=otp".into(),
                 path: "Private/Claude[alexey@zhokhov.com]/security/auth token?attribute=otp".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2899,6 +2907,7 @@ mod secrets_tab_render_tests {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude/security/auth token".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2933,6 +2942,7 @@ mod secrets_tab_render_tests {
                 op: "op://abc/def/fld".into(),
                 path: "garbage-no-slashes".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let ws = WorkspaceConfig {

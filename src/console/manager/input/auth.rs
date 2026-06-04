@@ -1299,7 +1299,7 @@ mod tests {
             .expect("credential env var must be set");
         match value {
             EnvValue::Plain(s) => assert_eq!(s, "secret"),
-            EnvValue::OpRef(_) => panic!("expected plain literal credential"),
+            EnvValue::Extended(_) | EnvValue::OpRef(_) => panic!("expected plain literal credential"),
         }
     }
 
@@ -1544,7 +1544,7 @@ mod tests {
             .expect("role env credential must be set");
         match env_val {
             EnvValue::Plain(s) => assert_eq!(s, "abc"),
-            EnvValue::OpRef(_) => panic!("expected plain literal"),
+            EnvValue::Extended(_) | EnvValue::OpRef(_) => panic!("expected plain literal"),
         }
     }
 
@@ -1660,6 +1660,7 @@ mod tests {
             op: "op://uuid/claude-vault".into(),
             path: "Personal/Claude/oauth-token".into(),
             account: None,
+            on_demand: false,
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, minted.clone(), &StubRunner);
 
@@ -1780,6 +1781,7 @@ mod tests {
             op: "op://uuid/anthropic-vault".into(),
             path: "Work/Anthropic/api-key".into(),
             account: None,
+            on_demand: false,
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, picked.clone(), &StubRunner);
 
@@ -1836,6 +1838,7 @@ mod tests {
             op: "op://uuid/missing".into(),
             path: "Vault/Missing/field".into(),
             account: None,
+            on_demand: false,
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
 
@@ -1924,6 +1927,7 @@ mod tests {
                 op: String::new(),
                 path: String::new(),
                 account: None,
+                on_demand: false,
             });
         } else {
             panic!("auth form must still be open");
@@ -2012,7 +2016,7 @@ mod tests {
             .expect("GH_TOKEN must land on the github env block, not the regular env block");
         match value {
             EnvValue::Plain(s) => assert_eq!(s, "ghp_xxx"),
-            EnvValue::OpRef(_) => panic!("expected plain literal credential"),
+            EnvValue::Extended(_) | EnvValue::OpRef(_) => panic!("expected plain literal credential"),
         }
         // GH_TOKEN must NOT have leaked into the regular workspace env
         // map — that would shadow the kind-scoped value at launch
@@ -2174,7 +2178,7 @@ mod tests {
             .expect("GH_TOKEN must persist on the github env block")
         {
             EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
-            EnvValue::OpRef(_) => panic!("expected plain literal"),
+            EnvValue::Extended(_) | EnvValue::OpRef(_) => panic!("expected plain literal"),
         }
     }
 

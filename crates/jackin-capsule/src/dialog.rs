@@ -190,6 +190,11 @@ pub enum Dialog {
         selected: usize,
         intent: PickerIntent,
     },
+    /// Credential picker shown when the agent calls `jackin-exec`. The
+    /// operator selects which on-demand env vars to inject into the
+    /// command before it runs. Enter confirms; Esc cancels and sends
+    /// `ExecDenied` back to the `jackin-exec` client.
+    ExecPicker(crate::exec::ExecPickerState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -285,6 +290,12 @@ pub enum DialogAction {
     /// Mouse event lands somewhere with no semantic effect (border,
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
+    /// Operator confirmed the exec credential picker — daemon should
+    /// resolve selected credentials and execute the command.
+    ExecPickerConfirm,
+    /// Operator cancelled the exec credential picker — daemon should
+    /// send `ExecDenied` back to the `jackin-exec` client.
+    ExecPickerCancel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -479,6 +490,10 @@ impl Dialog {
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
+                Self::ExecPicker(s) => {
+                    s.cursor_up();
+                    DialogAction::Redraw
+                }
             };
         }
         if is_arrow_down(key) {
@@ -532,6 +547,10 @@ impl Dialog {
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
+                Self::ExecPicker(s) => {
+                    s.cursor_down();
+                    DialogAction::Redraw
+                }
             };
         }
         if is_backspace(key) {
@@ -623,8 +642,22 @@ impl Dialog {
                     },
                     None => DialogAction::Redraw,
                 },
+                Self::ExecPicker(_) => DialogAction::ExecPickerConfirm,
                 _ => DialogAction::Redraw,
             };
+        }
+        // Space toggles selection in the ExecPicker.
+        if key == b" " {
+            if let Self::ExecPicker(s) = self {
+                s.toggle_cursor();
+                return DialogAction::Redraw;
+            }
+        }
+        // ExecPicker: Esc / q cancel the exec.
+        if matches!(key, b"\x1b" | b"q") {
+            if let Self::ExecPicker(_) = self {
+                return DialogAction::ExecPickerCancel;
+            }
         }
         // Printable ASCII single-byte chunks become filter input. Multi-
         // byte sequences (CSI fragments that did not match a known key,
@@ -793,7 +826,8 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => 0,
+            | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_) => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -856,13 +890,14 @@ impl Dialog {
                     }
                 }
             }
-            // RenameTab, ContainerInfo, ConfirmAction, and ProviderPicker
-            // clicks were already handled by early returns above.
+            // RenameTab, ContainerInfo, ConfirmAction, ProviderPicker, and
+            // ExecPicker clicks were already handled by early returns above.
             Self::RenameTab { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => DialogAction::Consume,
+            | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_) => DialogAction::Consume,
         }
     }
 
@@ -937,6 +972,7 @@ impl Dialog {
                 let first_item_row = box_row + 1;
                 row >= first_item_row && row < first_item_row + providers.len() as u16
             }
+            Self::ExecPicker(_) => false,
         }
     }
 
@@ -990,6 +1026,7 @@ impl Dialog {
             Self::ConfirmAction { .. } => 9,
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
+            Self::ExecPicker(s) => s.items.len() as u16 + 2,
         };
         let max_height = term_rows
             .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
@@ -1123,6 +1160,9 @@ impl Dialog {
             } => {
                 render_provider_picker(buf, box_row, box_col, height, width, providers, *selected);
             }
+            Self::ExecPicker(s) => {
+                render_exec_picker(buf, box_row, box_col, height, width, s);
+            }
         }
     }
 
@@ -1164,6 +1204,7 @@ impl Dialog {
                 }
             }
             Self::ConfirmAction { .. } => CONFIRM_HINT,
+            Self::ExecPicker(_) => EXEC_PICKER_HINT,
         }
     }
 
@@ -1572,6 +1613,20 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("back"),
 ];
 
+const EXEC_PICKER_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Space"),
+    HintSpan::Text("toggle"),
+    HintSpan::GroupSep,
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Enter"),
+    HintSpan::Text("execute"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("cancel"),
+];
+
 /// Render the tab-rename modal. One text-input row showing the current
 /// buffer plus a blinking-style trailing `▌` caret.
 fn render_rename_tab(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, input: &str) {
@@ -1883,6 +1938,31 @@ fn render_provider_picker(
             width,
             provider.label(),
             i == selected,
+        );
+    }
+}
+
+fn render_exec_picker(
+    buf: &mut Vec<u8>,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
+    state: &crate::exec::ExecPickerState,
+) {
+    render_box(buf, start_row, start_col, height, width, "Allow credentials?");
+    let interior_items = height.saturating_sub(2) as usize;
+    let drawn = state.items.len().min(interior_items);
+    for (i, item) in state.items.iter().enumerate().take(drawn) {
+        let toggle = if item.selected { "[x]" } else { "[ ]" };
+        let label = format!("{toggle} {} ({})", item.name, item.display);
+        render_row(
+            buf,
+            start_row + 1 + i as u16,
+            start_col + 1,
+            width,
+            &label,
+            i == state.cursor,
         );
     }
 }

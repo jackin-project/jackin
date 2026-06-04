@@ -712,12 +712,12 @@ mod tests {
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
                 image_tag: "jk_agent-smith",
-                docker: crate::instance::DockerResources {
+                backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                     role_container: primary.into(),
                     dind_container: format!("{primary}-dind"),
                     network: format!("{primary}-net"),
                     certs_volume: format!("{primary}-dind-certs"),
-                },
+                }),
             });
         manifest.write(&paths.data_dir.join(primary)).unwrap();
         crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
@@ -734,12 +734,12 @@ mod tests {
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
                 image_tag: "jk_agent-smith",
-                docker: crate::instance::DockerResources {
+                backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                     role_container: second.into(),
                     dind_container: format!("{second}-dind"),
                     network: format!("{second}-net"),
                     certs_volume: format!("{second}-dind-certs"),
-                },
+                }),
             });
         second_manifest.write(&paths.data_dir.join(second)).unwrap();
         crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &second_manifest).unwrap();
@@ -1327,12 +1327,12 @@ mod tests {
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
                 image_tag: "jk_agent-smith",
-                docker: crate::instance::DockerResources {
+                backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                     role_container: container.to_string(),
                     dind_container: format!("{container}-dind"),
                     network: format!("{container}-net"),
                     certs_volume: format!("{container}-dind-certs"),
-                },
+                }),
             });
         manifest.mark_status(status);
         let state_dir = paths.data_dir.join(container);
@@ -1647,12 +1647,12 @@ mod tests {
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
                 image_tag: "jk_agent-smith",
-                docker: crate::instance::DockerResources {
+                backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
                     role_container: container.to_string(),
                     dind_container: format!("{container}-dind"),
                     network: format!("{container}-net"),
                     certs_volume: format!("{container}-dind-certs"),
-                },
+                }),
             });
         let mut manifest = manifest;
         manifest.mark_status(crate::instance::InstanceStatus::Purged);

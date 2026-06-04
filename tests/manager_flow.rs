@@ -2857,6 +2857,9 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         jackin::operator_env::EnvValue::OpRef(_) => {
             panic!("expected literal credential, got OpRef")
         }
+        jackin::operator_env::EnvValue::Extended(_) => {
+            panic!("expected literal credential, got Extended")
+        }
     }
 
     // Belt-and-braces: read the raw TOML and confirm the literal text is
@@ -3524,6 +3527,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     match value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
         jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
+        jackin::operator_env::EnvValue::Extended(_) => panic!("expected literal credential"),
     }
     assert!(
         !pending.env.contains_key("GH_TOKEN"),
@@ -3561,6 +3565,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     match env_value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
         jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
+        jackin::operator_env::EnvValue::Extended(_) => panic!("expected literal credential"),
     }
     // GH_TOKEN must NOT leak into the regular workspace env map after
     // reload (the kind-scoped layer is the only place it should live).

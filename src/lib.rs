@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod agent_binary;
+pub mod apple_container_client;
 pub mod ansi_text;
 pub mod app;
 pub mod binary_artifact;
@@ -13,6 +14,7 @@ pub mod docker;
 pub mod docker_client;
 pub mod env_model;
 pub mod env_resolver;
+pub mod exec_host;
 pub mod host_claude;
 pub mod instance;
 pub mod isolation;

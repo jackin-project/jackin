@@ -76,7 +76,8 @@ pub(crate) const fn classify_env_value(value: &crate::operator_env::EnvValue) ->
         // `$VAR`/`${VAR}` expansion that ends up empty; for panel display
         // any non-empty persisted string is treated as `Resolves`.
         EnvValue::Plain(s) if !s.is_empty() => CredentialBadge::Resolves,
-        EnvValue::Plain(_) => CredentialBadge::Unset,
+        EnvValue::Extended(e) if !e.value.is_empty() => CredentialBadge::Resolves,
+        EnvValue::Extended(_) | EnvValue::Plain(_) => CredentialBadge::Unset,
     }
 }
 

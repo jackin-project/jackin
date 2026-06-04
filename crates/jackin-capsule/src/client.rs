@@ -219,6 +219,9 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Status request")
         }
+        ServerMsg::ExecResult { .. } | ServerMsg::ExecDenied { .. } => {
+            anyhow::bail!("daemon replied with an exec result for Status request")
+        }
     };
     println!("Sessions: {}", sessions.len());
     for s in &sessions {
@@ -268,6 +271,9 @@ pub async fn run_snapshot() -> Result<()> {
         }
         ServerMsg::SessionList { .. } => {
             anyhow::bail!("daemon replied with SessionList for Snapshot request")
+        }
+        ServerMsg::ExecResult { .. } | ServerMsg::ExecDenied { .. } => {
+            anyhow::bail!("daemon replied with an exec result for Snapshot request")
         }
     };
     let payload = serde_json::json!({

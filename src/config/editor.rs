@@ -133,6 +133,7 @@ impl ConfigEditor {
         let table = table_path_mut(doc, &path);
         let item = match value {
             EnvValue::Plain(s) => toml_value(s),
+            EnvValue::Extended(e) => toml_value(e.value),
             EnvValue::OpRef(r) => {
                 let mut tbl = InlineTable::new();
                 tbl.insert("op", Value::from(r.op));
@@ -1964,6 +1965,7 @@ workdir = "/b"
                     op: "op://abc/def/fld".into(),
                     path: "Private/Claude/security/auth token".into(),
                     account: None,
+                    on_demand: false,
                 }),
             )
             .unwrap();
@@ -1995,6 +1997,7 @@ workdir = "/b"
                     op: "op://abc/def/fld".into(),
                     path: "Work/Claude/auth token".into(),
                     account: Some("WORKACCT".into()),
+                    on_demand: false,
                 }),
             )
             .unwrap();

@@ -136,11 +136,13 @@ pub fn render_derived_dockerfile(
     }
 
     // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
+    // jackin-exec is a symlink to jackin-capsule — no separate artifact needed.
     let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
         format!(
             "\
 COPY {src} /jackin/runtime/jackin-capsule
 RUN chmod +x /jackin/runtime/jackin-capsule
+RUN ln -sf /jackin/runtime/jackin-capsule /usr/local/bin/jackin-exec
 "
         )
     });

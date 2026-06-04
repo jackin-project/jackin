@@ -3071,6 +3071,7 @@ mod subpanel_padding_tests {
                 op: "op://abc-vault/abc-item/field".into(),
                 path: "Vault/Item/field".into(),
                 account: None,
+                on_demand: false,
             }),
         );
 

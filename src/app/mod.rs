@@ -3038,12 +3038,12 @@ mod auth_set_tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
                 network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
-            },
+            }),
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
         manifest.write(&state_dir).unwrap();
@@ -3073,12 +3073,12 @@ mod auth_set_tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
                 network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
-            },
+            }),
         });
         manifest.mark_status(instance::InstanceStatus::Purged);
         instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
@@ -3289,12 +3289,12 @@ mod auth_set_tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: "jk-k7p9m2xq-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
                 network: "jk-k7p9m2xq-agentsmith-net".to_string(),
                 certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
-            },
+            }),
         })
     }
 
@@ -3368,12 +3368,12 @@ mod auth_set_tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
                 network: format!("{container}-net"),
                 certs_volume: format!("{container}-dind-certs"),
-            },
+            }),
         });
         manifest.mark_status(instance::InstanceStatus::Crashed);
         let state_dir = paths.data_dir.join(container);
@@ -3414,12 +3414,12 @@ mod auth_set_tests {
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
             image_tag: "jk_agent-smith",
-            docker: instance::DockerResources {
+            backend: instance::BackendResources::Docker(instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
                 network: format!("{container}-net"),
                 certs_volume: format!("{container}-dind-certs"),
-            },
+            }),
         });
         manifest.mark_status(instance::InstanceStatus::Crashed);
         manifest.write(&paths.data_dir.join(container)).unwrap();
@@ -3742,12 +3742,14 @@ mod auth_set_tests {
                 op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
                 path: "Personal/Prior/token".into(),
                 account: None,
+                on_demand: false,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
             path: "Personal/New/token".into(),
             account: None,
+            on_demand: false,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
@@ -3766,12 +3768,14 @@ mod auth_set_tests {
                 op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
                 path: "Personal/My Vault Item/token".into(),
                 account: None,
+                on_demand: false,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
             path: "Personal/New/token".into(),
             account: None,
+            on_demand: false,
         };
         let writer = FakeOpWriter::adopted();
         delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
@@ -3791,12 +3795,14 @@ mod auth_set_tests {
                 op: "op://VAULT_UUID/OLD_ITEM/token".into(),
                 path: "Personal/Prior/token".into(),
                 account: None,
+                on_demand: false,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
             path: "Personal/New/token".into(),
             account: None,
+            on_demand: false,
         };
         let writer = FakeOpWriter::tag_read_fails();
         delete_prior_op_item_with_runner(prior, &new_ref, &writer)
@@ -3818,12 +3824,14 @@ mod auth_set_tests {
                 op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
                 path: "Personal/Prior/token".into(),
                 account: Some("account-A".into()),
+                on_demand: false,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
             path: "Personal/New/token".into(),
             account: Some("account-B".into()),
+            on_demand: false,
         };
         // The OpCli is pinned to the NEW account; the per-call override
         // (the prior ref's account) must still win.
@@ -3849,6 +3857,7 @@ mod auth_set_tests {
             op: "op://V/I/F".into(),
             path: "Personal/New/token".into(),
             account: None,
+            on_demand: false,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(None, &new_ref, &writer).unwrap();
@@ -3874,6 +3883,7 @@ mod auth_set_tests {
             op: "op://V/I/F".into(),
             path: "Personal/Item/token".into(),
             account: None,
+            on_demand: false,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(
@@ -3895,12 +3905,14 @@ mod auth_set_tests {
                 op: "op://V_UUID/I_UUID/F".into(),
                 path: "Personal/Prior/token".into(),
                 account: None,
+                on_demand: false,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://V_UUID/I_NEW/F".into(),
             path: "Personal/New/token".into(),
             account: None,
+            on_demand: false,
         };
         let writer = FakeOpWriter::failing();
         let err = delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap_err();

@@ -928,6 +928,11 @@ pub async fn run_console(
                                         ed, op_ref,
                                     );
                                 }
+                                crate::operator_env::EnvValue::Extended(e) => {
+                                    crate::console::manager::input::auth::apply_plain_text_to_auth_form(
+                                        ed, &e.value,
+                                    );
+                                }
                                 crate::operator_env::EnvValue::Plain(value) => {
                                     crate::console::manager::input::auth::apply_plain_text_to_auth_form(
                                         ed, &value,
@@ -940,6 +945,11 @@ pub async fn run_console(
                                 crate::operator_env::EnvValue::OpRef(op_ref) => {
                                     crate::console::manager::input::apply_op_picker_to_settings_auth_form(
                                         &mut s.auth, op_ref,
+                                    );
+                                }
+                                crate::operator_env::EnvValue::Extended(e) => {
+                                    crate::console::manager::input::apply_plain_text_to_settings_auth_form(
+                                        &mut s.auth, &e.value,
                                     );
                                 }
                                 crate::operator_env::EnvValue::Plain(value) => {
@@ -1688,6 +1698,7 @@ mod op_cache_invalidation_tests {
                 op: "op://v1/i1/f1".into(),
                 path: "Work/Claude/token".into(),
                 account: Some("ACCT".into()),
+                on_demand: false,
             },
         );
 
@@ -1705,6 +1716,7 @@ mod op_cache_invalidation_tests {
                 op: "not-a-ref".into(),
                 path: String::new(),
                 account: None,
+                on_demand: false,
             },
         );
     }

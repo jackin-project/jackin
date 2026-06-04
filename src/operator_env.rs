@@ -50,6 +50,18 @@ where
 {
     match value {
         EnvValue::Plain(s) => dispatch_plain(layer_label, var_name, s, host_env),
+        EnvValue::Extended(e) => {
+            if e.on_demand {
+                // on_demand=true vars are never resolved at launch — they are
+                // filtered out before the -e flags are built (see is_on_demand).
+                // Reaching this arm is a bug in the caller.
+                Err(anyhow::anyhow!(
+                    "{layer_label} env var {var_name:?}: on_demand var reached resolve_env_value — this is a bug"
+                ))
+            } else {
+                dispatch_plain(layer_label, var_name, &e.value, host_env)
+            }
+        }
         EnvValue::OpRef(r) => op_runner
             .read_with_account(&r.op, r.account.as_deref())
             .map_err(|e| {
@@ -105,17 +117,48 @@ fn parse_host_ref(value: &str) -> Option<&str> {
 }
 
 /// Operator-defined env value. Either a 1Password reference pinned by
-/// UUIDs (with a display snapshot), or any other string value.
+/// UUIDs (with a display snapshot), an extended value with metadata
+/// (e.g. on-demand credentials), or any other string value.
 ///
-/// Untagged: serde picks the variant by structural shape — inline TOML
-/// table → `OpRef`, scalar string → `Plain`. Legacy bare `op://...`
-/// strings deserialize as `Plain` and are passed through to the
-/// container as literals (no resolution attempt).
+/// Untagged: serde picks the variant by structural shape:
+/// - inline table with `op` field → `OpRef`
+/// - inline table with `value` field → `Extended`
+/// - scalar string → `Plain`
+///
+/// Legacy bare `op://...` strings deserialize as `Plain` and are passed
+/// through to the container as literals (no resolution attempt).
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EnvValue {
+    /// 1Password reference resolved via `op read`. Must stay first so
+    /// `#[serde(deny_unknown_fields)]` rejects tables with `value` here.
     OpRef(OpRef),
+    /// Extended value with metadata. `on_demand = true` means the var
+    /// is withheld from the container at launch and injected only when
+    /// the operator selects it in the `jackin-exec` picker dialog.
+    Extended(Extended),
+    /// Plain literal or `$VAR` / `${VAR}` host-env reference.
     Plain(String),
+}
+
+/// On-demand or plain-with-metadata env value. The `value` field
+/// supports the same `$VAR` / `${VAR}` host-env expansion as `Plain`.
+/// The table form (vs. scalar string) is what signals `Extended` to
+/// serde's untagged discriminator.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Extended {
+    /// The value string. Supports `$VAR` / `${VAR}` host-env expansion.
+    pub value: String,
+    /// When `true`, this var is NOT injected into the container at
+    /// launch. It is only materialized via `jackin-exec` when the
+    /// operator selects it in the credential picker dialog.
+    #[serde(default = "return_true")]
+    pub on_demand: bool,
+}
+
+fn return_true() -> bool {
+    true
 }
 
 /// Pinned 1Password reference. `op` is the canonical UUID-form URI we
@@ -151,6 +194,13 @@ pub struct OpRef {
     /// vaults resolve. Serialized only when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+
+    /// When `true`, this ref is NOT injected into the container at
+    /// launch. It is only resolved via `jackin-exec` when the operator
+    /// selects it in the credential picker dialog. Omitted from TOML
+    /// when `false` so existing configs are unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_demand: bool,
 }
 
 /// Which field an `item_field_set` write targets in an existing item.
@@ -196,27 +246,42 @@ impl FieldTarget {
 impl EnvValue {
     /// View the value as the string we'd pass to a downstream container
     /// for `Plain`, or the UUID-form `op://` URI for `OpRef` (see
-    /// `OpRef::op`). Resolution (calling the 1Password CLI for `OpRef`)
-    /// happens in `resolve_env_value`, not here — this is for internal
-    /// merging, comparison, and migration paths.
-    pub const fn as_persisted_str(&self) -> &str {
+    /// `OpRef::op`), or the raw value string for `Extended`. Resolution
+    /// (calling the 1Password CLI for `OpRef`) happens in
+    /// `resolve_env_value`, not here — this is for internal merging,
+    /// comparison, and migration paths.
+    pub fn as_persisted_str(&self) -> &str {
         match self {
             Self::Plain(s) => s.as_str(),
+            Self::Extended(e) => e.value.as_str(),
             Self::OpRef(r) => r.op.as_str(),
         }
     }
 
     /// Human-readable display form. For `OpRef`, returns the snapshot
     /// breadcrumb (e.g. `Private/Claude/security/auth token`). For
-    /// `Plain`, returns the literal value.
+    /// `Plain` and `Extended`, returns the literal value string.
     ///
     /// Use this on operator-facing surfaces (CLI `env list`, launch
     /// auth-mode notice). For internal merging or comparison, use
     /// `as_persisted_str` (which returns the UUID-form URI for `OpRef`).
-    pub const fn as_display_str(&self) -> &str {
+    pub fn as_display_str(&self) -> &str {
         match self {
             Self::Plain(s) => s.as_str(),
+            Self::Extended(e) => e.value.as_str(),
             Self::OpRef(r) => r.path.as_str(),
+        }
+    }
+
+    /// Returns `true` if this env var should NOT be injected into the
+    /// container at launch. on-demand vars are resolved at exec time via
+    /// `jackin-capsule exec` when the operator selects them in the
+    /// credential picker dialog.
+    pub fn is_on_demand(&self) -> bool {
+        match self {
+            Self::OpRef(r) => r.on_demand,
+            Self::Extended(e) => e.on_demand,
+            Self::Plain(_) => false,
         }
     }
 }
@@ -1316,6 +1381,7 @@ impl OpWriteRunner for OpCli {
             op: op_uri,
             path,
             account: self.account.clone(),
+            on_demand: false,
         })
     }
 
@@ -1521,7 +1587,8 @@ fn resolve_edited_field_ref(
         op: op_uri,
         path,
         account,
-    })
+    on_demand: false,
+})
 }
 
 /// Source layer of an env value, attached to error messages and
@@ -1802,6 +1869,7 @@ pub fn resolve_op_uri_to_ref(
         op: op_uri,
         path: display_path,
         account: account.map(str::to_string),
+        on_demand: false,
     })
 }
 
@@ -1927,6 +1995,11 @@ where
     }
 
     for (key, (layer, value)) in &attributed {
+        // Skip on-demand vars — they are not injected at container launch.
+        // They are materialized via `jackin-exec` at exec time only.
+        if value.is_on_demand() {
+            continue;
+        }
         let layer_label = format!("{layer}");
         match resolve_env_value(&layer_label, key, value, op_runner, &mut host_env) {
             Ok(v) => {
@@ -2068,6 +2141,13 @@ impl ValueKind {
     fn of_env_value(value: &EnvValue) -> Self {
         match value {
             EnvValue::OpRef(_) => Self::Op,
+            EnvValue::Extended(e) => {
+                if parse_host_ref(&e.value).is_some() {
+                    Self::Host
+                } else {
+                    Self::Literal
+                }
+            }
             EnvValue::Plain(s) => {
                 if parse_host_ref(s).is_some() {
                     Self::Host
@@ -2085,6 +2165,13 @@ impl ValueKind {
 fn classify_env_value(value: &EnvValue) -> String {
     match value {
         EnvValue::OpRef(r) => r.op.clone(),
+        EnvValue::Extended(e) => {
+            if parse_host_ref(&e.value).is_some() {
+                e.value.clone()
+            } else {
+                "literal".to_string()
+            }
+        }
         EnvValue::Plain(s) => {
             if parse_host_ref(s).is_some() {
                 s.clone()
@@ -2399,6 +2486,7 @@ mod tests {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/auth".into(),
             account: None,
+            on_demand: false,
         });
         assert_eq!(v.as_display_str(), "Private/Claude/auth");
     }
@@ -2474,6 +2562,7 @@ mod tests {
             op: "op://abc/def/fld".into(),
             path: "Vault/Item/Field".into(),
             account: None,
+            on_demand: false,
         });
         let r = resolve_env_value("test", "X", &v, &runner, |_| {
             Err(std::env::VarError::NotPresent)
@@ -2494,6 +2583,7 @@ mod tests {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/security/auth token".into(),
             account: None,
+            on_demand: false,
         });
         let err = resolve_env_value("workspace foo", "TOKEN", &v, &runner, |_| {
             Err(std::env::VarError::NotPresent)
@@ -3071,6 +3161,7 @@ mod tests {
                 op: "op://abc-vault/abc-item/field-a".to_string(),
                 path: "Personal/ItemA/field-a".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
         cfg.env.insert(
@@ -3079,6 +3170,7 @@ mod tests {
                 op: "op://abc-vault/abc-item/field-b".to_string(),
                 path: "Personal/ItemA/field-b".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
         let runner = ProbeCountingRunner {
@@ -3147,6 +3239,7 @@ mod tests {
                 op: "op://abc-vault/abc-item/field-a".to_string(),
                 path: "Personal/ItemA/field-a".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
         cfg.env.insert(
@@ -3155,6 +3248,7 @@ mod tests {
                 op: "op://abc-vault/abc-item/field-b".to_string(),
                 path: "Personal/ItemA/field-b".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
         let err = resolve_operator_env_with(&cfg, None, None, &FailingProbeRunner, |_| {
@@ -3177,6 +3271,7 @@ mod tests {
                 op: "op://abc-vault/abc-item/token".to_string(),
                 path: "Personal/BrokenItem/token".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
 
@@ -3230,6 +3325,7 @@ mod tests {
                 op: "op://abc-vault/abc-item/field".to_string(),
                 path: "Personal/item/field".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
@@ -3268,6 +3364,7 @@ mod tests {
                 op: "op://abc-vault/abc-item/field".to_string(),
                 path: "Personal/item/field".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
@@ -3641,6 +3738,7 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
                 op: "op://abc/def/fld".into(),
                 path: "Vault/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }))
         );
 

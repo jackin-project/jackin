@@ -38,6 +38,7 @@ use crate::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
     PickerIntent, PullRequestStatus, SplitDirection,
 };
+use crate::exec::{ExecOutcome, ExecRequest};
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
 use crate::protocol::attach::{
@@ -76,6 +77,8 @@ pub struct Multiplexer {
     /// dialog open" — every consumer treats `dialog_top()` as the
     /// canonical "is a dialog visible" check.
     dialog_stack: Vec<Dialog>,
+    exec_picker_result: Option<ExecPickerResult>,
+    exec_picker_cmd: Option<(String, Vec<String>)>,
     content_rows: u16,
     available_agents: Vec<String>,
     launch_config: CapsuleConfig,
@@ -189,6 +192,14 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
+}
+
+/// Outcome of an exec credential picker session, stored on the
+/// multiplexer and drained by the event loop after the dialog closes.
+#[derive(Debug)]
+pub(crate) enum ExecPickerResult {
+    Confirmed { refs: Vec<serde_json::Value> },
+    Cancelled,
 }
 
 /// One-shot resolution of workdir + tool facts. `gh_available` may
@@ -630,6 +641,8 @@ impl Multiplexer {
             term_cols: cols,
             status_bar,
             dialog_stack: Vec::new(),
+            exec_picker_result: None,
+            exec_picker_cmd: None,
             content_rows,
             available_agents: agents,
             launch_config,
@@ -1754,6 +1767,16 @@ impl Multiplexer {
                     ConfirmKind::CloseTab => self.close_focused_tab(),
                     ConfirmKind::Exit => self.exit_all_sessions(),
                 }
+            }
+            DialogAction::ExecPickerConfirm => {
+                if let Some(Dialog::ExecPicker(state)) = self.dialog_stack.pop() {
+                    self.exec_picker_result =
+                        Some(ExecPickerResult::Confirmed { refs: state.selected_refs() });
+                }
+            }
+            DialogAction::ExecPickerCancel => {
+                self.dialog_stack.pop();
+                self.exec_picker_result = Some(ExecPickerResult::Cancelled);
             }
         }
         self.compose_full_frame(FullRedrawReason::DialogChange)
@@ -3519,6 +3542,94 @@ impl Multiplexer {
     }
 }
 
+async fn handle_exec_request(
+    mux: &mut Multiplexer,
+    req: ExecRequest,
+    pending_exec: &mut Option<(crate::exec::ExecPickerState, tokio::sync::oneshot::Sender<ExecOutcome>)>,
+) {
+    let bindings = &mux.launch_config.exec_bindings;
+
+    if bindings.is_empty() {
+        let command = req.command.clone();
+        let args = req.args.clone();
+        let response_tx = req.response_tx;
+        tokio::spawn(async move {
+            match crate::exec::execute_command(&command, &args, &Default::default(), &[]).await {
+                Ok((exit_code, stdout, stderr, redacted_count)) => {
+                    let _ = response_tx.send(ExecOutcome::Result {
+                        exit_code,
+                        stdout,
+                        stderr,
+                        redacted_count,
+                    });
+                }
+                Err(e) => {
+                    let _ = response_tx
+                        .send(ExecOutcome::Denied { reason: format!("exec failed: {e:#}") });
+                }
+            }
+        });
+        return;
+    }
+
+    let items: Vec<crate::exec::ExecPickerItem> = bindings
+        .iter()
+        .map(|b| {
+            let kind = match b.kind.as_str() {
+                "op" => crate::exec::ExecItemKind::Op,
+                "env" => crate::exec::ExecItemKind::Env,
+                _ => crate::exec::ExecItemKind::Literal,
+            };
+            crate::exec::ExecPickerItem {
+                name: b.name.clone(),
+                display: b.display.clone(),
+                kind,
+                source: b.source.clone(),
+                selected: false,
+            }
+        })
+        .collect();
+
+    let picker_state = crate::exec::ExecPickerState {
+        command: req.command.clone(),
+        args: req.args.clone(),
+        items,
+        cursor: 0,
+    };
+
+    mux.exec_picker_cmd = Some((req.command, req.args));
+    mux.dialog_push(Dialog::ExecPicker(picker_state.clone()));
+    *pending_exec = Some((picker_state, req.response_tx));
+}
+
+async fn run_exec_with_refs(
+    cmd_and_args: Option<(String, Vec<String>)>,
+    refs: Vec<serde_json::Value>,
+    host_sock: String,
+) -> ExecOutcome {
+    let Some((command, args)) = cmd_and_args else {
+        return ExecOutcome::Denied { reason: "no command stored".to_string() };
+    };
+
+    let values = match crate::exec::resolve_credentials(&host_sock, refs).await {
+        Ok(v) => v,
+        Err(e) => {
+            return ExecOutcome::Denied {
+                reason: format!("credential resolution failed: {e:#}"),
+            }
+        }
+    };
+
+    let secret_values: Vec<String> = values.values().cloned().collect();
+
+    match crate::exec::execute_command(&command, &args, &values, &secret_values).await {
+        Ok((exit_code, stdout, stderr, redacted_count)) => {
+            ExecOutcome::Result { exit_code, stdout, stderr, redacted_count }
+        }
+        Err(e) => ExecOutcome::Denied { reason: format!("command execution failed: {e:#}") },
+    }
+}
+
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
@@ -3573,6 +3684,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // handshakes ride this channel back to the main loop, which then
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
+    // Inbound: exec requests from `jackin-exec` / `jackin-capsule exec`
+    // forwarded by the control-channel socket handler. The daemon event
+    // loop shows the credential picker and runs the command.
+    let (exec_tx, mut exec_rx) = mpsc::unbounded_channel::<ExecRequest>();
+    // Pending exec request waiting for the operator's picker confirmation.
+    // Only one exec can be pending at a time — the socket handler blocks
+    // until the daemon sends the response via the oneshot channel.
+    let mut pending_exec: Option<(crate::exec::ExecPickerState, tokio::sync::oneshot::Sender<ExecOutcome>)> = None;
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads
@@ -3635,6 +3754,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let sessions_snapshot = mux.session_infos();
                 let tabs_snapshot = mux.tab_snapshots();
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
+                let exec_tx_clone = exec_tx.clone();
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
@@ -3642,6 +3762,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     sessions_snapshot,
                     tabs_snapshot,
                     active_tab,
+                    Some(exec_tx_clone),
                 ));
             }
 
@@ -3785,9 +3906,35 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }));
             }
 
+            // Inbound exec request from a `jackin-exec` / `jackin-capsule exec` client.
+            Some(req) = exec_rx.recv() => {
+                handle_exec_request(&mut mux, req, &mut pending_exec).await;
+            }
+
             // Inbound attach frame from the active client task.
             Some(frame) = cmd_rx.recv() => {
                 handle_client_frame(&mut mux, frame).await;
+                // Process any ExecPicker result that was set during input handling.
+                if let Some(result) = mux.exec_picker_result.take() {
+                    if let Some((_, response_tx)) = pending_exec.take() {
+                        match result {
+                            ExecPickerResult::Confirmed { refs } => {
+                                let host_sock = mux.launch_config.host_sock_path.clone()
+                                    .unwrap_or_else(|| "/jackin/run/host.sock".to_string());
+                                let picker_cmd = mux.exec_picker_cmd.take();
+                                tokio::spawn(async move {
+                                    let outcome = run_exec_with_refs(picker_cmd, refs, host_sock).await;
+                                    let _ = response_tx.send(outcome);
+                                });
+                            }
+                            ExecPickerResult::Cancelled => {
+                                let _ = response_tx.send(ExecOutcome::Denied {
+                                    reason: "operator cancelled".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
                 if mux.detach_requested {
                     mux.detach_requested = false;
                     detach_client(&mut mux).await;
@@ -4093,6 +4240,7 @@ async fn perform_handshake(
     sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
     active_tab: u32,
+    exec_tx: Option<mpsc::UnboundedSender<ExecRequest>>,
 ) {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
@@ -4127,6 +4275,7 @@ async fn perform_handshake(
             sessions_snapshot,
             tabs_snapshot,
             active_tab,
+            exec_tx,
         )
         .await;
         drop(client_permit);
@@ -5981,6 +6130,8 @@ mod tests {
                 agents: Vec::new(),
                 models: std::collections::BTreeMap::new(),
                 initial_provider: None,
+                exec_bindings: vec![],
+                host_sock_path: None,
             },
         )
     }

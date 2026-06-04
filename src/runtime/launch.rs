@@ -1,8 +1,8 @@
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::{
-    DockerResources, InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus,
-    NewInstanceManifest, RoleState,
+    BackendResources, DockerResources, InstanceIndex, InstanceManifest, InstanceQuery,
+    InstanceStatus, NewInstanceManifest, RoleState,
 };
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
@@ -582,6 +582,8 @@ fn capsule_config(
     workdir: &str,
     manifest: &crate::manifest::RoleManifest,
     initial_provider: Option<jackin_protocol::InitialProvider>,
+    config: &AppConfig,
+    workspace_label: &str,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -608,13 +610,74 @@ fn capsule_config(
             models.insert(agent.slug().to_string(), model.to_string());
         }
     }
+
+    // Collect on-demand credential bindings from global and workspace env layers.
+    // These are written into CapsuleConfig so the in-container exec picker
+    // knows which env vars the operator can inject via `jackin-exec`.
+    let exec_bindings = build_exec_bindings(config, workspace_label);
+
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
         workdir: workdir.to_string(),
         agents,
         models,
         initial_provider,
+        exec_bindings,
+        host_sock_path: None, // defaults to /jackin/run/host.sock
     }
+}
+
+/// Collect all on-demand env vars from the global config and the named
+/// workspace, converting them to `ExecBinding` structs for the capsule.
+fn build_exec_bindings(config: &AppConfig, workspace_label: &str) -> Vec<jackin_protocol::ExecBinding> {
+    use crate::operator_env::EnvValue;
+
+    let mut bindings = Vec::new();
+
+    let global_env = &config.env;
+    let workspace_env = config
+        .workspaces
+        .get(workspace_label)
+        .map(|w| &w.env);
+
+    let mut collect = |env: &std::collections::BTreeMap<String, EnvValue>| {
+        for (name, value) in env {
+            if !value.is_on_demand() {
+                continue;
+            }
+            let (kind, source, display) = match value {
+                EnvValue::OpRef(r) => (
+                    "op".to_string(),
+                    r.op.clone(),
+                    r.path.clone(),
+                ),
+                EnvValue::Extended(e) => {
+                    let kind = if crate::operator_env::parse_op_reference(&e.value).is_some() {
+                        "op"
+                    } else if e.value.starts_with('$') {
+                        "env"
+                    } else {
+                        "literal"
+                    };
+                    (kind.to_string(), e.value.clone(), e.value.clone())
+                }
+                EnvValue::Plain(_) => continue, // Plain is never on_demand
+            };
+            bindings.push(jackin_protocol::ExecBinding {
+                name: name.clone(),
+                display,
+                kind,
+                source,
+            });
+        }
+    };
+
+    collect(global_env);
+    if let Some(ws_env) = workspace_env {
+        collect(ws_env);
+    }
+
+    bindings
 }
 
 /// Create the Docker network, start `DinD`, and launch the role container.
@@ -868,6 +931,18 @@ async fn launch_role_runtime(
         crate::env_model::JACKIN_ENV_NAME,
         crate::env_model::JACKIN_ENV_VALUE
     ));
+    // Inject JACKIN_EXEC_BINDINGS listing names of on-demand credential vars.
+    // The agent reads this at startup to know which commands need jackin-exec.
+    let exec_binding_names: String = ctx
+        .capsule_config
+        .exec_bindings
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    if !exec_binding_names.is_empty() {
+        env_strings.push(format!("JACKIN_EXEC_BINDINGS={exec_binding_names}"));
+    }
     // DinD reachable only via Docker network; route past HTTP_PROXY by adding
     // hostname to NO_PROXY in both casings — Go reads upper, curl/Python
     // requests/wget read lower. Mirror the merged value across both casings
@@ -1045,6 +1120,18 @@ async fn launch_role_runtime(
         progress.opening_hardline();
         progress.settle_stage_visual().await;
     }
+    // Start the host.sock credential resolver BEFORE the blocking docker exec.
+    // The listener runs as a tokio::spawn task alongside the blocking attach call
+    // so the in-container jackin-exec can resolve on-demand credentials at runtime.
+    // The socket path is ~/.jackin/sockets/<container>/host.sock, which is
+    // bind-mounted into the container at /jackin/run/host.sock.
+    let host_sock_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(container_name)
+        .join("host.sock");
+    let _exec_host_handle = crate::exec_host::start(host_sock_path);
+
     // Tear down the loading cockpit before the interactive attach: the
     // capsule's `docker exec -it` must own a clean terminal, and leaving the
     // rich surface active would force-capture its PTY and hang the handoff.
@@ -1983,12 +2070,12 @@ async fn load_role_with(
             role_source_git: &source.git,
             role_source_ref: opts.role_branch.as_deref(),
             image_tag: &image,
-            docker: DockerResources {
+            backend: BackendResources::Docker(DockerResources {
                 role_container: container_name.clone(),
                 dind_container: dind.clone(),
                 network: network.clone(),
                 certs_volume: certs_volume.clone(),
-            },
+            }),
         });
         // `read_optional` already separates "manifest absent" (fall back
         // to `new_manifest` and re-record the recovered identity) from
@@ -2198,6 +2285,8 @@ async fn load_role_with(
             &workspace.workdir,
             &validated_repo.manifest,
             opts.initial_provider(),
+            config,
+            workspace.label.as_str(),
         );
         let ctx = LaunchContext {
             container_name: &container_name,
@@ -3578,6 +3667,7 @@ fn build_env_layer_states(
     const fn classify(value: &crate::operator_env::EnvValue) -> EnvLayerState {
         match value {
             crate::operator_env::EnvValue::Plain(_) => EnvLayerState::ResolvedLiteral,
+            crate::operator_env::EnvValue::Extended(_) => EnvLayerState::ResolvedLiteral,
             crate::operator_env::EnvValue::OpRef(_) => EnvLayerState::ResolvedOpRef,
         }
     }
@@ -3805,12 +3895,12 @@ mod tests {
             role_source_git: &role_source_git,
             role_source_ref: None,
             image_tag: &image_tag,
-            docker: DockerResources {
+            backend: BackendResources::Docker(DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
                 network: format!("{container_name}-net"),
                 certs_volume: format!("{container_name}-dind-certs"),
-            },
+            }),
         })
     }
 
@@ -3920,7 +4010,8 @@ model = "zai/glm"
 
         let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-        let config = capsule_config(&selector, "/workspace", &manifest, None);
+        let app_config = AppConfig::default();
+        let config = capsule_config(&selector, "/workspace", &manifest, None, &app_config, "");
 
         assert_eq!(config.role, "chainargos/the-architect");
         assert_eq!(config.workdir, "/workspace");
@@ -9044,6 +9135,7 @@ plugins = []
                 op: "op://uuid/test/field".into(),
                 path: "Test/api/key".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let mut ws = WorkspaceConfig::default();

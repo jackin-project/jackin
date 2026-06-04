@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, protocol::attach::SpawnRequest, runtime_setup,
+    client, config, daemon, exec, protocol::attach::SpawnRequest, runtime_setup,
     session::validate_agent_slug,
 };
 use std::path::Path;
@@ -19,7 +19,15 @@ async fn main() -> Result<()> {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
     }
 
-    let is_pid1 = std::process::id() == 1;
+    // In normal Docker operation the entrypoint IS PID 1. For Apple Container
+    // (and smolvm), vminitd / smolvm-agent occupies PID 1 and jackin-capsule
+    // runs as the OCI entrypoint at PID 2+. Setting JACKIN_CAPSULE_FORCE_DAEMON
+    // lets the host backend opt-in to daemon mode regardless of PID. The env
+    // var is injected by the apple-container backend at `container run` time;
+    // it must NOT be a static ENV in the derived Dockerfile because that would
+    // force daemon mode on client invocations in the normal Docker backend.
+    let is_pid1 = std::process::id() == 1
+        || std::env::var("JACKIN_CAPSULE_FORCE_DAEMON").is_ok();
 
     if is_pid1 {
         let launch_config = config::load()?;
@@ -27,9 +35,16 @@ async fn main() -> Result<()> {
         let agent = resolve_initial_agent(&args, &supported_agents)?;
         daemon::run_daemon(agent, launch_config).await
     } else {
+        // jackin-exec is a symlink to jackin-capsule. When invoked as
+        // jackin-exec (via argv[0]) treat trailing args as the command.
+        if invoked_as_jackin_exec(&args) {
+            return exec::run(&args[1..]).await;
+        }
+
         let subcommand = args.get(1).map(String::as_str);
         let focus_session = parse_focus_flag(&args);
         match subcommand {
+            Some("exec") => exec::run(&args[2..]).await,
             None => client::run_client(None, focus_session).await,
             Some("--version") | Some("-V") => {
                 println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
@@ -81,7 +96,7 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: exec <cmd> [args…], status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
                 )
             }
         }
@@ -92,6 +107,14 @@ fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
     args.first()
         .and_then(|arg0| Path::new(arg0).file_name())
         .is_some_and(|file_name| file_name == "prepare-commit-msg")
+}
+
+/// Detect invocation as `jackin-exec` via a symlink.
+/// `/usr/local/bin/jackin-exec` → `/jackin/runtime/jackin-capsule`
+fn invoked_as_jackin_exec(args: &[String]) -> bool {
+    args.first()
+        .and_then(|a| Path::new(a).file_name())
+        .is_some_and(|n| n == "jackin-exec")
 }
 
 /// Parse `--focus <id>` / `--focus=<id>` out of the client argv.

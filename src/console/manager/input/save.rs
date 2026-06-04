@@ -2369,6 +2369,7 @@ mod tests {
                 op: "op://abc/def/fld".to_string(),
                 path: "Private/Claude/auth".to_string(),
                 account: None,
+                on_demand: false,
             }),
         );
 

@@ -54,6 +54,7 @@ impl AuthForm {
         let credential = match credential {
             None => CredentialInput::None,
             Some(EnvValue::Plain(s)) => CredentialInput::Literal(s),
+            Some(EnvValue::Extended(e)) => CredentialInput::Literal(e.value),
             Some(EnvValue::OpRef(r)) => CredentialInput::OpRef(r),
         };
         Self {
@@ -174,6 +175,7 @@ mod tests {
             op: "op://uuid/test".into(),
             path: "Test/api/key".into(),
             account: None,
+            on_demand: false,
         }
     }
 
@@ -242,6 +244,7 @@ mod tests {
             op: String::new(),
             path: String::new(),
             account: None,
+            on_demand: false,
         });
         assert!(!f.can_save());
         // Empty `op` alone: rejected.
@@ -249,6 +252,7 @@ mod tests {
             op: String::new(),
             path: "Test/api/key".into(),
             account: None,
+            on_demand: false,
         });
         assert!(!f.can_save());
         // Empty `path` alone: rejected.
@@ -256,6 +260,7 @@ mod tests {
             op: "op://uuid/test".into(),
             path: String::new(),
             account: None,
+            on_demand: false,
         });
         assert!(!f.can_save());
     }
@@ -427,6 +432,7 @@ mod tests {
             op: "op://uuid/missing".into(),
             path: "Vault/Missing/field".into(),
             account: None,
+            on_demand: false,
         };
         let result = f.try_commit_op_ref(&FailRunner, attempted);
         assert!(result.is_err(), "failed op read must not commit");
@@ -445,6 +451,7 @@ mod tests {
             op: "op://uuid/anthropic".into(),
             path: "Work/Anthropic/api-key".into(),
             account: None,
+            on_demand: false,
         };
         let result = f.try_commit_op_ref(&GoodRunner, r.clone());
         assert!(result.is_ok());

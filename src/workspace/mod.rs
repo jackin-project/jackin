@@ -1034,6 +1034,7 @@ allowed_roles = ["smith"]
                 op: "op://v/i/f".into(),
                 path: "Vault/Item/Field".into(),
                 account: Some("ACCT123".into()),
+                on_demand: false,
             }),
         );
         let original = WorkspaceConfig {
@@ -1065,6 +1066,7 @@ allowed_roles = ["smith"]
                 op: "op://v/i/f".into(),
                 path: "Vault/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         let cfg = WorkspaceConfig {
