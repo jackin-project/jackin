@@ -855,48 +855,157 @@ async fn launch_role_runtime(
         run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);
     }
 
-    // ── Security and resource flags (Phase 2–4) ────────────────────────────
-    // Capability drops + read-only root. Only meaningful when DinD is disabled
-    // (with DinD active, the agent can regain caps via docker run --privileged).
+    // ── Security and resource flags (Phase 2–5) ─────────────────────────────
+
+    // Capability drops + per-cap telemetry.
+    // Only substantively constraining when DinD is disabled (with DinD active
+    // the agent can regain caps via `docker run --privileged` against the sidecar).
     let cap_flags = super::docker_profile::capability_flags(*profile, &grants.capabilities_add);
     let cap_flag_strs: Vec<&str> = cap_flags.iter().map(String::as_str).collect();
     run_args.extend_from_slice(&cap_flag_strs);
-
-    let readonly_flags = super::docker_profile::readonly_root_flags(grants);
-    let readonly_flag_strs: Vec<&str> = readonly_flags.iter().map(String::as_str).collect();
-    run_args.extend_from_slice(&readonly_flag_strs);
-
-    // no-new-privileges: schema present, enforcement deferred pending sudo audit.
-    if grants.no_new_privileges {
+    let drops_all = matches!(
+        *profile,
+        super::docker_profile::DockerSecurityProfile::Hardened
+            | super::docker_profile::DockerSecurityProfile::Locked
+    );
+    if drops_all {
+        crate::debug_log!("launch", "cap_drop_all container={container_name}");
+        for cap in super::docker_profile::MINIMUM_CAPABILITIES {
+            crate::debug_log!(
+                "launch",
+                "cap_add cap={cap} reason=jackin-default container={container_name}",
+            );
+        }
+    }
+    for cap in &grants.capabilities_add {
+        let reason = if cap == "NET_ADMIN" || cap == "NET_RAW" {
+            "implicit_network_grant"
+        } else {
+            "opt-in"
+        };
         crate::debug_log!(
             "launch",
-            "no_new_privileges enforced=no reason=sudo-audit-pending container={container_name}",
+            "cap_add cap={cap} reason={reason} container={container_name}",
         );
     }
 
+    // Read-only root filesystem + tmpfs preset.
+    let readonly_flags = super::docker_profile::readonly_root_flags(grants);
+    let readonly_flag_strs: Vec<&str> = readonly_flags.iter().map(String::as_str).collect();
+    run_args.extend_from_slice(&readonly_flag_strs);
+    {
+        let (enforced, reason) = if !grants.system_writes {
+            ("yes", "profile")
+        } else {
+            ("no", "system_writes=true")
+        };
+        let tmpfs_list = if !grants.system_writes {
+            "/tmp,/run,/var/run,/var/tmp,/var/cache,/var/log,/var/lib/apt/lists,\
+             /var/cache/apt/archives,/var/lib/dpkg,/home/agent/.cache,/home/agent/.zsh_sessions"
+        } else {
+            ""
+        };
+        crate::debug_log!(
+            "launch",
+            "read_only_root enforced={enforced} tmpfs={tmpfs_list} reason={reason} \
+             container={container_name}",
+        );
+    }
+
+    // no-new-privileges: applied for hardened/locked profiles.
+    // Sudoers open question (#5) only blocks this for *standard* profile —
+    // hardened/locked intentionally do not grant sudo (grants.sudo = false).
+    if grants.no_new_privileges {
+        run_args.extend_from_slice(&["--security-opt", "no-new-privileges"]);
+        crate::debug_log!(
+            "launch",
+            "no_new_privileges enforced=yes reason=profile container={container_name}",
+        );
+    } else {
+        crate::debug_log!(
+            "launch",
+            "no_new_privileges enforced=no reason={} container={container_name}",
+            if grants.sudo {
+                "sudo-granted"
+            } else {
+                "compat-or-standard-profile"
+            },
+        );
+    }
+
+    // Seccomp: Docker applies its default profile unless explicitly disabled.
+    // jackin' never disables it; report it as active on all profiles.
+    crate::debug_log!(
+        "launch",
+        "seccomp profile=docker-default container={container_name}",
+    );
+
     // User override — only emit --user when not the default agent user.
-    // The image's USER directive already sets the correct UID-remapped agent user.
     let user_flag_val = grants.user.clone();
     if user_flag_val != "agent" {
         run_args.extend_from_slice(&["--user", &user_flag_val]);
     }
 
-    // Resource limits.
+    // Resource limits with per-limit telemetry.
     let resource_flags = super::docker_profile::resource_flags(grants);
     let resource_flag_strs: Vec<&str> = resource_flags.iter().map(String::as_str).collect();
     run_args.extend_from_slice(&resource_flag_strs);
+    if let Some(bytes) = grants.memory_bytes {
+        crate::debug_log!(
+            "launch",
+            "resource_limit kind=memory value={bytes} backend_translated=--memory \
+             container={container_name}",
+        );
+    }
+    if let Some(bytes) = grants.memory_reservation_bytes {
+        crate::debug_log!(
+            "launch",
+            "resource_limit kind=memory_reservation value={bytes} \
+             backend_translated=--memory-reservation container={container_name}",
+        );
+    }
+    if let Some(cpus) = grants.cpus {
+        crate::debug_log!(
+            "launch",
+            "resource_limit kind=cpus value={cpus} backend_translated=--cpus \
+             container={container_name}",
+        );
+    }
+    if let Some(pids) = grants.pids {
+        crate::debug_log!(
+            "launch",
+            "resource_limit kind=pids value={pids} backend_translated=--pids-limit \
+             container={container_name}",
+        );
+    }
+    if let Some(nofile) = grants.nofile {
+        crate::debug_log!(
+            "launch",
+            "resource_limit kind=nofile value={nofile} \
+             backend_translated=--ulimit-nofile container={container_name}",
+        );
+    }
 
+    // Compact one-line summary (future clog! tier; debug_log! until clog! lands).
+    let cap_count = if drops_all {
+        super::docker_profile::MINIMUM_CAPABILITIES.len()
+            + grants.capabilities_add.len()
+    } else {
+        super::docker_profile::DEFAULT_CAPABILITIES.len()
+            + grants.capabilities_add.len()
+    };
     crate::debug_log!(
         "launch",
-        "effective_grants profile={profile} network={:?} dind={:?} system_writes={} \
-         memory_bytes={:?} cpus={:?} pids={:?} no_new_privileges={}",
+        "launch profile={profile} source={profile_source} \
+         cap_set={cap_count} caps \
+         no_new_privileges={} \
+         read_only_root={} \
+         dind={} \
+         network={:?}",
+        if grants.no_new_privileges { "on" } else { "off" },
+        if !grants.system_writes { "on" } else { "off" },
+        if dind_enabled { "enabled" } else { "disabled" },
         grants.network,
-        grants.dind,
-        grants.system_writes,
-        grants.memory_bytes,
-        grants.cpus,
-        grants.pids,
-        grants.no_new_privileges,
     );
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1190,6 +1299,38 @@ async fn launch_role_runtime(
         progress.while_waiting(run_role).await?;
     } else {
         run_role.await?;
+    }
+
+    // Install network allowlist via `docker exec --user root` when the
+    // allowlist tier is active. Running as root via docker exec (daemon-granted,
+    // not setuid) is compatible with --security-opt no-new-privileges.
+    if grants.network == super::docker_profile::NetworkGrant::Allowlist {
+        // Set JACKIN_FIREWALL_INSTALLED=1 so entrypoint.sh doesn't warn.
+        let firewall_env = "JACKIN_FIREWALL_INSTALLED=1";
+        let firewall_exec_args: Vec<&str> = vec![
+            "exec",
+            "-e",
+            firewall_env,
+            "--user",
+            "root",
+            container_name,
+            "/jackin/runtime/init-firewall.sh",
+        ];
+        crate::debug_log!(
+            "launch",
+            "installing network allowlist via docker exec container={container_name}",
+        );
+        let firewall_result = runner
+            .run("docker", &firewall_exec_args, None, &docker_run_opts)
+            .await;
+        if let Err(e) = firewall_result {
+            // Non-fatal: log and continue. The container is running but
+            // without the allowlist. Session contract will report degraded.
+            crate::debug_log!(
+                "launch",
+                "network allowlist install failed (degraded to open): {e}",
+            );
+        }
     }
 
     // Reconcile keep_awake AFTER the role container is running but
@@ -2141,6 +2282,23 @@ async fn load_role_with(
         let dind = format!("{container_name}-dind");
         let certs_volume = dind_certs_volume(&container_name);
         let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
+
+        // Detect cgroup version on the host before resolving grants.
+        // Required for: fail-closed behavior under hardened/locked on cgroup v1,
+        // and informing the telemetry `cgroup_version` line.
+        let cgroup_version = detect_cgroup_version(runner).await;
+        crate::debug_log!("launch", "cgroup_version v={cgroup_version}");
+
+        // Detect AppArmor availability via `docker info`.
+        // Reports enforcement layer (host vs VM for macOS Docker Desktop/OrbStack).
+        let apparmor_info = detect_apparmor(runner).await;
+        crate::debug_log!(
+            "launch",
+            "apparmor available={} profile={} layer={}",
+            apparmor_info.available,
+            apparmor_info.profile,
+            apparmor_info.layer,
+        );
 
         // Resolve Docker security profile and effective grants early so they
         // can inform the instance manifest (dind enablement) and the launch.
@@ -3282,6 +3440,57 @@ pub(super) fn preserved_instance_status(
         return Ok(InstanceStatus::PreservedUnpushed);
     }
     Ok(InstanceStatus::RestoreAvailable)
+}
+
+/// Cgroup version string for telemetry: `"v2"`, `"v1"`, or `"unknown"`.
+/// Reads the cgroup filesystem type from the host via `stat`.
+async fn detect_cgroup_version(runner: &mut impl CommandRunner) -> String {
+    // `stat -fc %T /sys/fs/cgroup/` → `cgroup2fs` (v2) or `tmpfs` (v1).
+    match runner
+        .capture("stat", &["-fc", "%T", "/sys/fs/cgroup/"], None)
+        .await
+    {
+        Ok(output) if output.trim() == "cgroup2fs" => "v2".to_string(),
+        Ok(output) if output.trim() == "tmpfs" => "v1".to_string(),
+        Ok(output) => format!("unknown({})", output.trim()),
+        Err(_) => "unknown".to_string(),
+    }
+}
+
+/// AppArmor availability information probed from `docker info`.
+struct AppArmorInfo {
+    available: bool,
+    profile: String,
+    layer: String,
+}
+
+/// Probe AppArmor availability from `docker info --format '{{.SecurityOptions}}'`.
+async fn detect_apparmor(runner: &mut impl CommandRunner) -> AppArmorInfo {
+    let output = runner
+        .capture(
+            "docker",
+            &["info", "--format", "{{.SecurityOptions}}"],
+            None,
+        )
+        .await
+        .unwrap_or_default();
+    let available = output.contains("apparmor");
+    // On macOS, Docker Desktop and OrbStack run inside a VM; AppArmor
+    // enforcement happens inside the VM, not on macOS itself.
+    let layer = if cfg!(target_os = "macos") {
+        "backend-vm"
+    } else {
+        "host"
+    };
+    AppArmorInfo {
+        available,
+        profile: if available {
+            "docker-default".to_string()
+        } else {
+            "unavailable".to_string()
+        },
+        layer: layer.to_string(),
+    }
 }
 
 fn manifest_host_workdir_fingerprint(workspace: &crate::workspace::ResolvedWorkspace) -> String {
@@ -7316,6 +7525,26 @@ plugins = []
         );
     }
 
+    /// The DinD sidecar must also never receive the host Docker socket.
+    /// A rogue DinD with access to the host socket collapses the isolation
+    /// boundary — the sidecar is effectively the same as no isolation at all.
+    #[tokio::test]
+    async fn dind_sidecar_never_mounts_host_docker_socket() {
+        let (_, runner, _temp) = run_load_and_capture_all_commands(&[]).await;
+        let dind_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=dind"));
+        if let Some(dind_cmd) = dind_cmd {
+            assert!(
+                !dind_cmd.contains("docker.sock"),
+                "DinD sidecar must never receive the host Docker socket; \
+                 offending dind command: {dind_cmd}",
+            );
+        }
+        // DinD may not be started (e.g. hardened profile) — that is also fine.
+    }
+
     /// Phase 1: `--docker-profile <X>` is accepted and does not alter the
     /// produced run command. All profiles resolve to identical `Compat`-
     /// equivalent flags until Phase 2–4 wire per-dimension behavior.
@@ -7355,10 +7584,16 @@ plugins = []
                 expects_cap_drop,
                 "profile {profile}: --read-only presence mismatch",
             );
-            // no-new-privileges not yet enforced (sudo audit pending).
-            assert!(
-                !run_cmd.contains("no-new-privileges"),
-                "profile {profile} unexpectedly added no-new-privileges in Phase 1",
+            // locked/hardened → no-new-privileges; standard/compat → not applied.
+            let expects_no_new_priv = matches!(
+                profile,
+                crate::runtime::docker_profile::DockerSecurityProfile::Locked
+                    | crate::runtime::docker_profile::DockerSecurityProfile::Hardened
+            );
+            assert_eq!(
+                run_cmd.contains("no-new-privileges"),
+                expects_no_new_priv,
+                "profile {profile}: no-new-privileges presence mismatch",
             );
         }
     }
@@ -7418,6 +7653,67 @@ plugins = []
             .unwrap()
             .clone();
         (run_cmd, temp)
+    }
+
+    /// Returns `(role_run_cmd, runner, tempdir)` — exposes the full runner so
+    /// callers can inspect DinD commands, not just the role container command.
+    async fn run_load_and_capture_all_commands(
+        entries: &[(&str, &str)],
+    ) -> (String, FakeRunner, tempfile::TempDir) {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        for (k, v) in entries {
+            config.env.insert(
+                (*k).to_string(),
+                crate::operator_env::EnvValue::Plain((*v).to_string()),
+            );
+        }
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .await
+        .unwrap();
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .unwrap()
+            .clone();
+        (run_cmd, runner, temp)
     }
 
     async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {

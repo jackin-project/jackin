@@ -31,24 +31,16 @@ run_hook() {
 # values.
 /jackin/runtime/jackin-capsule runtime-setup
 
-# ── Network allowlist (api_only / allowlist tier) ──────────────────────
-# When the operator selects network = "allowlist", jackin injects
-# JACKIN_NETWORK_MODE=allowlist and JACKIN_ALLOWED_HOSTS=<domains,...>.
-# init-firewall.sh installs a default-DROP OUTPUT allowlist via iptables/ipset.
-# Requires CAP_NET_ADMIN + CAP_NET_RAW (implicitly granted by the allowlist tier).
-# Runs as root via sudo scoped to this script alone; the agent process that
-# follows does not inherit the elevated privilege.
-if [ "${JACKIN_NETWORK_MODE:-open}" = "allowlist" ]; then
-    if [ -x /jackin/runtime/init-firewall.sh ]; then
-        echo "[entrypoint] installing network allowlist..."
-        # Suspend debug xtrace around the firewall script to avoid logging
-        # domain names from JACKIN_ALLOWED_HOSTS into operator output.
-        case $- in *x*) fw_xtrace=1; set +x ;; esac
-        sudo /jackin/runtime/init-firewall.sh
-        [ "${fw_xtrace:-0}" = "1" ] && set -x
-    else
-        echo "[entrypoint] WARNING: JACKIN_NETWORK_MODE=allowlist but init-firewall.sh not found" >&2
-    fi
+# ── Network allowlist (allowlist tier) ────────────────────────────────
+# init-firewall.sh is run by jackin' via `docker exec --user root` BEFORE
+# the agent session starts, not here in the entrypoint. This avoids a
+# conflict with --security-opt no-new-privileges (docker exec as root does
+# not require setuid escalation; sudo inside the container does).
+# JACKIN_NETWORK_MODE is available here for informational use only.
+if [ "${JACKIN_NETWORK_MODE:-open}" = "allowlist" ] && \
+   [ "${JACKIN_FIREWALL_INSTALLED:-0}" != "1" ]; then
+    echo "[entrypoint] WARNING: network=allowlist but firewall not installed" \
+         "(JACKIN_FIREWALL_INSTALLED not set by host)" >&2
 fi
 
 # ── agent-specific setup ───────────────────────────────────────────
