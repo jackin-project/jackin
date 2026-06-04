@@ -57,6 +57,41 @@ docker info
 <Aside type="tip">
 On macOS, [OrbStack](https://orbstack.dev/) is a lightweight alternative to Docker Desktop that works well with jackin'.
 </Aside>
+
+## Apple Container (macOS 26 ARM, optional)
+
+On macOS 26 (Tahoe) with Apple Silicon, jackin' can use Apple Container as an alternative runtime backend. Each agent session gets its own dedicated Linux kernel via Virtualization.framework — stronger isolation than the default Docker backend.
+
+**Install apple/container:**
+
+```bash
+# Via Homebrew (if tap is available):
+brew install apple/container/container
+
+# Or download from GitHub Releases:
+open https://github.com/apple/container/releases
+```
+
+**Verify:**
+
+```bash
+container --version
+```
+
+**Use with jackin':**
+
+```bash
+# Load an agent using the Apple Container backend:
+jackin load the-architect . --backend apple-container
+
+# Or set as default for a workspace:
+# [workspaces.my-project.runtime]
+# backend = "apple-container"
+```
+
+<Aside type="note">
+The Apple Container backend is experimental on macOS 26 ARM. The default Docker backend continues to work on all supported platforms.
+</Aside>
 ## What gets installed
 
 jackin' installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs can still fetch or build that runtime on first use.
