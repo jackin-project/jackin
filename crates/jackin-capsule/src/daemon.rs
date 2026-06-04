@@ -710,6 +710,22 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
             // Inbound attach frame from the active client task.
             Some(frame) = cmd_rx.recv() => {
+                // Coalesce consecutive Resize frames: process only the latest size
+                // so a SIGWINCH storm produces one reflow instead of N full repaints.
+                let frame = if let ClientFrame::Resize { .. } = &frame {
+                    let mut latest = frame;
+                    let mut coalesced: u32 = 0;
+                    while let Ok(ClientFrame::Resize { rows, cols }) = cmd_rx.try_recv() {
+                        latest = ClientFrame::Resize { rows, cols };
+                        coalesced = coalesced.saturating_add(1);
+                    }
+                    if coalesced > 0 {
+                        crate::cdebug!("resize: coalesced {coalesced} pending resize(s), using latest");
+                    }
+                    latest
+                } else {
+                    frame
+                };
                 handle_client_frame(&mut mux, frame).await;
                 if mux.detach_requested {
                     mux.detach_requested = false;
