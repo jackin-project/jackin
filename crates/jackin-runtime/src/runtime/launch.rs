@@ -1213,10 +1213,14 @@ pub(super) fn pull_git_sources_with_git(
         if debug {
             jackin_diagnostics::active_debug("git_pull", &format!("git pull in {src}"));
             if jackin_diagnostics::active_run().is_none() {
-                eprintln!("[jackin debug] git pull in {src}");
+                tracing::debug!(src, "git pull in workspace");
             }
         }
         if print_starts {
+            tracing::info!(
+                src = jackin_diagnostics::shorten_home(&src).as_str(),
+                "pulling workspace"
+            );
             eprintln!("  Pulling {} …", jackin_diagnostics::shorten_home(&src));
         }
         let git_program = git_program.to_path_buf();
@@ -1256,12 +1260,15 @@ pub(super) fn print_git_pull_results(results: &[GitPullResult]) {
                 print_git_pull_stdout(stdout);
             }
             GitPullResult::Failure { src, stderr } => {
+                tracing::warn!(src, stderr = stderr.trim(), "git pull failed");
                 eprintln!("  Warning: git pull failed in {}: {}", src, stderr.trim());
             }
             GitPullResult::SpawnError { src, error } => {
+                tracing::warn!(src, %error, "git pull spawn error");
                 eprintln!("  Warning: could not run git pull in {src}: {error}");
             }
             GitPullResult::JoinError { src } => {
+                tracing::warn!(src, "git pull thread panicked");
                 eprintln!("  Warning: git pull thread panicked in {src}");
             }
         }
