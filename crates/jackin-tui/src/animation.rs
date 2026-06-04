@@ -161,7 +161,7 @@ fn draw_brand_pill_bottom() {
         "\x1b[{row};{col}H{}",
         BRAND_PILL
             .bold()
-            .color(owo_colors::Rgb(0, 0, 0))
+            .color(owo_rgb(crate::BLACK))
             .on_color(owo_rgb(PHOSPHOR_GREEN))
     );
 }
