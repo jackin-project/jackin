@@ -2,11 +2,31 @@
 title: "Per-scope auth-sync source folder"
 ---
 
-**Status**: Open — design proposal
+**Status**: Open — **folded into the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) epic** (executing in the `feature/tui-architecture` PR, June 2026). Implemented there because it touches exactly the surface that epic collapses — `AgentAuthConfig`, the five `provision_*_auth` functions, and the auth-tab UI — so the new override field rides the unified config + adapter dispatch instead of adding a sixth parallel branch. Executable checklist: [Defect 46, Phase B](/reference/roadmap/post-restructure-fixes/). This page is the design of record for the default/explicit/inherited semantics and the operator flow.
+
+## Credential-source kind is per-agent (researched June 2026)
+
+The override target is **not uniformly "a folder"** — each agent stores credentials differently, so the **adapter declares its credential-source kind** and the picker matches it. Researched truth:
+
+| Agent | Credential (container/Linux form) | Relocation mechanism | Adapter source kind |
+|---|---|---|---|
+| **Claude Code** | `<dir>/.credentials.json` + `~/.claude.json`; **macOS host → Keychain (no file)** | `CLAUDE_CONFIG_DIR` (directory) | **Dir** (config home) |
+| **Codex** | `<CODEX_HOME>/auth.json`; or OS **keyring**; or `auto` | `CODEX_HOME` (directory) | **Dir** (config home) |
+| **Amp** | `~/.local/share/amp/secrets.json`; settings `~/.config/amp/settings.json` | `AMP_DATA_HOME` (dir); `AMP_SETTINGS_FILE` (**file**); `XDG_CONFIG_HOME` | **Dir** (data home; secrets within) |
+| **Kimi** | `~/.kimi-code/` | (directory) | **Dir** |
+| **OpenCode** | `~/.local/share/opencode/auth.json` | `XDG_DATA_HOME` (directory) | **Dir** (data home) |
+
+What this means for the picker:
+
+- **Default and primary UX = folder selection.** Every agent's credentials live inside a *relocatable directory*; the operator picks that directory and the adapter resolves the known entry within it (`auth.json`, `secrets.json`, `.credentials.json`, or the dir itself). The operator never has to know the filename. This is the "folder, not file" rule the operator asked for — correct for all five agents today.
+- **The kind is adapter-declared, not hardcoded folder-only.** Model it as a `CredentialSource` the adapter returns: `Dir { default_rel, entry }` today for all five; leave room for `File { default_rel }` (an agent whose credential relocates file-granular, e.g. an `AMP_SETTINGS_FILE`-style target) and `Keychain` / `Keyring` (macOS Claude, Codex keyring — **no host file exists to sync**, so the override is inapplicable and the row must say so rather than offer a meaningless picker).
+- **Keychain/keyring caveat (host-dependent).** On a macOS host, Claude credentials live in the Keychain and Codex may use the OS keyring — there is no folder/file for `sync` to read. The source-folder override is only meaningful for the file/dir storage forms. The auth row must detect/declare this and show "not file-based on this host" instead of an override that can't work.
+
+The picker therefore dispatches on the adapter's `CredentialSource`: **Dir → folder picker** (the common case), **File → file picker** (reserved), **Keychain/Keyring → no override, explanatory note**.
 
 ## Problem
 
-jackin' `sync` auth mode copies an agent's host credential folder into the role-state directory and bind-mounts it into the container. The host source path is **hardcoded** per agent — `~/.claude`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`, `~/.kimi-code`, `~/.local/share/opencode/auth.json` — in the `provision_*_auth` functions in <RepoFile path="src/instance/auth.rs" />. There is no way to point `sync` at a different folder.
+jackin' `sync` auth mode copies an agent's host credential folder into the role-state directory and bind-mounts it into the container. The host source path is **hardcoded** per agent — `~/.claude`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`, `~/.kimi-code`, `~/.local/share/opencode/auth.json` — in the `provision_*_auth` functions in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" />. There is no way to point `sync` at a different folder.
 
 Operators who keep credentials outside the default locations have no path today:
 
@@ -28,11 +48,11 @@ The driving case is an operator with **two accounts for the same agent**: a pers
 
 ## Current behavior
 
-- **Host source paths** are hardcoded in each `provision_*_auth` in <RepoFile path="src/instance/auth.rs" /> as `host_home.join("<relative-path>")`. No struct carries a source path.
-- **Mode config** is `AgentAuthConfig { auth_forward: AuthForwardMode }` in <RepoFile path="src/config/mod.rs" />, embedded in both `AppConfig` (global, `config.toml`) and `WorkspaceConfig` (per-workspace files). Mode is resolved most-specific-first by `resolve_mode` in <RepoFile path="src/config/roles.rs" />.
-- **The directory picker** is `FileBrowserState` in <RepoFile path="src/console/widgets/file_browser/state.rs" />, already generic: it returns a bare `PathBuf` and knows nothing about mounts. It is opened today from the workspace editor and the settings global-mounts flow.
-- **Hidden folders are filtered out** by a single guard in `load_entries` (<RepoFile path="src/console/widgets/file_browser/state.rs" />): `if name.starts_with('.') { continue; }`. Because every default credential folder is a dotfile (`~/.claude`, `~/.codex`, …), the picker cannot currently show them.
-- **The Auth tab** `sync` flow only sets the mode — no folder step. The settings Auth modal (`SettingsAuthModal` in <RepoFile path="src/console/manager/state.rs" />) has no `FileBrowser` variant.
+- **Host source paths** are hardcoded in each `provision_*_auth` in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> as `host_home.join("<relative-path>")`. No struct carries a source path.
+- **Mode config** is `AgentAuthConfig { auth_forward: AuthForwardMode }` in <RepoFile path="crates/jackin-config/src/auth.rs" />, embedded in both `AppConfig` (global, `config.toml`) and `WorkspaceConfig` (per-workspace files). Mode is resolved most-specific-first by `resolve_mode` in <RepoFile path="crates/jackin-config/src/app_config_roles.rs" />.
+- **The directory picker** is `FileBrowserState` in <RepoFile path="crates/jackin-console/src/tui/components/file_browser/state.rs" />, already generic: it returns a bare `PathBuf` and knows nothing about mounts. It is opened today from the workspace editor and the settings global-mounts flow.
+- **Hidden folders are filtered out** by a single guard in `load_entries` (<RepoFile path="crates/jackin-console/src/tui/components/file_browser/state.rs" />): `if name.starts_with('.') { continue; }`. Because every default credential folder is a dotfile (`~/.claude`, `~/.codex`, …), the picker cannot currently show them.
+- **The Auth tab** `sync` flow only sets the mode — no folder step. The settings Auth modal (`SettingsAuthModal` in <RepoFile path="crates/jackin/src/console/tui/state.rs" />) has no `FileBrowser` variant.
 
 ## Proposal
 
@@ -58,7 +78,7 @@ sync_source_dir = "/Users/me/secrets/claude-work"   # new, optional
 
 `#[serde(default, skip_serializing_if = "Option::is_none")]` keeps files without the field round-tripping cleanly. Because `AgentAuthConfig` is embedded in both `AppConfig` and `WorkspaceConfig` — both versioned schemas — this addition requires the full versioned-change artifact set per the pre-release schema rule:
 
-1. Bump `CURRENT_CONFIG_VERSION` and `CURRENT_WORKSPACE_VERSION` (currently `v1alpha5`) to the next version in <RepoFile path="src/config/migrations.rs" />.
+1. Bump `CURRENT_CONFIG_VERSION` and `CURRENT_WORKSPACE_VERSION` (currently `v1alpha5`) to the next version in <RepoFile path="crates/jackin-config/src/migrations.rs" />.
 2. A no-op migration step in both `CONFIG_MIGRATIONS` and `WORKSPACE_MIGRATIONS` (the field is additive with a serde default).
 3. New fixture dirs under `tests/fixtures/migrations/config/from-v1alpha5/` and `tests/fixtures/migrations/workspace/from-v1alpha5/`.
 4. Re-bake every existing fixture's `after.toml` through the new step.
@@ -68,7 +88,7 @@ One version bump covers all affected file kinds, per the one-bump-per-PR rule. `
 
 ### Resolution
 
-Add a companion resolver `resolve_sync_source_dir` next to `resolve_mode` in <RepoFile path="src/config/roles.rs" />, walking the same three layers (workspace-role override → workspace → global), returning `Option<PathBuf>`. It keeps the source axis symmetric with the mode axis — the DRY rule wants both resolved by parallel functions reading the same layered structs, so they advance together.
+Add a companion resolver `resolve_sync_source_dir` next to `resolve_mode` in <RepoFile path="crates/jackin-config/src/app_config_roles.rs" />, walking the same three layers (workspace-role override → workspace → global), returning `Option<PathBuf>`. It keeps the source axis symmetric with the mode axis — the DRY rule wants both resolved by parallel functions reading the same layered structs, so they advance together.
 
 #### Default vs explicit (the load-bearing distinction)
 
@@ -94,7 +114,7 @@ The displayed label must distinguish the two states so the operator always knows
 
 ### Provisioning
 
-Each `provision_*_auth` in <RepoFile path="src/instance/auth.rs" /> takes the resolved override and falls back to the current hardcoded relative path when it is `None`. Factor the per-agent default into a single place so the default and the override flow through one code path:
+Each `provision_*_auth` in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> takes the resolved override and falls back to the current hardcoded relative path when it is `None`. Factor the per-agent default into a single place so the default and the override flow through one code path:
 
 ```rust
 let source = resolved_source_dir.unwrap_or_else(|| host_home.join(AGENT_DEFAULT_REL));
@@ -118,8 +138,8 @@ This is the same dialog → picker → back-to-dialog → save loop the operator
 
 ### Picker changes
 
-- Add a `show_hidden: bool` to `FileBrowserState` (default `false`) threaded into `load_entries`, gating the dotfile filter at <RepoFile path="src/console/widgets/file_browser/state.rs" />. The auth flow constructs the picker with `show_hidden = true`; the mount flow keeps `false`, so mount behavior is unchanged. No other picker behavior changes — `s` to select, Enter to descend, the sandbox-root and `~/.jackin/` reject rules in `commit_or_reject` all carry over.
-- Add a `FileBrowser` variant to `SettingsAuthModal` (settings Auth tab, <RepoFile path="src/console/manager/state.rs" />) and to the workspace-editor auth modal, dispatched the same way the mount file browser is dispatched in <RepoFile path="src/console/manager/input/global_mounts.rs" />. The committed `PathBuf` is written to a pending field on the auth state, then persisted on save.
+- Add a `show_hidden: bool` to `FileBrowserState` (default `false`) threaded into `load_entries`, gating the dotfile filter at <RepoFile path="crates/jackin-console/src/tui/components/file_browser/state.rs" />. The auth flow constructs the picker with `show_hidden = true`; the mount flow keeps `false`, so mount behavior is unchanged. No other picker behavior changes — `s` to select, Enter to descend, the sandbox-root and `~/.jackin/` reject rules in `commit_or_reject` all carry over.
+- Add a `FileBrowser` variant to `SettingsAuthModal` (settings Auth tab, <RepoFile path="crates/jackin/src/console/tui/state.rs" />) and to the workspace-editor auth modal, dispatched the same way the mount file browser is dispatched in <RepoFile path="crates/jackin/src/console/tui/input/global_mounts.rs" />. The committed `PathBuf` is written to a pending field on the auth state, then persisted on save.
 
 ### Both surfaces behave identically
 
