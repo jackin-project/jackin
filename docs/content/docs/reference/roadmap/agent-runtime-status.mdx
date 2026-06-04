@@ -25,6 +25,52 @@ Alignment rules to minimize future conflicts:
 5. **The `Session.state` field → `Session::state()` accessor swap is deliberate.** The refactor keeps a `state: AgentState` field with ~3 read sites; on merge those become `session.state()` and the refactor's `refresh_state`/`state_after_*` bodies are deleted (this feature's Phase 0). The accessor shape makes that a find-replace.
 6. **Phase 6 token dialog must be Ratatui-ready.** Build the dialog's data model and layout (`ProviderUsageSnapshot`, `RateWindow`, the line/span computation) as a pure function in `token_monitor/`. The render shim that paints it is the only piece that touches the dialog system. On `main` that shim may be raw-ANSI to match the pre-refactor dialog path; on merge only the shim is rewritten to a `jackin-tui` Ratatui widget — the layout logic is reused unchanged. Do not bury layout decisions inside ANSI emit code.
 
+### Refactor Reference Inventory (verified facts)
+
+These are the concrete facts an implementer needs, captured from a source review of the refactor branch. Re-verify against the branch before each phase because the refactor moves quickly.
+
+**File moves and module layout on the refactor branch:**
+
+- `crates/jackin-capsule/src/statusbar.rs` (689 lines on `main`) is **deleted**. Its contents move to `crates/jackin-capsule/src/tui/components/status_bar.rs`, with tests in `crates/jackin-capsule/src/tui/components/status_bar/tests.rs`. Tab chrome also exists at `crates/jackin-capsule/src/tui/components/chrome.rs`. The capsule render entry point is `crates/jackin-capsule/src/tui/render.rs`.
+- `crates/jackin-capsule/src/daemon.rs` (8496 lines on `main`) is decomposed to ~3777 lines plus submodules under `crates/jackin-capsule/src/daemon/`: `compositor.rs`, `session_lifecycle.rs`, `pane_layout.rs`, `multiplexer_utils.rs`, and `tests.rs`. The `Multiplexer` impl decomposition is incomplete on the branch (~113 methods still in the main file), and the `state_ticker` loop with its `session.refresh_state()` call still lives in `daemon.rs` itself.
+- The capsule MVU model lives in `crates/jackin-capsule/src/tui/app.rs`.
+
+**The render-layer enum (the key bridge type):**
+
+```rust
+// crates/jackin-capsule/src/tui/app.rs (refactor branch)
+pub enum VisibleAgentState { Idle, Working, Done, Blocked }
+
+pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState {
+    match state {
+        AgentState::Idle => VisibleAgentState::Idle,
+        AgentState::Working => VisibleAgentState::Working,
+        AgentState::Done => VisibleAgentState::Done,
+        AgentState::Blocked => VisibleAgentState::Blocked,
+    }
+}
+```
+
+The status bar's `render()` signature on the refactor branch takes `sessions_state: &[(u64, VisibleAgentState)]`, not `&[(u64, AgentState)]`. Adding `AgentState::Unknown` (this feature) makes `visible_agent_state_from_protocol`'s match non-exhaustive — that is the expected, documented two-line merge fix: add `VisibleAgentState::Unknown` and the matching arm. The tab-glyph emit in the refactor's `status_bar.rs::emit_tab_row0` is still raw-ANSI (`buf: &mut Vec<u8>`), so this feature's glyph logic remains applicable after the move; only the dialog overlays became Ratatui widgets.
+
+**What the refactor did NOT change (so this feature is complementary):**
+
+- The protocol `AgentState` is still the 4-variant `Working|Blocked|Done|Idle` on the refactor branch; it has no `Unknown`.
+- `session.rs` on the refactor branch still has `BLOCKED_AFTER`, `state_after_pty_output`, `state_after_refresh`, and a `refresh_state()` that flips on the timer, plus a `state: AgentState` field set directly (`self.state = AgentState::Working`). The refactor did not touch the silence heuristic — removing it is this feature's Phase 0.
+
+**Per-file conflict and resolution map** (this feature's six touched code files against the refactor):
+
+| File | Refactor's change | Resolution on merge |
+|---|---|---|
+| `crates/jackin-protocol/src/control.rs` | Trimmed (−34 lines); `AgentState` still 4-variant | Re-apply the `Unknown` variant + `label()` arm; add `VisibleAgentState::Unknown` + `visible_agent_state_from_protocol` arm in `tui/app.rs` |
+| `crates/jackin-capsule/src/session.rs` | Keeps timer fns + `state` field | Delete `BLOCKED_AFTER`/`state_after_*`/timer body (Phase 0); convert `self.state` writes to the `status` machine; `Session::state()` accessor replaces field reads |
+| `crates/jackin-capsule/src/statusbar.rs` | Deleted → `tui/components/status_bar.rs` | Move the `Unknown` (later `Stuck`) glyph arm + color into `status_bar.rs::emit_tab_row0`; re-key `tab_label` on `VisibleAgentState` |
+| `crates/jackin-capsule/src/daemon.rs` | Split into `daemon/` submodules; ticker still in main file | Move `refresh_session_statuses()` + the `detectors` field + the `state_ticker` arm into the session-lifecycle submodule as a block |
+| `crates/jackin-capsule/src/lib.rs` | Adds `tui` module tree | `pub mod agent_status;` is an additive line — clean |
+| `docs/.../roadmap/index.mdx` | Both edit the overview list | Textual three-way merge — trivial |
+| `crates/jackin-capsule/src/agent_status/**` (new) | Not present on refactor | No conflict — new files |
+| `crates/jackin-capsule/src/token_monitor/**` (Phase 6, new) | Not present on refactor | No conflict — new files |
+
 ## Implemented Shape (As Shipped)
 
 The shipped implementation diverges from the original design proposal below in three deliberate ways. This section is the source of truth for what exists in the code today; the design sections that follow describe the remaining work and retain the original proposal's vocabulary where it has not yet been built.
