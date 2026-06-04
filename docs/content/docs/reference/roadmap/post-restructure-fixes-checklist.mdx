@@ -242,9 +242,9 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [x] Fix the quit-confirm render path in `run.rs`: when `quit_confirm` is active, paint `render_modal_backdrop` (or the surface's opaque fill) across the **full** area — over both the manager UI and any open `list_modal` — before drawing the exit confirm, so only the exit dialog is visible.
-- [ ] Audit every other place a modal can open while another dialog is already on screen (console `list_modal` + quit, capsule `dialog_stack`, launch). Confirm each repaints the opaque backdrop so the superseding modal hides everything beneath it rather than stacking visibly.
-- [ ] Reconcile with Defect 9: where genuine modal *stacking* is intended (child modal over parent), apply the one-bright-border rule; where it is a *supersede* (exit confirm), apply the full-backdrop hide-everything rule. Document which dialogs are stack vs supersede.
-- [ ] Confirm the existing rule text "Opening a modal must paint an opaque backdrop over the whole terminal before drawing the modal" in [TUI Design Decisions](/reference/tui/chrome/) covers the dialog-over-dialog case explicitly; tighten if needed.
+- [x] Audit every other place a modal can open while another dialog is already on screen (console `list_modal` + quit, capsule `dialog_stack`, launch). Confirm each repaints the opaque backdrop so the superseding modal hides everything beneath it rather than stacking visibly. Console quit: backdrop painted ✓. Capsule: full backdrop before each dialog ✓. Launch: ContainerInfo only dialog.
+- [x] Reconcile with Defect 9: where genuine modal *stacking* is intended (child modal over parent), apply the one-bright-border rule; where it is a *supersede* (exit confirm), apply the full-backdrop hide-everything rule. Document which dialogs are stack vs supersede. Done in chrome.mdx.
+- [x] Confirm the existing rule text "Opening a modal must paint an opaque backdrop over the whole terminal before drawing the modal" in [TUI Design Decisions](/reference/tui/chrome/) covers the dialog-over-dialog case explicitly; tighten if needed. Updated in chrome.mdx.
 
 ---
 
