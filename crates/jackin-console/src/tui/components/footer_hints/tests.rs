@@ -378,3 +378,21 @@ fn generate_token_footer_appends_group() {
     append_generate_token_footer_item(&mut items);
     assert_eq!(labels(items), vec!["Esc", "cancel", "G", "generate"]);
 }
+
+#[test]
+fn settings_general_content_footer_has_no_duplicate_navigate_span() {
+    // Defect 33 regression: before the fix, settings_general_row_footer_items()
+    // returned [↑↓ navigate, ·, ␣ toggle] and content_footer_items() prepended
+    // its own [↑↓ navigate], producing "↑↓ navigate   ↑↓ navigate · ␣ toggle".
+    // Verify the composed hint set contains exactly one "navigate" text span.
+    let row_items = settings_general_row_footer_items();
+    let all = content_footer_items("save", row_items, None);
+    let navigate_count = all
+        .iter()
+        .filter(|span| matches!(span, HintSpan::Text("navigate")))
+        .count();
+    assert_eq!(
+        navigate_count, 1,
+        "exactly one 'navigate' span; got {navigate_count}"
+    );
+}
