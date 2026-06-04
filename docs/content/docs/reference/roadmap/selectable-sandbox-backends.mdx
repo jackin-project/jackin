@@ -40,10 +40,11 @@ The next work should happen in this order:
 
 1. [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/)
    - make the current Docker backend explicit, auditable, and progressively stricter before changing runtime families.
-2. [OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/)
-   - research a macOS backend that runs the role container and private Docker engine inside an OrbStack isolated machine.
-3. [smolvm backend research](/reference/roadmap/smolvm-backend-research/) - evaluate an open Rust/libkrun VM backend for true VM-per-workload isolation, OCI-image execution, and potential SDK integration; compare it directly with OrbStack isolated machines and Docker Sandboxes.
-4. Kubernetes platform support - future work, not part of the current Docker hardening, OrbStack, or smolvm design pass.
+2. [smolvm backend research](/reference/roadmap/smolvm-backend-research/) — evaluate an open Rust/libkrun VM backend for true VM-per-workload isolation, OCI-image execution, and potential SDK integration; compare it directly with Docker Sandboxes. This is now the primary VM isolation track.
+3. **Apple Container framework evaluation** (macOS 26 Tahoe) — each OCI container runs in its own lightweight VM via Virtualization.framework on Apple Silicon, giving a true per-container kernel boundary. Evaluate once operator macOS 26 adoption reaches a usable threshold; no dedicated roadmap item yet.
+4. Kubernetes platform support — future work, not part of the current Docker hardening or smolvm design pass.
+
+**[OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/) is deferred.** Research in June 2026 established that OrbStack isolated machines share OrbStack's Linux kernel — they add namespace isolation, not a hypervisor boundary — and that for the current macOS ARM operator audience (all of whom already use OrbStack as their Docker engine), the role container is already inside OrbStack's Linux VM. An isolated machine adds a namespace layer within the same kernel, which does not address the kernel escape risk that motivates microVM adoption. The OrbStack item retains its historical research as reference material.
 
 There is no active generic microVM-provider track in this roadmap pass. The VM-style comparison is intentionally limited to OrbStack isolated machines, smolvm, and Docker Sandboxes as captured in the smolvm research item.
 
@@ -54,9 +55,9 @@ Different operators need different boundaries. The backend decision should follo
 | Scenario | User problem | Recommended direction | Why |
 |---|---|---|---|
 | Local trusted operator | Run personal agents without trashing the host workflow. | Docker `standard` profile. | Best UX, existing role compatibility, explicit mounts, private DinD, and clear reporting are enough for the usual local trust model. |
-| Suspicious repository | Let an agent inspect/build unknown code without giving it broad host access. | Docker `hardened` first; OrbStack isolated or smolvm if Docker controls are insufficient. | The first wins are network deny/allowlist, resource caps, read-only root, reduced credentials, and no unnecessary DinD. |
+| Suspicious repository | Let an agent inspect/build unknown code without giving it broad host access. | Docker `hardened` first; smolvm if Docker controls are insufficient and smolvm compatibility is proven. | The first wins are network deny/allowlist, resource caps, read-only root, reduced credentials, and no unnecessary DinD. |
 | Long autonomous agent | Limit runaway cost, resource use, network behavior, and credential exposure. | Docker `hardened` plus session contract, network policy, resource limits, and credential broker work. | A VM boundary helps escapes, but most practical failures are still egress, credentials, workspace writes, and resource exhaustion. |
-| Shared workstation or team laptop | Keep one operator's agent from reaching local services, broad files, or shared Docker state. | OrbStack isolated on macOS; Docker Sandboxes-style controls as benchmark; smolvm if it passes compatibility. | The key need is an isolated machine/private daemon plus explicit sharing, not only stricter container flags. |
+| Shared workstation or team laptop | Keep one operator's agent from reaching local services, broad files, or shared Docker state. | smolvm (own kernel per workload, network off by default) or Docker Sandboxes-style controls as benchmark. OrbStack isolated machines are deferred — they share OrbStack's Linux kernel and do not provide a new kernel boundary. | The key need is a true VM boundary and private Docker daemon, not only stricter namespace flags. |
 | Hosted or multi-tenant future | Run code for strangers or customers. | Do not rely on Docker-only hardening. Require VM/hypervisor-backed isolation plus policy proxy and brokered credentials. | Containers share the host kernel; hostile multi-tenant workloads need a stronger tenant boundary and auditable controls. |
 | Enterprise/regulatory future | Prove boundaries and central policy. | Docker Sandboxes-style governance benchmark; future backend-neutral policy engine. | Enterprises need explainable controls, centralized policy, logs, and compliance language more than another runtime flag. |
 
@@ -189,21 +190,14 @@ The next research should produce evidence in this order:
    - compare startup time, storage driver behavior, bind mounts, BuildKit, and cleanup against current privileged DinD
    - decide whether rootless DinD belongs in `standard`, `hardened`, opt-in only, or not at all
 
-3. **OrbStack isolated-machine prototype**
-   - create an isolated machine with no default Mac filesystem integration
-   - add only selected workspace/global shares
-   - install or start machine-local Docker
-   - import a jackin' role image and run the role container inside the machine
-   - validate attach/reconnect/eject/purge semantics and report shared-kernel residual risk
-
-4. **smolvm compatibility tests**
+3. **smolvm compatibility tests**
    - boot a simple OCI image with network disabled
    - test `--allow-host` with package registries, redirects, DNS, and blocked hosts
    - mount a workspace directory and validate read/write/read-only behavior
    - try booting the current construct/role image directly
    - validate Docker-in-smolvm claims before treating smolvm as a normal jackin' backend
 
-5. **Docker Sandboxes benchmark**
+4. **Docker Sandboxes benchmark**
    - run the same agent workflow where access/licensing permits
    - inspect how workspace mount, private Docker Engine, network policy, credential proxy, persistence, and cleanup feel from an operator perspective
    - decide which controls jackin' should implement itself and whether `sbx` has enough lifecycle surface to become a direct backend later
