@@ -3545,51 +3545,6 @@ impl Multiplexer {
                         }
                     );
                 }
-            // Drain any buffered shell integration marker from the last PTY parse pass.
-            if let Some(mark) = session.take_shell_mark() {
-                use crate::session::OscShellMark;
-                let raw = match mark {
-                    OscShellMark::PromptEnd | OscShellMark::CommandFinished { .. } => {
-                        Some(crate::agent_status::AgentRawState::PromptVisible)
-                    }
-                    OscShellMark::PreExec => {
-                        Some(crate::agent_status::AgentRawState::Osc133PreExec)
-                    }
-                    OscShellMark::PromptStart => None,
-                };
-                if let Some(raw) = raw {
-                    if let Some(new_state) = session.apply_raw_state(raw) {
-                        crate::cdebug!(
-                            "session {id}: OSC 133 {:?} → {:?}",
-                            mark,
-                            new_state
-                        );
-                        let _ = self.state_broadcast_tx.send(
-                            jackin_protocol::control::ServerMsg::AgentStateChanged {
-                                session_id: id,
-                                raw_state: None,
-                                effective: new_state.label().to_string(),
-                                seen: session.status.seen,
-                                source: "screen-detector".to_string(),
-                                confidence: None,
-                                detected_agent: None,
-                                foreground_pgid: None,
-                                visible_blocker: false,
-                                visible_idle: false,
-                                visible_working: false,
-                                process_exited: false,
-                                stale_report: false,
-                                seq: None,
-                                ts_ns: None,
-                                revision: session.status.revision,
-                                last_seen_revision: None,
-                                reason: None,
-                            }
-                        );
-                    }
-                }
-            }
-
             // Cursor-position probe for stuck detection.
             const PROBE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
             if session.state() == crate::protocol::control::AgentState::Working
@@ -4415,6 +4370,30 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         let mut reassert_outer_terminal_title = false;
                         if let Some(session) = mux.sessions.get_mut(&session_id) {
                             session.feed_pty(&data);
+                            // Scan raw PTY bytes for OSC 133 shell integration markers.
+                            // Model-independent: works with vt100 and future DamageGrid.
+                            use crate::agent_status::{scan_osc133, OscShellMark};
+                            if let Some(mark) = scan_osc133(&data) {
+                                let raw = match mark {
+                                    OscShellMark::PromptEnd
+                                    | OscShellMark::CommandFinished { .. } => {
+                                        Some(crate::agent_status::AgentRawState::PromptVisible)
+                                    }
+                                    OscShellMark::PreExec => {
+                                        Some(crate::agent_status::AgentRawState::Osc133PreExec)
+                                    }
+                                    OscShellMark::PromptStart => None,
+                                };
+                                if let Some(raw) = raw {
+                                    if let Some(new_state) = session.apply_raw_state(raw) {
+                                        crate::cdebug!(
+                                            "session {session_id}: OSC 133 {:?} → {:?}",
+                                            mark,
+                                            new_state
+                                        );
+                                    }
+                                }
+                            }
                             // Always drain the OSC + unhandled-CSI
                             // passthrough buffer so a backgrounded
                             // agent emitting OSC 7 / OSC 9 / OSC 8 on

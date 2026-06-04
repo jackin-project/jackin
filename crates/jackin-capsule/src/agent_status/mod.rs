@@ -36,6 +36,111 @@ pub mod sequence;
 
 use crate::protocol::AgentState;
 
+/// Shell integration markers from OSC 133 sequences.
+///
+/// Emitted by shell `precmd`/`preexec` hooks installed in `/home/agent/.zshrc`.
+/// Parsed from raw PTY bytes by `scan_osc133`; model-independent (works with
+/// both vt100 and DamageGrid renderers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OscShellMark {
+    /// `OSC 133 ; A` — prompt start.
+    PromptStart,
+    /// `OSC 133 ; B` — prompt end / ready for input.
+    PromptEnd,
+    /// `OSC 133 ; C` — pre-execution (user pressed Enter).
+    PreExec,
+    /// `OSC 133 ; D` — command finished with optional exit code.
+    CommandFinished { exit_code: Option<i32> },
+}
+
+/// Scan raw PTY bytes for the FIRST `OSC 133 ; <letter>` sequence.
+///
+/// Finds `\x1b]133;A`, `B`, `C`, or `D[;<exit_code>]` followed by BEL
+/// (`\x07`) or ST (`\x1b\\`). Model-independent: works with both the
+/// current vt100-based session and the future DamageGrid-based session.
+pub fn scan_osc133(bytes: &[u8]) -> Option<OscShellMark> {
+    // Minimum sequence: \x1b]133;A\x07 = 8 bytes
+    let len = bytes.len();
+    if len < 8 { return None; }
+
+    let mut i = 0;
+    while i + 7 < len {
+        // Look for ESC ] 1 3 3 ;
+        if bytes[i] == b'\x1b'
+            && bytes[i + 1] == b']'
+            && bytes[i + 2] == b'1'
+            && bytes[i + 3] == b'3'
+            && bytes[i + 4] == b'3'
+            && bytes[i + 5] == b';'
+        {
+            let letter = bytes[i + 6];
+            match letter {
+                b'A' => return Some(OscShellMark::PromptStart),
+                b'B' => return Some(OscShellMark::PromptEnd),
+                b'C' => return Some(OscShellMark::PreExec),
+                b'D' => {
+                    // Optional exit code after another ';'
+                    let exit_code = if i + 7 < len && bytes[i + 7] == b';' {
+                        let start = i + 8;
+                        let end = bytes[start..]
+                            .iter()
+                            .position(|&b| !b.is_ascii_digit())
+                            .map(|p| start + p)
+                            .unwrap_or(len);
+                        if end > start {
+                            std::str::from_utf8(&bytes[start..end])
+                                .ok()
+                                .and_then(|s| s.parse::<i32>().ok())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    return Some(OscShellMark::CommandFinished { exit_code });
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+#[cfg(test)]
+mod osc133_tests {
+    use super::*;
+
+    #[test]
+    fn scan_osc133_detects_prompt_end() {
+        let bytes = b"\x1b]133;B\x07";
+        assert_eq!(scan_osc133(bytes), Some(OscShellMark::PromptEnd));
+    }
+
+    #[test]
+    fn scan_osc133_detects_pre_exec() {
+        let bytes = b"\x1b]133;C\x07";
+        assert_eq!(scan_osc133(bytes), Some(OscShellMark::PreExec));
+    }
+
+    #[test]
+    fn scan_osc133_detects_command_finished_with_code() {
+        let bytes = b"\x1b]133;D;0\x07";
+        assert_eq!(scan_osc133(bytes), Some(OscShellMark::CommandFinished { exit_code: Some(0) }));
+    }
+
+    #[test]
+    fn scan_osc133_returns_none_for_plain_output() {
+        assert_eq!(scan_osc133(b"hello world"), None);
+    }
+
+    #[test]
+    fn scan_osc133_finds_marker_in_larger_buffer() {
+        let bytes = b"some output\r\n\x1b]133;B\x07more output";
+        assert_eq!(scan_osc133(bytes), Some(OscShellMark::PromptEnd));
+    }
+}
+
 /// Authoritative state report from a trusted in-container reporter.
 /// Stored per session; cleared on process exit or explicit `ClearAgentAuthority`.
 #[derive(Debug, Clone)]

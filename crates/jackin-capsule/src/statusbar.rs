@@ -451,10 +451,18 @@ enum TabGlyph {
     Stuck,
 }
 
-/// Resolve the base name + state glyph for a tab. The caller builds
-/// the full display label by reserving the sep + glyph slots; the
-/// glyph is painted separately so its colour can differ from the
-/// surrounding tab foreground.
+/// Resolve the base name + state glyph for a tab.
+///
+/// The caller builds the full display label by reserving the sep + glyph slots;
+/// the glyph is painted separately so its colour can differ from the surrounding
+/// tab foreground.
+///
+/// **Merge note (TUI architecture refactor)**: After PR #495 merges,
+/// this function's `states` parameter type changes from
+/// `&[(u64, AgentState)]` to `&[(u64, VisibleAgentState)]` (from
+/// `crate::tui::app`). Adding `VisibleAgentState::Unknown` and a
+/// matching `VisibleAgentState::Working` arm are the only code changes
+/// needed. The glyph match arms are unchanged.
 fn tab_label(
     tab: &Tab,
     states: &[(u64, AgentState)],

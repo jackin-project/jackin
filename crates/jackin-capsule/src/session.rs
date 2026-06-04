@@ -31,24 +31,6 @@ use vt100::{Callbacks, Screen};
 use crate::agent_status::AgentRawState;
 use crate::protocol::AgentState;
 
-/// Shell integration markers from OSC 133 sequences.
-///
-/// These are emitted by shell `precmd`/`preexec` hooks when shell
-/// integration is installed into `/home/agent/.zshrc`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OscShellMark {
-    /// `OSC 133 ; A` — prompt start (shell about to draw prompt).
-    PromptStart,
-    /// `OSC 133 ; B` — prompt end / start of command input.
-    PromptEnd,
-    /// `OSC 133 ; C` — pre-execution (user pressed Enter, before output).
-    PreExec,
-    /// `OSC 133 ; D` — command finished with optional exit code.
-    CommandFinished {
-        exit_code: Option<i32>,
-    },
-}
-
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Lines of scrollback every PTY session retains. ~1.5 MB worst-case
@@ -392,9 +374,6 @@ pub struct OscCapture {
     /// when the agent has not set an `OSC 2` of its own, matching
     /// zellij's "Shell title shows cwd" convention.
     pub(crate) cwd: Option<String>,
-    /// Most recently captured OSC 133 shell integration marker. Checked by
-    /// the daemon on the next tick to feed into the status machine.
-    pub(crate) shell_mark: Option<OscShellMark>,
 }
 
 impl OscCapture {
@@ -408,12 +387,7 @@ impl OscCapture {
             focus_events: false,
             modify_other_keys: None,
             cwd: None,
-            shell_mark: None,
         }
-    }
-
-    pub fn take_shell_mark(&mut self) -> Option<OscShellMark> {
-        self.shell_mark.take()
     }
 
     pub fn drain(&mut self) -> Vec<Vec<u8>> {
@@ -486,31 +460,10 @@ impl Callbacks for OscCapture {
 
     fn unhandled_osc(&mut self, _: &mut Screen, params: &[&[u8]]) {
         let ps: &[u8] = params.first().copied().unwrap_or(&[]);
-        // OSC 133 — shell integration markers. FTCS sequences:
-        //   OSC 133 ; A → prompt start
-        //   OSC 133 ; B → prompt end
-        //   OSC 133 ; C → pre-execution
-        //   OSC 133 ; D ; <exit_code> → command finished
-        // Capture into `shell_mark` for status machine. Never forward to host
-        // (host would misinterpret container shell boundaries as its own).
+        // OSC 133 — shell integration markers. Never forward to host (host
+        // would misinterpret container shell boundaries as its own). Raw-byte
+        // scanning via `agent_status::scan_osc133` handles state machine feed.
         if ps == b"133" {
-            let letter = params.get(1).copied().unwrap_or(&[]);
-            let mark = match letter {
-                b"A" => Some(OscShellMark::PromptStart),
-                b"B" => Some(OscShellMark::PromptEnd),
-                b"C" => Some(OscShellMark::PreExec),
-                b"D" => {
-                    let exit_code = params
-                        .get(2)
-                        .and_then(|p| std::str::from_utf8(p).ok())
-                        .and_then(|s| s.parse::<i32>().ok());
-                    Some(OscShellMark::CommandFinished { exit_code })
-                }
-                _ => None,
-            };
-            if mark.is_some() {
-                self.shell_mark = mark;
-            }
             return;
         }
         // OSC 7 — current working directory. Shells emit
@@ -1687,11 +1640,6 @@ impl Session {
         if callbacks.modify_other_keys.take().is_some() {
             callbacks.pending.push(b"\x1b[>4;0m".to_vec());
         }
-    }
-
-    /// Drain any buffered shell integration marker from the OSC parser.
-    pub fn take_shell_mark(&mut self) -> Option<OscShellMark> {
-        self.parser.callbacks_mut().take_shell_mark()
     }
 
     /// Drain the OSC / unhandled-CSI byte sequences the parser captured
