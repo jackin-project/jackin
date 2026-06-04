@@ -181,12 +181,9 @@ fn remove_with_debug_log(path: &Path) {
     }
 }
 
-// The function is a sequential download pipeline with cleanup at each error
-// site. Splitting it for line-count would spread the cleanup logic across
-// disconnected helpers without reducing conceptual complexity.
 #[expect(
     clippy::too_many_lines,
-    reason = "sequential download pipeline with per-step cleanup"
+    reason = "sequential download pipeline; splitting would fragment the per-step cleanup logic"
 )]
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
@@ -260,10 +257,10 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         })?;
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
         remove_with_debug_log(&tmp_archive);
-        anyhow::bail!(
+        return Err(anyhow::anyhow!(
             "jackin-capsule SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
              refusing to cache the binary; investigate network tampering and retry."
-        );
+        ));
     }
 
     if let Err(e) = extract_tar_gz_member(&tmp_archive, "jackin-capsule", &tmp) {
@@ -465,7 +462,6 @@ async fn fetch_and_verify_manifest(
             format!(
                 "jackin-capsule manifest signature verification failed for {manifest_url}\n\
                  expected signer: ^https://github.com/jackin-project/jackin/\n\
-                 OIDC issuer: https://token.actions.githubusercontent.com\n\
                  refusing to use unverified capsule binary; investigate release tampering and retry.\n\
                  If you built the binary locally, set JACKIN_CAPSULE_BIN=/path/to/jackin-capsule instead."
             )
@@ -602,11 +598,15 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
         if !output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let detail = match (stdout.trim().is_empty(), stderr.trim().is_empty()) {
-                (false, false) => format!("stdout: {stdout}\nstderr: {stderr}"),
-                (false, true) => format!("stdout: {stdout}"),
-                (true, false) => format!("stderr: {stderr}"),
-                (true, true) => "(no output — possible signal/crash)".to_string(),
+            let streams: Vec<String> = [("stdout", stdout.trim()), ("stderr", stderr.trim())]
+                .into_iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect();
+            let detail = if streams.is_empty() {
+                "(no output — possible signal/crash)".to_string()
+            } else {
+                streams.join("\n")
             };
             anyhow::bail!(
                 "jackin-capsule --version at {} exited with {}\n{detail}\n\
@@ -659,7 +659,7 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
                 binary.display()
             );
         }
-        let _expected = expected;
+        let _ = expected;
         Ok(())
     }
 }
