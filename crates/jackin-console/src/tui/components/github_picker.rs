@@ -90,6 +90,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
         ])
         .split(inner);
 
+    if state.choices.is_empty() {
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
+                ratatui::text::Span::styled("no GitHub sources", jackin_tui::theme::DIM),
+            ))
+            .alignment(ratatui::layout::Alignment::Center),
+            rows[1],
+        );
+        return;
+    }
     // Pre-compute shortened src + width so the `· github · <branch>` suffix
     // lines up across rows.
     let displays: Vec<String> = state.choices.iter().map(|c| shorten_home(&c.src)).collect();

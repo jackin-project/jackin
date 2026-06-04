@@ -146,6 +146,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
         ])
         .split(inner);
 
+    if state.choices.is_empty() {
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
+                ratatui::text::Span::styled("no directories", jackin_tui::theme::DIM),
+            ))
+            .alignment(ratatui::layout::Alignment::Center),
+            rows[1],
+        );
+        return;
+    }
     // Pre-compute display paths and column width so labels line up.
     let displays: Vec<String> = state
         .choices
