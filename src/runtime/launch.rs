@@ -7427,13 +7427,8 @@ plugins = ["code-review@claude-plugins-official"]
                 .iter()
                 .any(|call| call == &format!("docker rm -f {dind}"))
         );
-        assert!(
-            docker
-                .recorded
-                .borrow()
-                .iter()
-                .any(|call| call == &format!("docker volume rm {certs_volume}"))
-        );
+        // Certs are now stored in the socket dir (not a Docker volume), so no
+        // volume removal call is expected. The socket dir cleanup handles certs.
         assert!(
             docker
                 .recorded
