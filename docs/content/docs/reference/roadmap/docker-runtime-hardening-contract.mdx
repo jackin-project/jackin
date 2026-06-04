@@ -2,7 +2,7 @@
 title: "Docker Runtime Hardening Contract"
 ---
 
-**Status**: Partially implemented — Phases 1–5 fully shipped (PR #528). Remaining deferred items: rootless DinD (Phase 3 research), `no-new-privileges` enforcement (blocked by base-image sudo audit), compatibility test matrix validation.
+**Status**: Partially implemented — all implementable phases shipped (PR #528). Permanently deferred by documented blockers: rootless DinD (Phase B research, cgroup v2 + compatibility matrix required), `no-new-privileges` for `standard` (blocked by base-image `NOPASSWD:ALL` sudo audit — Open Question #5), Sysbox (Phase C — host-install policy undecided).
 
 ## Problem
 

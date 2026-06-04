@@ -758,7 +758,7 @@ fn missing_restore_message(
 
 pub(super) async fn wait_for_dind(
     dind_name: &str,
-    certs_volume: &str,
+    _certs_volume: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     const MAX_ATTEMPTS: u32 = 30;

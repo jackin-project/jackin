@@ -1000,18 +1000,24 @@ async fn launch_role_runtime(
     // we explicitly request it for profiles ≥ standard to make the intent clear.
     // `systempaths=unconfined` is NOT added (masked paths stay on for all profiles
     // except where an explicit capability grant relaxes them — tracked as future).
-    let apparmor_flag_val;
-    if *apparmor_available
+    // The apparmor security-opt string must live long enough for run_args to
+    // be consumed by `docker run`. Declare it in the outer scope so the borrow
+    // inside `run_args` does not dangle.
+    let apparmor_secopt = if *apparmor_available
         && !matches!(*profile, super::docker_profile::DockerSecurityProfile::Compat)
     {
-        apparmor_flag_val = "apparmor=docker-default".to_string();
-        run_args.extend_from_slice(&["--security-opt", &apparmor_flag_val]);
+        Some("apparmor=docker-default".to_string())
+    } else {
+        None
+    };
+    if let Some(ref flag) = apparmor_secopt {
+        run_args.extend_from_slice(&["--security-opt", flag]);
         crate::debug_log!(
             "launch",
-            "apparmor profile=docker-default layer={apparmor_layer} container={container_name}",
+            "apparmor profile=docker-default layer={apparmor_layer} applied=yes \
+             container={container_name}",
         );
     } else {
-        apparmor_flag_val = String::new();
         crate::debug_log!(
             "launch",
             "apparmor available={} profile=docker-default layer={apparmor_layer} \
@@ -2489,19 +2495,35 @@ async fn load_role_with(
         // always uses v2; the probe returns "unknown" on macOS since it runs
         // against the host filesystem, not the VM. We only fail-close on
         // explicit "v1" — "unknown" is treated as potentially v2 on macOS.
-        if cgroup_version == "v1"
-            && matches!(
-                resolved_profile_early.0,
+        if cgroup_version == "v1" {
+            match resolved_profile_early.0 {
                 super::docker_profile::DockerSecurityProfile::Hardened
-                    | super::docker_profile::DockerSecurityProfile::Locked
-            )
-        {
-            anyhow::bail!(
-                "docker profile {:?} requires cgroup v2 for full resource enforcement; \
-                 this host reports cgroup v1. Upgrade the kernel to 5.11+ or choose \
-                 a less restrictive profile (standard or compat)",
-                resolved_profile_early.0,
-            );
+                | super::docker_profile::DockerSecurityProfile::Locked => {
+                    anyhow::bail!(
+                        "docker profile {:?} requires cgroup v2 for full resource enforcement; \
+                         this host reports cgroup v1. Upgrade the kernel to 5.11+ or choose \
+                         a less restrictive profile (standard or compat)",
+                        resolved_profile_early.0,
+                    );
+                }
+                super::docker_profile::DockerSecurityProfile::Standard => {
+                    // memory_reservation maps to memory.high on cgroup v2 (soft throttle).
+                    // On cgroup v1 it maps to memory.soft_limit_in_bytes (different semantics:
+                    // no CPU throttling, just OOM priority adjustment). Warn so the operator
+                    // knows the soft-limit behavior differs.
+                    crate::tui::emit_compact_line(
+                        "warning",
+                        "[docker] cgroup v1 detected: memory_reservation (--memory-reservation) \
+                         maps to memory.soft_limit_in_bytes on cgroup v1, not memory.high — \
+                         throttling semantics differ from cgroup v2",
+                    );
+                    crate::debug_log!(
+                        "launch",
+                        "cgroup_v1_memory_reservation_downgrade profile=standard",
+                    );
+                }
+                _ => {}
+            }
         }
 
         // Resource limits enforcement: hardened and locked require memory and pid
