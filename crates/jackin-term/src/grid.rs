@@ -1063,9 +1063,8 @@ impl DamageGrid {
                     let depth = self.kitty_kb_stack.len();
                     self.kitty_kb_stack.clear();
                     for _ in 0..depth {
-                        self.passthrough.push(PassthroughEvent::UnhandledCsi(
-                            b"\x1b[<u".to_vec(),
-                        ));
+                        self.passthrough
+                            .push(PassthroughEvent::UnhandledCsi(b"\x1b[<u".to_vec()));
                     }
                 }
             }
