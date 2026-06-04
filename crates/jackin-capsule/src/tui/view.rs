@@ -338,6 +338,46 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) menu_hovered: bool,
     pub(crate) selection: Option<crate::tui::selection::SelectionState>,
+    /// Per-pane scrollbar inputs `(session_id, offset, filled)`. A pane with
+    /// `filled > 0` gets a thumb painted on its right border.
+    pub(crate) scrollbars: &'a [(u64, usize, usize)],
+}
+
+/// Paint the scrollback thumb on a pane's right border, matching the raw
+/// `draw_scrollbar`: the thumb spans the interior rows (top/bottom border
+/// rows excluded) using the focused/unfocused colour.
+fn apply_pane_scrollbar(
+    buf: &mut ratatui::buffer::Buffer,
+    pane: &VisiblePane,
+    offset: usize,
+    filled: usize,
+    focused: bool,
+) {
+    if pane.outer.cols == 0 || pane.outer.rows < 2 {
+        return;
+    }
+    let interior_rows = pane.outer.rows.saturating_sub(2);
+    let Some(thumb) = jackin_tui::scroll::tail_vertical_thumb(interior_rows, filled, offset) else {
+        return;
+    };
+    let col = pane
+        .outer
+        .col
+        .saturating_add(pane.outer.cols)
+        .saturating_sub(1);
+    let color = if focused {
+        jackin_tui::theme::PHOSPHOR_GREEN
+    } else {
+        ratatui::style::Color::Rgb(160, 160, 160)
+    };
+    let track_start_row = pane.outer.row + 1;
+    for r in 0..thumb.len {
+        let y = track_start_row + thumb.start + r;
+        if let Some(cell) = buf.cell_mut((col, y)) {
+            cell.set_symbol("█");
+            cell.set_fg(color);
+        }
+    }
 }
 
 /// Overlay the inverse-video selection highlight onto the cells the pane
@@ -459,6 +499,17 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
                 height: pane.inner.rows,
             };
             frame.render_widget(PaneBodyWidget::new(snap), body_area);
+        }
+    }
+
+    // Per-pane scrollback thumbs on the right border.
+    for pane in view.panes {
+        if let Some(&(_, offset, filled)) =
+            view.scrollbars.iter().find(|(id, _, _)| *id == pane.id)
+            && filled > 0
+        {
+            let focused = Some(pane.id) == view.focused_id;
+            apply_pane_scrollbar(frame.buffer_mut(), pane, offset, filled, focused);
         }
     }
 

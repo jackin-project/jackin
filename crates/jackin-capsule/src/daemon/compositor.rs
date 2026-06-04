@@ -197,6 +197,17 @@ impl Multiplexer {
                     .map(|s| (pane.id, session_display_title(s)))
             })
             .collect();
+        // Per-pane scrollbar inputs (offset, filled). get_mut because
+        // scrollback_filled lazily counts; done before the immutable pane_screens
+        // borrow below.
+        let pane_scrollbars: Vec<(u64, usize, usize)> = panes
+            .iter()
+            .filter_map(|pane| {
+                self.sessions
+                    .get_mut(&pane.id)
+                    .map(|s| (pane.id, s.scrollback_offset, s.scrollback_filled()))
+            })
+            .collect();
         // Pane bodies as GridSnapshots. A pane the operator has scrolled up in
         // (scrollback_offset != 0) is dumped as a scrollback VIEW so the
         // Ratatui body shows history instead of the live tail — the parallel of
@@ -254,6 +265,7 @@ impl Multiplexer {
                     hovered_tab,
                     menu_hovered,
                     selection,
+                    scrollbars: &pane_scrollbars,
                 },
             );
         });
