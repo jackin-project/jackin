@@ -25,3 +25,12 @@ debug = 1
 
 [profile.release]
 strip = "symbols"
+
+# Symbol-rich capsule build for triage. Select with:
+#   cargo run --bin build-jackin-capsule -- --profile debug
+# Produces a ~10x larger binary; backtraces resolve to function + file:line.
+# Use RUST_BACKTRACE=full when launching to get the richest trace.
+[profile.capsule-debug]
+inherits = "release"
+strip = false
+debug = "line-tables-only"

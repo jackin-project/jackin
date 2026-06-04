@@ -376,11 +376,22 @@ The binary is written to the standard cache path and subsequent `jackin load` in
 | Flag | Description |
 |---|---|
 | `--arch arm64\|amd64` | Target architecture (default: current host's container arch) |
+| `--profile debug` | Build with the `capsule-debug` Cargo profile: symbols retained, line tables included. Backtraces from `Backtrace::force_capture()` resolve to function names, file paths, and line numbers instead of `<unknown>`. Output binary is named `jackin-capsule-debug`. The lean release binary is unchanged. |
+| `--debug` | Convenience alias for `--profile debug`. |
 | `--export` | Print only `export JACKIN_CAPSULE_BIN=<path>` for `eval` |
 
 Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig cargo:cargo-zigbuild` if missing.
 
 First build takes 2–3 minutes; subsequent builds are incremental via cargo's dependency cache.
+
+**Debug builds for crash triage.** When a container crashes with an exit-101 panic and the backtrace in `~/.jackin/data/<container>/state/multiplexer.log` shows `<unknown>` frames, rebuild the capsule with symbols:
+
+```sh
+eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
+RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
+```
+
+The debug binary is ~10× larger than release but resolves every frame to function + file:line. The `RUST_BACKTRACE=full` env var causes `Backtrace::force_capture()` in the panic hook to capture the full stack trace with inlined frames. After reproducing the crash, share the run id with `jackin --debug`; the run log (from Defect 41's `container_started` event) points to the container's `multiplexer.log` where the resolved backtrace is written.
 
 ### Derived image build
 

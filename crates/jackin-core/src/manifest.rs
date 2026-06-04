@@ -61,6 +61,20 @@ impl RoleManifest {
     pub fn supported_agents(&self) -> Vec<Agent> {
         self.agents.clone().unwrap_or_else(|| vec![Agent::Claude])
     }
+
+    /// Returns the per-agent model override from the manifest, if any.
+    ///
+    /// Collapses the five-arm `match agent { Agent::Claude => manifest.claude…, … }`
+    /// pattern used at capsule-config construction time (Defect 46 Phase 2).
+    pub fn agent_model(&self, agent: Agent) -> Option<&str> {
+        match agent {
+            Agent::Claude => self.claude.as_ref().and_then(|c| c.model.as_deref()),
+            Agent::Codex => self.codex.as_ref().and_then(|c| c.model.as_deref()),
+            Agent::Amp => None,
+            Agent::Kimi => self.kimi.as_ref().and_then(|c| c.model.as_deref()),
+            Agent::Opencode => self.opencode.as_ref().and_then(|c| c.model.as_deref()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

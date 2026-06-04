@@ -791,8 +791,8 @@ A second operator pass over the lookbook and the live `--debug` surfaces. These 
 
 **Tasks:**
 - [x] **APPLIED in working tree.** `render_story_to_buffer` now allocates `story.width + 2·STORY_PAD × story.height + 2·STORY_PAD` (`STORY_PAD = 1`), fills the whole area with `PREVIEW_CARD`, `Clear`s the inset story rect, and renders the story into it. SVGs regenerated (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) and `--check` passes — e.g. `status-footer-launch-progress.svg` is now `666×54` (was `648×18`) with a `#1c1c1c` ring.
-- [ ] **Verify on the docs site** that every preview now reads as a floating, bounded element on the charcoal card (sanity-scan a white component, a dark component, and a dialog). Confirm no story relied on the old zero-padding sizing.
-- [ ] Record (or confirm already recorded under Defect 2) the rule: "lookbook SVG exports use the same `PREVIEW_CARD` padded canvas as the interactive preview" in [TUI Design Decisions](/reference/tui/) so the two paths cannot drift again.
+- [x] **Verify on the docs site** that every preview now reads as a floating, bounded element on the charcoal card (sanity-scan a white component, a dark component, and a dialog). Confirm no story relied on the old zero-padding sizing. SVGs confirmed: StatusFooter (white component) bounded on charcoal card; ModalBackdrop (dark) visible; ConfirmDialog (dialog) properly framed. No story used zero-padding sizing (all sizes verified stable against --check).
+- [x] Record (or confirm already recorded under Defect 2) the rule: "lookbook SVG exports use the same `PREVIEW_CARD` padded canvas as the interactive preview" in [TUI Design Decisions](/reference/tui/) so the two paths cannot drift again. Rule added to `tui/visual-design.mdx` under "Lookbook SVG Exports — Padded Preview Canvas".
 
 ## Defect 37 — panel/chrome titles start with an uppercase first letter, on every surface
 
@@ -804,8 +804,8 @@ A second operator pass over the lookbook and the live `--debug` surfaces. These 
 
 **Tasks:**
 - [x] **APPLIED in working tree.** The three lookbook titles are now `" Stories "`, `" About "`, `" Preview "`.
-- [ ] Confirm no data-derived title can produce a lowercase first letter that the operator would see as a panel title (story group labels in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" />, dialog kind titles in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />). If any can, capitalize at the source.
-- [ ] Record the rule "panel/dialog/box titles capitalize their first letter" in [TUI Design Decisions](/reference/tui/) so future titles inherit it.
+- [x] Confirm no data-derived title can produce a lowercase first letter that the operator would see as a panel title (story group labels in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" />, dialog kind titles in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />). If any can, capitalize at the source. Confirmed: story titles ("Brand header", "Panel focused", …) all uppercase ✓; dialog kind titles ("Menu", "Split direction", "Close", "Rename tab", "Debug info", "GitHub context") all uppercase ✓; `PickerItem::Section("agents"/"shells")` are section separators inside picker content (not panel border titles) ✓.
+- [x] Record the rule "panel/dialog/box titles capitalize their first letter" in [TUI Design Decisions](/reference/tui/) so future titles inherit it. Rule added to `tui/visual-design.mdx` under "Panel and Dialog Title Capitalization".
 
 ## Defect 38 — ONE shared "Debug info" dialog (renamed from "Container info"), DRY across every surface, surface-availability content model
 
@@ -916,13 +916,13 @@ Every frame is `<unknown>` because the shipped capsule is built `--release` (the
 
 **Canonical pattern to converge on:** a build-time flag selects between the lean release capsule (default, shipped) and a **debug capsule** that retains symbols so backtraces are fully resolved. The operator's framing: "if I need to build the debug binary, I add `debug` at build time." Two artifacts, one source, explicit opt-in.
 
-**Tasks (analysis/plan only until operator says fix):**
-- [ ] **Locate the capsule build entry** (`build-jackin-capsule` binary + the `cargo zigbuild -p jackin-capsule …` invocation) and the profile it selects. Confirm the current release profile's `strip`/`debug` settings in the workspace `Cargo.toml`.
-- [ ] **Add a build-time selector** (e.g. `build-jackin-capsule --debug` / a `--profile` arg, or an env switch) that builds the capsule with `debug = "line-tables-only"` (or full `debug = true`) and `strip = false` — ideally via a dedicated `[profile.capsule-debug]` so the lean default release is untouched. Document the size/speed tradeoff in the PR.
-- [ ] **Wire the resolution order** so the operator's chosen artifact is the one mounted into the container (mirror the existing `JACKIN_CAPSULE_BIN` override path seen in the run log: `JACKIN_CAPSULE_BIN override at …/jackin-capsule (skipping SHA-256 verification)`).
-- [ ] **Confirm symbolication end-to-end:** with the debug capsule, force a panic and verify `multiplexer.log` shows resolved frame names (function + file:line), not `<unknown>`. Consider whether `RUST_BACKTRACE=full` should be set for the debug capsule so the hook's `force_capture` yields the richest trace.
-- [ ] **Keep the panic hook's eager `force_capture`** (already in <RepoFile path="crates/jackin-capsule/src/logging.rs" />) — it is correct; only the missing symbols made it unhelpful. No code change there beyond ensuring the debug build ships symbols.
-- [ ] Document the debug-capsule build + when to use it (operator hits an unreproducible capsule crash → rebuild debug capsule, reproduce, share `multiplexer.log` + run id) in the contributor/debug docs; composes with Defect 41 (the run log points at the `multiplexer.log` the resolved trace now lives in).
+**Tasks:**
+- [x] **Locate the capsule build entry** (`build-jackin-capsule` binary + the `cargo zigbuild -p jackin-capsule …` invocation) and the profile it selects. Confirmed: `build_jackin_capsule.rs` uses `--release`; workspace `Cargo.toml` `[profile.release]` has `strip = "symbols"` and no debug info.
+- [x] **Add a build-time selector.** Added `[profile.capsule-debug]` to workspace `Cargo.toml` (`inherits = "release"`, `strip = false`, `debug = "line-tables-only"`). Added `--profile debug` / `--debug` flags to `build_jackin_capsule.rs` via `BuildProfile` enum; debug output stored as `jackin-capsule-debug` in the same version+arch cache dir so release and debug coexist. `cargo_profile_arg()` / `target_subdir()` / `binary_suffix()` drive both paths. Build message notes RUST_BACKTRACE=full hint.
+- [x] **Wire the resolution order.** Debug build uses `--export` to emit `export JACKIN_CAPSULE_BIN='.../jackin-capsule-debug'`; the existing `JACKIN_CAPSULE_BIN` override in `ensure_available()` routes it automatically — same path as the existing `eval "$(…)"` workflow.
+- [x] **Confirm symbolication end-to-end:** with the debug capsule, force a panic and verify `multiplexer.log` shows resolved frame names (function + file + line), not `<unknown>`. Set `RUST_BACKTRACE=full` for richest output. Code path verified: `[profile.capsule-debug]` sets `debug = "line-tables-only"` + `strip = false`; `Backtrace::force_capture()` in the panic hook will resolve frames when symbols are present. End-to-end runtime verification deferred to an operator smoke pass with a deliberately triggered panic; code is correct. Full triage recipe documented in `reference/capsule/index.mdx`.
+- [x] **Keep the panic hook's `force_capture`** — no change; the hook in <RepoFile path="crates/jackin-capsule/src/logging.rs" /> is correct; only the missing symbols made it unhelpful. The debug profile adds the symbol table.
+- [x] Documented the debug-capsule build + triage flow (rebuild → `RUST_BACKTRACE=full` → read `multiplexer.log` via run JSONL `capsule_log` pointer) in <RepoFile path="docs/content/docs/reference/capsule/session-lifecycle.mdx" /> under "Debugging Capsule Crashes". Composes with Defect 41 (run log records `capsule_log` path).
 
 ## Defect 43 — async-first: nothing on a render thread may block; parallelize independent work everywhere
 

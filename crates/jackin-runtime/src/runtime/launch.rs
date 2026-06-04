@@ -517,23 +517,7 @@ pub(super) fn capsule_config(
     let mut models = std::collections::BTreeMap::new();
     for agent in manifest.supported_agents() {
         agents.push(agent.slug().to_string());
-        let model = match agent {
-            jackin_core::agent::Agent::Claude => manifest
-                .claude
-                .as_ref()
-                .and_then(|cfg| cfg.model.as_deref()),
-            jackin_core::agent::Agent::Codex => {
-                manifest.codex.as_ref().and_then(|cfg| cfg.model.as_deref())
-            }
-            jackin_core::agent::Agent::Amp => None,
-            jackin_core::agent::Agent::Kimi => {
-                manifest.kimi.as_ref().and_then(|cfg| cfg.model.as_deref())
-            }
-            jackin_core::agent::Agent::Opencode => manifest
-                .opencode
-                .as_ref()
-                .and_then(|cfg| cfg.model.as_deref()),
-        };
+        let model = manifest.agent_model(agent);
         if let Some(model) = model {
             models.insert(agent.slug().to_string(), model.to_string());
         }
@@ -2069,13 +2053,7 @@ fn render_auth_credential_missing(
         }
     }
 
-    let agent_title = match agent {
-        jackin_core::agent::Agent::Claude => "Claude",
-        jackin_core::agent::Agent::Codex => "Codex",
-        jackin_core::agent::Agent::Amp => "Amp",
-        jackin_core::agent::Agent::Kimi => "Kimi",
-        jackin_core::agent::Agent::Opencode => "OpenCode",
-    };
+    let agent_title = agent.runtime().label();
 
     let _ = writeln!(out);
     let _ = writeln!(out, "  Fix one of:");

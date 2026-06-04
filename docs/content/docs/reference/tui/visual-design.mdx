@@ -89,6 +89,32 @@ Every row that begins with `+` is an add/create action and must render through t
 ---
 
 
+## Lookbook SVG Exports — Padded Preview Canvas
+
+**Rule:** lookbook SVG exports use the same `PREVIEW_CARD` padded canvas as the interactive preview. The SVG export path and the interactive preview must render identically — each story floats on a uniform charcoal card, never edge-to-edge against a black background.
+
+Concretely, `render_story_to_buffer` allocates a buffer of `(story.width + 2·STORY_PAD) × (story.height + 2·STORY_PAD)`, fills the whole area with `PREVIEW_CARD` (`Rgb(28, 28, 28)`), `Clear`s the inset story rect, and renders the story into that inset. The resulting SVG has a `#1c1c1c` ring around every component.
+
+Two paths that must always agree:
+- **Interactive preview** (`main.rs` `preview_inner`): fills with `PREVIEW_CARD`, applies `Margin { horizontal: 1, vertical: 1 }`.
+- **SVG export** (`svg.rs` `render_story_to_buffer`): same `PREVIEW_CARD` fill, same `STORY_PAD = 1` padding ring.
+
+If one path is updated (different padding, different background), the other must be updated in the same PR. DRY miss here = every screenshot on the docs site drifts from the interactive browser.
+
+---
+
+## Panel and Dialog Title Capitalization
+
+Every panel border title, dialog title, and box border title must start with an uppercase letter. The first character of the title string (after `Panel::title()` normalizes spacing) must be uppercase.
+
+**Rule:** pass titles with an uppercase first character at the call site. `Panel::title()` does not normalize letter case — it only normalizes spacing. A title `"workspace"` produces `┌ workspace ┐` (wrong); `"Workspace"` produces `┌ Workspace ┐` (correct).
+
+Data-derived titles (workspace names, role names, story group labels) must be capitalized at their **source**, not with a post-hoc `to_uppercase()` call. If a data source can produce a lowercase first character that ends up as a panel border title, capitalize it at the point where the string is constructed.
+
+Examples of correctly capitalized titles: `"General"`, `"Environments"`, `"Container info"`, `"Debug info"`, `"Stories"`, `"About"`, `"Preview"`. A lowercase first letter in any title visible to the operator is a violation of this rule.
+
+---
+
 ## Capsule ANSI color encoders: static allowlist vs dynamic runtime
 
 The capsule's ANSI renderer uses two flavors of the color-encoding helpers in <RepoFile path="crates/jackin-tui/src/lib.rs" />:

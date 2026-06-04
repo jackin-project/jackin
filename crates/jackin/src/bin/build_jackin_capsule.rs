@@ -1,10 +1,14 @@
 //! Builds `jackin-capsule` for Linux via cargo-zigbuild and caches the result.
 //!
 //! Usage:
-//!   cargo run --bin build-jackin-capsule [-- [--arch arm64|amd64] [--export]]
+//!   cargo run --bin build-jackin-capsule [-- [--arch arm64|amd64] [--profile debug] [--export]]
 //!
 //! Flags:
 //!   --arch arm64|amd64   Target architecture (default: matches current host container arch)
+//!   --profile debug      Build with the `capsule-debug` profile: symbols retained, line tables
+//!                        included. Backtraces resolve to function + file + line. Output binary
+//!                        is named `jackin-capsule-debug`; the lean release binary is unchanged.
+//!                        Also accepted as `--debug` for convenience.
 //!   --export             Print `export JACKIN_CAPSULE_BIN=<path>` suitable for eval
 //!
 //! Requires: zig and cargo-zigbuild installed (`mise install zig cargo:cargo-zigbuild`)
@@ -14,13 +18,24 @@
 //!
 //!   eval "$(cargo run --bin build-jackin-capsule -- --export)"
 //!   cargo run --bin jackin -- load the-architect . --debug
+//!
+//! Debug build for triage (backtraces resolve to function names):
+//!
+//!   eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
+//!   cargo run --bin jackin -- load the-architect . --debug
+//!
+//! When using the debug capsule, set `RUST_BACKTRACE=full` for the richest traces:
+//!
+//! ```text
+//! RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
+//! ```
 
 use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{Context, Result};
 use jackin::binary_artifact::{chmod_executable, container_arch};
-use jackin::capsule_binary::{REQUIRED_VERSION, cached_binary_path};
+use jackin::capsule_binary::REQUIRED_VERSION;
 use jackin::paths::JackinPaths;
 
 // Compile-time crate manifest dir. Now that the binary lives in crates/jackin/,
@@ -28,11 +43,15 @@ use jackin::paths::JackinPaths;
 const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 fn main() -> Result<()> {
-    let Args { arch, export } = parse_args()?;
+    let Args {
+        arch,
+        export,
+        profile,
+    } = parse_args()?;
     let arch = arch.unwrap_or_else(|| container_arch().to_string());
 
     let paths = JackinPaths::detect()?;
-    let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, &arch);
+    let cached = binary_cache_path(&paths.cache_dir, REQUIRED_VERSION, &arch, profile);
 
     if let Some(parent) = cached.parent() {
         std::fs::create_dir_all(parent)
@@ -40,7 +59,7 @@ fn main() -> Result<()> {
     }
 
     let workspace = workspace_root();
-    build_via_zigbuild(&workspace, &arch, &cached)?;
+    build_via_zigbuild(&workspace, &arch, profile, &cached)?;
 
     if export {
         // POSIX single-quote wrap so `eval "$(...)"` survives paths with
@@ -49,9 +68,14 @@ fn main() -> Result<()> {
         let escaped = cached.display().to_string().replace('\'', "'\\''");
         println!("export JACKIN_CAPSULE_BIN='{escaped}'");
     } else {
+        let profile_note = if profile == BuildProfile::Debug {
+            "\n[build] note: debug binary — set RUST_BACKTRACE=full for richest traces"
+        } else {
+            ""
+        };
         eprintln!(
             "[build] cached at: {}\n\
-             [build] to use:    export JACKIN_CAPSULE_BIN={}",
+             [build] to use:    export JACKIN_CAPSULE_BIN={}{profile_note}",
             cached.display(),
             cached.display()
         );
@@ -59,9 +83,64 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Which Cargo profile to use for the capsule build.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BuildProfile {
+    /// `--release` + `strip = "symbols"` — the lean default for shipping.
+    Release,
+    /// `[profile.capsule-debug]` — retains symbols + line tables; ~10× larger.
+    /// Backtraces from `Backtrace::force_capture()` resolve to function + file + line number.
+    Debug,
+}
+
+impl BuildProfile {
+    const fn cargo_profile_arg(self) -> &'static str {
+        match self {
+            Self::Release => "release",
+            // Named profile in workspace Cargo.toml.
+            Self::Debug => "capsule-debug",
+        }
+    }
+
+    /// Subdirectory the Cargo build puts the binary in (matches profile name).
+    const fn target_subdir(self) -> &'static str {
+        match self {
+            Self::Release => "release",
+            Self::Debug => "capsule-debug",
+        }
+    }
+
+    /// Filename suffix so debug and release can coexist in the same cache dir.
+    const fn binary_suffix(self) -> &'static str {
+        match self {
+            Self::Release => "",
+            Self::Debug => "-debug",
+        }
+    }
+}
+
 struct Args {
     arch: Option<String>,
     export: bool,
+    profile: BuildProfile,
+}
+
+/// Return the cache path for the built binary.
+///
+/// Release:  `<cache>/jackin-capsule/<version>/linux-<arch>/jackin-capsule`
+/// Debug:    `<cache>/jackin-capsule/<version>/linux-<arch>/jackin-capsule-debug`
+fn binary_cache_path(
+    cache_dir: &std::path::Path,
+    version: &str,
+    arch: &str,
+    profile: BuildProfile,
+) -> PathBuf {
+    let safe_version = version.replace('+', "_");
+    cache_dir
+        .join("jackin-capsule")
+        .join(safe_version)
+        .join(format!("linux-{arch}"))
+        .join(format!("jackin-capsule{}", profile.binary_suffix()))
 }
 
 /// Walk up from the crate manifest dir to find the Cargo workspace root.
@@ -89,6 +168,7 @@ fn workspace_root() -> PathBuf {
 fn parse_args() -> Result<Args> {
     let mut arch = None;
     let mut export = false;
+    let mut profile = BuildProfile::Release;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -97,17 +177,45 @@ fn parse_args() -> Result<Args> {
             s if s.starts_with("--arch=") => {
                 arch = Some(s.trim_start_matches("--arch=").to_string());
             }
+            // --debug is a convenience alias for --profile debug.
+            "--debug" => profile = BuildProfile::Debug,
+            "--profile" => {
+                let name = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("--profile requires a value (release|debug)"))?;
+                profile = match name.as_str() {
+                    "release" => BuildProfile::Release,
+                    "debug" => BuildProfile::Debug,
+                    other => anyhow::bail!(
+                        "unknown profile {other:?}; recognized values: release, debug"
+                    ),
+                };
+            }
+            s if s.starts_with("--profile=") => {
+                let name = s.trim_start_matches("--profile=");
+                profile = match name {
+                    "release" => BuildProfile::Release,
+                    "debug" => BuildProfile::Debug,
+                    other => anyhow::bail!(
+                        "unknown profile {other:?}; recognized values: release, debug"
+                    ),
+                };
+            }
             // Reject unknown tokens loudly. A silent catch-all here
             // lets a typo like `--arc amd64` fall back to the host arch
             // with no warning; the operator scp's the wrong-arch binary
             // and only finds out later when `docker run` greets them
             // with `exec format error`.
             other => anyhow::bail!(
-                "unknown argument {other:?}; recognized flags: --arch <arm64|amd64>, --export"
+                "unknown argument {other:?}; recognized flags: --arch <arm64|amd64>, --profile <release|debug>, --debug, --export"
             ),
         }
     }
-    Ok(Args { arch, export })
+    Ok(Args {
+        arch,
+        export,
+        profile,
+    })
 }
 
 fn zigbuild_target(arch: &str) -> &'static str {
@@ -168,20 +276,27 @@ fn ensure_rustup_target(triple: &str) -> Result<()> {
     Ok(())
 }
 
-fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
+fn build_via_zigbuild(
+    workspace: &Path,
+    arch: &str,
+    profile: BuildProfile,
+    dest: &Path,
+) -> Result<()> {
     check_zigbuild_installed()?;
     ensure_rustup_target(target_triple(arch))?;
 
     let target = zigbuild_target(arch);
+    let cargo_profile = profile.cargo_profile_arg();
     eprintln!(
-        "[build] cargo zigbuild -p jackin-capsule --target {target} ({REQUIRED_VERSION})\n\
+        "[build] cargo zigbuild --profile {cargo_profile} -p jackin-capsule --target {target} ({REQUIRED_VERSION})\n\
          [build] first build ~2-3 min; subsequent builds incremental via cargo cache"
     );
 
     let status = process::Command::new("cargo")
         .args([
             "zigbuild",
-            "--release",
+            "--profile",
+            cargo_profile,
             "-p",
             "jackin-capsule",
             "--target",
@@ -199,7 +314,7 @@ fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
     let built = workspace
         .join("target")
         .join(target_triple(arch))
-        .join("release")
+        .join(profile.target_subdir())
         .join("jackin-capsule");
 
     anyhow::ensure!(

@@ -126,13 +126,9 @@ pub fn render_derived_dockerfile(
     // is passed. Stable ordering keeps diffs reviewable.
     let mut install_blocks = String::new();
     let mut sorted: Vec<Agent> = supported.to_vec();
-    sorted.sort_by_key(|h| match h {
-        Agent::Claude => 0,
-        Agent::Codex => 1,
-        Agent::Amp => 2,
-        Agent::Kimi => 3,
-        Agent::Opencode => 4,
-    });
+    // Stable ordering (Agent derives Ord in declaration order: Claude, Codex, Amp, Kimi, Opencode)
+    // so cache-bust diffs are reviewable. No explicit sort_by_key needed.
+    sorted.sort();
     for h in sorted {
         let source = agent_binaries
             .iter()
@@ -141,7 +137,8 @@ pub fn render_derived_dockerfile(
                 || format!(".jackin-runtime/agent-binaries/{}", h.slug()),
                 |(_, path)| path.clone(),
             );
-        install_blocks.push_str(&h.install_block(&source));
+        // Phase 2: route through the AgentRuntime adapter instead of enum method.
+        install_blocks.push_str(&h.runtime().install_block(&source));
         if h == Agent::Claude {
             install_blocks.push_str(&render_claude_plugin_install_block(claude_config));
         }
