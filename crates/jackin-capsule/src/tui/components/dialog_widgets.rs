@@ -61,7 +61,7 @@ pub(crate) enum DialogRatatuiSnapshot {
         value: String,
         cursor: usize,
     },
-    /// Read-only label/value info panel (ContainerInfo, GitHubContext).
+    /// Read-only label/value info panel (GitHubContext).
     InfoRows {
         dialog_title: String,
         rows: Vec<(String, String)>,
@@ -70,6 +70,10 @@ pub(crate) enum DialogRatatuiSnapshot {
         /// Whether the copy was just triggered (shows "✓ Copied!").
         copied: bool,
     },
+    /// The "Debug info" dialog, rendered through the shared jackin-tui
+    /// `ContainerInfoState` so its rows, copy affordances, link styling, and
+    /// hover behaviour are identical to the host console and launch cockpit.
+    DebugInfo(jackin_tui::components::ContainerInfoState),
 }
 
 impl Dialog {
@@ -230,32 +234,10 @@ impl Dialog {
                 cursor: input.cursor(),
             },
 
-            Dialog::ContainerInfo {
-                container_name,
-                role,
-                focused_agent,
-                workdir,
-                diagnostics: _,
-                copied,
-            } => {
-                let agent_label = focused_agent
-                    .as_deref()
-                    .and_then(jackin_tui::agent_display_name)
-                    .or(focused_agent.as_deref())
-                    .unwrap_or("(shell)")
-                    .to_string();
-                DialogRatatuiSnapshot::InfoRows {
-                    dialog_title: "Debug info".into(),
-                    rows: vec![
-                        ("Role".into(), role.clone()),
-                        ("Agent".into(), agent_label),
-                        ("Container".into(), container_name.clone()),
-                        ("Working dir".into(), workdir.clone()),
-                    ],
-                    copy_row: Some(2),
-                    copied: *copied,
-                }
-            }
+            Dialog::ContainerInfo { .. } => DialogRatatuiSnapshot::DebugInfo(
+                self.container_info_state()
+                    .expect("container_info_state is Some for ContainerInfo"),
+            ),
 
             Dialog::GitHubContext { copied } => {
                 let branch = pr_branch
@@ -355,6 +337,9 @@ pub(crate) fn render_dialog_ratatui(
             copied,
         } => {
             render_info_rows_dialog(frame, area, dialog_title, rows, *copy_row, *copied);
+        }
+        DialogRatatuiSnapshot::DebugInfo(state) => {
+            jackin_tui::components::render_container_info(frame, area, state);
         }
     }
 }

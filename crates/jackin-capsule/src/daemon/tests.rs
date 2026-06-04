@@ -2270,7 +2270,8 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
 
     mux.update_pointer_shape_for_mouse(
         row.saturating_add(1),
-        col.saturating_add(1),
+        // Hover the value column (the cyan link), past the widest label.
+        col.saturating_add(22),
         SGR_NO_BUTTON_MOTION,
     );
     let shape = rx.try_recv().expect("dialog pointer-shape update");
@@ -2316,7 +2317,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
     }
     assert!(!String::from_utf8_lossy(&frame).contains("Copied!"));
     let Some(Dialog::ContainerInfo {
-        copied: false,
+        copied_row: None,
         workdir,
         ..
     }) = mux.dialog_top()
@@ -2396,7 +2397,8 @@ fn container_info_copy_feedback_expires() {
         focused_agent: Some("claude".to_string()),
         workdir: "/workspace".to_string(),
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
-        copied: true,
+        copied_row: Some(0),
+        hovered_row: None,
     });
     let now = Instant::now();
     mux.dialog_copy_feedback_deadline = Some(now);
@@ -2404,7 +2406,10 @@ fn container_info_copy_feedback_expires() {
     assert!(mux.expire_dialog_copy_feedback(now));
     assert!(matches!(
         mux.dialog_top(),
-        Some(Dialog::ContainerInfo { copied: false, .. })
+        Some(Dialog::ContainerInfo {
+            copied_row: None,
+            ..
+        })
     ));
 }
 
@@ -2418,7 +2423,8 @@ fn container_info_id_click_copies_and_renders_feedback() {
         focused_agent: Some("claude".to_string()),
         workdir: "/workspace".to_string(),
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
-        copied: false,
+        copied_row: None,
+        hovered_row: None,
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
@@ -2430,7 +2436,8 @@ fn container_info_id_click_copies_and_renders_feedback() {
     let frame = mux
         .handle_input(InputEvent::MousePress {
             row: box_row + 1,
-            col: box_col + 1,
+            // Click the value column (the cyan link), past the widest label.
+            col: box_col + 22,
             button: 0,
         })
         .expect("container id click should redraw copy feedback");
@@ -2445,7 +2452,10 @@ fn container_info_id_click_copies_and_renders_feedback() {
     assert!(String::from_utf8_lossy(&frame).contains("Copied!"));
     assert!(matches!(
         mux.dialog_top(),
-        Some(Dialog::ContainerInfo { copied: true, .. })
+        Some(Dialog::ContainerInfo {
+            copied_row: Some(0),
+            ..
+        })
     ));
 }
 
@@ -2550,7 +2560,7 @@ fn apply_action_open_container_info_pushes_dialog() {
         mux.dialog_top(),
         Some(Dialog::ContainerInfo {
             container_name,
-            copied: false,
+            copied_row: None,
             ..
         }) if container_name == "jk-test-container"
     ));
@@ -2640,7 +2650,7 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         mux.dialog_top(),
         Some(Dialog::ContainerInfo {
             container_name,
-            copied: false,
+            copied_row: None,
             ..
         }) if container_name == "jk-test-container"
     ));

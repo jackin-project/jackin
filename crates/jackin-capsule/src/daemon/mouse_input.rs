@@ -25,12 +25,19 @@ impl Multiplexer {
 
     pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
         let next = self.hover_target_at(row, col);
-        if self.hover_target == next {
+        // The shared Debug info dialog brightens the hovered copyable row, so a
+        // move between two copyable rows must redraw even though hover_target
+        // stays DialogCopyTarget. Track the per-row hover separately.
+        let (term_rows, term_cols) = (self.term_rows, self.term_cols);
+        let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
+            dialog.set_container_info_hover(row + 1, col + 1, term_rows, term_cols)
+        });
+        if self.hover_target == next && !row_hover_changed {
             return None;
         }
         self.hover_target = next;
         match hover_frame_plan(self.dialog_open()) {
-            HoverFramePlan::DialogOverlay(reason) => Some(self.compose_full_frame(reason)),
+            HoverFramePlan::DialogOverlay(reason) => Some(self.compose_full_redraw(reason)),
             HoverFramePlan::ChromeHover => Some(self.compose_chrome_hover_frame()),
         }
     }

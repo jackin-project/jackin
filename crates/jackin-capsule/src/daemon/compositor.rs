@@ -241,6 +241,23 @@ impl Multiplexer {
         match result {
             Ok(_) => {
                 let mut output = self.ratatui_terminal.backend_mut().take_output();
+                // OSC 8 hyperlinks can't ride the Ratatui cell buffer, so the
+                // shared Debug info dialog's clickable rows (the diagnostics
+                // log path) are re-emitted as a raw overlay over the cells the
+                // frame already drew — same pattern the host uses.
+                if let Some((DialogRatatuiSnapshot::DebugInfo(state), (row, col, height, width))) =
+                    dialog_snapshot.as_ref()
+                {
+                    let area = ratatui::layout::Rect {
+                        x: *col,
+                        y: *row,
+                        width: *width,
+                        height: *height,
+                    };
+                    output.extend_from_slice(
+                        &jackin_tui::components::container_info_hyperlink_overlay(area, state),
+                    );
+                }
                 // Bottom chrome (branch/PR bar, hint row, debug chip) is raw
                 // ANSI appended after the Ratatui diff for both the dialog and
                 // non-dialog cases. Ratatui owns status + panes; the raw append

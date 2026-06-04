@@ -191,7 +191,11 @@ pub enum Dialog {
         focused_agent: Option<String>,
         workdir: String,
         diagnostics: ContainerInfoDiagnostics,
-        copied: bool,
+        /// Index of the row whose value was just copied (shows "Copied!"),
+        /// or `None`. Indexes into the shared `ContainerInfoState` rows.
+        copied_row: Option<usize>,
+        /// Index of the copyable row under the pointer (link hover colour).
+        hovered_row: Option<usize>,
     },
     /// Read-only modal opened from the bottom branch/PR context.
     /// Branch / PR / loading state come from `GithubContextView` at
@@ -371,8 +375,68 @@ impl Dialog {
             focused_agent,
             workdir,
             diagnostics,
-            copied: false,
+            copied_row: None,
+            hovered_row: None,
         }
+    }
+
+    /// Build the shared [`ContainerInfoState`](jackin_tui::components::ContainerInfoState)
+    /// for the `ContainerInfo` ("Debug info") dialog from the accumulating
+    /// [`DebugInfo`](jackin_tui::components::DebugInfo) model — the single
+    /// source of rows/order/labels/copy-affordances shared with the host
+    /// console and launch cockpit. Returns `None` for other dialog variants.
+    ///
+    /// Run id / diagnostics-log rows are included only under `--debug`, matching
+    /// the host. Versions are the exact `jackin --version` / `jackin-capsule
+    /// --version` strings.
+    pub(crate) fn container_info_state(
+        &self,
+    ) -> Option<jackin_tui::components::ContainerInfoState> {
+        let Self::ContainerInfo {
+            container_name,
+            role,
+            focused_agent,
+            workdir,
+            diagnostics,
+            copied_row,
+            hovered_row,
+        } = self
+        else {
+            return None;
+        };
+        let agent_label = focused_agent
+            .as_deref()
+            .and_then(jackin_tui::agent_display_name)
+            .or(focused_agent.as_deref())
+            .unwrap_or("(shell)")
+            .to_string();
+        let debug = crate::logging::debug_enabled() && !diagnostics.run_id.is_empty();
+        // Pass the absolute path so the `file://` href the model builds is
+        // valid; `run_log_href` already carries it (`file://<abs>`).
+        let log_path = debug.then(|| {
+            diagnostics
+                .run_log_href
+                .as_deref()
+                .and_then(|href| href.strip_prefix("file://"))
+                .map(str::to_string)
+                .unwrap_or_else(|| diagnostics.run_log_display.clone())
+        });
+        let mut state = jackin_tui::components::DebugInfo {
+            jackin_version: Some(diagnostics.host_version.clone()),
+            capsule_version: Some(env!("JACKIN_CAPSULE_VERSION").to_string()),
+            container_id: Some(container_name.clone()),
+            role: (!role.is_empty()).then(|| role.clone()),
+            agent: Some(agent_label),
+            target: (!workdir.is_empty()).then(|| workdir.clone()),
+            run_id: debug.then(|| diagnostics.run_id.clone()),
+            diagnostics_log_path: log_path,
+        }
+        .into_state();
+        if let Some(row) = *copied_row {
+            state.mark_copied(row);
+        }
+        state.set_hovered_row(*hovered_row);
+        Some(state)
     }
 
     pub fn new_github_context() -> Self {
@@ -437,13 +501,28 @@ impl Dialog {
                 return DialogAction::Dismiss;
             }
             return match key {
-                b"\r" | b"\n" => match self.copy_target(github) {
-                    Some(target) => {
-                        *target.copied = true;
-                        DialogAction::CopyToClipboard(target.payload)
+                b"\r" | b"\n" => {
+                    // ContainerInfo: Enter copies the container id (row 0),
+                    // matching the "↵ copy container ID" footer hint. Mouse
+                    // clicks copy whichever row was clicked (handle_click).
+                    if let Self::ContainerInfo {
+                        container_name,
+                        copied_row,
+                        ..
+                    } = self
+                    {
+                        let payload = container_name.clone();
+                        *copied_row = Some(0);
+                        return DialogAction::CopyToClipboard(payload);
                     }
-                    None => DialogAction::Redraw,
-                },
+                    match self.copy_target(github) {
+                        Some(target) => {
+                            *target.copied = true;
+                            DialogAction::CopyToClipboard(target.payload)
+                        }
+                        None => DialogAction::Redraw,
+                    }
+                }
                 _ => DialogAction::Redraw,
             };
         }
@@ -721,10 +800,30 @@ impl Dialog {
         // ContainerInfo: only the Container ID row is the copy
         // target. Other inside-box clicks are informational and must
         // not mutate the operator's clipboard.
-        if matches!(
-            self,
-            Self::ContainerInfo { .. } | Self::GitHubContext { .. }
-        ) {
+        // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
+        // log) copies via the shared hit-test. The clicked row's value goes to
+        // the clipboard and that row shows the "Copied!" badge.
+        if matches!(self, Self::ContainerInfo { .. }) {
+            let area = ratatui::layout::Rect {
+                x: box_col,
+                y: box_row,
+                width,
+                height,
+            };
+            let hit = self.container_info_state().and_then(|state| {
+                jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+            });
+            return match hit {
+                Some((hit_row, payload)) => {
+                    if let Self::ContainerInfo { copied_row, .. } = self {
+                        *copied_row = Some(hit_row);
+                    }
+                    DialogAction::CopyToClipboard(payload)
+                }
+                None => DialogAction::Consume,
+            };
+        }
+        if matches!(self, Self::GitHubContext { .. }) {
             return match self.copy_target(github) {
                 Some(target)
                     if info_box_value_row_clickable(
@@ -920,14 +1019,18 @@ impl Dialog {
         }
         match self {
             Self::RenameTab { .. } => false,
-            Self::ContainerInfo { .. } => info_box_value_row_clickable(
-                row,
-                col,
-                box_row,
-                box_col,
-                width,
-                CONTAINER_INFO_ID_ROW,
-            ),
+            Self::ContainerInfo { .. } => {
+                let area = ratatui::layout::Rect {
+                    x: box_col,
+                    y: box_row,
+                    width,
+                    height,
+                };
+                self.container_info_state().is_some_and(|state| {
+                    jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+                        .is_some()
+                })
+            }
             Self::GitHubContext { .. } => {
                 github.and_then(|view| view.status.loaded()).is_some()
                     && info_box_value_row_clickable(
@@ -1020,15 +1123,9 @@ impl Dialog {
                 items + 4
             }
             Self::RenameTab { .. } => 5,
-            Self::ContainerInfo { .. } => {
-                if crate::logging::debug_enabled() {
-                    // 4 base rows + jackin + jackin-capsule + Run ID + Run log + box chrome (4)
-                    12
-                } else {
-                    // 4 base rows + jackin + jackin-capsule + box chrome (4)
-                    10
-                }
-            }
+            Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
+                jackin_tui::components::container_info_required_height(&state)
+            }),
             Self::GitHubContext { .. } => 9,
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
@@ -1123,8 +1220,12 @@ impl Dialog {
                 focused_agent,
                 workdir,
                 diagnostics,
-                copied,
+                copied_row,
+                ..
             } => {
+                // Raw-ANSI fallback, only reached if the Ratatui draw fails.
+                // The primary path renders the shared component; this degraded
+                // path keeps the single Container-ID copy badge.
                 render_container_info(
                     buf,
                     box_row,
@@ -1136,7 +1237,7 @@ impl Dialog {
                     focused_agent.as_deref(),
                     workdir,
                     diagnostics,
-                    *copied,
+                    *copied_row == Some(0),
                     copy_target_hovered,
                 );
             }
@@ -1215,11 +1316,47 @@ impl Dialog {
         }
     }
 
+    /// Update the hovered copyable row of the `ContainerInfo` dialog from a
+    /// pointer hit at `(row, col)` (1-based). Returns true when the hovered
+    /// row changed (the caller redraws so the link hover colour updates).
+    /// No-op for other dialog variants.
+    pub fn set_container_info_hover(
+        &mut self,
+        row: u16,
+        col: u16,
+        term_rows: u16,
+        term_cols: u16,
+    ) -> bool {
+        let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let area = ratatui::layout::Rect {
+            x: box_col,
+            y: box_row,
+            width,
+            height,
+        };
+        let hit = self.container_info_state().and_then(|state| {
+            jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+                .map(|(idx, _)| idx)
+        });
+        if let Self::ContainerInfo { hovered_row, .. } = self
+            && *hovered_row != hit
+        {
+            *hovered_row = hit;
+            return true;
+        }
+        false
+    }
+
     /// Clear transient copy feedback after the daemon-side timer
     /// expires. Returns true only when the visible dialog changed.
     pub fn clear_copy_feedback(&mut self) -> bool {
         match self {
-            Self::ContainerInfo { copied, .. } | Self::GitHubContext { copied, .. } => {
+            Self::ContainerInfo { copied_row, .. } => {
+                let was = copied_row.is_some();
+                *copied_row = None;
+                was
+            }
+            Self::GitHubContext { copied, .. } => {
                 let was = *copied;
                 *copied = false;
                 was
@@ -1231,7 +1368,10 @@ impl Dialog {
     pub fn has_copy_feedback(&self) -> bool {
         matches!(
             self,
-            Self::ContainerInfo { copied: true, .. } | Self::GitHubContext { copied: true, .. }
+            Self::ContainerInfo {
+                copied_row: Some(_),
+                ..
+            } | Self::GitHubContext { copied: true, .. }
         )
     }
 
@@ -1247,15 +1387,9 @@ impl Dialog {
         github: Option<&GithubContextView<'_>>,
     ) -> Option<CopyTarget<'a>> {
         match self {
-            Self::ContainerInfo {
-                container_name,
-                copied,
-                ..
-            } => Some(CopyTarget {
-                payload: container_name.clone(),
-                copied,
-                row_offset: CONTAINER_INFO_ID_ROW,
-            }),
+            // ContainerInfo copy is handled directly via the shared hit-test
+            // (handle_click / handle_key) so it can target any copyable row,
+            // not a single fixed offset.
             Self::GitHubContext { copied } => {
                 let url = github.and_then(|view| view.status.loaded())?.url.clone();
                 Some(CopyTarget {
@@ -1292,7 +1426,6 @@ fn info_box_value_row_clickable(
     row == box_row.saturating_add(row_offset) && col >= start && col < end
 }
 
-const CONTAINER_INFO_ID_ROW: u16 = 2;
 const GITHUB_CONTEXT_URL_ROW: u16 = 5;
 
 /// Edit a rename-tab input buffer in response to a raw key chunk.

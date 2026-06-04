@@ -139,8 +139,11 @@ fn click_outside_dialog_dismisses() {
 fn clickable_at_reports_container_info_copy_target() {
     let d = container_info_fixture();
     let (row, col, _, _) = d.box_rect(40, 100);
-    assert!(d.clickable_at(row + 2, col + 2, 40, 100, None));
-    assert!(!d.clickable_at(row + 3, col + 2, 40, 100, None));
+    // Click the value column (the cyan link), not the label: the shared
+    // component's hit-zone is the value text. Value starts past the widest
+    // label ("jackin-capsule").
+    assert!(d.clickable_at(row + 2, col + 22, 40, 100, None));
+    assert!(!d.clickable_at(row + 3, col + 22, 40, 100, None));
     assert!(!d.clickable_at(0, 0, 40, 100, None));
 }
 
@@ -424,7 +427,8 @@ fn container_info_fixture() -> Dialog {
         focused_agent: Some("claude".to_string()),
         workdir: "/workspace/jackin".to_string(),
         diagnostics: ContainerInfoDiagnostics::default(),
-        copied: false,
+        copied_row: None,
+        hovered_row: None,
     }
 }
 
@@ -442,12 +446,13 @@ fn pull_request_fixture() -> PullRequestInfo {
 fn container_info_enter_flips_copied_flag_for_render_feedback() {
     let mut d = container_info_fixture();
     let _ = d.handle_key(b"\r", None);
-    let Dialog::ContainerInfo { copied, .. } = d else {
+    let Dialog::ContainerInfo { copied_row, .. } = d else {
         unreachable!()
     };
-    assert!(
-        copied,
-        "Enter must flip `copied` so the next render shows the Copied! indicator"
+    assert_eq!(
+        copied_row,
+        Some(0),
+        "Enter must mark the container-id row copied so the next render shows the Copied! indicator"
     );
 }
 
@@ -479,16 +484,17 @@ fn container_info_enter_copies_container_name() {
 fn container_info_click_on_id_row_copies_container_name() {
     let mut d = container_info_fixture();
     let (row, col, _, _) = d.box_rect(40, 100);
-    match d.handle_click(row + 2, col + 2, 40, 100, None) {
+    // Click the value (the cyan link), not the label column.
+    match d.handle_click(row + 2, col + 22, 40, 100, None) {
         DialogAction::CopyToClipboard(payload) => {
             assert_eq!(payload, "jk-abc123-thearchitect");
         }
         other => panic!("Container ID row click must request clipboard copy, got {other:?}"),
     }
-    let Dialog::ContainerInfo { copied, .. } = d else {
+    let Dialog::ContainerInfo { copied_row, .. } = d else {
         unreachable!()
     };
-    assert!(copied, "ID row click must show copy feedback");
+    assert_eq!(copied_row, Some(0), "ID row click must show copy feedback");
 }
 
 #[test]
@@ -499,10 +505,13 @@ fn container_info_click_on_other_rows_does_not_copy() {
         d.handle_click(row + 3, col + 2, 40, 100, None),
         DialogAction::Consume
     );
-    let Dialog::ContainerInfo { copied, .. } = d else {
+    let Dialog::ContainerInfo { copied_row, .. } = d else {
         unreachable!()
     };
-    assert!(!copied, "non-ID rows must not show copy feedback");
+    assert!(
+        copied_row.is_none(),
+        "non-copyable rows must not show copy feedback"
+    );
 }
 
 #[test]
@@ -513,13 +522,14 @@ fn container_info_clear_copy_feedback_hides_badge() {
         focused_agent: Some("claude".to_string()),
         workdir: "/workspace/jackin".to_string(),
         diagnostics: ContainerInfoDiagnostics::default(),
-        copied: true,
+        copied_row: Some(0),
+        hovered_row: None,
     };
     assert!(d.clear_copy_feedback());
-    let Dialog::ContainerInfo { copied, .. } = d else {
+    let Dialog::ContainerInfo { copied_row, .. } = d else {
         unreachable!()
     };
-    assert!(!copied);
+    assert!(copied_row.is_none());
 }
 
 #[test]
@@ -530,7 +540,8 @@ fn container_info_copied_badge_survives_long_container_name() {
         focused_agent: Some("claude".to_string()),
         workdir: "/workspace/jackin".to_string(),
         diagnostics: ContainerInfoDiagnostics::default(),
-        copied: true,
+        copied_row: Some(0),
+        hovered_row: None,
     };
     let mut buf = Vec::new();
     d.render(&mut buf, 40, 100);
