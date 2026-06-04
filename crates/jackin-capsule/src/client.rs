@@ -342,7 +342,8 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     // Human-readable table. Annotate the caller's own row with "← you".
     let my_codename = std::env::var("JACKIN_AGENT_CODENAME").unwrap_or_default();
 
-    println!("jackin' agent registry");
+    print!("{}", jackin_tui::ansi::BRAND_BANNER);
+    println!("agent registry");
     if !my_codename.is_empty() {
         let my_record = records.iter().find(|r| r.codename == my_codename);
         if let Some(r) = my_record {

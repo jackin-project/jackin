@@ -140,7 +140,8 @@ async fn run_level0(
         workspaces.into_iter().collect();
     sorted_ws.sort_by(|a, b| a.0.cmp(&b.0));
 
-    println!("jackin' fleet status\n");
+    print!("{}", jackin_tui::ansi::BRAND_BANNER);
+    println!("fleet status\n");
 
     // Check container states in parallel using tokio::join_all for all instances.
     let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new(); // (name, total, running, stopped)

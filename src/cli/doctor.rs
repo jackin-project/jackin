@@ -32,7 +32,8 @@ pub async fn run(args: &DoctorArgs, paths: &JackinPaths) -> anyhow::Result<()> {
         return run_json(checks, paths).await;
     }
 
-    println!("jackin' doctor\n");
+    print!("{}", jackin_tui::ansi::BRAND_BANNER);
+    println!("doctor\n");
 
     let mut any_fail = false;
     for &check in checks {
