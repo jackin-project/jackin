@@ -9,6 +9,7 @@ pub mod error_dialog;
 pub mod filter_input;
 pub mod focus_owner;
 pub mod hint_bar;
+pub mod hover_tracker;
 pub mod modal_backdrop;
 pub mod panel;
 pub mod save_discard_dialog;
@@ -39,6 +40,7 @@ pub use focus_owner::FocusOwner;
 pub use hint_bar::{
     HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
 };
+pub use hover_tracker::HoverTracker;
 pub use modal_backdrop::ModalBackdrop;
 pub use panel::{
     FocusPalette, Panel, PanelFocus, modal_block, modal_block_inactive, panel_body_area,
