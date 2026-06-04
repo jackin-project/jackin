@@ -257,9 +257,17 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
+    /// Resolved Anthropic API key (`ANTHROPIC_API_KEY`) from the operator env.
+    /// Drives Anthropic as a selectable provider for non-Claude agents (e.g.
+    /// OpenCode, where the Claude subscription does not extend).
+    anthropic_api_key: Option<String>,
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
+    /// Resolved MiniMax API key (`MINIMAX_API_KEY`) from the operator env.
+    minimax_key: Option<String>,
+    /// Resolved Kimi Code API key (`KIMI_CODE_API_KEY`) from the operator env.
+    kimi_key: Option<String>,
     /// Cached at construction for the hot polling path. The only
     /// mutation after that is `gh_available` flipping false → true when
     /// a background PR lookup succeeds, so a startup PATH /
@@ -354,7 +362,16 @@ impl Multiplexer {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = available_content_rows(rows);
         let agents = launch_config.supported_agents();
+        let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
         let zai_key = std::env::var("ZAI_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let minimax_key = std::env::var("MINIMAX_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let kimi_key = std::env::var("KIMI_CODE_API_KEY")
             .ok()
             .filter(|value| !value.is_empty());
 
@@ -422,7 +439,10 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
+            anthropic_api_key,
             zai_key,
+            minimax_key,
+            kimi_key,
             ratatui_terminal: ratatui::Terminal::new(
                 crate::tui::socket_backend::SocketBackend::new(cols, rows),
             )

@@ -939,12 +939,17 @@ pub(crate) fn resolve_provider_launch_workspace(
     crate::console::preview::resolve_selected_workspace(config, cwd, &choice, selector).map(Some)
 }
 
-fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
+fn operator_key_present(
+    config: &AppConfig,
+    workspace_name: &str,
+    role_selector: &str,
+    env_var: &str,
+) -> bool {
     crate::operator_env::lookup_operator_env_raw(
         config,
         Some(role_selector),
         Some(workspace_name),
-        "ZAI_API_KEY",
+        env_var,
     )
     .is_some()
 }
@@ -955,9 +960,13 @@ pub(in crate::console) fn providers_for_launch(
     role_selector: &str,
     agent: crate::agent::Agent,
 ) -> Vec<jackin_protocol::Provider> {
+    let key = |env_var: &str| operator_key_present(config, workspace_name, role_selector, env_var);
     jackin_protocol::Provider::available_for(
         agent.slug(),
-        zai_key_present(config, workspace_name, role_selector),
+        key("ANTHROPIC_API_KEY"),
+        key("ZAI_API_KEY"),
+        key("MINIMAX_API_KEY"),
+        key("KIMI_CODE_API_KEY"),
     )
 }
 

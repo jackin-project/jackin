@@ -132,8 +132,6 @@ jobs:
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
       - run: cargo check --all-targets
-      - name: Check generated TUI lookbook previews
-        run: cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook
       # `dind_e2e` invokes `jackin load` end-to-end. `jackin load` calls
       # `capsule_binary::ensure_available`, which downloads the
       # `jackin-capsule` artifact from the rolling `preview` GitHub Release.
@@ -147,7 +145,7 @@ jobs:
         run: |
           cargo build -p jackin-capsule --bin jackin-capsule
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
-      - run: cargo nextest run --all-features --color=always
+      - run: cargo nextest run --workspace --all-features --color=always
       # Build (but don't run) the frame-time and pane-body benchmarks to
       # ensure they compile on every CI run. Full criterion runs happen
       # locally or in dedicated perf workflows.

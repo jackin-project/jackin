@@ -57,18 +57,22 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
-    // Per-tab provider injection — Z.AI and future Anthropic-compatible backends.
+    // Per-tab provider injection — Anthropic-compatible backends (Claude Code).
     // Listed here so env_for_spawn's allowlist accepts them as overrides when the
     // operator picks an alternative provider in the AgentPicker flow.
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_BASE_URL",
-    // Z.AI model mapping so Claude Code maps its internal model tiers to GLM names.
+    // Model-tier mapping so Claude Code maps its internal tiers to provider model names.
     "ANTHROPIC_DEFAULT_OPUS_MODEL",
     "ANTHROPIC_DEFAULT_SONNET_MODEL",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    // Z.AI operational env vars.
+    // Provider operational env vars.
     "API_TIMEOUT_MS",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+    // MiniMax key forwarded into Codex so its config.toml `env_key = "MINIMAX_API_KEY"` resolves.
+    "MINIMAX_API_KEY",
+    // Kimi key — serves both the Kimi Code runtime agent and the Kimi Claude Code provider.
+    "KIMI_CODE_API_KEY",
 ];
 
 /// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile

@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "../multi-runtime-support",
+    "../alternative-llm-providers",
     "../native-apm-role-support",
     "../claude-auth-strategy",
     "../workspace-claude-token-setup",

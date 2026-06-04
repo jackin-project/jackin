@@ -37,7 +37,27 @@ impl Multiplexer {
         &self,
         agent: Option<&str>,
     ) -> Vec<jackin_protocol::Provider> {
-        jackin_protocol::Provider::available_for(agent.unwrap_or_default(), self.zai_key.is_some())
+        jackin_protocol::Provider::available_for(
+            agent.unwrap_or_default(),
+            self.anthropic_api_key.is_some(),
+            self.zai_key.is_some(),
+            self.minimax_key.is_some(),
+            self.kimi_key.is_some(),
+        )
+    }
+
+    /// Resolve the container-side API key for `provider` from the operator
+    /// env captured at construction. The host sends only the provider label;
+    /// the token never travels the wire. `None` means the key was unset, in
+    /// which case the session falls back to the agent's default auth.
+    pub(super) fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
+        let key = match provider {
+            jackin_protocol::Provider::Anthropic => self.anthropic_api_key.as_deref(),
+            jackin_protocol::Provider::Zai => self.zai_key.as_deref(),
+            jackin_protocol::Provider::Minimax => self.minimax_key.as_deref(),
+            jackin_protocol::Provider::Kimi => self.kimi_key.as_deref(),
+        };
+        key.filter(|value| !value.is_empty())
     }
 
     /// Bound the per-container surface for any path that allocates a

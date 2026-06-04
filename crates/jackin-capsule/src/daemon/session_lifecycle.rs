@@ -197,14 +197,16 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
-                let token = self.zai_key.as_deref().filter(|value| !value.is_empty());
                 let resolved_env = match jackin_protocol::Provider::from_label(&provider_label) {
                     Some(provider) => {
                         // Token is resolved here (not on the wire) from the
-                        // container's ZAI_API_KEY; the host only sends the label.
-                        if provider == jackin_protocol::Provider::Zai && token.is_none() {
+                        // container's per-provider API key env; the host only
+                        // sends the label.
+                        let token = self.token_for_provider(provider);
+                        if token.is_none() && provider != jackin_protocol::Provider::Anthropic {
                             crate::clog!(
-                                "spawn: provider Z.AI selected but ZAI_API_KEY unresolved in container; session falls back to the agent's default auth"
+                                "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
+                                provider.label()
                             );
                         }
                         provider.env_overrides(token)

@@ -1,4 +1,4 @@
 {
   "title": "Authentication",
-  "pages": ["index", "agents", "github-cli", "zai"]
+  "pages": ["index", "agents", "github-cli", "zai", "minimax", "kimi"]
 }
