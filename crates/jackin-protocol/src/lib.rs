@@ -8,6 +8,9 @@
 //! here too so the two binaries cannot drift.
 
 pub mod control;
+pub mod provider_adapter;
+
+pub use provider_adapter::ProviderAdapter;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
