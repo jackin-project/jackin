@@ -15,6 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { path = "../jackin-core" }
+jackin-diagnostics = { path = "../jackin-diagnostics" }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 anyhow = "1.0"

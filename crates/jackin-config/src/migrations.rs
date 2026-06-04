@@ -239,8 +239,9 @@ pub fn migrate_workspace_file_if_needed(path: &Path) -> anyhow::Result<bool> {
 /// Read `path`, run any pending migrations, write the result back atomically.
 ///
 /// Returns `Some(old_version)` when a migration ran, `None` when the file
-/// was already at `current_raw`. Also writes
-/// `[jackin] {label} migrated {old} -> {current_raw}` to stderr. Wrappers
+/// was already at `current_raw`. Records `{label} migrated {old} ->
+/// {current_raw}` in the run diagnostics log (debug runs only) — never on
+/// screen, since the operator did not ask for the upgrade. Wrappers
 /// (e.g. `manifest::migrations::migrate_manifest_file`) project the
 /// `SchemaVersion` into display strings for callers that need to print
 /// both ends.
@@ -270,7 +271,10 @@ pub fn migrate_file_if_needed(
     apply_migrations(&mut doc, &old_version, &current, migrations, label)?;
     atomic_write(path, &doc.to_string())
         .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
-    eprintln!("[jackin] {label} migrated {old_version} -> {current_raw}");
+    // Migration is a silent, automatic upgrade — the operator never asked for
+    // it and must not see it on screen. Record it in the run diagnostics log
+    // (debug runs only); a clean (non-debug) run stays quiet.
+    jackin_diagnostics::debug_log!("config", "{label} migrated {old_version} -> {current_raw}");
     Ok(Some(old_version))
 }
 

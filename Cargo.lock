@@ -1788,6 +1788,7 @@ dependencies = [
  "directories",
  "fs2",
  "jackin-core",
+ "jackin-diagnostics",
  "serde",
  "tempfile",
  "thiserror 2.0.18",
