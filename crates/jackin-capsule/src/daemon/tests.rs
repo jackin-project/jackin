@@ -433,7 +433,7 @@ fn resize_zero_zero_normalizes_to_default_dimensions() {
     // A client sending Resize { rows: 0, cols: 0 } is asking for
     // "use the defaults"; the daemon must floor through
     // `normalize_size` and never store 0 in `term_rows`/`term_cols`,
-    // because zero-row PTYs collapse vt100 rendering.
+    // because zero-row PTYs collapse grid rendering.
     let mut mux = test_mux(48, 160);
     mux.resize(0, 0);
     assert_eq!((mux.term_rows, mux.term_cols), (DEFAULT_ROWS, DEFAULT_COLS));
@@ -2025,7 +2025,7 @@ fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollbac
     );
     session.feed_pty(b"\x1b[?1049h");
     assert!(
-        session.screen().alternate_screen(),
+        session.alternate_screen(),
         "setup should leave pane in the alternate screen"
     );
     mux.sessions.insert(1, session);

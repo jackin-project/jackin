@@ -45,7 +45,7 @@ pub(crate) fn selection_start_for_inner_rect(
     })
 }
 
-/// Extract the selected text from the pane's vt100 screen.
+/// Extract the selected text from the pane's grid screen.
 ///
 /// Uses `canonical_selection` ordering and matches the bounds used by
 /// `paint_selection_highlight` so copied text and highlighted cells agree.

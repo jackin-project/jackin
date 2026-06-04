@@ -30,31 +30,17 @@ tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros"
 crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process", "inotify"] }
-# Pinned git fork of `vt100`. The fork's ONLY delta over the canonical
-# crates.io `vt100` (doy/vt100-rust 0.16.2) is `Screen::clear_scrollback()`,
-# used by `clear_scrollback_and_request_screen_clear` in session.rs and the
-# focused-pane handler in daemon.rs. The four OSC/CSI callbacks named in the
-# old comment (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`,
-# `unhandled_csi`) **already shipped** in vt100 0.16.2 (January 2025) — those
-# are NOT what the fork adds. The `clear_scrollback` patch is submitted upstream
-# as doy/vt100-rust PR #31 ("Support clearing scrollback", May 22 2026) but
-# the upstream is effectively stalled (last substantive merge April 2023, 10+
-# open PRs unmerged). This fork is therefore permanent until `jackin-term`
-# (Defect 45) replaces vt100 entirely, or PR #31 merges. Tracked in TODO.md.
-vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 vte = "0.15"
-# jackin-term: owned terminal model (Phase 5 — always active).
-# The `jackin-term` feature flag is now a no-op preserved for CI compatibility;
-# the crate is a normal dependency and DamageGrid is the primary model.
-# vt100 remains for scrollback + OscCapture until Phase 5 deletion is complete.
+# jackin-term: the owned terminal model. `DamageGrid` is the sole VT parser /
+# screen / scrollback / passthrough model.
 jackin-term = { path = "../jackin-term" }
 url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jackin-tui = { path = "../jackin-tui" }
 ratatui = "0.30"
-# tui-term was evaluated for pane-body rendering (see ADR-004) but is
-# incompatible with our vt100 fork. The custom cell widget approach is used instead.
+# tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit
+# the capsule's owned-grid model. The custom cell widget approach is used instead.
 
 [build-dependencies]
 jackin-build-meta = { path = "../jackin-build-meta" }
@@ -62,11 +48,6 @@ jackin-build-meta = { path = "../jackin-build-meta" }
 [[bench]]
 name = "pane_body"
 harness = false
-
-[features]
-# jackin-term feature preserved as a no-op for CI compatibility.
-# The jackin-term crate is now a normal (non-optional) dependency.
-jackin-term = []
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

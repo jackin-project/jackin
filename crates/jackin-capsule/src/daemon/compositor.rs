@@ -318,7 +318,7 @@ impl Multiplexer {
                 // Phase 5: WireEmitter is the primary render path.
                 // Live view: use DamageGrid dirty_spans for wire-minimal emit.
                 // Scrollback / selection: render_snapshot() handles both
-                // (uses DamageGrid scrollback rows, falls back to vt100 inline history).
+                // (uses DamageGrid scrollback rows for the scrollback view).
                 let pane_body_stats = if session.scrollback_offset == 0
                     && selection_for_pane.is_none()
                 {

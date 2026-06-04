@@ -722,7 +722,7 @@ impl PaneTree {
 }
 
 /// Lower bound for a split ratio. 0.05 = 5% of the available cells,
-/// the smallest size before vt100 / agent UI starts mis-wrapping.
+/// the smallest size before the grid / agent UI starts mis-wrapping.
 pub const SPLIT_RATIO_MIN: f32 = 0.05;
 /// Upper bound — symmetric counterpart of SPLIT_RATIO_MIN.
 pub const SPLIT_RATIO_MAX: f32 = 0.95;

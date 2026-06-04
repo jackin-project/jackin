@@ -1777,7 +1777,6 @@ dependencies = [
  "tracing",
  "unicode-width",
  "url",
- "vt100",
  "vte",
 ]
 

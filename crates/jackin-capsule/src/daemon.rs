@@ -198,7 +198,7 @@ pub struct Multiplexer {
     /// outer clipboard via OSC 52 on release.
     selection: Option<SelectionState>,
     /// Last visible pane-body snapshot per session. PTY output can
-    /// then repaint only rows whose vt100 cells changed.
+    /// then repaint only rows whose grid cells changed.
     pane_body_caches: HashMap<u64, PaneBodyCache>,
     /// Pane bodies dirtied by PTY output. The render ticker drains
     /// this at most once per frame, preserving the existing coalescing

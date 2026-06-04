@@ -419,7 +419,7 @@ pub(crate) struct ScrollAffordanceMetrics {
 }
 
 /// DamageGrid-based scrollbar affordance metrics.
-/// Uses a `GridSnapshot` so the debug scrollbar path does not need `&vt100::Screen`.
+/// Uses a `GridSnapshot` so the debug scrollbar path does not need the live grid.
 pub(crate) fn grid_scroll_affordance_metrics(
     snap: &jackin_term::GridSnapshot,
     viewport_rows: u16,

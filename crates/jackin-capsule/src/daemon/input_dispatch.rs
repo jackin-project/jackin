@@ -334,10 +334,10 @@ impl Multiplexer {
                 };
                 if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(
                     session.mouse_enabled(),
-                    session.screen().alternate_screen(),
+                    session.alternate_screen(),
                 ) && let Some(buf) = encode_wheel_cursor_fallback(
                     session.mouse_enabled(),
-                    session.screen().application_cursor(),
+                    session.application_cursor(),
                     button,
                 ) {
                     crate::cdebug!(
@@ -362,7 +362,7 @@ impl Multiplexer {
                         row,
                         col,
                         button,
-                        session.screen().alternate_screen(),
+                        session.alternate_screen(),
                         session.mouse_enabled(),
                         vt_filled,
                         inline_filled

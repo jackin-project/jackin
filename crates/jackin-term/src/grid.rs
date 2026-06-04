@@ -468,6 +468,39 @@ impl DamageGrid {
         }
     }
 
+    /// Push the visible primary-screen rows into scrollback before a
+    /// full-screen clear (ED2, or ED0 at the home cursor). Only the
+    /// non-blank span (first non-blank row through last non-blank row) is
+    /// kept, matching how a shell or inline agent TUI redraws over its own
+    /// transcript. No-op on the alternate screen — full-screen apps own
+    /// their display and do not contribute scrollback.
+    fn preserve_visible_rows_to_scrollback(&mut self) {
+        if self.alt_screen {
+            return;
+        }
+        let Some(first) = self
+            .primary
+            .iter()
+            .position(|row| row.iter().any(|cell| !cell.contents.is_empty()))
+        else {
+            return;
+        };
+        let Some(last) = self
+            .primary
+            .iter()
+            .rposition(|row| row.iter().any(|cell| !cell.contents.is_empty()))
+        else {
+            return;
+        };
+        for idx in first..=last {
+            let row = self.primary[idx].clone();
+            if self.scrollback.len() >= self.scrollback_limit {
+                self.scrollback.remove(0);
+            }
+            self.scrollback.push(row);
+        }
+    }
+
     /// Newline action: move down or scroll.
     fn newline_action(&mut self) {
         if self.cursor_row == self.scroll_bottom {
@@ -514,6 +547,13 @@ impl DamageGrid {
         let cols_u16 = self.cols;
         match mode {
             0 => {
+                // ED0 at the home cursor is the normal-screen clear/redraw
+                // shape shells and inline agent TUIs use; preserve the
+                // visible rows as scrollback before blanking so the operator
+                // can scroll back to read them.
+                if self.cursor_row == 0 && self.cursor_col == 0 {
+                    self.preserve_visible_rows_to_scrollback();
+                }
                 let grid = self.active_grid();
                 grid[cursor_row][cursor_col..cols_usize].fill(Cell::default());
                 for row in grid.iter_mut().take(rows).skip(cursor_row + 1) {
@@ -528,6 +568,10 @@ impl DamageGrid {
                 grid[cursor_row][0..=cursor_col.min(cols_usize - 1)].fill(Cell::default());
             }
             2 => {
+                // ED2 clears the whole visible display; preserve those rows
+                // as scrollback. ED3 below is the explicit saved-lines clear
+                // and must NOT preserve them.
+                self.preserve_visible_rows_to_scrollback();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
                     *row = blank_row(cols_u16);
@@ -566,9 +610,18 @@ impl DamageGrid {
                 self.passthrough
                     .push(PassthroughEvent::IconNameChanged(name.to_string()));
             }
-            (Some(52), Some(payload)) => {
+            (Some(52), Some(_)) => {
+                // OSC 52 format: 52;<sel>;<b64data>
+                // params[1] = selection ("c" for clipboard), params[2] = base64 data.
+                // Re-join all params after the code so the full "c;SGVsbG8=" payload
+                // is preserved for re-encoding as "\x1b]52;c;SGVsbG8=\x07".
+                let payload: String = params[1..]
+                    .iter()
+                    .filter_map(|b| std::str::from_utf8(b).ok())
+                    .collect::<Vec<_>>()
+                    .join(";");
                 self.passthrough
-                    .push(PassthroughEvent::ClipboardWrite(payload.to_string()));
+                    .push(PassthroughEvent::ClipboardWrite(payload));
             }
             (Some(7), Some(uri)) => {
                 self.passthrough
@@ -807,8 +860,10 @@ impl vte::Perform for DamageGrid {
                 let row = p0.saturating_sub(1);
                 self.cursor_row = row.min(self.rows.saturating_sub(1));
             }
-            // SGR — Select Graphic Rendition.
-            'm' => {
+            // SGR — Select Graphic Rendition (no intermediates). The
+            // `>`-intermediate form (`CSI > 4 ; n m`, xterm modifyOtherKeys)
+            // is not SGR and must fall through to the passthrough arm.
+            'm' if intermediates.is_empty() => {
                 self.apply_sgr(&p);
             }
             // DEC Private Mode Set.

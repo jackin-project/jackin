@@ -1,21 +1,33 @@
 //! Tests for `render`.
 use super::*;
-use vt100::Parser;
+use jackin_term::DamageGrid;
+
+/// Build a viewport snapshot from a freshly-fed `DamageGrid` the same way
+/// the production compositor does, so these tests exercise the real
+/// snapshot-render path.
+fn snapshot(grid: &DamageGrid, rows: u16, cols: u16) -> Vec<RowSnapshot> {
+    pane_snapshot_from_damagegrid(grid, rows, cols)
+}
+
+fn grid_with(rows: u16, cols: u16, bytes: &[u8]) -> DamageGrid {
+    let mut grid = DamageGrid::new(rows, cols, 0);
+    grid.process(bytes);
+    grid
+}
 
 #[test]
 fn alt_screen_round_trip_preserves_primary() {
     // Enter alt-screen, write content, leave alt-screen, primary should
-    // be restored. Regression guard for the hand-rolled emulator that
-    // ignored DEC private mode `?1049`.
-    let mut parser = Parser::new(5, 20, 0);
-    parser.process(b"hello\r\nworld\r\n");
-    let primary_before = parser.screen().contents();
+    // be restored. Regression guard for ignoring DEC private mode `?1049`.
+    let mut grid = DamageGrid::new(5, 20, 0);
+    grid.process(b"hello\r\nworld\r\n");
+    let primary_before = grid.dump().to_text();
 
-    parser.process(b"\x1b[?1049h");
-    parser.process(b"\x1b[2J\x1b[Halt-screen content\r\n");
-    parser.process(b"\x1b[?1049l");
+    grid.process(b"\x1b[?1049h");
+    grid.process(b"\x1b[2J\x1b[Halt-screen content\r\n");
+    grid.process(b"\x1b[?1049l");
 
-    let primary_after = parser.screen().contents();
+    let primary_after = grid.dump().to_text();
     assert_eq!(
         primary_after.trim_end(),
         primary_before.trim_end(),
@@ -25,11 +37,11 @@ fn alt_screen_round_trip_preserves_primary() {
 
 #[test]
 fn render_pane_offsets_cursor_to_origin() {
-    let mut parser = Parser::new(3, 10, 0);
-    parser.process(b"hi");
+    let grid = grid_with(3, 10, b"hi");
+    let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    render_pane(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 3, 10),
         4,
         2,
         3,
@@ -50,11 +62,11 @@ fn render_pane_offsets_cursor_to_origin() {
 
 #[test]
 fn inactive_pane_dim_uses_light_ansi_dim_only() {
-    let mut parser = Parser::new(1, 10, 0);
-    parser.process(b"\x1b[31mred");
+    let grid = grid_with(1, 10, b"\x1b[31mred");
+    let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    render_pane(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 1, 10),
         0,
         0,
         1,
@@ -73,13 +85,12 @@ fn inactive_pane_dim_uses_light_ansi_dim_only() {
 
 #[test]
 fn pane_cache_first_render_is_full_and_tracks_every_visible_row() {
-    let mut parser = Parser::new(3, 8, 0);
-    parser.process(b"one\r\ntwo");
+    let grid = grid_with(3, 8, b"one\r\ntwo");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
 
-    let stats = cache.render_partial(
-        parser.screen(),
+    let stats = cache.render_partial_snapshot(
+        snapshot(&grid, 3, 8),
         10,
         20,
         3,
@@ -99,12 +110,11 @@ fn pane_cache_first_render_is_full_and_tracks_every_visible_row() {
 
 #[test]
 fn pane_cache_emits_only_changed_rows_after_warmup() {
-    let mut parser = Parser::new(3, 12, 0);
-    parser.process(b"alpha\r\nbeta\r\ngamma");
+    let mut grid = grid_with(3, 12, b"alpha\r\nbeta\r\ngamma");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 3, 12),
         0,
         0,
         3,
@@ -115,9 +125,9 @@ fn pane_cache_emits_only_changed_rows_after_warmup() {
     );
     buf.clear();
 
-    parser.process(b"\x1b[2;1Hbravo");
-    let stats = cache.render_partial(
-        parser.screen(),
+    grid.process(b"\x1b[2;1Hbravo");
+    let stats = cache.render_partial_snapshot(
+        snapshot(&grid, 3, 12),
         0,
         0,
         3,
@@ -138,12 +148,11 @@ fn pane_cache_emits_only_changed_rows_after_warmup() {
 
 #[test]
 fn pane_cache_partial_rows_reset_styles_independently() {
-    let mut parser = Parser::new(2, 16, 0);
-    parser.process(b"\x1b[31mred\x1b[0m\r\nplain");
+    let mut grid = grid_with(2, 16, b"\x1b[31mred\x1b[0m\r\nplain");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 2, 16),
         0,
         0,
         2,
@@ -154,9 +163,9 @@ fn pane_cache_partial_rows_reset_styles_independently() {
     );
     buf.clear();
 
-    parser.process(b"\x1b[1;1H\x1b[32mgreen\x1b[0m");
-    let stats = cache.render_partial(
-        parser.screen(),
+    grid.process(b"\x1b[1;1H\x1b[32mgreen\x1b[0m");
+    let stats = cache.render_partial_snapshot(
+        snapshot(&grid, 2, 16),
         0,
         0,
         2,
@@ -175,12 +184,11 @@ fn pane_cache_partial_rows_reset_styles_independently() {
 
 #[test]
 fn pane_cache_handles_wide_characters_without_dirtying_continuations() {
-    let mut parser = Parser::new(2, 10, 0);
-    parser.process("表x\r\nsame".as_bytes());
+    let mut grid = grid_with(2, 10, "表x\r\nsame".as_bytes());
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 2, 10),
         0,
         0,
         2,
@@ -191,9 +199,9 @@ fn pane_cache_handles_wide_characters_without_dirtying_continuations() {
     );
     buf.clear();
 
-    parser.process("\x1b[1;3Hy".as_bytes());
-    let stats = cache.render_partial(
-        parser.screen(),
+    grid.process("\x1b[1;3Hy".as_bytes());
+    let stats = cache.render_partial_snapshot(
+        snapshot(&grid, 2, 10),
         0,
         0,
         2,
@@ -211,12 +219,11 @@ fn pane_cache_handles_wide_characters_without_dirtying_continuations() {
 
 #[test]
 fn pane_cache_partial_ansi_serialization_covers_rgb_and_background() {
-    let mut parser = Parser::new(1, 8, 0);
-    parser.process(b"plain");
+    let mut grid = grid_with(1, 8, b"plain");
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    cache.render_full(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 1, 8),
         0,
         0,
         1,
@@ -227,9 +234,9 @@ fn pane_cache_partial_ansi_serialization_covers_rgb_and_background() {
     );
     buf.clear();
 
-    parser.process(b"\x1b[1;1H\x1b[38;2;1;2;3;48;5;4;1mX");
-    let stats = cache.render_partial(
-        parser.screen(),
+    grid.process(b"\x1b[1;1H\x1b[38;2;1;2;3;48;5;4;1mX");
+    let stats = cache.render_partial_snapshot(
+        snapshot(&grid, 1, 8),
         0,
         0,
         1,
@@ -250,14 +257,13 @@ fn pane_cache_partial_ansi_serialization_covers_rgb_and_background() {
 // extends to the terminal's right edge (PaneRightEdge::TerminalEdge).
 #[test]
 fn resize_shrink_emits_erase_to_eol_for_terminal_edge_pane() {
-    let mut parser = Parser::new(2, 20, 0);
-    parser.process(b"hello world twenty!!"); // fills the full 20-col row
+    let grid = grid_with(2, 20, b"hello world twenty!!"); // fills the full 20-col row
 
     let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
     // First render at 20 cols to populate the cache.
-    cache.render_full(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 2, 20),
         0,
         0,
         2,
@@ -270,13 +276,13 @@ fn resize_shrink_emits_erase_to_eol_for_terminal_edge_pane() {
 
     // Simulate resize to 10 cols: snapshot at the narrower width.  The
     // narrow screen would only show "hello worl" (first 10 chars).
-    // render_full (triggered by invalid cache dimensions) must emit \x1b[K
-    // after each row so the stale right 10 cols are cleared.
-    let mut parser2 = Parser::new(2, 10, 0);
-    parser2.process(b"hello worl");
+    // render_full_snapshot (the cache falls back to full on geometry
+    // change) must emit \x1b[K after each row so the stale right 10 cols
+    // are cleared.
+    let grid2 = grid_with(2, 10, b"hello worl");
 
-    let stats = cache.render_full(
-        parser2.screen(),
+    let stats = cache.render_full_snapshot(
+        snapshot(&grid2, 2, 10),
         0,
         0,
         2,
@@ -297,11 +303,11 @@ fn resize_shrink_emits_erase_to_eol_for_terminal_edge_pane() {
 
 #[test]
 fn interior_pane_does_not_emit_erase_to_eol() {
-    let mut parser = Parser::new(2, 10, 0);
-    parser.process(b"hello");
+    let grid = grid_with(2, 10, b"hello");
+    let mut cache = PaneBodyCache::default();
     let mut buf = Vec::new();
-    render_pane(
-        parser.screen(),
+    cache.render_full_snapshot(
+        snapshot(&grid, 2, 10),
         0,
         0,
         2,

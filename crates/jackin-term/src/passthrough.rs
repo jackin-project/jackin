@@ -14,7 +14,9 @@ pub enum PassthroughEvent {
     TitleChanged(String),
     /// OSC 1: window icon name change.
     IconNameChanged(String),
-    /// OSC 52: clipboard write (base64-encoded content).
+    /// OSC 52: clipboard write. Carries the full payload after the OSC code —
+    /// `<selection>;<base64>` (e.g. `c;SGVsbG8=`) — so `encode` can reproduce
+    /// the exact `\x1b]52;<payload>\x07` the program emitted.
     ClipboardWrite(String),
     /// OSC 7: current working directory (URI).
     CwdChanged(String),
@@ -57,7 +59,7 @@ impl PassthroughEvent {
             // OSC sequences — use BEL terminator (ST `\x07` is widely supported).
             Self::TitleChanged(title) => Some(format!("\x1b]0;{title}\x07").into_bytes()),
             Self::IconNameChanged(name) => Some(format!("\x1b]1;{name}\x07").into_bytes()),
-            Self::ClipboardWrite(b64) => Some(format!("\x1b]52;c;{b64}\x07").into_bytes()),
+            Self::ClipboardWrite(payload) => Some(format!("\x1b]52;{payload}\x07").into_bytes()),
             Self::CwdChanged(uri) => Some(format!("\x1b]7;{uri}\x07").into_bytes()),
             Self::Notification(msg) => Some(format!("\x1b]9;{msg}\x07").into_bytes()),
             // DEC private mode toggles.

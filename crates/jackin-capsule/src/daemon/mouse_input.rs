@@ -180,7 +180,7 @@ impl Multiplexer {
     }
 
     /// Commit the active selection: extract the selected text from
-    /// the source session's `vt100` grid, emit OSC 52 to the
+    /// the source session's grid, emit OSC 52 to the
     /// attached client (which the outer terminal turns into a
     /// real clipboard write), and clear the highlight.
     pub(super) fn finalize_selection(&mut self) -> Option<Vec<u8>> {

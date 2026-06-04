@@ -1,11 +1,10 @@
-//! Render a `vt100::Screen` into the host terminal at a pane rectangle.
+//! Render a `DamageGrid` snapshot into the host terminal at a pane rectangle.
 //! Cursor positioning is offset by the pane's origin so the agent's
 //! `(0, 0)` lands at `(dest_row, dest_col)`.
 
 use std::io::Write;
 
 use jackin_tui::ansi::{RESET, fg};
-use vt100::{Color, Screen};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub(crate) struct Attrs {
@@ -24,16 +23,6 @@ enum ColorKey {
     Default,
     Idx(u8),
     Rgb(u8, u8, u8),
-}
-
-impl From<Color> for ColorKey {
-    fn from(c: Color) -> Self {
-        match c {
-            Color::Default => Self::Default,
-            Color::Idx(n) => Self::Idx(n),
-            Color::Rgb(r, g, b) => Self::Rgb(r, g, b),
-        }
-    }
 }
 
 impl From<jackin_term::Color> for ColorKey {
@@ -59,52 +48,12 @@ pub(crate) struct RowSnapshot {
 }
 
 impl RowSnapshot {
-    pub(crate) fn is_blank(&self) -> bool {
-        self.cells
-            .iter()
-            .all(|cell| cell.contents.trim_end().is_empty())
-    }
-
-    pub(crate) fn text_len(&self) -> usize {
-        self.cells.iter().map(|cell| cell.contents.len()).sum()
-    }
-
     pub(crate) fn text_range(&self, from_col: u16, to_col: u16) -> String {
         let mut out = String::new();
         for cell in row_range_cells(self, from_col, to_col) {
             out.push_str(&cell.contents);
         }
         out
-    }
-
-    fn clipped(&self, cols_to_draw: u16) -> Self {
-        let mut cells = Vec::with_capacity(usize::from(cols_to_draw));
-        let mut width = 0u16;
-        for cell in &self.cells {
-            if width >= cols_to_draw {
-                break;
-            }
-            let remaining = cols_to_draw - width;
-            if cell.width <= remaining {
-                cells.push(cell.clone());
-                width += cell.width;
-            } else {
-                cells.push(CellSnapshot {
-                    contents: " ".repeat(usize::from(remaining)),
-                    attrs: Attrs::default(),
-                    width: remaining,
-                });
-                width = cols_to_draw;
-            }
-        }
-        if width < cols_to_draw {
-            cells.push(CellSnapshot {
-                contents: " ".repeat(usize::from(cols_to_draw - width)),
-                attrs: Attrs::default(),
-                width: cols_to_draw - width,
-            });
-        }
-        Self { cells }
     }
 }
 
@@ -147,24 +96,6 @@ impl PaneBodyCache {
 
     pub fn is_valid_for(&self, rect_rows: u16, rect_cols: u16, dim: PaneBodyDim) -> bool {
         self.valid && self.rows == rect_rows && self.cols == rect_cols && self.dim == dim
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn render_full(
-        &mut self,
-        screen: &Screen,
-        dest_row: u16,
-        dest_col: u16,
-        rect_rows: u16,
-        rect_cols: u16,
-        dim: PaneBodyDim,
-        right_edge: PaneRightEdge,
-        buf: &mut Vec<u8>,
-    ) -> PaneBodyRenderStats {
-        let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
-        self.render_full_from_snapshot(
-            snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
-        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -218,10 +149,19 @@ impl PaneBodyCache {
         }
     }
 
+    /// Diff a freshly-built snapshot against the cached one and emit only
+    /// changed rows; falls back to a full repaint when geometry or
+    /// row-count diverges.
+    ///
+    /// Test-only: production drives the cache through `render_full_snapshot`
+    /// plus the compositor's `dirty_spans` wire path, which already emits
+    /// minimal updates. This method exercises the snapshot-diff fallback the
+    /// cache uses when no dirty-span information is available.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
-    pub fn render_partial(
+    pub(crate) fn render_partial_snapshot(
         &mut self,
-        screen: &Screen,
+        next: Vec<RowSnapshot>,
         dest_row: u16,
         dest_col: u16,
         rect_rows: u16,
@@ -230,16 +170,14 @@ impl PaneBodyCache {
         right_edge: PaneRightEdge,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
-        if !self.valid || self.rows != rect_rows || self.cols != rect_cols || self.dim != dim {
-            return self.render_full(
-                screen, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
-            );
-        }
-
-        let next = pane_snapshot(screen, rect_rows, rect_cols);
-        if next.len() != self.snapshot.len() {
-            return self.render_full(
-                screen, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
+        if !self.valid
+            || self.rows != rect_rows
+            || self.cols != rect_cols
+            || self.dim != dim
+            || next.len() != self.snapshot.len()
+        {
+            return self.render_full_from_snapshot(
+                next, dest_row, dest_col, rect_rows, rect_cols, dim, right_edge, buf,
             );
         }
 
@@ -266,25 +204,6 @@ impl PaneBodyCache {
             changed_rows,
         }
     }
-}
-
-/// Render the screen at `(dest_row, dest_col)` into `buf`, clipped to
-/// `(rect_rows, rect_cols)`. Coordinates are 0-based. Inactive (unfocused
-/// multi-pane) panes get a light ANSI-dim cue.
-#[allow(clippy::too_many_arguments)]
-pub fn render_pane(
-    screen: &Screen,
-    dest_row: u16,
-    dest_col: u16,
-    rect_rows: u16,
-    rect_cols: u16,
-    dim: PaneBodyDim,
-    right_edge: PaneRightEdge,
-    buf: &mut Vec<u8>,
-) {
-    let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
-    let rows: Vec<u16> = (0..snapshot.len() as u16).collect();
-    render_snapshot_rows(&snapshot, &rows, dest_row, dest_col, dim, right_edge, buf);
 }
 
 /// Paint the scrollbar thumb onto the pane's right border column
@@ -356,83 +275,7 @@ pub fn draw_scrollbar(
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-fn cell_attrs(cell: &vt100::Cell) -> Attrs {
-    Attrs {
-        fg: ColorKey::from(cell.fgcolor()),
-        bg: ColorKey::from(cell.bgcolor()),
-        bold: cell.bold(),
-        dim: cell.dim(),
-        italic: cell.italic(),
-        underline: cell.underline(),
-        inverse: cell.inverse(),
-    }
-}
-
-fn pane_snapshot(screen: &Screen, rect_rows: u16, rect_cols: u16) -> Vec<RowSnapshot> {
-    pane_snapshot_with_scrollback_prefix(screen, &[], rect_rows, rect_cols)
-}
-
-pub(crate) fn pane_snapshot_with_scrollback_prefix(
-    screen: &Screen,
-    scrollback_prefix: &[RowSnapshot],
-    rect_rows: u16,
-    rect_cols: u16,
-) -> Vec<RowSnapshot> {
-    let (screen_rows, screen_cols) = screen.size();
-    let rows_to_draw = rect_rows.min(screen_rows);
-    let cols_to_draw = rect_cols.min(screen_cols);
-    let prefix_rows = scrollback_prefix.len().min(usize::from(rows_to_draw));
-    let mut snapshot = Vec::with_capacity(usize::from(rows_to_draw));
-    snapshot.extend(
-        scrollback_prefix
-            .iter()
-            .take(prefix_rows)
-            .map(|row| row.clipped(cols_to_draw)),
-    );
-    snapshot.extend(
-        (0..rows_to_draw.saturating_sub(prefix_rows as u16))
-            .map(|row| snapshot_row(screen, row, cols_to_draw)),
-    );
-    snapshot
-}
-
-pub(crate) fn snapshot_screen_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
-    let mut cells = Vec::with_capacity(cols_to_draw as usize);
-    let mut col = 0;
-    while col < cols_to_draw {
-        let cell = screen.cell(row, col);
-        if cell.is_some_and(|cell| cell.is_wide_continuation()) {
-            col += 1;
-            continue;
-        }
-
-        let width = cell
-            .filter(|cell| cell.is_wide())
-            .map_or(1, |_| 2)
-            .min(cols_to_draw - col);
-        let attrs = cell.map(cell_attrs).unwrap_or_default();
-        let contents = match cell {
-            Some(cell) if cell.has_contents() => cell.contents().to_string(),
-            _ => " ".repeat(width as usize),
-        };
-        cells.push(CellSnapshot {
-            contents,
-            attrs,
-            width,
-        });
-        col += width;
-    }
-    RowSnapshot { cells }
-}
-
-fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
-    snapshot_screen_row(screen, row, cols_to_draw)
-}
-
-/// Snapshot a single row from a `DamageGrid`, matching the vt100 row snapshot shape.
-///
-/// Used by the `jackin-term` feature path to build `RowSnapshot` from `DamageGrid::cell()`.
-/// Mirrors `snapshot_screen_row` exactly — the two functions must stay in sync.
+/// Snapshot a single row from a `DamageGrid` into a `RowSnapshot`.
 pub(crate) fn snapshot_damagegrid_row(
     grid: &jackin_term::DamageGrid,
     row: u16,
@@ -467,8 +310,6 @@ pub(crate) fn snapshot_damagegrid_row(
 }
 
 /// Build a full-screen snapshot from a `DamageGrid`.
-///
-/// Mirrors `pane_snapshot_with_scrollback_prefix` for the `jackin-term` path.
 pub(crate) fn pane_snapshot_from_damagegrid(
     grid: &jackin_term::DamageGrid,
     rect_rows: u16,
@@ -484,7 +325,6 @@ pub(crate) fn pane_snapshot_from_damagegrid(
 
 /// Build a snapshot from a `DamageGrid` with a scrollback prefix.
 ///
-/// Mirrors `pane_snapshot_with_scrollback_prefix` for the DamageGrid path.
 /// `scrollback_rows` are the rows from `DamageGrid::scrollback_rows_at_offset()`.
 pub(crate) fn pane_snapshot_from_damagegrid_with_scrollback(
     grid: &jackin_term::DamageGrid,

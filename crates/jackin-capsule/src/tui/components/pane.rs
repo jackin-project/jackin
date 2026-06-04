@@ -1,7 +1,6 @@
 //! Custom pane-body widget for rendering terminal screen content into a Ratatui Buffer.
 //!
-//! Phase 5: migrated from vt100::Screen to jackin_term::GridSnapshot.
-//! Blits DamageGrid cells directly into the Ratatui Buffer so the existing
+//! Blits `DamageGrid` cells directly into the Ratatui Buffer so the existing
 //! SocketBackend diff mechanism handles terminal output.
 
 use jackin_term::{Color as TermColor, GridSnapshot};
@@ -13,7 +12,7 @@ use ratatui::{
 };
 
 /// A Ratatui widget that renders a [`GridSnapshot`] (from `DamageGrid::dump()`)
-/// into the given area. Replaces the old vt100::Screen-based widget.
+/// into the given area.
 pub struct PaneBodyWidget<'a> {
     snapshot: &'a GridSnapshot,
 }
