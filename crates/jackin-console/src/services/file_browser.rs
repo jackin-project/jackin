@@ -52,7 +52,10 @@ pub fn is_directory(path: &Path) -> bool {
 }
 
 /// Read directories under `cwd` and build the entry list.
-pub fn load_entries(cwd: &Path, root: &Path) -> Vec<FolderEntry> {
+///
+/// `show_hidden` — when `true`, include dotfile directories (e.g. `~/.claude`).
+/// The auth source-folder picker sets this so credential directories are reachable.
+pub fn load_entries(cwd: &Path, root: &Path, show_hidden: bool) -> Vec<FolderEntry> {
     let mut out: Vec<FolderEntry> = Vec::new();
 
     if cwd != root
@@ -75,7 +78,7 @@ pub fn load_entries(cwd: &Path, root: &Path) -> Vec<FolderEntry> {
     let mut dirs: Vec<FolderEntry> = Vec::new();
     for entry in read.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') {
+        if name.starts_with('.') && !show_hidden {
             continue;
         }
         if at_root && is_excluded(&name) {
@@ -117,7 +120,7 @@ pub fn listing_from_home() -> anyhow::Result<FolderListing> {
 pub fn listing_at(root: PathBuf, cwd: PathBuf) -> FolderListing {
     let root = canonicalize_or_self(root);
     let cwd = canonicalize_or_self(cwd);
-    let entries = load_entries(&cwd, &root);
+    let entries = load_entries(&cwd, &root, false);
     FolderListing { root, cwd, entries }
 }
 
@@ -141,6 +144,54 @@ pub fn parent_listing(root: &Path, cwd: &Path) -> Option<FolderListing> {
         return None;
     }
     Some(listing_at(root.to_path_buf(), parent.to_path_buf()))
+}
+
+/// Like [`listing_at`] but optionally shows dotfile directories.
+/// Used by the auth source-folder picker to reach `~/.claude`, `~/.codex`, etc.
+pub fn listing_at_with_hidden(root: PathBuf, cwd: PathBuf, show_hidden: bool) -> FolderListing {
+    let root = canonicalize_or_self(root);
+    let cwd = canonicalize_or_self(cwd);
+    let entries = load_entries(&cwd, &root, show_hidden);
+    FolderListing { root, cwd, entries }
+}
+
+/// Like [`clamped_listing`] but optionally shows dotfile directories.
+pub fn clamped_listing_with_hidden(root: &Path, cwd: &Path, show_hidden: bool) -> FolderListing {
+    let target = if is_within_root(cwd, root) && is_directory(cwd) {
+        canonicalize_or_self(cwd.to_path_buf())
+    } else {
+        root.to_path_buf()
+    };
+    listing_at_with_hidden(root.to_path_buf(), target, show_hidden)
+}
+
+/// Like [`parent_listing`] but optionally shows dotfile directories.
+pub fn parent_listing_with_hidden(
+    root: &Path,
+    cwd: &Path,
+    show_hidden: bool,
+) -> Option<FolderListing> {
+    if cwd == root {
+        return None;
+    }
+    let parent = cwd.parent()?;
+    if !parent.starts_with(root) {
+        return None;
+    }
+    Some(listing_at_with_hidden(
+        root.to_path_buf(),
+        parent.to_path_buf(),
+        show_hidden,
+    ))
+}
+
+/// Build an initial listing from `$HOME` with hidden directories visible.
+/// Used for the auth source-folder picker.
+pub fn listing_from_home_with_hidden() -> anyhow::Result<FolderListing> {
+    let home = BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
+    Ok(listing_at_with_hidden(home.clone(), home, true))
 }
 
 /// Validate a candidate workspace source path.

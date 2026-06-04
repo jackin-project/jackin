@@ -24,6 +24,11 @@ pub struct FileBrowserState {
     /// Set when the operator presses `s` but the selection is rejected
     /// (e.g. `$HOME` itself, `~/.jackin/...`). Cleared on the next key.
     pub rejected_reason: Option<String>,
+    /// Show hidden (dot-prefixed) directories in the listing.
+    ///
+    /// Default `false` (mounts flow); `true` for the auth source-folder picker
+    /// so dotfile credential dirs like `~/.claude` are reachable.
+    pub show_hidden: bool,
     /// Active when the operator has pressed Enter on a git-repo row.
     pub pending_git_prompt: Option<PathBuf>,
     /// Origin URL (web form) for the repo referenced by
@@ -72,6 +77,7 @@ impl FileBrowserState {
             cwd,
             entries,
             list_state,
+            show_hidden: false,
             rejected_reason: None,
             pending_git_prompt: None,
             pending_git_url: None,
