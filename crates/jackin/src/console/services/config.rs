@@ -129,7 +129,9 @@ pub(crate) fn save_settings(
                 };
                 editor_doc.set_global_github_auth_forward(mode);
             }
-            AuthKind::Zai => {}
+            // Provider-credential kinds are env-only; the credential lives in the
+            // env_vars block and is written via the env commit path above.
+            AuthKind::Zai | AuthKind::Minimax => {}
         }
     }
     for key in input.original_github_env.keys() {

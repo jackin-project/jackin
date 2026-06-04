@@ -3,12 +3,14 @@
 //! sourcing role hooks and `exec`-ing the selected agent.
 
 use std::fs;
+use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use serde_json::json;
 
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
@@ -226,7 +228,111 @@ fn setup_codex() -> Result<()> {
     } else {
         remove_file_if_exists("/home/agent/.codex/auth.json")?;
     }
+    write_codex_provider_config(Path::new("/home/agent/.codex"))?;
     Ok(())
+}
+
+/// Appends `[model_providers]` + `[profiles]` blocks for available alt
+/// providers to `config.toml` under `codex_dir`. MiniMax is the only
+/// deliverable Codex cell (Responses-API compatible); GLM and Kimi are
+/// deferred. Idempotent: skips the write if the block is already present.
+fn write_codex_provider_config(codex_dir: &Path) -> Result<()> {
+    write_codex_provider_config_inner(codex_dir, nonempty_env("MINIMAX_API_KEY").is_some())
+}
+
+/// Core of [`write_codex_provider_config`] with env reading lifted out so tests
+/// drive the MiniMax-present decision directly (no process-global env mutation).
+fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) -> Result<()> {
+    if !minimax_present {
+        return Ok(());
+    }
+    let config_path = codex_dir.join("config.toml");
+    fs::create_dir_all(codex_dir)
+        .with_context(|| format!("failed to create {}", codex_dir.display()))?;
+    // Check for existing block before appending to stay idempotent across
+    // repeated setup invocations (duplicate TOML table keys are a parse error).
+    if config_path.exists() {
+        let existing = fs::read_to_string(&config_path).with_context(|| {
+            format!(
+                "failed to read {} for idempotency check",
+                config_path.display()
+            )
+        })?;
+        if existing.contains("[model_providers.minimax]") {
+            return Ok(());
+        }
+    }
+    let provider_block = codex_minimax_provider_toml()?;
+    // Append so any operator-authored config.toml content is preserved.
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&config_path)
+        .with_context(|| {
+            format!(
+                "failed to open {} for provider config",
+                config_path.display()
+            )
+        })?;
+    file.write_all(provider_block.as_bytes()).with_context(|| {
+        format!(
+            "failed to write MiniMax provider block to {}",
+            config_path.display()
+        )
+    })?;
+    println!(
+        "[entrypoint] codex: wrote MiniMax provider block to {}",
+        config_path.display()
+    );
+    Ok(())
+}
+
+/// Serializes the MiniMax `[model_providers.minimax]` + `[profiles.minimax]`
+/// Codex block via the `toml` crate (a leading newline separates it from any
+/// existing appended-to content).
+fn codex_minimax_provider_toml() -> Result<String> {
+    #[derive(serde::Serialize)]
+    struct ProviderEntry {
+        name: &'static str,
+        base_url: &'static str,
+        env_key: &'static str,
+        wire_api: &'static str,
+    }
+    #[derive(serde::Serialize)]
+    struct ProfileEntry {
+        model_provider: &'static str,
+        model: &'static str,
+    }
+    #[derive(serde::Serialize)]
+    struct CodexBlock {
+        model_providers: std::collections::BTreeMap<&'static str, ProviderEntry>,
+        profiles: std::collections::BTreeMap<&'static str, ProfileEntry>,
+    }
+    let block = CodexBlock {
+        model_providers: [(
+            "minimax",
+            ProviderEntry {
+                name: "MiniMax",
+                base_url: jackin_protocol::MINIMAX_OPENAI_BASE_URL,
+                env_key: "MINIMAX_API_KEY",
+                wire_api: "responses",
+            },
+        )]
+        .into_iter()
+        .collect(),
+        profiles: [(
+            "minimax",
+            ProfileEntry {
+                model_provider: "minimax",
+                model: jackin_protocol::MINIMAX_DEFAULT_MODEL,
+            },
+        )]
+        .into_iter()
+        .collect(),
+    };
+    let body =
+        toml::to_string(&block).context("failed to serialize Codex MiniMax provider block")?;
+    Ok(format!("\n{body}"))
 }
 
 fn setup_amp() -> Result<()> {
@@ -266,11 +372,13 @@ fn setup_kimi() -> Result<()> {
         eprintln!(
             "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
         );
-    } else if nonempty_env("KIMI_API_KEY").is_some() {
-        eprintln!("[entrypoint] kimi: KIMI_API_KEY present in env; agent will use api-key auth");
+    } else if nonempty_env("KIMI_CODE_API_KEY").is_some() {
+        eprintln!(
+            "[entrypoint] kimi: KIMI_CODE_API_KEY present in env; agent will use api-key auth"
+        );
     } else {
         eprintln!(
-            "[entrypoint] kimi: KIMI_API_KEY unset - agent will require interactive login or config"
+            "[entrypoint] kimi: KIMI_CODE_API_KEY unset - agent will require interactive login or config"
         );
     }
     Ok(())
@@ -298,14 +406,132 @@ fn setup_opencode() -> Result<()> {
             "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
         );
     }
-    fs::create_dir_all("/home/agent/.config/opencode")
+    use std::os::unix::fs::DirBuilderExt as _;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create("/home/agent/.config/opencode")
         .context("failed to create /home/agent/.config/opencode")?;
     let config = Path::new("/home/agent/.config/opencode/opencode.json");
-    if !config.exists() {
-        fs::write(config, b"{\"permission\":\"allow\"}\n")
-            .context("failed to write default opencode.json")?;
-    }
+    write_opencode_config(config)?;
     Ok(())
+}
+
+/// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
+/// for every alt provider whose API key is present in the container env.
+fn write_opencode_config(config: &Path) -> Result<()> {
+    let cfg = build_opencode_config(
+        nonempty_env("ZAI_API_KEY"),
+        nonempty_env("MINIMAX_API_KEY"),
+        nonempty_env("KIMI_CODE_API_KEY"),
+    );
+    write_opencode_json(config, &cfg)
+}
+
+/// Serializes `cfg` to `config` with mode 0o600 — the file embeds live API keys,
+/// so it must never be group/world-readable. Env reading is lifted to the caller
+/// so tests can assert the permission without process-global env mutation.
+fn write_opencode_json(config: &Path, cfg: &serde_json::Value) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let mut content = serde_json::to_vec(cfg).context("failed to serialize opencode.json")?;
+    content.push(b'\n');
+    let mut f = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(config)
+        .context("failed to open opencode.json for writing")?;
+    f.write_all(&content)
+        .context("failed to write opencode.json")?;
+    Ok(())
+}
+
+/// Builds the `opencode.json` value: base `"permission":"allow"` plus a
+/// self-contained `provider` block for each alt provider whose key is present.
+///
+/// Each block fully defines the provider (npm SDK, baseURL, apiKey, the one
+/// model id) instead of relying on OpenCode's bundled models.dev registry. Two
+/// reasons it must be self-contained: the registry keys Z.AI's credential off
+/// `ZHIPU_API_KEY` (a name jackin never sets — so an apiKey-less block would
+/// fail to authenticate), and the registry has no `kimi` provider at all (its
+/// entry is `kimi-for-coding`), so a bare `{baseURL}` block leaves OpenCode
+/// with no SDK or model list to resolve `-m kimi/kimi-for-coding`. The model id
+/// is the suffix [`jackin_protocol::Provider::opencode_model`] emits for the
+/// `-m <provider>/<model>` flag; the test binds the two so they cannot drift.
+fn build_opencode_config(
+    zai_key: Option<String>,
+    minimax_key: Option<String>,
+    kimi_key: Option<String>,
+) -> serde_json::Value {
+    let mut providers = serde_json::Map::new();
+    if let Some(key) = zai_key {
+        providers.insert(
+            "zai".to_string(),
+            opencode_provider_block(
+                "Z.AI",
+                "@ai-sdk/openai-compatible",
+                jackin_protocol::ZAI_OPENAI_BASE_URL,
+                &key,
+                jackin_protocol::ZAI_DEFAULT_OPUS_MODEL,
+            ),
+        );
+    }
+    if let Some(key) = minimax_key {
+        providers.insert(
+            "minimax".to_string(),
+            opencode_provider_block(
+                "MiniMax",
+                "@ai-sdk/anthropic",
+                // `@ai-sdk/anthropic` appends `/messages` to baseURL (its default
+                // is `…/v1`), whereas Claude Code's SDK appends `/v1/messages`.
+                // So the OpenCode block needs the `/v1` the Claude-path constant omits.
+                &format!("{}/v1", jackin_protocol::MINIMAX_BASE_URL),
+                &key,
+                jackin_protocol::MINIMAX_DEFAULT_MODEL,
+            ),
+        );
+    }
+    if let Some(key) = kimi_key {
+        providers.insert(
+            "kimi".to_string(),
+            opencode_provider_block(
+                "Kimi",
+                "@ai-sdk/anthropic",
+                // See MiniMax note: `@ai-sdk/anthropic` needs `/v1` in baseURL.
+                &format!("{}/v1", jackin_protocol::KIMI_BASE_URL),
+                &key,
+                jackin_protocol::KIMI_DEFAULT_MODEL,
+            ),
+        );
+    }
+    let mut cfg = json!({"permission": "allow"});
+    if !providers.is_empty() {
+        cfg["provider"] = serde_json::Value::Object(providers);
+    }
+    cfg
+}
+
+/// One OpenCode custom-provider block. `model_id` is both the sole entry in the
+/// `models` map and the suffix OpenCode matches after the provider id in
+/// `-m <provider>/<model_id>`. MiniMax and Kimi speak the Anthropic wire format
+/// (npm `@ai-sdk/anthropic`), but with a `/v1`-suffixed baseURL since that SDK
+/// appends only `/messages`; Z.AI's coding-plan endpoint is OpenAI-compatible.
+fn opencode_provider_block(
+    name: &str,
+    npm: &str,
+    base_url: &str,
+    api_key: &str,
+    model_id: &str,
+) -> serde_json::Value {
+    let mut models = serde_json::Map::new();
+    models.insert(model_id.to_string(), json!({ "name": model_id }));
+    json!({
+        "name": name,
+        "npm": npm,
+        "options": { "baseURL": base_url, "apiKey": api_key },
+        "models": serde_json::Value::Object(models),
+    })
 }
 
 fn seed_home_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {

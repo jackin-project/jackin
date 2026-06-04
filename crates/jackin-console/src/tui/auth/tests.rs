@@ -22,6 +22,7 @@ fn auth_kind_order_lists_match_console_surfaces() {
             AuthKind::Opencode,
             AuthKind::Github,
             AuthKind::Zai,
+            AuthKind::Minimax,
         ],
     );
     assert_eq!(
@@ -34,6 +35,7 @@ fn auth_kind_order_lists_match_console_surfaces() {
             AuthKind::Opencode,
             AuthKind::Github,
             AuthKind::Zai,
+            AuthKind::Minimax,
         ],
     );
 }
@@ -83,9 +85,36 @@ fn required_env_vars_match_auth_kind_table() {
     );
     assert_eq!(
         AuthKind::Zai.required_env_var(AuthMode::ApiKey),
-        Some("ZAI_API_KEY")
+        Some(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
     );
     assert_eq!(AuthKind::Github.required_env_var(AuthMode::Sync), None);
+}
+
+#[test]
+fn kimi_required_env_vars_match_runtime_table() {
+    assert_eq!(
+        AuthKind::Kimi.required_env_var(AuthMode::ApiKey),
+        Some(jackin_core::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+    );
+    assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Sync), None);
+    assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Ignore), None);
+}
+
+#[test]
+fn minimax_required_env_var_matches_constant() {
+    assert_eq!(
+        AuthKind::Minimax.required_env_var(AuthMode::ApiKey),
+        Some(jackin_core::env_model::MINIMAX_API_KEY_ENV_NAME)
+    );
+    assert_eq!(AuthKind::Minimax.required_env_var(AuthMode::Sync), None);
+}
+
+#[test]
+fn minimax_supported_modes_are_api_key_and_ignore() {
+    assert_eq!(
+        AuthKind::Minimax.supported_modes(),
+        &[AuthMode::ApiKey, AuthMode::Ignore]
+    );
 }
 
 #[test]

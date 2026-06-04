@@ -18,6 +18,13 @@ pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
+/// `MiniMax` Token Plan API key. Gates the `MiniMax` provider picker and the
+/// `AuthKind::Minimax` env-only auth kind.
+pub const MINIMAX_API_KEY_ENV_NAME: &str = "MINIMAX_API_KEY";
+/// Kimi API key. Covers both the Kimi Code CLI runtime agent (`api_key` mode)
+/// and routing Claude Code / `OpenCode` to Kimi's endpoint. A single key from
+/// the Kimi Code Console covers both uses.
+pub const KIMI_CODE_API_KEY_ENV_NAME: &str = "KIMI_CODE_API_KEY";
 pub const GH_TOKEN_ENV_NAME: &str = "GH_TOKEN";
 pub const GITHUB_TOKEN_ENV_NAME: &str = "GITHUB_TOKEN";
 pub const GH_HOST_ENV_NAME: &str = "GH_HOST";

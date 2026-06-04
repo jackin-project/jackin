@@ -145,11 +145,17 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
             AuthKind::Claude => ro.claude = None,
             AuthKind::Codex => ro.codex = None,
             AuthKind::Amp => ro.amp = None,
-            AuthKind::Kimi => ro.kimi = None,
+            AuthKind::Kimi => {
+                ro.kimi = None;
+                ro.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
+            }
             AuthKind::Opencode => ro.opencode = None,
             AuthKind::Github => ro.github = None,
             AuthKind::Zai => {
                 ro.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+            }
+            AuthKind::Minimax => {
+                ro.env.remove(crate::env_model::MINIMAX_API_KEY_ENV_NAME);
             }
         }
     }
@@ -160,11 +166,17 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
         AuthKind::Claude => ws.claude = None,
         AuthKind::Codex => ws.codex = None,
         AuthKind::Amp => ws.amp = None,
-        AuthKind::Kimi => ws.kimi = None,
+        AuthKind::Kimi => {
+            ws.kimi = None;
+            ws.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
+        }
         AuthKind::Opencode => ws.opencode = None,
         AuthKind::Github => ws.github = None,
         AuthKind::Zai => {
             ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+        }
+        AuthKind::Minimax => {
+            ws.env.remove(crate::env_model::MINIMAX_API_KEY_ENV_NAME);
         }
     }
 }

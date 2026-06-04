@@ -27,7 +27,7 @@ pub(super) const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
         AuthKind::Amp => Some(Agent::Amp),
         AuthKind::Kimi => Some(Agent::Kimi),
         AuthKind::Opencode => Some(Agent::Opencode),
-        AuthKind::Github | AuthKind::Zai => None,
+        AuthKind::Github | AuthKind::Zai | AuthKind::Minimax => None,
     }
 }
 
@@ -37,10 +37,20 @@ pub(super) fn role_override_present(kind: AuthKind, ro: &WorkspaceRoleOverride) 
         AuthKind::Claude => ro.claude.is_some(),
         AuthKind::Codex => ro.codex.is_some(),
         AuthKind::Amp => ro.amp.is_some(),
-        AuthKind::Kimi => ro.kimi.is_some(),
+        // Kimi covers both the typed agent block and env-key-based provider routing.
+        AuthKind::Kimi => {
+            ro.kimi.is_some()
+                || ro
+                    .env
+                    .contains_key(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+        }
         AuthKind::Opencode => ro.opencode.is_some(),
         AuthKind::Github => ro.github.is_some(),
         AuthKind::Zai => ro.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
+        // Minimax is env-only; no typed block in WorkspaceRoleOverride.
+        AuthKind::Minimax => ro
+            .env
+            .contains_key(crate::env_model::MINIMAX_API_KEY_ENV_NAME),
     }
 }
 
@@ -203,7 +213,10 @@ fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<Aut
                 layer.github_auth(),
             ));
         }
-        AuthKind::Zai => {}
+        AuthKind::Zai | AuthKind::Minimax => {
+            // Provider-credential kinds are env-only; credential lives in env_vars —
+            // no auth_forward config block to write here.
+        }
     }
 }
 
@@ -215,8 +228,12 @@ pub(super) fn apply_workspace_auth_commit(
     env_value: Option<crate::operator_env::EnvValue>,
 ) {
     set_workspace_auth_mode(ws, kind, Some(mode));
-    if kind == AuthKind::Zai && mode == AuthMode::Ignore {
-        ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+    // Env-only provider kinds: when set to Ignore, remove the credential key.
+    if mode == AuthMode::Ignore
+        && matches!(kind, AuthKind::Zai | AuthKind::Minimax)
+        && let Some(env_key) = kind.required_env_var(AuthMode::ApiKey)
+    {
+        ws.env.remove(env_key);
     }
     apply_auth_env_value(
         &mut ws.env,
@@ -235,8 +252,12 @@ pub(super) fn apply_role_auth_commit(
     env_value: Option<crate::operator_env::EnvValue>,
 ) {
     set_role_auth_mode(role, kind, Some(mode));
-    if kind == AuthKind::Zai && mode == AuthMode::Ignore {
-        role.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+    // Env-only provider kinds: when set to Ignore, remove the credential key.
+    if mode == AuthMode::Ignore
+        && matches!(kind, AuthKind::Zai | AuthKind::Minimax)
+        && let Some(env_key) = kind.required_env_var(AuthMode::ApiKey)
+    {
+        role.env.remove(env_key);
     }
     apply_auth_env_value(
         &mut role.env,
@@ -293,7 +314,8 @@ fn settings_auth_env_map_mut<'a>(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode
-        | AuthKind::Zai => agent_env,
+        | AuthKind::Zai
+        | AuthKind::Minimax => agent_env,
     }
 }
 
@@ -318,7 +340,8 @@ fn apply_auth_env_value(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode
-        | AuthKind::Zai => {
+        | AuthKind::Zai
+        | AuthKind::Minimax => {
             env.insert(name.to_string(), value);
         }
     }
@@ -418,7 +441,12 @@ pub(super) fn workspace_auth_mode_and_credential(
                 });
             (mode, credential)
         }
-        AuthKind::Zai => zai_mode_and_credential(&workspace.env),
+        AuthKind::Zai => {
+            env_only_mode_and_credential(&workspace.env, crate::env_model::ZAI_API_KEY_ENV_NAME)
+        }
+        AuthKind::Minimax => {
+            env_only_mode_and_credential(&workspace.env, crate::env_model::MINIMAX_API_KEY_ENV_NAME)
+        }
     }
 }
 
@@ -445,7 +473,8 @@ pub(super) fn panel_auth_source_value<'a>(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode
-        | AuthKind::Zai => agent_panel_source_value(cfg, workspace, role, env_name),
+        | AuthKind::Zai
+        | AuthKind::Minimax => agent_panel_source_value(cfg, workspace, role, env_name),
     }
 }
 
@@ -556,7 +585,12 @@ pub(super) fn role_auth_mode_and_credential(
                 });
             (mode, credential)
         }
-        AuthKind::Zai => role.map_or((None, None), |role| zai_mode_and_credential(&role.env)),
+        AuthKind::Zai => role.map_or((None, None), |role| {
+            env_only_mode_and_credential(&role.env, crate::env_model::ZAI_API_KEY_ENV_NAME)
+        }),
+        AuthKind::Minimax => role.map_or((None, None), |role| {
+            env_only_mode_and_credential(&role.env, crate::env_model::MINIMAX_API_KEY_ENV_NAME)
+        }),
     }
 }
 
@@ -584,10 +618,11 @@ fn agent_role_mode_and_credential(
     (mode, credential)
 }
 
-fn zai_mode_and_credential(
+fn env_only_mode_and_credential(
     env: &BTreeMap<String, crate::operator_env::EnvValue>,
+    key: &str,
 ) -> (Option<AuthMode>, Option<crate::operator_env::EnvValue>) {
-    let credential = env.get(crate::env_model::ZAI_API_KEY_ENV_NAME).cloned();
+    let credential = env.get(key).cloned();
     let mode = credential.as_ref().map(|_| AuthMode::ApiKey);
     (mode, credential)
 }
@@ -637,12 +672,18 @@ pub(crate) fn resolve_panel_mode(
             let mode = crate::config::resolve_github_mode(cfg, workspace, role);
             auth_mode_from_github(mode)
         }
-        AuthKind::Zai => {
+        AuthKind::Zai | AuthKind::Minimax => {
+            // Env-only provider kinds: mode derived from whether the key is present
+            // in the effective env at this layer. Fails loudly if the AuthKind has no
+            // ApiKey env mapping, which is a programming error.
+            let env_key = kind
+                .required_env_var(AuthMode::ApiKey)
+                .expect("env-only provider AuthKind must define an ApiKey env var");
             let key_present = crate::operator_env::lookup_operator_env_raw(
                 cfg,
                 (!role.is_empty()).then_some(role),
                 Some(workspace),
-                crate::env_model::ZAI_API_KEY_ENV_NAME,
+                env_key,
             )
             .is_some();
             if key_present {

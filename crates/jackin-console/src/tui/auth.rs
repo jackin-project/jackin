@@ -11,6 +11,9 @@ pub enum AuthKind {
     Github,
     /// Z.AI / GLM Coding Plan: env-only auth kind.
     Zai,
+    /// MiniMax Token Plan: env-only provider credential. Distinct from agent
+    /// runtimes; credential lives as `MINIMAX_API_KEY` in `[env]`.
+    Minimax,
 }
 
 impl AuthKind {
@@ -21,6 +24,7 @@ impl AuthKind {
         Self::Opencode,
         Self::Github,
         Self::Zai,
+        Self::Minimax,
     ];
 
     pub const SETTINGS_KINDS: &'static [Self] = &[
@@ -31,6 +35,7 @@ impl AuthKind {
         Self::Opencode,
         Self::Github,
         Self::Zai,
+        Self::Minimax,
     ];
 
     #[must_use]
@@ -43,6 +48,7 @@ impl AuthKind {
             Self::Opencode => "OpenCode",
             Self::Github => "GitHub CLI",
             Self::Zai => "Z.AI",
+            Self::Minimax => "MiniMax",
         }
     }
 
@@ -59,7 +65,7 @@ impl AuthKind {
                 &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
             }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
-            Self::Zai => &[AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Zai | Self::Minimax => &[AuthMode::ApiKey, AuthMode::Ignore],
         }
     }
 
@@ -70,10 +76,15 @@ impl AuthKind {
             (Self::Claude, AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
             (Self::Codex, AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, AuthMode::ApiKey) => Some("AMP_API_KEY"),
-            (Self::Kimi, AuthMode::ApiKey) => Some("KIMI_API_KEY"),
+            (Self::Kimi, AuthMode::ApiKey) => {
+                Some(jackin_core::env_model::KIMI_CODE_API_KEY_ENV_NAME)
+            }
             (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Github, AuthMode::Token) => Some("GH_TOKEN"),
-            (Self::Zai, AuthMode::ApiKey) => Some("ZAI_API_KEY"),
+            (Self::Zai, AuthMode::ApiKey) => Some(jackin_core::env_model::ZAI_API_KEY_ENV_NAME),
+            (Self::Minimax, AuthMode::ApiKey) => {
+                Some(jackin_core::env_model::MINIMAX_API_KEY_ENV_NAME)
+            }
             _ => None,
         }
     }

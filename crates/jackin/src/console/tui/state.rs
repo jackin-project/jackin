@@ -634,10 +634,19 @@ impl SettingsStateExt for SettingsState<'_> {
 
     fn remove_zai_key_when_auth_ignored(&mut self) {
         for row in &self.auth.pending {
-            if row.kind == jackin_console::tui::auth::AuthKind::Zai
-                && row.mode == jackin_console::tui::auth::AuthMode::Ignore
+            // Remove the credential env var for env-only provider kinds when
+            // the operator commits Ignore (meaning: no credential at global scope).
+            if row.mode == jackin_console::tui::auth::AuthMode::Ignore
+                && matches!(
+                    row.kind,
+                    jackin_console::tui::auth::AuthKind::Zai
+                        | jackin_console::tui::auth::AuthKind::Minimax
+                )
+                && let Some(env_key) = row
+                    .kind
+                    .required_env_var(jackin_console::tui::auth::AuthMode::ApiKey)
             {
-                self.env.pending.env.remove("ZAI_API_KEY");
+                self.env.pending.env.remove(env_key);
             }
         }
     }

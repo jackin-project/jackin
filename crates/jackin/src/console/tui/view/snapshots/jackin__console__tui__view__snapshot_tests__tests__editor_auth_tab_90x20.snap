@@ -1,6 +1,5 @@
 ---
 source: crates/jackin/src/console/tui/view/snapshot_tests.rs
-assertion_line: 910
 expression: rendered
 ---
  jackin'  · edit workspace · ws                                                           
@@ -15,7 +14,7 @@ expression: rendered
 │  OpenCode                                                                              │
 │  GitHub CLI                                                                            │
 │  Z.AI                                                                                  │
-│                                                                                        │
+│  MiniMax                                                                               │
 │                                                                                        │
 │                                                                                        │
 │                                                                                        │

@@ -1,5 +1,6 @@
 //! Tests for `runtime_setup`.
 use super::*;
+use std::fs;
 
 #[test]
 fn container_init_marker_is_container_local() {
@@ -38,4 +39,125 @@ fn hook_uses_canonical_agent_trailers() {
 #[test]
 fn hook_marker_points_at_capsule_runtime_binary() {
     assert_eq!(CAPSULE_RUNTIME_BIN, "/jackin/runtime/jackin-capsule");
+}
+
+#[test]
+fn opencode_config_blocks_are_self_contained_and_match_picker_models() {
+    use jackin_protocol::Provider;
+    let cfg = build_opencode_config(
+        Some("zai-tok".to_string()),
+        Some("minimax-tok".to_string()),
+        Some("kimi-tok".to_string()),
+    );
+    assert_eq!(cfg["permission"], "allow");
+    let providers = cfg["provider"].as_object().expect("provider block present");
+
+    // MiniMax/Kimi baseURL carries a `/v1` suffix the Claude-path constant
+    // omits: `@ai-sdk/anthropic` appends only `/messages`, not `/v1/messages`.
+    for (provider, npm, base_url, api_key) in [
+        (
+            Provider::Zai,
+            "@ai-sdk/openai-compatible",
+            jackin_protocol::ZAI_OPENAI_BASE_URL.to_string(),
+            "zai-tok",
+        ),
+        (
+            Provider::Minimax,
+            "@ai-sdk/anthropic",
+            format!("{}/v1", jackin_protocol::MINIMAX_BASE_URL),
+            "minimax-tok",
+        ),
+        (
+            Provider::Kimi,
+            "@ai-sdk/anthropic",
+            format!("{}/v1", jackin_protocol::KIMI_BASE_URL),
+            "kimi-tok",
+        ),
+    ] {
+        // The picker emits the `-m <provider>/<model>` string; the config
+        // must define that exact provider id and model id, or the session
+        // fails to start.
+        let flag = provider
+            .opencode_model()
+            .expect("alt provider has -m string");
+        let (provider_id, model_id) = flag.split_once('/').expect("provider/model shape");
+        let block = providers
+            .get(provider_id)
+            .unwrap_or_else(|| panic!("config missing provider {provider_id}"));
+        assert_eq!(block["npm"], npm);
+        assert_eq!(block["options"]["baseURL"], base_url);
+        assert_eq!(block["options"]["apiKey"], api_key);
+        assert!(
+            block["models"].get(model_id).is_some(),
+            "provider {provider_id} block missing model {model_id}"
+        );
+    }
+}
+
+#[test]
+fn opencode_config_omits_absent_providers() {
+    let cfg = build_opencode_config(None, None, None);
+    assert_eq!(cfg["permission"], "allow");
+    assert!(cfg.get("provider").is_none());
+}
+
+#[test]
+fn opencode_json_is_written_owner_only() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("opencode.json");
+    let cfg = build_opencode_config(Some("zai-tok".to_string()), None, None);
+    write_opencode_json(&path, &cfg).expect("write opencode.json");
+    let mode = fs::metadata(&path).expect("metadata").permissions().mode();
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "opencode.json must be 0o600, got {:o}",
+        mode & 0o777
+    );
+}
+
+#[test]
+fn codex_provider_config_is_idempotent_across_repeated_runs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    // Two runs (simulating container reuse) must not duplicate the table.
+    write_codex_provider_config_inner(codex_dir, true).expect("first write");
+    write_codex_provider_config_inner(codex_dir, true).expect("second write");
+    let body = fs::read_to_string(codex_dir.join("config.toml")).expect("read config.toml");
+    assert_eq!(
+        body.matches("[model_providers.minimax]").count(),
+        1,
+        "MiniMax provider block must appear exactly once"
+    );
+}
+
+#[test]
+fn codex_provider_config_preserves_operator_content() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    let config_path = codex_dir.join("config.toml");
+    fs::write(
+        &config_path,
+        b"# existing operator config\n[settings]\nsome_key = true\n",
+    )
+    .expect("write existing config");
+    write_codex_provider_config_inner(codex_dir, true).expect("write with existing content");
+    let body = fs::read_to_string(&config_path).expect("read config.toml");
+    // Original content preserved.
+    assert!(body.contains("# existing operator config"));
+    assert!(body.contains("some_key = true"));
+    // Provider block appended.
+    assert!(body.contains("[model_providers.minimax]"));
+}
+
+#[test]
+fn codex_provider_config_noop_without_minimax_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    write_codex_provider_config_inner(codex_dir, false).expect("noop write");
+    assert!(
+        !codex_dir.join("config.toml").exists(),
+        "no config.toml should be written when MiniMax key absent"
+    );
 }

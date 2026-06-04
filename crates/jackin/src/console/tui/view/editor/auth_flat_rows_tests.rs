@@ -31,8 +31,11 @@ fn root_view_lists_auth_kinds_in_design_order() {
             AuthRow::AuthKindRow {
                 kind: AuthKind::Zai,
             },
+            AuthRow::AuthKindRow {
+                kind: AuthKind::Minimax,
+            },
         ],
-        "root view must list Claude / Codex / Amp / Opencode / Github / Z.AI in this order"
+        "root view must list Claude / Codex / Amp / Opencode / Github / Z.AI / MiniMax in this order"
     );
 }
 
