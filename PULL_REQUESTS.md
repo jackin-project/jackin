@@ -8,7 +8,7 @@ Read this file before opening, updating, or merging a pull request.
 
 PR rules are split by audience to avoid duplication:
 
-- **This file** is the **shared** PR flow — body-shape spec, Verify-locally template, mandatory isolation env-var rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Both humans and agents start here.
+- **This file** is the **shared** PR flow — body-shape spec, Verify-locally policy, mandatory isolation env-var rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Both humans and agents start here.
 - [`.github/AGENTS.md`](.github/AGENTS.md) is the **agent-only extras** — per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration-vs-merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Agents read this in addition to the shared file; the `.github/CLAUDE.md` include makes Claude Code auto-load it whenever working under `.github/`.
 
 When agent-only and shared rules cover the same topic (e.g. "include a Verify-locally section"), the shared rule states the *what* and the agent-only rule states the agent-specific *how/when/who*.
@@ -22,7 +22,7 @@ Sections, in order (drop the optional ones when they don't apply — the templat
 1. **Summary** — one paragraph: what shipped, who benefits, how it changes their flow. No file list, no rationale narration. Cross-references to other docs by name (no `/reference/...` links).
 2. **Hard rule / impact callout** *(optional — only when the PR introduces or honours a non-trivial cross-cutting rule)* — one paragraph naming the rule, what it blocks, where the full rationale lives.
 3. **What's deferred** *(optional — only when the PR is the first slice of a longer plan)* — bulleted list of explicit follow-up items so reviewers know what's intentionally out of scope.
-4. **Verify locally** — copy-pasteable steps the operator runs, structured by intent (Checkout / Static checks / Rust tests / Docs checks / User smoke / Documentation). One block per intent, with the exact commands and the expected output.
+4. **Verify locally** — copy-pasteable steps the operator runs, structured by intent. Start from the sections in the template and keep only the blocks that apply.
 5. **Migration notes** — short. "None" is a valid answer during pre-release; drop the section entirely when there's nothing to say.
 
 What the template deliberately omits:
@@ -39,21 +39,14 @@ Every pull request must include a copy-pasteable "Verify locally" section in the
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a PR-specific test directory (`$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>`) so the operator can inspect multiple PRs at once without checkout collisions. Use the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Rust tests only when there is a relevant `cargo` or `cargo nextest` command for the Rust project. Add Docs checks only when there is a relevant automated docs command, such as `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, or `bun test` from `docs/`. Keep Rust tests and Docs checks in separate blocks; docs tests validate the published documentation surface and docs tooling, not the Rust project itself. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command because it is the operator's most intuitive end-to-end validation path: `jackin console --debug`. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct commands such as `jackin load <role> <target> --debug` or narrower subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Rust tests only when there is a relevant Rust test command for the project. Add Docs checks only when there is a relevant automated docs command; use the template's docs gate rather than restating it here. Keep Rust tests and Docs checks in separate blocks; docs tests validate the published documentation surface and docs tooling, not the Rust project itself. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command from the template because it is the operator's most intuitive end-to-end validation path. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported debug command in the same smoke block and explain the gap in one sentence.
 
 ### jackin-capsule PRs
 
 Any PR touching `crates/jackin-capsule/` requires the Checkout block to build and export the capsule binary before any `jackin` smoke command, plus a dedicated `### jackin-capsule smoke` block:
 
-1. The Checkout block keeps the canonical eval one-shot at the end, after the local `jackin` binary build and `PATH` guardrail:
-
-   ```sh
-   eval "$(cargo run --bin build-jackin-capsule -- --export)"
-   ```
-
-   **Must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
-
-2. `### jackin-capsule smoke` — runs `jackin load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the Checkout block already exported `JACKIN_CAPSULE_BIN`.
+1. The Checkout block keeps the canonical capsule build/export one-shot from the template at the end, after the local `jackin` binary build and `PATH` guardrail. **It must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
+2. `### jackin-capsule smoke` uses the template's launch and in-container verify checklist. It does not repeat the capsule export; the Checkout block already exported `JACKIN_CAPSULE_BIN`.
 
 The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the checkout eval and smoke block in the correct order; copy them rather than rewriting the build invocation.
 
@@ -68,131 +61,38 @@ The Files-changed tab shows raw MDX. It does not show how Starlight renders the 
 Required pattern for docs-only PRs:
 
 1. **Checkout block** — same as any other PR.
-2. **Docs checks** — run the automated docs verification gate (the `### Docs checks` block from the template): `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. These catch broken builds, dead repo links, type errors, and failing docs tests before the manual walk.
-3. **Run the docs site locally** — `cd docs && bun install --frozen-lockfile && bun run dev`. Astro serves at `http://localhost:4321/`.
-4. **Direct links to every changed page** — for each affected MDX file, include a localhost URL the operator can click straight into. Map `docs/content/docs/<path>.mdx` to `http://localhost:4321/<path>/`. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
+2. **Docs checks** — run the automated docs verification gate from the template before the manual walk.
+3. **Run the docs site locally** — use the `### Documentation` block from the template.
+4. **Direct links to every changed page** — for each affected docs page, include a localhost URL the operator can click straight into. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
 
 A `.mdx`-only PR that omits the Docs checks gate or the local-render step is incomplete. The Files-changed tab is the operator's last-resort fallback, not the primary review surface.
 
-### Template
+### Verify-locally section policy
 
-The Checkout step is split into two separate code fences. The first block disables the `tirith` paste scanner for the rest of the session; the second block is the actual checkout. Splitting them lets the operator paste the bypass once on its own line and then paste the multi-line checkout block without triggering the scanner mid-way.
+The exact copy-paste commands live only in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Do not duplicate those commands here; update the template when a command changes. This file describes when each block is required and the invariants each block protects.
 
-#### Checkout
+The Checkout step in the template is split into two separate code fences: one paste disables the `tirith` paste scanner for the rest of the session, and the second paste performs the checkout. Keep that split in PR bodies.
 
-Paste this first to bypass the `tirith` paste scanner for the rest of the session:
+The checkout recipe must keep these properties:
 
-```sh
-export TIRITH=0
-```
-
-Then paste the checkout block:
-
-```sh
-mkdir -p "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
-cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
-
-if [ ! -d jackin/.git ]; then
-  git clone https://github.com/jackin-project/jackin.git
-fi
-
-cd jackin
-mise trust
-git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
-git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
-mise trust
-mise install
-cargo build --bin jackin
-export PATH="$PWD/target/debug:$PATH"
-export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
-export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
-which jackin
-```
-
-For PRs touching `crates/jackin-capsule/` only, follow the checkout block with a **separate** paste that builds and exports the capsule binary (drop it entirely for non-capsule PRs). Keep it as its own fence — not a line appended to the block above — so the operator can run it independently, and keep it before any `jackin console` / `jackin load` smoke step:
-
-```sh
-eval "$(cargo run --bin build-jackin-capsule -- --export)"
-```
-
-The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches may have been force-pushed after explicit operator approval (DCO amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at - so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
-
-The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path.
-
-The `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` exports are mandatory in the Checkout block. A PR binary can run schema migrations, write workspace files, cache roles, and create runtime state; those writes must land in PR-specific directories, not in the operator's live `~/.config/jackin` or `~/.jackin` trees. Keeping the exports in Checkout makes every later Static Checks, Rust Tests, User Smoke, and Documentation command inherit the isolated roots. Replace `<PR_NUMBER>` with the actual PR number. After verification the directories can be deleted with `rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"`.
-
-For `crates/jackin-capsule/` PRs, keep the separate `eval "$(cargo run --bin build-jackin-capsule -- --export)"` fence after the checkout block so every later `jackin console` / `jackin load` uses the freshly built capsule binary through `JACKIN_CAPSULE_BIN`; drop that fence for non-capsule PRs.
-
-#### Static Checks
-
-```sh
-cargo fmt --check
-cargo clippy --lib
-```
-
-#### Rust Tests
-
-```sh
-cargo test <RELEVANT_TEST>
-```
-
-#### Docs Checks
-
-```sh
-(
-  cd docs
-  bun install --frozen-lockfile
-  bun run build
-  bun run check:repo-links
-  bunx tsc --noEmit
-  bun test
-)
-```
-
-#### User Smoke
-
-```sh
-# Adapt this to the behavior changed by the PR.
-jackin console --debug
-```
-
-If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. Use plain `jackin ...` after the Checkout block's `PATH` export so the smoke path matches the operator's normal command shape while still running the PR-built binary. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation" in `AGENTS.md`.
+- It fetches the real PR head branch into a PR-numbered test directory.
+- It force-updates the remote-tracking ref so operator verification survives authorized force-pushes.
+- It builds the local `jackin` binary and prepends `target/debug` so smoke commands exercise the PR checkout, not a previously installed binary.
+- It exports PR-scoped `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` so schema migrations, workspace writes, role caches, and runtime state do not touch the operator's live config/state.
+- For `crates/jackin-capsule/` PRs, it includes the template's capsule build/export paste before any `jackin console` or `jackin load` smoke command.
 
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
 
 - **Checkout** — copy-pasteable commands to fetch and check out the PR.
 - **Static Checks** — only checks that are relevant and expected to be run locally.
-- **Rust Tests** — focused or full `cargo` / `cargo nextest` commands that validate the changed Rust behavior.
+- **Rust Tests** — focused or full Rust test commands that validate the changed behavior.
+- **Schema Migration Smoke** — only for PRs that bump a versioned schema. Config/workspace migrations copy real state owned by jackin' into the PR-scoped dirs, then run the PR binary against the copy. Role manifest migrations copy a role repo into the PR test directory, then migrate the copy.
 - **Docs Checks** — automated `bun` commands from `docs/` that validate the rendered docs project, repo links, TypeScript, and docs test suite.
 - **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
 
 Do not add generic commands that do not materially validate the PR. In particular, do not include `git diff --check` unless the PR is specifically about whitespace, patch hygiene, generated diffs, or another issue that command is meant to catch.
 
-For console/TUI changes, workspace flows, and runtime behavior that can be manually verified through jackin' itself, put the console smoke first and then list the keys/clicks the operator should walk. Prefer:
-
-```sh
-jackin console --debug
-```
-
-When the TUI change depends on config or workspace state, seed that state in the PR body before the console command. Use a disposable `HOME` when the smoke test writes jackin-owned config, so the operator can verify save flows without mutating their real `~/.config/jackin`:
-
-```sh
-export JACKIN_VERIFY_HOME="$PWD/.verify-home/<feature>"
-rm -rf "$JACKIN_VERIFY_HOME"
-mkdir -p "$JACKIN_VERIFY_HOME/.config/jackin"
-cat > "$JACKIN_VERIFY_HOME/.config/jackin/config.toml" <<'TOML'
-version = "v1alpha2"
-# Add the smallest config that makes the changed UI visible.
-TOML
-
-HOME="$JACKIN_VERIFY_HOME" jackin console --debug
-```
-
-For CLI subcommand changes, include the exact subcommand invocation and the expected output or persisted file change, for example:
-
-```sh
-jackin config mount list --debug
-```
+For console/TUI changes, workspace flows, and runtime behavior that can be manually verified through jackin' itself, put the console smoke first and then list the keys/clicks the operator should walk. If the TUI change depends on config or workspace state, seed that state in the PR body before the console command using the template's isolated env-var pattern. For CLI subcommand changes, include the exact subcommand invocation and the expected output or persisted file change.
 
 #### Isolation env vars
 
@@ -204,21 +104,9 @@ Three env vars let the operator test a PR without touching their live config or 
 | `JACKIN_HOME_DIR` | `~/.jackin` | data/, roles/, cache/ |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | construct image used for role validation and launch |
 
-`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. Use the PR number as the suffix so two PRs can be tested in parallel on the same machine without their state directories colliding:
+`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. Use the PR number as the suffix so two PRs can be tested in parallel on the same machine without their state directories colliding.
 
-```sh
-export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
-export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
-```
-
-For construct image PRs, add the build step and the override export:
-
-```sh
-just construct-build-local
-export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
-```
-
-`just construct-build-local` builds a single-platform image tagged `jackin-local/construct:trixie` and loads it into the local Docker daemon. `JACKIN_CONSTRUCT_IMAGE` then makes jackin use that image for Dockerfile validation and role container launch instead of the published one.
+For construct image PRs, use the construct-image block from the template. It builds a local construct image and points jackin' at that image for Dockerfile validation and role container launch instead of the published one.
 
 Do not include `JACKIN_CONSTRUCT_IMAGE` in PRs that do not touch the construct image — the isolation pattern is about scoping test risk, not about exhaustively listing every available env var.
 
@@ -228,19 +116,9 @@ The PR body is read in GitHub's renderer, which already wraps long lines at the 
 
 - **Do not hard-wrap prose at ~70 columns.** Write each paragraph as a single long line in the source. GitHub will wrap it at display time. Source-side line breaks at column 70 produce output where every other line ends mid-sentence, which is much harder to read than a flowing paragraph. The exception is code fences and bullet contents that already encode meaningful line breaks.
 - **No verbosity, no duplication.** A PR body explains *what shipped* and *how to verify it*. It does not duplicate the design rationale (that lives in the contributor doc the PR adds or updates), the file-by-file changelog (visible in the PR diff), or the test list (visible in the test-runner output). Trim every sentence that exists in two places. Default to 100–200 lines for a substantial PR; 400+ lines is a smell.
-- **Never link deployed docs from the PR body.** Operator-facing docs URLs, roadmap pages, and any `https://jackin.example/...` link can move, rename, or 404 after the PR merges. The PR body becomes a permanent commit attribution after squash-merge, so a broken link is permanent. Use localhost render URLs (`http://localhost:4321/...`) inside the **Verify locally → Documentation** block — those are valid only at verification time and are obviously local. Refer to other docs by name, not URL: write *"the GitHub CLI authentication strategy roadmap doc"*, not a link to it.
-- **No mechanical / CI-shaped checks in the PR body.** Anything fully deterministic — sidebar diffs, link audits, file-tree assertions, "did you remember to update the changelog" greps — belongs in CI, not in a checklist the operator has to copy-paste. The PR body is for the operator-facing verification path: build, test, run the binary, render the docs. If a mechanical check is missing from CI today, file a follow-up to add it; do not promote it into every PR body in the meantime. The one exception is the docs verification gate — the **Docs Checks** block (`bun install --frozen-lockfile`, then `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, `bun test` from `docs/`). It is the single sanctioned copy-paste mechanical check because `bunx tsc --noEmit` and `bun test` have no CI backstop today, so the operator running them locally is the only gate; AGENTS.md requires the gate before a docs-touching PR is merge-ready.
-- **Verify-locally documentation block: one block per page.** Each page operators should walk gets its own block: the URL bolded on its own line, the description on the next line with no blank line in between (use a trailing two-space line break for the soft break), and a blank line between blocks. Like:
-
-  ```md
-  **http://localhost:4321/getting-started/design-principles/**␣␣
-  NEW page. Repo-wide design rules — never mutate the host, …
-
-  **http://localhost:4321/guides/github-cli-auth/**␣␣
-  NEW page. Dedicated `gh` auth flow — modes, launch-summary samples, …
-  ```
-
-  Do not use `####` or `###` for the URLs — that creates extra vertical space and pushes the description away from its link. Do not put the URL in plain prose with the description tail-trailing it on the same wrapped line — that hides the link inside a paragraph. The bold-URL + soft-break + description pattern keeps each entry one visual block while still flowing inside GitHub's renderer.
+- **Never link deployed docs from the PR body.** Operator-facing docs URLs, roadmap pages, and any deployed docs link can move, rename, or 404 after the PR merges. The PR body becomes a permanent commit attribution after squash-merge, so a broken link is permanent. Use the localhost render URL shape from the template inside the **Verify locally → Documentation** block — those links are valid only at verification time and are obviously local. Refer to other docs by name, not URL: write *"the GitHub CLI authentication strategy roadmap doc"*, not a link to it.
+- **No mechanical / CI-shaped checks in the PR body.** Anything fully deterministic — sidebar diffs, link audits, file-tree assertions, "did you remember to update the changelog" greps — belongs in CI, not in a checklist the operator has to copy-paste. The PR body is for the operator-facing verification path: build, test, run the binary, render the docs. If a mechanical check is missing from CI today, file a follow-up to add it; do not promote it into every PR body in the meantime. The one exception is the docs verification gate from the template. It is the single sanctioned copy-paste mechanical check because parts of the docs gate have no CI backstop today, so the operator running them locally is the only gate; AGENTS.md requires the gate before a docs-touching PR is merge-ready.
+- **Verify-locally documentation block: one block per page.** Use the URL-and-description shape from the template for each page operators should walk. Do not use headings for the URLs, and do not bury the URL in prose with the description tail-trailing it on the same wrapped line.
 
 For agent-side body construction (shell quoting, `gh pr create --body-file` vs `--body`, heredoc pattern), see [`.github/AGENTS.md`](.github/AGENTS.md) under `## Author the PR body so it renders correctly on GitHub`.
 
@@ -290,7 +168,7 @@ When a PR ships the last remaining piece of a roadmap item — every feature, su
 4. **Replace the page with a single bullet in the Completed section** of `docs/content/docs/reference/roadmap/index.mdx`. The bullet names the feature in plain prose and links to the canonical user-facing or contributor-facing doc that now describes the shipped behaviour. No link back to a deleted roadmap page.
 5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked to the deleted page; point them at the canonical home from step 3 instead.
 6. **Run the sidebar and overview audits** documented in `docs/AGENTS.md`. The sidebar audit must show no diff after deleting the entry from `docs/astro.config.ts`. The overview audit must continue to pass (every roadmap file is reachable from `roadmap.mdx` or covered by a parent program entry).
-7. **Run the docs verification gate.** `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A retirement that breaks the build or repo-link references is incomplete.
+7. **Run the docs verification gate.** Use the template's Docs Checks block. A retirement that breaks the build or repo-link references is incomplete.
 
 A `Status: Resolved` roadmap page that still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired in the PR that ships the last piece — not deferred to a later cleanup PR, because every later contributor reading the resolved page treats it as authoritative until it is gone.
 
