@@ -8,32 +8,52 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use jackin_tui::theme::PREVIEW_CARD;
 use ratatui::{
     Terminal,
     backend::TestBackend,
     buffer::Buffer,
+    layout::Rect,
     style::{Color, Style},
-    widgets::Block,
+    widgets::{Block, Clear},
 };
 
 use crate::stories::{Story, stories};
 
+/// Uniform charcoal padding ring around every exported story, in cells. Mirrors
+/// the interactive preview's 1-cell `Margin` so a component floats inside the
+/// PREVIEW_CARD surround instead of bleeding to the image edge.
+const STORY_PAD: u16 = 1;
+
 /// Render the story into a ratatui test buffer and return it.
 pub fn render_story_to_buffer(story: Story) -> Buffer {
-    let backend = TestBackend::new(story.width, story.height);
+    let width = story.width.saturating_add(STORY_PAD * 2);
+    let height = story.height.saturating_add(STORY_PAD * 2);
+    let backend = TestBackend::new(width, height);
     let mut terminal = match Terminal::new(backend) {
         Ok(terminal) => terminal,
         Err(error) => match error {},
     };
     match terminal.draw(|frame| {
         let area = frame.area();
-        // Pre-fill with black so cells not touched by the story match the
-        // real terminal background instead of appearing as Color::Reset.
+        // PREVIEW_CARD charcoal surround, matching the interactive preview so
+        // the padding ring is visible against the black page background and
+        // every component reads as a floating element.
         frame.render_widget(
-            Block::default().style(Style::default().bg(Color::Black)),
+            Block::default().style(Style::default().bg(PREVIEW_CARD)),
             area,
         );
-        story.render(frame, area);
+        let inner = Rect {
+            x: STORY_PAD,
+            y: STORY_PAD,
+            width: story.width,
+            height: story.height,
+        };
+        // Clear the component area to the terminal default (black) so the story
+        // renders on the same surface as the real app, with PREVIEW_CARD only
+        // as the surround — identical to the interactive preview.
+        frame.render_widget(Clear, inner);
+        story.render(frame, inner);
     }) {
         Ok(_) => {}
         Err(error) => match error {},

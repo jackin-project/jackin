@@ -159,7 +159,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 PanelFocus::Unfocused
             };
             let sidebar_block = Panel::new()
-                .title(" stories ")
+                .title(" Stories ")
                 .focus(sidebar_panel_focus)
                 .block();
             let sidebar_inner = sidebar_block.inner(sidebar_area);
@@ -218,7 +218,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             // ── Description block ─────────────────────────────────────────────
             let desc_block = Panel::new()
-                .title(" about ")
+                .title(" About ")
                 .focus(PanelFocus::Unfocused)
                 .block();
             let desc_inner = panel_body_area(&desc_block, desc_area);
@@ -261,7 +261,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 PanelFocus::Unfocused
             };
             let preview_block = Panel::new()
-                .title(" preview ")
+                .title(" Preview ")
                 .focus(preview_panel_focus)
                 .block();
             let preview_inner = preview_block.inner(preview_area);
