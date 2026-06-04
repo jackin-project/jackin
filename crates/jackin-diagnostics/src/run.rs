@@ -151,12 +151,20 @@ impl RunDiagnostics {
 
     pub fn compact(&self, kind: &str, message: &str) {
         self.write(kind, message, None, None, None);
+        tracing::info!(run_id = %self.run_id, kind, "{message}");
     }
 
     pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
         // `span_id` is left unset: the `stage` field already identifies the
         // span, so repeating it as the span id is pure duplication.
         self.write(kind, message, Some(stage), detail, None);
+        tracing::info!(
+            run_id = %self.run_id,
+            kind,
+            stage,
+            detail,
+            "{message}"
+        );
     }
 
     pub fn debug(&self, category: &str, line: &str) -> bool {
@@ -164,6 +172,7 @@ impl RunDiagnostics {
             return false;
         }
         self.write("debug", line, None, Some(category), None);
+        tracing::debug!(run_id = %self.run_id, category, "{line}");
         true
     }
 

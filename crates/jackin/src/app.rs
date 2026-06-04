@@ -91,6 +91,11 @@ pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     tui::set_debug_mode(debug);
 
+    // Initialize the global tracing subscriber (Defect 47.1 foundation).
+    // Ignores "already installed" errors from test harnesses that set their
+    // own subscriber.
+    let _ = jackin_diagnostics::init_tracing(debug);
+
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
     // the deprecation warning for `launch` land in a follow-up commit.
