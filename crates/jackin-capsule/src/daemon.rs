@@ -189,6 +189,9 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
+    /// Screen-pattern detectors, one per built-in agent runtime. Run on the
+    /// 1Hz state ticker to derive each session's status from visible output.
+    detectors: crate::agent_status::detectors::DetectorRegistry,
 }
 
 /// One-shot resolution of workdir + tool facts. `gh_available` may
@@ -631,6 +634,7 @@ impl Multiplexer {
             status_bar,
             dialog_stack: Vec::new(),
             content_rows,
+            detectors: crate::agent_status::detectors::DetectorRegistry::default_registry(),
             available_agents: agents,
             launch_config,
             env_passthrough,
@@ -3241,7 +3245,37 @@ impl Multiplexer {
     }
 
     fn snapshot_session_states(&self) -> Vec<(u64, AgentState)> {
-        self.sessions.iter().map(|(&id, s)| (id, s.state)).collect()
+        self.sessions
+            .iter()
+            .map(|(&id, s)| (id, s.state()))
+            .collect()
+    }
+
+    /// Run the screen detectors over every live session and feed the result
+    /// into each session's status machine. Called once per 1Hz tick. The
+    /// focused pane is also acknowledged so a `Done` it produced clears to
+    /// `Idle` (the operator is looking at it).
+    fn refresh_session_statuses(&mut self) {
+        let focused = self.active_focused_id();
+        for (&id, session) in self.sessions.iter_mut() {
+            // Acknowledge the focused pane first so a freshly-finished
+            // focused agent reads as Idle, not Done (the operator sees it).
+            if Some(id) == focused {
+                session.acknowledge();
+            }
+            let agent = session.agent.clone();
+            if let Some(raw) = self
+                .detectors
+                .detect(agent.as_deref(), session.parser.screen())
+                && let Some(new_state) = session.apply_raw_state(raw) {
+                    crate::cdebug!(
+                        "session {id}: status {:?} (raw {:?}, agent {:?})",
+                        new_state,
+                        raw,
+                        agent
+                    );
+                }
+        }
     }
 
     fn compose_chrome_hover_frame(&mut self) -> Vec<u8> {
@@ -3445,7 +3479,7 @@ impl Multiplexer {
                 id,
                 label: s.label.clone(),
                 agent: s.agent.clone(),
-                state: s.state,
+                state: s.state(),
                 active: Some(id) == focused,
             })
             .collect()
@@ -3499,7 +3533,7 @@ impl Multiplexer {
                             session_id: id,
                             label: session.label.clone(),
                             agent: session.agent.clone(),
-                            state: session.state,
+                            state: session.state(),
                         },
                         None => PaneSnapshot {
                             session_id: id,
@@ -3961,9 +3995,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
-                for session in mux.sessions.values_mut() {
-                    session.refresh_state();
-                }
+                mux.refresh_session_statuses();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
                     let frame_data =
                         mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);

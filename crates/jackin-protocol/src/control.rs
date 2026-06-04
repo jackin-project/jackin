@@ -74,6 +74,10 @@ pub enum AgentState {
     Blocked,
     Done,
     Idle,
+    /// State not yet determined. Safer default than `Blocked` when no
+    /// reliable signal is available. Phase 1 arbitration will replace this
+    /// with a real detection result.
+    Unknown,
 }
 
 impl AgentState {
@@ -83,6 +87,7 @@ impl AgentState {
             Self::Blocked => "blocked",
             Self::Done => "done",
             Self::Idle => "idle",
+            Self::Unknown => "unknown",
         }
     }
 }

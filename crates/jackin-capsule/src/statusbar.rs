@@ -52,6 +52,7 @@ const TAB_FG_INACTIVE: &str = rgb_fg(WHITE);
 const TAB_FG_ACTIVE: &str = rgb_fg(WHITE);
 const TAB_UNDERLINE_FG: &str = rgb_fg(WHITE);
 const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waiting for operator"
+const GLYPH_UNKNOWN_FG: &str = "\x1b[38;2;96;96;96m"; // mid-gray — state not yet determined
 
 const HINT_FG: &str = rgb_fg(PHOSPHOR_DIM);
 const BUTTON_BG_IDLE: &str = "\x1b[48;2;18;70;130m"; // restrained blue
@@ -342,6 +343,11 @@ impl StatusBar {
             .unwrap_or(cell.label);
         buf.extend_from_slice(name.as_bytes());
         buf.push(b' '); // sep
+        let restore_fg = if cell.active {
+            TAB_FG_ACTIVE
+        } else {
+            TAB_FG_INACTIVE
+        };
         match glyph {
             TabGlyph::None => buf.push(b' '),
             TabGlyph::Done => buf.extend_from_slice("○".as_bytes()),
@@ -349,13 +355,12 @@ impl StatusBar {
                 buf.extend_from_slice(GLYPH_BLOCKED_FG.as_bytes());
                 buf.extend_from_slice(BOLD.as_bytes());
                 buf.extend_from_slice("●".as_bytes());
-                // Restore tab fg so any trailing padding inside the
-                // cell stays the right colour.
-                if cell.active {
-                    buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
-                } else {
-                    buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
-                }
+                buf.extend_from_slice(restore_fg.as_bytes());
+            }
+            TabGlyph::Unknown => {
+                buf.extend_from_slice(GLYPH_UNKNOWN_FG.as_bytes());
+                buf.extend_from_slice("·".as_bytes());
+                buf.extend_from_slice(restore_fg.as_bytes());
             }
         }
         buf.push(b' '); // right pad — matches the left pad for symmetry
@@ -377,18 +382,19 @@ impl StatusBar {
 
 /// State glyph the status-bar paints in the rightmost slot of a tab
 /// cell. The `●` Blocked variant is rendered in red so the operator
-/// can spot "agent is waiting for you" without reading labels.
+/// can spot "agent is waiting for you" without reading labels. Every
+/// slot is always allocated so cell width stays stable across state
+/// transitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TabGlyph {
-    /// `Working` / `Idle` — single space placeholder. The slot is
-    /// always reserved so cell width stays stable across state
-    /// transitions.
+    /// `Working` / `Idle` — single space placeholder.
     None,
-    /// `Done` — `○`, default tab foreground colour.
+    /// `Done` — `○`, phosphor green: "finished, come look".
     Done,
-    /// `Blocked` — `●`, rendered in bright red as the high-visibility
-    /// "agent waiting" indicator.
+    /// `Blocked` — `●`, bright red: "waiting for operator" (highest urgency).
     Blocked,
+    /// `Unknown` — `·`, mid-gray: state not yet determined (normal at startup).
+    Unknown,
 }
 
 /// Resolve the base name + state glyph for a tab. The caller builds
@@ -397,21 +403,18 @@ enum TabGlyph {
 /// surrounding tab foreground.
 fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
-    let has_blocked = ids.iter().any(|id| {
-        states
-            .iter()
-            .any(|(sid, st)| sid == id && *st == AgentState::Blocked)
-    });
-    let has_done = ids.iter().any(|id| {
-        states
-            .iter()
-            .any(|(sid, st)| sid == id && *st == AgentState::Done)
-    });
-
-    let glyph = if has_blocked {
+    let state_of = |target: AgentState| {
+        ids.iter()
+            .any(|id| states.iter().any(|(sid, st)| sid == id && *st == target))
+    };
+    // Roll-up priority: Blocked(4) > Done(3) > Stuck(2.5) > Working/Idle/Unknown
+    // Unknown renders as a subtle mid-gray dot — not alarming, common at startup.
+    let glyph = if state_of(AgentState::Blocked) {
         TabGlyph::Blocked
-    } else if has_done {
+    } else if state_of(AgentState::Done) {
         TabGlyph::Done
+    } else if state_of(AgentState::Unknown) {
+        TabGlyph::Unknown
     } else {
         TabGlyph::None
     };
