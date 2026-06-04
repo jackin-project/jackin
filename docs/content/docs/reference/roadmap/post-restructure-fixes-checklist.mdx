@@ -400,7 +400,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Tasks:**
 - [x] Make the tab strip render its focus cue from `tab_bar_focused`: green underline only when the tab bar owns focus; white/normal underline when content owns focus. Check `render_editor_tab_strip` / `render_settings_tab_strip` and the `TabStrip` `focused(..)` call.
 - [x] Ensure the click-to-focus path (Defect 17) sets `tab_bar_focused = false` when it transfers focus into content, so the tab strip stops being green in the same frame.
-- [ ] Couple this with Defect 18: when content gains focus, `▸` appears; when the tab bar regains focus, `▸` disappears and the content border goes dark.
+- [x] Couple this with Defect 18: when content gains focus, `▸` appears; when the tab bar regains focus, `▸` disappears and the content border goes dark. Done: our Defect 17/18 fixes correctly couple the two signals.
 - [x] Scan every tabbed screen (workspace editor, create-workspace, settings) for the dual-focus bug and fix all of them (fix the whole class). Confirmed trigger: switching tabs left/right and returning to the **Mounts** tab leaves the Mounts content block with a green border while the tab bar still owns focus — the content border must be dark whenever `tab_bar_focused` is true, regardless of tab-switch history. Audit per-tab focus state that is not reset when the tab bar owns focus.
 - [x] Record the tab-strip-vs-content mutual-exclusion rule explicitly in [TUI Design Decisions](/reference/tui/navigation/) (W3C Tabs section).
 
