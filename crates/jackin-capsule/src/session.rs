@@ -1116,27 +1116,28 @@ impl Session {
         (self.vt_scrollback_filled(), self.inline_scrollback.len())
     }
 
-    fn vt_scrollback_filled(&self) -> usize {
-        // Phase 5: use DamageGrid's scrollback_len() for the fill count.
-        self.shadow_grid.scrollback_len()
+    fn vt_scrollback_filled(&mut self) -> usize {
+        // Use vt100 native scrollback count for accuracy: vt100 only accumulates
+        // scrollback for full-screen scrolls (not partial scroll regions like CSI S
+        // in a top-anchored region). DamageGrid's scrollback_len() double-counts when
+        // inline_scrollback also captures the same rows (e.g. CSI S top-region case).
+        let saved = self.parser.screen().scrollback();
+        self.parser.screen_mut().set_scrollback(usize::MAX);
+        let filled = self.parser.screen().scrollback();
+        self.parser.screen_mut().set_scrollback(saved.min(filled));
+        filled
     }
 
     fn apply_scrollback_offset(&mut self) {
         let vt_filled = self.vt_scrollback_filled();
-        // Phase 5: set DamageGrid scrollback offset instead of vt100.
+        // Sync DamageGrid scrollback offset for rendering.
+        let dg_filled = self.shadow_grid.scrollback_len();
         self.shadow_grid
-            .set_scrollback(self.scrollback_offset.min(vt_filled));
-        // Keep vt100 parser scrollback in sync for the inline-scrollback fallback path.
-        let saved = self.parser.screen().scrollback();
-        let vt_parser_filled = {
-            self.parser.screen_mut().set_scrollback(usize::MAX);
-            let f = self.parser.screen().scrollback();
-            self.parser.screen_mut().set_scrollback(saved.min(f));
-            f
-        };
+            .set_scrollback(self.scrollback_offset.min(dg_filled));
+        // Sync vt100 parser scrollback offset.
         self.parser
             .screen_mut()
-            .set_scrollback(self.scrollback_offset.min(vt_parser_filled));
+            .set_scrollback(self.scrollback_offset.min(vt_filled));
     }
 
     fn clamp_scrollback_offset(&mut self) {
@@ -1311,18 +1312,19 @@ impl Session {
             bytes.len(),
             bytes
         );
-        let was_alternate = self.shadow_grid.alternate_screen();
+        // Use vt100 parser for was/is_alternate: DamageGrid is batch-updated AFTER the loop.
+        let was_alternate = self.parser.screen().alternate_screen();
         let was_scrolled = self.scrollback_offset != 0;
         for &byte in bytes {
-            let (screen_rows, _) = self.shadow_grid.size();
+            let (screen_rows, _) = self.parser.screen().size();
             let actions = self.inline_scroll_region_tracker.advance(byte, screen_rows);
             self.capture_inline_scrollback_before_actions(actions);
             self.capture_inline_scrollback_before_byte(byte);
             self.parser.process(std::slice::from_ref(&byte));
         }
-        let is_alternate = self.shadow_grid.alternate_screen();
+        let is_alternate = self.parser.screen().alternate_screen();
         if was_alternate != is_alternate {
-            let (screen_rows, _) = self.shadow_grid.size();
+            let (screen_rows, _) = self.parser.screen().size();
             self.inline_scroll_region_tracker.reset(screen_rows);
         }
         if was_alternate && !is_alternate {
@@ -1375,7 +1377,10 @@ impl Session {
     }
 
     fn capture_inline_scrollback_before_erase_display(&mut self, mode: u16) {
-        if self.shadow_grid.alternate_screen() {
+        // Use vt100 parser screen for alternate-screen and cursor position checks:
+        // shadow_grid is updated AFTER the per-byte loop, so its cursor/alt-screen
+        // state lags behind vt100 during mid-batch captures.
+        if self.parser.screen().alternate_screen() {
             return;
         }
 
@@ -1384,7 +1389,7 @@ impl Session {
             // paired with a home cursor move, which is the normal-screen
             // clear/redraw shape used by shells and agent TUIs.
             0 => {
-                let (cursor_row, cursor_col) = self.shadow_grid.cursor_position();
+                let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
                 if cursor_row == 0 && cursor_col == 0 {
                     self.capture_visible_inline_scrollback_rows("erase-display");
                 }
@@ -1407,11 +1412,12 @@ impl Session {
     }
 
     fn capture_inline_scrollback_before_scroll_up(&mut self, count: usize) {
-        if self.shadow_grid.alternate_screen() {
+        // Use vt100 for mid-batch state checks (shadow_grid lags during per-byte loop).
+        if self.parser.screen().alternate_screen() {
             return;
         }
 
-        let (screen_rows, screen_cols) = self.shadow_grid.size();
+        let (screen_rows, screen_cols) = self.parser.screen().size();
         let Some(scroll_bottom) = self
             .inline_scroll_region_tracker
             .top_anchored_bottom(screen_rows)
@@ -1420,10 +1426,10 @@ impl Session {
         };
 
         let removed_rows = usize::from(scroll_bottom).saturating_add(1).min(count);
-        // Phase 5: use DamageGrid for inline scrollback row capture.
+        // Capture from vt100 screen (mid-batch: shadow_grid not yet updated).
         let rows: Vec<_> = (0..u16::try_from(removed_rows).unwrap_or(u16::MAX))
             .map(|row| {
-                crate::tui::render::snapshot_damagegrid_row(&self.shadow_grid, row, screen_cols)
+                crate::tui::render::snapshot_screen_row(self.parser.screen(), row, screen_cols)
             })
             .collect();
         for row in rows {
@@ -1432,11 +1438,11 @@ impl Session {
     }
 
     fn capture_visible_inline_scrollback_rows(&mut self, reason: &'static str) {
-        let (screen_rows, screen_cols) = self.shadow_grid.size();
-        // Phase 5: use DamageGrid for visible inline scrollback capture.
+        // Capture from vt100 screen (mid-batch: shadow_grid not yet updated).
+        let (screen_rows, screen_cols) = self.parser.screen().size();
         let rows: Vec<_> = (0..screen_rows)
             .map(|row| {
-                crate::tui::render::snapshot_damagegrid_row(&self.shadow_grid, row, screen_cols)
+                crate::tui::render::snapshot_screen_row(self.parser.screen(), row, screen_cols)
             })
             .collect();
         let Some(first) = rows.iter().position(|row| !row.is_blank()) else {
@@ -1453,8 +1459,9 @@ impl Session {
 
     fn capture_inline_scrollback_before_byte(&mut self, byte: u8) {
         let (screen_rows, screen_cols) = self.shadow_grid.size();
-        // Phase 5: use DamageGrid state for alt-screen and cursor position checks.
-        if byte != b'\n' || self.shadow_grid.alternate_screen() {
+        // Use vt100 parser screen for alternate-screen and cursor position checks:
+        // shadow_grid is updated AFTER the per-byte loop, so its state lags during captures.
+        if byte != b'\n' || self.parser.screen().alternate_screen() {
             return;
         }
 
@@ -1464,7 +1471,7 @@ impl Session {
         else {
             return;
         };
-        let (cursor_row, _) = self.shadow_grid.cursor_position();
+        let (cursor_row, _) = self.parser.screen().cursor_position();
         if cursor_row != scroll_bottom {
             return;
         }
@@ -1528,15 +1535,19 @@ impl Session {
     ///
     /// Uses OscCapture (vt100) as the primary source — it handles kitty keyboard
     /// stack and other complex CSI sequences that DamageGrid doesn't yet capture.
-    /// DamageGrid passthrough events are drained and discarded (avoiding buffer growth).
+    /// DamageGrid passthrough events are merged with vt100 OscCapture events.
     ///
-    /// Phase 5 follow-up: port kitty keyboard stack to DamageGrid's PassthroughEvent
-    /// then switch to DamageGrid as the sole source.
+    /// DamageGrid is authoritative for kitty-keyboard stack events (Phase 5).
+    /// OscCapture handles all other passthrough (title, OSC-7, bracketed paste, etc.).
     pub fn drain_passthrough(&mut self) -> Vec<Vec<u8>> {
-        // Also drain DamageGrid to keep its buffer clear.
-        let _ = self.shadow_grid.drain_passthrough();
-        // OscCapture remains authoritative until kitty kb stack is ported.
-        self.parser.callbacks_mut().drain()
+        let mut out = self.parser.callbacks_mut().drain();
+        // DamageGrid is authoritative for kitty-keyboard stack pop/push events.
+        for event in self.shadow_grid.drain_passthrough() {
+            if let Some(bytes) = event.encode() {
+                out.push(bytes);
+            }
+        }
+        out
     }
 
     /// Compare current vt100 mode state against the last observed

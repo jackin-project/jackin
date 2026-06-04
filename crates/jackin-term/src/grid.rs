@@ -864,8 +864,9 @@ impl vte::Perform for DamageGrid {
                 if self.kitty_kb_stack.len() < KITTY_KB_STACK_CAP {
                     self.kitty_kb_stack.push(flags);
                 }
-                self.passthrough
-                    .push(PassthroughEvent::UnhandledCsi(format!("\x1b[>{flags}u").into_bytes()));
+                self.passthrough.push(PassthroughEvent::UnhandledCsi(
+                    format!("\x1b[>{flags}u").into_bytes(),
+                ));
             }
             // Kitty keyboard pop (`\x1b[<{n}u`): pop `n` levels (default 1).
             'u' if intermediates == b"<" => {
@@ -873,14 +874,18 @@ impl vte::Perform for DamageGrid {
                 for _ in 0..count.min(self.kitty_kb_stack.len()) {
                     self.kitty_kb_stack.pop();
                 }
-                self.passthrough
-                    .push(PassthroughEvent::UnhandledCsi(format!("\x1b[<{count}u").into_bytes()));
+                self.passthrough.push(PassthroughEvent::UnhandledCsi(
+                    format!("\x1b[<{count}u").into_bytes(),
+                ));
             }
             // Kitty keyboard set/report (`\x1b[?{flags}u` / `\x1b[?u`).
             'u' if intermediates == b"?" => {
-                self.passthrough.push(PassthroughEvent::UnhandledCsi(
-                    reconstruct_csi(params, intermediates, action as u8),
-                ));
+                self.passthrough
+                    .push(PassthroughEvent::UnhandledCsi(reconstruct_csi(
+                        params,
+                        intermediates,
+                        action as u8,
+                    )));
             }
             _ => {
                 // Unhandled CSI — reconstruct the original bytes and forward
@@ -1051,6 +1056,17 @@ impl DamageGrid {
                     self.cursor_row = self.saved_cursor_row;
                     self.cursor_col = self.saved_cursor_col;
                     self.clamp_cursor();
+                    // Reset kitty keyboard stack on alt-screen exit: programs in
+                    // the alt screen may not clean up their keyboard mode stack,
+                    // so pop all pushed levels and emit one reset per level so
+                    // the outer terminal's keyboard mode is restored correctly.
+                    let depth = self.kitty_kb_stack.len();
+                    self.kitty_kb_stack.clear();
+                    for _ in 0..depth {
+                        self.passthrough.push(PassthroughEvent::UnhandledCsi(
+                            b"\x1b[<u".to_vec(),
+                        ));
+                    }
                 }
             }
             // Mouse modes.
