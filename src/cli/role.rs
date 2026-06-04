@@ -56,6 +56,18 @@ pub struct LoadArgs {
     /// it merges to the default branch.
     #[arg(long)]
     pub role_branch: Option<String>,
+    /// Print the resolved launch plan (workspace, role, mounts, auth decisions,
+    /// derived image) and exit without spawning any containers.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Output format for `--dry-run` (`human` or `json`)
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        default_value = "human",
+        requires = "dry_run"
+    )]
+    pub format: String,
 }
 
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {

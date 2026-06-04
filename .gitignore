@@ -7,6 +7,7 @@
 # Claude Code
 .worktrees/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .idea/
 
 # Temporary files
