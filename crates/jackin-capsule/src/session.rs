@@ -39,6 +39,8 @@ use vt100::{Callbacks, Screen};
 
 use crate::protocol::AgentState;
 use crate::pull_request::PullRequestInfo;
+#[cfg(feature = "jackin-term")]
+use crate::tui::render::pane_snapshot_from_damagegrid;
 use crate::tui::render::{RowSnapshot, pane_snapshot_with_scrollback_prefix, snapshot_screen_row};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -661,6 +663,13 @@ pub struct Session {
     /// freshly-split pane does not paint a stray blinking cursor
     /// inside an otherwise empty rectangle.
     pub received_output: bool,
+    /// Shadow terminal model for the `jackin-term` feature flag.
+    ///
+    /// When `cfg(feature = "jackin-term")`, every byte batch fed to `parser`
+    /// is also fed here. `render_snapshot` uses this grid for rendering when
+    /// the feature is active, validating correctness vs the `vt100` oracle.
+    #[cfg(feature = "jackin-term")]
+    pub shadow_grid: Box<jackin_term::DamageGrid>,
 }
 
 pub enum SessionEvent {
@@ -1050,6 +1059,8 @@ impl Session {
                 inline_scroll_region_tracker: InlineScrollRegionTracker::new(rows),
                 bracketed_paste_active: false,
                 received_output: false,
+                #[cfg(feature = "jackin-term")]
+                shadow_grid: Box::new(jackin_term::DamageGrid::new(rows, cols, SCROLLBACK_LEN)),
             },
             sid,
         ))
@@ -1163,6 +1174,15 @@ impl Session {
         viewport_rows: u16,
         viewport_cols: u16,
     ) -> Vec<RowSnapshot> {
+        // jackin-term feature path: use DamageGrid for live-view rendering.
+        // When scrollback is active (operator scrolled up), fall back to the
+        // vt100 path — scrollback row injection via `scrollback_render_prefix`
+        // is not yet ported to DamageGrid (Phase 4 work).
+        #[cfg(feature = "jackin-term")]
+        if self.scrollback_offset == 0 {
+            return pane_snapshot_from_damagegrid(&self.shadow_grid, viewport_rows, viewport_cols);
+        }
+
         let scrollback_prefix = self.scrollback_render_prefix(viewport_rows);
         pane_snapshot_with_scrollback_prefix(
             self.screen(),
@@ -1296,6 +1316,12 @@ impl Session {
                 self.inline_scroll_region_tracker.region.bottom
             );
         }
+        // Shadow feed for the jackin-term feature: same bytes → DamageGrid.
+        // Fed as a batch after the vt100 per-byte loop so inline scrollback
+        // interception (which is vt100-specific) does not interfere.
+        #[cfg(feature = "jackin-term")]
+        self.shadow_grid.process(bytes);
+
         self.last_output_at = std::time::Instant::now();
         self.state = state_after_pty_output(self.state);
     }
@@ -1578,6 +1604,8 @@ impl Session {
         self.inline_scroll_region_tracker.resize(rows);
         self.clamp_scrollback_offset();
         self.apply_scrollback_offset();
+        #[cfg(feature = "jackin-term")]
+        self.shadow_grid.set_size(rows, cols);
     }
 
     pub fn refresh_state(&mut self) {
@@ -1625,6 +1653,8 @@ impl Session {
             inline_scroll_region_tracker: InlineScrollRegionTracker::new(size.0),
             bracketed_paste_active: false,
             received_output: true,
+            #[cfg(feature = "jackin-term")]
+            shadow_grid: Box::new(jackin_term::DamageGrid::new(size.0, size.1, scrollback_len)),
         }
     }
 }

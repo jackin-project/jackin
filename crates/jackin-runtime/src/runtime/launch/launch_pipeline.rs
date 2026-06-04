@@ -466,7 +466,20 @@ pub(crate) async fn load_role_with(
     // supplied seams, so tests never need to mutate `std::env` and the
     // crate-level `unsafe_code = "forbid"` lint stays intact.
     let operator_env = if opts.op_runner.is_none() && opts.host_env.is_none() {
-        jackin_env::resolve_operator_env(config, Some(&selector.key()), workspace_name.as_deref())?
+        // Offload `op` CLI calls to the blocking pool so the tokio render
+        // thread stays responsive during 1Password lookups (Defect 43).
+        let config_clone = config.clone();
+        let selector_key = selector.key().to_string();
+        let workspace_key = workspace_name.as_deref().map(String::from);
+        tokio::task::spawn_blocking(move || {
+            jackin_env::resolve_operator_env(
+                &config_clone,
+                Some(&selector_key),
+                workspace_key.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))??
     } else {
         let default_runner = jackin_env::OpCli::new();
         let runner: &dyn jackin_env::OpRunner =

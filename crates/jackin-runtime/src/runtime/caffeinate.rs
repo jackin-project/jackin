@@ -110,7 +110,15 @@ async fn reconcile_inner(
     let want_running = count_keep_awake_agents(docker).await? > 0;
     let pid_path = paths.data_dir.join(PID_FILENAME);
     let current_pid = read_pid_file(&pid_path)?;
-    let liveness = current_pid.map_or(Liveness::Gone, is_caffeinate_alive_at);
+    // Offload the synchronous `ps` check to the blocking pool so it never
+    // stalls the tokio render thread (Defect 43 — async-first rule).
+    let liveness = if let Some(pid) = current_pid {
+        tokio::task::spawn_blocking(move || is_caffeinate_alive_at(pid))
+            .await
+            .unwrap_or(Liveness::Unknown)
+    } else {
+        Liveness::Gone
+    };
 
     match (want_running, liveness) {
         (true, Liveness::Alive) => {}

@@ -80,4 +80,8 @@ impl Cell {
     pub fn inverse(&self) -> bool {
         self.attrs.inverse
     }
+
+    pub fn dim(&self) -> bool {
+        self.attrs.dim
+    }
 }

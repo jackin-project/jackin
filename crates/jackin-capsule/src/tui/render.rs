@@ -36,6 +36,17 @@ impl From<Color> for ColorKey {
     }
 }
 
+#[cfg(feature = "jackin-term")]
+impl From<jackin_term::Color> for ColorKey {
+    fn from(c: jackin_term::Color) -> Self {
+        match c {
+            jackin_term::Color::Default => Self::Default,
+            jackin_term::Color::Idx(n) => Self::Idx(n),
+            jackin_term::Color::Rgb(r, g, b) => Self::Rgb(r, g, b),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CellSnapshot {
     pub(crate) contents: String,
@@ -417,6 +428,74 @@ pub(crate) fn snapshot_screen_row(screen: &Screen, row: u16, cols_to_draw: u16) 
 
 fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
     snapshot_screen_row(screen, row, cols_to_draw)
+}
+
+/// Snapshot a single row from a `DamageGrid`, matching the vt100 row snapshot shape.
+///
+/// Used by the `jackin-term` feature path to build `RowSnapshot` from `DamageGrid::cell()`.
+/// Mirrors `snapshot_screen_row` exactly — the two functions must stay in sync.
+#[cfg(feature = "jackin-term")]
+pub(crate) fn snapshot_damagegrid_row(
+    grid: &jackin_term::DamageGrid,
+    row: u16,
+    cols_to_draw: u16,
+) -> RowSnapshot {
+    let mut cells = Vec::with_capacity(cols_to_draw as usize);
+    let mut col = 0;
+    while col < cols_to_draw {
+        let cell = grid.cell(row, col);
+        if cell.is_some_and(|c| c.is_wide_continuation) {
+            col += 1;
+            continue;
+        }
+
+        let width = cell
+            .filter(|c| c.is_wide)
+            .map_or(1, |_| 2)
+            .min(cols_to_draw - col);
+        let attrs = cell.map(cell_attrs_damagegrid).unwrap_or_default();
+        let contents = match cell {
+            Some(c) if c.has_contents() => c.contents().to_string(),
+            _ => " ".repeat(width as usize),
+        };
+        cells.push(CellSnapshot {
+            contents,
+            attrs,
+            width,
+        });
+        col += width;
+    }
+    RowSnapshot { cells }
+}
+
+/// Build a full-screen snapshot from a `DamageGrid`.
+///
+/// Mirrors `pane_snapshot_with_scrollback_prefix` for the `jackin-term` path.
+#[cfg(feature = "jackin-term")]
+pub(crate) fn pane_snapshot_from_damagegrid(
+    grid: &jackin_term::DamageGrid,
+    rect_rows: u16,
+    rect_cols: u16,
+) -> Vec<RowSnapshot> {
+    let (screen_rows, screen_cols) = grid.size();
+    let rows_to_draw = rect_rows.min(screen_rows);
+    let cols_to_draw = rect_cols.min(screen_cols);
+    (0..rows_to_draw)
+        .map(|row| snapshot_damagegrid_row(grid, row, cols_to_draw))
+        .collect()
+}
+
+#[cfg(feature = "jackin-term")]
+fn cell_attrs_damagegrid(cell: &jackin_term::Cell) -> Attrs {
+    Attrs {
+        fg: ColorKey::from(cell.fgcolor()),
+        bg: ColorKey::from(cell.bgcolor()),
+        bold: cell.bold(),
+        dim: cell.dim(),
+        italic: cell.italic(),
+        underline: cell.underline(),
+        inverse: cell.inverse(),
+    }
 }
 
 /// Whether this pane's right edge reaches the terminal's right boundary.
