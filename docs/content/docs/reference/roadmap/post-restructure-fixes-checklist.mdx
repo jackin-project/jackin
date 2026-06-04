@@ -468,8 +468,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Tasks:**
 - [x] Fix `render_provider_picker_sidebar` to accept and pass the real `focused` state instead of `false`; thread the focus flag from the picker's active state at the call site.
 - [x] Audit every `render_picker_sidebar` caller for a hardcoded `false` (or omitted) focus argument: `rg -n "render_picker_sidebar" crates/*/src`. Fix all inline pickers (role, agent, provider, launch-provider) so the active one is focused.
-- [ ] Compose with Defect 18: the focused picker shows `▸` and the green border together; the inactive ones show neither.
-- [ ] Per the per-item analysis rule, check the inline-picker focus-state plumbing end-to-end (which picker is "active" → that one renders focused) and confirm exactly one is focused at a time.
+- [x] Compose with Defect 18: the focused picker shows `▸` and the green border together; the inactive ones show neither. list_names_focused drives the focused parameter for all pickers.
+- [x] Per the per-item analysis rule, check the inline-picker focus-state plumbing end-to-end (which picker is "active" → that one renders focused) and confirm exactly one is focused at a time. Verified: pickers are mutually exclusive else-if branches in render_list_sidebar; exactly one renders at a time using list_names_focused.
 - [x] Confirm via the workspace-list launch flow that role, agent, and provider pickers each show the green border while active.
 
 ---
