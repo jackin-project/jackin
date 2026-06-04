@@ -4,6 +4,27 @@ title: "Agent Runtime Status Authority"
 
 **Status**: Partially implemented (Phase 2, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). Phase 0 (silence-bug removal), Phase 1 (state model + status machine), and the Phase 4 screen-detector framework have shipped. Phases 2, 3, the rest of 4, 5, and 6 remain.
 
+## Merge Alignment With the TUI Architecture Refactor
+
+This feature is developed against `main`, but a large parallel refactor (the TUI Architecture roadmap, branch `feature/tui-architecture`) is reshaping the same capsule files and will land separately. This feature is expected to merge first because it is far smaller. To keep the eventual reconciliation mechanical rather than surgical, every phase here is implemented in shapes that match the refactor's target architecture. An implementer working on any remaining phase must follow these alignment rules.
+
+The refactor's relevant end-state (for status work):
+
+- The capsule renders through Ratatui. A custom `SocketBackend` serializes the Ratatui `Buffer` diff to the attach socket. Dialog overlays are built from shared `jackin-tui` components, not raw ANSI byte pushes.
+- `crates/jackin-capsule/src/statusbar.rs` is removed; the status bar lives in `crates/jackin-capsule/src/tui/components/status_bar.rs`.
+- `daemon.rs` is decomposed into submodules under `crates/jackin-capsule/src/daemon/` (compositor, session lifecycle, pane layout, multiplexer utilities, …).
+- A render-layer enum `VisibleAgentState` (in `crates/jackin-capsule/src/tui/app.rs`) is derived from the protocol `AgentState` via `visible_agent_state_from_protocol`. The status bar renders from `VisibleAgentState`, not directly from `AgentState`.
+- The refactor does **not** remove the silence-timer heuristic and does **not** add `Unknown` — those are this feature's job, so the two are complementary, not redundant.
+
+Alignment rules to minimize future conflicts:
+
+1. **Keep status derivation and token data in pure modules (`agent_status/`, `token_monitor/`) with no rendering.** These are new files the refactor does not touch, so they merge clean. The bulk of every phase's logic must live here. Rendering is a thin shim layered on top.
+2. **Protocol `AgentState` stays the single wire enum; `Unknown` is added there.** When the refactor merges, it gains one new arm in `visible_agent_state_from_protocol` and one new `VisibleAgentState::Unknown` (plus `Stuck` later). Treat that two-line addition as the documented merge cost; do not invent a competing render enum on `main`.
+3. **Tab-glyph logic is keyed on the effective status and kept in one cohesive function.** On `main` it lives in `statusbar.rs::tab_label`; on merge it moves whole to `tui/components/status_bar.rs` and switches its key type from `AgentState` to `VisibleAgentState`. Keep the glyph→state mapping a single match so the move is copy-paste.
+4. **Daemon additions stay cohesive and ticker-local.** The per-tick status refresh is one method (`refresh_session_statuses`) plus one `Multiplexer` field (`detectors`) plus one `state_ticker` arm edit. On merge it relocates to the refactor's session-lifecycle submodule as a block, not interleaved lines.
+5. **The `Session.state` field → `Session::state()` accessor swap is deliberate.** The refactor keeps a `state: AgentState` field with ~3 read sites; on merge those become `session.state()` and the refactor's `refresh_state`/`state_after_*` bodies are deleted (this feature's Phase 0). The accessor shape makes that a find-replace.
+6. **Phase 6 token dialog must be Ratatui-ready.** Build the dialog's data model and layout (`ProviderUsageSnapshot`, `RateWindow`, the line/span computation) as a pure function in `token_monitor/`. The render shim that paints it is the only piece that touches the dialog system. On `main` that shim may be raw-ANSI to match the pre-refactor dialog path; on merge only the shim is rewritten to a `jackin-tui` Ratatui widget — the layout logic is reused unchanged. Do not bury layout decisions inside ANSI emit code.
+
 ## Implemented Shape (As Shipped)
 
 The shipped implementation diverges from the original design proposal below in three deliberate ways. This section is the source of truth for what exists in the code today; the design sections that follow describe the remaining work and retain the original proposal's vocabulary where it has not yet been built.
