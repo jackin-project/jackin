@@ -86,12 +86,32 @@ pub enum NetworkGrant {
     Open,
 }
 
+impl std::fmt::Display for NetworkGrant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::Allowlist => write!(f, "allowlist"),
+            Self::Open => write!(f, "open"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DindGrant {
     None,
     Rootless,
     Privileged,
+}
+
+impl std::fmt::Display for DindGrant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::Rootless => write!(f, "rootless"),
+            Self::Privileged => write!(f, "privileged"),
+        }
+    }
 }
 
 // ── Valid Linux capability names ─────────────────────────────────────────────
@@ -342,35 +362,35 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
         errors.push(GrantValidationError::RootAndSudo);
     }
 
-    // Validate capability names.
+    // Validate capability names — reuse normalize_cap to strip CAP_ prefix.
     for cap in &grants.capabilities_add {
-        let upper = cap.to_ascii_uppercase();
-        // Strip leading CAP_ if present (be lenient on input).
-        let normalized = upper.strip_prefix("CAP_").unwrap_or(&upper);
-        if !VALID_CAPABILITIES.contains(&normalized) {
+        let normalized = normalize_cap(cap);
+        if !VALID_CAPABILITIES.contains(&normalized.as_str()) {
             errors.push(GrantValidationError::UnknownCapability(cap.clone()));
         }
     }
 
-    // Parse and validate memory sizes.
+    // Parse and validate memory sizes — call parse_memory_bytes once per field.
     let memory_bytes = grants.memory.as_deref().and_then(|s| {
-        if parse_memory_bytes(s).is_none() {
+        let v = parse_memory_bytes(s);
+        if v.is_none() {
             errors.push(GrantValidationError::UnparsableSize {
                 field: "memory",
                 value: s.to_string(),
             });
         }
-        parse_memory_bytes(s)
+        v
     });
 
     let reservation_bytes = grants.memory_reservation.as_deref().and_then(|s| {
-        if parse_memory_bytes(s).is_none() {
+        let v = parse_memory_bytes(s);
+        if v.is_none() {
             errors.push(GrantValidationError::UnparsableSize {
                 field: "memory_reservation",
                 value: s.to_string(),
             });
         }
-        parse_memory_bytes(s)
+        v
     });
 
     if let (Some(res), Some(mem)) = (reservation_bytes, memory_bytes) {
@@ -548,8 +568,8 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
     // network grant — not in `capabilities_add` in the TOML, but reported
     // in the session contract as `source=implicit_network_grant`.
     if base.network == NetworkGrant::Allowlist {
-        for cap in &["NET_ADMIN", "NET_RAW"] {
-            if !base.capabilities_add.contains(&cap.to_string()) {
+        for cap in ["NET_ADMIN", "NET_RAW"] {
+            if !base.capabilities_add.iter().any(|c| c == cap) {
                 base.capabilities_add.push(cap.to_string());
             }
         }
@@ -627,6 +647,22 @@ pub fn resolve_effective_grants(
 
 // ── Docker flag emission ─────────────────────────────────────────────────────
 
+/// Returns the network enforcement quality label for session contract output
+/// and `JACKIN_NETWORK_ENFORCEMENT`. Shared between `format_session_contract`
+/// and `launch_role_runtime` so both surfaces stay in sync.
+pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
+    if !matches!(grants.network, NetworkGrant::Allowlist) {
+        return "n/a";
+    }
+    if grants.sudo || grants.user == "root" {
+        "partial (sudo grants iptables access)"
+    } else if grants.dind != DindGrant::None {
+        "partial (DinD inner containers bypass host iptables)"
+    } else {
+        "full"
+    }
+}
+
 /// Format a human-readable session contract table for the active grants.
 /// Emitted via `crate::debug_log!` at launch; surfaced to the operator in
 /// `--debug` mode as a factual summary of what the container can do.
@@ -664,31 +700,15 @@ pub fn format_session_contract(
             }
         )
     };
-    let dind_status = match grants.dind {
-        DindGrant::None => "disabled".to_string(),
-        DindGrant::Rootless => "rootless".to_string(),
-        DindGrant::Privileged => "privileged".to_string(),
-    };
     let network_mode = match grants.network {
         NetworkGrant::None => "none (--network none)".to_string(),
         NetworkGrant::Allowlist => format!(
             "allowlist ({} hosts)",
-            grants.allowed_hosts.len()
-                + 1 // agent endpoint always included
+            grants.allowed_hosts.len() + 1 // +1 for agent endpoint always included
         ),
         NetworkGrant::Open => "open".to_string(),
     };
-    let network_enforcement = if matches!(grants.network, NetworkGrant::Allowlist) {
-        if grants.sudo || grants.user == "root" {
-            "partial (sudo grants iptables access)"
-        } else if grants.dind != DindGrant::None {
-            "partial (DinD inner containers bypass host iptables)"
-        } else {
-            "full"
-        }
-    } else {
-        "n/a"
-    };
+    let network_enforcement = network_enforcement_label(grants);
     let memory_line = grants
         .memory_bytes
         .map(|b| format!("{}", format_bytes(b)))
@@ -739,7 +759,7 @@ pub fn format_session_contract(
             "/tmp,/run,/var/run,/var/tmp,/var/cache,/var/log,/var/lib/apt/lists,\
              /var/cache/apt/archives,/var/lib/dpkg,/home/agent/.cache".to_string()
         },
-        dind_status,
+        grants.dind,  // Display impl emits "none"/"rootless"/"privileged"
         network_mode,
         network_enforcement,
         cgroup_version,
@@ -886,6 +906,15 @@ pub fn readonly_root_flags(
 
 // ── Convenience helpers ──────────────────────────────────────────────────────
 
+/// Returns `true` when the profile uses `--cap-drop=ALL` + minimum cap set.
+/// Centralises the Hardened/Locked check so callers don't re-spell it.
+pub fn drops_all_caps(profile: DockerSecurityProfile) -> bool {
+    matches!(
+        profile,
+        DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
+    )
+}
+
 /// Returns `true` when the effective grants enable any DinD tier.
 pub fn dind_enabled(grants: &EffectiveGrants) -> bool {
     grants.dind != DindGrant::None
@@ -896,14 +925,15 @@ pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
 }
 
-/// Emit ALL security and resource Docker CLI flags for `run_args` in one call.
+/// Emit most security and resource Docker CLI flags for `run_args` in one call.
 ///
 /// Combines `capability_flags`, `readonly_root_flags`, and `resource_flags`.
 /// The caller still handles:
 /// - `--network <name>` (network is created before flags are assembled)
 /// - `-v`, `-e`, `--label`, `--name`, `--hostname`, `--workdir` (structural flags)
-/// - `--user` (handled separately because it needs the user string value)
-/// - `--security-opt no-new-privileges` (handled separately, same reason)
+/// - `--user` (string value lives in `grants.user`)
+/// - `--security-opt no-new-privileges` (string value must live in caller scope)
+/// - `--security-opt apparmor=…` (requires `apparmor_available` from host probe)
 pub fn to_docker_flags(
     profile: DockerSecurityProfile,
     grants: &EffectiveGrants,
@@ -958,23 +988,18 @@ pub fn to_host_config_fields(
         security_opt.push("no-new-privileges".to_string());
     }
 
+    // Use the same const arrays as `readonly_root_flags` to keep both paths in sync.
     let tmpfs: std::collections::HashMap<String, String> = if !grants.system_writes {
-        [
-            "/tmp",
-            "/run",
-            "/var/run",
-            "/var/tmp",
-            "/var/cache",
-            "/var/log",
-            "/var/lib/apt/lists",
-            "/var/cache/apt/archives",
-            "/var/lib/dpkg",
-            "/home/agent/.cache",
-            "/home/agent/.zsh_sessions",
-        ]
-        .iter()
-        .map(|p| ((*p).to_string(), "rw,nosuid,nodev".to_string()))
-        .collect()
+        let extra: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
+            &[]
+        } else {
+            TMPFS_PATHS_HARDENED_EXTRA
+        };
+        TMPFS_PATHS_MINIMAL
+            .iter()
+            .chain(extra.iter())
+            .map(|p| ((*p).to_string(), "rw,nosuid,nodev".to_string()))
+            .collect()
     } else {
         std::collections::HashMap::new()
     };

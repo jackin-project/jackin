@@ -717,7 +717,7 @@ async fn launch_role_runtime(
     // Start Docker-in-Docker with TLS — skipped when the effective grant
     // sets `dind = None` (locked/hardened profiles without an explicit DinD
     // grant, or roles that declare `dind = "none"` in their manifest).
-    let dind_enabled = grants.dind != super::docker_profile::DindGrant::None;
+    let dind_enabled = super::docker_profile::dind_enabled(grants);
     if dind_enabled {
         // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
         // appended to the auto-generated server cert's Subject Alternative Names.
@@ -916,13 +916,8 @@ async fn launch_role_runtime(
     // Only substantively constraining when DinD is disabled (with DinD active
     // the agent can regain caps via `docker run --privileged` against the sidecar).
     let cap_flags = super::docker_profile::capability_flags(*profile, &grants.capabilities_add);
-    let cap_flag_strs: Vec<&str> = cap_flags.iter().map(String::as_str).collect();
-    run_args.extend_from_slice(&cap_flag_strs);
-    let drops_all = matches!(
-        *profile,
-        crate::runtime::docker_profile::DockerSecurityProfile::Hardened
-            | crate::runtime::docker_profile::DockerSecurityProfile::Locked
-    );
+    run_args.extend(cap_flags.iter().map(String::as_str));
+    let drops_all = super::docker_profile::drops_all_caps(*profile);
     if drops_all {
         crate::debug_log!("launch", "cap_drop_all container={container_name}");
         for cap in super::docker_profile::MINIMUM_CAPABILITIES {
@@ -946,8 +941,7 @@ async fn launch_role_runtime(
 
     // Read-only root filesystem + tmpfs preset.
     let readonly_flags = super::docker_profile::readonly_root_flags(*profile, grants);
-    let readonly_flag_strs: Vec<&str> = readonly_flags.iter().map(String::as_str).collect();
-    run_args.extend_from_slice(&readonly_flag_strs);
+    run_args.extend(readonly_flags.iter().map(String::as_str));
     {
         let (enforced, reason) = if !grants.system_writes {
             ("yes", "profile")
@@ -1042,15 +1036,13 @@ async fn launch_role_runtime(
     crate::debug_log!("launch", "session_contract:\n{contract}");
 
     // User override — only emit --user when not the default agent user.
-    let user_flag_val = grants.user.clone();
-    if user_flag_val != "agent" {
-        run_args.extend_from_slice(&["--user", &user_flag_val]);
+    if grants.user != "agent" {
+        run_args.extend_from_slice(&["--user", &grants.user]);
     }
 
     // Resource limits with per-limit telemetry.
     let resource_flags = super::docker_profile::resource_flags(grants);
-    let resource_flag_strs: Vec<&str> = resource_flags.iter().map(String::as_str).collect();
-    run_args.extend_from_slice(&resource_flag_strs);
+    run_args.extend(resource_flags.iter().map(String::as_str));
     if let Some(bytes) = grants.memory_bytes {
         crate::debug_log!(
             "launch",
@@ -1287,14 +1279,7 @@ async fn launch_role_runtime(
             allowed.len(),
         );
 
-        // Determine enforcement quality.
-        let enforcement = if grants.sudo || grants.user == "root" {
-            "partial (sudo grants iptables access)"
-        } else if dind_enabled {
-            "partial (dind inner containers bypass host iptables)"
-        } else {
-            "full"
-        };
+        let enforcement = super::docker_profile::network_enforcement_label(grants);
         crate::debug_log!(
             "launch",
             "network_enforcement={enforcement} container={container_name}",
@@ -2384,15 +2369,25 @@ async fn load_role_with(
         let certs_volume = dind_certs_volume(&container_name);
         let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
 
-        // Detect cgroup version on the host before resolving grants.
-        // Required for: fail-closed behavior under hardened/locked on cgroup v1,
-        // and informing the telemetry `cgroup_version` line.
-        let cgroup_version = detect_cgroup_version(runner).await;
+        // Detect cgroup version and AppArmor availability.
+        // Skip for compat: both values are unused by compat (no fail-close branch,
+        // no AppArmor flag). `docker info` is non-trivial under heavy load.
+        let is_compat = opts.docker_profile
+            == Some(super::docker_profile::DockerSecurityProfile::Compat)
+            || (opts.docker_profile.is_none()
+                && config.docker.profile == Some(super::docker_profile::DockerSecurityProfile::Compat));
+        let cgroup_version = if is_compat {
+            "skipped(compat)".to_string()
+        } else {
+            detect_cgroup_version(runner).await
+        };
         crate::debug_log!("launch", "cgroup_version v={cgroup_version}");
 
-        // Detect AppArmor availability via `docker info`.
-        // Reports enforcement layer (host vs VM for macOS Docker Desktop/OrbStack).
-        let apparmor_info = detect_apparmor(runner).await;
+        let apparmor_info = if is_compat {
+            AppArmorInfo { available: false, profile: "n/a".to_string(), layer: "n/a".to_string() }
+        } else {
+            detect_apparmor(runner).await
+        };
         crate::debug_log!(
             "launch",
             "apparmor available={} profile={} layer={}",
@@ -2451,17 +2446,12 @@ async fn load_role_with(
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);
             }
         }
-        // Apply role-level allowed_hosts and capabilities_add from manifest [docker].
+        // Apply role-level allowed_hosts and capabilities_add via apply_grants
+        // so both fields go through the same dedup/normalization path.
         if let Some(ref docker_cfg) = validated_repo.manifest.docker {
-            if !docker_cfg.allowed_hosts.is_empty() {
-                for host in &docker_cfg.allowed_hosts {
-                    if !effective_grants_early.allowed_hosts.contains(host) {
-                        effective_grants_early.allowed_hosts.push(host.clone());
-                    }
-                }
-            }
-            if !docker_cfg.capabilities_add.is_empty() {
+            if !docker_cfg.allowed_hosts.is_empty() || !docker_cfg.capabilities_add.is_empty() {
                 let role_grants = super::docker_profile::DockerGrants {
+                    allowed_hosts: docker_cfg.allowed_hosts.clone(),
                     capabilities_add: docker_cfg.capabilities_add.clone(),
                     ..Default::default()
                 };
@@ -2485,9 +2475,8 @@ async fn load_role_with(
             }
         }
 
-        // Lock dind_started AFTER role manifest adjustments.
-        let dind_started =
-            effective_grants_early.dind != super::docker_profile::DindGrant::None;
+        // Lock dind_started AFTER role manifest adjustments — use shared helper.
+        let dind_started = super::docker_profile::dind_enabled(&effective_grants_early);
 
         // Cgroup v1 fail-close: hardened/locked require cgroup v2 for full
         // resource enforcement. On macOS (Docker Desktop/OrbStack), the VM
@@ -2572,28 +2561,28 @@ async fn load_role_with(
             );
         }
 
-        // Validate explicit grants before any container work starts.
-        // Collect all errors so the operator sees the full list at once.
-        if let Some(ref grants) = config.docker.grants {
-            let errors = super::docker_profile::validate_grants(grants);
-            if !errors.is_empty() {
-                let msg = errors
-                    .iter()
-                    .map(|e| format!("  • {e}"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                anyhow::bail!("docker grants validation failed:\n{msg}");
+        // Validate explicit grants from all sources before any container work starts.
+        // Aggregate errors across config and workspace so the operator sees everything at once.
+        {
+            let mut all_errors: Vec<String> = Vec::new();
+            if let Some(ref grants) = config.docker.grants {
+                all_errors.extend(
+                    super::docker_profile::validate_grants(grants)
+                        .into_iter()
+                        .map(|e| format!("  • [config] {e}")),
+                );
             }
-        }
-        if let Some(ws_grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
-            let errors = super::docker_profile::validate_grants(ws_grants);
-            if !errors.is_empty() {
-                let msg = errors
-                    .iter()
-                    .map(|e| format!("  • {e}"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                anyhow::bail!("workspace docker grants validation failed:\n{msg}");
+            if let Some(ws_grants) =
+                workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref())
+            {
+                all_errors.extend(
+                    super::docker_profile::validate_grants(ws_grants)
+                        .into_iter()
+                        .map(|e| format!("  • [workspace] {e}")),
+                );
+            }
+            if !all_errors.is_empty() {
+                anyhow::bail!("docker grants validation failed:\n{}", all_errors.join("\n"));
             }
         }
 
@@ -2897,15 +2886,7 @@ async fn load_role_with(
             cgroup_version: cgroup_version.clone(),
             apparmor_available: apparmor_info.available,
             apparmor_layer: apparmor_info.layer.clone(),
-            agent_auth_mode_str: format!(
-                "{:?}",
-                crate::config::resolve_mode(
-                    config,
-                    agent,
-                    workspace_name.as_deref().unwrap_or(""),
-                    &role_key,
-                )
-            ),
+            agent_auth_mode_str: format!("{:?}", auth_mode),
             gh_auth_forwarded: !github_resolved_env.is_empty(),
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
