@@ -33,6 +33,12 @@ compact_str = "0.9"
 # vt100 fork: differential oracle for the Phase 1 harness.
 # Do NOT use vt100 in production jackin-term code — it is a test dependency only.
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
+# criterion: benchmark harness for Experiments 1-4 (present-frame p99, allocs, wire bytes).
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "present_frame"
+harness = false
 
 [lints.rust]
 unsafe_code = "forbid"
