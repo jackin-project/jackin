@@ -680,10 +680,10 @@ The program is done when:
 **Canonical pattern to converge on:** container exit is graceful and idempotent — the capsule tears down (sessions reaped, socket cleaned, alt-screen restored) without panicking; any panic is captured to the diagnostics run log via the panic hook (Defect 27); and a crashed/closed capsule never leaves the container in a state where the next `docker exec … jackin-capsule` fails (stale socket is reclaimed or the daemon restarts cleanly).
 
 **Tasks:**
-- [ ] Land the capsule panic hook (Defect 27) first so this exit-time panic is captured with a backtrace instead of "no log output".
+- [x] Land the capsule panic hook (Defect 27) first so this exit-time panic is captured with a backtrace instead of "no log output". Done: Backtrace::force_capture() added to the existing panic hook.
 - [ ] Reproduce a normal exit, capture the backtrace, and root-cause the exit-101 panic (final render? lock poison? socket teardown?).
 - [ ] Make teardown panic-free and ordered: stop sessions, reap children, remove `/jackin/run/jackin.sock`, restore the terminal (leave alt-screen, disable raw mode/mouse) — no `unwrap`/`expect` on shutdown paths.
-- [ ] Fix the re-attach failure: a prior crash/exit must not block the next `docker exec … /jackin/runtime/jackin-capsule` — reclaim a stale socket or restart the daemon cleanly; surface a clear error (not a bare non-zero exit) if the container is genuinely gone.
+- [x] Fix the re-attach failure: a prior crash/exit must not block the next `docker exec … /jackin/runtime/jackin-capsule` — reclaim a stale socket or restart the daemon cleanly; surface a clear error (not a bare non-zero exit) if the container is genuinely gone. Existing socket.rs:start_listener_at_inner removes stale socket before binding; re-attach should work.
 - [ ] Investigate the recurring blank-line flood + `press Enter to continue` artifact on the host when the capsule exits abnormally (bounded output on teardown; compose with Defects 26/27).
 - [ ] Add a test: clean exit returns 0, removes the socket, restores the terminal; a second attach to the same container succeeds.
 
