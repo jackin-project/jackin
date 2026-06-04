@@ -87,6 +87,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
+    let is_first_run = !paths.config_file.exists();
     let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
@@ -100,7 +101,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             force,
             agent,
             role_branch,
+            dry_run,
+            format,
         }) => {
+            // Pre-flight: ensure Docker is reachable and directories exist.
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
             let docker = connect_docker()?;
             let cwd = std::env::current_dir()?;
 
@@ -144,6 +149,18 @@ pub async fn run(cli: Cli) -> Result<()> {
                 &ad_hoc_mounts,
             )?;
 
+            // Short-circuit for --dry-run: print resolved plan and exit.
+            if dry_run {
+                return print_dry_run_plan(
+                    &class,
+                    &resolved_workspace,
+                    agent.as_ref(),
+                    role_branch.as_deref(),
+                    rebuild,
+                    &format,
+                );
+            }
+
             let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
             opts.force = force;
             opts.agent = agent;
@@ -178,6 +195,12 @@ pub async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Console(ConsoleArgs {}) => {
+            // First-run wizard: no existing config + interactive TTY.
+            if is_first_run && { use std::io::IsTerminal; std::io::stdout().is_terminal() } {
+                crate::cli::wizard::run(&paths).await?;
+                // Re-load the config the wizard wrote before proceeding.
+                config = AppConfig::load_or_init(&paths)?;
+            }
             let cwd = std::env::current_dir()?;
             let mut in_place = ConsoleInPlaceHandler {
                 paths: paths.clone(),
@@ -333,6 +356,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             agent,
             shell,
         }) => {
+            // Pre-flight: ensure Docker is reachable and directories exist.
+            crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
             let docker = connect_docker()?;
             // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
             // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
@@ -868,9 +893,30 @@ pub async fn run(cli: Cli) -> Result<()> {
                 );
                 Ok(())
             }
-            WorkspaceCommand::List => {
+            WorkspaceCommand::List(list_args) => {
                 let workspaces = config.list_workspaces();
-                if workspaces.is_empty() {
+                let json_format = list_args.format == "json";
+
+                if json_format {
+                    let data: Vec<serde_json::Value> = workspaces
+                        .iter()
+                        .map(|(name, ws)| {
+                            serde_json::json!({
+                                "name": name,
+                                "workdir": ws.workdir,
+                                "mounts": ws.mounts.len(),
+                                "allowed_roles": ws.allowed_roles,
+                                "default_role": ws.default_role,
+                                "default_agent": ws.resolved_agent().slug(),
+                            })
+                        })
+                        .collect();
+                    let envelope = serde_json::json!({
+                        "schema_version": "v1",
+                        "data": data,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&envelope)?);
+                } else if workspaces.is_empty() {
                     println!("No workspaces configured.");
                     println!();
                     println!("Add one with:");
@@ -1453,6 +1499,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 }
             }
         },
+        Command::Doctor(args) => {
+            crate::cli::doctor::run(&args, &paths).await
+        }
         Command::Status(args) => {
             crate::cli::status::run(&args, &paths).await
         }
@@ -1462,6 +1511,84 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     }
+}
+
+/// Print the resolved load plan for `--dry-run` and exit without launching.
+fn print_dry_run_plan(
+    class: &crate::selector::RoleSelector,
+    workspace: &crate::workspace::ResolvedWorkspace,
+    agent: Option<&crate::agent::Agent>,
+    role_branch: Option<&str>,
+    rebuild: bool,
+    format: &str,
+) -> anyhow::Result<()> {
+    let agent_slug = agent
+        .map(|a| a.slug().to_string())
+        .or_else(|| workspace.default_agent.map(|a| a.slug().to_string()))
+        .unwrap_or_else(|| "claude".to_string());
+
+    let mount_lines: Vec<String> = workspace
+        .mounts
+        .iter()
+        .map(|m| {
+            format!(
+                "  {}  <-  {}  ({})",
+                m.dst,
+                m.src,
+                m.isolation.to_string()
+            )
+        })
+        .collect();
+
+    if format == "json" {
+        let mounts: Vec<serde_json::Value> = workspace
+            .mounts
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "host_src": m.src,
+                    "container_dest": m.dst,
+                    "isolation": m.isolation.to_string(),
+                })
+            })
+            .collect();
+        let plan = serde_json::json!({
+            "schema_version": "v1",
+            "data": {
+                "workspace": workspace.label,
+                "workdir": workspace.workdir,
+                "role": class.to_string(),
+                "role_branch": role_branch,
+                "agent": agent_slug,
+                "rebuild": rebuild,
+                "mounts": mounts,
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&plan)?);
+    } else {
+        println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
+        let role_display = if let Some(branch) = role_branch {
+            format!("{} (branch: {branch})", class.to_string())
+        } else {
+            class.to_string().to_string()
+        };
+        println!("Role:       {role_display}");
+        println!("Agent:      {agent_slug}");
+        if rebuild {
+            println!("Rebuild:    yes");
+        }
+        if mount_lines.is_empty() {
+            println!("Mounts:     none");
+        } else {
+            println!("Mounts ({}):", mount_lines.len());
+            for line in &mount_lines {
+                println!("{line}");
+            }
+        }
+        println!();
+        println!("No changes made. Use `jackin load` to execute.");
+    }
+    Ok(())
 }
 
 const fn command_name(command: &Command) -> &'static str {
@@ -1477,6 +1604,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Workspace(_) => "workspace",
         Command::Config(_) => "config",
         Command::Logs(_) => "logs",
+        Command::Doctor(_) => "doctor",
         Command::Status(_) => "status",
         Command::Help { .. } => "help",
     }

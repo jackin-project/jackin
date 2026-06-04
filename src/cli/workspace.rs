@@ -1,4 +1,4 @@
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use std::str::FromStr;
 
 use super::{BANNER, HELP_STYLES};
@@ -18,6 +18,14 @@ fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+}
+
+/// Args for `jackin workspace list`
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct WorkspaceListArgs {
+    /// Output format (`human` or `json`)
+    #[arg(long, value_name = "FORMAT", default_value = "human")]
+    pub format: String,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -79,7 +87,7 @@ Examples:
     },
     /// List all saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    List,
+    List(WorkspaceListArgs),
     /// Display details of a saved workspace
     #[command(
         before_help = BANNER,

@@ -271,7 +271,7 @@ This needs brainstorming on UX. Key questions to research:
 ### Phase 1 — `jackin doctor`
 
 - Add `Command::Doctor(DoctorArgs)` to <RepoFile path="src/cli/mod.rs" />.
-- Create `src/cli/doctor.rs` with `pub async fn run(args: DoctorArgs) -> Result<()>`.
+- Create <RepoFile path="src/cli/doctor.rs" /> with `pub async fn run(args: DoctorArgs) -> Result<()>`.
 - Create `src/diagnostics/checks.rs` with one async function per check, returning `CheckResult { name, status, hint }`.
 - The pre-flight wrapper is a function `preflight(required_checks: &[CheckName]) -> Result<()>` used by `load`, `hardline`, etc.
 - Snapshot test the human output.
@@ -279,7 +279,7 @@ This needs brainstorming on UX. Key questions to research:
 ### Phase 2 — `jackin status` + `--format json`
 
 - Add `Command::Status(StatusArgs)` and `Command::Ps` alias to <RepoFile path="src/cli/mod.rs" />.
-- Create `src/cli/format.rs` with `enum OutputFormat { Human, Json }` and `OutputEnvelope<T>`.
+- Create <RepoFile path="src/cli/format.rs" /> with `enum OutputFormat { Human, Json }` and `OutputEnvelope<T>`.
 - Reuse instance discovery from <RepoFile path="src/runtime/discovery.rs" />. CPU/MEM via Docker stats.
 - Sweep subcommands for `--format json` support, starting with `workspace list`.
 
@@ -291,7 +291,7 @@ This needs brainstorming on UX. Key questions to research:
 
 ### Phase 4 — `JackinError`
 
-- Create `src/error.rs` with `enum JackinError` and `impl JackinError::user_message(&self) -> UserMessage`.
+- Create <RepoFile path="src/error.rs" /> with `enum JackinError` and `impl JackinError::user_message(&self) -> UserMessage`.
 - Convert known `anyhow::bail!` sites at module boundaries.
 - In `main.rs`, downcast and render friendly block with fallback.
 - Open `docs/content/docs/reference/errors/` with one page per code.

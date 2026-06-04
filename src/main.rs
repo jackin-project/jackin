@@ -16,7 +16,7 @@ async fn main() {
                 debug,
             };
             if let Err(error) = Box::pin(jackin::run(cli)).await {
-                jackin::tui::fatal(&format!("{error:#}"));
+                render_error(&error, debug);
                 std::process::exit(1);
             }
         }
@@ -27,14 +27,11 @@ async fn main() {
                 debug,
             };
             if let Err(error) = Box::pin(jackin::run(cli)).await {
-                jackin::tui::fatal(&format!("{error:#}"));
+                render_error(&error, debug);
                 std::process::exit(1);
             }
         }
         Action::PrintHelpAndExit => {
-            // Bare `jackin` on a non-interactive stdout: print help
-            // silently and exit 0. No warning — this is the expected
-            // fallback, not a user error.
             let mut cmd = Cli::command();
             let _ = cmd.print_help();
             println!();
@@ -42,7 +39,7 @@ async fn main() {
         }
         Action::PrintHelp { command } => {
             if let Err(e) = jackin::cli::help::exec(&command) {
-                jackin::tui::fatal(&format!("{e:#}"));
+                render_error(&e, debug);
                 std::process::exit(1);
             }
         }
@@ -50,5 +47,22 @@ async fn main() {
             eprintln!("error: {}", dispatch::CONSOLE_REQUIRES_TTY_ERROR);
             std::process::exit(1);
         }
+    }
+}
+
+/// Render an error at the binary entry point.
+///
+/// Downcasts to `JackinError` for a structured friendly block; falls back to
+/// the existing `{error:#}` chain rendering for unrecognized errors.
+fn render_error(error: &anyhow::Error, debug: bool) {
+    use owo_colors::OwoColorize;
+    if let Some(jackin_err) = error.downcast_ref::<jackin::error::JackinError>() {
+        jackin_err.user_message().render();
+        if debug {
+            eprintln!();
+            eprintln!("  {} {error:#}", "detail:".dimmed());
+        }
+    } else {
+        jackin::tui::fatal(&format!("{error:#}"));
     }
 }
