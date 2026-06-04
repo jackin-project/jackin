@@ -249,6 +249,15 @@ pub fn stories() -> Vec<Story> {
             8,
             story_select_list_empty,
         ),
+        Story::new(
+            "confirm/focus-yes",
+            "Confirm dialog — Yes focused",
+            "ConfirmDialog",
+            "Confirmation dialog with Yes button pre-selected (non-default state).",
+            48,
+            8,
+            story_confirm_focus_yes,
+        ),
     ]
 }
 
@@ -498,6 +507,11 @@ fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
 fn story_select_list_empty(frame: &mut Frame<'_>, area: Rect) {
     let state = SelectListState::new(vec![]);
     render_select_list(frame, area, &state, "No roles found", &[]);
+}
+
+fn story_confirm_focus_yes(frame: &mut Frame<'_>, area: Rect) {
+    let state = ConfirmState::new("Exit without saving?").with_focus_yes();
+    render_confirm_dialog(frame, area, &state);
 }
 
 #[cfg(test)]
