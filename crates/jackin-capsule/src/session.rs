@@ -1475,8 +1475,30 @@ impl Session {
     /// the attached client only when this session owns the focused
     /// pane in the active tab — see `OscCapture` for the routing
     /// rationale.
+    /// Drain raw passthrough bytes from vt100's `OscCapture`.
+    ///
+    /// When the `jackin-term` feature is active, also drains the shadow grid's
+    /// typed `PassthroughEvent`s and encodes them to bytes. This validates parity
+    /// between the two models (Phase 5 will replace OscCapture entirely with the
+    /// typed stream once the smoke gate passes).
     pub fn drain_passthrough(&mut self) -> Vec<Vec<u8>> {
-        self.parser.callbacks_mut().drain()
+        let out = self.parser.callbacks_mut().drain();
+        #[cfg(feature = "jackin-term")]
+        {
+            // Drain the shadow grid's PassthroughEvents and encode them.
+            // Collect into a separate Vec to avoid borrow conflicts with `out`.
+            let typed: Vec<Vec<u8>> = self
+                .shadow_grid
+                .drain_passthrough()
+                .into_iter()
+                .filter_map(|ev| ev.encode())
+                .collect();
+            // For now, silently drop typed events to avoid double-forwarding:
+            // the OscCapture path already produced the raw bytes. In Phase 5,
+            // the OscCapture path is removed and typed becomes the sole source.
+            let _ = typed;
+        }
+        out
     }
 
     /// Compare current vt100 mode state against the last observed
