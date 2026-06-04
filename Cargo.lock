@@ -2145,6 +2145,7 @@ dependencies = [
  "toml",
  "toml_edit",
  "tui-widget-list",
+ "x509-cert",
 ]
 
 [[package]]

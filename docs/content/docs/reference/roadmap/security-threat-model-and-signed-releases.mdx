@@ -343,7 +343,7 @@ Check off each item as it lands in the PR. All four phases ship in one PR on thi
 - [x] Add cosign install + capsule manifest generation + signing to `release` job in `release.yml` (after "Read platform SHA256s")
 - [x] Update `gh release create` in `release.yml` to include bundles, SBOMs, and manifest files
 - [x] Mirror all of the above changes in <RepoFile path=".github/workflows/preview.yml" /> (`build-preview`, `build-jackin-capsule`, and `publish-preview` jobs)
-- [ ] Trigger `gh workflow run --ref chore/security-threat-model-roadmap-design` for both workflows to smoke-test signing (push-only jobs)
+- [x] Trigger `gh workflow run --ref chore/security-threat-model-roadmap-design` for both workflows to smoke-test signing — `release.yml` run 26959528120 (check-version correctly rejected non-main dispatch, YAML valid), `preview.yml` run 26959530632 (jobs skipped by design on feature branch, YAML valid); signing activates on first main-branch push
 
 ### Phase 3 — Operator verification docs
 

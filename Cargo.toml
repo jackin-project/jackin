@@ -82,6 +82,7 @@ reqwest = { version = "0.13", default-features = false }
 # (requires `gh` on PATH). Selected for hermetic operation with no system dep.
 sigstore = { version = "0.14", default-features = false, features = ["cosign"] }
 base64 = "0.22"
+x509-cert = { version = "0.2", default-features = false }
 
 [build-dependencies]
 jackin-build-meta = { path = "crates/jackin-build-meta" }

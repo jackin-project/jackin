@@ -398,12 +398,21 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
             )
         })?;
 
-    // Confirm the certificate SAN encodes a jackin' CI workflow URL.
+    // Confirm the certificate SAN is exactly one of the two signing workflows
+    // (release.yml for tagged releases, preview.yml for rolling main builds).
+    // The Rekor SET verification above guarantees the cert was logged at signing time;
+    // Rekor enforces Fulcio-issued certs, so the SAN is the OIDC identity Fulcio issued
+    // to. Tightening to the specific workflow files prevents any other workflow in the
+    // repo from producing a valid manifest bundle.
     let san = extract_cert_san_url(&cert_pem)?;
     anyhow::ensure!(
-        san.starts_with("https://github.com/jackin-project/jackin/"),
-        "capsule manifest signed by unexpected identity {san:?}; \
-         expected signer under https://github.com/jackin-project/jackin/"
+        san.starts_with(
+            "https://github.com/jackin-project/jackin/.github/workflows/release.yml@"
+        ) || san.starts_with(
+            "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@"
+        ),
+        "capsule manifest signed by unexpected signer {san:?}; \
+         expected release.yml or preview.yml workflow in jackin-project/jackin"
     );
 
     crate::debug_log!(
@@ -430,36 +439,25 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
 /// Extract the first URI Subject Alternative Name from a PEM-encoded X.509 certificate.
 ///
 /// Fulcio issues certificates with the OIDC subject as a URI SAN for keyless signing.
-/// The certificate chain validity has already been verified by `Client::verify_blob` at
-/// the call site, so here we only need to extract the identity string, not re-validate.
-///
-/// Decodes PEM to DER without a `pem` crate dep — strips the `-----BEGIN/END-----` header
-/// lines, base64-decodes the body, then searches the DER bytes for the URI SAN. URI SANs
-/// are encoded in DER as a context-tag `[6]` byte followed by a length byte and raw ASCII,
-/// so `from_utf8_lossy` over the DER preserves the URL characters intact.
+/// Uses `x509-cert` to parse the SubjectAltName extension by OID rather than scanning
+/// DER bytes — prevents bypass via URL-like strings in other certificate fields.
 fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
-    use base64::engine::general_purpose::STANDARD as BASE64;
-    use base64::Engine as _;
+    use x509_cert::Certificate;
+    use x509_cert::der::DecodePem;
+    use x509_cert::ext::pkix::SubjectAltName;
+    use x509_cert::ext::pkix::name::GeneralName;
 
-    // Strip PEM armor and decode base64 body to get DER bytes.
-    let b64_body: String = cert_pem
-        .lines()
-        .filter(|l| !l.starts_with("-----"))
-        .collect();
-    let der = BASE64
-        .decode(b64_body.trim())
-        .context("base64-decoding PEM certificate body to DER")?;
+    let cert = Certificate::from_pem(cert_pem.as_bytes()).context("parsing PEM certificate")?;
 
-    // URI SANs appear as raw ASCII in DER. Search for the GitHub URL prefix.
-    let der_str = String::from_utf8_lossy(&der);
-    if let Some(pos) = der_str.find("https://github.com/") {
-        let rest = &der_str[pos..];
-        let end = rest
-            .find(|c: char| !c.is_ascii_graphic() || c == '"')
-            .unwrap_or(rest.len());
-        return Ok(rest[..end].to_string());
+    for result in cert.tbs_certificate.filter::<SubjectAltName>() {
+        let (_, san) = result.context("parsing SubjectAltName extension")?;
+        for name in san.0.iter() {
+            if let GeneralName::UniformResourceIdentifier(uri) = name {
+                return Ok(uri.to_string());
+            }
+        }
     }
-    anyhow::bail!("no GitHub Actions URI SAN found in Fulcio certificate")
+    anyhow::bail!("no URI SAN found in Fulcio certificate")
 }
 
 fn linux_target(arch: &str) -> &'static str {
