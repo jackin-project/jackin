@@ -115,8 +115,8 @@ fn required_height_accounts_for_chrome() {
         Line::from("two"),
         Line::from("three"),
     ]);
-    // 3 content lines + 5 chrome rows (2 borders + top blank + after-content blank + buttons)
-    assert_eq!(required_height(&s), 8);
+    // 3 content lines + 6 chrome rows (2 borders + leading + spacer + buttons + trailing)
+    assert_eq!(required_height(&s), 9);
 }
 
 #[test]

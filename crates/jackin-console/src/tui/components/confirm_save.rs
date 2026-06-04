@@ -119,14 +119,15 @@ impl<M: Clone> ConfirmSaveState<M> {
 /// Layout: top border + blank + N content lines + blank + buttons + bottom border = N + 5.
 #[must_use]
 pub fn required_height<M: Clone>(state: &ConfirmSaveState<M>) -> u16 {
+    // 2 borders + 1 leading + content + 1 spacer + 1 buttons + 1 trailing = lines + 6
     let lines = u16::try_from(state.lines.len()).unwrap_or(u16::MAX);
-    lines.saturating_add(5)
+    lines.saturating_add(6)
 }
 
 pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>) {
     let inner = Block::default().borders(Borders::ALL).inner(area);
-    let content_rows = inner.height.saturating_sub(3); // blank, blank, buttons
-    let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
+    // Subtract 4 fixed rows (leading + spacer + buttons + trailing).
+    let content_rows = inner.height.saturating_sub(4);
     state.preview_rows = content_rows;
     clamp_scroll_offset(
         state.lines.len(),
@@ -144,11 +145,8 @@ pub fn render<M: Clone>(frame: &mut Frame, area: Rect, state: &ConfirmSaveState<
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Compute how many content rows we can afford, then apply the scroll
-    // offset so the operator can page through long diffs.
-    let content_rows = inner.height.saturating_sub(3); // blank, blank, buttons
-    let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
-    let content_area_height = content_rows;
+    // Content rows = inner height minus 4 fixed rows (leading + spacer + buttons + trailing).
+    let content_area_height = inner.height.saturating_sub(4);
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
@@ -164,13 +162,15 @@ pub fn render<M: Clone>(frame: &mut Frame, area: Rect, state: &ConfirmSaveState<
         })
         .collect();
 
+    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // top blank
-            Constraint::Length(content_area_height),
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // buttons
+            Constraint::Length(1),                    // leading spacer
+            Constraint::Length(content_area_height),  // content
+            Constraint::Length(1),                    // spacer
+            Constraint::Length(1),                    // buttons
+            Constraint::Length(1),                    // trailing spacer
         ])
         .split(inner);
 
