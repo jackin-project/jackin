@@ -252,7 +252,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
 
     extract_tar_gz_member(&tmp_archive, "jackin-capsule", &tmp)
         .with_context(|| format!("extracting jackin-capsule from {}", tmp_archive.display()))?;
-    let _ = std::fs::remove_file(&tmp_archive);
+    remove_with_debug_log(&tmp_archive);
 
     chmod_executable(&tmp).with_context(|| {
         format!(
