@@ -233,6 +233,7 @@ fn setup_codex() -> Result<()> {
 /// Appends `[model_providers]` + `[profiles]` blocks for available alt
 /// providers to `~/.codex/config.toml`. MiniMax is the only deliverable
 /// Codex cell (Responses-API compatible); GLM and Kimi are deferred.
+/// Idempotent: skips the write if the block is already present.
 fn write_codex_provider_config() -> Result<()> {
     let minimax_key = nonempty_env("MINIMAX_API_KEY");
     if minimax_key.is_none() {
@@ -240,15 +241,19 @@ fn write_codex_provider_config() -> Result<()> {
     }
     let config_path = Path::new("/home/agent/.codex/config.toml");
     fs::create_dir_all("/home/agent/.codex").context("failed to create /home/agent/.codex")?;
-    let provider_block = concat!(
-        "\n[model_providers.minimax]\n",
-        "name = \"MiniMax\"\n",
-        "base_url = \"https://api.minimax.io/v1\"\n",
-        "env_key = \"MINIMAX_API_KEY\"\n",
-        "wire_api = \"responses\"\n",
-        "\n[profiles.minimax]\n",
-        "model_provider = \"minimax\"\n",
-        "model = \"MiniMax-M3\"\n",
+    // Check for existing block before appending to stay idempotent across
+    // repeated setup invocations (duplicate TOML table keys are a parse error).
+    if config_path.exists() {
+        let existing = fs::read_to_string(config_path)
+            .context("failed to read ~/.codex/config.toml for idempotency check")?;
+        if existing.contains("[model_providers.minimax]") {
+            return Ok(());
+        }
+    }
+    let provider_block = format!(
+        "\n[model_providers.minimax]\nname = \"MiniMax\"\nbase_url = \"{}\"\nenv_key = \"MINIMAX_API_KEY\"\nwire_api = \"responses\"\n\n[profiles.minimax]\nmodel_provider = \"minimax\"\nmodel = \"{}\"\n",
+        jackin_protocol::MINIMAX_OPENAI_BASE_URL,
+        jackin_protocol::MINIMAX_DEFAULT_MODEL,
     );
     // Append so any operator-authored config.toml content is preserved.
     let mut file = fs::OpenOptions::new()
@@ -305,7 +310,7 @@ fn setup_kimi() -> Result<()> {
         );
     } else {
         eprintln!(
-            "[entrypoint] kimi: KIMI_API_KEY unset - agent will require interactive login or config"
+            "[entrypoint] kimi: KIMI_CODE_API_KEY unset - agent will require interactive login or config"
         );
     }
     Ok(())
@@ -333,7 +338,11 @@ fn setup_opencode() -> Result<()> {
             "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
         );
     }
-    fs::create_dir_all("/home/agent/.config/opencode")
+    use std::os::unix::fs::DirBuilderExt as _;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create("/home/agent/.config/opencode")
         .context("failed to create /home/agent/.config/opencode")?;
     let config = Path::new("/home/agent/.config/opencode/opencode.json");
     write_opencode_config(config)?;
@@ -342,7 +351,9 @@ fn setup_opencode() -> Result<()> {
 
 /// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
 /// for every alt provider whose API key is present in the container env.
+/// Written with mode 0o600 — the file embeds live API keys.
 fn write_opencode_config(config: &Path) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt as _;
     let cfg = build_opencode_config(
         nonempty_env("ZAI_API_KEY"),
         nonempty_env("MINIMAX_API_KEY"),
@@ -350,7 +361,14 @@ fn write_opencode_config(config: &Path) -> Result<()> {
     );
     let mut content = serde_json::to_vec(&cfg).context("failed to serialize opencode.json")?;
     content.push(b'\n');
-    fs::write(config, &content).context("failed to write opencode.json")?;
+    let mut f = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(config)
+        .context("failed to open opencode.json for writing")?;
+    f.write_all(&content).context("failed to write opencode.json")?;
     Ok(())
 }
 

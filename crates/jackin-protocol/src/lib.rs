@@ -59,6 +59,8 @@ pub const ZAI_API_TIMEOUT_MS: &str = "3000000";
 
 /// MiniMax Anthropic-compatible API base URL (Claude Code and OpenCode).
 pub const MINIMAX_BASE_URL: &str = "https://api.minimax.io/anthropic";
+/// MiniMax OpenAI-compatible API base URL (Codex Responses API).
+pub const MINIMAX_OPENAI_BASE_URL: &str = "https://api.minimax.io/v1";
 /// MiniMax Token Plan model — all three Claude tiers map to this single model.
 pub const MINIMAX_DEFAULT_MODEL: &str = "MiniMax-M3";
 /// MiniMax recommended API timeout, matching the Z.AI value.

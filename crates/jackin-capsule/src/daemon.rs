@@ -1662,7 +1662,8 @@ impl Multiplexer {
                     [only] => {
                         let provider = *only;
                         self.dialog_clear();
-                        let env_overrides = provider.env_overrides(self.zai_key.as_deref());
+                        let env_overrides =
+                            provider.env_overrides(self.token_for_provider(provider));
                         self.dispatch_spawn_intent_with_provider(
                             agent,
                             intent,
@@ -1683,8 +1684,8 @@ impl Multiplexer {
                 intent,
             } => {
                 self.dialog_clear();
-                // Token resolved here from the container's ZAI_API_KEY.
-                let env_overrides = provider.env_overrides(self.zai_key.as_deref());
+                // Token resolved here from the container's provider-specific key env var.
+                let env_overrides = provider.env_overrides(self.token_for_provider(provider));
                 self.dispatch_spawn_intent_with_provider(
                     agent,
                     intent,
