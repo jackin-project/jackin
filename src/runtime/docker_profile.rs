@@ -603,19 +603,11 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
             base.capabilities_add.push(normalized);
         }
     }
-    // `allowlist` network tier requires CAP_NET_ADMIN and CAP_NET_RAW for
-    // iptables/ipset to function. These are implicit side-effects of the
-    // network grant — not in `capabilities_add` in the TOML, but reported
-    // in the session contract as `source=implicit_network_grant`.
-    if base.network == NetworkGrant::Allowlist {
-        for cap in ["NET_ADMIN", "NET_RAW"] {
-            if !base.capabilities_add.iter().any(|c| c == cap) {
-                base.capabilities_add.push(cap.to_string());
-            }
-        }
-    }
-
     base
+    // Note: implicit NET_ADMIN/NET_RAW injection for the allowlist network tier
+    // is handled by apply_implicit_grants(), called once at the end of
+    // resolve_effective_grants() after all sources are merged. It does not belong
+    // here because apply_grants() is a pure layering function.
 }
 
 // ── Profile resolution ───────────────────────────────────────────────────────
@@ -1418,23 +1410,47 @@ mod tests {
         );
     }
 
-    /// Implicit NET_ADMIN/NET_RAW caps injected when apply_grants sees network = allowlist.
+    /// Implicit NET_ADMIN/NET_RAW caps injected by resolve_effective_grants for Allowlist network.
+    /// Tests via the public API (resolve_effective_grants) so the test exercises the same
+    /// path an operator launch uses, not an internal function.
     #[test]
     fn allowlist_network_adds_implicit_caps() {
-        // The implicit caps are injected inside apply_grants when network == Allowlist.
-        // Trigger it by applying an empty grants struct over a locked base.
-        let base = profile_base_grants(DockerSecurityProfile::Locked);
-        assert_eq!(base.network, NetworkGrant::Allowlist);
-        let resolved = apply_grants(base, &DockerGrants::default());
+        // No explicit grants: apply_implicit_grants() in resolve_effective_grants
+        // must inject the caps even without any config/workspace DockerGrants.
+        let grants = resolve_effective_grants(DockerSecurityProfile::Locked, None, None);
+        assert_eq!(grants.network, NetworkGrant::Allowlist);
         assert!(
-            resolved.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
-            "apply_grants over Allowlist network must inject implicit NET_ADMIN; got: {:?}",
-            resolved.capabilities_add
+            grants.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
+            "resolve_effective_grants(Locked) must inject implicit NET_ADMIN; got: {:?}",
+            grants.capabilities_add
         );
         assert!(
-            resolved.capabilities_add.iter().any(|c| c == "NET_RAW"),
-            "apply_grants over Allowlist network must inject implicit NET_RAW; got: {:?}",
-            resolved.capabilities_add
+            grants.capabilities_add.iter().any(|c| c == "NET_RAW"),
+            "resolve_effective_grants(Locked) must inject implicit NET_RAW; got: {:?}",
+            grants.capabilities_add
+        );
+    }
+
+    /// Implicit caps are also present when hardened profile (Allowlist) has config grants.
+    /// apply_implicit_grants must fire even when apply_grants already ran.
+    #[test]
+    fn allowlist_network_with_grants_still_gets_implicit_caps() {
+        // Hardened profile has Allowlist network; add a memory config grant.
+        // apply_grants runs (so it fired), then apply_implicit_grants must still add caps.
+        let config_grants = DockerGrants {
+            memory: Some("8G".to_string()),
+            ..Default::default()
+        };
+        let grants = resolve_effective_grants(
+            DockerSecurityProfile::Hardened,
+            Some(&config_grants),
+            None,
+        );
+        assert_eq!(grants.network, NetworkGrant::Allowlist);
+        assert!(
+            grants.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
+            "Hardened with config grants must still have implicit NET_ADMIN; got: {:?}",
+            grants.capabilities_add
         );
     }
 

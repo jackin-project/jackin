@@ -112,7 +112,7 @@ pub async fn eject_role(
             crate::debug_log!(
                 "cleanup",
                 "eject_role {container_name}: could not read instance manifest, \
-                 assuming dind_was_started=true: {e:#}"
+                 assuming dind_was_started=true: {e}"
             );
             None
         }
