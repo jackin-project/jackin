@@ -28,7 +28,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
-    parse_sha256_hex,
+    parse_sha256_hex, sha256_hex,
 };
 use crate::paths::JackinPaths;
 
@@ -442,6 +442,7 @@ struct CapsuleManifest {
 // Unknown keys are ignored for forward-compatibility with Rekor spec changes.
 #[derive(serde::Deserialize)]
 struct RekorBody {
+    kind: String,
     spec: RekorSpec,
 }
 #[derive(serde::Deserialize)]
@@ -495,18 +496,20 @@ fn verify_rekor_body_binds_bundle(
     let body: RekorBody =
         serde_json::from_slice(&body_json).context("parsing Rekor payload body as hashedrekord")?;
 
+    anyhow::ensure!(
+        body.kind == "hashedrekord",
+        "Rekor entry kind is {:?}; expected \"hashedrekord\" — the signing workflow \
+         may have been reconfigured to use a different entry type",
+        body.kind
+    );
+
     // 1. Verify the body covers these exact manifest bytes.
     anyhow::ensure!(
         body.spec.data.hash.algorithm == "sha256",
         "Rekor entry uses unexpected hash algorithm {:?}; expected sha256",
         body.spec.data.hash.algorithm
     );
-    let digest = Sha256::digest(manifest_bytes);
-    let manifest_sha256 = digest.iter().fold(String::with_capacity(64), |mut s, b| {
-        use std::fmt::Write as _;
-        let _ = write!(s, "{b:02x}");
-        s
-    });
+    let manifest_sha256 = sha256_hex(Sha256::digest(manifest_bytes));
     anyhow::ensure!(
         body.spec
             .data
@@ -520,17 +523,18 @@ fn verify_rekor_body_binds_bundle(
     );
 
     // 2. Verify the body covers the same certificate presented in bundle.cert.
+    // The body is authenticated by the Rekor SET; bundle.cert is attacker-supplied.
     anyhow::ensure!(
         body.spec.signature.public_key.content == bundle.cert,
-        "Rekor entry covers a different certificate than bundle.cert; \
-         the bundle fields may have been swapped after the Rekor entry was created"
+        "Rekor log entry covers a different certificate than the one in bundle.cert; \
+         bundle.cert may have been substituted after the log entry was created"
     );
 
     // 3. Verify the body covers the same signature presented in bundle.base64_signature.
     anyhow::ensure!(
         body.spec.signature.content == bundle.base64_signature,
-        "Rekor entry covers a different signature than bundle.base64_signature; \
-         the bundle fields may have been swapped after the Rekor entry was created"
+        "Rekor log entry covers a different signature than bundle.base64_signature; \
+         bundle.base64_signature may have been substituted after the log entry was created"
     );
 
     Ok(())
