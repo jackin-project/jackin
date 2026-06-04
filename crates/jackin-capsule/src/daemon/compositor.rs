@@ -338,6 +338,17 @@ impl Multiplexer {
         }
 
         let pull_request_loading = self.pull_request_context_loading();
+        // Compute the debug run-id once so we can pass &str to CapsuleBottomChrome.
+        let debug_run_id_owned: Option<String> = if crate::logging::debug_enabled() {
+            let diag = crate::container_context::resolve_container_diagnostics();
+            if diag.run_id.is_empty() {
+                None
+            } else {
+                Some(diag.run_id)
+            }
+        } else {
+            None
+        };
         let scrollback_active = focused_id
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
@@ -352,6 +363,7 @@ impl Multiplexer {
                 instance_id_label: self.status_bar.instance_id_label(),
                 hover_target: self.hover_target,
                 scrollback_active,
+                debug_run_id: debug_run_id_owned.as_deref(),
             },
         );
 

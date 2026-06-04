@@ -230,6 +230,8 @@ pub(crate) struct CapsuleBottomChrome<'a> {
     pub(crate) instance_id_label: &'a str,
     pub(crate) hover_target: Option<HoverTarget>,
     pub(crate) scrollback_active: bool,
+    /// Run ID for the red debug chip shown when `--debug` is active. `None` = no chip.
+    pub(crate) debug_run_id: Option<&'a str>,
 }
 
 pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBottomChrome<'_>) {
@@ -243,6 +245,30 @@ pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBotto
         view.instance_id_label,
         view.hover_target,
     );
+    // Debug chip: red run-id chip at the far right of the branch context bar row.
+    if let Some(run_id) = view.debug_run_id.filter(|r| !r.is_empty()) {
+        let chip = format!(" {run_id} ");
+        let chip_cols = jackin_tui::display_cols(&chip) as u16;
+        let bar_row = view.term_rows.saturating_sub(1);
+        let col = view.term_cols.saturating_sub(chip_cols).saturating_add(1); // 1-based
+        jackin_tui::ansi::move_to(buf, bar_row, col);
+        let (chip_bg, chip_fg) = if view.hover_target == Some(HoverTarget::DebugChip) {
+            (
+                jackin_tui::ansi::rgb_bg(jackin_tui::WHITE),
+                jackin_tui::ansi::rgb_fg(jackin_tui::DANGER_RED),
+            )
+        } else {
+            (
+                jackin_tui::ansi::rgb_bg(jackin_tui::DANGER_RED),
+                jackin_tui::ansi::rgb_fg(jackin_tui::WHITE),
+            )
+        };
+        buf.extend_from_slice(chip_bg.as_bytes());
+        buf.extend_from_slice(chip_fg.as_bytes());
+        buf.extend_from_slice(jackin_tui::ansi::BOLD.as_bytes());
+        buf.extend_from_slice(chip.as_bytes());
+        buf.extend_from_slice(jackin_tui::ansi::RESET.as_bytes());
+    }
 
     let hint_spans = crate::tui::components::dialog::main_view_hint(view.scrollback_active);
     let hint_row = view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);

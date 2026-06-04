@@ -151,6 +151,8 @@ pub(crate) struct BranchContextBarLayout {
     pub(crate) left_region: Option<ColRange>,
     pub(crate) container: String,
     pub(crate) container_region: Option<ColRange>,
+    /// Click region for the debug run-id chip (rightmost, only when debug is active).
+    pub(crate) debug_chip_region: Option<ColRange>,
 }
 
 pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> Option<&str> {
@@ -214,6 +216,7 @@ pub(crate) fn branch_context_bar_layout(
         left_region,
         container,
         container_region,
+        debug_chip_region: None, // populated by callers that have the run_id
     })
 }
 
@@ -221,6 +224,8 @@ pub(crate) fn branch_context_bar_layout(
 pub(crate) enum BranchContextBarHit {
     Context,
     Container,
+    /// Click on the debug run-id chip (only shown when `--debug` is active).
+    DebugChip,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -245,6 +250,24 @@ pub(crate) fn branch_context_bar_hit(
         pull_request_loading,
         container_name,
     )?;
+    // Check debug chip: when JACKIN_DEBUG is active, the rightmost N columns
+    // show the red run-id chip. Detected here from the env var so callers
+    // don't need a separate parameter.
+    if crate::logging::debug_enabled() {
+        if let Ok(run_id) = std::env::var("JACKIN_RUN_ID") {
+            if !run_id.is_empty() {
+                let chip = format!(" {run_id} ");
+                let chip_cols = u16::try_from(display_cols(&chip)).unwrap_or(u16::MAX);
+                let chip_start = term_cols.saturating_sub(chip_cols).saturating_add(1);
+                if col >= chip_start && col <= term_cols {
+                    return Some(BranchContextBarHit::DebugChip);
+                }
+            }
+        }
+    }
+    if layout.debug_chip_region.is_some_and(|r| r.contains(col)) {
+        return Some(BranchContextBarHit::DebugChip);
+    }
     if layout.container_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Container);
     }

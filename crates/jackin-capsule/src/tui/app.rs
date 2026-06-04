@@ -115,6 +115,8 @@ pub(crate) enum HoverTarget {
     Menu,
     BranchContext,
     Container,
+    /// The red debug run-id chip at the bottom-right when `--debug` is active.
+    DebugChip,
     DialogCopyTarget,
 }
 
@@ -142,6 +144,7 @@ pub(crate) fn chrome_hover_target_for_state(state: ChromeHitState) -> Option<Hov
     match state.branch_hit {
         Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
         Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
+        Some(BranchContextBarHit::DebugChip) => Some(HoverTarget::DebugChip),
         None => None,
     }
 }

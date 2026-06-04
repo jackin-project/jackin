@@ -323,6 +323,8 @@ pub(crate) fn branch_context_bar_click_action(hit: Option<BranchContextBarHit>) 
     match hit {
         Some(BranchContextBarHit::Context) => Some(Action::OpenGithubContext),
         Some(BranchContextBarHit::Container) => Some(Action::OpenContainerInfo),
+        // Debug chip also opens the shared ContainerInfo dialog.
+        Some(BranchContextBarHit::DebugChip) => Some(Action::OpenContainerInfo),
         None => None,
     }
 }
