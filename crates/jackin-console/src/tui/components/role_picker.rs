@@ -124,8 +124,8 @@ use ratatui::{
 };
 
 use jackin_tui::components::render_dialog_shell;
-use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::render_filter_input;
+use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame, area: Rect, state: &RolePickerState<R>) {

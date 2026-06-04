@@ -256,7 +256,8 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
         height: h,
     };
 
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("Git repository detected"));
+    let inner =
+        jackin_tui::components::render_dialog_shell(frame, area, Some("Git repository detected"));
 
     // Row constraints: [prompt][url?][spacer][buttons][spacer].
     let row_count = if has_url { 5 } else { 4 };

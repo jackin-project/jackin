@@ -13,8 +13,8 @@ use ratatui::{
 use crate::tui::components::list_helpers::first_selection;
 pub use crate::tui::components::list_helpers::matches_filter;
 use crate::tui::components::spinner::SPINNER_FRAMES;
-use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::TextInputState;
+use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 pub fn item_name_input_state<'a>(item_default: impl Into<String>) -> TextInputState<'a> {

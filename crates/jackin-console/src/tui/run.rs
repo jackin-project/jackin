@@ -112,7 +112,6 @@ pub fn split_debug_area(area: Rect, debug_mode: bool) -> (Rect, Option<Rect>) {
     (main, Some(bar))
 }
 
-
 #[must_use]
 pub fn debug_run_id_label(run_id: Option<&str>) -> String {
     run_id.unwrap_or_default().to_string()

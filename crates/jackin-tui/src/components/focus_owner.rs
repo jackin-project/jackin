@@ -9,8 +9,9 @@
 
 use crate::components::panel::PanelFocus;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FocusOwner<Tab> {
+    #[default]
     /// The tab bar owns focus (green tab underline, dark content borders, no ▸).
     TabBar,
     /// A specific tab's content block owns focus (green border, ▸ cursor, white tab underline).
@@ -56,8 +57,3 @@ impl<Tab: Copy> FocusOwner<Tab> {
     }
 }
 
-impl<Tab> Default for FocusOwner<Tab> {
-    fn default() -> Self {
-        Self::TabBar
-    }
-}

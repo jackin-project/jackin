@@ -70,7 +70,7 @@ impl<K: Clone + PartialEq> HoverTracker<K> {
     /// Return `true` when the pointer is over the element identified by `key`.
     #[must_use]
     pub fn is_hovered(&self, col: u16, row: u16, key: &K) -> bool {
-        self.hovered(col, row).map_or(false, |k| k == key)
+        self.hovered(col, row).is_some_and(|k| k == key)
     }
 
     /// Return the hover style for an element: lifted (hover) or resting.

@@ -110,14 +110,13 @@ pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptS
 /// Used by the mouse routing layer to enforce single-consumer precedence: when
 /// this returns `false`, chrome interactions (debug chip) and base-surface mouse
 /// handling are suppressed so only the active modal handles the event.
-pub(crate) fn no_modal_open(state: &ConsoleState) -> bool {
+pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
     use crate::console::tui::state::ManagerStage;
     let ConsoleStage::Manager(ms) = &state.stage;
     state.quit_confirm.is_none()
         && ms.list_modal.is_none()
         && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
 }
-
 
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,

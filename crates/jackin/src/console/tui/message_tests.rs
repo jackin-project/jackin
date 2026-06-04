@@ -1077,10 +1077,10 @@ fn chip_click_does_not_fire_while_list_modal_open() {
     // Verifies single-consumer precedence: when a list_modal is active, the
     // no_modal_open guard returns false, preventing the debug chip handler
     // (and base-surface mouse routing) from mutating manager state.
-    use crate::console::tui::run::no_modal_open;
     use crate::console::tui::app::{ConsoleStage, ConsoleState};
-    use std::rc::Rc;
+    use crate::console::tui::run::no_modal_open;
     use std::cell::RefCell;
+    use std::rc::Rc;
 
     let cwd = std::path::Path::new("/");
     let config = crate::config::AppConfig::default();
@@ -1089,7 +1089,10 @@ fn chip_click_does_not_fire_while_list_modal_open() {
     let op_cache = Rc::new(RefCell::new(crate::operator_env::OpCache::default()));
     let clean_manager = ManagerState::from_config(&config, cwd);
     let clean_state = ConsoleState::new(ConsoleStage::Manager(clean_manager), op_cache, false);
-    assert!(no_modal_open(&clean_state), "no modal by default — chip is active");
+    assert!(
+        no_modal_open(&clean_state),
+        "no modal by default — chip is active"
+    );
 
     // Open a list modal and verify the guard fires.
     let mut manager_with_modal = ManagerState::from_config(&config, cwd);
@@ -1101,7 +1104,8 @@ fn chip_click_does_not_fire_while_list_modal_open() {
         },
     );
     let op_cache2 = Rc::new(RefCell::new(crate::operator_env::OpCache::default()));
-    let state_with_modal = ConsoleState::new(ConsoleStage::Manager(manager_with_modal), op_cache2, false);
+    let state_with_modal =
+        ConsoleState::new(ConsoleStage::Manager(manager_with_modal), op_cache2, false);
 
     assert!(
         !no_modal_open(&state_with_modal),
@@ -1111,10 +1115,10 @@ fn chip_click_does_not_fire_while_list_modal_open() {
 
 #[test]
 fn chip_click_does_not_fire_while_quit_confirm_open() {
-    use crate::console::tui::run::no_modal_open;
     use crate::console::tui::app::{ConsoleStage, ConsoleState};
-    use std::rc::Rc;
+    use crate::console::tui::run::no_modal_open;
     use std::cell::RefCell;
+    use std::rc::Rc;
 
     let cwd = std::path::Path::new("/");
     let config = crate::config::AppConfig::default();

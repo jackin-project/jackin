@@ -253,16 +253,15 @@ pub(crate) fn branch_context_bar_hit(
     // Check debug chip: when JACKIN_DEBUG is active, the rightmost N columns
     // show the red run-id chip. Detected here from the env var so callers
     // don't need a separate parameter.
-    if crate::logging::debug_enabled() {
-        if let Ok(run_id) = std::env::var("JACKIN_RUN_ID") {
-            if !run_id.is_empty() {
-                let chip = format!(" {run_id} ");
-                let chip_cols = u16::try_from(display_cols(&chip)).unwrap_or(u16::MAX);
-                let chip_start = term_cols.saturating_sub(chip_cols).saturating_add(1);
-                if col >= chip_start && col <= term_cols {
-                    return Some(BranchContextBarHit::DebugChip);
-                }
-            }
+    if crate::logging::debug_enabled()
+        && let Ok(run_id) = std::env::var("JACKIN_RUN_ID")
+        && !run_id.is_empty()
+    {
+        let chip = format!(" {run_id} ");
+        let chip_cols = u16::try_from(display_cols(&chip)).unwrap_or(u16::MAX);
+        let chip_start = term_cols.saturating_sub(chip_cols).saturating_add(1);
+        if col >= chip_start && col <= term_cols {
+            return Some(BranchContextBarHit::DebugChip);
         }
     }
     if layout.debug_chip_region.is_some_and(|r| r.contains(col)) {

@@ -89,7 +89,6 @@ fn token_generate_status_message_names_target_scope() {
     );
 }
 
-
 #[test]
 fn debug_run_id_label_uses_empty_fallback() {
     assert_eq!(debug_run_id_label(Some("run-1")), "run-1");

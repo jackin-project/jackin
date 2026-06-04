@@ -204,10 +204,10 @@ mod tests {
 /// Callers use `dialog_inner_chunks(inner, content_rows)` to lay out the
 /// canonical five slots within the returned inner area.
 #[must_use]
-pub fn render_dialog_shell<'a>(
+pub fn render_dialog_shell(
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
-    title: Option<&'a str>,
+    title: Option<&str>,
 ) -> ratatui::layout::Rect {
     use crate::components::panel::{Panel, PanelFocus, modal_block};
     use ratatui::widgets::Widget;
