@@ -642,12 +642,16 @@ pub async fn inspect_hardline_instance(
         crate::instance::BackendResources::Docker(d) => Some(d),
         crate::instance::BackendResources::AppleContainer(_) => None,
     });
-    let dind_name =
-        docker_resources.map_or_else(|| format!("{container_name}-dind"), |d| d.dind_container.clone());
+    let dind_name = docker_resources.map_or_else(
+        || format!("{container_name}-dind"),
+        |d| d.dind_container.clone(),
+    );
     let network_name =
         docker_resources.map_or_else(|| format!("{container_name}-net"), |d| d.network.clone());
-    let certs_volume =
-        docker_resources.map_or_else(|| dind_certs_volume(container_name), |d| d.certs_volume.clone());
+    let certs_volume = docker_resources.map_or_else(
+        || dind_certs_volume(container_name),
+        |d| d.certs_volume.clone(),
+    );
 
     let (role_container_state, dind_state_raw, network_result) = tokio::join!(
         docker.inspect_container_state(container_name),

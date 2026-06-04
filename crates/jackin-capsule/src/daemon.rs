@@ -3703,7 +3703,11 @@ async fn handle_exec_request(
 ) {
     // Compact lifecycle telemetry. Log the program name and arg count, never
     // the args themselves — they may carry literal secrets.
-    crate::clog!("exec: received command={} args={}", req.command, req.args.len());
+    crate::clog!(
+        "exec: received command={} args={}",
+        req.command,
+        req.args.len()
+    );
 
     // A picker is already awaiting the operator's decision. Reject rather than
     // overwrite it: overwriting would drop the first client's response channel
@@ -3723,28 +3727,16 @@ async fn handle_exec_request(
         // No on-demand bindings configured: nothing to inject or gate, so the
         // command runs unattended. Log it at the compact tier so an operator
         // can still see what ran in their session.
-        crate::clog!("exec: no bindings configured, running command={}", req.command);
+        crate::clog!(
+            "exec: no bindings configured, running command={}",
+            req.command
+        );
         let command = req.command.clone();
         let args = req.args.clone();
         let response_tx = req.response_tx;
         tokio::spawn(async move {
-            match crate::exec::execute_command(&command, &args, &Default::default(), &[]).await {
-                Ok((exit_code, stdout, stderr, redacted_count)) => {
-                    crate::clog!("exec: command exited code={exit_code} redacted={redacted_count}");
-                    let _ = response_tx.send(ExecOutcome::Result {
-                        exit_code,
-                        stdout,
-                        stderr,
-                        redacted_count,
-                    });
-                }
-                Err(e) => {
-                    crate::clog!("exec: command failed: {e:#}");
-                    let _ = response_tx.send(ExecOutcome::Denied {
-                        reason: format!("exec failed: {e:#}"),
-                    });
-                }
-            }
+            let outcome = exec_and_log(&command, &args, &Default::default(), &[]).await;
+            let _ = response_tx.send(outcome);
         });
         return;
     }
@@ -3805,11 +3797,25 @@ async fn run_exec_with_refs(
             };
         }
     };
-    crate::clog!("exec: resolved {} credential(s), running command={command}", values.len());
+    crate::clog!(
+        "exec: resolved {} credential(s), running command={command}",
+        values.len()
+    );
 
     let secret_values: Vec<String> = values.values().cloned().collect();
+    exec_and_log(&command, &args, &values, &secret_values).await
+}
 
-    match crate::exec::execute_command(&command, &args, &values, &secret_values).await {
+/// Run a command via `execute_command`, log the outcome at the compact tier,
+/// and map it to an `ExecOutcome`. Shared by the no-bindings fast path and the
+/// credential-resolved path so the execute + log + map logic lives once.
+async fn exec_and_log(
+    command: &str,
+    args: &[String],
+    env: &std::collections::BTreeMap<String, String>,
+    secrets: &[String],
+) -> ExecOutcome {
+    match crate::exec::execute_command(command, args, env, secrets).await {
         Ok((exit_code, stdout, stderr, redacted_count)) => {
             crate::clog!("exec: command exited code={exit_code} redacted={redacted_count}");
             ExecOutcome::Result {
