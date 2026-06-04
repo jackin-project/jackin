@@ -685,7 +685,13 @@ async fn launch_role_runtime(
             (k.to_string(), v.to_string())
         })
         .collect();
-    docker.create_network(network, network_labels).await?;
+    // `locked` profile with `network = None` uses an internal bridge when
+    // DinD is also disabled — otherwise DinD inner containers bypass egress.
+    let network_internal = grants.network == super::docker_profile::NetworkGrant::None
+        && grants.dind == super::docker_profile::DindGrant::None;
+    docker
+        .create_network(network, network_labels, network_internal)
+        .await?;
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(super::progress::LaunchStage::Network, "isolated");
     }
@@ -2084,13 +2090,74 @@ async fn load_role_with(
             workspace_docker_for_grants.and_then(|wd| wd.profile),
             config.docker.profile,
         );
-        let effective_grants_early = super::docker_profile::resolve_effective_grants(
+        let mut effective_grants_early = super::docker_profile::resolve_effective_grants(
             resolved_profile_early,
             config.docker.grants.as_ref(),
             workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
         );
-        let dind_started = effective_grants_early.dind
-            != super::docker_profile::DindGrant::None;
+        // Check role manifest min_profile against the resolved profile.
+        // The profile must be >= the role's declared minimum (more capable
+        // than or equal to what the role requires).
+        if let Some(min) = validated_repo.manifest.min_profile {
+            if resolved_profile_early < min {
+                anyhow::bail!(
+                    "role {:?} declares min_profile = \"{min}\"; the active profile \
+                     \"{resolved_profile_early}\" is below that minimum — use \
+                     `--docker-profile {min}` or set `[docker] default_profile = \"{min}\"` \
+                     in your config",
+                    selector.key(),
+                );
+            }
+        }
+        // Apply role-declared dind requirement: if role declares dind and
+        // the effective grants don't enable it, raise to the declared level.
+        // (Role can only raise, not lower, the profile's dind grant.)
+        if let Some(role_dind) = validated_repo.manifest.dind {
+            if effective_grants_early.dind < role_dind {
+                crate::debug_log!(
+                    "launch",
+                    "role declared dind={:?} raises profile dind={:?}",
+                    role_dind,
+                    effective_grants_early.dind,
+                );
+                // Re-resolve effective_grants_early with the role's dind grant applied.
+                let role_grants = super::docker_profile::DockerGrants {
+                    dind: Some(role_dind),
+                    ..Default::default()
+                };
+                effective_grants_early =
+                    super::docker_profile::apply_grants(effective_grants_early, &role_grants);
+            }
+        }
+
+        // Lock dind_started AFTER role manifest adjustments.
+        let dind_started =
+            effective_grants_early.dind != super::docker_profile::DindGrant::None;
+
+        // Validate explicit grants before any container work starts.
+        // Collect all errors so the operator sees the full list at once.
+        if let Some(ref grants) = config.docker.grants {
+            let errors = super::docker_profile::validate_grants(grants);
+            if !errors.is_empty() {
+                let msg = errors
+                    .iter()
+                    .map(|e| format!("  • {e}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                anyhow::bail!("docker grants validation failed:\n{msg}");
+            }
+        }
+        if let Some(ws_grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
+            let errors = super::docker_profile::validate_grants(ws_grants);
+            if !errors.is_empty() {
+                let msg = errors
+                    .iter()
+                    .map(|e| format!("  • {e}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                anyhow::bail!("workspace docker grants validation failed:\n{msg}");
+            }
+        }
 
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
             container_base: &container_name,
