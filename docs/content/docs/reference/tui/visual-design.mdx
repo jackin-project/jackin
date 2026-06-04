@@ -124,3 +124,16 @@ The capsule's ANSI renderer uses two flavors of the color-encoding helpers in <R
 - **`rgb_fg_dyn(Rgb) -> String` / `rgb_bg_dyn(Rgb) -> String` — dynamic, runtime.** These emit the standard truecolor SGR sequence `\x1b[38;2;r;g;bm` / `\x1b[48;2;r;g;bm` for **any** `Rgb` value and never panic. Use these whenever the color value is not a compile-time constant — any place a color is chosen at runtime (e.g. the debug chip which is conditionally rendered with `DANGER_RED`).
 
 **Rule:** capsule render code must never call `rgb_fg` or `rgb_bg` with a value that is not a `const` palette constant. Any non-const color use must route through `rgb_fg_dyn` / `rgb_bg_dyn`. A `const` call with an unlisted color is a build error (correct!); a non-`const` call with an unlisted color is an exit-101 panic (bug!).
+
+---
+
+## Copyable values — link style, hover, click-to-copy
+
+Any value the operator can click to copy (a file path, run id, container id, URL) must read as a link and behave identically on every surface, following the W3C native-link convention:
+
+- **Colour:** `LINK_FG` (cyan) on a dark dialog surface — never blue, never the same as plain or emphasised text. `LINK_BLUE` is reserved for clickable text on the *white* status bar, where cyan lacks contrast; do not use it on dark dialog surfaces.
+- **Underline:** always underlined, with or without an OSC 8 hyperlink. Underline is the resting affordance that marks the value as a link; underlining only the hyperlinked rows is a violation.
+- **Hover:** the value brightens to `LINK_FG_HOVER` while the pointer is over it, and the pointer switches to the clickable shape where supported. A copyable value with no hover colour change is a violation — the hover feedback is what tells the operator it is interactive.
+- **Click:** copies the full value to the clipboard (OSC 52) and shows the transient "Copied!" badge on that row. The visible text may be abbreviated; the copied payload and the OSC 8 `href` carry the full value.
+
+These rules are enforced by the shared component (<RepoFile path="crates/jackin-tui/src/components/container_info.rs" />): every copyable row renders through the same styling, so the affordance never drifts between the console, launch cockpit, and capsule. New copyable surfaces reuse that component rather than re-implementing the colour/underline/hover rules.
