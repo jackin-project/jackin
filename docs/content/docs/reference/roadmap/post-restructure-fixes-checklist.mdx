@@ -57,9 +57,9 @@ Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run th
 **Canonical pattern to converge on:** one shared preview-canvas treatment so **every** story renders on an identical dark card with consistent framing, regardless of component type — the operator should never have to guess a component's bounds.
 
 **Tasks:**
-- [ ] Decide and document the single canonical preview-card treatment (uniform charcoal canvas + consistent inset/framing for every component, dialog or not) and record it as a rule in the lookbook section so future stories inherit it.
-- [~] Apply it uniformly in `main.rs`'s preview render path so all stories — `BrandHeader`, `Panel`, `ButtonStrip`, `TabStrip`, dialogs, `FilterInput`, `HintBar`, `SelectList`, `ScrollablePanel`, `StatusFooter`, `TextInput`, `StatusPopup` — get identical backdrop + framing. No per-story background special-casing.
-- [ ] Verify against the full story list in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> that no story renders with a background that differs from the shared treatment.
+- [x] Decide and document the single canonical preview-card treatment (uniform charcoal canvas + consistent inset/framing for every component, dialog or not) and record it as a rule in the lookbook section so future stories inherit it.
+- [x] Apply it uniformly in `main.rs`'s preview render path so all stories — `BrandHeader`, `Panel`, `ButtonStrip`, `TabStrip`, dialogs, `FilterInput`, `HintBar`, `SelectList`, `ScrollablePanel`, `StatusFooter`, `TextInput`, `StatusPopup` — get identical backdrop + framing. No per-story background special-casing.
+- [x] Verify against the full story list in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> that no story renders with a background that differs from the shared treatment.
 - [x] Regenerate SVGs and confirm the docs previews show the uniform card for every component.
 
 ---
