@@ -73,7 +73,7 @@ With the kernel boundary problem defined, we researched what provides a true per
 
 **gVisor**: syscall interception in userspace — no KVM required. But confirmed broken on OrbStack macOS ARM ([orbstack/orbstack#2362](https://github.com/orbstack/orbstack/issues/2362) — `/tmp → /private/tmp` symlink causes runsc to crash immediately). Claude Code hangs indefinitely in gVisor on macOS ARM ([anthropics/claude-code#35454](https://github.com/anthropics/claude-code/issues/35454)). Not viable on current platform stack.
 
-**smolvm**: uses Hypervisor.framework on macOS and libkrun on Linux. Pre-1.0. Has a documented Docker-in-VM path (v0.7.0, requires Alpine base + ext4 bind mount + virtio-net). See [smolvm backend research](/reference/roadmap/smolvm-backend-research/).
+**smolvm**: uses Hypervisor.framework on macOS and libkrun on Linux. Pre-1.0. Has a documented Docker-in-VM path (v0.7.0, requires Alpine base + ext4 bind mount + virtio-net). **Deferred** in June 2026 — Apple Container is the primary macOS 26 VM track (zero install friction, gRPC/vsock attach, Virtualization.framework). smolvm remains the fallback if Apple Container Phase 0 fails the Docker-inside test. See [smolvm backend research](/reference/roadmap/smolvm-backend-research/).
 
 **Docker Sandboxes**: productized microVM runner from Docker Inc. (launched January 2026). Runs each agent session in a dedicated VM using a proprietary VMM on Apple's Hypervisor.framework. Has a built-in credential proxy and network proxy. However: not a backend API for jackin' to build on — it is a complete agent runner that replaces jackin's role (see [Part 3](#part-3-why-apple-container-not-docker-sandboxes)).
 
@@ -416,16 +416,31 @@ Work proceeds in this order. Each step is a prerequisite for the next where note
 
 ---
 
+## Related Files
+
+The key source files an implementing agent reads before touching this architecture:
+
+- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection (`process::id() == 1`); must add `JACKIN_CAPSULE_FORCE_DAEMON` env var check for Apple Container
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — daemon control plane; add jackin-exec message type here
+- <RepoFile path="src/instance/manifest.rs" /> — `InstanceManifest` + `DockerResources`; add `BackendResources` tagged union with `AppleContainerResources` variant
+- <RepoFile path="src/runtime/launch.rs" /> — launch orchestration; backend split point
+- <RepoFile path="src/docker_client.rs" /> — Docker lifecycle boundary; Apple Container gets a peer module
+- <RepoFile path="docker/construct/Dockerfile" /> — role base image; install `jackin-exec` and `zerobox` here
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — capsule startup inside role container; inject `JACKIN_EXEC_BINDINGS` env var
+- <RepoFile path="src/config/mod.rs" /> — `AppConfig` + `WorkspaceConfig`; `WorkspaceConfig` gains `secure_exec` field (jackin-exec)
+
 ## Related Roadmap Items
 
 | Item | Role in this architecture |
 |---|---|
-| [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | Layer 1 — prerequisite for Apple Container (rootless DinD). Also independently valuable for current Docker backend operators. |
-| [smolvm backend research](/reference/roadmap/smolvm-backend-research/) | Contains the Apple Container detailed comparison + Phase 0 plan. Also the fallback if Apple Container fails Docker-inside validation. |
-| [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/) | Cross-layer — covers both zerobox per-operation sandboxing and the jackin-exec secure execution wrapper design. |
+| [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | Layer 1 — prerequisite for Apple Container (rootless DinD must validate). Independently valuable for current Docker backend operators. |
+| [Apple Container backend](/reference/roadmap/apple-container-backend/) | Layer 2 — dedicated item with Phase 0-4, `AppleContainerResources` struct, schema migration, `JACKIN_CAPSULE_FORCE_DAEMON` code task. |
+| [jackin-exec](/reference/roadmap/jackin-exec/) | Layer 3 — dedicated item with workspace secret bindings schema migration, implementation phases, MCP tool spec, operator approval UI. |
+| [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/) | Cross-layer — zerobox per-operation filesystem/network sandboxing only (jackin-exec is separate). |
 | [Network egress policy](/reference/roadmap/network-egress-policy/) | Layer 4 — session-level outbound policy, enforced at VM egress when Apple Container backend lands. |
-| [Container credential exposure](/reference/roadmap/container-credential-exposure/) | The problem that jackin-exec (Layer 3) solves. Documents the trajectory from current env injection to jackin-exec credential isolation. |
-| [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/) | The host-side resolver that jackin-exec calls to look up credentials from the operator's vault or keychain. |
-| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | How the operator sees which layers are active, what each boundary enforces, and what residual risks remain. |
-| [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Umbrella for the backend selection model. Apple Container and smolvm are the active candidates. |
-| [OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/) | Deferred — shared-kernel architecture does not address the kernel escape risk. Historical research preserved. |
+| [Container credential exposure](/reference/roadmap/container-credential-exposure/) | The problem that jackin-exec (Layer 3) solves. |
+| [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/) | Host-side resolver that jackin-exec calls for `op://` credentials. |
+| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | How the operator sees which layers are active and what residual risks remain. |
+| [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Umbrella for Docker and Apple Container as the two runtime families; backend selection model, instance registry design. |
+| [smolvm backend research](/reference/roadmap/smolvm-backend-research/) | Deferred — fallback if Apple Container Phase 0 fails Docker-inside test. |
+| [OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/) | Deferred — shared-kernel namespace, not hypervisor boundary. Historical research preserved. |

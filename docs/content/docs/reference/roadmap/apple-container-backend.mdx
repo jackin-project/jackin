@@ -1,0 +1,260 @@
+---
+title: "Apple Container Backend"
+---
+
+**Status**: Open — research complete, Phase 0 pending (prerequisite: Docker hardening rootless DinD validation)
+
+## What This Is
+
+This item tracks the implementation of the `apple-container` backend for jackin'. Apple Container (`apple/container`, macOS 26 Tahoe) gives each role container its own dedicated Linux VM via Virtualization.framework, natively on Apple Silicon, with zero install friction — it is built into macOS 26.
+
+The Apple Container backend is the primary path to close the **kernel boundary gap**: today all jackin' sessions share a single OrbStack Linux VM kernel. Apple Container gives each session its own kernel, so a kernel exploit in one session cannot reach other sessions or the host.
+
+For the complete picture of why this backend exists and how it fits with the other security layers, see [Agent isolation architecture](/reference/roadmap/agent-isolation-architecture/).
+
+## Prerequisites (Both Must Complete Before Phase 0 Starts)
+
+### Prerequisite 1: Docker Hardening Rootless DinD Validation
+
+Apple Container does not support `--privileged`. The current jackin' DinD sidecar requires `--privileged` and cannot run inside an apple/container VM as-is. Rootless DinD is the compatibility path — it replaces `--privileged` with specific capability grants (`--cap-add`).
+
+Before Apple Container Phase 0 can start, the [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) work must answer:
+
+1. Does apple/container allow `--cap-add CAP_SYS_ADMIN`? (rootless DinD needs it for mount namespaces)
+2. Does rootless DinD pass `docker build`, Compose, and Testcontainers inside an apple/container VM?
+
+If rootless DinD fails inside apple/container — either `CAP_SYS_ADMIN` is blocked or Docker workflows break — the Apple Container backend cannot support full jackin' role workflows. In that case, fall back to [smolvm backend research](/reference/roadmap/smolvm-backend-research/), which has a documented Docker-in-VM path (though constrained).
+
+### Prerequisite 2: `JACKIN_CAPSULE_FORCE_DAEMON` Capsule Patch
+
+Apple Container's `vminitd` runs as PID 1 inside every VM. The current jackin-capsule daemon mode triggers on `process::id() == 1` (<RepoFile path="crates/jackin-capsule/src/main.rs" /> line 22). Since `vminitd` is PID 1 and jackin-capsule runs as the container's entrypoint (PID 2+), capsule will enter client mode instead of daemon mode.
+
+**Required code change** before Phase 0 testing:
+
+```rust
+// crates/jackin-capsule/src/main.rs
+// Before:
+let is_pid1 = std::process::id() == 1;
+
+// After:
+let is_pid1 = std::process::id() == 1
+    || std::env::var("JACKIN_CAPSULE_FORCE_DAEMON").is_ok();
+```
+
+The Apple Container backend launch path sets `JACKIN_CAPSULE_FORCE_DAEMON=1` as a container env var at launch time. This must be validated in Phase 0: does SIGTERM propagation, exit-code visibility, and Ctrl+C passthrough all still work correctly when capsule is not PID 1?
+
+## Architecture
+
+### Runtime Stack
+
+```
+macOS 26 ARM
+  → apple/container VM (own kernel, Virtualization.framework)
+    → vminitd (PID 1, gRPC/vsock init system)
+      → role container entrypoint (jackin-capsule, PID 2+, JACKIN_CAPSULE_FORCE_DAEMON=1)
+        → agent process (Claude Code, Codex, Amp, ...)
+        → rootless DinD (inner Docker daemon, --cap-add instead of --privileged)
+```
+
+### Attach Transport
+
+`vminitd` exposes a gRPC API over vsock. It provides I/O streaming, signal forwarding, and process supervision. The `container exec` CLI command uses this internally. jackin' shells out to:
+
+```bash
+container exec -it <container-name> jackin-capsule
+```
+
+This gives a proper PTY with SIGWINCH forwarding and signal passthrough — the exact requirements for jackin's interactive TUI session. This is an advantage over smolvm's CLI-based attach where PTY behavior was undocumented.
+
+### Lifecycle CLI Surface
+
+jackin' shells out to the `container` CLI for all lifecycle operations:
+
+```bash
+container run --name jackin-<instance> \
+  -e JACKIN_CAPSULE_FORCE_DAEMON=1 \
+  -v /host/workspace:/workspace \
+  --cap-add <required-caps> \
+  <role-image> jackin-capsule
+
+container exec -it jackin-<instance> jackin-capsule   # attach
+container stop jackin-<instance>                       # stop
+container rm jackin-<instance>                         # delete
+container ps --format json                             # list/inspect
+container logs jackin-<instance>                       # logs
+```
+
+No Rust-native API exists for apple/container; the programmatic surface is Swift XPC-native. Shell-out to `container` CLI is the correct integration pattern for V1.
+
+### Networking
+
+Each apple/container VM gets its own dedicated IP address via vmnet — no port mapping needed. Services inside the role container are reachable from macOS at the container's IP. Known rough edges in v0.11.0: container-to-container networking on the same bridge has DNS hiccups after macOS sleep/wake. jackin' should detect DNS failures and prompt the operator to reconnect.
+
+## Backend Name
+
+```text
+apple-container
+```
+
+Used in CLI flags, config schema, instance manifests, telemetry, and operator-facing session contract output:
+
+```sh
+jackin load the-architect . --backend apple-container
+```
+
+```toml
+[runtime]
+default_backend = "docker"  # or "apple-container"
+
+[workspaces.my-service.runtime]
+backend = "apple-container"
+```
+
+## `AppleContainerResources` — Instance Manifest Shape
+
+<RepoFile path="src/instance/manifest.rs" /> today has `DockerResources` as the only backend resource type. The backend-neutral instance registry (designed in [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/)) will replace it with a `BackendResources` tagged union.
+
+The `AppleContainerResources` variant needed for this backend:
+
+```rust
+pub struct AppleContainerResources {
+    /// Name of the apple/container container: "jackin-<instance-id>"
+    pub container_name: String,
+    /// OCI image ref used to start the container
+    pub role_image_ref: String,
+    /// Whether an inner Docker daemon (rootless DinD) is running
+    pub inner_docker_enabled: bool,
+}
+```
+
+The `BackendResources` tagged union that replaces `DockerResources` in `InstanceManifest`:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BackendResources {
+    Docker(DockerResources),
+    AppleContainer(AppleContainerResources),
+}
+```
+
+`InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the AGENTS.md sense — it does not need a `CURRENT_INSTANCE_VERSION` fixture chain. Add a `manifest_version: u32` field for forward-compat graceful fallback when a stale instance manifest is read. Old Docker instances default to `BackendResources::Docker` with a serde `default` attribute.
+
+## Schema Migration Footprint
+
+Two versioned config surfaces touch this backend. Each requires the five-artifact procedure per AGENTS.md:
+
+| Surface | File kind | Type touched | Change |
+|---|---|---|---|
+| `[runtime] default_backend = "apple-container"` | `config.toml` | `AppConfig` | bump `CURRENT_CONFIG_VERSION`, add fixture |
+| `[workspaces.X.runtime] backend = "apple-container"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`, add fixture |
+
+Both are additive (new optional fields with serde defaults). One PR per version bump per the one-bump-per-PR rule.
+
+## Telemetry
+
+Backend operations emit `debug_log!("apple-container", …)` per the two-tier telemetry rule in AGENTS.md. Minimum required lines:
+
+- `container_version version=<container --version>`
+- `vminitd_api grpc=<yes|no>` (probed at launch)
+- `container_run name=<name> image=<ref> force_daemon=<yes> inner_docker=<yes|no>`
+- `mount source=<host_abs> guest=<path> mode=<rw|ro>`
+- `cap_add caps=<list>` (every `--cap-add` granted at launch)
+- `inner_docker_mode=<rootless|none>`
+- `attach transport=container-exec pty=<yes|no>`
+- `container_state action=<stop|rm|gc> result=<ok|failure>`
+- `dns_check result=<ok|hiccup>` (post-sleep/wake check)
+
+Compact launch line:
+
+```text
+apple-container launch name=jackin-<id> image=the-architect inner_docker=rootless caps=3 mounts=2
+```
+
+## Known Limitations (v0.11.0)
+
+| Limitation | Workaround |
+|---|---|
+| `--privileged` not supported | rootless DinD via `--cap-add` (Phase 0 validation required) |
+| Multi-container bridge networking rough edges | DinD inner container networking may be affected; test in Phase 0 |
+| DNS hiccuping after macOS sleep/wake | Detect DNS failure in capsule; surface "reconnect required" to operator |
+| No health checks (`--health-cmd`) | jackin-capsule liveness probes instead |
+| Apple Silicon only | Acceptable — jackin' targets macOS 26 ARM only |
+| macOS 26 required | Acceptable — jackin' targets macOS 26+ |
+
+## Implementation Phases
+
+### Phase 0 — empirical validation (prerequisite gate)
+
+Run on a real macOS 26 ARM machine with apple/container v0.11.0+. This phase is empirical only — no code lands.
+
+- Apply `JACKIN_CAPSULE_FORCE_DAEMON` patch to capsule (Prerequisite 2 above)
+- Run `container run -it <jackin-role-image> bash` — does the role OCI image boot?
+- Run capsule with `JACKIN_CAPSULE_FORCE_DAEMON=1` — does daemon mode activate? Does SIGTERM propagate? Does exit-code flow back correctly?
+- Run `container exec -it <name> jackin-capsule` — does PTY work? SIGWINCH on resize? Ctrl+C passthrough?
+- Attempt rootless DinD with `--cap-add`:
+  - Does apple/container allow `--cap-add CAP_SYS_ADMIN`?
+  - Run `docker build`, `docker run`, Compose, Testcontainers inside rootless DinD
+- Test workspace bind mount — read/write correctness, read-only enforcement
+- Measure cold start (container launch to capsule ready), warm attach (reconnect)
+- Test DNS stability across macOS sleep/wake cycle
+
+**Decision gate**: if rootless DinD passes → proceed to Phase 1. If it fails → fall back to smolvm Phase 0.
+
+### Phase 1 — backend-neutral instance registry
+
+- Add `BackendResources` tagged union to <RepoFile path="src/instance/manifest.rs" /> (DockerResources variant, AppleContainerResources variant)
+- Teach `hardline --inspect` to report manifest state for non-Docker backends
+- Extract backend-kind probe from Docker-specific naming in <RepoFile path="src/runtime/launch.rs" />
+
+### Phase 2 — experimental `apple-container` backend
+
+- Add `apple-container` as a hidden/experimental backend flag in the CLI
+- Shell out to `container run` for launch
+- Shell out to `container exec` for attach
+- Apply `JACKIN_CAPSULE_FORCE_DAEMON=1` env var at launch
+- Use rootless DinD inside the VM (validated in Phase 0)
+- Mount only operator-approved workspace/global paths
+
+### Phase 3 — full lifecycle (reconnect, eject, purge)
+
+- Reconnect to stopped/running containers via `container exec`
+- `stop` → `container stop`
+- `eject` → stop container, preserve instance manifest
+- `purge` → `container rm`, delete instance manifest
+- Detect and handle DNS hiccup state after sleep/wake
+- Preserve worktree cleanup behavior on eject
+
+### Phase 4 — session contract and security output
+
+- Launch/session contract output for backend=apple-container, kernel boundary, inner Docker, caps granted, mounts, residual risks
+- Report DNS enforcement state
+- Fail-closed if required caps are not available
+
+## Open Before Implementation Can Start
+
+1. **Phase 0 must complete** (empirical, no code) — answers whether rootless DinD works
+2. **`JACKIN_CAPSULE_FORCE_DAEMON` patch** — small code change in capsule, should land before Phase 0 testing so the test is representative
+3. **`BackendResources` enum design** — Phase 1 is the natural place but the shape above should be reviewed against the full instance manifest before starting
+
+## Related Files
+
+- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection; `JACKIN_CAPSULE_FORCE_DAEMON` patch goes here
+- <RepoFile path="src/instance/manifest.rs" /> — `InstanceManifest`; add `BackendResources` tagged union
+- <RepoFile path="src/runtime/launch.rs" /> — launch orchestration; backend split point
+- <RepoFile path="src/docker_client.rs" /> — Docker lifecycle boundary; apple-container has a parallel `apple_container_client.rs`
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — capsule startup inside the role container; backend-agnostic, unchanged
+- <RepoFile path="docker/construct/Dockerfile" /> — role base image; reusable across backends
+
+## Related Roadmap Items
+
+| Item | Relationship |
+|---|---|
+| [Agent isolation architecture](/reference/roadmap/agent-isolation-architecture/) | Master architecture doc; Apple Container is Layer 2 (VM boundary) |
+| [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | Prerequisite — rootless DinD must validate before Phase 0 starts |
+| [jackin-exec](/reference/roadmap/jackin-exec/) | Layer 3 — credential injection; works on top of any backend including apple-container |
+| [Network egress policy](/reference/roadmap/network-egress-policy/) | Layer 4 — enforced at VM boundary level when apple-container backend is active |
+| [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Umbrella for Docker and Apple Container as the two runtime families |
+| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | Apple Container backend must feed the session contract with kernel boundary, caps, mounts |
+| [smolvm backend research](/reference/roadmap/smolvm-backend-research/) | Fallback if Phase 0 fails; deferred until Apple Container Phase 0 outcome is known |
+| [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/) | Cross-layer zerobox sandboxing; compatibility inside apple-container VM needs validation |

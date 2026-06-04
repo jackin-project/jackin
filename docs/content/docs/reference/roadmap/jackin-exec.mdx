@@ -1,0 +1,211 @@
+---
+title: "jackin-exec: Secure Execution Wrapper"
+---
+
+**Status**: Open — design approved, implementation pending (can start before Apple Container backend lands)
+
+## What This Is
+
+`jackin-exec` is a wrapper binary installed in every jackin' role container's construct image. When an agent needs to run a command that requires credentials — SSH connections, registry logins, cloud CLI commands, git push, API calls — it calls `jackin-exec <command>` instead of running the command directly. jackin-capsule intercepts, injects the required credential from the operator's host vault at execution time, runs the command, filters the output, and returns sanitized results. The raw credential value never enters the agent's context.
+
+This is a standalone layer that works on top of any jackin' backend — Docker, Apple Container, or smolvm. It does not require the Apple Container backend to land first.
+
+For the complete picture of how `jackin-exec` fits with the other security layers, see [Agent isolation architecture](/reference/roadmap/agent-isolation-architecture/).
+
+## The Problem
+
+The current jackin' model injects agent credentials as environment variables or synced files at container launch. This means:
+
+- The agent process can `printenv` and read raw API keys
+- The agent can read credential files from the agent home mount
+- The agent retains credential values in its context window across prompts — a future prompt can reference or exfiltrate them
+- Multiple agents sharing a workspace can access each other's credentials if one is compromised
+- An agent asked to "share your environment" can extract raw token values
+
+A VM boundary (Apple Container) does not close this gap. If the API key is an environment variable inside the VM, the agent can still read it. `jackin-exec` closes this gap independently of the backend.
+
+The operator's goal: "I trust this agent to connect to my server, but I do not want it to have my raw SSH private key. I want jackin' to make the connection happen on behalf of the agent."
+
+## Command Flow
+
+```
+agent process
+  → jackin-exec ssh sentry
+    → jackin-capsule (via Unix socket /jackin/run/jackin.sock)
+      → [optional] TUI approval dialog shown to operator
+      → operator approves (or auto-approve if session policy allows)
+      → capsule resolves: workspace binding "sentry-ssh-key" → SSH private key from host vault
+      → capsule writes key to /jackin/run/<instance>/secrets/<uuid> (mode 0600)
+      → capsule executes: ssh -i /jackin/run/<instance>/secrets/<uuid> sentry
+      → captures stdout/stderr
+      → scans output for secret patterns → redacts matching content
+      → deletes /jackin/run/<instance>/secrets/<uuid>
+      → returns sanitized output to jackin-exec
+    → jackin-exec writes sanitized output to agent's stdout/stderr
+  agent receives: connection output, no key material visible
+```
+
+The SSH private key exists on disk only for the duration of the single invocation. It is written under `/jackin/run/` (per the container path convention) and deleted immediately after use. It never appears in `env`, never in `/home/agent/`, never in the agent's context.
+
+## Binary Name
+
+`jackin-exec` — final, not negotiable after baking into construct image.
+
+Installed at `/usr/local/bin/jackin-exec` inside the role container via <RepoFile path="docker/construct/Dockerfile" />.
+
+## Workspace Secret Bindings
+
+The operator declares credential bindings per workspace. These map command patterns to host-side credentials:
+
+```toml
+[workspaces.my-service.secure_exec]
+require_approval = "sensitive"  # always | sensitive | never
+
+[workspaces.my-service.secure_exec.bindings]
+# name = { match pattern, credential source, optional output filters }
+sentry-ssh   = { match = "ssh sentry*",        credential = "op://Personal/sentry-ssh/private-key" }
+ghcr-token   = { match = "docker login ghcr.io*", credential = "op://Work/ghcr/token" }
+github-token = { match = "gh *",               credential = "op://Work/github/token" }
+aws-session  = { match = "aws *",              credential_env = { AWS_ACCESS_KEY_ID = "op://Work/aws/key-id", AWS_SECRET_ACCESS_KEY = "op://Work/aws/secret" } }
+```
+
+Credential sources supported in V1:
+- `op://<vault>/<item>/<field>` — 1Password via `op` CLI on host
+- `env:<VAR>` — operator's host environment variable
+- `file:<abs-path>` — raw file on host
+
+Credentials are resolved at execution time from the host by jackin-capsule. They are never pre-loaded into the container. No credential is ever decrypted until the moment of execution.
+
+## Operator Approval UI
+
+jackin' controls the full terminal display. When an agent calls `jackin-exec`, jackin-capsule can interrupt the session and surface a native approval dialog before executing.
+
+Proposed dialog shape (exact design belongs in [TUI design decisions](/reference/tui-design-decisions/) — this is the spec):
+
+```
+┌─ Secure Execution Request ─────────────────────────────────────────┐
+│  Agent: the-architect  │  Session: ws:my-service/#4                │
+│                                                                      │
+│  Command:   ssh sentry                                              │
+│  Binding:   sentry-ssh-key  (SSH key, op://Personal/sentry-ssh)    │
+│  Will inject: key → temp file, deleted after execution             │
+│  Output filter: redact SSH fingerprints                             │
+│                                                                      │
+│  [Approve]  [Deny]  [Approve All Similar]  [Always for Session]    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+Approval modes:
+
+| Mode | Behavior |
+|---|---|
+| `Approve` | Run this invocation only |
+| `Deny` | Return error to agent: "jackin-exec: permission denied by operator" |
+| `Approve All Similar` | Auto-approve all `jackin-exec ssh sentry` for this session |
+| `Always for Session` | Auto-approve all `jackin-exec` calls for this session |
+
+`require_approval = "sensitive"` triggers the dialog only for commands matched in the workspace bindings. `require_approval = "never"` skips the dialog entirely but still logs every call to the diagnostics run file.
+
+## Output Filtering
+
+jackin-capsule scans every `jackin-exec` output stream before returning it to the agent:
+
+- **Configured secret values**: any value matching a workspace-configured secret (raw, base64, hex) → `[redacted by jackin']`
+- **PEM blocks**: `-----BEGIN * KEY-----` … `-----END * KEY-----` → `[key material redacted by jackin']`
+- **AWS credential strings**: `AKIA[A-Z0-9]{16}` pattern → `[aws-key redacted by jackin']`
+- **Operator-defined patterns**: regex list in workspace config → redacted
+
+The full unredacted output is written to the diagnostics run file under `JACKIN_DEBUG` runs.
+
+**Limitation**: output filtering is defense-in-depth, not a complete boundary. A determined agent could exfiltrate across multiple invocations, use encoding, or use side channels. The operator approval step is the primary defense for adversarial cases. Document this honestly in the session contract output.
+
+## How the Agent Learns to Use `jackin-exec`
+
+### Primary: Role system prompt
+
+The construct image configures a system prompt instruction block for every agent runtime:
+
+```text
+When you need to execute commands that require credentials — SSH connections,
+registry logins, cloud CLI commands (aws, kubectl, gh), git push — call
+jackin-exec <command> instead of running the command directly. jackin' will
+inject any required credentials securely. Available bindings for this workspace:
+<list from JACKIN_EXEC_BINDINGS env var at launch time>
+```
+
+Works with every agent runtime without modification.
+
+### Secondary: MCP tool (Claude Code / Codex / MCP-capable agents)
+
+jackin-capsule exposes a `jackin_exec` MCP tool inside the role container. The tool description lists available bindings and when to use them. Agents that support MCP tool discovery can inspect the schema and use the tool directly rather than relying on the system prompt.
+
+### Not recommended: PATH shadowing
+
+The construct image could place wrappers higher in `PATH` to intercept `ssh`, `gh`, `docker`, etc. transparently. This is not recommended — it hides the sandboxing from the agent, making the approval dialog less transparent and making it harder to audit which calls went through `jackin-exec`.
+
+## Schema Migration Footprint
+
+This design adds a new section to `WorkspaceConfig` — a versioned schema per AGENTS.md. Ships with the full five-artifact procedure:
+
+| Surface | File kind | Type touched | Action |
+|---|---|---|---|
+| `[workspaces.X.secure_exec]` + `[workspaces.X.secure_exec.bindings]` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`, add migration step, add fixture under `tests/fixtures/migrations/workspace/from-<predecessor>/`, re-bake every existing `after.toml`, add Schema Versions entry |
+
+Additive change (new optional section with serde default = empty). The version bump lands in the same PR that adds the `secure_exec` field to `WorkspaceConfig`.
+
+There is no change to `AppConfig` or `RoleManifest` for V1 — workspace-level bindings only.
+
+## Implementation Phases
+
+### Phase 1 — capsule extension
+
+- Add a `jackin-exec` control message type to the jackin-capsule Unix socket protocol (<RepoFile path="crates/jackin-capsule/src/daemon.rs" />)
+- Message carries: command + args, session context, workspace binding lookup key
+- Response carries: exit code, sanitized stdout/stderr
+
+### Phase 2 — binary and credential resolution
+
+- Add `jackin-exec` binary to <RepoFile path="docker/construct/Dockerfile" /> (compiled Rust binary or shell script in V1)
+- Implement workspace binding lookup in jackin-capsule: match command against configured patterns, resolve credential from host
+- V1 credential sources: `env:<VAR>` and `file:<path>` (simplest, no external tool dependency)
+- Wire `JACKIN_EXEC_BINDINGS` env var at container launch so the agent knows which bindings are available
+
+### Phase 3 — 1Password + operator approval UI
+
+- Add `op://` credential source (shell out to `op read` on host via jackin-capsule)
+- Implement TUI approval dialog in the console (Approve / Deny / Approve All Similar / Always for Session)
+- Add `require_approval` config key to `WorkspaceConfig`
+- Ship `CURRENT_WORKSPACE_VERSION` bump with all five migration artifacts
+
+### Phase 4 — MCP tool + output filtering
+
+- Expose `jackin_exec` as an MCP tool from jackin-capsule
+- Add output filtering (PEM blocks, AWS patterns, configured regexes)
+- Add diagnostics run file logging for every `jackin-exec` call
+
+### Phase 5 — system prompt injection
+
+- At container launch, inject the available bindings into the agent's system prompt context
+- Format: plain text list of binding names + matching patterns (not credential values)
+
+## Related Files
+
+- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — capsule entry; add jackin-exec control message handling
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — daemon control plane; add jackin-exec message type
+- <RepoFile path="docker/construct/Dockerfile" /> — construct image; install jackin-exec binary
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime entrypoint; inject JACKIN_EXEC_BINDINGS env var at launch
+- <RepoFile path="src/runtime/launch.rs" /> — launch orchestration; pass workspace secure_exec config to container env
+- <RepoFile path="src/config/mod.rs" /> — config types; `WorkspaceConfig` gains `secure_exec` field
+- <RepoFile path="src/manifest/migrations.rs" /> — migration registry; new `WorkspaceConfig` migration step
+
+## Related Roadmap Items
+
+| Item | Relationship |
+|---|---|
+| [Agent isolation architecture](/reference/roadmap/agent-isolation-architecture/) | Master architecture doc; jackin-exec is Layer 3 (credential injection) |
+| [Container credential exposure](/reference/roadmap/container-credential-exposure/) | The problem this item solves; documents the trajectory from current env injection to jackin-exec |
+| [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/) | The host-side resolver that jackin-capsule calls for `op://` credentials; jackin-exec is the agent-facing surface of this same capability |
+| [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/) | Complementary — zerobox wraps per-operation filesystem/network policy; jackin-exec handles credential injection. Both install in the construct image. |
+| [Apple Container backend](/reference/roadmap/apple-container-backend/) | jackin-exec works on any backend including Docker; Apple Container does not need to land first |
+| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | Every jackin-exec call and its approval outcome should appear in session contract output |
+| [Network egress policy](/reference/roadmap/network-egress-policy/) | jackin-exec's network proxy (zerobox layer) and egress policy are complementary; jackin-exec handles per-command credential injection, egress policy handles session-level domain allowlists |
