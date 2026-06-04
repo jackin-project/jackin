@@ -167,16 +167,20 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
         .join("jackin-capsule")
 }
 
-/// Remove a file, logging via `debug_log!` if the removal fails rather than
-/// silently discarding the error. Used at every cleanup site in
-/// `download_and_cache` — both error paths and the success-path archive removal
-/// after extraction — so a failed cleanup is always observable in debug output.
+/// Remove a file, emitting a compact always-visible warning if the removal fails.
+/// Used at every cleanup site in `download_and_cache` — both error paths and the
+/// success-path archive removal after extraction — so a failed cleanup is always
+/// observable regardless of `--debug`, and the operator can manually remove the
+/// stale file to recover disk space.
 fn remove_with_debug_log(path: &Path) {
     if let Err(e) = std::fs::remove_file(path) {
-        crate::debug_log!(
-            "capsule_binary",
-            "failed to remove temp file at {}: {e}",
-            path.display()
+        crate::tui::emit_compact_line(
+            "warning",
+            &format!(
+                "[jackin] warning: failed to remove temp file at {}: {e} \
+                 (manual cleanup may be needed)",
+                path.display()
+            ),
         );
     }
 }
@@ -197,7 +201,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
 
     // Fetch the signed capsule manifest (verifies cosign bundle + identity) and
     // download the archive concurrently. The manifest returns the expected SHA-256
-    // for this arch, replacing the bare .sha256 file fetch.
+    // for this arch.
     // Resolve once; both the manifest verification and the post-download
     // version check use the same channel determination.
     let is_preview = is_preview_version(version);
@@ -240,21 +244,32 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // Hashing a multi-MB archive parks the tokio worker; run it on the
     // blocking pool so concurrent launch / TUI tasks keep progressing.
     let archive_for_hash = tmp_archive.clone();
-    let actual_sha = tokio::task::spawn_blocking(move || hash_file_sha256(&archive_for_hash))
-        .await
-        .with_context(|| {
-            format!(
-                "SHA-256 hash worker panicked or was cancelled for {}; \
-                 delete the partial archive and retry",
-                tmp_archive.display()
-            )
-        })?
-        .with_context(|| {
-            format!(
-                "hashing downloaded jackin-capsule archive at {}",
-                tmp_archive.display()
-            )
-        })?;
+    let hash_result =
+        tokio::task::spawn_blocking(move || hash_file_sha256(&archive_for_hash)).await;
+    let actual_sha = match hash_result {
+        Err(e) => {
+            // JoinError: worker panicked or runtime shut down. Clean up before propagating —
+            // the error message tells the operator to delete the partial archive, so we do it.
+            remove_with_debug_log(&tmp_archive);
+            return Err(e).with_context(|| {
+                format!(
+                    "SHA-256 hash worker panicked or was cancelled for {}; \
+                     delete the partial archive and retry",
+                    tmp_archive.display()
+                )
+            });
+        }
+        Ok(Err(e)) => {
+            remove_with_debug_log(&tmp_archive);
+            return Err(e).with_context(|| {
+                format!(
+                    "hashing downloaded jackin-capsule archive at {}",
+                    tmp_archive.display()
+                )
+            });
+        }
+        Ok(Ok(sha)) => sha,
+    };
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
         remove_with_debug_log(&tmp_archive);
         return Err(anyhow::anyhow!(
@@ -314,8 +329,19 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
             )
         });
     }
-    std::fs::rename(&tmp, dest)
-        .with_context(|| format!("failed to move jackin-capsule to {}", dest.display()))?;
+    if let Err(e) = std::fs::rename(&tmp, dest) {
+        remove_with_debug_log(&tmp);
+        return Err(e).with_context(|| {
+            format!(
+                "failed to move jackin-capsule to {}; \
+                 if {} and {} are on different filesystems, \
+                 ensure the cache directory is on the same volume as the download temp directory",
+                dest.display(),
+                tmp.display(),
+                dest.display()
+            )
+        });
+    }
 
     crate::debug_log!(
         "capsule_binary",
@@ -475,10 +501,7 @@ async fn fetch_and_verify_manifest(
     // the repo from producing a valid manifest bundle.
     let san = extract_cert_san_url(&cert_pem)?;
     anyhow::ensure!(
-        san.starts_with("https://github.com/jackin-project/jackin/.github/workflows/release.yml@")
-            || san.starts_with(
-                "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@"
-            ),
+        is_allowed_signer_san(&san),
         "capsule manifest signed by unexpected signer {san:?}; \
          expected release.yml or preview.yml workflow in jackin-project/jackin"
     );
@@ -544,6 +567,16 @@ fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
     anyhow::bail!("no URI SAN found in Fulcio certificate")
 }
 
+/// Return true if `san` is the OIDC identity of one of the two permitted signing
+/// workflows (`release.yml` for tagged releases, `preview.yml` for rolling main
+/// builds). The `@<ref>` suffix is required by GitHub Actions OIDC; the
+/// `starts_with` check accepts any ref so the check survives branch/tag renames.
+fn is_allowed_signer_san(san: &str) -> bool {
+    san.starts_with("https://github.com/jackin-project/jackin/.github/workflows/release.yml@")
+        || san
+            .starts_with("https://github.com/jackin-project/jackin/.github/workflows/preview.yml@")
+}
+
 fn linux_target(arch: &str) -> &'static str {
     match arch {
         "arm64" => "aarch64-unknown-linux-gnu",
@@ -575,6 +608,22 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
     Ok(())
 }
 
+/// Format stdout/stderr streams from a process exit for an error message.
+/// Returns a human-readable detail block; falls back to a signal-crash hint when
+/// both streams are empty.
+fn format_exit_detail(stdout: &str, stderr: &str) -> String {
+    let streams: Vec<String> = [("stdout", stdout.trim()), ("stderr", stderr.trim())]
+        .into_iter()
+        .filter(|(_, v)| !v.is_empty())
+        .map(|(k, v)| format!("{k}: {v}"))
+        .collect();
+    if streams.is_empty() {
+        "(no output — possible signal/crash)".to_string()
+    } else {
+        streams.join("\n")
+    }
+}
+
 /// Verify the downloaded binary is a jackin-capsule of the expected
 /// version. Strict matching is only meaningful for stable releases —
 /// dev/preview builds share a single rolling `preview` tag whose SHA
@@ -598,16 +647,7 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
         if !output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let streams: Vec<String> = [("stdout", stdout.trim()), ("stderr", stderr.trim())]
-                .into_iter()
-                .filter(|(_, v)| !v.is_empty())
-                .map(|(k, v)| format!("{k}: {v}"))
-                .collect();
-            let detail = if streams.is_empty() {
-                "(no output — possible signal/crash)".to_string()
-            } else {
-                streams.join("\n")
-            };
+            let detail = format_exit_detail(&stdout, &stderr);
             anyhow::bail!(
                 "jackin-capsule --version at {} exited with {}\n{detail}\n\
                  If the binary is corrupted, delete it and retry: rm -f {}",
@@ -782,8 +822,11 @@ mod tests {
         // Confirm the key variant is ECDSA P-256, matching Sigstore production Rekor.
         let key = keys.get(SIGSTORE_REKOR_KEY_ID).unwrap();
         assert!(
-            format!("{key:?}").contains("ECDSA_P256"),
-            "expected Rekor key to be ECDSA_P256 variant, got: {key:?}"
+            matches!(
+                key,
+                sigstore::crypto::CosignVerificationKey::ECDSA_P256_SHA256_ASN1(_)
+            ),
+            "expected Rekor key to be ECDSA_P256_SHA256_ASN1 variant, got: {key:?}"
         );
     }
 
@@ -796,5 +839,54 @@ mod tests {
         assert!(!is_preview_version("0.6.0"));
         // "-preview1" lacks the required trailing dot — not a preview channel version.
         assert!(!is_preview_version("0.6.0-preview1"));
+    }
+
+    #[test]
+    fn is_allowed_signer_san_accepts_release_and_preview_workflows() {
+        // Accepted: release.yml with tag ref.
+        assert!(is_allowed_signer_san(
+            "https://github.com/jackin-project/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
+        ));
+        // Accepted: preview.yml with branch ref.
+        assert!(is_allowed_signer_san(
+            "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@refs/heads/main"
+        ));
+        // Rejected: different workflow file in the same repo.
+        assert!(!is_allowed_signer_san(
+            "https://github.com/jackin-project/jackin/.github/workflows/evil.yml@refs/heads/main"
+        ));
+        // Rejected: correct workflow but in a different repository.
+        assert!(!is_allowed_signer_san(
+            "https://github.com/attacker/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
+        ));
+        // Rejected: partial path match (no trailing @ref).
+        assert!(!is_allowed_signer_san(
+            "https://github.com/jackin-project/jackin/.github/workflows/release.yml"
+        ));
+        // Rejected: empty string.
+        assert!(!is_allowed_signer_san(""));
+    }
+
+    #[test]
+    fn format_exit_detail_produces_expected_output() {
+        // Both streams present.
+        assert_eq!(
+            format_exit_detail("out text", "err text"),
+            "stdout: out text\nstderr: err text"
+        );
+        // Only stdout.
+        assert_eq!(format_exit_detail("out text", ""), "stdout: out text");
+        // Only stderr.
+        assert_eq!(format_exit_detail("", "err text"), "stderr: err text");
+        // Both empty (signal/crash).
+        assert_eq!(
+            format_exit_detail("", ""),
+            "(no output — possible signal/crash)"
+        );
+        // Whitespace-only streams treated as empty.
+        assert_eq!(
+            format_exit_detail("  \n  ", ""),
+            "(no output — possible signal/crash)"
+        );
     }
 }
