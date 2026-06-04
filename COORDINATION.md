@@ -17,7 +17,7 @@ Shared status board for Claude agents running in parallel on this branch.
 |---|---|---|
 | Defect 45 Phase 4 (PageList memory model) | AVAILABLE | Heavy optimization; benchmark-driven |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Depends on Phase 4 |
-| Defect 46 Phase 3 (serde newtype collapse) | AVAILABLE | Parser-only; likely no version bump |
+| Defect 46 Phase 3 (serde newtype collapse) | **[AGENT-B WORKING]** | Parser-only; adapter-driven validation |
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Judgement call, do after Phase 3 |
 | Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Docs decision + codebase map update |
 | Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | AVAILABLE | Sequence after Phase 3 |
@@ -53,7 +53,9 @@ Shared status board for Claude agents running in parallel on this branch.
 
 | File | Claimed by | Purpose |
 |---|---|---|
-| (none currently — working tree clean) | — | — |
+| `crates/jackin-config/src/auth.rs` | Agent-B | Phase 3: collapsing per-agent newtypes |
+| `crates/jackin-config/src/app_config.rs` | Agent-B | Phase 3: field type changes |
+| `crates/jackin-runtime/src/instance/auth.rs` | Agent-B | Phase 3: provisioning uses adapter |
 
 ## Notes
 
