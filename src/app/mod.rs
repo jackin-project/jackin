@@ -1594,8 +1594,10 @@ fn print_dry_run_plan(
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
         println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
-        let role_display = role_branch
-            .map_or_else(|| class.to_string(), |branch| format!("{class} (branch: {branch})"));
+        let role_display = role_branch.map_or_else(
+            || class.to_string(),
+            |branch| format!("{class} (branch: {branch})"),
+        );
         println!("Role:       {role_display}");
         println!("Agent:      {agent_slug}");
         if rebuild {

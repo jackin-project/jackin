@@ -306,7 +306,10 @@ async fn run_level1(
         .unwrap_or(4)
         .max(4);
 
-    println!("  {:<id_width$}  {:<role_width$}  {:<8}  pr", "instance", "role", "state");
+    println!(
+        "  {:<id_width$}  {:<role_width$}  {:<8}  pr",
+        "instance", "role", "state"
+    );
     println!(
         "  {}",
         "─".repeat(id_width + 2 + role_width + 2 + 8 + 2 + 10)
@@ -383,11 +386,9 @@ async fn run_level2(
     };
 
     if format == OutputFormat::Json {
-        let agents_value = agents_json
-            .as_ref()
-            .map_or(serde_json::Value::Null, |a| {
-                serde_json::to_value(a).unwrap_or(serde_json::Value::Null)
-            });
+        let agents_value = agents_json.as_ref().map_or(serde_json::Value::Null, |a| {
+            serde_json::to_value(a).unwrap_or(serde_json::Value::Null)
+        });
         let pr_value = pr_info.as_ref().map_or(serde_json::Value::Null, |p| {
             serde_json::json!({
                 "number": p.number,
@@ -456,7 +457,9 @@ async fn run_level2(
                 a.agent.as_deref().unwrap_or("shell"),
                 a.provider.as_deref().unwrap_or("—"),
                 compact_ts(&a.started_at),
-                a.exited_at.as_deref().map_or_else(|| "—".to_string(), compact_ts),
+                a.exited_at
+                    .as_deref()
+                    .map_or_else(|| "—".to_string(), compact_ts),
                 a.status,
             );
         }
@@ -486,10 +489,10 @@ impl PrInfo {
         match self.ci_status.as_str() {
             "passing" | "success" => "✓ passing".to_string(),
             "pending" => "⏳ pending".to_string(),
-            "failing" | "failure" | "error" => self
-                .ci_failing_check
-                .as_ref()
-                .map_or_else(|| "✗ failing".to_string(), |check| format!("✗ failing — {check}")),
+            "failing" | "failure" | "error" => self.ci_failing_check.as_ref().map_or_else(
+                || "✗ failing".to_string(),
+                |check| format!("✗ failing — {check}"),
+            ),
             _ => "—".to_string(),
         }
     }
