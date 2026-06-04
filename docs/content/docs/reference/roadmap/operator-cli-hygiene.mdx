@@ -59,15 +59,54 @@ Wire a lightweight subset of the same checks as a pre-flight on every command th
 
 ### 2. `jackin status` / `jackin ps` — fleet overview from CLI
 
-Add `jackin status` (and `jackin ps` as an alias) that prints a structured overview of all running jackin' instances from the host. Each instance block shows the instance identity, resource usage, git branch, pull request details with CI status, and the full per-agent identity table sourced from the in-container registry.
+Add `jackin status` (and `jackin ps` as an alias) with three levels of detail. Each level is designed to fit one terminal screen and reveal more information on demand. The operator starts with the workspace summary and drills down to a specific instance when they need the full picture.
+
+#### Level 0 — `jackin status` (workspace summary)
+
+The default view. One row per workspace. Always fits one screen regardless of how many instances or agents are running.
 
 ```
 jackin' fleet status
 
-2 instances running · 3 agents active · 1 agent exited
+workspace        instances   agents   state
+─────────────────────────────────────────────────
+myproj           3           7        3 running
+backend-api      2           4        2 running
+frontend         1           2        1 running
+infra-tools      3           5        2 running · 1 stopped
+auth-service     1           3        1 running
 
-────────────────────────────────────────────────────────────────────────────────
+5 workspaces · 10 instances running · 1 stopped · 21 agents active
 
+  jackin status <workspace>           show instances
+  jackin status <workspace> <id>      show full detail
+```
+
+No branch, PR, or agent detail at this level — just enough to know what is alive and where to look next.
+
+#### Level 1 — `jackin status <workspace>` (instance list)
+
+One row per instance in the workspace, with a PR number column so the operator can see at a glance what each instance is working on.
+
+```
+myproj   3 instances · 7 agents
+
+instance         role              state    uptime    agents   pr
+───────────────────────────────────────────────────────────────────────
+jk-k7p9m2xq     the-architect     running   2h 14m   2        #142
+jk-x3n1q8vz     agent-smith       running   47m      3        #138
+jk-p2q8r5v      agent-smith       stopped   —        —        —
+
+  jackin status myproj <id>           show full detail
+```
+
+No branch name, no PR title, no CI, no agent codenames at this level — the PR number is enough to orient. The stopped instance row shows `—` for all live fields without hiding the instance from view.
+
+#### Level 2 — `jackin status <workspace> <instance-id>` (instance detail)
+
+Full detail for one instance. This is the only level that shows branch, PR title, GitHub URL, CI status, and the complete agent registry table.
+
+```
 jk-k7p9m2xq   myproj / the-architect   running   2h 14m   12% cpu   420M
 
   branch   feat/auth-refactor
@@ -79,68 +118,59 @@ jk-k7p9m2xq   myproj / the-architect   running   2h 14m   12% cpu   420M
   ───────────────────────────────────────────────────────────────
   badger     claude    anthropic     10:15:02   —          active
   falcon     claude    anthropic     10:32:15   —          active
-
-────────────────────────────────────────────────────────────────────────────────
-
-jk-x3n1q8vz   myproj / agent-smith   running   47m   3% cpu   180M
-
-  branch   fix/token-expiry
-  pr       #138  Fix JWT token expiry edge case
-  url      https://github.com/acme/myproj/pull/138
-  ci       ✗ failing — check_lint
-
-  codename   agent     provider      started    exited     status
-  ───────────────────────────────────────────────────────────────
-  reef       codex     openai        13:20:44   —          active
-  crater     claude    anthropic     10:12:00   10:40:11   exited
-
-────────────────────────────────────────────────────────────────────────────────
 ```
 
-**Instance block fields:**
+**Detail block fields:**
+- `branch` — git branch checked out in the container's workdir.
+- `pr` — PR number and title, resolved via `gh pr view` using the branch name. Shows `—` when no open PR exists.
+- `url` — direct GitHub link. The operator can open it immediately.
+- `ci` — aggregated check-run status for the PR's head commit: `✓ passing (N/N)`, `✗ failing — <check-name>`, `⏳ pending`, or `—` when there is no PR or no check runs. Sourced from `gh pr view --json statusCheckRollup`.
+- Agent table matches `jackin-capsule agents` format exactly — codename, agent type, provider, started, exited (`—` when active), status. Active agents sort first; exited agents follow.
 
-- Header line: instance ID, workspace, role, state, uptime, CPU%, memory.
-- `branch` — the git branch currently checked out in the container's workdir.
-- `pr` — PR number and title, resolved via `gh pr view` inside the container or via the GitHub API using the branch name. Shows `—` when no open PR exists for the branch.
-- `url` — direct GitHub link to the pull request. The operator can open it immediately without searching.
-- `ci` — aggregated check-run status for the PR's head commit: `✓ passing`, `✗ failing — <check-name>`, or `⏳ pending`. Sourced from `gh pr view --json statusCheckRollup`. Shows `—` when there is no PR or no check runs.
+**When agent data is unavailable:** instances whose control socket is not yet reachable show `agents  pending`. Stopped instances show `agents  —` since the registry is in-memory and not persisted across container restarts (see [agent codenames](/reference/roadmap/agent-codenames/) Phase 3 for deferred registry persistence).
 
-**Agent table fields:** same as `jackin-capsule agents` — codename, agent type, provider, started timestamp, exited timestamp (`—` when still active), and status. Active agents sort first; exited agents follow.
+#### Flags
 
-**When agent data is unavailable:** instances whose control socket is not yet reachable (still starting up) show `agents  pending`. Stopped instances show `agents  —` since the registry is in-memory and not persisted across container restarts (see [agent codenames](/reference/roadmap/agent-codenames/) Phase 3 for deferred registry persistence).
+- `--state running` / `--state stopped` — filter by state at any level.
+- `--filter agent=claude` — show only workspaces/instances that have a running agent of the given type.
+- `--format json` — machine-readable output at any level (see item 3 below).
 
-**`--format json` shape:**
+#### `--format json` shape
 
 ```json
 {
   "schema_version": "v1",
-  "instances": [
+  "workspaces": [
     {
-      "instance_id": "jk-k7p9m2xq",
       "workspace": "myproj",
-      "role": "the-architect",
-      "state": "running",
-      "uptime_seconds": 8040,
-      "cpu_percent": 12.0,
-      "memory_mb": 420,
-      "branch": "feat/auth-refactor",
-      "pull_request": {
-        "number": 142,
-        "title": "Refactor JWT authentication layer",
-        "url": "https://github.com/acme/myproj/pull/142",
-        "ci_status": "passing",
-        "ci_failing_check": null
-      },
-      "agents": [
-        {"codename": "badger", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:15:02Z", "exited_at": null, "status": "active"},
-        {"codename": "falcon", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:32:15Z", "exited_at": null, "status": "active"}
+      "instances": [
+        {
+          "instance_id": "jk-k7p9m2xq",
+          "role": "the-architect",
+          "state": "running",
+          "uptime_seconds": 8040,
+          "cpu_percent": 12.0,
+          "memory_mb": 420,
+          "branch": "feat/auth-refactor",
+          "pull_request": {
+            "number": 142,
+            "title": "Refactor JWT authentication layer",
+            "url": "https://github.com/acme/myproj/pull/142",
+            "ci_status": "passing",
+            "ci_failing_check": null
+          },
+          "agents": [
+            {"codename": "badger", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:15:02Z", "exited_at": null, "status": "active"},
+            {"codename": "falcon", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:32:15Z", "exited_at": null, "status": "active"}
+          ]
+        }
       ]
     }
   ]
 }
 ```
 
-Supports `--filter workspace=myproj`, `--filter agent=claude`, `--state running`. Reuses the instance discovery logic the console already uses (<RepoFile path="src/runtime/discovery.rs" />). CPU/MEM via `docker stats --no-stream --format json`. Branch and PR data via `gh` CLI or the GitHub REST API.
+The JSON output is always fully expanded regardless of which level was requested, so scripts and future tooling (Desktop Agent Hub, the rich TUI, PR verification) always receive the complete picture in one call. Reuses instance discovery from <RepoFile path="src/runtime/discovery.rs" />. CPU/MEM via `docker stats --no-stream --format json`. Branch and PR data via `gh` CLI or GitHub REST API.
 
 ### 3. `--format json` for every list-style subcommand + stable JSON schema
 
