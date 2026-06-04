@@ -28,6 +28,10 @@ A verbatim port would **multiply** the very dispatch fan-out this item exists to
 
 All of it in this one PR. The migration plan section is rewritten below to reflect single-PR, green-at-each-commit phasing instead of four separate PRs.
 
+**Progress (live):** the **structural-absorption checkpoint landed** (merge commit `0e1f2a9d`) — `main`/`#523` absorbed by deliberate port (branch structure kept, `Provider` extended to the 4-key catalog, capsule + host key wiring + `token_for_provider` in place, 465 tests green). The remaining Phase 0 close-out (Codex/OpenCode `runtime_setup` provider configs, auth-tab UI rows, operator smoke) plus Phases A/1–4 are tracked, item-by-item, in [Defect 46](/reference/roadmap/post-restructure-fixes/).
+
+**Extensible umbrella.** This epic is the home for tightly-coupled dispatch/structure work; the operator may fold additional roadmap items in as new phases (Phase B, C, …) under the same green-at-each-commit rule. Tight coupling (shared files, shared dispatch) is the test for "same PR"; a loosely-coupled item is planned here but may ship as its own PR if this one outgrows comfortable single-reviewer scope.
+
 ## Problem
 
 **Note (2026-06-03):** `enum Agent` has moved to `crates/jackin-core/src/agent.rs` as part of the Stage 1 vocabulary extraction. The paths below reflect the current codebase; <RepoFile path="crates/jackin-core/src/agent.rs" /> is now a one-line re-export of `jackin_core::Agent`.
