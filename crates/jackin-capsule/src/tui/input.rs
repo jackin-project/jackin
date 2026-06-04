@@ -671,7 +671,7 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
     // and cannot be safely routed by "whatever pane is focused now".
     // Forwarding them to a shell leaks fragments like `8;40;135t` as
     // command text. Keep this paired with the output-side `CSI ... t`
-    // passthrough suppression in `session::OscCapture::unhandled_csi`.
+    // passthrough suppression in `session::apply_passthrough_policy` for `UnhandledCsi`.
     if matches!(seq.last(), Some(b't')) {
         return Some(None);
     }
