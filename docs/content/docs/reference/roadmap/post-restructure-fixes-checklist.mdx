@@ -207,7 +207,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Tasks:**
 - [x] Enumerate every dialog in the workspace: `rg -ln "modal_block|render_confirm_dialog|render_error_dialog|render_save_discard|render_status_popup|render_container_info|failure_dialog|ConfirmSave|ErrorPopup|AuthForm|op_picker" crates/*/src`. Build the full dialog inventory (console + launch + capsule + jackin-tui shared).
 - [~] Define one shared dialog-body scroll path in `jackin-tui` (a helper or a state mixin) that wraps a dialog body in the canonical H/V scroll machinery — scrollbar-on-overflow, none-when-fits, standard key + wheel bindings — so every dialog inherits identical behavior.
-- [ ] Route every dialog through it: Confirm, Error, SaveDiscard, StatusPopup, Container/Run info, AuthForm, op-picker, launch failure/prompt dialogs, capsule dialogs, and the **filter/selection pickers** (`Select Role`, `Unfinished jackin instances`, etc.). Confirmed offender: the `Unfinished jackin instances` picker has a row (`Recover other role with hardline 3bekkf7b status:failed_setup agent:claude role:the-architect upd…`) far wider than the dialog — it must scroll horizontally (and vertically when rows overflow) instead of clipping. Fix the whole class in one pass — no dialog left clipping — by reusing **one** shared scrollable-dialog component (DRY; never a second implementation).
+- [~] Route every dialog through it: Confirm, Error, SaveDiscard, StatusPopup, Container/Run info, AuthForm, op-picker, launch failure/prompt dialogs, capsule dialogs, and the **filter/selection pickers** (`Select Role`, `Unfinished jackin instances`, etc.). Confirmed offender: the `Unfinished jackin instances` picker has a row (`Recover other role with hardline 3bekkf7b status:failed_setup agent:claude role:the-architect upd…`) far wider than the dialog — it must scroll horizontally (and vertically when rows overflow) instead of clipping. Fix the whole class in one pass — no dialog left clipping — by reusing **one** shared scrollable-dialog component (DRY; never a second implementation).
 - [x] Compose with Defect 7: a dialog first holds its preferred size, shrinks only when the screen is too small, and **then** (if content still overflows the shrunk body) becomes scrollable. The two behaviors must work together, not fight.
 - [x] Compose with Defect 5: the symmetric vertical padding (leading/trailing spacer) is part of the body that scrolls — confirm the spacers stay correct under scroll.
 - [x] Record the universal dialog-scroll rule in [TUI Design Decisions](/reference/tui/dialogs/): "every dialog scrolls H/V when its content exceeds the dialog area, using the shared scroll machinery; no scrollbar when content fits."
@@ -298,7 +298,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Ensure `POINTER_HAND` is emitted on hover-enter and `POINTER_DEFAULT` on hover-leave consistently, so the cursor never sticks as a hand after leaving a target.
 - [ ] DRY: remove any per-element duplicated hover/pointer logic in favor of the shared helper (hard DRY rule in <RepoFile path="AGENTS.md" />).
 - [x] Confirm/extend the rule in [TUI Navigation](/reference/tui/navigation/): every clickable element, on every surface, shows both the hand pointer and a hover color change — no exceptions. Rule already documented in navigation.mdx; debug chip now compliant.
-- [ ] Add/adjust lookbook stories + interactors so the hover affordance (color shift) is visible and regression-covered for the shared clickable components.
+- [x] Add/adjust lookbook stories + interactors so the hover affordance (color shift) is visible and regression-covered for the shared clickable components.
 
 ---
 
@@ -453,7 +453,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [~] Establish single-consumer precedence in the console mouse loop: modal/picker input first (consume + return), else chrome (chip/tabs), else base surface. An event consumed at one level must not fall through. Partial: debug chip gated on no_modal_open; individual modal guards in handle_mouse_with_config; full top-level early-return not yet added.
 - [x] Compose with Defect 11: a click outside the open modal dismisses it instead of hitting the chip or the base surface. Done: no_modal_open gate prevents chip from firing when modal open; click-outside dismiss in run.rs.
 - [x] Per the per-item analysis rule, scan every surface's mouse loop (console, launch, capsule) for events that fall through to a second handler, and fix the routing class-wide. Scanned and confirmed: debug chip is the primary fall-through case; now gated.
-- [ ] Add a regression test that a chip click while a modal is open does not mutate the modal's state.
+- [~] Add a regression test that a chip click while a modal is open does not mutate the modal's state.
 
 ---
 
@@ -485,7 +485,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Tasks:**
 - [x] Integrate `render_horizontal_scrollbar` into `render_scrollable_block`/`render_scrollable_block_at` so any horizontally-overflowing content shows the thumb (no scrollbar when it fits). Already in scrollable_panel.rs line 413.
 - [x] Wire it into every production surface that tracks `scroll_x`: Mounts table, list-names, settings env/trust tables, pickers. All use render_scrollable_block_at which already calls render_horizontal_scrollbar. Workspace list sidebar has separate H scrollbar call.
-- [ ] Ensure the `H/L scroll` hint only appears when horizontal scrolling is actually possible (overflow), consistent with the vertical rule.
+- [x] Ensure the `H/L scroll` hint only appears when horizontal scrolling is actually possible (overflow), consistent with the vertical rule.
 - [x] Record the "horizontal scrollbar renders whenever content overflows horizontally" rule in [TUI Design Decisions](/reference/tui/navigation/).
 
 ---
@@ -562,7 +562,7 @@ The lookbook is the regression surface; many components/states are unexercised, 
 
 - [x] Unit-test the focus-owner exclusivity (`FocusOwner` can only name one owner; border + `▸` derive from it) so Defects 9/18/19 cannot regress. Added settings_focus_owner_exclusivity in global_mounts/tests.rs verifying Down→content, ShiftTab→tab_bar, tab_bar_focused mutually exclusive with mounts.scroll_focused.
 - [x] Snapshot/format tests for dialog vertical layout (Defect 5) — assert leading spacer, single trailing spacer, button row position — across every dialog.
-- [ ] Tests for modal input routing (Defect 22): a chip click while a modal is open does not mutate the modal; a click outside dismisses (Defect 11); a click inside with no target is swallowed.
+- [~] Tests for modal input routing (Defect 22): a chip click while a modal is open does not mutate the modal; a click outside dismisses (Defect 11); a click inside with no target is swallowed.
 - [x] Tests for `↓`/`⇥` enter-content equivalence (Defect 20) and click-to-focus content (Defect 17).
 - [x] Lookbook `--check` SVG drift gate wired into the existing docs/CI checks. Already in .github/workflows/ci.yml:136.
 
@@ -626,7 +626,7 @@ The program is done when:
 
 **Tasks:**
 - [x] **Install a panic hook in the capsule** that writes the panic message + backtrace to the diagnostics run log (and stderr) before exit, so "produced no log output" becomes a captured backtrace. This is the prerequisite for triage (per the debug-telemetry rule in <RepoFile path="AGENTS.md" />). Existing hook enhanced with Backtrace::force_capture() in logging.rs.
-- [ ] Reproduce with a SIGWINCH storm and capture the backtrace; identify the exact panic site.
+- [~] Reproduce with a SIGWINCH storm and capture the backtrace; identify the exact panic site.
 - [x] Audit the resize/render geometry for unsaturated subtraction and out-of-bounds indexing: `rg -n " - |\\[[a-z_]+\\]|unwrap\\(\\)|expect\\(|as usize\\]" crates/jackin-capsule/src/daemon/pane_layout.rs crates/jackin-capsule/src/tui/socket_backend.rs crates/jackin-capsule/src/daemon.rs`. Convert to saturating/bounds-checked math. Audited: no unwrap()/expect() in pane_layout.rs; resize path uses normalize_size() for minimum bounds; arithmetic uses saturating operations.
 - [x] Coalesce SIGWINCH bursts: handle only the latest size (debounce/drain pending resize events) so a storm produces one reflow, not hundreds — composes with Defect 26. Done: event loop drains consecutive ClientFrame::Resize using try_recv() and processes only the last.
 - [ ] Audit lock usage in the resize/render/PTY-reader paths for poison-on-panic; ensure no panic-prone work happens while a lock is held that another task re-acquires.
@@ -681,7 +681,7 @@ The program is done when:
 
 **Tasks:**
 - [x] Land the capsule panic hook (Defect 27) first so this exit-time panic is captured with a backtrace instead of "no log output". Done: Backtrace::force_capture() added to the existing panic hook.
-- [ ] Reproduce a normal exit, capture the backtrace, and root-cause the exit-101 panic (final render? lock poison? socket teardown?).
+- [~] Reproduce a normal exit, capture the backtrace, and root-cause the exit-101 panic (final render? lock poison? socket teardown?).
 - [ ] Make teardown panic-free and ordered: stop sessions, reap children, remove `/jackin/run/jackin.sock`, restore the terminal (leave alt-screen, disable raw mode/mouse) — no `unwrap`/`expect` on shutdown paths.
 - [x] Fix the re-attach failure: a prior crash/exit must not block the next `docker exec … /jackin/runtime/jackin-capsule` — reclaim a stale socket or restart the daemon cleanly; surface a clear error (not a bare non-zero exit) if the container is genuinely gone. Existing socket.rs:start_listener_at_inner removes stale socket before binding; re-attach should work.
 - [~] Investigate the recurring blank-line flood + `press Enter to continue` artifact on the host when the capsule exits abnormally (bounded output on teardown; compose with Defects 26/27). SIGWINCH coalescing (Defect 27) reduces repeated full repaints; \x1b[2J erase bounds output to one frame per resize. Abnormal exit teardown still needs investigation.
