@@ -175,6 +175,14 @@ impl Multiplexer {
 
     pub(super) fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = normalize_size(rows, cols);
+        crate::cdebug!(
+            "resize: {}x{} → {}x{} content_rows={}",
+            self.term_cols,
+            self.term_rows,
+            cols,
+            rows,
+            available_content_rows(rows),
+        );
         // Outer-terminal resize invalidates the drag's saved rect.
         self.cancel_drag();
         self.term_rows = rows;
