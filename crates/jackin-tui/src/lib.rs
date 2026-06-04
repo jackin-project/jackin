@@ -245,6 +245,27 @@ pub mod ansi {
         }
     }
 
+    /// Truecolor foreground SGR for an arbitrary RGB value.
+    ///
+    /// The `const` `rgb_fg` above returns a `&'static str` and so must match a
+    /// fixed allowlist — appropriate for compile-time `const` color tables,
+    /// where an unlisted token is a build error. Render code that picks a color
+    /// at runtime must use this instead: a `Color::Rgb` the allowlist happens
+    /// not to cover would otherwise panic the whole capsule on the frame that
+    /// first paints it (the debug run-id chip's `DANGER_RED` did exactly that).
+    #[must_use]
+    pub fn rgb_fg_dyn(rgb: Rgb) -> String {
+        format!("\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b)
+    }
+
+    /// Truecolor background SGR for an arbitrary RGB value. Runtime counterpart
+    /// to the `const` `rgb_bg`; see [`rgb_fg_dyn`] for why render-time callers
+    /// must never route through the panicking `const` allowlist.
+    #[must_use]
+    pub fn rgb_bg_dyn(rgb: Rgb) -> String {
+        format!("\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b)
+    }
+
     /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)
     /// and uses BEL termination, which is accepted by Ghostty, Kitty, iTerm2,
     /// Alacritty, and WezTerm. (GNOME Terminal / VTE has historically required

@@ -254,13 +254,13 @@ pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBotto
         jackin_tui::ansi::move_to(buf, bar_row, col);
         let (chip_bg, chip_fg) = if view.hover_target == Some(HoverTarget::DebugChip) {
             (
-                jackin_tui::ansi::rgb_bg(jackin_tui::WHITE),
-                jackin_tui::ansi::rgb_fg(jackin_tui::DANGER_RED),
+                jackin_tui::ansi::rgb_bg_dyn(jackin_tui::WHITE),
+                jackin_tui::ansi::rgb_fg_dyn(jackin_tui::DANGER_RED),
             )
         } else {
             (
-                jackin_tui::ansi::rgb_bg(jackin_tui::DANGER_RED),
-                jackin_tui::ansi::rgb_fg(jackin_tui::WHITE),
+                jackin_tui::ansi::rgb_bg_dyn(jackin_tui::DANGER_RED),
+                jackin_tui::ansi::rgb_fg_dyn(jackin_tui::WHITE),
             )
         };
         buf.extend_from_slice(chip_bg.as_bytes());
