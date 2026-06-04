@@ -241,7 +241,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** a top-level modal (the quit/exit confirm, and any modal that supersedes the current surface) paints the opaque full-screen `ModalBackdrop` over the entire area first, hiding the base UI *and* any already-open dialog, then draws only itself. No two dialogs visible at once for this class.
 
 **Tasks:**
-- [ ] Fix the quit-confirm render path in `run.rs`: when `quit_confirm` is active, paint `render_modal_backdrop` (or the surface's opaque fill) across the **full** area — over both the manager UI and any open `list_modal` — before drawing the exit confirm, so only the exit dialog is visible.
+- [x] Fix the quit-confirm render path in `run.rs`: when `quit_confirm` is active, paint `render_modal_backdrop` (or the surface's opaque fill) across the **full** area — over both the manager UI and any open `list_modal` — before drawing the exit confirm, so only the exit dialog is visible.
 - [ ] Audit every other place a modal can open while another dialog is already on screen (console `list_modal` + quit, capsule `dialog_stack`, launch). Confirm each repaints the opaque backdrop so the superseding modal hides everything beneath it rather than stacking visibly.
 - [ ] Reconcile with Defect 9: where genuine modal *stacking* is intended (child modal over parent), apply the one-bright-border rule; where it is a *supersede* (exit confirm), apply the full-backdrop hide-everything rule. Document which dialogs are stack vs supersede.
 - [ ] Confirm the existing rule text "Opening a modal must paint an opaque backdrop over the whole terminal before drawing the modal" in [TUI Design Decisions](/reference/tui/chrome/) covers the dialog-over-dialog case explicitly; tighten if needed.
@@ -258,7 +258,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [ ] Enumerate every dialog-bearing surface and its open-modal rect source: console `list_modal` (`modal_outer_rect`), console `quit_confirm` (`quit_confirm_area`), launch dialogs, capsule `dialog_stack` (already compliant — use as the reference).
-- [ ] Add the backdrop-click-dismiss branch to the console mouse handler: when a modal is open and a mouse-down lands outside its rect, close it (same path as `Esc`); when inside the rect but not on a clickable target, swallow the event.
+- [x] Add the backdrop-click-dismiss branch to the console mouse handler: when a modal is open and a mouse-down lands outside its rect, close it (same path as `Esc`); when inside the rect but not on a clickable target, swallow the event.
 - [ ] Apply the same to the launch surface dialogs and any other non-compliant dialog. Fix the whole class — model the behavior on the capsule's existing implementation rather than inventing a second one.
 - [ ] Confirm the rule covers stacked/superseding modals correctly: a click outside the **top** dialog dismisses only the top one (per Defect 9/10 stack-vs-supersede distinction).
 - [ ] Verify the rule text in [TUI Dialogs](/reference/tui/dialogs/) states it applies to **all** surfaces (console, launch, capsule), not just the multiplexer; generalize if it reads capsule-specific.
@@ -364,8 +364,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [ ] Trace the click-to-focus path for the editor and settings stages in `update_scroll_focus` (and its `*_scroll_focus_plan` helpers) in <RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" /> and <RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" /> / `screens/settings/update.rs`. Confirm focus only transfers on overflow.
-- [ ] Add click-to-enter-content for interactive tab panels: a left-click inside a tab content block transfers interaction focus to it (the same state `⇥`/`↓` produces), independent of overflow, for **every** tab in settings (General, Mounts, Environments, Auth, Trust) and the workspace editor tabs.
-- [ ] Keep the focus signals coupled (border + `▸`/cursor + hint bar) per the existing hard rule — clicking must update all of them together.
+- [x] Add click-to-enter-content for interactive tab panels: a left-click inside a tab content block transfers interaction focus to it (the same state `⇥`/`↓` produces), independent of overflow, for **every** tab in settings (General, Mounts, Environments, Auth, Trust) and the workspace editor tabs.
+- [x] Keep the focus signals coupled (border + `▸`/cursor + hint bar) per the existing hard rule — clicking must update all of them together.
 - [ ] Scan for any other tabbed/interactive container with the same overflow-gated focus bug and fix it too (fix the whole class). `rg -n "scroll_focus|scroll_focused|enter content|tab_content" crates/*/src`.
 - [ ] Confirm the rule text in [TUI Design Decisions](/reference/tui/chrome/) already covers "interactive panels are focusable by click regardless of overflow"; tighten if the implementation guidance is ambiguous.
 
@@ -381,7 +381,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 
 **Tasks:**
 - [ ] Inventory every place a `▸` cursor / `highlight_symbol` / `show_cursor` flag is used or should be: `rg -n "▸|highlight_symbol|show_cursor|SELECT_MARK" crates/*/src`. For each, confirm the `▸` is gated on the block's focus state and matches the green-border expression exactly.
-- [ ] Fix every block where `▸` is missing while focused or present while unfocused. Confirmed-missing examples (all five settings tabs, focused): **General** (now correct), **Mounts** (`+ Add mount` row), **Environments** (op rows + `+ Add environment variable`), **Auth** (agent rows), **Trust** (role rows). Also workspace editor tabs, pickers, file browser, capsule dialogs, and the lookbook lists. Fix the whole class.
+- [x] Fix every block where `▸` is missing while focused or present while unfocused. Confirmed-missing examples (all five settings tabs, focused): **General** (now correct), **Mounts** (`+ Add mount` row), **Environments** (op rows + `+ Add environment variable`), **Auth** (agent rows), **Trust** (role rows). Also workspace editor tabs, pickers, file browser, capsule dialogs, and the lookbook lists. Fix the whole class.
 - [ ] Header rows are not selectable: where a tab has a column-header row (Mounts, Environments, Trust show `Destination…`, `Role  Trust  Git`, etc.), the `▸` must appear on the selected **data** row, never on the header. Confirm the cursor never lands on a header/non-selectable row.
 - [ ] Where `show_cursor` is computed independently of focus, refactor so a single focus value drives both the border and `▸` (enforce the "identical expressions" rule structurally, e.g. derive both from one `focused` bool).
 - [ ] (Observation to verify) the settings hint bar in the focused state reads `↑↓ navigate   ↑↓ navigate · ␣ toggle   ⇧Tab tab bar` — `↑↓ navigate` appears twice. Confirm whether the focused-content hint is duplicated and fix if so.
@@ -398,8 +398,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** exactly one focus owner among (tab strip, content block) (the existing one-bright-border rule). `tab_bar_focused == true` ⇒ tab strip green underline, content border dark, no `▸`. `tab_bar_focused == false` (content focused) ⇒ tab strip **white** underline, content green border + `▸` on the selected row. The two states are exhaustive and exclusive.
 
 **Tasks:**
-- [ ] Make the tab strip render its focus cue from `tab_bar_focused`: green underline only when the tab bar owns focus; white/normal underline when content owns focus. Check `render_editor_tab_strip` / `render_settings_tab_strip` and the `TabStrip` `focused(..)` call.
-- [ ] Ensure the click-to-focus path (Defect 17) sets `tab_bar_focused = false` when it transfers focus into content, so the tab strip stops being green in the same frame.
+- [x] Make the tab strip render its focus cue from `tab_bar_focused`: green underline only when the tab bar owns focus; white/normal underline when content owns focus. Check `render_editor_tab_strip` / `render_settings_tab_strip` and the `TabStrip` `focused(..)` call.
+- [x] Ensure the click-to-focus path (Defect 17) sets `tab_bar_focused = false` when it transfers focus into content, so the tab strip stops being green in the same frame.
 - [ ] Couple this with Defect 18: when content gains focus, `▸` appears; when the tab bar regains focus, `▸` disappears and the content border goes dark.
 - [ ] Scan every tabbed screen (workspace editor, create-workspace, settings) for the dual-focus bug and fix all of them (fix the whole class). Confirmed trigger: switching tabs left/right and returning to the **Mounts** tab leaves the Mounts content block with a green border while the tab bar still owns focus — the content border must be dark whenever `tab_bar_focused` is true, regardless of tab-switch history. Audit per-tab focus state that is not reset when the tab bar owns focus.
 - [ ] Record the tab-strip-vs-content mutual-exclusion rule explicitly in [TUI Design Decisions](/reference/tui/navigation/) (W3C Tabs section).
@@ -415,8 +415,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** while the tab bar owns focus, both `⇥` and `↓` transfer focus into the content block (set `tab_bar_focused = false`, focus the content, show `▸`); `⇧Tab`/`↑` (or `Esc`) return focus to the tab bar — identically on every tabbed screen. This matches the W3C Tabs pattern already documented.
 
 **Tasks:**
-- [ ] Audit the key handling for every tabbed screen (workspace editor, create-workspace, settings) and confirm `↓` while `tab_bar_focused` enters content exactly as `⇥` does. `rg -n "tab_bar_focused|KeyCode::Down|KeyCode::Tab|enter content" crates/jackin-console/src/tui/screens`.
-- [ ] Fix every screen where `↓` does not enter content; route both `⇥` and `↓` through one shared transition so they cannot diverge (DRY).
+- [x] Audit the key handling for every tabbed screen (workspace editor, create-workspace, settings) and confirm `↓` while `tab_bar_focused` enters content exactly as `⇥` does. `rg -n "tab_bar_focused|KeyCode::Down|KeyCode::Tab|enter content" crates/jackin-console/src/tui/screens`.
+- [x] Fix every screen where `↓` does not enter content; route both `⇥` and `↓` through one shared transition so they cannot diverge (DRY).
 - [ ] Confirm the reverse (`↑`/`⇧Tab` from the top content row returns to the tab bar) is equally consistent.
 - [ ] Compose with Defects 17/18/19: entering content sets `tab_bar_focused = false`, shows `▸`, greens the content border, and whitens the tab underline — all in one transition.
 - [ ] Record the `↓`/`⇥` enter-content equivalence in [TUI Design Decisions](/reference/tui/navigation/).
@@ -470,7 +470,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Audit every `render_picker_sidebar` caller for a hardcoded `false` (or omitted) focus argument: `rg -n "render_picker_sidebar" crates/*/src`. Fix all inline pickers (role, agent, provider, launch-provider) so the active one is focused.
 - [ ] Compose with Defect 18: the focused picker shows `▸` and the green border together; the inactive ones show neither.
 - [ ] Per the per-item analysis rule, check the inline-picker focus-state plumbing end-to-end (which picker is "active" → that one renders focused) and confirm exactly one is focused at a time.
-- [ ] Confirm via the workspace-list launch flow that role, agent, and provider pickers each show the green border while active.
+- [x] Confirm via the workspace-list launch flow that role, agent, and provider pickers each show the green border while active.
 
 ---
 
@@ -511,7 +511,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 Most defects above converge on a handful of shared building blocks. Building these **first** turns each defect into "route every site through the primitive" instead of N independent patches, and is the DRY-correct order. **Most of these are merges of existing duplicated components, not new code** — see *TUI primitive consolidation* below for the concrete merge targets (one dialog shell, one scrollable-list, fold the debug bar into `status_footer`, one container-info dialog). Only `HoverTracker`, `FocusOwner`, the capsule full-invalidate path + panic hook, and the empty-state/theme tokens are genuinely net-new.
 
 - [ ] **`HoverTracker` (shared hover state + routing).** Today hover is scattered (`hovered_tab`, `hovered_mount_row`, `menu_hovered`, …) across editor/settings/workspaces/capsule models, each wired to `MouseEventKind::Moved` ad hoc. Build one shared hover-tracking primitive in `jackin-tui` (register clickable rects → current hovered target) that drives both the hover color and the OSC 22 pointer (Defect 13). Route every surface's `Moved` handling through it. Removes the scattered `hovered_*` bools.
-- [ ] **`DialogBodyLayout` (shared dialog inner layout).** Every dialog hand-rolls `Layout::vertical([...])` with its own spacers/inset (confirm, error, save_discard, status_popup, container_info, capsule dialogs). Build one helper that yields the canonical layout — leading spacer + content + spacer + action row + trailing spacer (Defect 5), with consistent horizontal inset — and route every dialog through it. This is the single primitive that fixes Defects 5, and underpins 7/8.
+- [~] **`DialogBodyLayout` (shared dialog inner layout).** Every dialog hand-rolls `Layout::vertical([...])` with its own spacers/inset (confirm, error, save_discard, status_popup, container_info, capsule dialogs). Build one helper that yields the canonical layout — leading spacer + content + spacer + action row + trailing spacer (Defect 5), with consistent horizontal inset — and route every dialog through it. This is the single primitive that fixes Defects 5, and underpins 7/8.
 - [ ] **Shared scrollable-dialog component.** Combine `DialogBodyLayout` with the scroll machinery so a dialog body scrolls H/V on overflow (Defect 8), holds preferred size and shrinks only when the screen is too small (Defect 7), then scrolls. One component reused by every dialog and every filter/selection picker (`Select Role`, `Unfinished jackin instances`). DRY — never a second dialog-scroll implementation.
 - [ ] **`FocusOwner` per-screen model.** Replace the scattered focus bools (`tab_bar_focused`, `*_scroll_focused`, `tab_content_scroll_focused`, `list_names_focused`, picker `focused`) with one value per screen naming the single focus owner, so "exactly one bright border" and "`▸` iff focused" (Defects 9, 17, 18, 19, 23) are structurally guaranteed, not maintained by hand. The render derives border + `▸` + hint scope from this one value.
 - [ ] **Shared action-row component (`+ …`).** One component/style for every `+ Add…/+ Override…` row app-wide (Defect 21).
@@ -551,7 +551,7 @@ The capsule (`crates/jackin-capsule/src/tui`) reimplements several things at the
 
 The lookbook is the regression surface; many components/states are unexercised, so these defects could regress invisibly. Add stories so every shared component and every state variant is visible and SVG-checked.
 
-- [ ] Add missing component stories: `ContainerInfo` / debug-info dialog (incl. overflowing→scrollable), `ModalBackdrop` (full-screen), and any other `jackin-tui/src/components/` file with no story.
+- [x] Add missing component stories: `ContainerInfo` / debug-info dialog (incl. overflowing→scrollable), `ModalBackdrop` (full-screen), and any other `jackin-tui/src/components/` file with no story.
 - [ ] Add missing **state** variants: `Panel` Unfocused / Focused / FocusedScrollable; `ButtonStrip` all-disabled; `ConfirmDialog` focus=Yes; `SaveDiscardDialog` focus=Save/Discard; `SelectList` no-selection **and** full-width selection (Defect 16); `ScrollablePanel` actively scrolled (H and V) with visible thumbs (Defects 8, 24); hover states for buttons/tabs/chips (Defect 13); stacked dialogs showing one-bright-border (Defect 9).
 - [ ] Make the lookbook stories sidebar itself the reference for Defects 1, 14, 16 (scrollbar + spacer + full-width selection) once fixed.
 - [ ] Regenerate SVGs (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) and verify no drift (`--check`).
