@@ -26,6 +26,7 @@ RUN apt-get update && \
     bash \
     ca-certificates \
     curl \
+    dnsutils \
     fd-find \
     fish \
     fzf \
@@ -35,6 +36,8 @@ RUN apt-get update && \
     openssh-client \
     procps \
     ripgrep \
+    ipset \
+    iptables \
     sudo \
     tree \
     yq \

@@ -586,6 +586,8 @@ struct LaunchContext<'a> {
     profile: crate::runtime::docker_profile::DockerSecurityProfile,
     /// Fully resolved capability grants for this launch.
     grants: crate::runtime::docker_profile::EffectiveGrants,
+    /// Source of the active profile (cli/workspace/config/default).
+    profile_source: crate::runtime::docker_profile::ProfileSource,
 }
 
 fn capsule_config(
@@ -656,11 +658,12 @@ async fn launch_role_runtime(
         paths,
         profile,
         grants,
+        profile_source,
     } = ctx;
 
     crate::debug_log!(
         "launch",
-        "docker_profile selected={profile} container={container_name}",
+        "profile_selected profile={profile} source={profile_source} container={container_name}",
     );
 
     let certs_volume = dind_certs_volume(container_name);
@@ -740,7 +743,8 @@ async fn launch_role_runtime(
         ];
         crate::debug_log!(
             "launch",
-            "dind enabled=yes mode=privileged container={dind}",
+            "dind enabled=yes mode=privileged container={dind} \
+             tls_certs=per-launch lifetime=launch",
         );
         let run_dind = runner.run("docker", &dind_args, None, &docker_run_opts);
         if let Some(progress) = steps.progress_mut() {
@@ -1028,6 +1032,65 @@ async fn launch_role_runtime(
             .get(crate::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME)
             .map(String::as_str),
     );
+
+    // ── Network mode env vars ─────────────────────────────────────────────────
+    // Inform the container of the active network mode so entrypoint.sh can
+    // conditionally install the iptables allowlist.
+    let network_mode_str = match grants.network {
+        super::docker_profile::NetworkGrant::None => "none",
+        super::docker_profile::NetworkGrant::Allowlist => "allowlist",
+        super::docker_profile::NetworkGrant::Open => "open",
+    };
+    env_strings.push(format!("JACKIN_NETWORK_MODE={network_mode_str}"));
+
+    if grants.network == super::docker_profile::NetworkGrant::Allowlist {
+        // Assemble JACKIN_ALLOWED_HOSTS from: auto agent endpoints + operator
+        // config allowed_hosts + role network_allow.
+        let mut allowed: Vec<String> = Vec::new();
+
+        // Auto agent endpoints.
+        allowed.extend(
+            super::docker_profile::default_allowed_hosts_for_agent(agent.slug())
+                .iter()
+                .map(|&s| s.to_string()),
+        );
+
+        // GitHub if gh auth is forwarded.
+        if !github_env.is_empty() {
+            allowed.push("github.com".to_string());
+            allowed.push("api.github.com".to_string());
+        }
+
+        // Operator-level allowed_hosts from grants.
+        allowed.extend(grants.allowed_hosts.iter().cloned());
+
+        // Deduplicate preserving order.
+        let mut seen = std::collections::HashSet::new();
+        allowed.retain(|h| seen.insert(h.clone()));
+
+        let hosts_str = allowed.join(",");
+        env_strings.push(format!("JACKIN_ALLOWED_HOSTS={hosts_str}"));
+
+        crate::debug_log!(
+            "launch",
+            "network_mode=allowlist hosts_count={} hosts={hosts_str}",
+            allowed.len(),
+        );
+
+        // Determine enforcement quality.
+        let enforcement = if grants.sudo || grants.user == "root" {
+            "partial (sudo grants iptables access)"
+        } else if dind_enabled {
+            "partial (dind inner containers bypass host iptables)"
+        } else {
+            "full"
+        };
+        crate::debug_log!(
+            "launch",
+            "network_enforcement={enforcement} container={container_name}",
+        );
+        env_strings.push(format!("JACKIN_NETWORK_ENFORCEMENT={enforcement}"));
+    }
 
     for env_str in &env_strings {
         run_args.push("-e");
@@ -2091,7 +2154,7 @@ async fn load_role_with(
             config.docker.profile,
         );
         let mut effective_grants_early = super::docker_profile::resolve_effective_grants(
-            resolved_profile_early,
+            resolved_profile_early.0,
             config.docker.grants.as_ref(),
             workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
         );
@@ -2099,10 +2162,11 @@ async fn load_role_with(
         // The profile must be >= the role's declared minimum (more capable
         // than or equal to what the role requires).
         if let Some(min) = validated_repo.manifest.min_profile {
-            if resolved_profile_early < min {
+            if resolved_profile_early.0 < min {
+                let active = resolved_profile_early.0;
                 anyhow::bail!(
                     "role {:?} declares min_profile = \"{min}\"; the active profile \
-                     \"{resolved_profile_early}\" is below that minimum — use \
+                     \"{active}\" is below that minimum — use \
                      `--docker-profile {min}` or set `[docker] default_profile = \"{min}\"` \
                      in your config",
                     selector.key(),
@@ -2206,6 +2270,23 @@ async fn load_role_with(
             agent,
             workspace_name.as_deref().unwrap_or(""),
             &role_key,
+        );
+        crate::debug_log!(
+            "launch",
+            "credential_posture agent={} mode={:?} profile={} \
+             note={}",
+            agent.slug(),
+            auth_mode,
+            resolved_profile_early.0,
+            if matches!(
+                resolved_profile_early.0,
+                super::docker_profile::DockerSecurityProfile::Hardened
+                    | super::docker_profile::DockerSecurityProfile::Locked
+            ) {
+                "hardened/locked prefer api_key or oauth_token over sync"
+            } else {
+                "sync mode copies credentials to container state dir"
+            },
         );
 
         // Modes that inject a credential require the well-known env
@@ -2405,8 +2486,9 @@ async fn load_role_with(
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
             paths,
-            profile: resolved_profile_early,
+            profile: resolved_profile_early.0,
             grants: effective_grants_early,
+            profile_source: resolved_profile_early.1,
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
         let mut cleanup = LoadCleanup::new(

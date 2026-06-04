@@ -543,12 +543,44 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
             base.capabilities_add.push(normalized);
         }
     }
+    // `allowlist` network tier requires CAP_NET_ADMIN and CAP_NET_RAW for
+    // iptables/ipset to function. These are implicit side-effects of the
+    // network grant — not in `capabilities_add` in the TOML, but reported
+    // in the session contract as `source=implicit_network_grant`.
+    if base.network == NetworkGrant::Allowlist {
+        for cap in &["NET_ADMIN", "NET_RAW"] {
+            if !base.capabilities_add.contains(&cap.to_string()) {
+                base.capabilities_add.push(cap.to_string());
+            }
+        }
+    }
+
     base
 }
 
 // ── Profile resolution ───────────────────────────────────────────────────────
 
-/// Resolve the effective Docker security profile from the available sources.
+/// Source that produced the active Docker security profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileSource {
+    Cli,
+    Workspace,
+    Config,
+    Default,
+}
+
+impl std::fmt::Display for ProfileSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cli => write!(f, "cli"),
+            Self::Workspace => write!(f, "workspace"),
+            Self::Config => write!(f, "config"),
+            Self::Default => write!(f, "default"),
+        }
+    }
+}
+
+/// Resolve the effective Docker security profile and its source.
 ///
 /// Precedence (highest to lowest):
 /// 1. CLI `--docker-profile` override
@@ -559,11 +591,17 @@ pub fn resolve_profile(
     cli_override: Option<DockerSecurityProfile>,
     workspace_profile: Option<DockerSecurityProfile>,
     config_default: Option<DockerSecurityProfile>,
-) -> DockerSecurityProfile {
-    cli_override
-        .or(workspace_profile)
-        .or(config_default)
-        .unwrap_or_default()
+) -> (DockerSecurityProfile, ProfileSource) {
+    if let Some(p) = cli_override {
+        return (p, ProfileSource::Cli);
+    }
+    if let Some(p) = workspace_profile {
+        return (p, ProfileSource::Workspace);
+    }
+    if let Some(p) = config_default {
+        return (p, ProfileSource::Config);
+    }
+    (DockerSecurityProfile::default(), ProfileSource::Default)
 }
 
 /// Resolve the effective profile and apply grants, returning the merged
@@ -588,6 +626,20 @@ pub fn resolve_effective_grants(
 }
 
 // ── Docker flag emission ─────────────────────────────────────────────────────
+
+/// Default agent API endpoints added to `JACKIN_ALLOWED_HOSTS` when
+/// `network = "allowlist"` is active. These are the minimum set required
+/// for each agent to reach its model API.
+pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
+    match agent {
+        "claude" => &["api.anthropic.com"],
+        "codex" => &["api.openai.com"],
+        "amp" => &["ampcode.com", "sourcegraph.com"],
+        "kimi" => &["api.kimi.com", "kimi.moonshot.cn"],
+        "opencode" => &["api.z.ai", "api.anthropic.com", "api.openai.com"],
+        _ => &[],
+    }
+}
 
 /// Emit resource limit Docker CLI flags from resolved grants.
 /// Returns an owned `Vec<String>` of alternating flag/value pairs ready to
@@ -716,34 +768,42 @@ mod tests {
 
     #[test]
     fn resolve_cli_override_wins() {
-        assert_eq!(
-            resolve_profile(
-                Some(DockerSecurityProfile::Locked),
-                Some(DockerSecurityProfile::Standard),
-                Some(DockerSecurityProfile::Compat),
-            ),
-            DockerSecurityProfile::Locked,
+        let (profile, source) = resolve_profile(
+            Some(DockerSecurityProfile::Locked),
+            Some(DockerSecurityProfile::Standard),
+            Some(DockerSecurityProfile::Compat),
         );
+        assert_eq!(profile, DockerSecurityProfile::Locked);
+        assert_eq!(source, ProfileSource::Cli);
     }
 
     #[test]
     fn resolve_workspace_beats_config() {
-        assert_eq!(
-            resolve_profile(
-                None,
-                Some(DockerSecurityProfile::Hardened),
-                Some(DockerSecurityProfile::Compat),
-            ),
-            DockerSecurityProfile::Hardened,
+        let (profile, source) = resolve_profile(
+            None,
+            Some(DockerSecurityProfile::Hardened),
+            Some(DockerSecurityProfile::Compat),
         );
+        assert_eq!(profile, DockerSecurityProfile::Hardened);
+        assert_eq!(source, ProfileSource::Workspace);
     }
 
     #[test]
     fn resolve_no_override_returns_default() {
-        assert_eq!(
-            resolve_profile(None, None, None),
-            DockerSecurityProfile::default()
+        let (profile, source) = resolve_profile(None, None, None);
+        assert_eq!(profile, DockerSecurityProfile::default());
+        assert_eq!(source, ProfileSource::Default);
+    }
+
+    #[test]
+    fn resolve_config_source_tracked() {
+        let (profile, source) = resolve_profile(
+            None,
+            None,
+            Some(DockerSecurityProfile::Standard),
         );
+        assert_eq!(profile, DockerSecurityProfile::Standard);
+        assert_eq!(source, ProfileSource::Config);
     }
 
     #[test]

@@ -31,6 +31,26 @@ run_hook() {
 # values.
 /jackin/runtime/jackin-capsule runtime-setup
 
+# ── Network allowlist (api_only / allowlist tier) ──────────────────────
+# When the operator selects network = "allowlist", jackin injects
+# JACKIN_NETWORK_MODE=allowlist and JACKIN_ALLOWED_HOSTS=<domains,...>.
+# init-firewall.sh installs a default-DROP OUTPUT allowlist via iptables/ipset.
+# Requires CAP_NET_ADMIN + CAP_NET_RAW (implicitly granted by the allowlist tier).
+# Runs as root via sudo scoped to this script alone; the agent process that
+# follows does not inherit the elevated privilege.
+if [ "${JACKIN_NETWORK_MODE:-open}" = "allowlist" ]; then
+    if [ -x /jackin/runtime/init-firewall.sh ]; then
+        echo "[entrypoint] installing network allowlist..."
+        # Suspend debug xtrace around the firewall script to avoid logging
+        # domain names from JACKIN_ALLOWED_HOSTS into operator output.
+        case $- in *x*) fw_xtrace=1; set +x ;; esac
+        sudo /jackin/runtime/init-firewall.sh
+        [ "${fw_xtrace:-0}" = "1" ] && set -x
+    else
+        echo "[entrypoint] WARNING: JACKIN_NETWORK_MODE=allowlist but init-firewall.sh not found" >&2
+    fi
+fi
+
 # ── agent-specific setup ───────────────────────────────────────────
 #
 # Per-session file setup already ran in `jackin-capsule runtime-setup`.
