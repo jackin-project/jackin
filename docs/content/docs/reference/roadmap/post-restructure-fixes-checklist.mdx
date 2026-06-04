@@ -141,6 +141,8 @@ There is no shared dialog body-layout helper enforcing symmetric top/bottom inse
 
 ## Defect 6 — one shared cross-screen debug-info dialog, full-screen on open, additive content per surface
 
+> **REOPENED by Defect 38 (Round 2).** The closed tasks below that show the run-log **contents** and call the dialog "Container info" are superseded: the operator now wants it renamed **"Debug info"**, with **no log contents** (copyable run-log link only), a **jackin version** row on every surface, and a genuine single-implementation refactor (the capsule still has its own representation). Treat Defect 38 as the current contract.
+
 **Symptom:** clicking the run-id chip must hide the **whole** screen and show **only** a debug-info dialog. That dialog must be **one shared dialog used across every surface** — console, capsule, launch, and any other screen — with the **same style and the same base content everywhere**. Content is **additive**, never subtractive: the base is Run ID + where to find the log + the run log contents; on surfaces that know more (capsule/launch know the container ID and what was just started), the dialog shows that **additional** information too — but it is never drawn differently or with less.
 
 **Root cause:** today there is no single cross-screen debug dialog. The console builds a static two-row `ContainerInfoState` (Run ID + Run log *path*) via `debug_run_info_state` (<RepoFile path="crates/jackin-console/src/tui/components/container_info.rs" />) with no log contents and no scroll; the capsule has its own `container_info_dialog` (<RepoFile path="crates/jackin-capsule/src/tui/components/container_info_dialog.rs" />); the launch surface has yet another. They are separate implementations that drift in style and content. `ContainerInfoState` (<RepoFile path="crates/jackin-tui/src/components/container_info.rs" />) has no scroll offset and `render_container_info` draws no scrollbar.
@@ -303,6 +305,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 ---
 
 ## Defect 14 — the bottom hint bar always has one blank spacer row above it, on every screen
+
+> **EXTENDED by Defect 39 (Round 2).** This defect covers the spacer **above** the hints (body → spacer → hints). Defect 39 adds a second spacer **below** the hints, between the hints and the run-id/status chip row. Full bottom stack: body → spacer → hints → spacer → status/chip row.
 
 **Symptom:** the bottom hint row (`↑↓ · ↵ launch   N new · S settings   Q quit`) must always be separated from the screen body by exactly one blank line — a spacer row, then the hints. Some screens render the hints flush against the body with no spacer, which reads as cramped. This must be uniform across every jackin' screen.
 
@@ -770,3 +774,190 @@ The program is done when:
 ## Further defects
 
 Additional defects the operator reports get appended here, each following the same shape: symptom → root cause against the current tree → canonical pattern → repo-wide scan + fix-all tasks.
+
+---
+
+## Round 2 — operator re-review (2026-06-04)
+
+A second operator pass over the lookbook and the live `--debug` surfaces. These refine or **reopen** earlier defects that were marked `[x]` but do not match the operator's intent on closer inspection. Defects 38 and 39 partially contradict the *closed* Defects 6 and 14 — the new operator instruction wins; the old tasks are reopened where noted. Per the operator's instruction, this round is **analysis + plan only** — do not fix until the operator says "fix them"; the exception is Defects 36 and 37, already applied in the working tree (noted inline).
+
+## Defect 36 — lookbook SVG previews need padding + a charcoal card surround so components don't bleed to the image edge
+
+**Symptom:** the exported lookbook preview SVGs (the "dark output" rendered on the docs site) draw each component edge-to-edge on a pure-black image. White components (e.g. `StatusFooter`) fill the entire image so it is unclear they are a bounded element; dark/transparent components are invisible against black. The operator: "we need padding for all components because some of them we don't see in the dark output."
+
+**Root cause:** the interactive preview pane in <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> already fills `preview_inner` with `PREVIEW_CARD` charcoal and applies a 1-cell `Margin`, but the **SVG export path** does not. `render_story_to_buffer` in <RepoFile path="crates/jackin-tui-lookbook/src/svg.rs" /> allocated a `TestBackend` sized exactly `story.width × story.height`, pre-filled black, and rendered the story into the full area — no padding ring, no `PREVIEW_CARD` surround. The two render paths diverged (DRY miss): the interactive canvas floats the component, the exported SVG does not.
+
+**Canonical pattern to converge on:** the SVG export mirrors the interactive preview — a uniform `PREVIEW_CARD` (`Rgb(28,28,28)`) padding ring around every component, with the component itself `Clear`-ed to the terminal default so it sits on the same surface as the real app, framed by the charcoal card.
+
+**Tasks:**
+- [x] **APPLIED in working tree.** `render_story_to_buffer` now allocates `story.width + 2·STORY_PAD × story.height + 2·STORY_PAD` (`STORY_PAD = 1`), fills the whole area with `PREVIEW_CARD`, `Clear`s the inset story rect, and renders the story into it. SVGs regenerated (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) and `--check` passes — e.g. `status-footer-launch-progress.svg` is now `666×54` (was `648×18`) with a `#1c1c1c` ring.
+- [ ] **Verify on the docs site** that every preview now reads as a floating, bounded element on the charcoal card (sanity-scan a white component, a dark component, and a dialog). Confirm no story relied on the old zero-padding sizing.
+- [ ] Record (or confirm already recorded under Defect 2) the rule: "lookbook SVG exports use the same `PREVIEW_CARD` padded canvas as the interactive preview" in [TUI Design Decisions](/reference/tui/) so the two paths cannot drift again.
+
+## Defect 37 — panel/chrome titles start with an uppercase first letter, on every surface
+
+**Symptom:** the lookbook chrome panels were titled `┌ stories ┐`, `┌ about ┐`, `┌ preview ┐` (lowercase first letter). The operator: titles like these "should always start from the uppercase; the first symbol should be upper case … everywhere we have this similar outlook."
+
+**Root cause:** the three lookbook panel titles in <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> were authored lowercase (`.title(" stories ")`, `.title(" about ")`, `.title(" preview ")`). A repo-wide scan (`rg -nE '\.title\("[a-z]' crates/ src/`) found **no other** static lowercase-leading literal panel titles — every other titled panel either already capitalizes (`General`, `Environments`, `Container info`, …) or derives its title from data (story group names, dialog kind names, workspace names) that is already capitalized.
+
+**Canonical pattern to converge on:** every panel/dialog/box border title renders with an uppercase first character. This is a content rule (capitalize the title string), distinct from Defects 4/25 (which govern the surrounding `┌ Title ┐` spacing, not the letter case).
+
+**Tasks:**
+- [x] **APPLIED in working tree.** The three lookbook titles are now `" Stories "`, `" About "`, `" Preview "`.
+- [ ] Confirm no data-derived title can produce a lowercase first letter that the operator would see as a panel title (story group labels in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" />, dialog kind titles in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />). If any can, capitalize at the source.
+- [ ] Record the rule "panel/dialog/box titles capitalize their first letter" in [TUI Design Decisions](/reference/tui/) so future titles inherit it.
+
+## Defect 38 — ONE shared "Debug info" dialog (renamed from "Container info"), DRY across every surface, surface-availability content model
+
+**Symptom:** the debug/run-info dialog (opened from the run-id chip) has multiple problems the operator called out across two messages:
+1. **Wrong name.** Titled "Container info"; the operator wants a generic name — "Debug info" (it is not container-specific; it shows on the container-less workspace screen too).
+2. **Run ID shows a full file path** (`/Users/donbeave/.jackin/data/diagnostics/runs/jk-run-8b4766.jsonl`) instead of the bare run id (`jk-run-8b4766`).
+3. **Run log dumps the `.jsonl` contents** into the dialog as ~20 truncated rows. The operator: "I don't think we need to make a preview … Let's not display the content of the run log itself. There's no point for that." The Run log row must be **only** a copyable file link.
+4. **The run-log link is not copyable.** The operator: "that file should be copyable. I should be able to click on that link and copy that link, that file link fully." Applies everywhere a detailed-log path is shown.
+5. **jackin version is missing** on the workspace/console surface. The operator: "We also need to display the version of jackin here … I should be capable of seeing the … version of my current version of jackin."
+6. **Multiple copies of the dialog exist.** The operator: "we are speaking about one dialogue across all application places … if we have multiple copies, you need to restructure and do refactoring and use one place … We shouldn't have multiple copies, multiple representations of this dialogue."
+
+**This reopens Defect 6.** Defect 6 was closed with "Base content … include the run log **contents** … in a scrollable body" — the operator now explicitly **reverses** that (no contents, link only). Defect 6's "one shared dialog" goal was also not actually achieved: the capsule still renders its own representation.
+
+**Root cause — the dialog has four separate representations:**
+- **Shared (correct home):** <RepoFile path="crates/jackin-tui/src/components/container_info.rs" /> — `ContainerInfoState` + `ContainerInfoRow` + `render_container_info` (`.copyable()`, `.hyperlink()`, `.emphasised()` row modifiers; `hyperlink_overlay` emits OSC-8). This is where the one canonical dialog should live.
+- **Console builder:** `debug_run_info_state` in <RepoFile path="crates/jackin-console/src/tui/components/container_info.rs" /> — builds rows and **reads the `.jsonl` and appends ~20 tail lines** (the content dump, source of problem 3). Run log row is `.hyperlink(...)` only, **not** `.copyable()` (problem 4). No jackin-version row (problem 5).
+- **Launch builder:** <RepoFile path="crates/jackin-launch/src/tui/components/container_info_dialog.rs" /> — its own `ContainerInfoState::new("Container info", rows)` with its own row set; run log `.hyperlink(...)` only.
+- **Capsule renderer (fully separate):** <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> renders via `render_box(buf, …, "Container info")` + `render_info_rows` (ANSI/`SocketBackend` path, line ~2077–2098) and <RepoFile path="crates/jackin-capsule/src/tui/components/container_info_dialog.rs" /> + <RepoFile path="crates/jackin-capsule/src/container_context.rs" /> — does **not** route through `render_container_info`. Run log row `.hyperlink(run_log_href_ref)` only.
+
+The "Container info" title string appears in ~8 sites (rg `'"Container info"'`): the two builders, the launch builder, the capsule `render_box`, the capsule `dialog_widgets` title, plus lookbook + tests.
+
+**Canonical pattern to converge on:** exactly **one** dialog — renamed **"Debug info"** — whose row set is built by **one** function that takes the facts a surface can supply and emits only the rows it has data for. Content is **additive by availability**, never per-surface-divergent in shape or style:
+
+- **Always available (every surface, incl. container-less console/workspace):** Run ID (bare `jk-run-…`, `.copyable().emphasised()`), Run log (the `.jsonl` **path**, `.copyable()` **and** `.hyperlink("file://…")` — click copies the full path; no contents), **jackin version**.
+- **Added when a container exists (capsule/launch):** Container ID, Role, Agent, Workdir, jackin-capsule version. These rows appear only when the surface can fill them — absence ≠ a different dialog, just fewer rows.
+- The operator's exact framing: "Everything that we display there is displayable only depends on the screen where the information is available … the capsule version will be added when we enter the capsule container, and that's the same dialogue."
+
+**Tasks (do NOT start until operator says fix — analysis/plan only):**
+- [ ] **Rename to "Debug info"** at every title site: console/launch/capsule builders, capsule `render_box` + `dialog_widgets`, lookbook stories, and all tests. `rg -n '"Container info"' crates/ src/`. Rename the capsule `container_info_dialog.rs` / console `container_info.rs` modules and `ContainerInfoState`/`ContainerInfoRow` types only if the rename stays cheap; the **title string** rename is mandatory, the type rename is optional polish.
+- [ ] **Collapse to one builder.** Make a single `debug_info_state(facts)` (in `jackin-tui` or a console-shared module) that takes an options/facts struct (`run_id`, `run_log_path`, `jackin_version`, optional `container_id`/`role`/`agent`/`workdir`/`capsule_version`) and emits rows additively. Delete `debug_run_info_state`'s bespoke logic, the launch builder's bespoke row set, and the capsule's bespoke row set — every surface calls the one builder. (DRY hard rule, <RepoFile path="AGENTS.md" />.)
+- [ ] **Remove the run-log content dump** entirely from `debug_run_info_state` (the `std::fs::read_to_string` + tail loop). No `.jsonl` contents in the dialog on any surface. (Reverses the closed Defect 6 task.)
+- [ ] **Run ID = bare id.** Pass `run.run_id()` (e.g. `jk-run-8b4766`), never the path. Investigate the screenshot showing the path in the Run ID row — confirm whether a surface passes `path` where it should pass `run_id` (check the console/launch/capsule call sites and `RunDiagnostics::run_id()` vs `path()` in <RepoFile path="crates/jackin-diagnostics/src/run.rs" />) and fix at the call site.
+- [ ] **Run log = copyable link.** Every run-log row gets `.copyable()` in addition to `.hyperlink("file://…")` so a click copies the full path. Apply to all surfaces: `rg -n '\.hyperlink\(' crates/ src/` — console, launch, capsule. Confirm the capsule ANSI renderer (`render_info_rows`) supports copy-on-click for that row; if not, that is the capsule's gap to close.
+- [ ] **jackin version row on every surface.** Add a "jackin" version row (`env!("CARGO_PKG_VERSION")` / the existing `host_version`) to the always-available set so the console/workspace dialog shows it (capsule already shows it via `diagnostics.host_version`).
+- [ ] **Single render path where possible.** Console and launch already use `render_container_info`; route them through the renamed shared renderer. The capsule renders via ANSI (`render_box`/`render_info_rows`) due to its `SocketBackend` — keep the ANSI renderer but drive it from the **same row set** the shared builder produces, so content/logic is single-sourced even though the blitting differs. Document the ANSI exception inline.
+- [ ] **Surface-availability is data, not branches.** The per-surface difference must be which facts are passed to the one builder, not a different builder or a different layout (DRY rule 4: symmetric variants demand symmetric implementations).
+- [ ] Update the lookbook `ContainerInfoState`/`container-info` story to the new name + new content shape (bare Run ID, copyable run-log link, jackin version, no dump) and regenerate SVGs.
+- [ ] Update [TUI Design Decisions](/reference/tui/chrome/) and the Defect 6 contract: rename to "Debug info", **no log contents**, copyable run-log link, jackin version always shown, additive-by-availability single component. Reconcile the now-contradicted Defect 6 wording.
+
+## Defect 39 — one blank spacer row between the hint bar and the run-id/status chip row, on every surface
+
+**Symptom:** at the bottom of the screen the hint row (`↑↓ · ↵ launch   N new · S settings   Q quit`) sits **directly above** the run-id/debug status chip row (`jk-run-8b4766`) with no gap. The operator wants, bottom-to-top: (1) the status bar (run-id chip row), (2) one empty line, (3) the hints. So a blank spacer must separate the hint row from the status/chip row.
+
+**Distinct from Defect 14.** Defect 14 added one blank spacer **above** the hint bar (between the screen body and the hints). This defect adds a blank spacer **below** the hints (between the hints and the run-id/status chip row). Both spacers coexist: body → spacer → hints → **spacer** → status/chip row.
+
+**Root cause (to confirm against the tree):** the status footer renders the hint row and the right-aligned run-id/debug chip on adjacent rows with no separating blank. The shared footer is `StatusFooter` / `render_status_footer` in <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" /> (the `Layout` around line 133 splits columns for hint vs chip; the chip row stacking lives in the console run loop and the capsule status bar). Each surface stacks hints and chip independently, so the gap is unenforced. The capsule has its own status bar (<RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" />).
+
+**Canonical pattern to converge on:** every surface reserves exactly one blank row between the hint row and the run-id/status chip row. Prefer baking the spacer into the shared footer height/stacking (so `footer_height` accounts for `spacer(above hints) + hints + spacer + chip row`) — then no surface can forget it — rather than per-screen layout math. Compose with Defect 14 (spacer above hints) and Defect 15 (status bar always reserved).
+
+**Tasks (analysis/plan only until operator says fix):**
+- [ ] Inventory how each surface stacks the hint row and the run-id/debug chip row: console manager, workspace editor, settings, launch cockpit, capsule. `rg -n "render_status_footer|status_footer_right_chip_rect|right_debug|render_hint_bar|footer_height" crates/ src/`. For each, confirm whether a blank row separates hints from the chip row.
+- [ ] Decide the enforcement point (bake the inter-row spacer into the shared footer height/stacking vs per-screen). Apply repo-wide so every surface matches: body → spacer → hints → spacer → status/chip row.
+- [ ] Fix the console/workspace surface shown in the operator screenshot, then every other surface found in the inventory (fix the whole class in one pass), including the capsule status bar.
+- [ ] Record the rule "exactly one blank spacer row between the hint bar and the status/run-id chip row, every surface" in [TUI Design Decisions](/reference/tui/navigation/) alongside the Defect 14 spacer rule, so the full bottom-of-screen stack (spacer / hints / spacer / status bar) is documented in one place.
+- [ ] Regenerate lookbook SVGs if the `StatusFooter` story layout changes.
+
+## Defect 40 — the capsule ANSI render path must never panic on a color (root cause of the exit-101 container crash)
+
+**Symptom:** every container launch under `--debug` crashed immediately — `container … exited during session (exit 101) and produced no log output`. The PID-1 `jackin-capsule` daemon panicked on its first rendered frame.
+
+**Root cause (confirmed from the host-side capsule log, not guessed):** `~/.jackin/data/<container>/state/multiplexer.log` (the bind-mounted capsule log, written by the panic hook in <RepoFile path="crates/jackin-capsule/src/logging.rs" />) recorded:
+
+```text
+[jackin-capsule] PANIC: panicked at crates/jackin-tui/src/lib.rs:236:18:
+unsupported RGB background token
+```
+
+`ansi::rgb_bg` / `ansi::rgb_fg` in <RepoFile path="crates/jackin-tui/src/lib.rs" /> are `const fn`s returning `&'static str` from a **fixed allowlist**, with `_ => panic!(...)`. The capsule debug run-id chip (added on this branch, Defect 281/12) renders `rgb_bg(DANGER_RED)` / `rgb_fg(DANGER_RED)` at **runtime** in <RepoFile path="crates/jackin-capsule/src/tui/view.rs" /> (the `render_capsule_bottom_chrome` chip block). `DANGER_RED` (`255,94,122`) was never in the allowlist, so the chip — which only paints under `--debug` — panicked the daemon on the first frame. All the *other* call sites are compile-time `const` (`const FG_GREEN: &str = rgb_fg(PHOSPHOR_GREEN)`, etc.), where an unlisted token is a **build error**, not a runtime panic — which is why the bug never showed at compile time and only the runtime chip path crashed.
+
+**Canonical pattern to converge on:** a render-time color encoder is **total** — it never panics on any `Rgb`. The `const` allowlist is for compile-time `const` tables only (a missing token there is a desirable build error); any value chosen at runtime emits a truecolor SGR dynamically.
+
+**Tasks:**
+- [x] **APPLIED in working tree.** Added `ansi::rgb_fg_dyn(Rgb) -> String` / `ansi::rgb_bg_dyn(Rgb) -> String` to <RepoFile path="crates/jackin-tui/src/lib.rs" /> (emit `\x1b[38;2;r;g;bm` / `\x1b[48;2;r;g;bm` for any value, never panic) and routed the debug chip in <RepoFile path="crates/jackin-capsule/src/tui/view.rs" /> through them. Added a regression test (`debug_run_id_chip_renders_danger_red_without_panicking`) asserting the chip paints DANGER_RED truecolor on both idle and hovered paths. `cargo build -p jackin-capsule` + the test pass.
+- [ ] **Operator re-validation:** rebuild the capsule (`eval "$(cargo run --bin build-jackin-capsule -- --export)"`) and relaunch (`cargo run --bin jackin -- console --debug`) — confirm the container reaches the multiplexer instead of exiting 101.
+- [ ] **Audit for any other runtime caller** of the panicking `const` encoders: `rg -n "rgb_bg\(|rgb_fg\(|reset_rgb_bg\(" crates/ src/` and confirm every **non-`const`** call site uses a `_dyn` variant. The `const X: &str = rgb_*(NAMED)` sites stay on the `const` fn (build-time check is correct there).
+- [ ] **Decide whether the `const` panic is still wanted at all.** Options: (a) keep `const fn rgb_* -> &'static str` panicking (build-error for const tables) + the `_dyn` runtime variants — current shape; or (b) delete the allowlists entirely and make every caller use the dynamic encoder (simpler, fewer concepts, but `const`s become runtime). Record the decision; do not leave a third half-state.
+- [ ] Record the rule "capsule ANSI color encoders never panic at render time; runtime colors use the dynamic truecolor encoder, the `const` allowlist is compile-time only" in [TUI Design Decisions](/reference/tui/) so palette growth (Defect 31) cannot reintroduce this crash class.
+
+## Defect 41 — the diagnostics run log is the single shareable artifact: capture container IDs, the run→container→capsule-log linkage, and every crash
+
+**Symptom:** when a container crashed (Defect 40), the diagnostics run JSONL (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) recorded only `inspect … -> stopped exit:101` and `produced no log output`. The actual cause (`unsupported RGB background token` + backtrace) lived **only** in the container-side `multiplexer.log`, which the run log neither captured nor pointed at. The operator had to know that file existed and where it lived. The operator's intent: "I should be able to share the debug log and the agent figures out the full story — what I did, which container started, what crashed. If something crashed, that's the most important thing to store. The debug log doesn't store the capsule's information; the capsule has its own log file, and the run log should at least tell us which container started, its ID, and therefore which capsule log to read."
+
+**Root cause:** the run log (`RunDiagnostics` in <RepoFile path="crates/jackin-diagnostics/src/run.rs" />) records freeform `debug` lines (including the raw `docker run …` command and the returned container id) but has **no structured container-lifecycle events** and **no pointer to the per-container capsule log**. The capsule log path is derivable (`paths.data_dir / <container_base> / state / multiplexer.log`) but the run log never emits it. On non-zero exit, the launch finalizer in <RepoFile path="crates/jackin/src/runtime/launch.rs" /> (~lines 1044–1083) folds `docker logs --tail 40` into the **error string** shown on screen but not into the run JSONL, and never reads the (more useful) `multiplexer.log` — which is exactly where the panic landed while `docker logs` was empty.
+
+**Canonical pattern to converge on:** the run JSONL is a self-contained, shareable timeline. From the run id alone an agent can (1) reconstruct what the operator did and which stages ran, (2) enumerate every container the run started **with its name and docker id**, (3) follow a recorded pointer to each container's `multiplexer.log` on the host, and (4) read the crash cause inline when a container exits non-zero — without the operator knowing any on-disk path. One run id may map to **several** containers (role + dind sidecar today; potentially more) — verify and model the one-to-many relationship explicitly rather than assuming one.
+
+**Tasks (analysis/plan only until operator says fix):**
+- [ ] **Verify the run→container cardinality.** Enumerate every container a single run starts (`rg -n "docker run|--name|inspect_container|dind|ContainerState" crates/jackin/src/runtime/ crates/jackin-runtime/src/runtime/`). At minimum a run starts the role container **and** the `*-dind` sidecar; confirm the full set so the model captures all of them, not just the role container.
+- [ ] **Add structured container-lifecycle events** to `RunDiagnostics` (new `kind`s, e.g. `container_started` / `container_exited`) carrying: container name, docker id (the `docker run -d` stdout), role/class, the host `multiplexer.log` path for that container, and on exit the exit code + OOM flag. Emit them from the launch path where the `docker run`/inspect already happen, replacing the reliance on parsing freeform `debug` lines.
+- [ ] **On non-zero container exit, fold the crash evidence into the run JSONL** (not just the on-screen error): capture `docker logs --tail N` **and** the tail of the host-mounted `multiplexer.log` for that container, as a dedicated `container_crash` event (or a sidecar `.log` artifact via the existing `write_command_output` mechanism in <RepoFile path="crates/jackin-diagnostics/src/run.rs" />) so the cause is present in the shared artifact even when `docker logs` is empty.
+- [ ] **Record the run→capsule-log pointer even on clean runs**, so an operator sharing a non-crashing run still lets the agent request the right container log. A single `container_started` event with the `multiplexer.log` path satisfies this.
+- [ ] **Make "always capture the error" a hard rule:** any path that ends a run in failure (container crash, docker error, stage failure, panic in the host CLI itself) must write a terminal `error`/`crash` event with the underlying message + errno/exit code before the process exits. Audit the host CLI's own panic/anyhow exit paths for this (the host process should mirror the capsule's panic-hook-to-log behavior so a host-side crash is also in the run JSONL).
+- [ ] **Redaction stays intact:** the new events must honor the existing `<redacted>` env handling — container env in `docker run` is already redacted in the freeform line; structured events must not regress that.
+- [ ] Document the run-log contract (single shareable artifact; container lifecycle + IDs + capsule-log pointers + inline crash capture; one run → many containers) on the internals diagnostics page (`reference/`), and note for operators (in `commands/` debug guidance) that sharing the run id is sufficient — the agent will request any linked capsule log by path from the run log itself.
+
+## Defect 42 — a symbolicated capsule build for debugging (resolve `<unknown>` backtrace frames) selectable at build time
+
+**Symptom:** the captured panic backtrace was useless beyond the top frame:
+
+```text
+[jackin-capsule] BACKTRACE:
+   0: <unknown>
+   1: <unknown>
+   …
+  24: __libc_start_main
+```
+
+Every frame is `<unknown>` because the shipped capsule is built `--release` (the `build-jackin-capsule` export uses the `release` profile) with symbols stripped, so `Backtrace::force_capture()` cannot resolve names. The top `panicked at …:line` came from the panic message, not the backtrace — the stack itself gave nothing.
+
+**Root cause:** the capsule build (`cargo zigbuild -p jackin-capsule --target … ` via the `build-jackin-capsule` binary) uses the optimized release profile with no debug info / stripped symbols. There is no build switch to produce a symbol-rich "debug capsule" for triage.
+
+**Canonical pattern to converge on:** a build-time flag selects between the lean release capsule (default, shipped) and a **debug capsule** that retains symbols so backtraces are fully resolved. The operator's framing: "if I need to build the debug binary, I add `debug` at build time." Two artifacts, one source, explicit opt-in.
+
+**Tasks (analysis/plan only until operator says fix):**
+- [ ] **Locate the capsule build entry** (`build-jackin-capsule` binary + the `cargo zigbuild -p jackin-capsule …` invocation) and the profile it selects. Confirm the current release profile's `strip`/`debug` settings in the workspace `Cargo.toml`.
+- [ ] **Add a build-time selector** (e.g. `build-jackin-capsule --debug` / a `--profile` arg, or an env switch) that builds the capsule with `debug = "line-tables-only"` (or full `debug = true`) and `strip = false` — ideally via a dedicated `[profile.capsule-debug]` so the lean default release is untouched. Document the size/speed tradeoff in the PR.
+- [ ] **Wire the resolution order** so the operator's chosen artifact is the one mounted into the container (mirror the existing `JACKIN_CAPSULE_BIN` override path seen in the run log: `JACKIN_CAPSULE_BIN override at …/jackin-capsule (skipping SHA-256 verification)`).
+- [ ] **Confirm symbolication end-to-end:** with the debug capsule, force a panic and verify `multiplexer.log` shows resolved frame names (function + file:line), not `<unknown>`. Consider whether `RUST_BACKTRACE=full` should be set for the debug capsule so the hook's `force_capture` yields the richest trace.
+- [ ] **Keep the panic hook's eager `force_capture`** (already in <RepoFile path="crates/jackin-capsule/src/logging.rs" />) — it is correct; only the missing symbols made it unhelpful. No code change there beyond ensuring the debug build ships symbols.
+- [ ] Document the debug-capsule build + when to use it (operator hits an unreproducible capsule crash → rebuild debug capsule, reproduce, share `multiplexer.log` + run id) in the contributor/debug docs; composes with Defect 41 (the run log points at the `multiplexer.log` the resolved trace now lives in).
+
+## Defect 43 — async-first: nothing on a render thread may block; parallelize independent work everywhere
+
+**Symptom:** the launch cockpit's digital rain stutters/freezes and the screen feels unresponsive while provisioning runs, and provisioning stages feel serial. The operator's intent: "jackin should be designed around async as much as possible — blocking the rendering or a parallel operation slows performance and the visual representation. Refactor heavily; use async everywhere it makes sense."
+
+**Root cause:** the host CLI runs on a **single-threaded** runtime — `#[tokio::main(flavor = "current_thread")]` in <RepoFile path="crates/jackin/src/main.rs" /> (the capsule daemon is the same, <RepoFile path="crates/jackin-capsule/src/main.rs" />). The launch cockpit's rain is rendered by a `tokio::spawn` task (`RichDriver::spawn` in <RepoFile path="crates/jackin-launch/src/tui/run.rs" />, ticking ~33 ms) that **shares that one OS thread** with the provisioning task. Cooperative scheduling means any **blocking** call on the provisioning task — a synchronous `std::process::Command`, a blocking `std::fs` read, or un-offloaded CPU work — prevents the runtime from polling the render task, so the rain freezes and input lags until the blocking call returns. The architecture is *already* partly async (`ShellRunner` wraps `tokio::process` in <RepoFile path="crates/jackin-docker/src/shell_runner.rs" />; hashing is offloaded via `spawn_blocking` in <RepoFile path="crates/jackin-image/src/agent_binary.rs" /> and <RepoFile path="crates/jackin-image/src/capsule_binary.rs" />; `tokio::join!`/`try_join!` parallelize in <RepoFile path="crates/jackin/src/runtime/cleanup.rs" />, <RepoFile path="crates/jackin/src/runtime/image.rs" />, <RepoFile path="crates/jackin/src/runtime/launch/launch_pipeline.rs" />) — so the work is to make that discipline **total**, not to introduce async from scratch.
+
+**Two distinct problems, do not conflate them:**
+1. **Thread-starving blockers** — blocking calls executed on the runtime thread while a render task wants to tick. These cause the visible rain freeze. Fix: route every subprocess through `ShellRunner` (async `tokio::process`) or wrap unavoidable sync work in `tokio::task::spawn_blocking`.
+2. **Missed parallelism** — independent provisioning stages awaited sequentially (<RepoFile path="crates/jackin/src/runtime/launch.rs" /> has ~25 sequential `.await`s) where no data dependency forces an order. Fix: fan independent stages out with `try_join!` / `FuturesUnordered`.
+
+**Canonical pattern to converge on:** no blocking call ever runs on a thread that also renders or handles input; independent async work runs concurrently; CPU-bound and unavoidably-sync work is offloaded to `spawn_blocking`. "Async everywhere it makes sense" — subprocess, network, fs-at-scale, and multi-step provisioning are async and concurrent by default; only genuinely-sequential data-dependent steps stay ordered.
+
+**Tasks (analysis/plan only until operator says fix):**
+
+*Inventory & classification*
+- [ ] **Enumerate every blocking call reachable from an async context.** `rg -n "std::process::Command|\.output\(\)|\.status\(\)(?!\.await)|std::fs::(read|write|read_to_string|copy)|std::thread::sleep" crates/ src/ --glob '!**/tests*'`. Known sync-`std::process::Command` sites to classify: <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> (`connect_to_cli_docker_context`, deliberately sync "before any runtime exists" — confirm it is *never* reached post-runtime on the cockpit thread), <RepoFile path="crates/jackin/src/runtime/launch.rs" />, <RepoFile path="crates/jackin/src/instance/auth.rs" /> (gh/git), <RepoFile path="crates/jackin-env/src/op_cli.rs" /> (1Password CLI — network-bound, prime offender), <RepoFile path="crates/jackin-env/src/host_claude.rs" />, <RepoFile path="crates/jackin/src/runtime/snapshot.rs" />, <RepoFile path="crates/jackin/src/runtime/logs.rs" />, <RepoFile path="crates/jackin/src/runtime/caffeinate.rs" />. For each: mark (a) runs pre-runtime (safe), (b) runs inside async provisioning (must convert), or (c) CPU/sync-only (wrap in `spawn_blocking`).
+- [ ] **Confirm the rain-freeze mechanism empirically:** under `--debug`, correlate a cockpit stall with the `stage_started`/`cmd` timestamps in the run JSONL — the frozen interval should line up with a blocking `cmd` (e.g. an `op` 1Password fetch or a sync docker call). This both proves the diagnosis and becomes a regression signal.
+
+*Conversion (problem 1 — unblock the render thread)*
+- [ ] Route every provisioning-path subprocess through `ShellRunner` (async). Where a sync API must stay (the pre-runtime docker context probe), guarantee it cannot be called on the cockpit thread, or move it behind `spawn_blocking`.
+- [ ] Wrap unavoidable blocking work (1Password `op` calls in <RepoFile path="crates/jackin-env/src/op_cli.rs" />, any remaining sync git/gh in <RepoFile path="crates/jackin/src/instance/auth.rs" />, large `std::fs` copies in the image/materialize path) in `tokio::task::spawn_blocking` so the runtime thread keeps polling the render task. `spawn_blocking` works on the `current_thread` runtime (it uses tokio's separate blocking pool), so this is available without changing the runtime flavor.
+- [ ] Audit the **capsule daemon** for the same class: <RepoFile path="crates/jackin-capsule/src/git_context.rs" />, <RepoFile path="crates/jackin-capsule/src/pr_context.rs" />, <RepoFile path="crates/jackin-capsule/src/util.rs" />, <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />, <RepoFile path="crates/jackin-capsule/src/session.rs" /> run on the capsule's `current_thread` runtime and can stall the multiplexer render the same way the launch rain stalls. The git/PR context fetches are already partly task-based (the log shows `git-context-watch` and `pull-request-context` on channels) — finish that so no `Command` blocks the daemon select loop.
+
+*Parallelism (problem 2 — overlap independent work)*
+- [ ] Map the launch stage dependency graph in <RepoFile path="crates/jackin/src/runtime/launch.rs" /> and <RepoFile path="crates/jackin/src/runtime/launch/launch_pipeline.rs" />: which stages are truly ordered (derived image must exist before `docker run`) vs incidentally serial (network create, dind pull, agent-binary prep, credential resolution, role-identity git fetch can overlap). Convert independent groups to `try_join!` / `FuturesUnordered`, extending the existing `launch_pipeline.rs` `tokio::join!` rather than adding a parallel mechanism (DRY).
+- [ ] Ensure progress events still arrive per-stage when stages run concurrently — the cockpit's `LaunchStage` updates must remain correct when several stages report `stage_started`/`stage_done` interleaved (the `SharedView` mutex in <RepoFile path="crates/jackin-launch/src/progress.rs" /> already supports out-of-order updates; verify).
+
+*Runtime-flavor decision*
+- [ ] **Decide single- vs multi-threaded runtime.** Evaluate switching the host (and/or capsule) to `#[tokio::main(flavor = "multi_thread")]` (or an explicit `worker_threads`) so a stray blocking call degrades throughput instead of freezing the UI. Weigh against why `current_thread` was chosen (terminal raw-mode / signal / PTY ordering, `!Send` state in the loops). Record the decision and rationale in the PR; if staying single-threaded, the `spawn_blocking` discipline above becomes a **hard rule**, not a best-effort.
+- [ ] Add a guard against regressions: a documented rule ("no blocking syscall on a thread that renders") plus, where feasible, a test or clippy config that flags new sync `std::process::Command` in the async crates.
+
+*Docs & rules*
+- [ ] Record the async architecture decisions (single shared render task; no blocking on the render thread; `spawn_blocking` for sync/CPU work; `try_join!` for independent stages; runtime-flavor choice) in the internals architecture page (`reference/architecture.mdx`) and, if it is a cross-cutting TUI rule, a one-line "render threads never block" entry in [TUI Design Decisions](/reference/tui/).
+- [ ] This composes with Defect 41 (the run JSONL's stage/cmd timestamps are the evidence trail for spotting blocking stalls) — keep stage timing in the debug log granular enough to localize a freeze to a single `cmd`.
