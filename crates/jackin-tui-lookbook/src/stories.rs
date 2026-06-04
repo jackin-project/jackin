@@ -6,8 +6,8 @@
 use jackin_tui::{
     HintSpan,
     components::{
-        ButtonStrip, ButtonStripItem, ConfirmState, ContainerInfoRow, ContainerInfoState,
-        ErrorPopupState, Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState,
+        ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, ErrorPopupState, Panel, PanelFocus,
+        SaveDiscardFocus, SaveDiscardState, SelectListState,
         StatusFooterHover, TabStrip, TextInputState, panel_body_area, render_brand_header,
         render_confirm_dialog, render_container_info, render_error_dialog, render_filter_input,
         render_save_discard_dialog, render_scrollable_block, render_select_list,
@@ -534,19 +534,22 @@ fn story_panel_unfocused(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
-    let state = ContainerInfoState::new(
-        "Debug info",
-        vec![
-            ContainerInfoRow::new("Container ID", "jk-sk76zdat-thearchitect").copyable(),
-            ContainerInfoRow::new("Role", "the-architect"),
-            ContainerInfoRow::new("Agent", "claude"),
-            ContainerInfoRow::new("Workdir", "/Users/jackin/Projects/jackin"),
-            ContainerInfoRow::new("jackin", "0.6.0-dev"),
-            ContainerInfoRow::new("jackin-capsule", "0.6.0-dev+444004b"),
-            ContainerInfoRow::new("Run ID", "jk-run-cc5ff2").emphasised(),
-            ContainerInfoRow::new("Run log", "~/.jackin/data/diagnostics/jk-run-cc5ff2.jsonl"),
-        ],
-    );
+    // Built from the shared accumulating model exactly as the capsule does once
+    // every fact is known — Container ID, Run ID, and Diagnostics log render as
+    // copyable cyan links; versions match the CLI strings.
+    let state = DebugInfo {
+        jackin_version: Some("0.6.0-dev".to_string()),
+        capsule_version: Some("0.6.0-dev+444004b".to_string()),
+        container_id: Some("jk-sk76zdat-thearchitect".to_string()),
+        role: Some("the-architect".to_string()),
+        agent: Some("claude".to_string()),
+        target: Some("/Users/jackin/Projects/jackin".to_string()),
+        run_id: Some("jk-run-cc5ff2".to_string()),
+        diagnostics_log_path: Some(
+            "/Users/jackin/.jackin/data/diagnostics/runs/jk-run-cc5ff2.jsonl".to_string(),
+        ),
+    }
+    .into_state();
     render_container_info(frame, area, &state);
 }
 
