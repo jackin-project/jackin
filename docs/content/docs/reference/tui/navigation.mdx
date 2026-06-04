@@ -99,6 +99,16 @@ Summary:
 - Cycle among options in a slot (auth mode): `Space` (radio-button pattern per W3C).
 - Re-open a picker for an already-set value (1Password op-ref, source): `Enter` (action). `P` is also supported as a shortcut where op_available is true, but `Enter` must always work.
 
+### Tab strip and content are mutually exclusive focus owners
+
+When a tabbed screen's **tab bar** owns focus, its active tab shows a `PHOSPHOR_GREEN` `━` underline and no content block has a green border. When a **content block** owns focus, the active tab underline switches to `WHITE` and the content block gets the `PHOSPHOR_GREEN` border. Exactly one of (tab bar, content block) shows the green signal at a time — never both.
+
+**Implementation:** `tab_bar_focused: bool` is the single owner flag. The tab strip render calls `TabStrip::new(...).focused(tab_bar_focused)` — green when `true`, white when `false`. Content blocks derive their `PanelFocus` from `!tab_bar_focused && scroll_focused`. A tab switch (keyboard or click) that returns focus to the tab bar must clear all `scroll_focused` booleans for that screen so no content block keeps a stale green border.
+
+### `↓` and `⇥` are equivalent for entering tab content
+
+Documented under [Selection highlight / `↓`/`⇥` enter-content](#-and--are-equivalent-for-entering-tab-content) (see above).
+
 ### Selection highlight is always full row width
 
 Every selectable list — workspace sidebar, pickers, file browser, settings tables, capsule dialogs, lookbook sidebar — paints the selected row's background across the **full available width**, not only across the text. The canonical example is the workspace sidebar: the selected row background fills the entire row using `highlight_style(bg(PHOSPHOR_GREEN) fg(PHOSPHOR_DARK))` on the ratatui `List` widget. The `▸ ` cursor prefix is always reserved via `highlight_spacing(HighlightSpacing::Always)` so unselected rows align.

@@ -402,7 +402,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Ensure the click-to-focus path (Defect 17) sets `tab_bar_focused = false` when it transfers focus into content, so the tab strip stops being green in the same frame.
 - [ ] Couple this with Defect 18: when content gains focus, `▸` appears; when the tab bar regains focus, `▸` disappears and the content border goes dark.
 - [ ] Scan every tabbed screen (workspace editor, create-workspace, settings) for the dual-focus bug and fix all of them (fix the whole class). Confirmed trigger: switching tabs left/right and returning to the **Mounts** tab leaves the Mounts content block with a green border while the tab bar still owns focus — the content border must be dark whenever `tab_bar_focused` is true, regardless of tab-switch history. Audit per-tab focus state that is not reset when the tab bar owns focus.
-- [ ] Record the tab-strip-vs-content mutual-exclusion rule explicitly in [TUI Design Decisions](/reference/tui/navigation/) (W3C Tabs section).
+- [x] Record the tab-strip-vs-content mutual-exclusion rule explicitly in [TUI Design Decisions](/reference/tui/navigation/) (W3C Tabs section).
 
 ---
 
@@ -419,7 +419,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Fix every screen where `↓` does not enter content; route both `⇥` and `↓` through one shared transition so they cannot diverge (DRY).
 - [ ] Confirm the reverse (`↑`/`⇧Tab` from the top content row returns to the tab bar) is equally consistent.
 - [ ] Compose with Defects 17/18/19: entering content sets `tab_bar_focused = false`, shows `▸`, greens the content border, and whitens the tab underline — all in one transition.
-- [ ] Record the `↓`/`⇥` enter-content equivalence in [TUI Design Decisions](/reference/tui/navigation/).
+- [x] Record the `↓`/`⇥` enter-content equivalence in [TUI Design Decisions](/reference/tui/navigation/).
 
 ---
 
@@ -436,7 +436,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Route the auth-override add-row (and any other `+ …` action row) through the same `action_row_style` the env add-rows use, so colors match exactly. `rg -n "action_row_style|Override for a role|Add environment variable|Add mount|\\+ " crates/jackin-console/src/tui/screens`.
 - [ ] Audit **every** `+ …` row anywhere in the app (env, auth, mounts, roles, settings, create-workspace, editor, pickers, dialogs) — `rg -n '"\\+ |+ Add|+ Override|\+ "' crates/*/src` — and converge them all on the one shared action-row style/component. Fix the whole class; no `+ …` row uses a bespoke style.
 - [ ] Per the mandatory per-item analysis rule, re-scan for any other action/sentinel row that diverges in color or carries a redundant description, and fix those too.
-- [ ] Record the "one action-row style, no redundant descriptions" rule in [TUI Design Decisions](/reference/tui/visual-design/).
+- [x] Record the "one action-row style, no redundant descriptions" rule in [TUI Design Decisions](/reference/tui/visual-design/).
 
 ---
 
@@ -486,7 +486,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [ ] Integrate `render_horizontal_scrollbar` into `render_scrollable_block`/`render_scrollable_block_at` so any horizontally-overflowing content shows the thumb (no scrollbar when it fits).
 - [ ] Wire it into every production surface that tracks `scroll_x`: Mounts table, list-names, settings env/trust tables, pickers. `rg -n "scroll_x|render_horizontal_scrollbar|ScrollLeft|H/L scroll|term_width_scroll" crates/*/src`.
 - [ ] Ensure the `H/L scroll` hint only appears when horizontal scrolling is actually possible (overflow), consistent with the vertical rule.
-- [ ] Record the "horizontal scrollbar renders whenever content overflows horizontally" rule in [TUI Design Decisions](/reference/tui/navigation/).
+- [x] Record the "horizontal scrollbar renders whenever content overflows horizontally" rule in [TUI Design Decisions](/reference/tui/navigation/).
 
 ---
 
@@ -572,12 +572,12 @@ The lookbook is the regression surface; many components/states are unexercised, 
 
 Each defect names a rule to record. Consolidate so the canonical TUI doc stays the single source of truth:
 
-- [ ] [TUI Navigation](/reference/tui/navigation/): full-width selection (16), `▸`-iff-focused (18), `↓`/`⇥` enter content (20), tab-strip-vs-content exclusion (19), hint-bar leading spacer (14), horizontal scrollbar on overflow (24), universal hover affordance (13).
-- [ ] [TUI Chrome](/reference/tui/chrome/): cross-screen debug bar (12), status-bar reserved/no-overdraw (15), debug-info dialog contract (6), one-bright-border + stack-vs-supersede (9, 10).
-- [ ] [TUI Dialogs](/reference/tui/dialogs/): symmetric vertical padding (5), preferred-size-on-resize (7), scroll-on-overflow (8), click-outside-dismiss all surfaces (11).
-- [ ] [TUI Visual Design](/reference/tui/visual-design/): one action-row style (21), title-spacing + body inset (4, 25), uniform dark preview card (2).
-- [ ] Reconcile the conflicting "dialogs always have green borders" line (9) and confirm the click-outside rule reads cross-surface (11).
-- [ ] Run the docs gate after edits: `bun run build`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bunx tsc --noEmit`, `bun test` from `docs/`.
+- [~] [TUI Navigation](/reference/tui/navigation/): full-width selection (16), `▸`-iff-focused (18), `↓`/`⇥` enter content (20), tab-strip-vs-content exclusion (19), hint-bar leading spacer (14), horizontal scrollbar on overflow (24), universal hover affordance (13).
+- [~] [TUI Chrome](/reference/tui/chrome/): cross-screen debug bar (12), status-bar reserved/no-overdraw (15), debug-info dialog contract (6), one-bright-border + stack-vs-supersede (9, 10).
+- [~] [TUI Dialogs](/reference/tui/dialogs/): symmetric vertical padding (5), preferred-size-on-resize (7), scroll-on-overflow (8), click-outside-dismiss all surfaces (11).
+- [~] [TUI Visual Design](/reference/tui/visual-design/): one action-row style (21), title-spacing + body inset (4, 25), uniform dark preview card (2).
+- [x] Reconcile the conflicting "dialogs always have green borders" line (9) and confirm the click-outside rule reads cross-surface (11).
+- [x] Run the docs gate after edits: `bun run build`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bunx tsc --noEmit`, `bun test` from `docs/`.
 
 ---
 
@@ -701,7 +701,7 @@ The program is done when:
 - [x] Enumerate ad-hoc color literals: `rg -n "Color::Rgb|Rgb\(" crates/*/src --glob '!**/theme.rs' --glob '!**/tests*'`. For each, add or reuse a named theme token and replace the literal.
 - [x] Promote the lookbook preview-card charcoal (Defect 2) and the debug-bar colors (Defect 12) into named theme tokens.
 - [ ] Per the per-item analysis rule, scan for non-`theme` color construction generally (owo_colors `Rgb`, ratatui `Style::fg/bg` with literals) and route through tokens.
-- [ ] Record "all colors come from `theme.rs` tokens; no inline RGB" in [TUI Visual Design](/reference/tui/visual-design/).
+- [x] Record "all colors come from `theme.rs` tokens; no inline RGB" in [TUI Visual Design](/reference/tui/visual-design/).
 
 ---
 
