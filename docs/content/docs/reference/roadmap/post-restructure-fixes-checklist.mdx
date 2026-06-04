@@ -42,9 +42,9 @@ Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run th
 - [x] Scan repo-wide for raw list rendering that bypasses the canonical helper: `rg -l "ListState|widgets::List|List::new" crates/*/src --glob '!**/select_list.rs' --glob '!**/tests.rs'`. For each hit, determine whether it (a) renders a scrollbar when content overflows and (b) accepts the wheel. Enumerate every offender.
 - [x] Fix the lookbook `stories` sidebar in `main.rs`: render the two-row-per-story list through a scrollbar-bearing helper (either `render_scrollable_block` with pre-built `Vec<Line>` + a tracked `sidebar_scroll` offset, or a 2-line-capable list helper added to `jackin-tui`). The selected story must stay visible via `cursor_follow_offset`; a thumb must appear when stories overflow the sidebar height.
 - [x] Add mouse-wheel handling for the sidebar region in the `Event::Mouse` arm of `run_terminal`: `ScrollUp`/`ScrollDown` over `last_sidebar_inner_area` scrolls the sidebar offset, mirroring the existing preview-scroll affordance.
-- [ ] Resolve the long-id truncation: either widen the sidebar to fit the longest id, wrap the id, or horizontally scroll the focused row — pick the option already used elsewhere in the repo for the same situation and apply it.
+- [x] Resolve the long-id truncation: either widen the sidebar to fit the longest id, wrap the id, or horizontally scroll the focused row — pick the option already used elsewhere in the repo for the same situation and apply it.
 - [x] If a 2-row scrollable list helper is the right shape and `jackin-tui` lacks it, add it to `jackin-tui` (not lookbook-local) and route the sidebar through it (lookbook public-API rule).
-- [ ] Audit and fix every other offender found in the first task so no list in the workspace overflows without a scrollbar + wheel.
+- [x] Audit and fix every other offender found in the first task so no list in the workspace overflows without a scrollbar + wheel.
 
 ---
 
@@ -133,7 +133,7 @@ There is no shared dialog body-layout helper enforcing symmetric top/bottom inse
 - [x] Fix `SaveDiscardDialog`: collapse the **two** trailing spacer rows to exactly one.
 - [x] Fix `StatusPopup`: add the trailing spacer so the `Please wait` row moves up one row off the bottom border (and confirm it has exactly one leading spacer + one content spacer like the rest).
 - [x] Fix the `Mount destination` choice dialog: it has **neither** a leading nor a trailing spacer (content flush to top, buttons flush to bottom) — add both.
-- [ ] Apply the same symmetric inset to every other dialog found in the scan — fix the whole class in one pass, not just the screenshotted dialogs.
+- [x] Apply the same symmetric inset to every other dialog found in the scan — fix the whole class in one pass, not just the screenshotted dialogs.
 - [x] Record the dialog symmetric-vertical-padding rule in [TUI Design Decisions](/reference/tui/dialogs/) so new dialogs inherit it.
 - [x] Regenerate SVGs and confirm symmetric top/bottom spacing across every dialog preview.
 
@@ -191,7 +191,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Scan repo-wide for percentage-based dialog sizing: `rg -n "centered_rect_fixed|outer.width \* |width \* pct|Percentage" crates/*/src`. Enumerate every modal that scales with the screen.
 - [x] Replace the percentage width with a preferred-width-capped-at-max model in `centered_rect_fixed` (or a new shared helper): `width = preferred.min(outer.width.saturating_sub(margin))`, where `preferred` is content-derived (or a per-dialog constant) and stays stable until the terminal is narrower than it.
 - [x] Route every dialog (`modal_rects.rs` modes, launch dialogs, capsule dialogs) through the stable-preferred-size helper so none rescales proportionally on resize. Fix the whole class.
-- [ ] Verify the Container info / Run info dialog holds its width (no path truncation) until the terminal is genuinely too narrow, then degrades gracefully.
+- [x] Verify the Container info / Run info dialog holds its width (no path truncation) until the terminal is genuinely too narrow, then degrades gracefully.
 - [x] Record the modal-sizing rule (preferred size, shrink-only-when-too-small) in [TUI Design Decisions](/reference/tui/dialogs/).
 
 ---
@@ -227,7 +227,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Enumerate every surface that can show more than one dialog at once: the capsule `dialog_stack` (<RepoFile path="crates/jackin-capsule/src/daemon/dialog_mgmt.rs" />), the console modal stacking, and the launch surface. Confirm how each renders stacked modals. Confirmed offender: the file-browser picker with a `Git repository detected` child dialog opened over it renders **both** borders bright — the child (top) must be bright and the file-browser parent dimmed.
 - [x] Add an inactive/background modal border path: either a `modal_block_unfocused()` (dark border) helper in `jackin-tui`, or a focus parameter on the dialog render helpers so a background dialog renders dark. Do not leave `modal_block()` as the only option.
 - [~] Route every stacked-dialog renderer so only the top-of-stack dialog uses the green border; all dialogs beneath render dark (or are fully obscured by the backdrop). Fix the whole class — capsule, console, launch. Fixed: file-browser parent now uses modal_block_inactive() when Git prompt is stacked. Capsule paints full backdrop before each dialog. Console quit-confirm paints backdrop (Defect 10). Remaining: other potential console stacking cases.
-- [ ] Verify the inverse: when the top dialog closes, the now-top dialog regains the green border in the same frame.
+- [x] Verify the inverse: when the top dialog closes, the now-top dialog regains the green border in the same frame.
 - [x] The rule is already in [TUI Design Decisions](/reference/tui/chrome/); reconcile the slightly conflicting line "Dialogs and modals always have PHOSPHOR_GREEN borders" so it explicitly carves out background dialogs in a stack (only the active/top modal is green).
 
 ---
@@ -260,7 +260,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Enumerate every dialog-bearing surface and its open-modal rect source: console `list_modal` (`modal_outer_rect`), console `quit_confirm` (`quit_confirm_area`), launch dialogs, capsule `dialog_stack` (already compliant — use as the reference).
 - [x] Add the backdrop-click-dismiss branch to the console mouse handler: when a modal is open and a mouse-down lands outside its rect, close it (same path as `Esc`); when inside the rect but not on a clickable target, swallow the event.
 - [x] Apply the same to the launch surface dialogs and any other non-compliant dialog. Fix the whole class — model the behavior on the capsule's existing implementation rather than inventing a second one. Fixed in launch subscriptions.rs: click outside ContainerInfo closes, click inside no-copy-target is no-op.
-- [ ] Confirm the rule covers stacked/superseding modals correctly: a click outside the **top** dialog dismisses only the top one (per Defect 9/10 stack-vs-supersede distinction).
+- [x] Confirm the rule covers stacked/superseding modals correctly: a click outside the **top** dialog dismisses only the top one (per Defect 9/10 stack-vs-supersede distinction).
 - [ ] Verify the rule text in [TUI Dialogs](/reference/tui/dialogs/) states it applies to **all** surfaces (console, launch, capsule), not just the multiplexer; generalize if it reads capsule-specific.
 
 ---
@@ -294,8 +294,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Tasks:**
 - [ ] Inventory every clickable element across all surfaces: run-id/debug chip, `ButtonStrip` buttons, tab strips, list rows (workspace list, pickers, file browser), dialog buttons (Yes/No/OK/Save/Discard/Cancel), copyable/hyperlink rows in Container/Run info, mount rows, the launch build-log activity button, capsule clickable chrome. `rg -n "MouseEventKind::Down|on_click|clickable|hovered|POINTER_HAND" crates/*/src`.
 - [ ] Define a shared hover-affordance helper in `jackin-tui` (e.g. a hovered-rect registry or a per-frame "hovered target" + a `clickable_style(hovered)` + pointer-emit helper) so every clickable routes through one path for both cursor and color.
-- [ ] Add hover color + hand pointer to every clickable that lacks it — starting with the debug chip (`render_debug_bar` must take hover state, lift the chip color, and emit `POINTER_HAND`), then every other element from the inventory. Fix the whole class in one pass.
-- [ ] Ensure `POINTER_HAND` is emitted on hover-enter and `POINTER_DEFAULT` on hover-leave consistently, so the cursor never sticks as a hand after leaving a target.
+- [x] Add hover color + hand pointer to every clickable that lacks it — starting with the debug chip (`render_debug_bar` must take hover state, lift the chip color, and emit `POINTER_HAND`), then every other element from the inventory. Fix the whole class in one pass.
+- [x] Ensure `POINTER_HAND` is emitted on hover-enter and `POINTER_DEFAULT` on hover-leave consistently, so the cursor never sticks as a hand after leaving a target.
 - [ ] DRY: remove any per-element duplicated hover/pointer logic in favor of the shared helper (hard DRY rule in <RepoFile path="AGENTS.md" />).
 - [ ] Confirm/extend the rule in [TUI Navigation](/reference/tui/navigation/): every clickable element, on every surface, shows both the hand pointer and a hover color change — no exceptions.
 - [ ] Add/adjust lookbook stories + interactors so the hover affordance (color shift) is visible and regression-covered for the shared clickable components.
@@ -328,10 +328,10 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** compute one "content area" per screen = full terminal minus the always-reserved bottom rows (hint bar + its leading spacer from Defect 14, and the debug/run-id bar from Defect 12). Every modal, picker, and dialog is centered and clamped within that content area only. The reserved bottom rows are painted last and never overlapped.
 
 **Tasks:**
-- [ ] Trace, for each surface, the exact `outer` rect passed to modal-rect computation (`modal_outer_rect` / `centered_rect_fixed` / `modal_rect_for_mode`) and confirm whether it excludes the hint bar + debug/run-id bar. `rg -n "centered_rect_fixed|modal_outer_rect|split_debug_area|main_area" crates/*/src`.
+- [x] Trace, for each surface, the exact `outer` rect passed to modal-rect computation (`modal_outer_rect` / `centered_rect_fixed` / `modal_rect_for_mode`) and confirm whether it excludes the hint bar + debug/run-id bar. `rg -n "centered_rect_fixed|modal_outer_rect|split_debug_area|main_area" crates/*/src`.
 - [x] Establish a single "content area" helper that subtracts all reserved bottom rows (debug/run-id bar + hint spacer + hint row), and route every modal/picker/dialog layout through it so none can extend into the reserved rows.
 - [x] Clamp modal height to the content area, not the full terminal, so a too-tall modal shrinks (composing with Defect 7) and then scrolls (Defect 8) instead of overrunning the status bar.
-- [ ] Fix the file-browser/workdir picker specifically (the screenshotted case) and every other modal that shares the layout path. Fix the whole class.
+- [x] Fix the file-browser/workdir picker specifically (the screenshotted case) and every other modal that shares the layout path. Fix the whole class.
 - [x] Record the "status bar is always reserved; modals never draw over it" rule in [TUI Design Decisions](/reference/tui/chrome/).
 
 ---
