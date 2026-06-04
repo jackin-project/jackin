@@ -2,7 +2,7 @@
 title: "Per-scope auth-sync source folder"
 ---
 
-**Status**: Open — **folded into the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) epic** (executing in the `feature/tui-architecture` PR, June 2026). Implemented there because it touches exactly the surface that epic collapses — `AgentAuthConfig`, the five `provision_*_auth` functions, and the auth-tab UI — so the new override field rides the unified config + adapter dispatch instead of adding a sixth parallel branch. Executable checklist: [Defect 46, Phase B](/reference/roadmap/post-restructure-fixes/). This page is the design of record for the default/explicit/inherited semantics and the operator flow.
+**Status**: **Partially implemented** — Phase B.1 (schema + resolver) complete; Phase B.2 (provisioning) in progress; B.3/B.4/B.5 pending. Phase B.1 landed: `sync_source_dir: Option<PathBuf>` in `AgentAuthConfig`; `resolve_sync_source_dir()` in `jackin-config`. Folded into the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) epic. Executable checklist: [Defect 46, Phase B](/reference/roadmap/post-restructure-fixes/). This page is the design of record for the default/explicit/inherited semantics and the operator flow.
 
 ## Folder-only selection, with a per-agent env-var hint (operator-decided, June 2026)
 
