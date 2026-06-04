@@ -464,6 +464,23 @@ pub async fn hardline_agent_with_focus(
     docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    // Check if this is an apple-container backend instance.
+    let container_state_dir = paths.data_dir.join(container_name);
+    let is_apple_container = crate::instance::InstanceManifest::read_optional(&container_state_dir)
+        .ok()
+        .flatten()
+        .map(|m| {
+            matches!(
+                m.backend,
+                crate::instance::BackendResources::AppleContainer(_)
+            )
+        })
+        .unwrap_or(false);
+
+    if is_apple_container {
+        return super::apple_container::reconnect(container_name, focus_session).await;
+    }
+
     // Reconcile keep_awake right before each `reconnect_or_create_session_with_focus`
     // call. The attach blocks on the jackin-capsule exec until the session ends,
     // so the post-hardline reconcile in `app::Command::Hardline` would fire

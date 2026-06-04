@@ -100,6 +100,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             force,
             agent,
             role_branch,
+            backend,
         }) => {
             let docker = connect_docker()?;
             let cwd = std::env::current_dir()?;
@@ -148,6 +149,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             opts.force = force;
             opts.agent = agent;
             opts.role_branch = role_branch;
+            opts.backend = backend;
             // Pre-launch reconcile: if a previous role in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host

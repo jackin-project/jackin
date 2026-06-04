@@ -73,6 +73,10 @@ pub struct LoadOptions {
     /// redirect). When set, the first attach carries the provider's env
     /// overrides and label into the capsule's initial spawn.
     pub provider: Option<jackin_protocol::Provider>,
+    /// Backend override for this launch. `None` = use global/workspace default.
+    /// `Some("apple-container")` uses the Apple Container backend.
+    /// `Some("docker")` forces Docker even if the workspace default differs.
+    pub backend: Option<String>,
 }
 
 impl LoadOptions {
@@ -2285,7 +2289,74 @@ async fn load_role_with(
             progress.stage_done(super::progress::LaunchStage::Workspace, "materialized");
         }
 
-        // Step 3: Create network and start Docker-in-Docker
+        // Resolve the runtime backend for this launch.
+        // Priority: CLI --backend > workspace runtime.backend > global runtime.default_backend
+        let resolved_backend = opts.backend.as_deref().unwrap_or_else(|| {
+            // Try workspace-level override
+            workspace_name
+                .as_deref()
+                .and_then(|name| config.workspaces.get(name))
+                .and_then(|ws| ws.runtime.backend.as_deref())
+                .unwrap_or(config.runtime.default_backend.as_str())
+        });
+
+        crate::debug_log!("launch", "backend resolved={resolved_backend}");
+
+        // For the apple-container backend, fork into a separate launch path.
+        if resolved_backend == crate::apple_container_client::BACKEND_NAME {
+            let ac_launch_config = capsule_config(
+                selector,
+                &workspace.workdir,
+                &validated_repo.manifest,
+                opts.initial_provider(),
+                config,
+                workspace.label.as_str(),
+            );
+
+            // Build env pairs: resolved_env + github env, filtering reserved names.
+            let mut env_pairs: Vec<(String, String)> = resolved_env.vars.clone();
+            for (k, v) in &github_resolved_env {
+                if !env_pairs.iter().any(|(ek, _)| ek == k) {
+                    env_pairs.push((k.clone(), v.clone()));
+                }
+            }
+
+            // Build mount pairs from materialized workspace.
+            let mount_pairs: Vec<(std::path::PathBuf, std::path::PathBuf)> = materialized
+                .mounts
+                .iter()
+                .map(|m| {
+                    (
+                        std::path::PathBuf::from(&m.bind_src),
+                        std::path::PathBuf::from(&m.dst),
+                    )
+                })
+                .collect();
+
+            steps.finish_progress();
+            super::apple_container::launch(
+                paths,
+                &container_name,
+                &image,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                &agent_display_name,
+                agent,
+                &source.git,
+                opts.role_branch.as_deref(),
+                &image_tag,
+                &env_pairs,
+                &mount_pairs,
+                &host_workdir_fingerprint,
+                &ac_launch_config,
+                opts.debug,
+            ).await?;
+            return Ok(container_name);
+        }
+
+        // Step 3: Create network and start Docker-in-Docker (Docker backend)
         steps.next("Starting Docker-in-Docker").await;
 
         let launch_config = capsule_config(

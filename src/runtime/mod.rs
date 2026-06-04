@@ -1,3 +1,4 @@
+pub(crate) mod apple_container;
 pub(crate) mod attach;
 pub mod build_log;
 mod caffeinate;

@@ -97,6 +97,35 @@ pub async fn eject_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
+    // Check instance manifest to determine backend — fall back to Docker if absent.
+    let container_state = paths.data_dir.join(container_name);
+    let backend = crate::instance::InstanceManifest::read_optional(&container_state)
+        .ok()
+        .flatten()
+        .map(|m| m.backend);
+
+    let is_apple_container = matches!(
+        backend,
+        Some(crate::instance::BackendResources::AppleContainer(_))
+    );
+
+    if is_apple_container {
+        // Apple Container eject: stop and remove via `container` CLI.
+        crate::debug_log!(
+            "apple-container",
+            "container_state action=stop name={container_name}"
+        );
+        let _ = super::apple_container::stop(container_name).await;
+        crate::debug_log!(
+            "apple-container",
+            "container_state action=rm name={container_name}"
+        );
+        let _ = super::apple_container::remove(container_name).await;
+        remove_socket_dir(paths, container_name);
+        return Ok(());
+    }
+
+    // Docker backend eject.
     let dind = dind_container_name(container_name);
     let certs_volume = dind_certs_volume(container_name);
     let network = role_network_name(container_name);

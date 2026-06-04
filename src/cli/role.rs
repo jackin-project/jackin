@@ -56,6 +56,11 @@ pub struct LoadArgs {
     /// it merges to the default branch.
     #[arg(long)]
     pub role_branch: Option<String>,
+    /// Container runtime backend to use for this launch.
+    /// Defaults to the global `[runtime] default_backend` setting (usually `"docker"`).
+    /// Pass `"apple-container"` to use the Apple Container backend on macOS 26 ARM.
+    #[arg(long, value_name = "BACKEND")]
+    pub backend: Option<String>,
 }
 
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
