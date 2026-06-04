@@ -1336,3 +1336,32 @@ fn scroll_up_decrements_vertical_scroll_offset() {
 
     assert_eq!(state.list_global_mounts_scroll_y, 0);
 }
+
+#[test]
+fn clicking_editor_content_area_clears_tab_bar_focus() {
+    // Defect 17: clicking the content block must transfer interaction focus
+    // into it — same end state as Tab/↓ — regardless of whether it overflows.
+    let mut state = list_state();
+    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+    editor.tab_bar_focused = true; // tab bar owns focus before the click
+    editor.active_tab = crate::console::tui::state::EditorTab::Roles;
+    editor.tab_content_height = 10;
+    state.stage = ManagerStage::Editor(editor);
+
+    // Click somewhere in the content area (rows 5–14 on a term(42) at SCREEN_HEADER_HEIGHT=2,
+    // TAB_STRIP_HEIGHT=2 → content starts at row 4).
+    handle_mouse_with_config(&mut state, mouse_at(10, 6), term(42), None);
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor stage expected");
+    };
+    // After clicking the content block, tab_bar_focused must be false.
+    assert!(
+        !editor.tab_bar_focused,
+        "clicking content must clear tab_bar_focused (Defect 17)"
+    );
+    assert!(
+        editor.tab_content_scroll_focused,
+        "clicking content must set tab_content_scroll_focused"
+    );
+}
