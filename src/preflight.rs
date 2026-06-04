@@ -1,11 +1,11 @@
-/// Pre-flight health checks for `jackin doctor` and load/hardline dispatch.
+//! Pre-flight health checks for `jackin doctor` and load/hardline dispatch.
+//!
+//! Each check runs asynchronously and returns a `CheckResult` with a status
+//! and a human-readable hint for fixing failures. The `preflight` function
+//! runs a slice of check names, fails on any `Fail`, and returns `Ok(())`
+//! when all pass or warn.
 #[allow(unused_imports)]
 use crate::docker_client::DockerApi;
-///
-/// Each check runs asynchronously and returns a `CheckResult` with a status
-/// and a human-readable hint for fixing failures. The `preflight` function
-/// runs a slice of check names, fails on any `Fail`, and returns `Ok(())`
-/// when all pass or warn.
 use owo_colors::OwoColorize;
 use std::path::Path;
 
