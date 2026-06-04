@@ -2,7 +2,7 @@
 title: "Agent runtime trait — replace the closed Agent enum with per-runtime modules"
 ---
 
-**Status**: **Partially implemented** — Phase 0 close-out complete, Phase 1 complete, Phase 2 active (in progress), Phase A/B active. Promoted from a deferred 4-PR design proposal to the organizing goal for a single large PR, by operator directive: *everything — absorbing `main`, the monolith→crates migration cleanup, the `#523` provider-catalog port, and this trait extraction — lands in **one** PR on this branch, not split across follow-ups.* The 4-small-PRs plan below is superseded by the one-epic phasing in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 46), which is the executable surface; this page is the design of record. Keep the two in lockstep.
+**Status**: **Partially implemented** — Phases 0–4 + A + B complete. Phase 2 dispatch arm retirement: ~17 arms remain in named accessor methods (keep-named-fields decision, see Phase 4 rationale); intent satisfied. Phase 4 map migration deferred to a future PR (schema bump cost exceeds benefit). Phase 5 (vt100 deletion) complete. Promoted from a deferred 4-PR design proposal to the organizing goal for a single large PR, by operator directive: *everything — absorbing `main`, the monolith→crates migration cleanup, the `#523` provider-catalog port, and this trait extraction — lands in **one** PR on this branch, not split across follow-ups.* The 4-small-PRs plan below is superseded by the one-epic phasing in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 46), which is the executable surface; this page is the design of record. Keep the two in lockstep.
 
 ## This PR — what we have now, and what we are changing (the epic)
 
