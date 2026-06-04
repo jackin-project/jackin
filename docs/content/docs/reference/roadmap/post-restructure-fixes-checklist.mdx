@@ -43,7 +43,7 @@ Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run th
 - [x] Fix the lookbook `stories` sidebar in `main.rs`: render the two-row-per-story list through a scrollbar-bearing helper (either `render_scrollable_block` with pre-built `Vec<Line>` + a tracked `sidebar_scroll` offset, or a 2-line-capable list helper added to `jackin-tui`). The selected story must stay visible via `cursor_follow_offset`; a thumb must appear when stories overflow the sidebar height.
 - [x] Add mouse-wheel handling for the sidebar region in the `Event::Mouse` arm of `run_terminal`: `ScrollUp`/`ScrollDown` over `last_sidebar_inner_area` scrolls the sidebar offset, mirroring the existing preview-scroll affordance.
 - [ ] Resolve the long-id truncation: either widen the sidebar to fit the longest id, wrap the id, or horizontally scroll the focused row — pick the option already used elsewhere in the repo for the same situation and apply it.
-- [ ] If a 2-row scrollable list helper is the right shape and `jackin-tui` lacks it, add it to `jackin-tui` (not lookbook-local) and route the sidebar through it (lookbook public-API rule).
+- [x] If a 2-row scrollable list helper is the right shape and `jackin-tui` lacks it, add it to `jackin-tui` (not lookbook-local) and route the sidebar through it (lookbook public-API rule).
 - [ ] Audit and fix every other offender found in the first task so no list in the workspace overflows without a scrollbar + wheel.
 
 ---
@@ -211,7 +211,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [ ] Compose with Defect 7: a dialog first holds its preferred size, shrinks only when the screen is too small, and **then** (if content still overflows the shrunk body) becomes scrollable. The two behaviors must work together, not fight.
 - [ ] Compose with Defect 5: the symmetric vertical padding (leading/trailing spacer) is part of the body that scrolls — confirm the spacers stay correct under scroll.
 - [x] Record the universal dialog-scroll rule in [TUI Design Decisions](/reference/tui/dialogs/): "every dialog scrolls H/V when its content exceeds the dialog area, using the shared scroll machinery; no scrollbar when content fits."
-- [ ] Regenerate lookbook SVGs and add/adjust stories that exercise an overflowing dialog so the scroll affordance is visible and regression-covered.
+- [x] Regenerate lookbook SVGs and add/adjust stories that exercise an overflowing dialog so the scroll affordance is visible and regression-covered.
 
 ---
 
@@ -311,7 +311,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** every screen reserves exactly one blank spacer row directly above the hint bar. Prefer baking the spacer into the shared footer height/render (so `footer_height` accounts for `spacer + hints` and `render_footer` paints into that area) — then no screen can forget it — rather than relying on each screen's layout to add it.
 
 **Tasks:**
-- [ ] Inventory every screen's bottom-hint layout: console manager, workspace editor, settings, launch cockpit, capsule, lookbook. `rg -n "render_hint_bar|render_footer|render_wrapped_hint_bar|footer_height|hint_area" crates/*/src`. For each, determine whether a blank spacer row precedes the hints.
+- [x] Inventory every screen's bottom-hint layout: console manager, workspace editor, settings, launch cockpit, capsule, lookbook. `rg -n "render_hint_bar|render_footer|render_wrapped_hint_bar|footer_height|hint_area" crates/*/src`. For each, determine whether a blank spacer row precedes the hints.
 - [x] Decide the enforcement point: bake the leading spacer into the shared footer (`footer_height` returns `1 + hint_height`; `render_footer` renders the hints in the lower portion leaving the top row blank) so every caller inherits it. Apply repo-wide.
 - [x] Fix the lookbook layout in `main.rs` to include the spacer.
 - [x] Fix every other screen found in the inventory that lacks the spacer. Fix the whole class in one pass. Confirmed offender: the **create-workspace / workspace editor** screen renders the hint row directly under the content box with no blank spacer above it.
@@ -345,12 +345,12 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** one selection-highlight style — a full-row-width background bar (PHOSPHOR_GREEN bg, black fg, `▸ ` cursor) identical to the workspace sidebar — used by every selectable list on every surface, including lists inside dialogs.
 
 **Tasks:**
-- [ ] Inventory every selectable-list renderer: workspace sidebar (canonical), `select_list.rs`, file browser, workdir/role/github pickers, op-picker lists, the lookbook stories sidebar (Defect 1), and any list in a dialog. `rg -n "highlight_style|render_select_list|render_selected_lines|highlight_symbol|ListItem::new" crates/*/src`.
+- [x] Inventory every selectable-list renderer: workspace sidebar (canonical), `select_list.rs`, file browser, workdir/role/github pickers, op-picker lists, the lookbook stories sidebar (Defect 1), and any list in a dialog. `rg -n "highlight_style|render_select_list|render_selected_lines|highlight_symbol|ListItem::new" crates/*/src`.
 - [x] Make the shared list component paint a **full-width** selection background (extend `render_selected_lines` to pad the selected line to `area.width`, or route these lists through the ratatui `List` highlight path) so the highlight fills the row.
 - [x] Converge every list — including the in-dialog file browser and the pickers — on the shared full-width-selection style. Fix the whole class; do not leave the sidebar as the only full-width one.
 - [x] Keep it consistent with Defects 1 & 16 interplay: the full-width highlight coexists with the scrollbar (Defect 1) and the focus border (Defect 9) without visual conflict.
 - [x] Record the "selection highlight is always full row width" rule in [TUI Design Decisions](/reference/tui/navigation/) (or visual-design), referencing the workspace sidebar as the canonical example.
-- [ ] Regenerate lookbook SVGs for `SelectList` so the full-width selection is visible and regression-covered.
+- [x] Regenerate lookbook SVGs for `SelectList` so the full-width selection is visible and regression-covered.
 
 ---
 
@@ -401,7 +401,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Make the tab strip render its focus cue from `tab_bar_focused`: green underline only when the tab bar owns focus; white/normal underline when content owns focus. Check `render_editor_tab_strip` / `render_settings_tab_strip` and the `TabStrip` `focused(..)` call.
 - [x] Ensure the click-to-focus path (Defect 17) sets `tab_bar_focused = false` when it transfers focus into content, so the tab strip stops being green in the same frame.
 - [ ] Couple this with Defect 18: when content gains focus, `▸` appears; when the tab bar regains focus, `▸` disappears and the content border goes dark.
-- [ ] Scan every tabbed screen (workspace editor, create-workspace, settings) for the dual-focus bug and fix all of them (fix the whole class). Confirmed trigger: switching tabs left/right and returning to the **Mounts** tab leaves the Mounts content block with a green border while the tab bar still owns focus — the content border must be dark whenever `tab_bar_focused` is true, regardless of tab-switch history. Audit per-tab focus state that is not reset when the tab bar owns focus.
+- [x] Scan every tabbed screen (workspace editor, create-workspace, settings) for the dual-focus bug and fix all of them (fix the whole class). Confirmed trigger: switching tabs left/right and returning to the **Mounts** tab leaves the Mounts content block with a green border while the tab bar still owns focus — the content border must be dark whenever `tab_bar_focused` is true, regardless of tab-switch history. Audit per-tab focus state that is not reset when the tab bar owns focus.
 - [x] Record the tab-strip-vs-content mutual-exclusion rule explicitly in [TUI Design Decisions](/reference/tui/navigation/) (W3C Tabs section).
 
 ---
@@ -553,8 +553,8 @@ The lookbook is the regression surface; many components/states are unexercised, 
 
 - [x] Add missing component stories: `ContainerInfo` / debug-info dialog (incl. overflowing→scrollable), `ModalBackdrop` (full-screen), and any other `jackin-tui/src/components/` file with no story.
 - [ ] Add missing **state** variants: `Panel` Unfocused / Focused / FocusedScrollable; `ButtonStrip` all-disabled; `ConfirmDialog` focus=Yes; `SaveDiscardDialog` focus=Save/Discard; `SelectList` no-selection **and** full-width selection (Defect 16); `ScrollablePanel` actively scrolled (H and V) with visible thumbs (Defects 8, 24); hover states for buttons/tabs/chips (Defect 13); stacked dialogs showing one-bright-border (Defect 9).
-- [ ] Make the lookbook stories sidebar itself the reference for Defects 1, 14, 16 (scrollbar + spacer + full-width selection) once fixed.
-- [ ] Regenerate SVGs (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) and verify no drift (`--check`).
+- [x] Make the lookbook stories sidebar itself the reference for Defects 1, 14, 16 (scrollbar + spacer + full-width selection) once fixed.
+- [x] Regenerate SVGs (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) and verify no drift (`--check`).
 
 ---
 
