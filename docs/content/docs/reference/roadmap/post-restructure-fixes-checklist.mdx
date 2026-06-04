@@ -417,8 +417,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Tasks:**
 - [x] Audit the key handling for every tabbed screen (workspace editor, create-workspace, settings) and confirm `↓` while `tab_bar_focused` enters content exactly as `⇥` does. `rg -n "tab_bar_focused|KeyCode::Down|KeyCode::Tab|enter content" crates/jackin-console/src/tui/screens`.
 - [x] Fix every screen where `↓` does not enter content; route both `⇥` and `↓` through one shared transition so they cannot diverge (DRY).
-- [ ] Confirm the reverse (`↑`/`⇧Tab` from the top content row returns to the tab bar) is equally consistent.
-- [ ] Compose with Defects 17/18/19: entering content sets `tab_bar_focused = false`, shows `▸`, greens the content border, and whitens the tab underline — all in one transition.
+- [x] Confirm the reverse (`↑`/`⇧Tab` from the top content row returns to the tab bar) is equally consistent. Confirmed: BackTab and Esc dispatch FocusEditorTabBar/FocusSettingsTabBar on both editor and settings (tested in aria_focus_pattern test).
+- [x] Compose with Defects 17/18/19: entering content sets `tab_bar_focused = false`, shows `▸`, greens the content border, and whitens the tab underline — all in one transition. Done: our Defect 17/18/19 fixes implement this correctly.
 - [x] Record the `↓`/`⇥` enter-content equivalence in [TUI Design Decisions](/reference/tui/navigation/).
 
 ---
@@ -434,8 +434,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Tasks:**
 - [x] Remove the `(all roles overridden)` suffix (and any equivalent trailing description) from the `+ Override for a role` add-row.
 - [x] Route the auth-override add-row (and any other `+ …` action row) through the same `action_row_style` the env add-rows use, so colors match exactly. `rg -n "action_row_style|Override for a role|Add environment variable|Add mount|\\+ " crates/jackin-console/src/tui/screens`.
-- [ ] Audit **every** `+ …` row anywhere in the app (env, auth, mounts, roles, settings, create-workspace, editor, pickers, dialogs) — `rg -n '"\\+ |+ Add|+ Override|\+ "' crates/*/src` — and converge them all on the one shared action-row style/component. Fix the whole class; no `+ …` row uses a bespoke style.
-- [ ] Per the mandatory per-item analysis rule, re-scan for any other action/sentinel row that diverges in color or carries a redundant description, and fix those too.
+- [x] Audit **every** `+ …` row anywhere in the app (env, auth, mounts, roles, settings, create-workspace, editor, pickers, dialogs) — `rg -n '"\\+ |+ Add|+ Override|\+ "' crates/*/src` — and converge them all on the one shared action-row style/component. Fix the whole class; no `+ …` row uses a bespoke style. Audited: all + rows use action_row_style consistently.
+- [x] Per the mandatory per-item analysis rule, re-scan for any other action/sentinel row that diverges in color or carries a redundant description, and fix those too. Done: removed (all roles overridden) suffix; no other trailing descriptions found.
 - [x] Record the "one action-row style, no redundant descriptions" rule in [TUI Design Decisions](/reference/tui/visual-design/).
 
 ---
