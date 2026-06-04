@@ -23,6 +23,7 @@ pub mod damage;
 pub mod grid;
 pub mod passthrough;
 pub mod snapshot;
+pub mod wire;
 
 pub use cell::{Attrs, Cell, Color};
 pub use damage::{DirtySpans, DirtyTracker};

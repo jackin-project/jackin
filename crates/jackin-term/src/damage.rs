@@ -1,8 +1,14 @@
+//! BORROW: Dirty-span tracking design from Zellij's `OutputBuffer` / `changed_lines`
+//! (MIT license, Zellij Contributors — <https://github.com/zellij-org/zellij>).
+//! Concept: record which rows changed during PTY output processing, then emit only
+//! those rows on the next render tick. Implementation is our own; the `DirtyTracker` +
+//! `DirtySpans` shape is a simplified version adapted for our per-pane render path.
+//!
 //! Dirty-span tracking: records mutations at write time so the emit path
 //! can walk only changed col-spans instead of diffing the whole grid.
 //!
-//! Phase 2 v0: simple `HashSet<u16>` of dirty rows. Phase 4 refines to
-//! per-row col-span ranges for tighter diffing.
+//! Phase 2 v0: `BTreeSet<u16>` of dirty rows (sorted, cheap dedup). Phase 4
+//! can refine to per-row col-span ranges for even tighter diffing.
 
 use std::collections::BTreeSet;
 
