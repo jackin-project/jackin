@@ -477,12 +477,10 @@ impl Multiplexer {
                 max_row > self.term_rows,
                 max_col > self.term_cols,
             );
-            // Verbatim dump of small frames (chrome / hover / dialog). The
-            // scan above proves cursor moves stay in-bounds, but a printed run
-            // that overflows the line (causing wrap-driven smear on the real
-            // terminal) leaves no cursor-move trace — only the bytes show it.
-            // Bounded so a steady-state firehose stays readable.
-            if bytes.len() <= 24000 {
+            // Verbatim dump of only the smallest frames (chrome-only). Capped
+            // tight so a steady-state run can't balloon the log to hundreds of
+            // MB — full frames are summarised by the `send:` line above.
+            if bytes.len() <= 1200 {
                 crate::cdebug!("send-bytes: {}", escape_for_log(&bytes));
             }
         }
@@ -1032,7 +1030,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 mux.refresh_tab_labels();
-                let sbuf = mux.compose_chrome_refresh();
+                // Repaint through the single cleared full-frame path so the 1 s
+                // chrome refresh shares the exact Ratatui buffer + diff every
+                // other frame uses. A no-clear diff here desynced against the
+                // render ticker's cleared frames and tiled the bottom chrome.
+                let sbuf = mux.compose_full_redraw(status_change_redraw_reason());
                 mux.send_output(sbuf);
             }
         }

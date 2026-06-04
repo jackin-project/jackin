@@ -574,24 +574,6 @@ impl Multiplexer {
             .collect()
     }
 
-    /// Repaint chrome (status bar + branch bar + hover state) as a Ratatui
-    /// *diff* — no buffer clear — so the 1 s state ticker and mouse-hover
-    /// updates emit only the cells that changed (the tab state glyph, a hover
-    /// background) instead of a full repaint. Replaces the raw
-    /// `compose_chrome_hover_frame`: routing the ticker through the same
-    /// Ratatui buffer as every other frame is what removes the third,
-    /// competing raw renderer.
-    pub(super) fn compose_chrome_refresh(&mut self) -> Vec<u8> {
-        self.refresh_tab_labels();
-        if let Some(out) = self.compose_ratatui_frame() {
-            let mut buf = Vec::with_capacity(out.len() + 64);
-            self.append_outer_terminal_title(&mut buf);
-            buf.extend_from_slice(&out);
-            return buf;
-        }
-        Vec::new()
-    }
-
 
     pub(super) fn compose_partial_frame(&mut self, dirty_panes: HashSet<u64>) -> Vec<u8> {
         match partial_frame_plan(PartialFrameState {
