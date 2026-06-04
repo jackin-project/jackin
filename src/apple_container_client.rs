@@ -113,14 +113,19 @@ impl AppleContainerApi for AppleContainerClient {
             cmd.arg("-e").arg(format!("{k}={v}"));
         }
         for (host, container) in &spec.mounts {
-            cmd.arg("-v").arg(format!("{}:{}", host.display(), container.display()));
+            cmd.arg("-v")
+                .arg(format!("{}:{}", host.display(), container.display()));
         }
         for cap in &spec.caps_add {
             cmd.arg("--cap-add").arg(cap);
         }
         cmd.arg(&spec.image).arg("jackin-capsule");
 
-        crate::debug_log!("apple-container", "container_run name={name} image={}", spec.image);
+        crate::debug_log!(
+            "apple-container",
+            "container_run name={name} image={}",
+            spec.image
+        );
 
         let output = cmd.output().await?;
         if !output.status.success() {
@@ -133,7 +138,10 @@ impl AppleContainerApi for AppleContainerClient {
 
     async fn exec_attach(&self, name: &str) -> Result<tokio::process::Child> {
         use std::process::Stdio;
-        crate::debug_log!("apple-container", "attach transport=container-exec name={name}");
+        crate::debug_log!(
+            "apple-container",
+            "attach transport=container-exec name={name}"
+        );
         let child = tokio::process::Command::new("container")
             .args(["exec", "-it", name, "jackin-capsule"])
             .stdin(Stdio::inherit())
@@ -158,7 +166,10 @@ impl AppleContainerApi for AppleContainerClient {
             );
             anyhow::bail!("container stop failed: {}", stderr.trim());
         }
-        crate::debug_log!("apple-container", "container_state action=stop name={name} result=ok");
+        crate::debug_log!(
+            "apple-container",
+            "container_state action=stop name={name} result=ok"
+        );
         Ok(())
     }
 
@@ -177,7 +188,10 @@ impl AppleContainerApi for AppleContainerClient {
             );
             anyhow::bail!("container rm failed: {}", stderr.trim());
         }
-        crate::debug_log!("apple-container", "container_state action=rm name={name} result=ok");
+        crate::debug_log!(
+            "apple-container",
+            "container_state action=rm name={name} result=ok"
+        );
         Ok(())
     }
 
@@ -213,10 +227,7 @@ impl AppleContainerApi for AppleContainerClient {
 /// Parse `container ps --format json` output for a specific container name.
 /// The exact JSON schema is determined empirically during Phase 0 testing.
 /// This implementation handles the most common shapes.
-fn parse_container_ps_json(
-    json_output: &str,
-    name: &str,
-) -> Result<Option<AppleContainerInfo>> {
+fn parse_container_ps_json(json_output: &str, name: &str) -> Result<Option<AppleContainerInfo>> {
     let all = parse_all_containers_json(json_output)?;
     Ok(all.into_iter().find(|c| c.name == name))
 }

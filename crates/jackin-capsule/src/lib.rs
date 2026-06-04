@@ -3,9 +3,9 @@
 /// without spawning a PTY.
 pub mod client;
 pub mod config;
-pub mod exec;
 pub mod daemon;
 pub mod dialog;
+pub mod exec;
 pub mod input;
 pub mod layout;
 pub mod logging;

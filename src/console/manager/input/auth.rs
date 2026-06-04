@@ -1299,7 +1299,9 @@ mod tests {
             .expect("credential env var must be set");
         match value {
             EnvValue::Plain(s) => assert_eq!(s, "secret"),
-            EnvValue::Extended(_) | EnvValue::OpRef(_) => panic!("expected plain literal credential"),
+            EnvValue::Extended(_) | EnvValue::OpRef(_) => {
+                panic!("expected plain literal credential")
+            }
         }
     }
 
@@ -2016,7 +2018,9 @@ mod tests {
             .expect("GH_TOKEN must land on the github env block, not the regular env block");
         match value {
             EnvValue::Plain(s) => assert_eq!(s, "ghp_xxx"),
-            EnvValue::Extended(_) | EnvValue::OpRef(_) => panic!("expected plain literal credential"),
+            EnvValue::Extended(_) | EnvValue::OpRef(_) => {
+                panic!("expected plain literal credential")
+            }
         }
         // GH_TOKEN must NOT have leaked into the regular workspace env
         // map — that would shadow the kind-scoped value at launch

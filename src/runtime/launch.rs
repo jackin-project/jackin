@@ -629,16 +629,16 @@ fn capsule_config(
 
 /// Collect all on-demand env vars from the global config and the named
 /// workspace, converting them to `ExecBinding` structs for the capsule.
-fn build_exec_bindings(config: &AppConfig, workspace_label: &str) -> Vec<jackin_protocol::ExecBinding> {
+fn build_exec_bindings(
+    config: &AppConfig,
+    workspace_label: &str,
+) -> Vec<jackin_protocol::ExecBinding> {
     use crate::operator_env::EnvValue;
 
     let mut bindings = Vec::new();
 
     let global_env = &config.env;
-    let workspace_env = config
-        .workspaces
-        .get(workspace_label)
-        .map(|w| &w.env);
+    let workspace_env = config.workspaces.get(workspace_label).map(|w| &w.env);
 
     let mut collect = |env: &std::collections::BTreeMap<String, EnvValue>| {
         for (name, value) in env {
@@ -646,11 +646,7 @@ fn build_exec_bindings(config: &AppConfig, workspace_label: &str) -> Vec<jackin_
                 continue;
             }
             let (kind, source, display) = match value {
-                EnvValue::OpRef(r) => (
-                    "op".to_string(),
-                    r.op.clone(),
-                    r.path.clone(),
-                ),
+                EnvValue::OpRef(r) => ("op".to_string(), r.op.clone(), r.path.clone()),
                 EnvValue::Extended(e) => {
                     let kind = if crate::operator_env::parse_op_reference(&e.value).is_some() {
                         "op"

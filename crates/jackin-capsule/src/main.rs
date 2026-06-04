@@ -26,8 +26,7 @@ async fn main() -> Result<()> {
     // var is injected by the apple-container backend at `container run` time;
     // it must NOT be a static ENV in the derived Dockerfile because that would
     // force daemon mode on client invocations in the normal Docker backend.
-    let is_pid1 = std::process::id() == 1
-        || std::env::var("JACKIN_CAPSULE_FORCE_DAEMON").is_ok();
+    let is_pid1 = std::process::id() == 1 || std::env::var("JACKIN_CAPSULE_FORCE_DAEMON").is_ok();
 
     if is_pid1 {
         let launch_config = config::load()?;

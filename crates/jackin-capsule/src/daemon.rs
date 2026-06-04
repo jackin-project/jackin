@@ -1770,8 +1770,9 @@ impl Multiplexer {
             }
             DialogAction::ExecPickerConfirm => {
                 if let Some(Dialog::ExecPicker(state)) = self.dialog_stack.pop() {
-                    self.exec_picker_result =
-                        Some(ExecPickerResult::Confirmed { refs: state.selected_refs() });
+                    self.exec_picker_result = Some(ExecPickerResult::Confirmed {
+                        refs: state.selected_refs(),
+                    });
                 }
             }
             DialogAction::ExecPickerCancel => {
@@ -3545,7 +3546,10 @@ impl Multiplexer {
 async fn handle_exec_request(
     mux: &mut Multiplexer,
     req: ExecRequest,
-    pending_exec: &mut Option<(crate::exec::ExecPickerState, tokio::sync::oneshot::Sender<ExecOutcome>)>,
+    pending_exec: &mut Option<(
+        crate::exec::ExecPickerState,
+        tokio::sync::oneshot::Sender<ExecOutcome>,
+    )>,
 ) {
     let bindings = &mux.launch_config.exec_bindings;
 
@@ -3564,8 +3568,9 @@ async fn handle_exec_request(
                     });
                 }
                 Err(e) => {
-                    let _ = response_tx
-                        .send(ExecOutcome::Denied { reason: format!("exec failed: {e:#}") });
+                    let _ = response_tx.send(ExecOutcome::Denied {
+                        reason: format!("exec failed: {e:#}"),
+                    });
                 }
             }
         });
@@ -3608,7 +3613,9 @@ async fn run_exec_with_refs(
     host_sock: String,
 ) -> ExecOutcome {
     let Some((command, args)) = cmd_and_args else {
-        return ExecOutcome::Denied { reason: "no command stored".to_string() };
+        return ExecOutcome::Denied {
+            reason: "no command stored".to_string(),
+        };
     };
 
     let values = match crate::exec::resolve_credentials(&host_sock, refs).await {
@@ -3616,17 +3623,22 @@ async fn run_exec_with_refs(
         Err(e) => {
             return ExecOutcome::Denied {
                 reason: format!("credential resolution failed: {e:#}"),
-            }
+            };
         }
     };
 
     let secret_values: Vec<String> = values.values().cloned().collect();
 
     match crate::exec::execute_command(&command, &args, &values, &secret_values).await {
-        Ok((exit_code, stdout, stderr, redacted_count)) => {
-            ExecOutcome::Result { exit_code, stdout, stderr, redacted_count }
-        }
-        Err(e) => ExecOutcome::Denied { reason: format!("command execution failed: {e:#}") },
+        Ok((exit_code, stdout, stderr, redacted_count)) => ExecOutcome::Result {
+            exit_code,
+            stdout,
+            stderr,
+            redacted_count,
+        },
+        Err(e) => ExecOutcome::Denied {
+            reason: format!("command execution failed: {e:#}"),
+        },
     }
 }
 
@@ -3691,7 +3703,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // Pending exec request waiting for the operator's picker confirmation.
     // Only one exec can be pending at a time — the socket handler blocks
     // until the daemon sends the response via the oneshot channel.
-    let mut pending_exec: Option<(crate::exec::ExecPickerState, tokio::sync::oneshot::Sender<ExecOutcome>)> = None;
+    let mut pending_exec: Option<(
+        crate::exec::ExecPickerState,
+        tokio::sync::oneshot::Sender<ExecOutcome>,
+    )> = None;
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads

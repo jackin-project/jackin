@@ -1950,7 +1950,14 @@ fn render_exec_picker(
     width: u16,
     state: &crate::exec::ExecPickerState,
 ) {
-    render_box(buf, start_row, start_col, height, width, "Allow credentials?");
+    render_box(
+        buf,
+        start_row,
+        start_col,
+        height,
+        width,
+        "Allow credentials?",
+    );
     let interior_items = height.saturating_sub(2) as usize;
     let drawn = state.items.len().min(interior_items);
     for (i, item) in state.items.iter().enumerate().take(drawn) {

@@ -71,7 +71,10 @@ struct CredError {
 /// configured for this session. Only refs in this set are resolved; any
 /// incoming request that references an unknown (name, kind, source) triple
 /// is rejected, preventing escalation from a compromised in-container process.
-pub fn start(sock_path: PathBuf, allowed_bindings: Vec<ExecCredRef>) -> tokio::task::JoinHandle<()> {
+pub fn start(
+    sock_path: PathBuf,
+    allowed_bindings: Vec<ExecCredRef>,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         if let Err(e) = run_listener(&sock_path, &allowed_bindings).await {
             crate::debug_log!("exec_host", "listener error: {e:#}");
@@ -129,14 +132,16 @@ async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredR
     // compromised in-container process from escalating privileges by requesting
     // arbitrary op:// URIs or host env vars.
     for r in &req.refs {
-        let approved = allowed_bindings.iter().any(|b| {
-            b.name == r.name && b.kind == r.kind && b.source == r.source
-        });
+        let approved = allowed_bindings
+            .iter()
+            .any(|b| b.name == r.name && b.kind == r.kind && b.source == r.source);
         if !approved {
             crate::debug_log!(
                 "exec_host",
                 "rejected unauthorized ref: name={:?} kind={:?} source={:?}",
-                r.name, r.kind, r.source
+                r.name,
+                r.kind,
+                r.source
             );
             let err = CredError {
                 error: format!(
@@ -178,9 +183,7 @@ async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredR
     Ok(())
 }
 
-async fn resolve_all(
-    refs: &[ExecCredRef],
-) -> Result<std::collections::BTreeMap<String, String>> {
+async fn resolve_all(refs: &[ExecCredRef]) -> Result<std::collections::BTreeMap<String, String>> {
     let mut values = std::collections::BTreeMap::new();
     for r in refs {
         let value = resolve_one(r)
@@ -212,14 +215,16 @@ fn validate_op_source(source: &str) -> Result<()> {
 async fn resolve_one(r: &ExecCredRef) -> Result<String> {
     match r.kind.as_str() {
         "op" => {
-            validate_op_source(&r.source)
-                .with_context(|| format!("credential {:?}", r.name))?;
+            validate_op_source(&r.source).with_context(|| format!("credential {:?}", r.name))?;
             resolve_op(&r.source).await
         }
         "env" => {
-            let var_name = r.source.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
-            std::env::var(var_name)
-                .with_context(|| format!("host env var {var_name:?} is not set"))
+            let var_name = r
+                .source
+                .trim_start_matches('$')
+                .trim_start_matches('{')
+                .trim_end_matches('}');
+            std::env::var(var_name).with_context(|| format!("host env var {var_name:?} is not set"))
         }
         "literal" => Ok(r.source.clone()),
         other => anyhow::bail!("unknown credential kind {:?}", other),

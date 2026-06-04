@@ -182,7 +182,10 @@ pub async fn resolve_credentials(
     stream.read_exact(&mut len_buf).await?;
     let reply_len = u32::from_be_bytes(len_buf) as usize;
     const MAX_REPLY: usize = 1024 * 1024;
-    anyhow::ensure!(reply_len <= MAX_REPLY, "host.sock reply too large: {reply_len}");
+    anyhow::ensure!(
+        reply_len <= MAX_REPLY,
+        "host.sock reply too large: {reply_len}"
+    );
 
     let mut reply_body = vec![0u8; reply_len];
     stream.read_exact(&mut reply_body).await?;
@@ -208,9 +211,7 @@ pub async fn execute_command(
     use std::process::Stdio;
 
     let mut cmd = tokio::process::Command::new(command);
-    cmd.args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
 
     for (k, v) in extra_env {
         cmd.env(k, v);
@@ -245,8 +246,8 @@ pub async fn execute_command(
             continue;
         }
         // Plain value redaction.
-        let count_before = stdout.matches(secret.as_str()).count()
-            + stderr.matches(secret.as_str()).count();
+        let count_before =
+            stdout.matches(secret.as_str()).count() + stderr.matches(secret.as_str()).count();
         if count_before > 0 {
             stdout = stdout.replace(secret.as_str(), "[redacted by jackin']");
             stderr = stderr.replace(secret.as_str(), "[redacted by jackin']");
@@ -350,9 +351,7 @@ pub async fn run(args: &[String]) -> Result<()> {
                     .context("writing stderr")?;
             }
             if redacted_count > 0 {
-                eprintln!(
-                    "[jackin-exec] {redacted_count} secret pattern(s) redacted from output"
-                );
+                eprintln!("[jackin-exec] {redacted_count} secret pattern(s) redacted from output");
             }
             std::process::exit(exit_code);
         }

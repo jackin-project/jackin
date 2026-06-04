@@ -286,46 +286,44 @@ pub async fn handle_control_request(
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
-        ClientMsg::ExecCommand { command, args } => {
-            match exec_tx {
-                None => ServerMsg::ExecDenied {
-                    reason: "exec not available (no daemon exec channel)".to_string(),
-                },
-                Some(tx) => {
-                    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-                    let req = crate::exec::ExecRequest {
-                        command,
-                        args,
-                        response_tx,
-                    };
-                    if tx.send(req).is_err() {
-                        ServerMsg::ExecDenied {
-                            reason: "daemon exec channel closed".to_string(),
+        ClientMsg::ExecCommand { command, args } => match exec_tx {
+            None => ServerMsg::ExecDenied {
+                reason: "exec not available (no daemon exec channel)".to_string(),
+            },
+            Some(tx) => {
+                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+                let req = crate::exec::ExecRequest {
+                    command,
+                    args,
+                    response_tx,
+                };
+                if tx.send(req).is_err() {
+                    ServerMsg::ExecDenied {
+                        reason: "daemon exec channel closed".to_string(),
+                    }
+                } else {
+                    match response_rx.await {
+                        Ok(crate::exec::ExecOutcome::Result {
+                            exit_code,
+                            stdout,
+                            stderr,
+                            redacted_count,
+                        }) => ServerMsg::ExecResult {
+                            exit_code,
+                            stdout,
+                            stderr,
+                            redacted_count,
+                        },
+                        Ok(crate::exec::ExecOutcome::Denied { reason }) => {
+                            ServerMsg::ExecDenied { reason }
                         }
-                    } else {
-                        match response_rx.await {
-                            Ok(crate::exec::ExecOutcome::Result {
-                                exit_code,
-                                stdout,
-                                stderr,
-                                redacted_count,
-                            }) => ServerMsg::ExecResult {
-                                exit_code,
-                                stdout,
-                                stderr,
-                                redacted_count,
-                            },
-                            Ok(crate::exec::ExecOutcome::Denied { reason }) => {
-                                ServerMsg::ExecDenied { reason }
-                            }
-                            Err(_) => ServerMsg::ExecDenied {
-                                reason: "daemon dropped exec response channel".to_string(),
-                            },
-                        }
+                        Err(_) => ServerMsg::ExecDenied {
+                            reason: "daemon dropped exec response channel".to_string(),
+                        },
                     }
                 }
             }
-        }
+        },
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.

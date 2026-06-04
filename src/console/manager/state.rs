@@ -2669,12 +2669,14 @@ mod tests {
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
                 image_tag: "jk_alpha",
-                backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
-                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-                }),
+                backend: crate::instance::BackendResources::Docker(
+                    crate::instance::DockerResources {
+                        role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                        dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                        network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                        certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                    },
+                ),
             });
         manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
         manifest
@@ -2715,12 +2717,14 @@ mod tests {
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
                 image_tag: "jk_alpha",
-                backend: crate::instance::BackendResources::Docker(crate::instance::DockerResources {
-                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-                }),
+                backend: crate::instance::BackendResources::Docker(
+                    crate::instance::DockerResources {
+                        role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                        dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                        network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                        certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                    },
+                ),
             });
         manifest.mark_status(crate::instance::InstanceStatus::Active);
         manifest

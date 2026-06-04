@@ -1,8 +1,8 @@
 pub mod agent;
 pub mod agent_binary;
-pub mod apple_container_client;
 pub mod ansi_text;
 pub mod app;
+pub mod apple_container_client;
 pub mod binary_artifact;
 pub mod capsule_binary;
 pub mod cli;

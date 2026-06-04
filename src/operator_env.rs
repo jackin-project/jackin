@@ -1587,8 +1587,8 @@ fn resolve_edited_field_ref(
         op: op_uri,
         path,
         account,
-    on_demand: false,
-})
+        on_demand: false,
+    })
 }
 
 /// Source layer of an env value, attached to error messages and
