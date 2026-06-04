@@ -40,7 +40,7 @@ use vt100::{Callbacks, Screen};
 use crate::protocol::AgentState;
 use crate::pull_request::PullRequestInfo;
 use crate::tui::render::pane_snapshot_from_damagegrid;
-use crate::tui::render::{RowSnapshot, pane_snapshot_with_scrollback_prefix, snapshot_screen_row};
+use crate::tui::render::{RowSnapshot, pane_snapshot_with_scrollback_prefix};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const BLOCKED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
@@ -1083,7 +1083,7 @@ impl Session {
     pub fn scroll_to_live(&mut self) {
         if self.scrollback_offset != 0 {
             self.scrollback_offset = 0;
-            self.parser.screen_mut().set_scrollback(0);
+            self.shadow_grid.set_scrollback(0);
         }
     }
 
@@ -1094,7 +1094,7 @@ impl Session {
     /// local `vt100` mirror.
     pub fn clear_scrollback_and_request_screen_clear(&mut self) {
         self.scroll_to_live();
-        self.parser.screen_mut().clear_scrollback();
+        self.shadow_grid.clear_scrollback();
         self.inline_scrollback.clear();
         self.scrollback_offset = 0;
         self.send_input(b"\x0c");
@@ -1118,12 +1118,12 @@ impl Session {
 
     fn vt_scrollback_filled(&mut self) -> usize {
         let saved = self.parser.screen().scrollback();
-        self.parser.screen_mut().set_scrollback(usize::MAX);
+        self.shadow_grid.set_scrollback(usize::MAX);
         let filled = self.parser.screen().scrollback();
         // saved.min(filled): vt100 rejects offsets above the actual fill
         // count, so restoring `saved` verbatim would be wrong if the fill
         // shrank between the read and the probe.
-        self.parser.screen_mut().set_scrollback(saved.min(filled));
+        self.shadow_grid.set_scrollback(saved.min(filled));
         filled
     }
 
@@ -1191,15 +1191,21 @@ impl Session {
             );
         }
 
-        // Fallback: DamageGrid scrollback empty (inline history not yet ported).
-        // Use vt100 inline scrollback prefix.
+        // Fallback: DamageGrid native scrollback empty.
+        // Use inline scrollback (RowSnapshot VecDeque from InlineScrollRegionTracker).
+        // Phase 5 note: inline scrollback capture now uses DamageGrid rows.
         let scrollback_prefix = self.scrollback_render_prefix(viewport_rows);
-        pane_snapshot_with_scrollback_prefix(
-            self.screen(),
-            &scrollback_prefix,
-            viewport_rows,
-            viewport_cols,
-        )
+        if !scrollback_prefix.is_empty() {
+            pane_snapshot_with_scrollback_prefix(
+                self.screen(),
+                &scrollback_prefix,
+                viewport_rows,
+                viewport_cols,
+            )
+        } else {
+            // No scrollback available — show live DamageGrid view.
+            pane_snapshot_from_damagegrid(&self.shadow_grid, viewport_rows, viewport_cols)
+        }
     }
 
     /// Dump the shadow grid's current screen state and drain its dirty spans.
@@ -1300,18 +1306,18 @@ impl Session {
             bytes.len(),
             bytes
         );
-        let was_alternate = self.parser.screen().alternate_screen();
+        let was_alternate = self.shadow_grid.alternate_screen();
         let was_scrolled = self.scrollback_offset != 0;
         for &byte in bytes {
-            let (screen_rows, _) = self.parser.screen().size();
+            let (screen_rows, _) = self.shadow_grid.size();
             let actions = self.inline_scroll_region_tracker.advance(byte, screen_rows);
             self.capture_inline_scrollback_before_actions(actions);
             self.capture_inline_scrollback_before_byte(byte);
             self.parser.process(std::slice::from_ref(&byte));
         }
-        let is_alternate = self.parser.screen().alternate_screen();
+        let is_alternate = self.shadow_grid.alternate_screen();
         if was_alternate != is_alternate {
-            let (screen_rows, _) = self.parser.screen().size();
+            let (screen_rows, _) = self.shadow_grid.size();
             self.inline_scroll_region_tracker.reset(screen_rows);
         }
         if was_alternate && !is_alternate {
@@ -1364,7 +1370,7 @@ impl Session {
     }
 
     fn capture_inline_scrollback_before_erase_display(&mut self, mode: u16) {
-        if self.parser.screen().alternate_screen() {
+        if self.shadow_grid.alternate_screen() {
             return;
         }
 
@@ -1373,7 +1379,7 @@ impl Session {
             // paired with a home cursor move, which is the normal-screen
             // clear/redraw shape used by shells and agent TUIs.
             0 => {
-                let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
+                let (cursor_row, cursor_col) = self.shadow_grid.cursor_position();
                 if cursor_row == 0 && cursor_col == 0 {
                     self.capture_visible_inline_scrollback_rows("erase-display");
                 }
@@ -1396,11 +1402,11 @@ impl Session {
     }
 
     fn capture_inline_scrollback_before_scroll_up(&mut self, count: usize) {
-        if self.parser.screen().alternate_screen() {
+        if self.shadow_grid.alternate_screen() {
             return;
         }
 
-        let (screen_rows, screen_cols) = self.parser.screen().size();
+        let (screen_rows, screen_cols) = self.shadow_grid.size();
         let Some(scroll_bottom) = self
             .inline_scroll_region_tracker
             .top_anchored_bottom(screen_rows)
@@ -1409,8 +1415,11 @@ impl Session {
         };
 
         let removed_rows = usize::from(scroll_bottom).saturating_add(1).min(count);
+        // Phase 5: use DamageGrid for inline scrollback row capture.
         let rows: Vec<_> = (0..u16::try_from(removed_rows).unwrap_or(u16::MAX))
-            .map(|row| snapshot_screen_row(self.parser.screen(), row, screen_cols))
+            .map(|row| {
+                crate::tui::render::snapshot_damagegrid_row(&self.shadow_grid, row, screen_cols)
+            })
             .collect();
         for row in rows {
             self.push_inline_scrollback_row(row, "scroll-up");
@@ -1418,10 +1427,12 @@ impl Session {
     }
 
     fn capture_visible_inline_scrollback_rows(&mut self, reason: &'static str) {
-        let (_, screen_cols) = self.parser.screen().size();
-        let (screen_rows, _) = self.parser.screen().size();
+        let (screen_rows, screen_cols) = self.shadow_grid.size();
+        // Phase 5: use DamageGrid for visible inline scrollback capture.
         let rows: Vec<_> = (0..screen_rows)
-            .map(|row| snapshot_screen_row(self.parser.screen(), row, screen_cols))
+            .map(|row| {
+                crate::tui::render::snapshot_damagegrid_row(&self.shadow_grid, row, screen_cols)
+            })
             .collect();
         let Some(first) = rows.iter().position(|row| !row.is_blank()) else {
             return;
@@ -1436,23 +1447,25 @@ impl Session {
     }
 
     fn capture_inline_scrollback_before_byte(&mut self, byte: u8) {
-        if byte != b'\n' || self.parser.screen().alternate_screen() {
+        let (screen_rows, screen_cols) = self.shadow_grid.size();
+        // Phase 5: use DamageGrid state for alt-screen and cursor position checks.
+        if byte != b'\n' || self.shadow_grid.alternate_screen() {
             return;
         }
 
-        let (screen_rows, screen_cols) = self.parser.screen().size();
         let Some(scroll_bottom) = self
             .inline_scroll_region_tracker
             .top_anchored_bottom(screen_rows)
         else {
             return;
         };
-        let (cursor_row, _) = self.parser.screen().cursor_position();
+        let (cursor_row, _) = self.shadow_grid.cursor_position();
         if cursor_row != scroll_bottom {
             return;
         }
 
-        let row = snapshot_screen_row(self.parser.screen(), 0, screen_cols);
+        let row =
+            crate::tui::render::snapshot_damagegrid_row(&self.shadow_grid, 0, screen_cols);
         if self.inline_scrollback.is_empty() && row.is_blank() {
             return;
         }
@@ -1644,7 +1657,7 @@ impl Session {
             }
             Err(e) => crate::clog!("session resize: PTY mutex poisoned: {e}"),
         }
-        self.parser.screen_mut().set_size(rows, cols);
+        self.shadow_grid.set_size(rows, cols);
         self.inline_scroll_region_tracker.resize(rows);
         self.clamp_scrollback_offset();
         self.apply_scrollback_offset();
