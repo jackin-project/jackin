@@ -31,7 +31,7 @@ Use when:
 
 ```toml
 [docker]
-default_profile = "locked"
+profile = "locked"
 ```
 
 ### `hardened` — restricted coding
@@ -45,7 +45,7 @@ Use when:
 
 ```toml
 [docker]
-default_profile = "hardened"
+profile = "hardened"
 ```
 
 ### `standard` — everyday dev work
@@ -58,7 +58,7 @@ Use when:
 
 ```toml
 [docker]
-default_profile = "standard"
+profile = "standard"
 ```
 
 ### `compat` — maximum compatibility
@@ -86,7 +86,7 @@ A profile sets defaults for all six capability dimensions. Use `[docker.grants]`
 
 ```toml
 [docker]
-default_profile = "hardened"
+profile = "hardened"
 
 [docker.grants]
 dind = "rootless"               # allow rootless DinD even under hardened
@@ -187,7 +187,7 @@ profile = "hardened"
 allowed_hosts = ["registry.npmjs.org"]
 ```
 
-Workspace grants layer on top of global grants. Workspace profile overrides the global `default_profile`.
+Workspace grants layer on top of global grants. Workspace profile overrides the global `profile`.
 
 ## Role manifest declarations
 
@@ -268,7 +268,7 @@ Everything described on this page is fully implemented and available now:
 
 Every launch uses `compat` by default — this is the same behavior as before profiles existed. Nothing breaks for anyone who doesn't opt in.
 
-To use a stricter profile today: pass `--docker-profile <profile>` or set `[docker] default_profile = "…"` in config.
+To use a stricter profile today: pass `--docker-profile <profile>` or set `[docker] profile = "…"` in config.
 
 ### What will change in a future PR
 
@@ -289,7 +289,7 @@ jackin load fullstack . --docker-profile compat
 or
 ```toml
 [docker]
-default_profile = "compat"
+profile = "compat"
 ```
 
 or in a role manifest:

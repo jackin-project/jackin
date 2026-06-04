@@ -636,7 +636,7 @@ impl std::fmt::Display for ProfileSource {
 /// Precedence (highest to lowest):
 /// 1. CLI `--docker-profile` override
 /// 2. Workspace `[docker] profile` override
-/// 3. Global `[docker] default_profile` from `config.toml`
+/// 3. Global `[docker] profile` from `config.toml`
 /// 4. Compiled-in default (`Compat` until sudo audit resolves)
 pub fn resolve_profile(
     cli_override: Option<DockerSecurityProfile>,
@@ -753,26 +753,15 @@ pub fn format_session_contract(
     agent_auth_mode: &str,
     gh_auth_forwarded: bool,
 ) -> String {
-    let caps_line = if drops_all_caps(profile) {
-        let extra = if grants.capabilities_add.is_empty() {
-            String::new()
-        } else {
-            format!(" + {}", grants.capabilities_add.join(","))
-        };
-        format!(
-            "drop-all + {}{}",
-            MINIMUM_CAPABILITIES.join(","),
-            extra
-        )
+    let extra_caps = if grants.capabilities_add.is_empty() {
+        String::new()
     } else {
-        format!(
-            "docker-default (14 caps){}",
-            if grants.capabilities_add.is_empty() {
-                String::new()
-            } else {
-                format!(" + {}", grants.capabilities_add.join(","))
-            }
-        )
+        format!(" + {}", grants.capabilities_add.join(","))
+    };
+    let caps_line = if drops_all_caps(profile) {
+        format!("drop-all + {}{extra_caps}", MINIMUM_CAPABILITIES.join(","))
+    } else {
+        format!("docker-default (14 caps){extra_caps}")
     };
     let network_mode = match grants.network {
         NetworkGrant::None => "none (--network none)".to_string(),
@@ -796,12 +785,13 @@ pub fn format_session_contract(
         .map(|p| p.to_string())
         .unwrap_or_else(|| "unlimited".to_string());
     let gh_line = if gh_auth_forwarded { "forwarded" } else { "not forwarded" };
+    let residual_base = "shared host kernel; writable workspace mounts can still be changed";
     let residual = if grants.dind != DindGrant::None {
-        "shared host kernel; writable workspace mounts can still be changed; DinD sidecar has kernel access"
-    } else if !grants.system_writes {
-        "shared host kernel; writable workspace mounts can still be changed"
+        format!("{residual_base}; DinD sidecar has kernel access")
+    } else if grants.system_writes {
+        format!("{residual_base}; writable container root")
     } else {
-        "shared host kernel; writable workspace mounts can still be changed; writable container root"
+        residual_base.to_string()
     };
 
     format!(
@@ -829,18 +819,7 @@ pub fn format_session_contract(
         if grants.system_writes {
             "none (writable root)".to_string()
         } else {
-            // Use the same consts as readonly_root_flags so the contract stays in sync.
-            let extra: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
-                &[]
-            } else {
-                TMPFS_PATHS_HARDENED_EXTRA
-            };
-            TMPFS_PATHS_MINIMAL
-                .iter()
-                .chain(extra.iter())
-                .copied()
-                .collect::<Vec<_>>()
-                .join(",")
+            tmpfs_paths(profile).join(",")
         },
         grants.dind,  // Display impl emits "none"/"rootless"/"privileged"
         network_mode,
@@ -957,11 +936,21 @@ const TMPFS_PATHS_HARDENED_EXTRA: &[&str] = &[
     "/home/agent/.cache",
 ];
 
-/// Emit `--read-only` and `--tmpfs` flags for profiles that use a read-only root.
-///
-/// `locked` uses the minimal tmpfs set (no package-manager paths — apt is
-/// unsupported under locked). `hardened` adds the full package-manager path set
-/// for roles that might call `apt-get update` but not `apt install`.
+/// Resolved tmpfs path set for a read-only-root profile. `locked` uses the
+/// minimal set (apt is unsupported); `hardened` adds package-manager paths.
+/// Single source of truth for `--tmpfs` flags and the session contract's
+/// "writable tmpfs" line so the two never drift.
+pub fn tmpfs_paths(profile: DockerSecurityProfile) -> Vec<&'static str> {
+    let extra: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
+        &[]
+    } else {
+        TMPFS_PATHS_HARDENED_EXTRA
+    };
+    TMPFS_PATHS_MINIMAL.iter().chain(extra).copied().collect()
+}
+
+/// Emit `--read-only` plus a `--tmpfs <path>:rw,nosuid,nodev` pair for every
+/// [`tmpfs_paths`] entry. Empty for writable-root profiles.
 pub fn readonly_root_flags(
     profile: DockerSecurityProfile,
     grants: &EffectiveGrants,
@@ -970,14 +959,7 @@ pub fn readonly_root_flags(
         return Vec::new();
     }
     let mut flags = vec!["--read-only".to_string()];
-
-    let extra_paths: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
-        &[]
-    } else {
-        TMPFS_PATHS_HARDENED_EXTRA
-    };
-
-    for path in TMPFS_PATHS_MINIMAL.iter().chain(extra_paths.iter()) {
+    for path in tmpfs_paths(profile) {
         flags.push("--tmpfs".to_string());
         flags.push(format!("{path}:rw,nosuid,nodev"));
     }

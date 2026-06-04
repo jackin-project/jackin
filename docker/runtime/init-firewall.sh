@@ -32,8 +32,15 @@ fi
 ipset create jackin-allowed hash:net maxelem 65536 2>/dev/null || \
     ipset flush jackin-allowed
 
-for entry in $(echo "$ALLOWED_HOSTS" | tr ',' '\n'); do
-    entry="$(echo "$entry" | xargs)"   # trim whitespace
+# IPv4 dotted-quad (optional /prefix) and IPv6 colon-hex (optional /prefix).
+ipv4_re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$'
+ipv6_re='^[0-9a-fA-F:]+(/[0-9]+)?$'
+
+IFS=',' read -ra entries <<< "$ALLOWED_HOSTS"
+for entry in "${entries[@]}"; do
+    # Trim surrounding whitespace via bash parameter expansion (no fork).
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
     [ -z "$entry" ] && continue
 
     # Strip optional port suffix (domain:8080 → domain).
@@ -42,17 +49,13 @@ for entry in $(echo "$ALLOWED_HOSTS" | tr ',' '\n'); do
     # If the entry looks like an IPv4/IPv6 address or CIDR, add directly.
     # Use $host (port-stripped) for the ipset entry so "1.2.3.4:443" is added
     # as "1.2.3.4" which is a valid hash:net entry.
-    # IPv4: dotted-quad prefix; IPv6: colon-hex with optional /prefix.
-    if echo "$host" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$' || \
-       echo "$host" | grep -qE '^[0-9a-fA-F:]+(/[0-9]+)?$'; then
+    if [[ $host =~ $ipv4_re || $host =~ $ipv6_re ]]; then
         ipset add jackin-allowed "$host" 2>/dev/null || true
         continue
     fi
 
     # Wildcard subdomain: *.example.com — resolve the apex domain.
-    if echo "$host" | grep -q '^\*\.'; then
-        host="${host#\*.}"
-    fi
+    [[ $host == '*.'* ]] && host="${host#\*.}"
 
     # Resolve domain to IPs and add each.
     while IFS= read -r ip; do
@@ -78,4 +81,9 @@ if ! curl -sf --max-time 5 --connect-timeout 3 https://api.github.com/zen > /dev
          "— DNS may still be resolving; verify JACKIN_ALLOWED_HOSTS includes it" >&2
 fi
 
-echo "[firewall] OUTPUT allowlist active: $(ipset list jackin-allowed | grep -c '^[0-9]') entries"
+# `-t` prints the header only (no member dump) including "Number of entries: N".
+# `|| true` keeps a failed lookup from tripping `set -e` on this breadcrumb line
+# (a plain `count=$(...)` assignment propagates the pipeline's exit status), and
+# `${count:-unknown}` beats a blank that would read as a broken log line.
+count="$(ipset list -t jackin-allowed 2>/dev/null | sed -n 's/^Number of entries: //p')" || true
+echo "[firewall] OUTPUT allowlist active: ${count:-unknown} entries"

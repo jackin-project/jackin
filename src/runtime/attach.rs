@@ -48,7 +48,7 @@ pub use crate::docker_client::ContainerState;
 use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
 
-use super::naming::dind_certs_volume;
+use super::naming::{dind_certs_volume, dind_container_name, role_network_name};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSession {
@@ -619,10 +619,10 @@ pub async fn inspect_hardline_instance(
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);
     let dind_name = manifest
         .and_then(|m| m.docker.dind_container.clone())
-        .unwrap_or_else(|| format!("{container_name}-dind"));
+        .unwrap_or_else(|| dind_container_name(container_name));
     let network_name = manifest
         .map(|m| m.docker.network.clone())
-        .unwrap_or_else(|| format!("{container_name}-net"));
+        .unwrap_or_else(|| role_network_name(container_name));
     let certs_volume = manifest
         .and_then(|m| m.docker.certs_volume.clone())
         .unwrap_or_else(|| dind_certs_volume(container_name));
@@ -756,11 +756,7 @@ fn missing_restore_message(
     )))
 }
 
-pub(super) async fn wait_for_dind(
-    dind_name: &str,
-    _certs_volume: &str,
-    docker: &impl DockerApi,
-) -> anyhow::Result<()> {
+pub(super) async fn wait_for_dind(dind_name: &str, docker: &impl DockerApi) -> anyhow::Result<()> {
     const MAX_ATTEMPTS: u32 = 30;
     const INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -1700,7 +1696,7 @@ mod tests {
             ..Default::default()
         };
 
-        let err = wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
+        let err = wait_for_dind("jk-agent-smith-dind", &docker)
             .await
             .unwrap_err();
 
@@ -1722,7 +1718,7 @@ mod tests {
             ..Default::default()
         };
 
-        let err = wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
+        let err = wait_for_dind("jk-agent-smith-dind", &docker)
             .await
             .unwrap_err();
 
@@ -1820,8 +1816,6 @@ mod tests {
             ..Default::default()
         };
 
-        wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
-            .await
-            .unwrap();
+        wait_for_dind("jk-agent-smith-dind", &docker).await.unwrap();
     }
 }

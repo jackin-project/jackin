@@ -681,7 +681,18 @@ async fn launch_role_runtime(
         "profile_selected profile={profile} source={profile_source} container={container_name}",
     );
 
-    let certs_volume = dind_certs_volume(container_name);
+    // Per-instance host runtime dir bind-mounted at `/jackin/run`. Built once
+    // here; the DinD certs subdir, the agent cert mount, and the Capsule
+    // socket/config mount below all derive from it. `Display` is lossy on
+    // non-UTF-8 paths — docker would silently mount a different host dir than
+    // the one we create — so validate the string form once, loudly, up front.
+    let socket_dir = paths.jackin_home.join("sockets").join(container_name);
+    let socket_dir_str = socket_dir.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "socket dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
+            socket_dir.display(),
+        )
+    })?;
 
     let docker_run_opts = RunOptions {
         quiet: !debug,
@@ -733,20 +744,11 @@ async fn launch_role_runtime(
         // Store TLS certs under the socket dir so `purge` removes them with
         // the rest of the per-instance runtime state. Per container-path
         // convention all jackin-owned runtime state lives under `/jackin/run/`.
-        let socket_dir_host = paths.jackin_home.join("sockets").join(container_name);
-        let dind_certs_dir_host = socket_dir_host.join("dind-certs");
+        let dind_certs_dir_host = socket_dir.join("dind-certs");
         std::fs::create_dir_all(&dind_certs_dir_host).with_context(|| {
-            format!(
-                "creating dind certs dir {}",
-                dind_certs_dir_host.display()
-            )
+            format!("creating dind certs dir {}", dind_certs_dir_host.display())
         })?;
-        let dind_certs_dir_str = dind_certs_dir_host.to_str().ok_or_else(|| {
-            anyhow::anyhow!(
-                "dind certs dir {} contains non-UTF-8 bytes",
-                dind_certs_dir_host.display()
-            )
-        })?;
+        let dind_certs_dir_str = format!("{socket_dir_str}/dind-certs");
         // DinD sidecar: certs dir mounted at `/jackin/run/dind-certs` so that
         // `DOCKER_TLS_CERTDIR=/jackin/run/dind-certs` produces
         // `ca/`, `server/`, `client/` subdirs under that path.
@@ -797,7 +799,7 @@ async fn launch_role_runtime(
             run_dind.await?;
         }
 
-        let dind_ready = wait_for_dind(dind, &certs_volume, docker);
+        let dind_ready = wait_for_dind(dind, docker);
         if let Some(progress) = steps.progress_mut() {
             progress.while_waiting(dind_ready).await?;
         } else {
@@ -854,16 +856,7 @@ async fn launch_role_runtime(
     // Certs live at /jackin/run/dind-certs (via the socket-dir bind mount).
     // The :ro flag on this bind mount is defensive — jackin-capsule and the
     // agent should never write to the certs dir; only the DinD sidecar writes there.
-    let socket_dir_str_for_certs = paths
-        .jackin_home
-        .join("sockets")
-        .join(container_name)
-        .to_str()
-        .map(ToOwned::to_owned)
-        .unwrap_or_default();
-    let certs_agent_mount = format!(
-        "{socket_dir_str_for_certs}/dind-certs:/jackin/run/dind-certs:ro"
-    );
+    let certs_agent_mount = format!("{socket_dir_str}/dind-certs:/jackin/run/dind-certs:ro");
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -949,11 +942,10 @@ async fn launch_role_runtime(
         } else {
             ("no", "system_writes=true")
         };
-        let tmpfs_list = if !grants.system_writes {
-            "/tmp,/run,/var/run,/var/tmp,/var/cache,/var/log,/var/lib/apt/lists,\
-             /var/cache/apt/archives,/var/lib/dpkg,/home/agent/.cache,/home/agent/.zsh_sessions"
+        let tmpfs_list = if grants.system_writes {
+            String::new()
         } else {
-            ""
+            super::docker_profile::tmpfs_paths(*profile).join(",")
         };
         crate::debug_log!(
             "launch",
@@ -1085,13 +1077,12 @@ async fn launch_role_runtime(
     }
 
     // Compact one-line summary (future clog! tier; debug_log! until clog! lands).
-    let cap_count = if drops_all {
+    let cap_base = if drops_all {
         super::docker_profile::MINIMUM_CAPABILITIES.len()
-            + grants.capabilities_add.len()
     } else {
         super::docker_profile::DEFAULT_CAPABILITIES.len()
-            + grants.capabilities_add.len()
     };
+    let cap_count = cap_base + grants.capabilities_add.len();
     crate::debug_log!(
         "launch",
         "launch profile={profile} source={profile_source} \
@@ -1313,19 +1304,15 @@ async fn launch_role_runtime(
     }
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
-    // Host-side bind-mount of the daemon's socket directory. Pre-create
-    // host-side so Docker does not materialise the target itself as
-    // root:root 0755 — that would block the in-container `agent` user
-    // (whose UID matches the host user post-`usermod` in the derived
-    // image) from creating and chmod'ing `jackin.sock`. The same
-    // directory carries Capsule's normalized launch config.
-    let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let capsule_config_contents = toml::to_string(capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    // Run the filesystem syscalls on the blocking pool — the tokio
-    // runtime is built without the `fs` feature here, and blocking on
-    // a slow / NFS host parks the worker driving the docker-run RPC
-    // for every other future scheduled on it.
+    // Pre-create the socket dir host-side so Docker does not materialise
+    // /jackin/run as root:root 0755 — that would block the in-container
+    // `agent` user (UID matched via `usermod` in the derived image) from
+    // creating and chmod'ing `jackin.sock`. The same dir carries Capsule's
+    // launch config. Run on the blocking pool: this tokio runtime lacks the
+    // `fs` feature, and a slow / NFS host would park the worker driving the
+    // docker-run RPC for every other future scheduled on it.
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
@@ -1349,15 +1336,6 @@ async fn launch_role_runtime(
     .with_context(|| {
         format!(
             "creating host-side socket dir {} for container {container_name}",
-            socket_dir.display(),
-        )
-    })?;
-    // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
-    // different host dir than the one we just created. Bail rather than
-    // smuggle U+FFFD into a `-v` argument.
-    let socket_dir_str = socket_dir.to_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "socket dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
             socket_dir.display(),
         )
     })?;
@@ -2461,7 +2439,7 @@ async fn load_role_with(
                 anyhow::bail!(
                     "role {:?} declares min_profile = \"{min}\"; the active profile \
                      \"{}\" is below that minimum — use \
-                     `--docker-profile {min}` or set `[docker] default_profile = \"{min}\"` \
+                     `--docker-profile {min}` or set `[docker] profile = \"{min}\"` \
                      in your config",
                     selector.key(),
                     resolved_profile_early.0,
