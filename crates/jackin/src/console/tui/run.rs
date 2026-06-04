@@ -620,14 +620,12 @@ pub async fn run_console<H: InstanceActionHandler>(
                             let (main_area, _) =
                                 split_debug_area(full_area, crate::tui::is_debug_mode());
                             let confirm_rect = quit_confirm_area(main_area, confirm);
-                            if matches!(
-                                jackin_tui::components::classify_click(
-                                    confirm_rect,
-                                    mouse.column,
-                                    mouse.row
-                                ),
-                                jackin_tui::components::ModalClickResult::OutsideDismiss
-                            ) {
+                            if jackin_tui::components::classify_click(
+                                confirm_rect,
+                                mouse.column,
+                                mouse.row,
+                            ) == jackin_tui::components::ModalClickResult::OutsideDismiss
+                            {
                                 state.quit_confirm = None;
                             }
                         }
@@ -643,14 +641,12 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 crate::console::tui::components::modal_layout::modal_outer_rect(
                                     modal, main_area,
                                 );
-                            if matches!(
-                                jackin_tui::components::classify_click(
-                                    modal_rect,
-                                    mouse.column,
-                                    mouse.row
-                                ),
-                                jackin_tui::components::ModalClickResult::OutsideDismiss
-                            ) {
+                            if jackin_tui::components::classify_click(
+                                modal_rect,
+                                mouse.column,
+                                mouse.row,
+                            ) == jackin_tui::components::ModalClickResult::OutsideDismiss
+                            {
                                 let _ = crate::console::tui::update_manager(
                                     ms,
                                     crate::console::tui::ManagerMessage::DismissListModal,

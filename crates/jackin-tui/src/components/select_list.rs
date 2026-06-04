@@ -34,7 +34,6 @@ impl SelectListState {
     }
 
     /// Set an initial filter string. Recomputes the visible-item list immediately.
-    /// Useful for lookbook stories showing filtered-empty or partially-filtered states.
     #[must_use]
     pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
         self.filter = filter.into();
@@ -229,15 +228,15 @@ impl Widget for SelectList<'_> {
                 let label = &self.state.items[item];
                 // Truncate labels wider than the viewport with an ellipsis so wide
                 // rows are legible rather than silently clipping at the border.
-                let truncated = if crate::display_cols(label) > viewport_cols {
+                let label_str = if crate::display_cols(label) > viewport_cols {
                     let mut s = crate::take_display_cols(label, viewport_cols.saturating_sub(1));
                     s.push('…');
-                    std::borrow::Cow::Owned(s)
+                    s
                 } else {
-                    std::borrow::Cow::Borrowed(label.as_str())
+                    label.clone()
                 };
                 ListItem::new(Line::from(Span::styled(
-                    truncated.into_owned(),
+                    label_str,
                     Style::default().fg(WHITE),
                 )))
             })
