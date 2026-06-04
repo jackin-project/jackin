@@ -1417,6 +1417,36 @@ fn editor_tab_bar_follows_aria_key_pattern() {
     );
 }
 
+// ── Tab switch clears stale content focus (Defect 19) ────────────
+
+#[test]
+fn tab_switch_via_tab_clears_content_scroll_focus() {
+    // When content owns focus and the operator presses Tab to cycle tabs,
+    // tab_bar_focused must become true and the stale content scroll focus
+    // must be cleared so no green border appears on the new tab's content.
+    let mut config = config_with_agents(&["alpha"]);
+    let mut state = ManagerState::from_config(&config, std::path::Path::new("/"));
+    state.stage = ManagerStage::Editor(EditorState::new_edit(
+        "ws".into(),
+        WorkspaceConfig::default(),
+    ));
+
+    // Enter content from tab bar.
+    press(&mut state, &mut config, KeyCode::Down).unwrap();
+    let tab_bar_cleared = matches!(&state.stage, ManagerStage::Editor(e) if !e.tab_bar_focused);
+    assert!(tab_bar_cleared, "Down must enter content");
+
+    // Tab while content is focused cycles to the next tab AND returns focus to tab bar.
+    press(&mut state, &mut config, KeyCode::Tab).unwrap();
+    assert!(
+        matches!(&state.stage, ManagerStage::Editor(e)
+            if e.tab_bar_focused
+                && !e.tab_content_scroll_focused
+                && !e.workspace_mounts_scroll_focused),
+        "Tab from content must return focus to tab bar and clear content scroll focus"
+    );
+}
+
 // ── Roles tab: Space toggle matches effective allow-state ────────
 
 #[test]
