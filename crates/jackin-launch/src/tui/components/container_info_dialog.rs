@@ -42,10 +42,11 @@ pub fn launch_container_info_state(
         );
         rows.push(
             ContainerInfoRow::new("Diagnostics log", run_log_path)
+                .copyable()
                 .hyperlink(format!("file://{run_log_path}")),
         );
     }
-    let mut state = ContainerInfoState::new("Container info", rows);
+    let mut state = ContainerInfoState::new("Debug info", rows);
     if let Some(row) = view.container_info_copied {
         state.mark_copied(row);
     }

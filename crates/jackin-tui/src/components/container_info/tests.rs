@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn renders_rows_with_title_and_link_style() {
     let state = ContainerInfoState::new(
-        "Container info",
+        "Debug info",
         vec![
             ContainerInfoRow::new("Container ID", "jk-test")
                 .copyable()
@@ -21,7 +21,7 @@ fn renders_rows_with_title_and_link_style() {
         .draw(|frame| render_container_info(frame, frame.area(), &state))
         .unwrap();
     let rendered = format!("{:?}", terminal.backend().buffer());
-    assert!(rendered.contains("Container info"));
+    assert!(rendered.contains("Debug info"));
     assert!(rendered.contains("jk-test"));
     assert!(rendered.contains("~/.jackin/run.jsonl"));
 }
@@ -29,7 +29,7 @@ fn renders_rows_with_title_and_link_style() {
 #[test]
 fn copy_payload_at_hits_copyable_value_column() {
     let state = ContainerInfoState::new(
-        "Container info",
+        "Debug info",
         vec![
             ContainerInfoRow::new("Container ID", "jk-test")
                 .copyable()
@@ -54,7 +54,7 @@ fn copy_payload_at_hits_copyable_value_column() {
 #[test]
 fn hyperlink_overlay_emits_osc8_for_link_rows() {
     let state = ContainerInfoState::new(
-        "Container info",
+        "Debug info",
         vec![
             ContainerInfoRow::new("Container ID", "jk-test").copyable(),
             ContainerInfoRow::new("Run log", "/tmp/run.jsonl").hyperlink("file:///tmp/run.jsonl"),

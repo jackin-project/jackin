@@ -245,7 +245,7 @@ impl Dialog {
                     .unwrap_or("(shell)")
                     .to_string();
                 DialogRatatuiSnapshot::InfoRows {
-                    dialog_title: "Container info".into(),
+                    dialog_title: "Debug info".into(),
                     rows: vec![
                         ("Role".into(), role.clone()),
                         ("Agent".into(), agent_label),

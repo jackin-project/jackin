@@ -121,13 +121,20 @@ The `▸` prefix on the selected row is **focus-gated**: it must appear if and o
 
 **Implementation:** compute `show_cursor = panel_focused && modal.is_none()` (or the equivalent expression for the surface) and thread it through every row-line builder. Use `highlight_spacing(HighlightSpacing::Always)` on the ratatui `List` so the blank prefix column is reserved even when `show_cursor` is false — this keeps row alignment stable across focus transitions. A `▸` visible in an unfocused panel is a design-decision violation.
 
-### Hint bar always has one blank spacer row above it
+### Full bottom-of-screen stack: spacer → hints → spacer → status/chip row
 
-Every screen (workspace list, workspace editor, settings, launch cockpit, lookbook) must reserve exactly one blank spacer row **directly above** the hint bar. This breathing room separates the screen body from the hints so the layout reads as two distinct layers.
+The bottom three layers of every screen must be laid out in this exact order (top to bottom):
 
-**Enforcement:** `footer_height()` in `jackin-console` returns `hint_height + 1` (spacer + hints). `render_footer()` renders hints in the bottom `hint_height` rows and leaves the top row blank. Callers that pass their own footer-height must account for the spacer: `footer_h = footer_height(&items, width)` already includes it.
+1. **One blank spacer row** above the hints — separates body from hints.
+2. **Hint bar** — keyboard shortcuts for the current focus.
+3. **One blank spacer row** below the hints — separates hints from the status row.
+4. **Status / debug-chip row** (debug mode only; absent when `--debug` is off).
 
-A hint row flush against the body content with no blank row above is a design-decision violation.
+**Enforcement (Defect 14 — spacer above hints):** `footer_height()` in `jackin-console` returns `hint_height + 1` (spacer + hints). `render_footer()` renders hints in the bottom `hint_height` rows and leaves the top row blank.
+
+**Enforcement (Defect 39 — spacer below hints, between hints and chip):** `split_debug_area()` in `jackin-console` allocates **2 rows** for the debug section when in debug mode (1 spacer + 1 chip row). Only the bottom row is rendered with `StatusFooter`; the top row is naturally blank. The main area shrinks by 2 rows (not 1) in debug mode, so the hint bar and the chip row are always separated by one blank row.
+
+A hint row flush against the body content with no blank row above is a design-decision violation. A chip row flush against the hint row with no blank row between them is equally a violation.
 
 ### `↓` and `⇥` are equivalent for entering tab content
 

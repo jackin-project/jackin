@@ -748,7 +748,7 @@ fn launch_container_info_renders_from_footer_chip_state() {
 
     let rendered = format!("{:?}", terminal.backend().buffer());
     for needle in [
-        "Container info",
+        "Debug info",
         "jk-k7p9m2xq-bigmonorepo-agentsmith",
         "jackin version",
         "agent-smith",

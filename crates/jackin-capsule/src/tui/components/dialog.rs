@@ -2074,7 +2074,7 @@ fn render_container_info(
     copied: bool,
     copy_target_hovered: bool,
 ) {
-    render_box(buf, box_row, box_col, height, width, "Container info");
+    render_box(buf, box_row, box_col, height, width, "Debug info");
 
     let capsule_ver = env!("JACKIN_CAPSULE_VERSION");
 

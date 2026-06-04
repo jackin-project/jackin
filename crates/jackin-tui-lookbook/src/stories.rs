@@ -233,9 +233,9 @@ pub fn stories() -> Vec<Story> {
         ),
         Story::new(
             "container-info/debug",
-            "Container info",
+            "Debug info",
             "ContainerInfoState",
-            "Debug-mode container info dialog with run ID and log path rows.",
+            "Debug-mode debug info dialog with run ID and log path rows.",
             72,
             12,
             story_container_info_debug,
@@ -535,7 +535,7 @@ fn story_panel_unfocused(frame: &mut Frame<'_>, area: Rect) {
 
 fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
     let state = ContainerInfoState::new(
-        "Container info",
+        "Debug info",
         vec![
             ContainerInfoRow::new("Container ID", "jk-sk76zdat-thearchitect").copyable(),
             ContainerInfoRow::new("Role", "the-architect"),

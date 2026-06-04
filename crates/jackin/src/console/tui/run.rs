@@ -24,7 +24,7 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_run_id_label,
+    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_chip_row, debug_run_id_label,
     quit_confirm_area, quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm,
     split_debug_area, token_generate_status_message,
 };
@@ -318,14 +318,17 @@ pub async fn run_console<H: InstanceActionHandler>(
                 if let Some(bar_area) = debug_bar_area {
                     let active_run = crate::diagnostics::active_run();
                     let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()));
+                    // Use only the bottom row of the 2-row bar for the chip;
+                    // the top row is the blank spacer (Defect 39).
+                    let chip_row = debug_chip_row(bar_area);
                     last_debug_chip_area =
-                        jackin_tui::components::status_footer_debug_chip_rect(bar_area, &run_id);
+                        jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id);
                     frame.render_widget(
                         jackin_tui::components::StatusFooter::new("")
                             .right_debug(Some(&run_id))
                             .alpha(1.0)
                             .right_debug_hover(debug_chip_hovered),
-                        bar_area,
+                        chip_row,
                     );
                 }
             })?;

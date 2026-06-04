@@ -97,19 +97,37 @@ pub fn quit_confirm_state() -> jackin_tui::components::ConfirmState {
 /// bottom.
 #[must_use]
 pub fn split_debug_area(area: Rect, debug_mode: bool) -> (Rect, Option<Rect>) {
-    if !debug_mode || area.height < 2 {
+    if !debug_mode || area.height < 3 {
         return (area, None);
     }
+    // Reserve 2 rows: 1 blank spacer + 1 chip row.  The spacer separates the
+    // hint bar from the debug chip (Defect 39 requirement: body → spacer →
+    // hints → spacer → status/chip row).
     let main = Rect {
-        height: area.height - 1,
+        height: area.height - 2,
         ..area
     };
     let bar = Rect {
-        y: area.y + area.height - 1,
-        height: 1,
+        y: area.y + area.height - 2,
+        height: 2,
         ..area
     };
     (main, Some(bar))
+}
+
+/// Return the 1-row rect within a `split_debug_area` bar where the chip
+/// is actually rendered.  The top row of the 2-row bar is the blank spacer;
+/// the chip lives in the bottom row.
+#[must_use]
+pub fn debug_chip_row(bar: Rect) -> Rect {
+    if bar.height < 2 {
+        return bar;
+    }
+    Rect {
+        y: bar.y + bar.height - 1,
+        height: 1,
+        ..bar
+    }
 }
 
 #[must_use]

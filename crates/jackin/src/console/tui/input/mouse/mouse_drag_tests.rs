@@ -298,7 +298,7 @@ fn container_info_copy_click_queues_typed_effect() {
     let mut state = list_state();
     state.list_modal = Some(Modal::ContainerInfo {
         state: jackin_tui::components::ContainerInfoState::new(
-            "Container info",
+            "Debug info",
             vec![
                 jackin_tui::components::ContainerInfoRow::new("Run ID", "run-123")
                     .copyable()
