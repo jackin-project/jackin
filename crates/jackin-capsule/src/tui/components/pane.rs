@@ -1,14 +1,10 @@
-//! Custom pane-body widget for rendering a vt100 screen into a Ratatui Buffer.
+//! Custom pane-body widget for rendering terminal screen content into a Ratatui Buffer.
 //!
-//! This is the implementation of the custom-cell-widget approach chosen in
-//! ADR-004. It blits `vt100::Screen` cells directly into the Ratatui `Buffer`
-//! so the existing `Buffer::diff` mechanism in the `SocketBackend` handles the
-//! actual terminal output — no hand-rolled row diff needed.
-//!
-//! **Why not tui-term?** See ADR-004: tui-term 0.3.4 implements its `Screen`
-//! trait for the crates.io `vt100::Screen`, which is incompatible at the type
-//! level with the `donbeave/vt100-rust` fork this codebase requires.
+//! Phase 5: migrated from vt100::Screen to jackin_term::GridSnapshot.
+//! Blits DamageGrid cells directly into the Ratatui Buffer so the existing
+//! SocketBackend diff mechanism handles terminal output.
 
+use jackin_term::{Color as TermColor, GridSnapshot};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -16,70 +12,65 @@ use ratatui::{
     widgets::Widget,
 };
 
-/// A Ratatui widget that renders a `vt100::Screen` into the given area.
-///
-/// Each vt100 cell is mapped to the corresponding `ratatui::buffer::Cell`.
-/// The Ratatui double-buffer diff in `SocketBackend` then only emits the
-/// cells that changed since the last frame, replacing the hand-rolled
-/// `PaneBodyCache` row-diff path.
+/// A Ratatui widget that renders a [`GridSnapshot`] (from `DamageGrid::dump()`)
+/// into the given area. Replaces the old vt100::Screen-based widget.
 pub struct PaneBodyWidget<'a> {
-    screen: &'a vt100::Screen,
+    snapshot: &'a GridSnapshot,
 }
 
 impl<'a> PaneBodyWidget<'a> {
     #[must_use]
-    pub const fn new(screen: &'a vt100::Screen) -> Self {
-        Self { screen }
+    pub const fn new(snapshot: &'a GridSnapshot) -> Self {
+        Self { snapshot }
     }
 }
 
 impl Widget for PaneBodyWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let (screen_rows, screen_cols) = self.screen.size();
+        let screen_rows = self.snapshot.rows;
+        let screen_cols = self.snapshot.cols;
 
-        // Always fill the ENTIRE area so that cells outside the current vt100
-        // screen dimensions are explicitly blanked. Without this, Ratatui's
-        // double-buffer diff leaves old content from previous layouts in the
-        // buffer — visible as corrupted content from other panes bleeding into
-        // the newly-expanded pane after a tab close or layout change.
         for row in 0..area.height {
             for col in 0..area.width {
                 let buf_cell = &mut buf[(area.x + col, area.y + row)];
 
                 if row < screen_rows && col < screen_cols {
-                    let Some(cell) = self.screen.cell(row, col) else {
+                    let Some(cell) = self.snapshot.cell(row, col) else {
                         buf_cell.reset();
                         continue;
                     };
+                    if cell.is_wide_continuation {
+                        buf_cell.reset();
+                        continue;
+                    }
 
-                    let contents = cell.contents();
-                    if !contents.is_empty() {
-                        buf_cell.set_symbol(contents);
+                    if !cell.text.is_empty() {
+                        buf_cell.set_symbol(&cell.text);
                     } else {
                         buf_cell.set_char(' ');
                     }
 
-                    buf_cell.set_fg(vt100_color(cell.fgcolor()));
-                    buf_cell.set_bg(vt100_color(cell.bgcolor()));
+                    buf_cell.set_fg(term_color(cell.fg));
+                    buf_cell.set_bg(term_color(cell.bg));
 
                     let mut modifier = Modifier::empty();
-                    if cell.bold() {
+                    if cell.bold {
                         modifier |= Modifier::BOLD;
                     }
-                    if cell.italic() {
+                    if cell.italic {
                         modifier |= Modifier::ITALIC;
                     }
-                    if cell.underline() {
+                    if cell.underline {
                         modifier |= Modifier::UNDERLINED;
                     }
-                    if cell.inverse() {
+                    if cell.inverse {
                         modifier |= Modifier::REVERSED;
+                    }
+                    if cell.dim {
+                        modifier |= Modifier::DIM;
                     }
                     buf_cell.modifier = modifier;
                 } else {
-                    // Outside the vt100 screen bounds (pane larger than the
-                    // parser has been resized to yet, or transitional state).
-                    // Reset to default so old buffer content is not retained.
                     buf_cell.reset();
                 }
             }
@@ -87,11 +78,11 @@ impl Widget for PaneBodyWidget<'_> {
     }
 }
 
-fn vt100_color(color: vt100::Color) -> Color {
+fn term_color(color: TermColor) -> Color {
     match color {
-        vt100::Color::Default => Color::Reset,
-        vt100::Color::Idx(idx) => Color::Indexed(idx),
-        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
+        TermColor::Default => Color::Reset,
+        TermColor::Idx(idx) => Color::Indexed(idx),
+        TermColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
     }
 }
 

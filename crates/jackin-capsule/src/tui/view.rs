@@ -336,7 +336,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
     pub(crate) scrollback_active: bool,
-    pub(crate) pane_screens: &'a [(u64, &'a vt100::Screen)],
+    pub(crate) pane_screens: &'a [(u64, jackin_term::GridSnapshot)],
 }
 
 pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>) {
@@ -411,7 +411,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             border_area,
         );
 
-        if let Some((_, screen)) = view
+        if let Some((_, snap)) = view
             .pane_screens
             .iter()
             .find(|(session_id, _)| *session_id == pane.id)
@@ -422,7 +422,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
                 width: pane.inner.cols,
                 height: pane.inner.rows,
             };
-            frame.render_widget(PaneBodyWidget::new(screen), body_area);
+            frame.render_widget(PaneBodyWidget::new(snap), body_area);
         }
     }
 }

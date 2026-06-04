@@ -153,9 +153,14 @@ impl Multiplexer {
                     .map(|s| (pane.id, session_display_title(s)))
             })
             .collect();
-        let pane_screens: Vec<(u64, &vt100::Screen)> = panes
+        // Phase 5: use GridSnapshot from DamageGrid for pane bodies in Ratatui frame.
+        let pane_screens: Vec<(u64, jackin_term::GridSnapshot)> = panes
             .iter()
-            .filter_map(|pane| self.sessions.get(&pane.id).map(|s| (pane.id, s.screen())))
+            .filter_map(|pane| {
+                self.sessions
+                    .get(&pane.id)
+                    .map(|s| (pane.id, s.shadow_grid.dump()))
+            })
             .collect();
 
         // Snapshot dialog state (fully owned) before the draw closure.
