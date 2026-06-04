@@ -12,6 +12,8 @@ use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
 pub struct StatusFooterHover {
     pub left: bool,
     pub right: bool,
+    /// Whether the pointer is over the debug chip (inverts chip colors on hover).
+    pub right_debug: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,6 +36,7 @@ impl<'a> StatusFooter<'a> {
             hover: StatusFooterHover {
                 left: false,
                 right: false,
+                right_debug: false,
             },
         }
     }
@@ -65,6 +68,12 @@ impl<'a> StatusFooter<'a> {
     #[must_use]
     pub const fn right_hover(mut self, right_hover: bool) -> Self {
         self.hover.right = right_hover;
+        self
+    }
+
+    #[must_use]
+    pub const fn right_debug_hover(mut self, hovered: bool) -> Self {
+        self.hover.right_debug = hovered;
         self
     }
 }
@@ -99,12 +108,17 @@ impl Widget for StatusFooter<'_> {
         if let Some(debug) = self.right_debug.filter(|debug| !debug.is_empty()) {
             // Canonical debug chip: DANGER_RED background, white text — identical to
             // the console's render_debug_bar so the operator sees the same chip on
-            // every surface. The red background is the "you are in a debug run" signal.
+            // every surface. Inverted on hover (white bg, red text) for clickability cue.
+            let (chip_bg, chip_fg) = if self.hover.right_debug {
+                (WHITE, DANGER_RED)
+            } else {
+                (DANGER_RED, WHITE)
+            };
             right_spans.push(Span::styled(
                 format!(" {debug} "),
                 Style::default()
-                    .bg(faded(DANGER_RED, self.alpha))
-                    .fg(faded(WHITE, self.alpha))
+                    .bg(faded(chip_bg, self.alpha))
+                    .fg(faded(chip_fg, self.alpha))
                     .add_modifier(Modifier::BOLD),
             ));
         }
@@ -188,6 +202,27 @@ pub fn status_footer_right_chip_rect(
         x,
         y: area.y,
         width: right_width.min(area.width),
+        height: area.height,
+    })
+}
+
+/// Return the rect of the **debug chip** (`right_debug`) on the status bar,
+/// regardless of whether the instance-id chip (`right`) is present.
+///
+/// Use this instead of `status_footer_right_chip_rect` when the caller only
+/// shows the debug chip (no instance chip), as on the console debug bar where
+/// `right` is empty.
+#[must_use]
+pub fn status_footer_debug_chip_rect(area: Rect, right_debug: &str) -> Option<Rect> {
+    if right_debug.is_empty() || area.width == 0 || area.height == 0 {
+        return None;
+    }
+    let chip_width = u16::try_from(format!(" {right_debug} ").chars().count()).unwrap_or(u16::MAX);
+    let x = area.x.saturating_add(area.width.saturating_sub(chip_width));
+    Some(Rect {
+        x,
+        y: area.y,
+        width: chip_width.min(area.width),
         height: area.height,
     })
 }

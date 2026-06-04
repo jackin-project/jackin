@@ -56,7 +56,8 @@ pub use scrollable_panel::{
 };
 pub use select_list::{SelectList, SelectListState, render_select_list};
 pub use status_footer::{
-    StatusFooter, StatusFooterHover, render_status_footer, status_footer_right_chip_rect,
+    StatusFooter, StatusFooterHover, render_status_footer, status_footer_debug_chip_rect,
+    status_footer_right_chip_rect,
 };
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_label_line, tab_underline_line};

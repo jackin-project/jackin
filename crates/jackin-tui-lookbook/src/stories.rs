@@ -480,6 +480,7 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
         StatusFooterHover {
             left: true,
             right: false,
+            right_debug: false,
         },
     );
 }

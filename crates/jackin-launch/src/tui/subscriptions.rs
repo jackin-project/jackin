@@ -160,6 +160,7 @@ fn handle_cockpit_mouse_move(
     let hover = StatusFooterHover {
         left: activity_hovering,
         right: container_hovering,
+        right_debug: false,
     };
     if hover != v.footer_hover {
         let _dirty = update_launch_view(v, LaunchMessage::FooterHoverChanged(hover));

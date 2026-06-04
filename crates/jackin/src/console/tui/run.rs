@@ -24,10 +24,9 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_bar_chip_area,
-    debug_run_id_label, quit_confirm_area, quit_confirm_state, render_debug_bar_hovered,
-    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
-    token_generate_status_message,
+    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_run_id_label,
+    quit_confirm_area, quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm,
+    split_debug_area, token_generate_status_message,
 };
 
 use crate::config::AppConfig;
@@ -306,8 +305,15 @@ pub async fn run_console<H: InstanceActionHandler>(
                 if let Some(bar_area) = debug_bar_area {
                     let active_run = crate::diagnostics::active_run();
                     let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()));
-                    last_debug_chip_area = Some(debug_bar_chip_area(bar_area, &run_id, None));
-                    render_debug_bar_hovered(frame, bar_area, &run_id, None, debug_chip_hovered);
+                    last_debug_chip_area =
+                        jackin_tui::components::status_footer_debug_chip_rect(bar_area, &run_id);
+                    frame.render_widget(
+                        jackin_tui::components::StatusFooter::new("")
+                            .right_debug(Some(&run_id))
+                            .alpha(1.0)
+                            .right_debug_hover(debug_chip_hovered),
+                        bar_area,
+                    );
                 }
             })?;
             if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =

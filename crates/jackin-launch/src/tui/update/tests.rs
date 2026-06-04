@@ -73,6 +73,7 @@ fn footer_hover_message_replaces_hover_state() {
         LaunchMessage::FooterHoverChanged(StatusFooterHover {
             left: true,
             right: false,
+            right_debug: false,
         }),
     );
 
