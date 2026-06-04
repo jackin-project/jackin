@@ -336,7 +336,7 @@ fn resolve_sync_source_dir_workspace_wins_over_global() {
         }),
         ..AppConfig::default()
     };
-    let mut ws = WorkspaceConfig {
+    let ws = WorkspaceConfig {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::Sync,
             sync_source_dir: Some(PathBuf::from("/workspace/claude")),
