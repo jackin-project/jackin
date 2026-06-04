@@ -259,8 +259,14 @@ The page should also document how to verify the capsule manifest specifically, s
 ### Rust dependency
 
 ```toml
-# Cargo.toml
+# root Cargo.toml — [workspace.dependencies]  (file: Cargo.toml)
 sigstore = { version = "0.14", default-features = false, features = ["cosign"] }
+```
+
+Then in the `jackin` crate's <RepoFile path="Cargo.toml" /> under `[dependencies]`:
+
+```toml
+sigstore.workspace = true
 ```
 
 Pre-1.0 — note the choice in the PR body per the "prefer libraries" rule. The implementing PR must confirm the exact feature flag set against the 0.14 docs; the crate's feature surface has changed between minor versions. Confirm also that bundle v0.3 verification is fully supported (sigstore/sigstore-rs issue #432) before landing this PR.
@@ -271,7 +277,7 @@ Pre-1.0 — note the choice in the PR body per the "prefer libraries" rule. The 
 
 The new function in <RepoFile path="src/capsule_binary.rs" />, `async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String>`, replaces `fetch_remote_sha256` in the `download_and_cache` call path:
 
-1. Concurrently fetch `{base_url}/capsule-manifest.json` and `{base_url}/capsule-manifest.json.bundle` as raw bytes (not parsed text — sigstore-rs verifies the signature over the exact bytes, so parsing before verification would lose the original byte sequence).
+1. Concurrently fetch `{base_url}/capsule-manifest.json` and `{base_url}/capsule-manifest.json.bundle` as raw bytes. If only `fetch_text` exists in `crate::net`, use `fetch_text(...).await?.into_bytes()` — valid because the manifest is UTF-8 JSON and no re-encoding occurs. Do NOT parse JSON first and re-serialize: sigstore-rs verifies over the exact byte sequence the CI step signed, and a round-trip parse would break the verification.
 2. Verify the cosign bundle against the manifest bytes using `sigstore-rs`. Identity constraint: `certificate_identity_regexp = "^https://github.com/jackin-project/jackin/"`, `certificate_oidc_issuer = "https://token.actions.githubusercontent.com"`. Failure is a hard abort with the error message format specified in the Implementation decisions section above.
 3. Parse the verified manifest JSON from the same bytes. Extract `targets["aarch64-unknown-linux-gnu"]` or `targets["x86_64-unknown-linux-gnu"]` based on `arch` (the value returned by `container_arch()`).
 4. Return the attested SHA256 hex string to the caller, which continues with the existing archive download + hash comparison + version verification flow unchanged.
@@ -302,6 +308,8 @@ Write `docs/content/docs/reference/security-implementation.mdx`. Pure docs, no c
 ### Phase 2 — SLSA + cosign + SBOM (CI changes)
 
 Add job-level permissions, archive filename export, cosign signing, `syft` SBOM generation, and `actions/attest-build-provenance` to both build jobs in <RepoFile path=".github/workflows/release.yml" /> and <RepoFile path=".github/workflows/preview.yml" />. Add capsule manifest generation and signing to the `release` and `publish-preview` jobs. Verify with `gh workflow run --ref feature-branch` for both workflows (push-only jobs per <RepoFile path=".github/AGENTS.md" />). Estimated 1.5 days.
+
+**OIDC pre-check (already confirmed):** `id-token: write` requires GitHub Actions OIDC to be enabled at the org/repo level. Confirmed working — <RepoFile path=".github/workflows/docs.yml" /> already uses `id-token: write` and succeeds on every run. No policy change needed before landing PR 2.
 
 ### Phase 3 — Operator verification docs
 
