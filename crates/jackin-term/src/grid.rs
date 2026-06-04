@@ -106,10 +106,23 @@ pub struct DamageGrid {
     scroll_top: u16,    // 0-based, inclusive
     scroll_bottom: u16, // 0-based, inclusive
 
+    /// Kitty keyboard protocol stack pushed by the foreground program.
+    /// Each `\x1b[>{flags}u` pushes; each `\x1b[<{n}u` pops `n` levels.
+    /// The capsule mirrors the top of this stack onto the outer terminal
+    /// on focus swap and pops it on focus-out, so it must track depth
+    /// exactly — a leaked push leaves the operator's terminal in kitty
+    /// mode after focus moves to a plain shell.
+    kitty_kb_stack: Vec<u32>,
+
     // ── Damage + passthrough ──────────────────────────────────────────────────
     pub dirty: DirtyTracker,
     pub passthrough: PassthroughBuffer,
 }
+
+/// Per-pane cap on kitty-keyboard push depth. A buggy or hostile program
+/// looping `\x1b[>1u` would otherwise grow `kitty_kb_stack` without bound;
+/// 64 is well past any real terminal program's nested keymap-mode depth.
+const KITTY_KB_STACK_CAP: usize = 64;
 
 impl DamageGrid {
     /// Create a new grid with the given dimensions and scrollback limit.
@@ -138,6 +151,7 @@ impl DamageGrid {
             current_attrs: Attrs::default(),
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
+            kitty_kb_stack: Vec::new(),
             dirty: DirtyTracker::default(),
             passthrough: PassthroughBuffer::default(),
         }
@@ -346,6 +360,25 @@ impl DamageGrid {
     /// to maintain their own copy by draining `PassthroughEvent::FocusEvents`.
     pub fn focus_events(&self) -> bool {
         self.focus_events
+    }
+
+    /// Top of the kitty-keyboard stack (`0` when empty). The capsule
+    /// re-asserts this on the outer terminal when the pane gains focus.
+    pub fn kitty_kb_flags(&self) -> u32 {
+        self.kitty_kb_stack.last().copied().unwrap_or(0)
+    }
+
+    /// Owned copy of the kitty-keyboard stack. The capsule mirrors this
+    /// for cheap focus-swap restore without re-borrowing the grid.
+    pub fn kitty_kb_stack_snapshot(&self) -> Vec<u32> {
+        self.kitty_kb_stack.clone()
+    }
+
+    /// Clear the kitty-keyboard stack. Called by the capsule on
+    /// alternate-screen exit so a full-screen program that pushed a
+    /// kitty level cannot leave the following shell prompt in that mode.
+    pub fn clear_kitty_kb_stack(&mut self) {
+        self.kitty_kb_stack.clear();
     }
 
     // ── Internal grid helpers ─────────────────────────────────────────────────
@@ -817,16 +850,45 @@ impl vte::Perform for DamageGrid {
                 self.saved_cursor_row = self.cursor_row;
                 self.saved_cursor_col = self.cursor_col;
             }
-            // Restore Cursor.
-            'u' => {
+            // `u` splits by intermediate: bare = DECRC (restore cursor);
+            // `>`/`<`/`?` = kitty keyboard protocol, tracked and forwarded.
+            'u' if intermediates.is_empty() => {
                 self.cursor_row = self.saved_cursor_row;
                 self.cursor_col = self.saved_cursor_col;
                 self.clamp_cursor();
             }
-            // DECSC (ESC 7) save cursor — emitted as CSI with intermediate '7' sometimes.
+            // Kitty keyboard push (`\x1b[>{flags}u`): track depth so the
+            // capsule's focus-swap restore stays balanced, and forward raw.
+            'u' if intermediates == b">" => {
+                let flags = u32::from(p0.max(1));
+                if self.kitty_kb_stack.len() < KITTY_KB_STACK_CAP {
+                    self.kitty_kb_stack.push(flags);
+                }
+                self.passthrough
+                    .push(PassthroughEvent::UnhandledCsi(format!("\x1b[>{flags}u").into_bytes()));
+            }
+            // Kitty keyboard pop (`\x1b[<{n}u`): pop `n` levels (default 1).
+            'u' if intermediates == b"<" => {
+                let count = usize::from(p0.max(1));
+                for _ in 0..count.min(self.kitty_kb_stack.len()) {
+                    self.kitty_kb_stack.pop();
+                }
+                self.passthrough
+                    .push(PassthroughEvent::UnhandledCsi(format!("\x1b[<{count}u").into_bytes()));
+            }
+            // Kitty keyboard set/report (`\x1b[?{flags}u` / `\x1b[?u`).
+            'u' if intermediates == b"?" => {
+                self.passthrough.push(PassthroughEvent::UnhandledCsi(
+                    reconstruct_csi(params, intermediates, action as u8),
+                ));
+            }
             _ => {
-                // Unhandled CSI — emit as passthrough.
-                // (Don't collect the full bytes here — just note it for passthrough.)
+                // Unhandled CSI — reconstruct the original bytes and forward
+                // raw so the capsule can pass it to the outer terminal.
+                let bytes = reconstruct_csi(params, intermediates, action as u8);
+                if !bytes.is_empty() {
+                    self.passthrough.push(PassthroughEvent::UnhandledCsi(bytes));
+                }
             }
         }
     }
@@ -1053,6 +1115,31 @@ impl DamageGrid {
 }
 
 // ── Parse helpers ─────────────────────────────────────────────────────────
+
+/// Reconstruct the raw bytes of a CSI sequence from its parsed components,
+/// for forwarding unhandled sequences verbatim to the outer terminal.
+///
+/// Sub-params (vte's `&[u16]` per top-level param) are joined with `:`,
+/// top-level params with `;`. Example: `[[1, 2], [3]]` with final `m`
+/// → `\x1b[1:2;3m`.
+fn reconstruct_csi(params: &vte::Params, intermediates: &[u8], final_byte: u8) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut buf = b"\x1b[".to_vec();
+    buf.extend_from_slice(intermediates);
+    for (idx, sub) in params.iter().enumerate() {
+        if idx > 0 {
+            buf.push(b';');
+        }
+        for (jdx, n) in sub.iter().enumerate() {
+            if jdx > 0 {
+                buf.push(b':');
+            }
+            let _ = write!(buf, "{n}");
+        }
+    }
+    buf.push(final_byte);
+    buf
+}
 
 /// Parse extended color from SGR params starting at `i`.
 /// Advances `i` past the color params consumed. Returns `None` for unknown.

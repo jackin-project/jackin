@@ -1116,22 +1116,27 @@ impl Session {
         (self.vt_scrollback_filled(), self.inline_scrollback.len())
     }
 
-    fn vt_scrollback_filled(&mut self) -> usize {
-        let saved = self.parser.screen().scrollback();
-        self.shadow_grid.set_scrollback(usize::MAX);
-        let filled = self.parser.screen().scrollback();
-        // saved.min(filled): vt100 rejects offsets above the actual fill
-        // count, so restoring `saved` verbatim would be wrong if the fill
-        // shrank between the read and the probe.
-        self.shadow_grid.set_scrollback(saved.min(filled));
-        filled
+    fn vt_scrollback_filled(&self) -> usize {
+        // Phase 5: use DamageGrid's scrollback_len() for the fill count.
+        self.shadow_grid.scrollback_len()
     }
 
     fn apply_scrollback_offset(&mut self) {
         let vt_filled = self.vt_scrollback_filled();
+        // Phase 5: set DamageGrid scrollback offset instead of vt100.
+        self.shadow_grid
+            .set_scrollback(self.scrollback_offset.min(vt_filled));
+        // Keep vt100 parser scrollback in sync for the inline-scrollback fallback path.
+        let saved = self.parser.screen().scrollback();
+        let vt_parser_filled = {
+            self.parser.screen_mut().set_scrollback(usize::MAX);
+            let f = self.parser.screen().scrollback();
+            self.parser.screen_mut().set_scrollback(saved.min(f));
+            f
+        };
         self.parser
             .screen_mut()
-            .set_scrollback(self.scrollback_offset.min(vt_filled));
+            .set_scrollback(self.scrollback_offset.min(vt_parser_filled));
     }
 
     fn clamp_scrollback_offset(&mut self) {
@@ -1464,8 +1469,7 @@ impl Session {
             return;
         }
 
-        let row =
-            crate::tui::render::snapshot_damagegrid_row(&self.shadow_grid, 0, screen_cols);
+        let row = crate::tui::render::snapshot_damagegrid_row(&self.shadow_grid, 0, screen_cols);
         if self.inline_scrollback.is_empty() && row.is_blank() {
             return;
         }
