@@ -746,7 +746,7 @@ The program is done when:
 **Canonical pattern to converge on:** one shared scroll-interaction model — wheel over a scrollable region scrolls it (hover-targeted), the scrollbar thumb is draggable, and a click in the track pages — used by every surface that renders a scrollbar. The thumb glyph/track style is also one shared rendering.
 
 **Tasks:**
-- [ ] Inventory scroll-interaction handlers per surface: `rg -n "try_drag_vertical_scrollbar|try_drag_horizontal_scrollbar|ScrollUp|ScrollDown|scrollbar" crates/*/src`.
+- [x] Inventory scroll-interaction handlers per surface: `rg -n "try_drag_vertical_scrollbar|try_drag_horizontal_scrollbar|ScrollUp|ScrollDown|scrollbar" crates/*/src`. Console: drag+wheel ✓ (mouse.rs). Launch: wheel for build_log ✓, no drag (no scrollbar rendered). Capsule: raw ANSI, no ratatui scrollbars.
 - [ ] Extract the drag/wheel/track-click scroll interaction into a shared helper and route console, launch, and capsule through it (DRY).
 - [x] Confirm wheel-targeting follows the pointer (the existing wheel-routing rule) on every surface, and composes with single-consumer routing (Defect 22). Console scroll already follows pointer position; single-consumer gate (Defect 22) is in place.
 - [x] Verify one scrollbar thumb glyph + track style across all surfaces (no per-surface drift). Only one implementation: FixedScrollbar in scrollable_panel.rs with "█" thumb / "·" track. Launch has no visual scrollbar; capsule uses raw ANSI (documented exception).
