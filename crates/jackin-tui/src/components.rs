@@ -29,7 +29,7 @@ pub use container_info::{
     hyperlink_overlay as container_info_hyperlink_overlay, render_container_info,
     required_height as container_info_required_height,
 };
-pub use dialog_layout::{dialog_inner_chunks, dialog_inner_height};
+pub use dialog_layout::{DialogBodyScroll, dialog_inner_chunks, dialog_inner_height};
 pub use error_dialog::{
     ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,
 };

@@ -23,7 +23,100 @@
 //! | 3     | Action / button row     |
 //! | 4     | Trailing spacer (1 row) |
 
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+
+/// Shared dialog body scroll state.
+///
+/// Any dialog whose body may exceed its viewport uses this type to track
+/// the current scroll offset. Attach it to the dialog's state struct, call
+/// `handle_key` for keyboard scroll events, and `render_scrollbars` after
+/// rendering the body content.
+#[derive(Debug, Clone, Default)]
+pub struct DialogBodyScroll {
+    pub scroll_y: u16,
+    pub scroll_x: u16,
+}
+
+impl DialogBodyScroll {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            scroll_y: 0,
+            scroll_x: 0,
+        }
+    }
+
+    /// Handle a key event for scrolling. Returns `true` if the key was consumed.
+    pub fn handle_key(
+        &mut self,
+        key: KeyEvent,
+        content_height: usize,
+        viewport_height: usize,
+        content_width: usize,
+        viewport_width: usize,
+    ) -> bool {
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+                self.scroll_y = self.scroll_y.saturating_sub(1);
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                let max = content_height.saturating_sub(viewport_height) as u16;
+                self.scroll_y = self.scroll_y.saturating_add(1).min(max);
+                true
+            }
+            KeyCode::PageUp => {
+                self.scroll_y = self.scroll_y.saturating_sub(viewport_height as u16);
+                true
+            }
+            KeyCode::PageDown => {
+                let max = content_height.saturating_sub(viewport_height) as u16;
+                self.scroll_y = self
+                    .scroll_y
+                    .saturating_add(viewport_height as u16)
+                    .min(max);
+                true
+            }
+            KeyCode::Left | KeyCode::Char('h' | 'H') => {
+                self.scroll_x = self.scroll_x.saturating_sub(1);
+                true
+            }
+            KeyCode::Right | KeyCode::Char('l' | 'L') => {
+                let max = content_width.saturating_sub(viewport_width) as u16;
+                self.scroll_x = self.scroll_x.saturating_add(1).min(max);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Render vertical and/or horizontal scrollbars on the block border when needed.
+    pub fn render_scrollbars(
+        &self,
+        frame: &mut Frame,
+        block_area: Rect,
+        content_height: usize,
+        content_width: usize,
+    ) {
+        use crate::components::scrollable_panel::{
+            is_scrollable, render_horizontal_scrollbar, render_vertical_scrollbar,
+        };
+        if is_scrollable(
+            content_height,
+            crate::components::scrollable_panel::viewport_height(block_area),
+        ) {
+            render_vertical_scrollbar(frame, block_area, content_height, self.scroll_y);
+        }
+        if is_scrollable(
+            content_width,
+            crate::components::scrollable_panel::viewport_width(block_area),
+        ) {
+            render_horizontal_scrollbar(frame, block_area, content_width, self.scroll_x);
+        }
+    }
+}
 
 /// Split `inner` into the canonical five-slot dialog layout.
 ///
