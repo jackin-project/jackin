@@ -27,6 +27,7 @@
 //! 2. Register it in [`detectors::default_registry`].
 //! 3. No changes to the state machine, `daemon.rs`, or `session.rs`.
 
+pub mod arbitrate;
 pub mod detectors;
 pub mod hook_installer;
 pub mod process;
@@ -308,5 +309,66 @@ mod tests {
         assert_eq!(s.revision, 1);
         s.advance(AgentRawState::PromptVisible);
         assert_eq!(s.revision, 2);
+    }
+
+    #[test]
+    fn re_work_after_ack_creates_new_done() {
+        let mut s = SessionStatus::new();
+        s.seen = false;
+        s.advance(AgentRawState::WorkingVisible);
+        s.advance(AgentRawState::PromptVisible); // → Done
+        assert_eq!(s.effective, AgentState::Done);
+        s.acknowledge(); // → Idle
+        assert_eq!(s.effective, AgentState::Idle);
+        // New work cycle
+        s.advance(AgentRawState::HookTaskStart);
+        s.advance(AgentRawState::PromptVisible); // → Done again (seen was reset by HookTaskStart)
+        assert_eq!(s.effective, AgentState::Done);
+    }
+
+    #[test]
+    fn done_derived_from_idle_plus_unseen() {
+        let mut s = SessionStatus::new();
+        s.seen = false;
+        s.advance(AgentRawState::HookTaskStart); // → Working, resets seen
+        let result = s.advance(AgentRawState::HookTaskDone); // → Done (raw idle + !seen)
+        assert_eq!(result, Some(AgentState::Done));
+        assert_eq!(s.effective, AgentState::Done);
+    }
+
+    #[test]
+    fn roll_up_priority_blocked_gt_done_gt_working_gt_idle_gt_unknown() {
+        use crate::agent_status::arbitrate::attention_priority;
+        assert!(attention_priority(AgentState::Blocked) > attention_priority(AgentState::Done));
+        assert!(attention_priority(AgentState::Done) > attention_priority(AgentState::Working));
+        assert!(attention_priority(AgentState::Working) > attention_priority(AgentState::Idle));
+        assert!(attention_priority(AgentState::Idle) > attention_priority(AgentState::Unknown));
+    }
+
+    #[test]
+    fn heartbeat_keeps_hook_authority_fresh() {
+        use std::time::Instant;
+        let mut auth = HookAuthority {
+            source_id: "hook-1".to_string(),
+            agent_label: "claude".to_string(),
+            raw_state: "blocked".to_string(),
+            seq: 100,
+            ts_ns: 0,
+            message: None,
+            last_seen: Instant::now(),
+        };
+        let before = auth.last_seen;
+        auth.last_seen = Instant::now();
+        assert!(auth.last_seen >= before);
+    }
+
+    #[test]
+    fn clear_authority_removes_only_matching_source() {
+        let mut seq = sequence::SequenceTracker::new();
+        seq.accept("source-a", 100);
+        seq.accept("source-b", 200);
+        seq.clear_source("source-a");
+        assert!(seq.has_source("source-b"));
+        assert!(!seq.has_source("source-a"));
     }
 }

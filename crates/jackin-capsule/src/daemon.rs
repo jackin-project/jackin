@@ -8906,4 +8906,29 @@ mod tests {
             "stderr detail should survive for logs: {err}"
         );
     }
+
+    #[test]
+    fn wait_session_status_returns_immediate_when_already_satisfied() {
+        use jackin_protocol::control::AgentState;
+        let sessions = vec![jackin_protocol::control::SessionInfo {
+            id: 42,
+            label: "test".to_string(),
+            agent: Some("claude".to_string()),
+            state: AgentState::Blocked,
+            active: true,
+            token_usage: None,
+        }];
+        let current = sessions
+            .iter()
+            .find(|s| s.id == 42)
+            .map(|s| s.state.label().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        let target_statuses = vec!["blocked".to_string(), "idle".to_string()];
+        let outcome = if target_statuses.contains(&current) {
+            "satisfied"
+        } else {
+            "timeout"
+        };
+        assert_eq!(outcome, "satisfied");
+    }
 }

@@ -201,4 +201,26 @@ mod tests {
         };
         assert_eq!(identify_agent(&info), Some(AgentKind::Amp));
     }
+
+    #[test]
+    fn identify_agent_stat_comm_truncation_falls_back_to_exe() {
+        let info = ProcessInfo {
+            pid: 400,
+            pgid: 400,
+            tpgid: 400,
+            cmdline: vec![
+                "node".to_string(),
+                "/path/to/@anthropic-ai/claude-code/cli.js".to_string(),
+            ],
+            exe_path: Some(PathBuf::from("/usr/bin/node")),
+            comm: "node".to_string(),
+        };
+        assert_eq!(identify_agent(&info), Some(AgentKind::ClaudeCode));
+    }
+
+    #[test]
+    fn dead_process_returns_none() {
+        let info = read_process_info(99999999);
+        assert!(info.is_none());
+    }
 }

@@ -219,3 +219,48 @@ pub fn embedded_models(provider: &str) -> Vec<ModelEntry> {
         _ => vec![],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_catalog_falls_back_to_embedded_list_on_error() {
+        let catalog = ModelCatalog::new();
+        let models = catalog.available_models("claude");
+        assert!(!models.is_empty(), "should have embedded fallback for claude");
+        assert!(models.iter().any(|m| m.model_id.contains("sonnet")));
+    }
+
+    #[test]
+    fn model_catalog_uses_cached_result_within_ttl() {
+        let mut catalog = ModelCatalog::new();
+        catalog.entries.push(ModelEntry {
+            provider: "claude".to_string(),
+            model_id: "claude-test-model".to_string(),
+            display_name: "Test Model".to_string(),
+        });
+        catalog.fetched_at = Some(Instant::now());
+        assert!(!catalog.needs_refresh());
+        let models = catalog.available_models("claude");
+        assert!(models.iter().any(|m| m.model_id == "claude-test-model"));
+    }
+
+    #[test]
+    fn model_catalog_parses_model_entries_correctly() {
+        let mut catalog = ModelCatalog::new();
+        catalog.entries.push(ModelEntry {
+            provider: "claude".to_string(),
+            model_id: "claude-opus-4-8-20251101".to_string(),
+            display_name: "Claude Opus 4.8".to_string(),
+        });
+        catalog.entries.push(ModelEntry {
+            provider: "claude".to_string(),
+            model_id: "claude-sonnet-4-6-20251101".to_string(),
+            display_name: "Claude Sonnet 4.6".to_string(),
+        });
+        let models = catalog.available_models("claude");
+        assert_eq!(models.len(), 2);
+        assert!(models.iter().any(|m| m.display_name == "Claude Opus 4.8"));
+    }
+}

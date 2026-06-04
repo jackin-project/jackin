@@ -305,34 +305,92 @@ pub async fn handle_control_request(
         ClientMsg::WaitSessionStatus {
             session_id,
             ref target_statuses,
-            ..
+            timeout_ms,
         } => {
-            // One-shot synchronous check — returns immediately against the
-            // current snapshot. Full blocking-wait semantics (subscription)
-            // are a future phase; this satisfies the "returns immediately if
-            // already satisfied" criterion.
+            let timeout_dur =
+                std::time::Duration::from_millis(timeout_ms.unwrap_or(30_000));
             let current = sessions
                 .iter()
                 .find(|s| s.id == session_id)
-                .map(|s| s.state.label().to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-            let outcome = if sessions.iter().any(|s| s.id == session_id) {
-                if target_statuses.contains(&current) {
-                    "satisfied"
-                } else {
-                    "timeout"
+                .map(|s| s.state.label().to_string());
+            match current {
+                None => {
+                    crate::cdebug!(
+                        "session {session_id}: WaitSessionStatus outcome=not_found"
+                    );
+                    ServerMsg::SessionStatusResult {
+                        session_id,
+                        effective: "unknown".to_string(),
+                        revision: 0,
+                        outcome: "not_found".to_string(),
+                    }
                 }
-            } else {
-                "not_found"
-            };
-            crate::cdebug!(
-                "session {session_id}: WaitSessionStatus outcome={outcome} effective={current}"
-            );
-            ServerMsg::SessionStatusResult {
-                session_id,
-                effective: current,
-                revision: 0,
-                outcome: outcome.to_string(),
+                Some(ref cur) if target_statuses.contains(cur) => {
+                    crate::cdebug!(
+                        "session {session_id}: WaitSessionStatus outcome=satisfied effective={cur}"
+                    );
+                    ServerMsg::SessionStatusResult {
+                        session_id,
+                        effective: cur.clone(),
+                        revision: 0,
+                        outcome: "satisfied".to_string(),
+                    }
+                }
+                Some(ref cur) => {
+                    // Not yet satisfied — subscribe to broadcast and wait.
+                    let mut rx = state_broadcast_tx.subscribe();
+                    let deadline = tokio::time::Instant::now() + timeout_dur;
+                    let cur = cur.clone();
+                    let targets = target_statuses.clone();
+                    loop {
+                        let rem = deadline
+                            .saturating_duration_since(tokio::time::Instant::now());
+                        if rem.is_zero() {
+                            crate::cdebug!(
+                                "session {session_id}: WaitSessionStatus outcome=timeout effective={cur}"
+                            );
+                            break ServerMsg::SessionStatusResult {
+                                session_id,
+                                effective: cur,
+                                revision: 0,
+                                outcome: "timeout".to_string(),
+                            };
+                        }
+                        match tokio::time::timeout(rem, rx.recv()).await {
+                            Ok(Ok(ServerMsg::AgentStateChanged {
+                                session_id: esid,
+                                ref effective,
+                                revision,
+                                ..
+                            })) if esid == session_id && targets.contains(effective) => {
+                                crate::cdebug!(
+                                    "session {session_id}: WaitSessionStatus outcome=satisfied effective={effective}"
+                                );
+                                break ServerMsg::SessionStatusResult {
+                                    session_id,
+                                    effective: effective.clone(),
+                                    revision,
+                                    outcome: "satisfied".to_string(),
+                                };
+                            }
+                            Ok(Ok(_)) => continue,
+                            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
+                                continue;
+                            }
+                            _ => {
+                                crate::cdebug!(
+                                    "session {session_id}: WaitSessionStatus outcome=timeout (channel closed)"
+                                );
+                                break ServerMsg::SessionStatusResult {
+                                    session_id,
+                                    effective: cur.clone(),
+                                    revision: 0,
+                                    outcome: "timeout".to_string(),
+                                };
+                            }
+                        }
+                    }
+                }
             }
         }
         ClientMsg::SessionReadVisible { session_id, .. } => {

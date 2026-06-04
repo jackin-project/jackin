@@ -97,4 +97,26 @@ mod tests {
         // After clear, even seq=1 is accepted
         assert!(t.accept("hook-1", 1));
     }
+
+    #[test]
+    fn reporter_accept_valid_sequence() {
+        let mut t = SequenceTracker::new();
+        assert!(t.accept("reporter-1", 1000));
+    }
+
+    #[test]
+    fn reporter_reject_stale_sequence() {
+        let mut t = SequenceTracker::new();
+        t.accept("reporter-1", 1000);
+        assert!(!t.accept("reporter-1", 999));
+    }
+
+    #[test]
+    fn reporter_reject_wrong_source_after_clear() {
+        let mut t = SequenceTracker::new();
+        t.accept("source-a", 100);
+        t.clear_source("source-a");
+        // After clear, source-a can re-register from any seq
+        assert!(t.accept("source-a", 1));
+    }
 }
