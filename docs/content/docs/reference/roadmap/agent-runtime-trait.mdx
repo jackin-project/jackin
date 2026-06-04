@@ -2,7 +2,7 @@
 title: "Agent runtime trait — replace the closed Agent enum with per-runtime modules"
 ---
 
-**Status**: Open — **active epic, executing in the `feature/tui-architecture` PR (June 2026).** Promoted from a deferred 4-PR design proposal to the organizing goal for a single large PR, by operator directive: *everything — absorbing `main`, the monolith→crates migration cleanup, the `#523` provider-catalog port, and this trait extraction — lands in **one** PR on this branch, not split across follow-ups.* The 4-small-PRs plan below is superseded by the one-epic phasing in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 46), which is the executable surface; this page is the design of record. Keep the two in lockstep.
+**Status**: **Partially implemented** — Phase 0 close-out complete, Phase 1 complete, Phase 2 active (in progress), Phase A/B active. Promoted from a deferred 4-PR design proposal to the organizing goal for a single large PR, by operator directive: *everything — absorbing `main`, the monolith→crates migration cleanup, the `#523` provider-catalog port, and this trait extraction — lands in **one** PR on this branch, not split across follow-ups.* The 4-small-PRs plan below is superseded by the one-epic phasing in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 46), which is the executable surface; this page is the design of record. Keep the two in lockstep.
 
 ## This PR — what we have now, and what we are changing (the epic)
 
@@ -28,7 +28,13 @@ A verbatim port would **multiply** the very dispatch fan-out this item exists to
 
 All of it in this one PR. The migration plan section is rewritten below to reflect single-PR, green-at-each-commit phasing instead of four separate PRs.
 
-**Progress (live):** the **structural-absorption checkpoint landed** (merge commit `0e1f2a9d`) — `main`/`#523` absorbed by deliberate port (branch structure kept, `Provider` extended to the 4-key catalog, capsule + host key wiring + `token_for_provider` in place, 465 tests green). The remaining Phase 0 close-out plus Phases A/1–4 are tracked, item-by-item, in [Defect 46](/reference/roadmap/post-restructure-fixes/).
+**Progress (live):**
+- Phase 0 close-out: complete — all `#523` ledger rows ported, 1104 tests green.
+- Phase 1 (`AgentRuntime` trait + adapters): complete — sealed trait, 5 zero-sized adapter structs, `Agent::runtime()` entry point, 6 snapshot tests pass byte-for-byte.
+- Phase 2 (retire `Agent::Variant =>` arms): in progress — `agent.runtime().label()`, `manifest.agent_model()`, `agent.runtime().parse_version()`, `agent.runtime().install_block()`, `stored_version()/store_version()` via `runtime().slug()`, and 3 more `extract_agent_version` dispatch sites collapsed. Remaining: `app_config.rs`/`schema.rs` auth-forward matches (need Phase 4 config-struct collapse), `instance.rs` AgentRuntimeState construction (Agent A active).
+- Phase A/B: active — Phase A.1 (`ProviderAdapter` registry) complete; Phase B.1 schema complete; Phase B.2 provisioning in progress.
+
+Items tracked in [Defect 46](/reference/roadmap/post-restructure-fixes/).
 
 ### `#523` port ledger — must reach zero MISSING (mirrors checklist Defect 46)
 
