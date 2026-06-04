@@ -1746,6 +1746,7 @@ dependencies = [
  "insta",
  "jackin-build-meta",
  "jackin-protocol",
+ "jackin-term",
  "jackin-tui",
  "nix 0.31.3",
  "portable-pty",
