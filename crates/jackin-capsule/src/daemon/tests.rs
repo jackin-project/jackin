@@ -513,10 +513,7 @@ fn geometry_changing_redraws_emit_screen_erase_others_do_not() {
         assert!(reason.clears_screen(), "{reason:?} must clear the screen");
         let mut mux = single_pane_tab_mux_with_size(24, 80);
         let frame = mux.compose_full_frame(reason);
-        assert!(
-            contains(&frame),
-            "{reason:?} full frame must emit \\x1b[2J"
-        );
+        assert!(contains(&frame), "{reason:?} full frame must emit \\x1b[2J");
     }
 
     for reason in [
