@@ -146,6 +146,10 @@ None that mutate the host. The feature only changes **which** host folder `sync`
 2. **Provisioning** — wire the resolved override into `provision_*_auth` with default fallback and the missing-file warning path. Now CLI-set overrides take effect.
 3. **Console UX** — `show_hidden` on the picker; the Source folder row (with the default/explicit/inherited labels) on both Auth-tab surfaces; the shared render/open-picker/persist helper; reset-to-default. The row appears only in Sync mode and pre-fills the recomputed default.
 
+## Related work
+
+- [Auth reliability and convenience program](/reference/roadmap/auth-reliability-program/) — umbrella program; this item is Phase 1 in the complete auth reliability sequence. Read it for how source-folder isolation connects to live sync, health visibility, and credential hardening.
+
 ## Open questions
 
 - **GitHub CLI.** `sync` for GitHub primarily reads via the `gh auth token` subprocess, not a folder, with `~/.config/gh/hosts.yml` only as a fallback. A folder override is meaningful only for the file fallback. Decide whether to expose the override for GitHub at all, or scope Phase 1–3 to the five file-based agents and treat GitHub separately.

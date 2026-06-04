@@ -87,6 +87,7 @@ The result is that token rotation — whether initiated by the host or by an age
 
 ## Related work
 
+- [Auth reliability and convenience program](/reference/roadmap/auth-reliability-program/) — umbrella that places this fix as Phase 0 in the complete auth reliability sequence; read it for how this item connects to live sync, health visibility, and multi-company isolation.
 - [jackin' daemon](/reference/roadmap/jackin-daemon/) — the umbrella long-running-process item. Lifecycle, install, control socket, and security posture are decided there. Live auth sync is a Phase 4 adapter against the daemon's plug-in surface.
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — detailed architecture for the shared store, per-axis adapters, in-container watcher, and conflict resolution. The long-term answer to the auth fragility problem this PR partially addresses.
 - [Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/) — design history for the `sync` / `token` / `ignore` mode set; the concurrent-session token-drift concerns documented there are what this PR's root-cause fix narrows.

@@ -271,6 +271,10 @@ copy-paste flow. A follow-up design proposal addresses that:
 3. Is a token-only mode sufficient, or should jackin also support an operator-provided `apiKeyHelper` path for terminal-only workflows?
 4. Should jackin proactively detect likely-auth-drift conditions and recommend `purge` or `sync` before the operator hits a 401?
 
+## Related work
+
+- [Auth reliability and convenience program](/reference/roadmap/auth-reliability-program/) — umbrella program placing this item's design history in context; the concurrent-session concerns documented here are addressed across Phases 1–4 of that program.
+
 ## Related Files
 
 - <RepoFile path="src/config/mod.rs" /> — `AuthForwardMode` enum, persistence types
