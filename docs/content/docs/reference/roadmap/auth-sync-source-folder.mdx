@@ -80,7 +80,7 @@ sync_source_dir = "/Users/me/secrets/claude-work"   # new, optional
 2. A no-op migration step in both `CONFIG_MIGRATIONS` and `WORKSPACE_MIGRATIONS` (the field is additive with a serde default).
 3. New fixture dirs under `tests/fixtures/migrations/config/from-v1alpha5/` and `tests/fixtures/migrations/workspace/from-v1alpha5/`.
 4. Re-bake every existing fixture's `after.toml` through the new step.
-5. A Timeline entry in [Schema Versions](/reference/schema-versions/).
+5. A Timeline entry in [Schema Versions](/reference/runtime/schema-versions/).
 
 One version bump covers all affected file kinds, per the one-bump-per-PR rule. `RoleManifest` is untouched (role manifests cannot control auth source).
 

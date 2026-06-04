@@ -521,6 +521,7 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         failure_copied: None,
         container_info_open: false,
         container_info_copied: None,
+        container_info_hover: None,
     };
     terminal
         .draw(|frame| render_build_log_dialog(frame, frame.area(), &view))
@@ -569,6 +570,7 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         failure_copied: None,
         container_info_open: false,
         container_info_copied: None,
+        container_info_hover: None,
     };
 
     view.build_log_scroll.scroll_by(filled, -1);
@@ -621,6 +623,7 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         failure_copied: None,
         container_info_open: false,
         container_info_copied: None,
+        container_info_hover: None,
     };
     terminal
         .draw(|frame| {
