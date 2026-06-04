@@ -190,6 +190,13 @@ pub enum Dialog {
         selected: usize,
         intent: PickerIntent,
     },
+    /// Token usage detail dialog opened by Ctrl+u.
+    /// Shows per-provider rate windows with progress bars for the focused session.
+    TokenUsage {
+        session_id: u64,
+        scroll_offset: u16,
+        summary: Option<jackin_protocol::control::TokenUsageSummary>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -441,6 +448,15 @@ impl Dialog {
             }
             return DialogAction::Redraw;
         }
+        // TokenUsage: scroll with arrows (handled above), dismiss with
+        // Esc / q / Ctrl+U. No filter input.
+        if matches!(self, Self::TokenUsage { .. }) {
+            return if is_dismiss_key(key) || key == b"\x15" {
+                DialogAction::Dismiss
+            } else {
+                DialogAction::Redraw
+            };
+        }
         // From here on, only the type-to-filter list dialogs reach
         // this code path. The dismiss surface is narrower than the
         // read-only dialogs above (`q` / Backspace / Delete are
@@ -473,6 +489,10 @@ impl Dialog {
                     if *selected > 0 {
                         *selected -= 1;
                     }
+                    DialogAction::Redraw
+                }
+                Self::TokenUsage { scroll_offset, .. } => {
+                    *scroll_offset = scroll_offset.saturating_sub(1);
                     DialogAction::Redraw
                 }
                 Self::RenameTab { .. }
@@ -526,6 +546,10 @@ impl Dialog {
                     if *selected + 1 < providers.len() {
                         *selected += 1;
                     }
+                    DialogAction::Redraw
+                }
+                Self::TokenUsage { scroll_offset, .. } => {
+                    *scroll_offset = scroll_offset.saturating_add(1);
                     DialogAction::Redraw
                 }
                 Self::RenameTab { .. }
@@ -793,7 +817,8 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => 0,
+            | Self::ProviderPicker { .. }
+            | Self::TokenUsage { .. } => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -856,13 +881,14 @@ impl Dialog {
                     }
                 }
             }
-            // RenameTab, ContainerInfo, ConfirmAction, and ProviderPicker
-            // clicks were already handled by early returns above.
+            // RenameTab, ContainerInfo, ConfirmAction, ProviderPicker, and
+            // TokenUsage clicks were already handled by early returns above.
             Self::RenameTab { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => DialogAction::Consume,
+            | Self::ProviderPicker { .. }
+            | Self::TokenUsage { .. } => DialogAction::Consume,
         }
     }
 
@@ -937,6 +963,7 @@ impl Dialog {
                 let first_item_row = box_row + 1;
                 row >= first_item_row && row < first_item_row + providers.len() as u16
             }
+            Self::TokenUsage { .. } => false,
         }
     }
 
@@ -990,6 +1017,7 @@ impl Dialog {
             Self::ConfirmAction { .. } => 9,
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
+            Self::TokenUsage { .. } => 12,
         };
         let max_height = term_rows
             .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
@@ -1123,6 +1151,9 @@ impl Dialog {
             } => {
                 render_provider_picker(buf, box_row, box_col, height, width, providers, *selected);
             }
+            Self::TokenUsage { session_id, scroll_offset, summary } => {
+                render_token_usage(buf, box_row, box_col, height, width, *session_id, summary.as_ref(), *scroll_offset);
+            }
         }
     }
 
@@ -1164,6 +1195,7 @@ impl Dialog {
                 }
             }
             Self::ConfirmAction { .. } => CONFIRM_HINT,
+            Self::TokenUsage { .. } => READ_ONLY_HINT,
         }
     }
 
@@ -1860,6 +1892,70 @@ fn render_agent_picker(
                 );
             }
         }
+    }
+}
+
+fn render_token_usage(
+    buf: &mut Vec<u8>,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
+    _session_id: u64,
+    summary: Option<&jackin_protocol::control::TokenUsageSummary>,
+    scroll_offset: u16,
+) {
+    let _ = scroll_offset;
+    render_box(buf, start_row, start_col, height, width, " Token Usage ");
+    let inner_w = (width as usize).saturating_sub(4);
+    let mut row = start_row + 2;
+
+    let Some(s) = summary else {
+        render_centered_line(buf, row, start_col + 2, inner_w, "No token data yet", FG_DIM, false);
+        return;
+    };
+
+    let model_label = s.model.as_deref().unwrap_or("unknown model");
+    render_centered_line(buf, row, start_col + 2, inner_w, model_label, FG_WHITE, false);
+    row += 2;
+
+    let fields = [
+        ("Input", s.input_tokens),
+        ("Output", s.output_tokens),
+        ("Cache read", s.cache_read_tokens),
+        ("Cache write", s.cache_write_tokens),
+    ];
+    for (label, count) in &fields {
+        if row >= start_row + height.saturating_sub(2) {
+            break;
+        }
+        let line = format!("  {:<14} {:>12}", label, format_tokens(*count));
+        move_to(buf, row, start_col + 1);
+        buf.extend_from_slice(b"\x1b[38;2;0;200;50m");
+        buf.extend_from_slice(line.as_bytes());
+        buf.extend_from_slice(b"\x1b[m");
+        row += 1;
+    }
+
+    if let Some(cost) = s.cost_usd {
+        row += 1;
+        if row < start_row + height.saturating_sub(2) {
+            let cost_line = format!("  ~Cost          ${:.4}", cost);
+            move_to(buf, row, start_col + 1);
+            buf.extend_from_slice(b"\x1b[38;2;255;170;0m");
+            buf.extend_from_slice(cost_line.as_bytes());
+            buf.extend_from_slice(b"\x1b[m");
+        }
+    }
+}
+
+fn format_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
     }
 }
 

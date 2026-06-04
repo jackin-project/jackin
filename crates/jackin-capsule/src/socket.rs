@@ -341,6 +341,24 @@ pub async fn handle_control_request(
                 lines: vec![],
             }
         }
+        ClientMsg::TokenGetSession { session_id } => {
+            let token_usage = sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .and_then(|s| s.token_usage.clone());
+            ServerMsg::TokenSessionResult {
+                session_id,
+                token_usage,
+            }
+        }
+        ClientMsg::TokenGetModels { .. } => ServerMsg::TokenModelsResult {
+            provider: "claude".to_string(),
+            models: vec![
+                "claude-opus-4-8-20251101".to_string(),
+                "claude-sonnet-4-6-20251101".to_string(),
+                "claude-haiku-4-5-20251001".to_string(),
+            ],
+        },
         _ => {
             crate::clog!("control: unhandled ClientMsg variant in one-shot handler");
             ServerMsg::Unknown

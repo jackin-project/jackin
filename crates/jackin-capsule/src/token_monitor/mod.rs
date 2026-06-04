@@ -37,6 +37,52 @@ pub struct TokenTotals {
     pub window_start: Option<SystemTime>,
 }
 
+/// One time-window rate/quota card (e.g. 5-hour session, weekly).
+#[derive(Debug, Clone)]
+pub struct RateWindow {
+    /// Display label: "Session", "Weekly", "Claude Sonnet (weekly)", etc.
+    pub label: String,
+    /// Usage percentage 0–100.
+    pub used_percent: f64,
+    /// Window duration in minutes (300 = 5h, 10080 = 1 week).
+    pub window_minutes: Option<u32>,
+    /// Next reset timestamp.
+    pub resets_at: Option<SystemTime>,
+    /// Custom reset description e.g. "Resets Monday 3:00 AM".
+    pub reset_description: Option<String>,
+}
+
+/// Complete token/quota snapshot for one provider in one session.
+#[derive(Debug, Clone)]
+pub struct ProviderUsageSnapshot {
+    pub provider: String,
+    pub model: Option<String>,
+    /// Session-level quota (5h for Claude, hourly for OpenAI).
+    pub primary: Option<RateWindow>,
+    /// Weekly quota.
+    pub secondary: Option<RateWindow>,
+    /// Monthly or model-specific quota.
+    pub tertiary: Option<RateWindow>,
+    /// Additional per-model breakdowns.
+    pub extra_windows: Vec<RateWindow>,
+    pub fetched_at: SystemTime,
+}
+
+impl ProviderUsageSnapshot {
+    /// Build a minimal snapshot from raw token totals (no OAuth quota data).
+    pub fn from_totals(provider: &str, totals: &TokenTotals) -> Self {
+        Self {
+            provider: provider.to_string(),
+            model: totals.model.clone(),
+            primary: None,
+            secondary: None,
+            tertiary: None,
+            extra_windows: Vec::new(),
+            fetched_at: SystemTime::now(),
+        }
+    }
+}
+
 impl TokenTotals {
     pub fn to_summary(&self) -> TokenUsageSummary {
         TokenUsageSummary {
@@ -113,17 +159,26 @@ impl TokenSession {
 #[derive(Default)]
 pub struct TokenMonitor {
     sessions: HashMap<u64, TokenSession>,
+    pub token_snapshots: HashMap<u64, ProviderUsageSnapshot>,
+    pub model_catalog: models::ModelCatalog,
 }
 
 impl TokenMonitor {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            sessions: HashMap::new(),
+            token_snapshots: HashMap::new(),
+            model_catalog: models::ModelCatalog::new(),
+        }
     }
 
     /// Register a new session for monitoring.
     pub fn register_session(&mut self, session_id: u64, agent: &str) {
         self.sessions
             .insert(session_id, TokenSession::new(session_id, agent));
+        if self.model_catalog.needs_refresh() {
+            self.model_catalog.populate(agent);
+        }
     }
 
     /// Deregister a session when it exits.
@@ -137,6 +192,13 @@ impl TokenMonitor {
         for (id, session) in self.sessions.iter_mut() {
             if session.poll_due() && session.poll() {
                 changed.push(*id);
+            }
+        }
+        for id in &changed {
+            if let Some(session) = self.sessions.get(id) {
+                let snapshot =
+                    ProviderUsageSnapshot::from_totals(&session.agent, &session.totals);
+                self.token_snapshots.insert(*id, snapshot);
             }
         }
         changed

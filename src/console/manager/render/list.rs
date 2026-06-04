@@ -1221,7 +1221,12 @@ fn render_instance_details_pane(
                 for pane in &tab.panes {
                     let focused = pane.session_id == tab.focused_pane;
                     let selected = selected_pane == Some(pane.session_id);
-                    let marker = if focused { "●" } else { "○" };
+                    let marker = match pane.state {
+                        jackin_protocol::control::AgentState::Blocked => "●",
+                        jackin_protocol::control::AgentState::Done => "◎",
+                        _ if focused => "●",
+                        _ => "○",
+                    };
                     let cursor_prefix = if selected { "▶ " } else { "  " };
                     let agent_label = pane.agent.clone().unwrap_or_else(|| "shell".to_string());
                     let state_label = pane.state.label();
@@ -1247,10 +1252,20 @@ fn render_instance_details_pane(
                             format!("  ({agent_label}) "),
                             Style::default().fg(PHOSPHOR_DIM),
                         ),
-                        Span::styled(
-                            format!("[{state_label}]"),
-                            Style::default().fg(PHOSPHOR_DIM),
-                        ),
+                        {
+                            use jackin_protocol::control::AgentState;
+                            let state_color = match pane.state {
+                                AgentState::Blocked => Color::Rgb(255, 68, 85),
+                                AgentState::Done    => Color::Rgb(0, 255, 65),
+                                AgentState::Working => Color::Rgb(0, 80, 18),
+                                AgentState::Unknown => Color::Rgb(96, 96, 96),
+                                AgentState::Idle    => PHOSPHOR_DIM,
+                            };
+                            Span::styled(
+                                format!("[{state_label}]"),
+                                Style::default().fg(state_color),
+                            )
+                        },
                     ]));
                 }
             }

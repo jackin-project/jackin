@@ -2695,6 +2695,19 @@ impl Multiplexer {
                     self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
                 {
                     Some(self.apply_dialog_action(action))
+                } else if bytes == b"\x15" {
+                    // Ctrl+U — open token usage dialog for the focused session.
+                    if let Some(session_id) = self.active_focused_id() {
+                        crate::clog!("action: open token-usage dialog session={session_id}");
+                        self.dialog_push(Dialog::TokenUsage {
+                            session_id,
+                            scroll_offset: 0,
+                            summary: self.token_monitor.totals(session_id).map(|t| t.to_summary()),
+                        });
+                        Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
+                    } else {
+                        None
+                    }
                 } else {
                     // Any keyboard input from the operator returns the
                     // focused pane to the live tail. Matches the
@@ -3132,6 +3145,9 @@ impl Multiplexer {
         self.refresh_tab_labels();
 
         let states = self.snapshot_session_states();
+        let token_snap = self
+            .active_focused_id()
+            .and_then(|id| self.token_monitor.token_snapshots.get(&id));
         self.status_bar.render(
             &mut buf,
             self.term_cols,
@@ -3140,6 +3156,7 @@ impl Multiplexer {
             &states,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
+            token_snap,
         );
 
         let focused_id = self.active_focused_id();
@@ -3330,6 +3347,9 @@ impl Multiplexer {
         self.refresh_tab_labels();
         let mut buf = b"\x1b7".to_vec();
         let states = self.snapshot_session_states();
+        let token_snap = self
+            .active_focused_id()
+            .and_then(|id| self.token_monitor.token_snapshots.get(&id));
         self.status_bar.render(
             &mut buf,
             self.term_cols,
@@ -3338,6 +3358,7 @@ impl Multiplexer {
             &states,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
+            token_snap,
         );
         render_branch_context_bar(
             &mut buf,

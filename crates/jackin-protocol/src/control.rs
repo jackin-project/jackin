@@ -59,6 +59,13 @@ pub enum ClientMsg {
         #[serde(skip_serializing_if = "Option::is_none")]
         rows: Option<u16>,
     },
+    /// One-shot query for current token totals for a session.
+    TokenGetSession { session_id: u64 },
+    /// Query the model catalog for available models.
+    TokenGetModels {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -89,6 +96,17 @@ pub enum ServerMsg {
         revision: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+    },
+    /// Response to TokenGetSession.
+    TokenSessionResult {
+        session_id: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        token_usage: Option<TokenUsageSummary>,
+    },
+    /// Response to TokenGetModels.
+    TokenModelsResult {
+        provider: String,
+        models: Vec<String>,
     },
     /// Response to WaitSessionStatus — the current state at the time the wait resolved.
     SessionStatusResult {

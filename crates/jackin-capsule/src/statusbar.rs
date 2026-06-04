@@ -179,6 +179,7 @@ impl StatusBar {
         sessions_state: &[(u64, AgentState)],
         hovered_tab: Option<usize>,
         menu_hovered: bool,
+        token_snapshot: Option<&crate::token_monitor::ProviderUsageSnapshot>,
     ) {
         self.tab_regions.clear();
         self.hint_region = None;
@@ -292,6 +293,11 @@ impl StatusBar {
                 break;
             }
         }
+
+        let indicator = Self::token_indicator_bytes(token_snapshot);
+        if !indicator.is_empty() {
+            buf.extend_from_slice(&indicator);
+        }
     }
 
     fn button_text(&self) -> String {
@@ -387,6 +393,36 @@ impl StatusBar {
         self.tab_regions
             .iter()
             .position(|&(start, end)| c >= start && c < end)
+    }
+
+    /// Render compact token usage indicator: `"89% (5h)"` or empty when no data.
+    pub fn token_indicator_bytes(
+        snapshot: Option<&crate::token_monitor::ProviderUsageSnapshot>,
+    ) -> Vec<u8> {
+        let Some(snap) = snapshot else {
+            return Vec::new();
+        };
+        let Some(ref primary) = snap.primary else {
+            return Vec::new();
+        };
+        let pct = 100.0 - primary.used_percent;
+        let window_label = match primary.window_minutes {
+            Some(300) => "5h",
+            Some(60) => "1h",
+            Some(10080) => "wk",
+            _ => return Vec::new(),
+        };
+        let color: &[u8] = if pct < 10.0 {
+            b"\x1b[38;2;255;68;85m"
+        } else if pct < 20.0 {
+            b"\x1b[38;2;255;170;0m"
+        } else {
+            b"\x1b[38;2;0;255;65m\x1b[2m"
+        };
+        let mut out = color.to_vec();
+        out.extend_from_slice(format!("{:.0}% ({window_label})", pct).as_bytes());
+        out.extend_from_slice(b"\x1b[m");
+        out
     }
 }
 
@@ -602,12 +638,12 @@ mod tests {
         let tabs = vec![tab];
         let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &states, None, false);
+        bar.render(&mut buf, 80, &tabs, 0, &states, None, false, None);
         let (start, end) = bar.tab_regions[0];
         assert_eq!(end - start, 10);
         // Re-rendering with no state must keep the same width.
         let mut buf2 = Vec::new();
-        bar.render(&mut buf2, 80, &tabs, 0, &[], None, false);
+        bar.render(&mut buf2, 80, &tabs, 0, &[], None, false, None);
         let (s2, e2) = bar.tab_regions[0];
         assert_eq!(e2 - s2, 10);
         assert_eq!((s2, e2), (start, end));
@@ -651,7 +687,7 @@ mod tests {
     fn idle_hint_is_rendered() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, false);
+        bar.render(&mut buf, 80, &[], 0, &[], None, false, None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("☰Menu"), "menu hint missing: {s:?}");
         assert!(
@@ -673,7 +709,7 @@ mod tests {
     fn idle_hint_hover_uses_lifted_button_chrome() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, true);
+        bar.render(&mut buf, 80, &[], 0, &[], None, true, None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains(" ☰Menu "), "menu hint should be padded: {s:?}");
         assert!(
@@ -687,7 +723,7 @@ mod tests {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, false);
+        bar.render(&mut buf, 80, &[], 0, &[], None, false, None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("prefix…"), "prefix hint missing: {s:?}");
         assert!(
@@ -701,7 +737,7 @@ mod tests {
         let mut bar = StatusBar::new();
         let tabs = vec![Tab::new_single("Claude", 1)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &[], None, false);
+        bar.render(&mut buf, 80, &tabs, 0, &[], None, false, None);
         let s = String::from_utf8_lossy(&buf);
         // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
         assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");

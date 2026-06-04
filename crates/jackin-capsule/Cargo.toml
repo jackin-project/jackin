@@ -42,6 +42,8 @@ url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 procfs = "0.18"
+rusqlite = { version = "0.32", features = ["bundled"] }
+ureq = { version = "2.12", features = ["tls"] }
 jackin-tui = { path = "../jackin-tui" }
 
 [build-dependencies]

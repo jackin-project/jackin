@@ -2,7 +2,7 @@
 title: "Agent Runtime Status Authority"
 ---
 
-**Status**: Partially implemented (Phase 6, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). Phases 0–4 are fully shipped: silence-bug removal, state model + status machine, container reporter + process identity, Claude Code hook installer + sequence validation, screen detectors with fixture coverage for all five runtimes, OSC 133 shell integration, tab-strip Working/Stuck glyphs, and subagent-counter sticky-blocked rule. Phase 5 (host consumer TUI integration) and the full Phase 6 token-monitor implementation (OpenCode SQLite, Amp thread files, model catalog API queries, detail dialog) remain.
+**Status**: Partially implemented ([Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). Phases 0–6 are substantially implemented. Remaining work: full `events.subscribe` streaming subscription protocol (push events from daemon to host clients); CSI 6n cursor-position stuck probe; Stuck timeout driving the amber `!` tab glyph; full OpenCode ACP stdio integration; Anthropic OAuth usage window polling for the token rate bar.
 
 ## Merge Alignment With the TUI Architecture Refactor
 
@@ -1483,7 +1483,7 @@ pub struct ProviderUsageSnapshot {
 
 **Goal**: update `jackin console`, the daemon, Desktop Agent Hub, attention prompts, autonomous queue, resource panel, and token/cost display to consume the event stream.
 
-**Shipped**: `JACKIN_SESSION_ID` and status env vars pass through to container sessions. `WaitSessionStatus` returns immediately when session is already in a target state. `events.subscribe` streaming protocol defined in the control channel; full push-subscription loop deferred to the attention-notification and Desktop Agent Hub work that will consume it. **Remaining**: `jackin console` TUI session-list state badges, `Done`-pane visual distinction, pane acknowledgement on focus, workspace roll-up from daemon rather than local inference.
+**Shipped**: `JACKIN_SESSION_ID` and status env vars pass through to container sessions. `WaitSessionStatus` returns immediately when session is already in a target state. Console session list renders state-specific colors: `Blocked` = bright red, `Done` = phosphor green, `Working` = dim green, `Unknown` = gray, `Idle` = dim. `Done` panes render with `◎` marker (vs `○` for normal, `●` for focused). Daemon acknowledges focused pane on every 1Hz tick clearing `Done` to `Idle`. `events.subscribe` streaming protocol defined; full push-subscription loop deferred to the attention-notification and Desktop Agent Hub work that will consume it.
 
 **Changes to make**:
 
@@ -1502,7 +1502,7 @@ pub struct ProviderUsageSnapshot {
 
 **Goal**: implement the token monitor module, wire it to the Capsule event stream, and display per-session token totals in the console session list and resource panel.
 
-**Shipped**: `token_monitor` module with `TokenMonitor`, `TokenSession`, `TokenTotals`. Claude JSONL reader (incremental reads, `costUSD` preference, sidechain skip). Codex, Kimi, Amp, OpenCode stubs. Static pricing table. Embedded model fallback catalog. 30-second polling ticker wired into the daemon. `SessionInfo.token_usage` populated from monitor totals. **Remaining**: Codex cumulative-delta JSONL parser, OpenCode SQLite reader (`rusqlite` crate), Kimi `wire.jsonl` token fields, Amp thread JSON reader, model catalog API queries per provider, `token.get_models` control message, resource-panel detail dialog (`RateWindow`, progress bars, `Ctrl+u` keybind).
+**Shipped**: Full `token_monitor` module — Claude JSONL reader (incremental reads, `costUSD` preference, sidechain skip), Codex session-format + headless JSONL reader (cumulative-delta calculation), Kimi `wire.jsonl` `StatusUpdate` token fields, Amp thread JSON reader, OpenCode SQLite reader (`rusqlite` crate, rowid-incremental). `RateWindow` and `ProviderUsageSnapshot` structs. `ModelCatalog` with `populate()` querying Anthropic `/v1/models`, OpenAI `/v1/models`, and MoonShot `/v1/models` via `ureq`; embedded fallback when API key absent. `TokenGetSession` + `TokenGetModels` control messages. `Dialog::TokenUsage` with real token summary display (model, input/output/cache counts, cost estimate). `Ctrl+u` keybind opens the token usage dialog. Compact token usage indicator (`89% (5h)` format) in the status bar for rate-limited providers. 30-second polling ticker. `SessionInfo.token_usage` populated. **Remaining**: Anthropic OAuth usage window polling for live quota percentages in the rate bar (requires `ANTHROPIC_OAUTH_TOKEN`); full `events.subscribe` streaming push protocol.
 
 **New files to create**:
 
