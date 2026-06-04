@@ -113,6 +113,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Create runtime user
 RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
+    # TODO(docker-security-profile-sudo-audit): replace NOPASSWD:ALL with
+    # per-binary file capabilities once the sudo audit resolves — see
+    # TODO.md "Docker security profile — audit NOPASSWD:ALL sudo in base image".
+    # Blocking: standard profile cannot enable --security-opt no-new-privileges
+    # until this line is replaced.
     echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
     install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 

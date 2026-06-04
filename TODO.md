@@ -44,6 +44,24 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 - **Last verified:** 2026-05-04 — checked v0.3.5 through v0.3.9 release assets; only `x86_64-linux.tar.xz` ships for Linux. Filed upstream issue #179 same day.
 - **Done when:** a shellfirm release at or after the fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalently named) alongside the existing x86_64 tarball. Replace the cargo install step with a TARGETARCH-aware curl + `tar -xJ` block (mirroring the tirith pattern), drop the `security-tools` stage and the `FROM rust:...` line, remove the `COPY --from=security-tools` for shellfirm, and remove the `TODO(shellfirm-aarch64-linux-binary)` marker in the Dockerfile.
 
+### Docker security profile — flip default from `compat` to `standard`
+
+- **What:** `DockerSecurityProfile::Compat` is the current `Default::default()` in [`src/runtime/docker_profile.rs`](src/runtime/docker_profile.rs). Once the base-image sudo audit below resolves, change the default to `Standard` and flip `profile_base_grants(Standard).sudo` from `true` → `false`. Also enable `--security-opt no-new-privileges` for the `standard` profile (currently schema-present but not enforced due to the sudo blocker).
+- **Why:** `compat` was made the compiled-in default because the sudo audit is unresolved. After the audit, every new launch gets `standard` behavior (resource limits, DinD with resource caps, `no-new-privileges`) without any operator action. `compat` remains a valid profile — it just requires explicit opt-in instead of being the default.
+- **Blocked by:** `TODO(docker-security-profile-sudo-audit)` below.
+- **Code change:** one line in `impl Default for DockerSecurityProfile` in `src/runtime/docker_profile.rs`; one field change in `profile_base_grants(Standard)` (`sudo: false`); remove the "deferred pending sudo audit" note from the `no_new_privileges` block in `launch_role_runtime`.
+- **Done when:** `NOPASSWD:ALL` is removed from the base image, the sudo audit entry below is resolved, and the two-line code change is made. Update the profile defaults table in `docs/content/docs/reference/roadmap/docker-runtime-hardening-contract.mdx` and `docs/content/docs/guides/docker-profiles.mdx`.
+- **Marker:** `TODO(docker-security-profile-default)` — none in code yet; add to `docker_profile.rs` default impl when this follow-up is opened.
+
+### Docker security profile — audit `NOPASSWD:ALL` sudo in base image
+
+- **What:** [`docker/construct/Dockerfile`](docker/construct/Dockerfile) at line 113 grants `agent ALL=(ALL) NOPASSWD:ALL`. This is incompatible with `--security-opt no-new-privileges` (sudo needs setuid-root escalation; `no-new-privileges` blocks it at the kernel level). Audit every privileged operation the base image and built-in agent images call at runtime via `sudo`, and replace each with a file capability (`setcap`) on the specific binary, or restructure so the operation runs before the `USER agent` switch.
+- **Why:** until this is resolved, `standard` profile cannot enable `no-new-privileges` (it would silently break `sudo apt install` and any agent script that calls `sudo`). This blocks `standard` from becoming the default and blocks the full privilege dimension of the hardening contract.
+- **Findings so far (2026-06-04):** zero `sudo` calls in jackin'-controlled runtime code (`entrypoint.sh`, `jackin-capsule runtime-setup`). The `NOPASSWD:ALL` entry exists for role-authored hook scripts and agent binaries (e.g., `apt install` during `setup-once.sh`). The network allowlist firewall init (`init-firewall.sh`) runs via `docker exec --user root` from the host — it does NOT call sudo inside the container and does not conflict.
+- **Resolution path:** (a) Replace `NOPASSWD:ALL` with a scoped sudoers entry for each privileged binary the base image ships (if any). (b) For roles that call `sudo` in hooks, role authors must either declare `min_profile = "standard"` (keeping full sudo) or replace sudo calls with file capabilities in their Dockerfile. (c) Update `profile_base_grants(Standard)` and the default to flip after this lands.
+- **Done when:** `NOPASSWD:ALL` is removed from `Dockerfile:113`, every built-in agent runtime (`the-architect`, `agent-smith`) passes the compatibility test matrix under `standard` profile with `no-new-privileges` enforced, and the `TODO(docker-security-profile-default)` entry above is executed.
+- **Marker:** `TODO(docker-security-profile-sudo-audit)` — add to `docker/construct/Dockerfile` near line 113.
+
 ### Internal cleanups
 
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check

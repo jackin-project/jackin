@@ -29,9 +29,9 @@ pub enum DockerSecurityProfile {
 
 impl Default for DockerSecurityProfile {
     fn default() -> Self {
-        // `Compat` is the initial default while `Standard` is not yet fully
-        // validated (sudo audit pending). This will flip to `Standard` in a
-        // later phase once the base-image sudo audit is resolved.
+        // TODO(docker-security-profile-default): flip to `Standard` once the
+        // base-image sudo audit resolves — see TODO.md "Docker security profile
+        // — flip default from compat to standard".
         Self::Compat
     }
 }
