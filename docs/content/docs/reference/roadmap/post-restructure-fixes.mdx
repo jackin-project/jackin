@@ -28,7 +28,16 @@ Phase 2 is a refactor/restructure at scale, so **applying Rust's own best practi
 13. **`unsafe` is forbidden unless justified, encapsulated, and `// SAFETY:`-commented.** None is expected in Phase 2.
 14. **Comments explain WHY, not WHAT** (AGENTS rule); every borrowed design (Ghostty/Alacritty/Zellij patterns in `jackin-term`) carries an attribution + license comment.
 
-When a Phase 2 entry's "Done when" is met but the diff violates the charter, it is **not** done. The charter lives here once and is referenced by the checklist so every executor shares one bar. Run the `rust-best-practices` review pass over Phase 2 diffs before marking work complete.
+**Library-crate refinements (canonical `rust-best-practices`).** The new and touched crates (`jackin-term`, `jackin-protocol`, `jackin-tui`, the `observability` surface, the config/runtime crates) are *libraries* in a workspace, so they carry the stricter library bar on top of the 14 items above:
+
+- **Borrowed params, precisely:** `&str`/`&[T]`/`&Path` over owned; `Option<&T>` over `&Option<T>`; take ownership only when the function stores/moves/sends the value. `.clone()` is a design decision, never a borrow-checker appeasement.
+- **Typed errors in libraries; `anyhow` only at binary/CLI edges.** A library returns a typed error enum (`thiserror`-style) so callers can match; `anyhow` + `.with_context()` belongs in the `jackin` binary / CLI / test helpers. Document public failure with rustdoc `# Errors` / `# Panics` / `# Safety` sections.
+- **Encode invariants in types, not `bool`/`String`/`Option` parameters.** Newtypes, enums, builders, type-state, validated wrappers. Keep public fields private unless the representation is a stable contract. The `AgentRuntime` registry trait should be **sealed** (downstream impls would block evolution of the built-in set); the built-ins are the only implementors.
+- **Suppression discipline.** Fix Clippy findings before suppressing; if justified, `#[expect(clippy::lint, reason = "…")]` (not bare `#[allow]`) so stale suppressions surface. Do **not** enable `pedantic`/`nursery`/`restriction` groups wholesale, and do **not** put crate-level `#![deny(warnings)]` in a reusable library — the `-D warnings` gate is a CI flag, not baked into the crate, so a future compiler warning cannot brick downstream builds.
+- **Conservative dependencies / stable boundaries.** Every dep carries compile-time + supply-chain + public-API cost; avoid public re-exports, blanket generic impls, and `serde` derives on public types unless they are intentional compatibility commitments. IO, serialization (the JSONL schema), protocols (`jackin-protocol`), and feature flags (`otlp`) are explicit boundaries.
+- **Tests/docs as the library contract.** Behavior tests at stable boundaries (not tests freezing incidental helpers); doc-tests on public API that propagate with `?`; **snapshot tests for rendered/serialized output** (the `jackin-term` golden wire-emit, the diagnostics JSONL golden) kept deterministic and redacted.
+
+When a Phase 2 entry's "Done when" is met but the diff violates the charter, it is **not** done. The charter lives here once and is referenced by the checklist so every executor shares one bar. **Run the `rust-best-practices` review pass** (`references/review-checklist.md`) over every Phase 2 diff before marking work complete, with the canonical validation: `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, `cargo test --all-targets --all-features --locked`.
 
 ## Why this exists
 
