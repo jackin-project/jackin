@@ -55,7 +55,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     LAUNCH=(amp --dangerously-allow-all)
     ;;
   kimi)
-    LAUNCH=(kimi --yolo)
+    LAUNCH=(kimi --yolo --auto)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi

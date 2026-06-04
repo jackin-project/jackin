@@ -900,7 +900,7 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
-        assert!(kimi_section.contains("LAUNCH=(kimi --yolo)"));
+        assert!(kimi_section.contains("LAUNCH=(kimi --yolo --auto)"));
         assert!(kimi_section.contains("LAUNCH+=(\"$@\")"));
     }
 

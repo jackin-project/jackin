@@ -97,7 +97,7 @@ The per-agent high-autonomy launch configuration defined in <RepoFile path="dock
 - Claude (line 41): `--dangerously-skip-permissions` CLI flag plus `skipDangerousModePermissionPrompt: true` in the settings JSON
 - Codex (line 47): `--dangerously-bypass-approvals-and-sandbox` CLI flag
 - Amp (line 53): `--dangerously-allow-all` CLI flag
-- Kimi (line 58): `--yolo` CLI flag
+- Kimi (line 58): `--yolo --auto` CLI flags (`--yolo` auto-approves all actions; `--auto` starts in auto permission mode)
 - OpenCode (line 64): `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'` env var, plus `~/.config/opencode/opencode.json` written with `"permission": "allow"` by capsule runtime setup in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />
 
 When any of these high-autonomy configurations are active: jackin' still enforces mount scoping, network isolation, and the host Docker socket exclusion. It does **not** guarantee that the agent cannot damage workspace content on writable mounts. It does **not** guarantee that the agent cannot exfiltrate data when egress is open. The flags remove tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures.
