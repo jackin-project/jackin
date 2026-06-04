@@ -22,6 +22,16 @@ pub struct ScreenDetection {
     pub observed_at: Option<Instant>,
 }
 
+impl ScreenDetection {
+    /// Returns true when this observation is fresher than `threshold`,
+    /// or when no observation time is recorded (conservative: assume fresh).
+    fn is_fresher_than(&self, now: Instant, threshold: Duration) -> bool {
+        self.observed_at
+            .map(|t| now.duration_since(t) < threshold)
+            .unwrap_or(true)
+    }
+}
+
 /// Evidence from the foreground process group for one session.
 #[derive(Debug, Default, Clone)]
 pub struct ProcessEvidence {
@@ -68,9 +78,7 @@ pub fn arbitrate_session_status(
     if screen.visible_blocker {
         if let Some(h) = hook {
             let hook_age = now.duration_since(h.last_seen);
-            let screen_is_fresh = screen.observed_at
-                .map(|t| now.duration_since(t) < hook_age)
-                .unwrap_or(true);
+            let screen_is_fresh = screen.is_fresher_than(now, hook_age);
             if h.raw_state == "blocked" {
                 return (AgentState::Blocked, StatusConfidence::Authoritative);
             } else if screen_is_fresh {
@@ -86,10 +94,7 @@ pub fn arbitrate_session_status(
         if let Some(h) = hook {
             if matches!(h.raw_state.as_str(), "idle" | "blocked") {
                 let hook_age = now.duration_since(h.last_seen);
-                let screen_fresh = screen.observed_at
-                    .map(|t| now.duration_since(t) < hook_age)
-                    .unwrap_or(true);
-                if screen_fresh {
+                if screen.is_fresher_than(now, hook_age) {
                     return (AgentState::Working, StatusConfidence::Strong);
                 }
             }

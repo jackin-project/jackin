@@ -68,18 +68,20 @@ impl ModelCatalog {
         self.fetched_at = Some(Instant::now());
     }
 
-    fn fetch_anthropic(&mut self) {
-        let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+    fn fetch_from_api(
+        &mut self,
+        provider: &str,
+        env_key: &str,
+        url: &str,
+        build_req: impl FnOnce(ureq::Request, &str) -> ureq::Request,
+        filter: impl Fn(&str) -> bool,
+    ) {
+        let api_key = std::env::var(env_key).unwrap_or_default();
         if api_key.is_empty() {
             return;
         }
-        let Ok(resp) = ureq::get("https://api.anthropic.com/v1/models")
-            .set("x-api-key", &api_key)
-            .set("anthropic-version", "2023-06-01")
-            .call()
-        else {
-            return;
-        };
+        let req = ureq::get(url);
+        let Ok(resp) = build_req(req, &api_key).call() else { return };
         let Ok(body) = resp.into_string() else { return };
         let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) else { return };
         if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
@@ -87,95 +89,62 @@ impl ModelCatalog {
                 .iter()
                 .filter_map(|m| {
                     let id = m.get("id")?.as_str()?.to_string();
+                    if !filter(&id) {
+                        return None;
+                    }
                     let display = m
                         .get("display_name")
                         .and_then(|v| v.as_str())
                         .unwrap_or(&id)
                         .to_string();
                     Some(ModelEntry {
-                        provider: "claude".into(),
+                        provider: provider.into(),
                         model_id: id,
                         display_name: display,
                     })
                 })
                 .collect();
             if !new.is_empty() {
-                self.entries.retain(|e| e.provider != "claude");
+                self.entries.retain(|e| e.provider != provider);
                 self.entries.extend(new);
             }
         }
+    }
+
+    fn fetch_anthropic(&mut self) {
+        self.fetch_from_api(
+            "claude",
+            "ANTHROPIC_API_KEY",
+            "https://api.anthropic.com/v1/models",
+            |req, key| req.set("x-api-key", key).set("anthropic-version", "2023-06-01"),
+            |_| true,
+        );
     }
 
     fn fetch_openai(&mut self) {
-        let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
-        if api_key.is_empty() {
-            return;
-        }
-        let Ok(resp) = ureq::get("https://api.openai.com/v1/models")
-            .set("Authorization", &format!("Bearer {api_key}"))
-            .call()
-        else {
-            return;
-        };
-        let Ok(body) = resp.into_string() else { return };
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) else { return };
-        if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
-            let new: Vec<ModelEntry> = arr
-                .iter()
-                .filter_map(|m| {
-                    let id = m.get("id")?.as_str()?.to_string();
-                    // Only coding-relevant models.
-                    if !id.starts_with("gpt-4")
-                        && !id.starts_with("o1")
-                        && !id.starts_with("o3")
-                        && !id.starts_with("o4")
-                    {
-                        return None;
-                    }
-                    Some(ModelEntry {
-                        provider: "codex".into(),
-                        model_id: id.clone(),
-                        display_name: id,
-                    })
-                })
-                .collect();
-            if !new.is_empty() {
-                self.entries.retain(|e| e.provider != "codex");
-                self.entries.extend(new);
-            }
-        }
+        self.fetch_from_api(
+            "codex",
+            "OPENAI_API_KEY",
+            "https://api.openai.com/v1/models",
+            |req, key| req.set("Authorization", &format!("Bearer {key}")),
+            // Only coding-relevant models.
+            |id| {
+                id.starts_with("gpt-4")
+                    || id.starts_with("o1")
+                    || id.starts_with("o3")
+                    || id.starts_with("o4")
+            },
+        );
     }
 
     fn fetch_moonshot(&mut self) {
-        let api_key = std::env::var("KIMI_CODE_API_KEY").unwrap_or_default();
-        if api_key.is_empty() {
-            return;
-        }
-        let Ok(resp) = ureq::get("https://api.moonshot.ai/v1/models")
-            .set("Authorization", &format!("Bearer {api_key}"))
-            .call()
-        else {
-            return;
-        };
-        let Ok(body) = resp.into_string() else { return };
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) else { return };
-        if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
-            let new: Vec<ModelEntry> = arr
-                .iter()
-                .filter_map(|m| {
-                    let id = m.get("id")?.as_str()?.to_string();
-                    Some(ModelEntry {
-                        provider: "kimi".into(),
-                        model_id: id.clone(),
-                        display_name: id,
-                    })
-                })
-                .collect();
-            if !new.is_empty() {
-                self.entries.retain(|e| e.provider != "kimi");
-                self.entries.extend(new);
-            }
-        }
+        self.fetch_from_api(
+            "kimi",
+            "KIMI_CODE_API_KEY",
+            "https://api.moonshot.ai/v1/models",
+            |req, key| req.set("Authorization", &format!("Bearer {key}")),
+            |_| true,
+        );
     }
 }
 

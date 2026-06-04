@@ -92,43 +92,41 @@ impl AgentKind {
     }
 }
 
+fn agent_kind_from_name(name: &str) -> Option<AgentKind> {
+    match name {
+        "codex"     => Some(AgentKind::Codex),
+        "amp"       => Some(AgentKind::Amp),
+        "kimi"      => Some(AgentKind::Kimi),
+        "opencode"  => Some(AgentKind::OpenCode),
+        "claude" | "claude-code" => Some(AgentKind::ClaudeCode),
+        _ => None,
+    }
+}
+
 /// Identify the agent running in `proc`. Returns `None` when no known agent
 /// is found.
 pub fn identify_agent(info: &ProcessInfo) -> Option<AgentKind> {
     // Primary: exe basename
     if let Some(ref exe) = info.exe_path {
         let exe_name = exe.file_name()?.to_string_lossy();
-        match exe_name.as_ref() {
-            "codex" => return Some(AgentKind::Codex),
-            "amp" => return Some(AgentKind::Amp),
-            "kimi" => return Some(AgentKind::Kimi),
-            "opencode" => return Some(AgentKind::OpenCode),
-            // Claude Code can be a native stub named `claude`
-            "claude" => return Some(AgentKind::ClaudeCode),
-            // Node-wrapped agents: inspect argv[1] for the JS entry point
-            "node" | "bun" | "deno" => {
-                if let Some(script) = info.cmdline.get(1) {
-                    if script.contains("@anthropic-ai/claude-code")
-                        || script.contains("claude-code")
-                    {
-                        return Some(AgentKind::ClaudeCode);
-                    }
+        if let Some(kind) = agent_kind_from_name(exe_name.as_ref()) {
+            return Some(kind);
+        }
+        // Node-wrapped agents: inspect argv[1] for the JS entry point
+        if matches!(exe_name.as_ref(), "node" | "bun" | "deno") {
+            if let Some(script) = info.cmdline.get(1) {
+                if script.contains("@anthropic-ai/claude-code")
+                    || script.contains("claude-code")
+                {
+                    return Some(AgentKind::ClaudeCode);
                 }
-                return Some(AgentKind::Unknown);
             }
-            _ => {}
+            return Some(AgentKind::Unknown);
         }
     }
 
     // Fallback: comm field (capped at 15 chars)
-    match info.comm.as_str() {
-        "claude" | "claude-code" => Some(AgentKind::ClaudeCode),
-        "codex" => Some(AgentKind::Codex),
-        "amp" => Some(AgentKind::Amp),
-        "kimi" => Some(AgentKind::Kimi),
-        "opencode" => Some(AgentKind::OpenCode),
-        _ => None,
-    }
+    agent_kind_from_name(info.comm.as_str())
 }
 
 /// Given the child PID of a session's root process, determine what agent
