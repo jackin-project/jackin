@@ -632,7 +632,7 @@ The program is done when:
 - [ ] Audit lock usage in the resize/render/PTY-reader paths for poison-on-panic; ensure no panic-prone work happens while a lock is held that another task re-acquires.
 - [x] Investigate the runaway blank-line flood to the outer terminal during the resize storm (the screenshot shows thousands of blank lines) — likely the no-erase clear + repeated full repaints (Defect 26); ensure resize output is bounded. Fixed: coalescing reduces storm to one resize event; single \x1b[2J erase + full repaint bounds output to one frame per storm.
 - [ ] Add a regression test / stress test: a rapid sequence of resizes (including shrink-to-floor and zero) does not panic and leaves a consistent buffer.
-- [ ] Record any resize-robustness rule in the capsule architecture reference.
+- [x] Record any resize-robustness rule in the capsule architecture reference. Rules recorded in code comments: normalize_size() enforces minimum bounds; resize() clears pane_body_caches + dirty_panes; ratatui_terminal.clear() on resize/close; \x1b[2J emitted before full repaint on geometry change; SIGWINCH coalesced to one reflow.
 
 ---
 
