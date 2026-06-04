@@ -74,6 +74,8 @@ pub struct ContainerInfoState {
     title: String,
     rows: Vec<ContainerInfoRow>,
     copied_row: Option<usize>,
+    /// Vertical scroll offset (in rows) for when content overflows the dialog area.
+    pub scroll_y: u16,
 }
 
 impl ContainerInfoState {
@@ -83,6 +85,7 @@ impl ContainerInfoState {
             title: title.into(),
             rows,
             copied_row: None,
+            scroll_y: 0,
         }
     }
 
@@ -91,9 +94,18 @@ impl ContainerInfoState {
         &self.rows
     }
 
-    pub fn handle_key(&self, key: KeyEvent) -> ModalOutcome<()> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
         match key.code {
             KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+                self.scroll_y = self.scroll_y.saturating_sub(1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                let max = self.rows.len().saturating_sub(1) as u16;
+                self.scroll_y = self.scroll_y.saturating_add(1).min(max);
+                ModalOutcome::Continue
+            }
             _ => ModalOutcome::Continue,
         }
     }
@@ -135,8 +147,18 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
         .map(|row| crate::display_cols(&row.label))
         .max()
         .unwrap_or(0);
-    let max_rows = usize::from(inner.height.saturating_sub(2));
-    for (idx, row) in state.rows.iter().take(max_rows).enumerate() {
+    // Viewport: leave 1 leading and 1 trailing spacer row.
+    let viewport_rows = usize::from(inner.height.saturating_sub(2));
+    let total_rows = state.rows.len();
+    let offset = (state.scroll_y as usize).min(total_rows.saturating_sub(viewport_rows));
+    let visible_rows = total_rows.saturating_sub(offset).min(viewport_rows);
+    for (idx, row) in state
+        .rows
+        .iter()
+        .skip(offset)
+        .take(visible_rows)
+        .enumerate()
+    {
         let y = inner
             .y
             .saturating_add(1)
@@ -151,10 +173,15 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
             Paragraph::new(container_info_line(
                 row,
                 label_width,
-                state.copied_row == Some(idx),
+                state.copied_row == Some(offset + idx),
             )),
             row_area,
         );
+    }
+    // Show scrollbar when content overflows the viewport.
+    if total_rows > viewport_rows {
+        use crate::components::scrollable_panel::render_vertical_scrollbar;
+        render_vertical_scrollbar(frame, area, total_rows, state.scroll_y);
     }
 }
 
