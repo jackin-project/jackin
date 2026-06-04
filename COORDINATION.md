@@ -30,7 +30,7 @@ This is the **single source of truth** for coordinating parallel Claude Code age
 | Defect 46 Phase 3 (serde newtype collapse) | **[DONE in 5991a106]** | CodexAuthConfig etc. removed; WorkspaceConfig::validate_auth_modes() added |
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Judgement call; do after Phase B |
 | Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Decision already made = `crates/jackin/src/console/` |
-| Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | AVAILABLE | sync_source_dir schema + provisioning + UX |
+| Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | **[AGENT-A WORKING]** | B.1: resolver fn in app_config_roles.rs; B.2: provisioning via state_paths() |
 | Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR-split point |
 | Defect 46 acceptance gates | AVAILABLE | Green gates + smoke tests |
 
