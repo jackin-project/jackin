@@ -348,3 +348,29 @@ Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/
 **Known open sites (Defect 43).** A small number of blocking calls remain in the provisioning path. The highest-priority one is `RoleState::prepare` in <RepoFile path="crates/jackin-runtime/src/instance.rs" />, which runs `gh` CLI, macOS keychain (`security`), and filesystem copies directly on the async provisioning task — and is therefore the most likely rain-freeze cause when git auth or 1Password are involved. Wrap it in `spawn_blocking` and clone the necessary inputs for the closure. Subsequent conversions: `op_cli.rs` poll loops, and any remaining `std::process::Command` in async-reachable paths.
 
 **Parallelism: `try_join!` for independent stages.** The launch pipeline in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> already uses `tokio::join!` for some independent steps. The pattern is `try_join!(stage_a, stage_b)` for stages with no data dependency, so they run concurrently while the render task keeps ticking. Each stage emits its own `stage_started` / `stage_done` events to the progress channel; the shared-state mutex in `SharedView` handles out-of-order updates already. Extending this to more stage groups is incremental and safe.
+
+## AgentRuntime and Provider registry
+
+Adding a new agent runtime or provider must be one registration, not N call-site edits. This is enforced through two sealed adapter registries.
+
+**`AgentRuntime` trait** (`crates/jackin-core/src/agent/runtime.rs`). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known, zero-cost dispatch point. Adding a sixth runtime means: (1) add an enum variant, (2) add an adapter file, (3) register in `adapters.rs`. No match arm elsewhere.
+
+Key trait methods:
+- `slug() / label()` — wire identifier and display name.
+- `install_block(source)` — generates the Dockerfile `COPY`/`RUN` block for this agent.
+- `required_env_var()` — the env var whose presence signals that the agent is installed.
+- `supported_modes()` — which `AuthForwardMode` values are valid for this agent.
+- `state_paths()` — `AgentStatePaths { credential_dir, credential_file, folder_env_var }` — the per-agent credential location on the host and the environment hint for the operator. Used by provisioning (Defect 46 Phase B's `sync_source_dir` reads from these).
+- `parse_version(output)` — parses `--version` stdout to extract a semver string, replacing five per-agent branches.
+
+**`ProviderAdapter` trait** (`crates/jackin-protocol/src/provider_adapter.rs`). Same sealed pattern for providers (Anthropic, Zai, MiniMax, Kimi). `Provider::adapter()` returns `&'static dyn ProviderAdapter`. `Provider::available_for(agent_slug, has_key: impl Fn(Provider) -> bool)` replaces the four-positional-bool form.
+
+Key trait methods:
+- `label()` — display name.
+- `needs_key_for_agent(slug)` — whether an explicit API key is required (Anthropic + claude: no; everything else: yes).
+- `supports_agent(slug)` — whether this provider works with the given agent.
+- `env_overrides(token)` — the env vars to inject at spawn to redirect the agent to this provider.
+- `key_env_var()` — the env var name that holds the provider's API key (`ZAI_API_KEY`, `MINIMAX_API_KEY`, `KIMI_CODE_API_KEY`, or `None` for Anthropic).
+- `opencode_model()` — the `provider/model` string for OpenCode's `-m` flag.
+
+**Sealed trait pattern.** Both traits are sealed via a `pub(crate) mod private { pub trait Sealed {} }` guard so external crates cannot add providers or runtimes. The built-in set is the intended complete set; adding one means changing this crate, which triggers a review.
