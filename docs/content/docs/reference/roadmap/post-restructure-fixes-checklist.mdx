@@ -483,8 +483,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** any block/list/dialog whose content is wider than its viewport renders the shared horizontal scrollbar thumb on its bottom border (mirroring the vertical thumb on the right), wherever `scroll_x` is tracked — driven from the same scroll module as the vertical one.
 
 **Tasks:**
-- [ ] Integrate `render_horizontal_scrollbar` into `render_scrollable_block`/`render_scrollable_block_at` so any horizontally-overflowing content shows the thumb (no scrollbar when it fits).
-- [ ] Wire it into every production surface that tracks `scroll_x`: Mounts table, list-names, settings env/trust tables, pickers. `rg -n "scroll_x|render_horizontal_scrollbar|ScrollLeft|H/L scroll|term_width_scroll" crates/*/src`.
+- [x] Integrate `render_horizontal_scrollbar` into `render_scrollable_block`/`render_scrollable_block_at` so any horizontally-overflowing content shows the thumb (no scrollbar when it fits). Already in scrollable_panel.rs line 413.
+- [x] Wire it into every production surface that tracks `scroll_x`: Mounts table, list-names, settings env/trust tables, pickers. All use render_scrollable_block_at which already calls render_horizontal_scrollbar. Workspace list sidebar has separate H scrollbar call.
 - [ ] Ensure the `H/L scroll` hint only appears when horizontal scrolling is actually possible (overflow), consistent with the vertical rule.
 - [x] Record the "horizontal scrollbar renders whenever content overflows horizontally" rule in [TUI Design Decisions](/reference/tui/navigation/).
 
