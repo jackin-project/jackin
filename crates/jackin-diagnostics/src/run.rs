@@ -5,12 +5,13 @@
 //! to the operator — that is `clog!`/`cdebug!`; this writes machine-readable
 //! JSONL for post-hoc triage.
 
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use rand::RngExt as _;
@@ -35,6 +36,10 @@ pub struct RunDiagnostics {
     path: PathBuf,
     debug: bool,
     writer: Mutex<BufWriter<File>>,
+    /// Per-stage start timestamps for wall-clock timing (Defect 47.5).
+    stage_starts: Mutex<HashMap<String, Instant>>,
+    /// Accumulated per-stage durations for the end-of-run summary.
+    stage_durations_ms: Mutex<Vec<(String, u64)>>,
 }
 
 #[derive(Debug)]
@@ -82,6 +87,8 @@ impl RunDiagnostics {
             path,
             debug,
             writer: Mutex::new(BufWriter::new(file)),
+            stage_starts: Mutex::new(HashMap::new()),
+            stage_durations_ms: Mutex::new(Vec::new()),
         });
         run.compact("run", &format!("command {command} started"));
         Ok(run)
@@ -155,16 +162,74 @@ impl RunDiagnostics {
     }
 
     pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
+        // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
+        let enriched_detail = match kind {
+            "stage_started" => {
+                if let Ok(mut starts) = self.stage_starts.lock() {
+                    starts.insert(stage.to_string(), Instant::now());
+                }
+                detail.map(String::from)
+            }
+            "stage_done" => {
+                let elapsed_ms =
+                    self.stage_starts.lock().ok().and_then(|starts| {
+                        starts.get(stage).map(|t| t.elapsed().as_millis() as u64)
+                    });
+                elapsed_ms.map_or_else(
+                    || detail.map(String::from),
+                    |ms| {
+                        if let Ok(mut durs) = self.stage_durations_ms.lock() {
+                            durs.push((stage.to_string(), ms));
+                        }
+                        let base = detail.unwrap_or("");
+                        if base.is_empty() {
+                            Some(format!("{{\"duration_ms\":{ms}}}"))
+                        } else {
+                            Some(format!("{{\"duration_ms\":{ms},\"detail\":{base:?}}}"))
+                        }
+                    },
+                )
+            }
+            _ => detail.map(String::from),
+        };
         // `span_id` is left unset: the `stage` field already identifies the
         // span, so repeating it as the span id is pure duplication.
-        self.write(kind, message, Some(stage), detail, None);
+        self.write(kind, message, Some(stage), enriched_detail.as_deref(), None);
         tracing::info!(
             run_id = %self.run_id,
             kind,
             stage,
-            detail,
+            detail = enriched_detail.as_deref(),
             "{message}"
         );
+    }
+
+    /// Emit a summary event at the end of the run with per-stage wall-clock durations.
+    pub fn emit_run_summary(&self) {
+        let snapshot: Vec<(String, u64)> = {
+            let durs = self
+                .stage_durations_ms
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            durs.clone()
+        };
+        if snapshot.is_empty() {
+            return;
+        }
+        let map: serde_json::Value = snapshot
+            .iter()
+            .map(|(s, ms)| (s.clone(), serde_json::Value::from(*ms)))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let summary = map.to_string();
+        self.write(
+            "run_summary",
+            "stage durations (ms)",
+            None,
+            Some(&summary),
+            None,
+        );
+        tracing::info!(run_id = %self.run_id, kind = "run_summary", detail = %summary, "stage durations");
     }
 
     pub fn debug(&self, category: &str, line: &str) -> bool {

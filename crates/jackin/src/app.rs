@@ -120,7 +120,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
 
-    match command {
+    let result = match command {
         Command::Load(args) => {
             load_cmd::handle_load(
                 args,
@@ -161,7 +161,10 @@ pub async fn run(cli: Cli) -> Result<()> {
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
         }
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
-    }
+    };
+    // Emit per-stage duration summary before the run guard drops (Defect 47.5).
+    diagnostics.emit_run_summary();
+    result
 }
 
 const fn command_name(command: &Command) -> &'static str {
