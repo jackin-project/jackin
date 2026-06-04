@@ -403,4 +403,116 @@ mod tests {
         assert!(seq.has_source("source-b"));
         assert!(!seq.has_source("source-a"));
     }
+
+    // PTY/e2e tests — simulate detector + state machine path via vt100::Parser
+    // without a live PTY. Covers the four scenarios from the roadmap Test Plan.
+
+    #[test]
+    fn fake_claude_permission_dialog_transitions_to_blocked() {
+        use vt100::Parser;
+        use crate::agent_status::detectors::DetectorRegistry;
+
+        let mut parser = Parser::new(24, 80, 0);
+        parser.process(b"Claude wants to run: rm -rf /tmp\r\n");
+        parser.process(b"\r\n");
+        parser.process(b"  enter to select  esc to cancel  \xe2\x86\x91/\xe2\x86\x93 to navigate\r\n");
+        let screen = parser.screen().clone();
+
+        let registry = DetectorRegistry::default_registry();
+        let result = registry.detect(Some("claude"), &screen);
+        assert_eq!(
+            result,
+            Some(AgentRawState::BlockedVisible),
+            "Claude permission dialog should produce BlockedVisible",
+        );
+
+        let mut status = SessionStatus::new();
+        let new_state = status.advance(AgentRawState::BlockedVisible);
+        assert_eq!(new_state, Some(AgentState::Blocked));
+    }
+
+    #[test]
+    fn fake_claude_spinner_transitions_to_working_then_idle() {
+        use vt100::Parser;
+        use crate::agent_status::detectors::DetectorRegistry;
+
+        let registry = DetectorRegistry::default_registry();
+
+        let mut parser = Parser::new(24, 80, 0);
+        parser.process(b"\xe2\x9c\xbb Simplifying\xe2\x80\xa6\r\n");
+        parser.process(b"esc to interrupt\r\n");
+        let screen_working = parser.screen().clone();
+        let raw = registry.detect(Some("claude"), &screen_working);
+        assert_eq!(raw, Some(AgentRawState::WorkingVisible));
+
+        let mut status = SessionStatus::new();
+        status.seen = false;
+        status.advance(AgentRawState::WorkingVisible);
+        assert_eq!(status.effective, AgentState::Working);
+
+        let mut parser2 = Parser::new(24, 80, 0);
+        parser2.process(b"\xe2\x95\xad\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x95\xae\r\n");
+        parser2.process(b"\xe2\x94\x82 > \xe2\x94\x82\r\n");
+        parser2.process(b"\xe2\x95\xb0\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x95\xaf\r\n");
+        let screen_idle = parser2.screen().clone();
+        let raw_idle = registry.detect(Some("claude"), &screen_idle);
+        assert_eq!(
+            raw_idle,
+            Some(AgentRawState::PromptVisible),
+            "Claude prompt box should produce PromptVisible",
+        );
+
+        let new_state = status.advance(AgentRawState::PromptVisible);
+        assert_eq!(
+            new_state,
+            Some(AgentState::Done),
+            "After Working with seen=false, idle → Done",
+        );
+    }
+
+    #[test]
+    fn process_exit_signal_transitions_to_idle_and_clears_authority() {
+        let _auth = HookAuthority {
+            source_id: "claude-hook".to_string(),
+            agent_label: "claude".to_string(),
+            raw_state: "working".to_string(),
+            seq: 100,
+            ts_ns: 0,
+            message: None,
+            last_seen: std::time::Instant::now(),
+        };
+
+        let mut status = SessionStatus::new();
+        status.advance(AgentRawState::WorkingVisible);
+        assert_eq!(status.effective, AgentState::Working);
+
+        let new_state = status.advance(AgentRawState::ProcessExited);
+        assert_eq!(
+            new_state,
+            Some(AgentState::Idle),
+            "Process exit should transition to Idle",
+        );
+        assert_eq!(status.effective, AgentState::Idle);
+    }
+
+    #[test]
+    fn multiple_sessions_roll_up_reflects_most_urgent() {
+        use crate::agent_status::arbitrate::{attention_priority, roll_up_states};
+
+        let session_states = vec![
+            AgentState::Working,
+            AgentState::Blocked,
+            AgentState::Working,
+            AgentState::Idle,
+        ];
+        let rolled = roll_up_states(&session_states);
+        assert_eq!(
+            rolled,
+            AgentState::Blocked,
+            "Roll-up should surface Blocked as the most urgent state",
+        );
+
+        assert!(attention_priority(AgentState::Blocked) > attention_priority(AgentState::Done));
+        assert!(attention_priority(AgentState::Done) > attention_priority(AgentState::Working));
+    }
 }
