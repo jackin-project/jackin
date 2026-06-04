@@ -16,6 +16,10 @@ Operators who keep credentials outside the default locations have no path today:
 
 The default locations must stay the default — the common case needs zero configuration — but `sync` should accept an operator-chosen source folder, settable globally or per workspace, exactly like the rest of the layered auth model.
 
+### Motivating use case
+
+The driving case is an operator with **two accounts for the same agent**: a personal Claude subscription and a company-provided Claude account, each logged in under a different host folder (Claude Code honors an environment override that relocates its config directory, so this is a real, supported split). The operator wants the personal account to be the global default and the company account to be used only in the workspaces tied to that company. With a per-scope source folder, the global default points at the standard `~/.claude`, and a company workspace overrides the source to the company folder — every container launched from that workspace syncs the company login, every other workspace keeps the personal one. The same pattern applies to any agent whose credentials an operator keeps in more than one place.
+
 ## Why It Matters
 
 - The auth model is already layered per (workspace × role × agent) for the *mode* (`sync` / `api_key` / `oauth_token` / `ignore`). The *source* of a `sync` is the one axis that is not configurable, so operators with more than one identity per agent are stuck.
@@ -56,7 +60,29 @@ One version bump covers all affected file kinds, per the one-bump-per-PR rule. `
 
 ### Resolution
 
-Add a companion resolver `resolve_sync_source_dir` next to `resolve_mode` in <RepoFile path="src/config/roles.rs" />, walking the same three layers (workspace-role override → workspace → global), returning `Option<PathBuf>`. `None` at every layer means "use the agent's default folder." This keeps the source axis symmetric with the mode axis — the DRY rule wants both resolved by parallel functions reading the same layered structs, so they advance together.
+Add a companion resolver `resolve_sync_source_dir` next to `resolve_mode` in <RepoFile path="src/config/roles.rs" />, walking the same three layers (workspace-role override → workspace → global), returning `Option<PathBuf>`. It keeps the source axis symmetric with the mode axis — the DRY rule wants both resolved by parallel functions reading the same layered structs, so they advance together.
+
+#### Default vs explicit (the load-bearing distinction)
+
+A layer either has an **explicit** folder set, or it carries **no value** ("default"). "Default" is never a stored path — it is the *absence* of a value at that layer, which means "inherit from the layer below." The chain is:
+
+1. **Workspace explicit** — a folder the operator chose for this workspace. Wins outright.
+2. **Global explicit** — a folder the operator chose at the global level. Used when the workspace has no explicit value.
+3. **Agent hardcoded default** — `host_home.join(AGENT_DEFAULT_REL)` (e.g. `~/.claude`). Used when neither layer set anything.
+
+So in the config, a layer with `sync_source_dir = None` is "default". The effective folder is the first explicit value walking workspace → global → hardcoded. This is exactly how `resolve_mode` already treats an absent mode, so the two resolvers behave identically and a reader who understands one understands the other.
+
+Concretely for the motivating use case:
+
+- **Global** Auth tab: leave Claude's source folder at default → resolves to `~/.claude` (personal).
+- **Company workspace** Auth tab: explicitly select `~/company/.claude` → that workspace resolves to the company folder; every other workspace still resolves to `~/.claude`.
+
+The displayed label must distinguish the two states so the operator always knows whether a value is explicit or inherited:
+
+- **Global, no explicit value:** `(default) ~/.claude` — shows the hardcoded fallback that will be used.
+- **Global, explicit value:** `~/secrets/claude-personal` — shows the chosen path plainly.
+- **Workspace, no explicit value:** `(default — follows global) ~/.claude` — makes clear it inherits whatever global resolves to, and shows the resolved result.
+- **Workspace, explicit value:** `~/company/.claude` — the override, shown plainly.
 
 ### Provisioning
 
@@ -68,22 +94,28 @@ let source = resolved_source_dir.unwrap_or_else(|| host_home.join(AGENT_DEFAULT_
 
 This is read-only against the host (the existing `sync` contract). When the chosen folder is missing the expected credential file, fall back to the existing "no forwarded auth" warning path rather than failing the launch.
 
-### Console UX
+### Operator flow
 
-When the operator opens the Auth tab, selects an agent, and sets mode **Sync**, show an additional **Source folder** row:
+The whole interaction lives inside the existing per-agent auth dialog. Today that dialog lets the operator pick the **mode** (off / sync / api_key / …). This feature adds a second selectable row, visible only when the chosen mode is **Sync**: the **Source folder** row. The flow, end to end:
 
-- Default state renders `(default) ~/.claude` (the per-agent default), so the common case needs no action and the operator can see what will be used.
-- Pressing Enter on the row opens the **same** `FileBrowserState` picker used for mounts, rooted at `$HOME`, with hidden folders visible.
-- Selecting a folder stores it as the override; a "reset to default" action clears it back to `None`.
+1. **Open the auth dialog.** In Settings (global) or in the workspace editor, go to the **Auth** tab, move the cursor to an agent (e.g. Claude), and press **Enter**. The per-agent dialog opens. By default an agent is in *off* mode; nothing changes until the operator edits it here.
+2. **Choose Sync.** In the dialog, set the mode to **Sync** (the existing mode control). As soon as the mode is Sync, a **Source folder** row appears below the mode row.
+3. **The Source folder row shows the pre-selected default.** Before the operator touches it, the row is pre-filled with the default value for that agent — `(default) ~/.claude` for Claude, the matching default for every other supported agent. This default is **not stored**; it is always recomputed as "the default for this setting" (hardcoded path at the global layer, "follow global" at the workspace layer). The operator can save right here and nothing about the source is persisted — the row was informational, confirming what Sync will read.
+4. **Press Enter on the Source folder row to change it.** This opens a new dialog — the **same** directory picker used when adding a workspace mount (`FileBrowserState`). The operator navigates with **Up/Down** to move through entries, **Enter** to descend into a folder, and selects the current folder with **`s`** (the same select key the mount picker uses). Hidden (dot) folders are visible here, so `~/.claude`, `~/.codex`, etc. can be reached.
+5. **Selection returns to the auth dialog.** After pressing `s`, the picker closes and control returns to the per-agent auth dialog. The Source folder row now shows the chosen folder (plainly, no `(default)` prefix — it is now explicit).
+6. **Save to apply.** The operator saves the dialog. The auth dialog closes and the view returns to the Auth tab list exactly as before. The chosen folder is now persisted at this layer (global config or the workspace file).
+7. **Reset to default.** When a folder has been explicitly selected, the Source folder row offers a **reset** action that clears the explicit value back to default (`None`). After reset the row again shows `(default) …`, and saving persists the cleared state. Reset is only meaningful when an explicit value exists — for an already-default row it is a no-op.
 
-Picker changes:
+This is the same dialog → picker → back-to-dialog → save loop the operator already knows from workspace mounts; only the entry point (the Source folder row) and the show-hidden behavior are new.
 
-- Add a `show_hidden: bool` to `FileBrowserState` (default `false`) threaded into `load_entries`, gating the dotfile filter at <RepoFile path="src/console/widgets/file_browser/state.rs" />. The auth flow constructs the picker with `show_hidden = true`; the mount flow keeps `false` so its behavior is unchanged.
-- Add a `FileBrowser` variant to `SettingsAuthModal` (settings Auth tab) and to the workspace-editor auth modal, dispatched the same way the mount file browser is dispatched in <RepoFile path="src/console/manager/input/global_mounts.rs" />.
+### Picker changes
+
+- Add a `show_hidden: bool` to `FileBrowserState` (default `false`) threaded into `load_entries`, gating the dotfile filter at <RepoFile path="src/console/widgets/file_browser/state.rs" />. The auth flow constructs the picker with `show_hidden = true`; the mount flow keeps `false`, so mount behavior is unchanged. No other picker behavior changes — `s` to select, Enter to descend, the sandbox-root and `~/.jackin/` reject rules in `commit_or_reject` all carry over.
+- Add a `FileBrowser` variant to `SettingsAuthModal` (settings Auth tab, <RepoFile path="src/console/manager/state.rs" />) and to the workspace-editor auth modal, dispatched the same way the mount file browser is dispatched in <RepoFile path="src/console/manager/input/global_mounts.rs" />. The committed `PathBuf` is written to a pending field on the auth state, then persisted on save.
 
 ### Both surfaces behave identically
 
-The settings Auth tab (global) and the workspace-editor Auth tab must offer the same Source-folder row and the same picker, writing to the global vs workspace layer respectively — the only difference is which config layer receives the value. Per the reuse rule, both surfaces route through one shared "open source-folder picker / persist result" helper rather than two parallel copies, mirroring how `resolve_mode` already serves both layers.
+The Settings Auth tab (global) and the workspace-editor Auth tab offer the **same** Source folder row, the **same** picker, the **same** keys, and the **same** reset action. The only difference is which config layer the saved value lands in: global writes to `config.toml`, the workspace editor writes to that workspace's file. Per the reuse rule, both surfaces route through **one** shared "render Source-folder row / open picker / persist or reset result" helper rather than two parallel copies — mirroring how `resolve_mode` already serves both layers from one function. Building it as two siblings is the exact drift the DRY rule blocks (one surface gets reset, the other does not; one shows the inherited-from-global label, the other does not).
 
 ## Host-side effects
 
@@ -102,9 +134,9 @@ None that mutate the host. The feature only changes **which** host folder `sync`
 
 ## Phases
 
-1. **Schema + resolution** — add `sync_source_dir` to `AgentAuthConfig`, the version bump + migrations + fixtures, and `resolve_sync_source_dir`. No behavior change yet (nothing reads the field).
+1. **Schema + resolution** — add `sync_source_dir` to `AgentAuthConfig`, the version bump + migrations + fixtures, and `resolve_sync_source_dir` with the default-vs-explicit layering above. No behavior change yet (nothing reads the field).
 2. **Provisioning** — wire the resolved override into `provision_*_auth` with default fallback and the missing-file warning path. Now CLI-set overrides take effect.
-3. **Console UX** — `show_hidden` on the picker, the Source-folder row on both Auth-tab surfaces, the shared open/persist helper, and reset-to-default.
+3. **Console UX** — `show_hidden` on the picker; the Source folder row (with the default/explicit/inherited labels) on both Auth-tab surfaces; the shared render/open-picker/persist helper; reset-to-default. The row appears only in Sync mode and pre-fills the recomputed default.
 
 ## Open questions
 
