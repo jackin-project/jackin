@@ -54,11 +54,9 @@ The daemon also maintains a `history: Vec<AgentRecord>` — an append-only order
 
 ### TUI display
 
-The Capsule tab strip currently renders `agent · provider` in each tab cell. With codenames active the cell renders `codename · agent · provider` (or `codename · agent` when there is no provider). The codename is rendered in the same muted accent color the current provider label uses, to the left of the agent slug. Codenames are always single short words (typically 4–8 characters), so the added width is small and does not crowd the strip at reasonable terminal widths.
+The Capsule tab strip label does not change. Codenames are intentionally not shown in the tab strip at rest — adding them there would increase visual noise without benefit, since the codename is not something the operator needs to see on every glance at the tab bar.
 
-**Tab hover tooltip.** When the operator moves their mouse cursor over a tab cell in the strip, the multiplexer renders a small overlay showing the full identity record for that tab: the codename, agent type, provider, start time, and exit time (or `active`). The tooltip design follows the overlay component conventions documented in [`tui-design-decisions.mdx`](/reference/tui-design-decisions/).
-
-When a custom tab label is set, the tab strip shows `my-label [badger]` — the custom label as the primary display, the codename in brackets — so the operator can rename tabs for their own orientation without losing the machine-readable codename.
+**Tab hover tooltip.** When the operator moves their mouse cursor over a tab cell in the strip, the multiplexer renders a small overlay showing the full identity record for that tab: the codename, agent type, provider, start time, and exit time (or `active`). This is the only place the codename appears in the TUI. The tooltip design follows the overlay component conventions documented in [`tui-design-decisions.mdx`](/reference/tui-design-decisions/).
 
 ## Agent registry command
 
@@ -112,7 +110,7 @@ Agents can read the registry but cannot write to it. The capsule daemon is the s
 
 **What does the tab hover tooltip show for split panes?** A tab can contain multiple split panes, each running a different session. The tooltip for the tab strip cell should show the primary session's identity and summarize the pane count. Per-pane identity is a Phase 3 design question.
 
-**Should `jackin status` on the host report codenames?** Exposing per-tab codenames through the host-side `jackin status` command alongside the existing instance overview would let host-side scripts and the future workflow runner address tabs by human-readable name without entering the container. Deferred to Phase 3.
+**Should `jackin status` on the host report codenames?** Yes — the host-side `jackin status` command should show per-instance agent lists with codenames, agent types, providers, and timestamps, making it a richer view than `jackin-capsule agents` (which is scoped to one container). This work is tracked in [Operator CLI Hygiene](/reference/roadmap/operator-cli-hygiene/) Phase 2, which already owns `jackin status` / `jackin ps`. That item's output schema will be extended to include per-agent codename rows when the registry data is available from a running container.
 
 ## Future direction: inter-agent messaging
 
@@ -137,9 +135,8 @@ Deliverables:
 - `history: Vec<AgentRecord>` append-only log in `Multiplexer` — stores codename, agent, provider, `started_at`, `exited_at` per tab; the sole authoritative data source for the registry command and tab tooltip.
 - `JACKIN_AGENT_CODENAME` env injection in `build_agent_command()`.
 - `JACKIN_AGENT_CODENAME` added to the reserved runtime env list in <RepoFile path="src/env_model.rs" />.
-- Codename displayed in the Capsule tab strip: `codename · agent · provider`.
 - `jackin-capsule agents` subcommand — queries the daemon via the control socket, renders the full registry with `← you` annotation and timestamps, supports `--format json`.
-- Tab hover tooltip in the Capsule tab strip showing codename, agent, provider, start time, exit time, and status.
+- Tab hover tooltip in the Capsule tab strip: shown on mouse hover only; displays codename, agent, provider, start time, exit time, and status. The tab label itself is unchanged.
 
 ### Phase 2 — Operator documentation
 
@@ -151,12 +148,13 @@ Deliverables:
 
 Deferred until Phase 1 and 2 have shipped. Candidate work:
 - Registry persistence across container restarts under `/jackin/state/agent-registry.json`.
-- `jackin status` host-side command reporting per-tab codenames alongside the existing instance overview.
 - Configurable wordlist override in the role manifest.
+- Host-side `jackin status` codename integration is tracked separately in [Operator CLI Hygiene](/reference/roadmap/operator-cli-hygiene/) Phase 2.
 
 ## Related work
 
 - [jackin' Capsule control plane](/reference/roadmap/jackin-capsule/) — the in-container multiplexer that owns tab lifecycle, pane tree, and environment injection. Phase 1 of this item is a direct extension of Capsule Phases 1–3.
+- [Operator CLI Hygiene](/reference/roadmap/operator-cli-hygiene/) — owns `jackin status` / `jackin ps` (Phase 2). That item's output will be extended to include per-agent codename, agent type, provider, and timestamps sourced from the in-container registry, giving the host operator a richer fleet view than `jackin-capsule agents` alone.
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — classifies whether an agent is `working`, `blocked`, `done`, or `idle`. Codenames give agents a stable per-tab identity; runtime status gives the operator visibility into what each identified agent is currently doing. Together they form the per-tab observability pair: who is this tab, and what state is it in.
 - [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) — the longer-term vision for jackin'-driven multi-agent workflows. Codenames and the registry are the identity substrate the workflow runner will build on; the future inter-agent messaging direction described above is the direct precursor to the runner's session-routing model.
 - [Persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) — a future durable storage surface relevant to Phase 3 registry persistence.

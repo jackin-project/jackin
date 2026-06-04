@@ -59,15 +59,20 @@ Wire a lightweight subset of the same checks as a pre-flight on every command th
 
 ### 2. `jackin status` / `jackin ps` — fleet overview from CLI
 
-Add `jackin status` (and `jackin ps` as an alias) that prints a table of all running jackin' instances outside the TUI.
+Add `jackin status` (and `jackin ps` as an alias) that prints a table of all running jackin' instances outside the TUI. When an instance is running and its container is reachable, the output includes the per-agent identity rows sourced from `jackin-capsule agents` — giving the operator a single host-side command that shows the full fleet picture: instances, agents inside each instance, their codenames, agent types, providers, and timestamps.
 
 ```
-INSTANCE                 WORKSPACE  ROLE               AGENT(S)          STATE    UPTIME   CPU%  MEM
-proj-the-architect-...   myproj     the-architect      claude            running  2h 14m   12%   420M
-proj-agent-smith-...     myproj     agent-smith        claude, codex     running    47m    3%   180M
+INSTANCE                        WORKSPACE   ROLE              STATE    UPTIME   CPU%  MEM
+jk-k7p9m2xq-myproj-architect   myproj      the-architect     running  2h 14m   12%   420M
+  ├── badger   claude  anthropic   active   started 10:15
+  └── falcon   claude  anthropic   active   started 10:32
+
+jk-x3n1q8vz-myproj-smith        myproj      agent-smith      running    47m    3%   180M
+  ├── reef     codex   openai     active   started 13:20
+  └── crater   claude  anthropic  exited   10:12 → 10:40
 ```
 
-One workspace can run multiple agents, so the agent column may list several. When available, show PR info per instance (the branch/PR the agent is working on).
+The per-agent rows are fetched by querying the in-container `jackin-capsule agents --format json` endpoint over the container's control socket. Instances that are running but whose socket is not yet reachable (still starting up) show `agents: pending`. Instances that are stopped show no agent rows, since the registry is in-memory and not persisted across container restarts (see [agent codenames](/reference/roadmap/agent-codenames/) Phase 3 for deferred registry persistence). When available, show PR info per instance (the branch/PR the agent is working on).
 
 Supports `--format json` (see item 3 below), `--filter workspace=myproj`, `--filter agent=claude`, `--state running`.
 
@@ -227,3 +232,4 @@ This needs brainstorming on UX. Key questions to research:
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — will consume `jackin status` for attention routing
 - [Déjà Vu](/reference/roadmap/deja-vu/) — will consume `--format json` for session enumeration
 - [PR verification](/reference/roadmap/pr-verification/) — will consume `--format json` for PR state
+- [Agent codenames](/reference/roadmap/agent-codenames/) — the in-container `jackin-capsule agents` registry is the data source for the per-agent rows in `jackin status`; the codename, agent type, provider, and timestamp fields come from that registry
