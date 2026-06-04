@@ -307,20 +307,62 @@ impl Multiplexer {
             if let Some(session) = self.sessions.get_mut(&pane.id) {
                 scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(session_display_title(session));
-                let body_snapshot = session.render_snapshot(pane.inner.rows, pane.inner.cols);
-                if let Some(sel) = selection_for_pane {
-                    selection_paint = Some((body_snapshot.clone(), sel, pane.body_dim));
-                }
                 let before = buf.len();
-                let cache = self.pane_body_caches.entry(pane.id).or_default();
-                let stats = render_capsule_pane_body_snapshot(
-                    &mut buf,
-                    cache,
-                    pane,
-                    body_snapshot,
-                    self.term_cols,
-                );
-                pane_rows_emitted += stats.rows_emitted;
+
+                // Phase 5 path (jackin-term feature): use WireEmitter + dirty_spans
+                // for live view (scrollback_offset == 0). Fall back to the vt100
+                // path when scrollback is active — DamageGrid scrollback injection
+                // is not yet complete (Phase 4 work).
+                #[cfg(feature = "jackin-term")]
+                let pane_body_stats = if session.scrollback_offset == 0 {
+                    let (snap, spans) = session.take_damagegrid_frame();
+                    let mut emitter = jackin_term::WireEmitter::new();
+                    emitter.emit_pane(&snap, &spans, pane.inner.row, pane.inner.col);
+                    buf.extend_from_slice(emitter.as_bytes());
+                    // Snapshot for selection highlight.
+                    let body_snapshot = session.render_snapshot(pane.inner.rows, pane.inner.cols);
+                    if let Some(sel) = selection_for_pane {
+                        selection_paint = Some((body_snapshot, sel, pane.body_dim));
+                    }
+                    crate::tui::render::PaneBodyRenderStats {
+                        mode: crate::tui::render::PaneBodyRenderMode::Full,
+                        rows_emitted: snap.rows as usize,
+                        changed_rows: (0..snap.rows).collect(),
+                    }
+                } else {
+                    // Scrollback view — fall back to vt100 path.
+                    let body_snapshot = session.render_snapshot(pane.inner.rows, pane.inner.cols);
+                    if let Some(sel) = selection_for_pane {
+                        selection_paint = Some((body_snapshot.clone(), sel, pane.body_dim));
+                    }
+                    let cache = self.pane_body_caches.entry(pane.id).or_default();
+                    render_capsule_pane_body_snapshot(
+                        &mut buf,
+                        cache,
+                        pane,
+                        body_snapshot,
+                        self.term_cols,
+                    )
+                };
+
+                // Default path (vt100 + RowSnapshot + PaneBodyCache).
+                #[cfg(not(feature = "jackin-term"))]
+                let pane_body_stats = {
+                    let body_snapshot = session.render_snapshot(pane.inner.rows, pane.inner.cols);
+                    if let Some(sel) = selection_for_pane {
+                        selection_paint = Some((body_snapshot.clone(), sel, pane.body_dim));
+                    }
+                    let cache = self.pane_body_caches.entry(pane.id).or_default();
+                    render_capsule_pane_body_snapshot(
+                        &mut buf,
+                        cache,
+                        pane,
+                        body_snapshot,
+                        self.term_cols,
+                    )
+                };
+
+                pane_rows_emitted += pane_body_stats.rows_emitted;
                 pane_body_bytes += buf.len() - before;
                 if pane.focused {
                     focused_pane_rect = Some(pane.inner);

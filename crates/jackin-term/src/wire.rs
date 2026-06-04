@@ -152,6 +152,37 @@ impl WireEmitter {
         self.emit_dirty(snap, &DirtySpans::All);
     }
 
+    /// Emit dirty rows offset by a pane origin on the outer terminal.
+    ///
+    /// Used by the capsule compositor in Phase 5 — replaces `render_capsule_pane_body_snapshot`.
+    /// Each row is positioned at `(row_origin + pane_row, col_origin + 0)` so the
+    /// content lands in the correct pane rectangle on the outer terminal.
+    pub fn emit_pane(
+        &mut self,
+        snap: &GridSnapshot,
+        spans: &DirtySpans,
+        row_origin: u16,
+        col_origin: u16,
+    ) {
+        let rows_to_emit: Vec<u16> = match spans {
+            DirtySpans::All => (0..snap.rows).collect(),
+            DirtySpans::Rows(rows) => rows.clone(),
+        };
+
+        for row_idx in rows_to_emit {
+            if row_idx >= snap.rows {
+                continue;
+            }
+            // Position at (row_origin + pane_row, col_origin).
+            self.emit_cursor_move(row_origin + row_idx, col_origin);
+            self.emit_row(snap, row_idx);
+            // Erase to end of line: clears stale cells from wider previous frames.
+            self.buf.extend_from_slice(b"\x1b[K");
+        }
+
+        self.emit_sgr_reset();
+    }
+
     // ── Internal helpers ────────────────────────────────────────────────────────
 
     fn emit_cursor_move(&mut self, row: u16, col: u16) {
