@@ -67,7 +67,7 @@ jackin' launches each agent with flags that remove tool-approval prompts. These 
 | Claude | `--dangerously-skip-permissions` CLI flag + `skipDangerousModePermissionPrompt: true` in settings JSON | line 41 |
 | Codex | `--dangerously-bypass-approvals-and-sandbox` CLI flag | line 47 |
 | Amp | `--dangerously-allow-all` CLI flag | line 53 |
-| Kimi | `--yolo --auto` CLI flags (`--yolo` auto-approves actions; `--auto` starts in auto permission mode) | line 58 |
+| Kimi | `--yolo` CLI flag (auto-approves all tool actions) | line 58 |
 | OpenCode | `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'` env var + `~/.config/opencode/opencode.json` written with `"permission": "allow"` by capsule runtime setup | line 64 + <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> |
 
 When any of these configurations are active: jackin' still enforces mount scoping, network isolation, and the host Docker socket exclusion. The flags remove tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures. Operators who need the approval prompts restored can rebuild the derived image without the high-autonomy flags by customising the entrypoint hook.

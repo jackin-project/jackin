@@ -167,6 +167,19 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
         .join("jackin-capsule")
 }
 
+/// Remove a file, logging via `cdebug!` if the removal fails rather than
+/// silently discarding the error. Used on all error-path cleanup sites in
+/// `download_and_cache` so a stale `.tmp` or `.tar.gz.tmp` is observable.
+fn remove_with_debug_log(path: &Path) {
+    if let Err(e) = std::fs::remove_file(path) {
+        crate::debug_log!(
+            "capsule_binary",
+            "failed to remove temp file at {}: {e}",
+            path.display()
+        );
+    }
+}
+
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let base_url = base_download_url(version);
@@ -180,8 +193,9 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // Fetch the signed capsule manifest (verifies cosign bundle + identity) and
     // download the archive concurrently. The manifest returns the expected SHA-256
     // for this arch, replacing the bare .sha256 file fetch.
+    let is_preview = is_preview_version(version);
     let (expected_sha_result, download_result) = tokio::join!(
-        fetch_and_verify_manifest(version, &base_url, arch),
+        fetch_and_verify_manifest(version, &base_url, arch, is_preview),
         crate::net::download_parallel(&url, &tmp_archive),
     );
 
@@ -189,7 +203,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // the manifest fetch and the download run concurrently, so a manifest error can land
     // with the archive already fully written.
     if let Err(e) = download_result {
-        let _ = std::fs::remove_file(&tmp_archive);
+        remove_with_debug_log(&tmp_archive);
         return Err(e).context(format!(
             "jackin-capsule {version} download failed.\n\
              \n\
@@ -205,7 +219,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     let expected_sha = match expected_sha_result {
         Ok(sha) => sha,
         Err(e) => {
-            let _ = std::fs::remove_file(&tmp_archive);
+            remove_with_debug_log(&tmp_archive);
             return Err(e).with_context(|| {
                 format!(
                     "fetching or verifying signed capsule manifest for jackin-capsule {version}"
@@ -229,7 +243,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
             )
         })?;
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
-        let _ = std::fs::remove_file(&tmp_archive);
+        remove_with_debug_log(&tmp_archive);
         anyhow::bail!(
             "jackin-capsule SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
              refusing to cache the binary; investigate network tampering and retry."
@@ -264,15 +278,8 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     //     for the same identity marker (and the version string, when
     //     stable) since both are baked in via env! and appear as
     //     contiguous ASCII runs.
-    let is_preview = is_preview_version(version);
     if let Err(e) = verify_version(&tmp, version, is_preview).await {
-        if let Err(cleanup_err) = std::fs::remove_file(&tmp) {
-            crate::debug_log!(
-                "capsule_binary",
-                "failed to remove partial jackin-capsule at {}: {cleanup_err}",
-                tmp.display()
-            );
-        }
+        remove_with_debug_log(&tmp);
         return Err(e).with_context(|| {
             format!(
                 "version verification failed for downloaded jackin-capsule {version} at {}",
@@ -374,7 +381,12 @@ struct CapsuleManifest {
 /// 6. Parse the verified manifest JSON and extract the SHA256 for `arch`.
 ///
 /// Failure is a hard abort — no warn-and-continue fallback.
-async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String> {
+async fn fetch_and_verify_manifest(
+    version: &str,
+    base_url: &str,
+    arch: &str,
+    is_preview: bool,
+) -> Result<String> {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use sigstore::cosign::bundle::SignedArtifactBundle;
@@ -457,7 +469,7 @@ async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) ->
     // tag, manifest always overwritten). For preview the host version is a -dev or
     // -preview. build and may legitimately differ from the capsule build version, so
     // we log it rather than assert equality.
-    if is_preview_version(version) {
+    if is_preview {
         crate::debug_log!(
             "capsule_binary",
             "signed capsule manifest version: {} (host version: {version})",
