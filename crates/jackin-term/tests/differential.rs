@@ -1,15 +1,12 @@
-//! Differential test harness: Phase 1 of Defect 45 (jackin-term).
+//! Differential test harness: Phase 2 of Defect 45 (jackin-term).
 //!
-//! Feeds identical byte streams to two terminal model implementations and asserts
-//! they produce identical final grids (cells, attrs, cursor, scrollback, alt-screen).
+//! Feeds identical byte streams to `jackin_term::DamageGrid` (left) and
+//! `vt100::Parser` (right, oracle) and asserts identical final grids —
+//! cells, attrs, cursor, alt-screen.
 //!
-//! Phase 1 goal: "can already diff stock vt100 vs itself (sanity) so the moment
-//! jackin-term v0 exists it is gradeable." The oracle-vs-oracle sanity run verifies
-//! that the harness plumbing is correct before `jackin-term` is wired in as the
-//! left-hand model.
-//!
-//! When Phase 2 lands `DamageGrid`, add it as the left model and update `run_differential`
-//! to instantiate `jackin_term::DamageGrid` on the left side.
+//! The harness is the correctness gate from the checklist:
+//! "the differential harness (Phase 1) passes against the `vt100` oracle
+//! across the entire committed corpus."
 //!
 //! ## Corpus layout
 //!
@@ -26,6 +23,44 @@
 
 use std::path::Path;
 
+use jackin_term::{Cell, Color, DamageGrid};
+
+// ---------------------------------------------------------------------------
+// Neutral color type for cross-model comparison
+// ---------------------------------------------------------------------------
+
+/// Neutral color representation comparable across both models.
+///
+/// Mirrors `vt100::Color` and `jackin_term::cell::Color` which have identical
+/// structural variants. Using a local type avoids the test depending on the
+/// `vt100` crate's type stability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColorSnap {
+    Default,
+    Idx(u8),
+    Rgb(u8, u8, u8),
+}
+
+impl From<vt100::Color> for ColorSnap {
+    fn from(c: vt100::Color) -> Self {
+        match c {
+            vt100::Color::Default => ColorSnap::Default,
+            vt100::Color::Idx(i) => ColorSnap::Idx(i),
+            vt100::Color::Rgb(r, g, b) => ColorSnap::Rgb(r, g, b),
+        }
+    }
+}
+
+impl From<Color> for ColorSnap {
+    fn from(c: Color) -> Self {
+        match c {
+            Color::Default => ColorSnap::Default,
+            Color::Idx(i) => ColorSnap::Idx(i),
+            Color::Rgb(r, g, b) => ColorSnap::Rgb(r, g, b),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Oracle abstraction
 // ---------------------------------------------------------------------------
@@ -36,8 +71,8 @@ struct CellSnapshot {
     contents: String,
     is_wide: bool,
     is_wide_continuation: bool,
-    foreground: vt100::Color,
-    background: vt100::Color,
+    foreground: ColorSnap,
+    background: ColorSnap,
     bold: bool,
     italic: bool,
     underline: bool,
@@ -96,7 +131,47 @@ impl ScreenSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// vt100 oracle adapter
+// DamageGrid adapter (left model)
+// ---------------------------------------------------------------------------
+
+fn snapshot_damagegrid(grid: &DamageGrid) -> ScreenSnapshot {
+    let (rows, cols) = grid.size();
+    let (cursor_row, cursor_col) = grid.cursor_position();
+
+    let mut cells = Vec::with_capacity(rows as usize);
+    for r in 0..rows {
+        let mut row = Vec::with_capacity(cols as usize);
+        for c in 0..cols {
+            let cell: &Cell = grid
+                .cell(r, c)
+                .unwrap_or_else(|| panic!("cell ({r},{c}) out of bounds for {rows}×{cols} grid"));
+            row.push(CellSnapshot {
+                contents: cell.contents().to_string(),
+                is_wide: cell.is_wide,
+                is_wide_continuation: cell.is_wide_continuation,
+                foreground: cell.fgcolor().into(),
+                background: cell.bgcolor().into(),
+                bold: cell.bold(),
+                italic: cell.italic(),
+                underline: cell.underline(),
+                inverse: cell.inverse(),
+            });
+        }
+        cells.push(row);
+    }
+
+    ScreenSnapshot {
+        rows,
+        cols,
+        cursor_row,
+        cursor_col,
+        alternate_screen: grid.alternate_screen(),
+        cells,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// vt100 oracle adapter (right model)
 // ---------------------------------------------------------------------------
 
 fn snapshot_vt100(parser: &vt100::Parser) -> ScreenSnapshot {
@@ -115,8 +190,8 @@ fn snapshot_vt100(parser: &vt100::Parser) -> ScreenSnapshot {
                 contents: cell.contents().to_string(),
                 is_wide: cell.is_wide(),
                 is_wide_continuation: cell.is_wide_continuation(),
-                foreground: cell.fgcolor(),
-                background: cell.bgcolor(),
+                foreground: cell.fgcolor().into(),
+                background: cell.bgcolor().into(),
                 bold: cell.bold(),
                 italic: cell.italic(),
                 underline: cell.underline(),
@@ -137,21 +212,19 @@ fn snapshot_vt100(parser: &vt100::Parser) -> ScreenSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// Differential runner
+// Differential runner — DamageGrid (left) vs vt100 (right/oracle)
 // ---------------------------------------------------------------------------
 
-/// Feed `bytes` to two independent vt100 parsers and assert identical output.
-///
-/// This is the Phase 1 sanity gate: oracle-vs-oracle. When Phase 2 lands
-/// `jackin_term::DamageGrid`, replace the left parser with it.
+/// Feed `bytes` to `DamageGrid` (left) and `vt100::Parser` (right/oracle) and
+/// assert identical cell grids, cursor position, and alt-screen flag.
 fn run_differential(rows: u16, cols: u16, bytes: &[u8], label: &str) {
-    let mut left = vt100::Parser::new(rows, cols, 10_000);
+    let mut left = DamageGrid::new(rows, cols, 10_000);
     let mut right = vt100::Parser::new(rows, cols, 10_000);
 
     left.process(bytes);
     right.process(bytes);
 
-    let left_snap = snapshot_vt100(&left);
+    let left_snap = snapshot_damagegrid(&left);
     let right_snap = snapshot_vt100(&right);
     left_snap.assert_eq(&right_snap, label);
 }
@@ -216,16 +289,20 @@ fn sanity_emoji() {
 #[test]
 fn sanity_resize_smaller_then_larger() {
     // Feed content, resize smaller (simulating Defect 44 scenario), then larger.
-    let mut left = vt100::Parser::new(24, 80, 10_000);
-    let mut right = vt100::Parser::new(24, 80, 10_000);
     let content = b"Line 1\r\nLine 2\r\nLine 3\r\n";
+
+    let mut left = DamageGrid::new(24, 80, 10_000);
+    let mut right = vt100::Parser::new(24, 80, 10_000);
+
     left.process(content);
     right.process(content);
-    left.screen_mut().set_size(10, 40);
+
+    left.set_size(10, 40);
     right.screen_mut().set_size(10, 40);
-    left.screen_mut().set_size(24, 80);
+    left.set_size(24, 80);
     right.screen_mut().set_size(24, 80);
-    snapshot_vt100(&left).assert_eq(&snapshot_vt100(&right), "resize smaller then larger");
+
+    snapshot_damagegrid(&left).assert_eq(&snapshot_vt100(&right), "resize smaller then larger");
 }
 
 #[test]
@@ -301,7 +378,6 @@ fn run_fixture(fixture_path: &Path) {
 fn corpus_all_fixtures() {
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     if !fixture_dir.exists() {
-        // No fixtures committed yet — Phase 1 corpus is assembled incrementally.
         return;
     }
     let mut count = 0usize;

@@ -122,9 +122,7 @@ impl DamageGrid {
     /// Dirty rows are recorded via `self.dirty`.
     pub fn process(&mut self, bytes: &[u8]) {
         let mut parser = vte::Parser::new();
-        for &byte in bytes {
-            parser.advance(self, &[byte]);
-        }
+        parser.advance(self, bytes);
     }
 
     /// Drain and return the dirty-row set, clearing it for the next frame.
@@ -230,14 +228,6 @@ impl DamageGrid {
         }
     }
 
-    fn active_grid_ref(&self) -> &Vec<Vec<Cell>> {
-        if self.alt_screen {
-            &self.alternate
-        } else {
-            &self.primary
-        }
-    }
-
     /// Write a character at the current cursor position, advance cursor.
     fn write_char_at_cursor(&mut self, ch: char) {
         if self.cursor_row >= self.rows || self.cursor_col >= self.cols {
@@ -250,10 +240,8 @@ impl DamageGrid {
         // Erase any prior wide char that would be partially overwritten.
         {
             let grid = self.active_grid();
-            if col < grid[row].len() && grid[row][col].is_wide_continuation {
-                if col > 0 {
-                    grid[row][col - 1] = Cell::default();
-                }
+            if col < grid[row].len() && grid[row][col].is_wide_continuation && col > 0 {
+                grid[row][col - 1] = Cell::default();
             }
         }
 
@@ -336,24 +324,21 @@ impl DamageGrid {
         let cols_u16 = self.cols;
         let cols = cols_u16 as usize;
         let cursor_row = self.cursor_row;
-        let grid = self.active_grid();
-        match mode {
-            0 => {
-                for c in col..cols {
-                    grid[row][c] = Cell::default();
+        {
+            let grid = self.active_grid();
+            match mode {
+                0 => {
+                    grid[row][col..cols].fill(Cell::default());
                 }
-            }
-            1 => {
-                for c in 0..=col.min(cols - 1) {
-                    grid[row][c] = Cell::default();
+                1 => {
+                    grid[row][0..=col.min(cols - 1)].fill(Cell::default());
                 }
+                2 => {
+                    grid[row] = blank_row(cols_u16);
+                }
+                _ => {}
             }
-            2 => {
-                grid[row] = blank_row(cols_u16);
-            }
-            _ => {}
         }
-        drop(grid);
         self.dirty.mark_row(cursor_row);
     }
 
@@ -366,21 +351,17 @@ impl DamageGrid {
         match mode {
             0 => {
                 let grid = self.active_grid();
-                for c in cursor_col..cols_usize {
-                    grid[cursor_row][c] = Cell::default();
-                }
-                for r in cursor_row + 1..rows {
-                    grid[r] = blank_row(cols_u16);
+                grid[cursor_row][cursor_col..cols_usize].fill(Cell::default());
+                for row in grid.iter_mut().take(rows).skip(cursor_row + 1) {
+                    *row = blank_row(cols_u16);
                 }
             }
             1 => {
                 let grid = self.active_grid();
-                for r in 0..cursor_row {
-                    grid[r] = blank_row(cols_u16);
+                for row in grid.iter_mut().take(cursor_row) {
+                    *row = blank_row(cols_u16);
                 }
-                for c in 0..=cursor_col.min(cols_usize - 1) {
-                    grid[cursor_row][c] = Cell::default();
-                }
+                grid[cursor_row][0..=cursor_col.min(cols_usize - 1)].fill(Cell::default());
             }
             2 | 3 => {
                 if mode == 3 {
@@ -388,8 +369,8 @@ impl DamageGrid {
                     self.scrollback_offset = 0;
                 }
                 let grid = self.active_grid();
-                for r in 0..rows {
-                    grid[r] = blank_row(cols_u16);
+                for row in grid.iter_mut().take(rows) {
+                    *row = blank_row(cols_u16);
                 }
             }
             _ => {}
@@ -438,7 +419,7 @@ impl vte::Perform for DamageGrid {
     fn execute(&mut self, byte: u8) {
         match byte {
             // LF / VT / FF — newline.
-            0x0a | 0x0b | 0x0c => {
+            0x0a..=0x0c => {
                 self.newline_action();
                 self.dirty.mark_row(self.cursor_row);
             }
@@ -578,8 +559,8 @@ impl vte::Perform for DamageGrid {
                 for c in col..cols.saturating_sub(n) {
                     row_cells[c] = row_cells.get(c + n).cloned().unwrap_or_default();
                 }
-                for c in cols.saturating_sub(n)..cols {
-                    row_cells[c] = Cell::default();
+                for cell in row_cells.iter_mut().skip(cols.saturating_sub(n)).take(n) {
+                    *cell = Cell::default();
                 }
                 self.dirty.mark_row(self.cursor_row);
             }
@@ -605,12 +586,14 @@ impl vte::Perform for DamageGrid {
             }
             // Erase Characters.
             'X' => {
-                let n = p0.max(1) as u16;
+                let n = p0.max(1) as usize;
                 let row = self.cursor_row as usize;
                 let col = self.cursor_col as usize;
                 let grid = self.active_grid();
-                for c in col..(col + n as usize).min(grid[row].len()) {
-                    grid[row][c] = Cell::default();
+                let row_len = grid[row].len();
+                let count = (col + n).min(row_len).saturating_sub(col);
+                for cell in grid[row].iter_mut().skip(col).take(count) {
+                    *cell = Cell::default();
                 }
                 self.dirty.mark_row(self.cursor_row);
             }
@@ -778,8 +761,22 @@ impl DamageGrid {
             // Bracketed paste.
             2004 => self.bracketed_paste = enabled,
             // Alternate screen (save/restore cursor).
-            1047 | 1049 => {
-                self.set_alt_screen(enabled);
+            // Mode 1047: switch only (no cursor save/restore).
+            // Mode 1049: save cursor before entering alt screen, restore after leaving.
+            1047 => self.set_alt_screen(enabled),
+            1049 => {
+                if enabled {
+                    self.saved_cursor_row = self.cursor_row;
+                    self.saved_cursor_col = self.cursor_col;
+                    self.set_alt_screen(true);
+                    self.cursor_row = 0;
+                    self.cursor_col = 0;
+                } else {
+                    self.set_alt_screen(false);
+                    self.cursor_row = self.saved_cursor_row;
+                    self.cursor_col = self.saved_cursor_col;
+                    self.clamp_cursor();
+                }
             }
             // Mouse modes.
             1000 => {
