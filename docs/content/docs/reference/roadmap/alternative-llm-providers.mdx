@@ -2,7 +2,9 @@
 title: "Alternative LLM Providers (MiniMax, Kimi, GLM everywhere)"
 ---
 
-**Status**: Partially implemented — Phases 1–4 shipped (catalog + Claude Code + Codex MiniMax + OpenCode + operator Auth-tab rows); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint
+**Status**: Partially implemented — Phases 1–4 shipped on `main` (catalog + Claude Code + Codex MiniMax + OpenCode + operator Auth-tab rows); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
+
+> **Branch port note (`feature/tui-architecture`).** This feature shipped on `main` as PR `#523` against the pre-migration monolith. The `feature/tui-architecture` PR (a monolith→crates migration) is **re-porting `#523` onto the new crate structure** — must-not-lose work. Some pieces (the `runtime_setup` Codex/OpenCode provider-config writers, the env-var registration, the auth-tab display rows) are **not yet re-applied** there. The ported-vs-missing ledger lives in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/) and [post-restructure-fixes Defect 46](/reference/roadmap/post-restructure-fixes-checklist/); that branch is not "done" until the ledger shows zero MISSING. On `main` the feature is complete as described below.
 
 ## Problem
 

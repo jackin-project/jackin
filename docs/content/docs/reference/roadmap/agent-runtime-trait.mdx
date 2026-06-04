@@ -28,7 +28,22 @@ A verbatim port would **multiply** the very dispatch fan-out this item exists to
 
 All of it in this one PR. The migration plan section is rewritten below to reflect single-PR, green-at-each-commit phasing instead of four separate PRs.
 
-**Progress (live):** the **structural-absorption checkpoint landed** (merge commit `0e1f2a9d`) — `main`/`#523` absorbed by deliberate port (branch structure kept, `Provider` extended to the 4-key catalog, capsule + host key wiring + `token_for_provider` in place, 465 tests green). The remaining Phase 0 close-out (Codex/OpenCode `runtime_setup` provider configs, auth-tab UI rows, operator smoke) plus Phases A/1–4 are tracked, item-by-item, in [Defect 46](/reference/roadmap/post-restructure-fixes/).
+**Progress (live):** the **structural-absorption checkpoint landed** (merge commit `0e1f2a9d`) — `main`/`#523` absorbed by deliberate port (branch structure kept, `Provider` extended to the 4-key catalog, capsule + host key wiring + `token_for_provider` in place, 465 tests green). The remaining Phase 0 close-out plus Phases A/1–4 are tracked, item-by-item, in [Defect 46](/reference/roadmap/post-restructure-fixes/).
+
+### `#523` port ledger — must reach zero MISSING (mirrors checklist Defect 46)
+
+`#523` is **must-not-lose** functionality. The merge took `--ours` for `runtime_setup.rs`/`daemon.rs`, which dropped parts that are being re-applied. This is the same ledger as the checklist — kept here so the design-of-record also tracks it. Verify any time with `git show 433cf6e8a --stat` + symbol grep; the epic is not done until every row is ✅.
+
+| `#523` piece | Symbol(s) | Status |
+|---|---|---|
+| Provider catalog | `Provider::{Anthropic,Zai,Minimax,Kimi}`, 4-key `available_for`, `opencode_model`, `from_label`, `env_overrides` (`jackin-protocol`) | ✅ ported |
+| Capsule keys + token | `anthropic_api_key`/`minimax_key`/`kimi_key`, `token_for_provider`, spawn routing (`jackin-capsule`) | ✅ ported |
+| Host availability | `providers_for_launch` 4-key (`jackin/src/console/domain.rs`) | ✅ ported |
+| Codex provider config | `write_codex_provider_config`, `codex_minimax_provider_toml` (`runtime_setup.rs`) + #523 tests | ❌ **MISSING** |
+| OpenCode provider config | `build_opencode_config`, `opencode_provider_block`, `write_opencode_config` (`runtime_setup.rs`) + #523 tests | ❌ **MISSING** |
+| Env-var registration | `#523` `src/env_model.rs` +9 → canonical `env_model` crate | ❌ **MISSING** |
+| Auth-tab display rows | new-provider key-status rows in the canonical console auth tab | ❌ **MISSING** |
+| Launch delta | `#523` `src/runtime/launch.rs` +2 → canonical home | ❌ **MISSING** |
 
 **Extensible umbrella.** This epic is the home for tightly-coupled dispatch/structure work; the operator may fold additional roadmap items in as new phases (Phase B, C, …) under the same green-at-each-commit rule. Tight coupling (shared files, shared dispatch) is the test for "same PR"; a loosely-coupled item is planned here but may ship as its own PR if this one outgrows comfortable single-reviewer scope.
 
