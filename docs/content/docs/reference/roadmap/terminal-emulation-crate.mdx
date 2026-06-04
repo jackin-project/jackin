@@ -2,14 +2,14 @@
 title: "Terminal Emulation Crate (jackin-term)"
 ---
 
-**Status**: **Partially implemented** — Phases 0–3 complete; Phases 4–5 active.
+**Status**: **Partially implemented** — Phases 0–5 complete; Ghostty `PageList` arena deferred (pending Experiments 1–4 benchmark confirmation).
 
 - **Phase 0 (baseline):** Complete — `vt100` coupling surface frozen in this roadmap item; fork consciously owned; TODO.md updated.
-- **Phase 1 (differential harness):** Complete — `crates/jackin-term/tests/differential.rs` with 30 tests (DamageGrid vs `vt100` oracle); `cargo-fuzz` target; corpus directory. Harness found and fixed 3 DamageGrid bugs (ESC M/RI, ICH/`@`, DECSTBM cursor homing).
+- **Phase 1 (differential harness):** Complete — `crates/jackin-term/tests/differential.rs` with 41 tests (DamageGrid vs `vt100` oracle) + 12 wire-emit round-trip tests; `cargo-fuzz` target; corpus directory. Harness found and fixed 3 DamageGrid bugs (ESC M/RI, ICH/`@`, DECSTBM cursor homing).
 - **Phase 2 (`DamageGrid` v0):** Complete — `vte::Perform` grid, `dirty_spans()`, typed `PassthroughEvents`, `CompactString` cells, `WireEmitter`, `GridSnapshot::dump()`.
 - **Phase 3 (capsule feature flag):** Complete — `jackin-term` feature flag in `jackin-capsule`; `DamageGrid` used for live pane rendering when feature is on.
-- **Phase 4 (optimize):** In progress — `CompactString` inline cells (Phase 4 partial); Ghostty `PageList` arena pending.
-- **Phase 5 (delete old path):** Not started — `vt100` removal + `RowSnapshot`/`PaneBodyCache` deletion requires real multi-pane smoke session confirmation.
+- **Phase 4 (optimize):** Complete — `CompactString` inline cells shipped (≤24-byte graphemes = zero heap alloc per cell); criterion benchmarks in place; Ghostty `PageList` arena deferred pending Experiments 1–4 showing current `Vec<Vec<Cell>>` model is the bottleneck.
+- **Phase 5 (delete old path):** Complete — `vt100` removed from all production capsule paths (`session.rs`, `tui/render.rs`, mode accessors, compositor, PaneBodyWidget); `DamageGrid` is unconditional; `vt100` retained only as dev-dependency differential oracle; vt100-backed integration tests (`osc_passthrough.rs`, `vt_round_trip.rs`) removed.
 
 The executable plan lives in the [post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 45), which is the primary implementation tracking surface. The crate README (`crates/jackin-term/README.md`) is the self-contained engineering record.
 
