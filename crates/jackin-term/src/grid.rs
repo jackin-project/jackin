@@ -426,6 +426,8 @@ impl DamageGrid {
                 for row in grid.iter_mut().take(rows) {
                     *row = blank_row(cols_u16);
                 }
+                // Emit ScrollbackClear so the capsule can clear its retained history.
+                self.passthrough.push(PassthroughEvent::ScrollbackClear);
             }
             _ => {}
         }
