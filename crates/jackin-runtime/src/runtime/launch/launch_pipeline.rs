@@ -766,13 +766,22 @@ pub(crate) async fn load_role_with(
                         &role_key_owned,
                     )
                 };
+                // Phase B.2: resolve the operator's sync-source-dir override for each agent.
+                let resolve_sync_src = |a: jackin_core::agent::Agent| {
+                    jackin_config::resolve_sync_source_dir(
+                        &config_owned,
+                        a,
+                        &workspace_name_owned,
+                        &role_key_owned,
+                    )
+                };
                 RoleState::prepare(
                     &paths_owned,
                     &container_name_owned,
                     &manifest_owned,
                     &PrepareResolvers {
                         auth_modes: &resolve_mode,
-                        sync_source_dirs: &|_| None,
+                        sync_source_dirs: &resolve_sync_src,
                     },
                     &github_ctx_owned,
                     &paths_owned.home_dir,
