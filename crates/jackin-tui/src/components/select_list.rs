@@ -241,7 +241,7 @@ impl Widget for SelectList<'_> {
                 )))
             })
             .collect();
-        render_selected_lines(list_area, buf, items, self.state.selected);
+        render_picker_list(list_area, buf, items, self.state.selected);
     }
 }
 
@@ -255,7 +255,13 @@ pub fn render_select_list(
     frame.render_widget(SelectList::new(state, title).context(context), area);
 }
 
-fn render_selected_lines(
+/// Render a vertical picker list into `area`: a ratatui `List` with the
+/// canonical selected-row highlight (PHOSPHOR_GREEN background, PHOSPHOR_DARK
+/// text, bold, `▸ ` cursor) plus a right-edge scroll thumb. Shared so every
+/// modal list — the capsule menu/pickers and the host console — gets the same
+/// look from one place. Callers pass pre-built `ListItem`s (style the
+/// unselected rows themselves) and the selected row index.
+pub fn render_picker_list(
     area: Rect,
     buf: &mut Buffer,
     items: Vec<ListItem<'_>>,

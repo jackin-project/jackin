@@ -370,13 +370,13 @@ fn render_filter_picker(
     items: &[PickerItem],
     selected: usize,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            format!(" {title} "),
-            jackin_tui::theme::BOLD_WHITE,
-        ));
+    // Reuse the shared modal panel so the menu/pickers match every other
+    // jackin' dialog: PHOSPHOR_GREEN focused border + bold-white title.
+    let title_str = format!(" {title} ");
+    let block = jackin_tui::components::Panel::new()
+        .title(&title_str)
+        .focus(jackin_tui::components::PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     Clear.render(area, frame.buffer_mut());
     block.render(area, frame.buffer_mut());
@@ -385,7 +385,7 @@ fn render_filter_picker(
         return;
     }
 
-    // Filter input on row 0.
+    // Filter input on row 0 (shared component).
     let filter_area = Rect { height: 1, ..inner };
     render_filter_input(frame, filter_area, filter);
 
@@ -393,36 +393,34 @@ fn render_filter_picker(
         return;
     }
 
-    // Items from row 2 onward (row 1 = separator gap).
+    // Items from row 2 onward (row 1 = separator gap). Section rows are dim;
+    // item rows are white and let the shared render_picker_list paint the
+    // selected-row highlight (green background, ▸ cursor) + scroll thumb.
     let list_area = Rect {
         y: inner.y + 2,
         height: inner.height.saturating_sub(2),
         ..inner
     };
 
-    let lines: Vec<Line<'_>> = items
+    let list_items: Vec<ratatui::widgets::ListItem<'_>> = items
         .iter()
-        .enumerate()
-        .map(|(i, item)| match item {
-            PickerItem::Section(label) => {
-                Line::from(Span::styled(format!(" {label}"), jackin_tui::theme::DIM))
-            }
-            PickerItem::Item(label) => {
-                let is_selected = i == selected;
-                let prefix = if is_selected { "\u{25b8} " } else { "  " };
-                let style = if is_selected {
-                    Style::default()
-                        .fg(PHOSPHOR_GREEN)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(WHITE)
-                };
-                Line::from(Span::styled(format!("{prefix}{label}"), style))
-            }
+        .map(|item| match item {
+            PickerItem::Section(label) => ratatui::widgets::ListItem::new(Line::from(
+                Span::styled(format!(" {label}"), jackin_tui::theme::DIM),
+            )),
+            PickerItem::Item(label) => ratatui::widgets::ListItem::new(Line::from(Span::styled(
+                label.clone(),
+                Style::default().fg(WHITE),
+            ))),
         })
         .collect();
 
-    Paragraph::new(lines).render(list_area, frame.buffer_mut());
+    jackin_tui::components::render_picker_list(
+        list_area,
+        frame.buffer_mut(),
+        list_items,
+        Some(selected),
+    );
 }
 
 fn render_text_input_dialog(
@@ -433,13 +431,13 @@ fn render_text_input_dialog(
     value: &str,
     cursor: usize,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            format!(" {dialog_title} "),
-            jackin_tui::theme::BOLD_WHITE,
-        ));
+    // Shared modal panel: PHOSPHOR_GREEN focused border, matching the menu /
+    // pickers and the rest of jackin's dialogs.
+    let title_str = format!(" {dialog_title} ");
+    let block = jackin_tui::components::Panel::new()
+        .title(&title_str)
+        .focus(jackin_tui::components::PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     Clear.render(area, frame.buffer_mut());
     block.render(area, frame.buffer_mut());
