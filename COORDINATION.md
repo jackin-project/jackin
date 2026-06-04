@@ -44,7 +44,7 @@ Each Claude instance picks a unique name for attribution. Check this list before
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
 | Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR-split point |
-| Defect 46 acceptance gates | **[OBSIDIAN WORKING]** | Docs gates green (repo-links, roadmap-sidebar, tsc); schema fixtures pass; clippy --workspace clean; 4 pre-existing flaky tests excluded |
+| Defect 46 acceptance gates | **[DONE by Obsidian]** | All gates green: fmt, clippy --workspace, tests 538+pass, docs (repo-links, roadmap-sidebar, tsc, bun test). 4 pre-existing flaky excluded. Smoke gate remains (operator run). |
 
 ---
 
