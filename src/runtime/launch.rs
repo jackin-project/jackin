@@ -7986,9 +7986,8 @@ min_profile = "standard"
                     capabilities_add: vec!["CAP_TOTALLY_FAKE".to_string()],
                     ..Default::default()
                 });
-                // Workspace label must match repo_workspace()'s label (repo_dir.display()).
-                let workspace_label = repo_dir.display().to_string();
-                config.workspaces.insert(workspace_label, {
+                // Label must match repo_workspace()'s label: repo_dir.display().to_string().
+                config.workspaces.insert(repo_dir.display().to_string(), {
                     let mut ws = crate::workspace::WorkspaceConfig::default();
                     ws.workdir = "/workspace".to_string();
                     // Workspace: user+sudo conflict (will appear as [workspace] in merged error).
@@ -8220,6 +8219,9 @@ plugins = []
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
         config_mutator: impl Fn(&mut AppConfig, &std::path::Path),
     ) -> (anyhow::Error, tempfile::TempDir) {
+        // `Some(&config_mutator)` coerces `impl Fn` → `&dyn Fn` to satisfy the inner
+        // signature which is `Option<&dyn Fn(...)>` (keeps callers that pass `None`
+        // from needing an explicit type annotation like `None::<fn(...)>`).
         let (result, _, temp) =
             run_load_core_with_manifest(&[], profile, manifest_toml, Some(&config_mutator)).await;
         (result.unwrap_err(), temp)
