@@ -126,7 +126,9 @@ pub struct AppleContainerResources {
 }
 ```
 
-The `BackendResources` tagged union that replaces `DockerResources` in `InstanceManifest`:
+The current `InstanceManifest` in <RepoFile path="src/instance/manifest.rs" /> has a hardcoded `pub docker: DockerResources` field (not a tagged union). `DockerResources` has four fields: `role_container: String`, `dind_container: String`, `network: String`, `certs_volume: String`.
+
+The `BackendResources` tagged union that replaces it:
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,7 +139,16 @@ pub enum BackendResources {
 }
 ```
 
-`InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the AGENTS.md sense — it does not need a `CURRENT_INSTANCE_VERSION` fixture chain. Add a `manifest_version: u32` field for forward-compat graceful fallback when a stale instance manifest is read. Old Docker instances default to `BackendResources::Docker` with a serde `default` attribute.
+**Backward-compat for existing instance manifests**: existing manifest JSON files on disk have `"docker": { "role_container": ..., "dind_container": ..., "network": ..., "certs_volume": ... }` without a `"kind"` field. Adding a `"kind"` discriminator via `#[serde(tag = "kind")]` means old manifests fail to deserialize. Two options:
+
+- **Option A (recommended)**: keep the field named `docker` in JSON via `#[serde(rename = "docker")]` but change the Rust type to `BackendResources`. Old manifests lack `"kind"` → deserialize fails → catch error in `InstanceManifest::read()` and fall back to the Docker variant by reading the raw `docker` field directly.
+- **Option B**: rename field from `docker` to `backend`, handle old manifests with a custom deserializer that tries `backend` first, falls back to `docker`.
+
+Either way: `InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the AGENTS.md sense — no `CURRENT_INSTANCE_VERSION` fixture chain required. Add `manifest_version: u32` field (currently `INSTANCE_MANIFEST_VERSION = 1`) and increment to `2` when the tagged union lands, so `InstanceManifest::read()` can branch on the version field for graceful migration.
+
+### Docker Client Architecture Note
+
+<RepoFile path="src/docker_client.rs" /> uses **bollard** — a typed async Rust API client for Docker, not a CLI shell-out. All Docker lifecycle calls (create container, start, stop, remove, network, volumes) go through bollard's `Docker` trait. The Apple Container backend **cannot** use bollard. It must **shell out to the `container` CLI** (`container run`, `container exec`, `container stop`, `container rm`). The Apple Container client module (`src/apple_container_client.rs`) will use `tokio::process::Command` for all lifecycle calls — a fundamentally different pattern from `docker_client.rs`. This means the `DockerApi` trait in `docker_client.rs` is NOT reusable for Apple Container; a new `AppleContainerApi` trait is needed.
 
 ## Schema Migration Footprint
 

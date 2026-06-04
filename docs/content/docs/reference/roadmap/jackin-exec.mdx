@@ -86,9 +86,16 @@ Serde untagged discrimination order:
 2. `Extended` — needs `value` field → plain scalars skip
 3. `Plain(String)` — scalar fallback
 
-Every existing config parses identically. `{ value = "..." }` without `on_demand` defaults to `true` (by `default = "return_true"`). In practice, the config editor always writes `on_demand = true` explicitly for clarity.
+Every existing config parses identically. `{ value = "..." }` without `on_demand` defaults to `true` via `#[serde(default = "return_true")]`. In practice, the config editor always writes `on_demand = true` explicitly for clarity.
 
-`Extended.value` is resolved using the same `dispatch_plain` function already used for `Plain` — `$VAR` / `${VAR}` expansion is automatic.
+`return_true` helper (add in <RepoFile path="src/operator_env.rs" />):
+```rust
+fn return_true() -> bool { true }
+```
+
+**`Extended { on_demand: false }` runtime behavior**: if an `Extended` value somehow ends up with `on_demand = false` (e.g. operator edits TOML manually), it is treated as always-available — resolved at launch using `dispatch_plain` exactly like `Plain`. The config editor prevents this state by converting back to `Plain(String)` when toggling off, but the runtime must be defensive.
+
+`Extended.value` is resolved using the same `dispatch_plain` function already used for `Plain` — `$VAR` / `${VAR}` expansion is automatic. For `on_demand = true` `Extended` values with `$VAR`, the host.sock request sends `kind: "env"` with the var name; for literals it sends `kind: "literal"` and the host returns the value verbatim (no actual host call needed, but the protocol is uniform).
 
 ### 2. Add `on_demand` to `OpRef`
 
@@ -125,11 +132,56 @@ Every `jackin-exec` call triggers the picker. No pre-selection, no patterns. All
 
 `OpRef` values show `path` (human-readable display). `Extended` values show their `value` string. No credential values are shown — display is always the label or source, not the resolved secret.
 
-After Enter: capsule sends the selected refs to the host process → host resolves via `op read` for each selected 1Password ref, or reads host env for `$VAR` refs → values sent back to capsule → injected as temp env vars for the duration of the command → command runs → output scanned for leaked values → temp vars deleted.
+After Enter: capsule sends the selected refs to the host process → host resolves via `op read` for each selected 1Password ref, or reads host env for `$VAR` refs → values sent back to capsule → injected as env vars on the spawned command's `CommandBuilder` → command runs → output scanned for leaked values → process exits (env vars die with it, no explicit cleanup needed).
+
+**Credential injection mechanism (Phase 1)**: All resolved values are injected as environment variables on the `CommandBuilder` for the spawned command — using the binding name as the key (e.g., `GH_TOKEN=resolved_value`, `AWS_ACCESS_KEY_ID=resolved_value`). The command inherits only these specific injected vars plus its standard env. This works for token-style credentials (GitHub, AWS, API keys). **Known Phase 1 limitation**: raw private key strings (SSH private keys from `op read`) cannot be consumed directly by the `ssh` binary via an env var. Phase 1 documents this: if an operator selects an SSH key credential, it is injected as `SSH_KEY=<pem_content>`. The agent must write it to a temp file itself or use `GIT_SSH_COMMAND`. Phase 2 will add temp-file materialization for key-type credentials (write to `/jackin/run/secrets/<uuid>`, set `SSH_KEY_FILE=/jackin/run/secrets/<uuid>`, delete after command exits).
+
+**Edge cases:**
+- **No on-demand vars configured** (`JACKIN_EXEC_BINDINGS` is empty): `jackin-exec` runs the command immediately without showing the picker. No dialog, no delay.
+- **host.sock unavailable** (host process died or listener failed): capsule returns `ExecDenied { reason: "host credential resolver unavailable" }`. Agent sees the error message. No silent failure.
+- **`op read` fails** (1Password auth expired, item not found): host.sock returns an error for that specific ref. Capsule returns `ExecDenied { reason: "credential resolution failed: <op error message>" }`.
+- **`op` Touch ID / biometric prompt**: blocks the host.sock listener task until the OS prompt completes. This is expected and intentional — the user explicitly wanted the 1Password window to appear on their macOS host.
 
 ## Host Process Callback (Phase 1 Design)
 
 On-demand credentials are resolved at exec time, not at container launch. Capsule (inside the container) calls back to the host to resolve credentials.
+
+### host.sock Protocol
+
+Length-prefixed JSON (same framing as the control channel: `[4-byte BE length][JSON body]`). One request/response exchange per `jackin-exec` invocation.
+
+**Request** (capsule → host):
+```json
+{
+  "refs": [
+    { "name": "GH_TOKEN",  "kind": "op",  "source": "op://uuid/uuid/uuid" },
+    { "name": "SSH_KEY",   "kind": "op",  "source": "op://uuid/uuid/uuid" },
+    { "name": "BUILD_ENV", "kind": "env", "source": "$BUILD_ENV" },
+    { "name": "STG_URL",   "kind": "literal", "source": "https://staging.internal" }
+  ]
+}
+```
+
+`kind`: `"op"` → call `op read <source>`; `"env"` → read host env var from `source`; `"literal"` → return `source` verbatim (no host call needed).
+
+**Response** (host → capsule):
+```json
+{
+  "values": {
+    "GH_TOKEN":  "ghp_xxxx",
+    "SSH_KEY":   "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
+    "BUILD_ENV": "production",
+    "STG_URL":   "https://staging.internal"
+  }
+}
+```
+
+**Error response**:
+```json
+{ "error": "op read failed for GH_TOKEN: biometric auth cancelled" }
+```
+
+On error, capsule sends `ExecDenied` to the agent — no command is executed.
 
 **Phase 1 mechanism**: `jackin load` host process stays running for the lifetime of the session. After `docker run -d` starts the container detached, the host immediately calls `docker exec -it` (via `reconnect_or_create_session_with_focus()` in <RepoFile path="src/runtime/attach.rs" />) which **blocks for the entire session**. The host.sock listener runs as a separate `tokio::spawn` task alongside this blocking exec — both share the same tokio runtime. The socket path `~/.jackin/sockets/<container>/host.sock` is bind-mounted into the container at `/jackin/run/host.sock`. When capsule sends a resolution request, the host task reads it, runs `op read` for each 1Password ref, reads host env vars, writes values back. Capsule injects them ephemerally and executes.
 
