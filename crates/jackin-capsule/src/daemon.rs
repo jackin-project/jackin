@@ -3551,15 +3551,36 @@ async fn handle_exec_request(
         tokio::sync::oneshot::Sender<ExecOutcome>,
     )>,
 ) {
+    // Compact lifecycle telemetry. Log the program name and arg count, never
+    // the args themselves — they may carry literal secrets.
+    crate::clog!("exec: received command={} args={}", req.command, req.args.len());
+
+    // A picker is already awaiting the operator's decision. Reject rather than
+    // overwrite it: overwriting would drop the first client's response channel
+    // (a silent denial) and stack two pickers. The operator resolves the
+    // in-flight exec first; the rejected client retries.
+    if pending_exec.is_some() {
+        crate::clog!("exec: denied — another exec awaiting approval");
+        let _ = req.response_tx.send(ExecOutcome::Denied {
+            reason: "another exec is awaiting operator approval; retry shortly".to_string(),
+        });
+        return;
+    }
+
     let bindings = &mux.launch_config.exec_bindings;
 
     if bindings.is_empty() {
+        // No on-demand bindings configured: nothing to inject or gate, so the
+        // command runs unattended. Log it at the compact tier so an operator
+        // can still see what ran in their session.
+        crate::clog!("exec: no bindings configured, running command={}", req.command);
         let command = req.command.clone();
         let args = req.args.clone();
         let response_tx = req.response_tx;
         tokio::spawn(async move {
             match crate::exec::execute_command(&command, &args, &Default::default(), &[]).await {
                 Ok((exit_code, stdout, stderr, redacted_count)) => {
+                    crate::clog!("exec: command exited code={exit_code} redacted={redacted_count}");
                     let _ = response_tx.send(ExecOutcome::Result {
                         exit_code,
                         stdout,
@@ -3568,6 +3589,7 @@ async fn handle_exec_request(
                     });
                 }
                 Err(e) => {
+                    crate::clog!("exec: command failed: {e:#}");
                     let _ = response_tx.send(ExecOutcome::Denied {
                         reason: format!("exec failed: {e:#}"),
                     });
@@ -3602,6 +3624,11 @@ async fn handle_exec_request(
         cursor: 0,
     };
 
+    crate::clog!(
+        "exec: awaiting operator approval command={} ({} bindings offered)",
+        req.command,
+        bindings.len()
+    );
     mux.exec_picker_cmd = Some((req.command, req.args));
     mux.dialog_push(Dialog::ExecPicker(picker_state.clone()));
     *pending_exec = Some((picker_state, req.response_tx));
@@ -3618,27 +3645,36 @@ async fn run_exec_with_refs(
         };
     };
 
+    let ref_count = refs.len();
     let values = match crate::exec::resolve_credentials(&host_sock, refs).await {
         Ok(v) => v,
         Err(e) => {
+            crate::clog!("exec: credential resolution failed ({ref_count} refs): {e:#}");
             return ExecOutcome::Denied {
                 reason: format!("credential resolution failed: {e:#}"),
             };
         }
     };
+    crate::clog!("exec: resolved {} credential(s), running command={command}", values.len());
 
     let secret_values: Vec<String> = values.values().cloned().collect();
 
     match crate::exec::execute_command(&command, &args, &values, &secret_values).await {
-        Ok((exit_code, stdout, stderr, redacted_count)) => ExecOutcome::Result {
-            exit_code,
-            stdout,
-            stderr,
-            redacted_count,
-        },
-        Err(e) => ExecOutcome::Denied {
-            reason: format!("command execution failed: {e:#}"),
-        },
+        Ok((exit_code, stdout, stderr, redacted_count)) => {
+            crate::clog!("exec: command exited code={exit_code} redacted={redacted_count}");
+            ExecOutcome::Result {
+                exit_code,
+                stdout,
+                stderr,
+                redacted_count,
+            }
+        }
+        Err(e) => {
+            crate::clog!("exec: command execution failed: {e:#}");
+            ExecOutcome::Denied {
+                reason: format!("command execution failed: {e:#}"),
+            }
+        }
     }
 }
 
@@ -3701,8 +3737,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // loop shows the credential picker and runs the command.
     let (exec_tx, mut exec_rx) = mpsc::unbounded_channel::<ExecRequest>();
     // Pending exec request waiting for the operator's picker confirmation.
-    // Only one exec can be pending at a time — the socket handler blocks
-    // until the daemon sends the response via the oneshot channel.
+    // At most one exec is pending: a second request arriving while this slot
+    // is occupied is denied in `handle_exec_request`, not queued, so the
+    // first client's response channel is never silently overwritten.
     let mut pending_exec: Option<(
         crate::exec::ExecPickerState,
         tokio::sync::oneshot::Sender<ExecOutcome>,

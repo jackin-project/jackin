@@ -46,6 +46,37 @@ pub(crate) use self::universe::{
 
 pub use self::launch::resolve_supported_agents_for_console;
 
+/// Create the host-side socket directory for a container, write Capsule's
+/// normalized launch config (`agent.toml`) into it, and lock it to `0o700`.
+///
+/// Both backends bind-mount this directory to `/jackin/run`; the capsule daemon
+/// reads `agent.toml` from there at startup and refuses to start without it.
+/// Sharing the routine keeps the Docker and apple-container paths from drifting
+/// — the apple-container path previously created the dir but never wrote the
+/// config, so its daemon could never come up.
+pub(crate) fn prepare_socket_dir(
+    socket_dir: &std::path::Path,
+    capsule_config: &jackin_protocol::CapsuleConfig,
+) -> anyhow::Result<()> {
+    use anyhow::Context as _;
+    let contents = toml::to_string(capsule_config)
+        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
+    std::fs::create_dir_all(socket_dir)
+        .with_context(|| format!("creating host-side socket dir {}", socket_dir.display()))?;
+    std::fs::write(
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+        contents,
+    )
+    .with_context(|| format!("writing capsule config into {}", socket_dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(socket_dir, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("chmod 0o700 {}", socket_dir.display()))?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn register_agent_repo(
     paths: &crate::paths::JackinPaths,
     selector: &crate::selector::RoleSelector,

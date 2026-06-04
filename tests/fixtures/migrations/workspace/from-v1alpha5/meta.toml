@@ -1,4 +1,4 @@
 from_version = "v1alpha5"
-target_version = "v1alpha7"
+target_version = "v1alpha6"
 target_version_shipped = "2026-06-04"
-summary = "Adds on_demand flag to OpRef and the Extended EnvValue variant for on-demand credential injection via jackin-exec. Additive; existing workspace files parse unchanged (noop migration)."
+summary = "Adds the on_demand flag to OpRef and the Extended EnvValue variant for on-demand credential injection via jackin-exec, plus the optional [workspaces.X.runtime] section with a backend field for per-workspace apple-container backend override. Both changes are additive; existing workspace files parse unchanged (noop migration)."

@@ -226,33 +226,31 @@ pub async fn execute_command(
 
     let exit_code = output.status.code().unwrap_or(-1);
 
-    // Convert to lossy UTF-8 strings capped at 1 MiB each.
-    const MAX_OUTPUT: usize = 1024 * 1024;
-    let mut stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    if stdout.len() > MAX_OUTPUT {
-        stdout.truncate(MAX_OUTPUT);
-        stdout.push_str("\n[output truncated — use JACKIN_DEBUG for full output]");
-    }
-    let mut stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    if stderr.len() > MAX_OUTPUT {
-        stderr.truncate(MAX_OUTPUT);
-        stderr.push_str("\n[output truncated — use JACKIN_DEBUG for full output]");
-    }
+    // Decode to UTF-8. `from_utf8` reuses the child's buffer on the common
+    // (valid-UTF-8) path; only invalid bytes pay the lossy re-allocation.
+    let mut stdout = into_utf8(output.stdout);
+    let mut stderr = into_utf8(output.stderr);
 
-    // Redact secret values from output.
+    // Redact secret values from the FULL output, before capping. Capping first
+    // would let a secret straddling the cap boundary survive: its tail gets
+    // truncated away so the leading prefix no longer matches `secret` and the
+    // replace misses it, leaking a verbatim partial secret to the caller.
     let mut redacted_count = 0u32;
     for secret in secrets_for_redaction {
         if secret.is_empty() {
             continue;
         }
-        // Plain value redaction.
-        let count_before =
-            stdout.matches(secret.as_str()).count() + stderr.matches(secret.as_str()).count();
-        if count_before > 0 {
+        // Plain value redaction — count and replace each stream independently
+        // so a stream with no hit skips its replace scan.
+        let out_hits = stdout.matches(secret.as_str()).count();
+        let err_hits = stderr.matches(secret.as_str()).count();
+        if out_hits > 0 {
             stdout = stdout.replace(secret.as_str(), "[redacted by jackin']");
-            stderr = stderr.replace(secret.as_str(), "[redacted by jackin']");
-            redacted_count += count_before as u32;
         }
+        if err_hits > 0 {
+            stderr = stderr.replace(secret.as_str(), "[redacted by jackin']");
+        }
+        redacted_count += (out_hits + err_hits) as u32;
         // PEM block redaction.
         if secret.contains("BEGIN") && secret.contains("PRIVATE KEY") {
             let pem_pattern = "-----BEGIN";
@@ -264,7 +262,33 @@ pub async fn execute_command(
         }
     }
 
+    // Cap returned output at 1 MiB per stream, after redaction so truncation
+    // cannot expose secret material.
+    const MAX_OUTPUT: usize = 1024 * 1024;
+    cap_output(&mut stdout, MAX_OUTPUT);
+    cap_output(&mut stderr, MAX_OUTPUT);
+
     Ok((exit_code, stdout, stderr, redacted_count))
+}
+
+/// Decode child output as UTF-8, reusing the buffer when valid and falling
+/// back to a lossy copy only for invalid byte sequences.
+fn into_utf8(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+/// Cap `s` at `max` bytes, rounding down to a UTF-8 char boundary so the
+/// truncation never panics mid-codepoint, and append a marker.
+fn cap_output(s: &mut String, max: usize) {
+    if s.len() <= max {
+        return;
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
+    s.push_str("\n[output truncated at 1 MiB]");
 }
 
 fn redact_pem(s: &mut String, count: &mut u32) {
@@ -366,77 +390,87 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
 
 /// Entry point for `jackin-capsule exec <command> [args…]`
 /// and the `jackin-exec <command> [args…]` symlink form.
+///
+/// Thin terminal wrapper over [`run_capture`]: the socket round-trip lives
+/// there; `run` only renders the captured result to stdout/stderr and exits
+/// with the child's code.
 pub async fn run(args: &[String]) -> Result<()> {
-    if args.is_empty() {
-        bail!("usage: jackin-exec <command> [args…]");
+    let capture = run_capture(args).await?;
+
+    if let Some(reason) = capture.denied {
+        eprintln!("[jackin-exec] denied: {reason}");
+        std::process::exit(1);
     }
 
-    let command = args[0].clone();
-    let cmd_args = args[1..].to_vec();
-
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .with_context(|| format!("connecting to capsule socket at {SOCKET_PATH}"))?;
-
-    // Control channel: write length-prefixed JSON.
-    let msg = ClientMsg::ExecCommand {
-        command: command.clone(),
-        args: cmd_args,
-    };
-    let framed = frame(&msg);
-    stream
-        .write_all(&framed)
-        .await
-        .context("sending ExecCommand")?;
-
-    // Read 4-byte length prefix then JSON body.
-    let mut len_buf = [0u8; 4];
-    stream
-        .read_exact(&mut len_buf)
-        .await
-        .context("reading ExecResult length")?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_REPLY: usize = 8 * 1024 * 1024;
-    if len > MAX_REPLY {
-        bail!("ExecResult reply too large: {len} bytes");
+    use std::io::Write as _;
+    if !capture.stdout.is_empty() {
+        std::io::stdout()
+            .write_all(capture.stdout.as_bytes())
+            .context("writing stdout")?;
     }
-    let mut body = vec![0u8; len];
-    stream
-        .read_exact(&mut body)
+    if !capture.stderr.is_empty() {
+        std::io::stderr()
+            .write_all(capture.stderr.as_bytes())
+            .context("writing stderr")?;
+    }
+    if capture.redacted_count > 0 {
+        eprintln!(
+            "[jackin-exec] {} secret pattern(s) redacted from output",
+            capture.redacted_count
+        );
+    }
+    std::process::exit(capture.exit_code);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cap_output_truncates_on_char_boundary() {
+        // 'é' is 2 bytes, placed so byte index 10 falls mid-codepoint. Capping
+        // at 10 must round down to a boundary (9) instead of panicking.
+        let mut s = "a".repeat(9) + "é" + &"b".repeat(20);
+        cap_output(&mut s, 10);
+        assert!(s.starts_with("aaaaaaaaa"));
+        assert!(!s.contains('é'));
+        assert!(s.contains("[output truncated"));
+    }
+
+    #[test]
+    fn cap_output_leaves_short_output_untouched() {
+        let mut s = "short".to_string();
+        cap_output(&mut s, 1024);
+        assert_eq!(s, "short");
+    }
+
+    #[test]
+    fn redact_pem_redacts_block_and_counts() {
+        let mut s =
+            "before\n-----BEGIN PRIVATE KEY-----\nMIIsecret\n-----END PRIVATE KEY-----\nafter"
+                .to_string();
+        let mut count = 0;
+        redact_pem(&mut s, &mut count);
+        assert!(!s.contains("MIIsecret"));
+        assert!(s.contains("[key material redacted by jackin']"));
+        assert_eq!(count, 1);
+        assert!(s.contains("before") && s.contains("after"));
+    }
+
+    #[tokio::test]
+    async fn execute_command_redacts_plain_secret() {
+        let env = std::collections::BTreeMap::new();
+        let (code, stdout, _stderr, redacted) = execute_command(
+            "printf",
+            &["%s".to_string(), "tok-SECRET-xyz".to_string()],
+            &env,
+            &["tok-SECRET-xyz".to_string()],
+        )
         .await
-        .context("reading ExecResult body")?;
-
-    let reply: ServerMsg = serde_json::from_slice(&body).context("parsing ExecResult")?;
-
-    match reply {
-        ServerMsg::ExecResult {
-            exit_code,
-            stdout,
-            stderr,
-            redacted_count,
-        } => {
-            use std::io::Write as _;
-            if !stdout.is_empty() {
-                std::io::stdout()
-                    .write_all(stdout.as_bytes())
-                    .context("writing stdout")?;
-            }
-            if !stderr.is_empty() {
-                std::io::stderr()
-                    .write_all(stderr.as_bytes())
-                    .context("writing stderr")?;
-            }
-            if redacted_count > 0 {
-                eprintln!("[jackin-exec] {redacted_count} secret pattern(s) redacted from output");
-            }
-            std::process::exit(exit_code);
-        }
-        ServerMsg::ExecDenied { reason } => {
-            eprintln!("[jackin-exec] denied: {reason}");
-            std::process::exit(1);
-        }
-        other => {
-            bail!("unexpected reply to ExecCommand: {other:?}");
-        }
+        .unwrap();
+        assert_eq!(code, 0);
+        assert!(!stdout.contains("tok-SECRET-xyz"));
+        assert!(stdout.contains("[redacted by jackin']"));
+        assert_eq!(redacted, 1);
     }
 }

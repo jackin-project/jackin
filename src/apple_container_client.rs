@@ -81,7 +81,7 @@ pub trait AppleContainerApi: Send + Sync {
     async fn remove_container(&self, name: &str) -> Result<()>;
 
     /// Inspect a container. Returns `None` if the container does not exist.
-    /// Equivalent to: `container inspect <name>` or `container ps --format json`
+    /// Resolved from `container ps --format json` filtered to the exact name.
     async fn inspect_container(&self, name: &str) -> Result<Option<AppleContainerInfo>>;
 
     /// List containers whose names start with `name_prefix`.
@@ -196,15 +196,12 @@ impl AppleContainerApi for AppleContainerClient {
     }
 
     async fn inspect_container(&self, name: &str) -> Result<Option<AppleContainerInfo>> {
-        let output = tokio::process::Command::new("container")
-            .args(["ps", "--all", "--format", "json"])
-            .output()
-            .await?;
-        if !output.status.success() {
-            return Ok(None);
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        parse_container_ps_json(&stdout, name)
+        // Single `container ps` codepath: filter the listing to the exact name.
+        Ok(self
+            .list_containers(name)
+            .await?
+            .into_iter()
+            .find(|c| c.name == name))
     }
 
     async fn list_containers(&self, name_prefix: &str) -> Result<Vec<AppleContainerInfo>> {
@@ -213,7 +210,13 @@ impl AppleContainerApi for AppleContainerClient {
             .output()
             .await?;
         if !output.status.success() {
-            return Ok(vec![]);
+            // Distinguish "command failed" (CLI missing, daemon down, perms)
+            // from "no containers". Returning Ok(vec![]) here would mask the
+            // failure as an empty list, making is_container_running report
+            // false and producing inexplicable reconnect behavior.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            crate::debug_log!("apple-container", "container ps failed: {}", stderr.trim());
+            anyhow::bail!("container ps failed: {}", stderr.trim());
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         let all = parse_all_containers_json(&stdout)?;
@@ -224,14 +227,9 @@ impl AppleContainerApi for AppleContainerClient {
     }
 }
 
-/// Parse `container ps --format json` output for a specific container name.
-/// The exact JSON schema is determined empirically during Phase 0 testing.
-/// This implementation handles the most common shapes.
-fn parse_container_ps_json(json_output: &str, name: &str) -> Result<Option<AppleContainerInfo>> {
-    let all = parse_all_containers_json(json_output)?;
-    Ok(all.into_iter().find(|c| c.name == name))
-}
-
+/// Parse `container ps --format json` output into container info records.
+/// The exact JSON schema is determined empirically during Phase 0 testing;
+/// this implementation handles the most common shapes (array or NDJSON).
 fn parse_all_containers_json(json_output: &str) -> Result<Vec<AppleContainerInfo>> {
     let trimmed = json_output.trim();
     if trimmed.is_empty() {
@@ -347,5 +345,72 @@ impl AppleContainerApi for FakeAppleContainerClient {
             .filter(|c| c.name.starts_with(name_prefix))
             .cloned()
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_json_array_shape() {
+        let json = r#"[{"name":"jk-a","status":"running"},{"name":"jk-b","status":"stopped"}]"#;
+        let all = parse_all_containers_json(json).unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].name, "jk-a");
+        assert!(all[0].is_running());
+        assert!(!all[1].is_running());
+    }
+
+    #[test]
+    fn parse_ndjson_shape() {
+        let json = "{\"name\":\"jk-a\",\"status\":\"running\"}\n{\"name\":\"jk-b\",\"status\":\"stopped\"}";
+        let all = parse_all_containers_json(json).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn parse_capitalized_keys_and_missing_status() {
+        // apple/container's exact JSON shape is empirically determined; tolerate
+        // capitalized keys and default a missing status to "unknown".
+        let json = r#"[{"Name":"jk-a","State":"Running"},{"name":"jk-b"}]"#;
+        let all = parse_all_containers_json(json).unwrap();
+        assert_eq!(all[0].name, "jk-a");
+        assert!(all[0].is_running());
+        assert_eq!(all[1].status, "unknown");
+        assert!(!all[1].is_running());
+    }
+
+    #[test]
+    fn parse_empty_and_malformed() {
+        assert!(parse_all_containers_json("").unwrap().is_empty());
+        assert!(parse_all_containers_json("   ").unwrap().is_empty());
+        // A malformed NDJSON line is skipped, not fatal.
+        let json = "{\"name\":\"jk-a\",\"status\":\"running\"}\nnot json";
+        assert_eq!(parse_all_containers_json(json).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn fake_client_lifecycle_contract() {
+        let client = FakeAppleContainerClient::new();
+        let spec = AppleContainerSpec {
+            image: "img".into(),
+            env: vec![],
+            mounts: vec![],
+            caps_add: vec![],
+        };
+        client.run_container("jk-a", &spec).await.unwrap();
+        assert!(client.inspect_container("jk-a").await.unwrap().unwrap().is_running());
+
+        client.stop_container("jk-a").await.unwrap();
+        assert!(!client.inspect_container("jk-a").await.unwrap().unwrap().is_running());
+
+        // Prefix filtering matches the real client's list semantics.
+        client.run_container("other", &spec).await.unwrap();
+        let listed = client.list_containers("jk-").await.unwrap();
+        assert_eq!(listed.len(), 1);
+
+        client.remove_container("jk-a").await.unwrap();
+        assert!(client.inspect_container("jk-a").await.unwrap().is_none());
     }
 }

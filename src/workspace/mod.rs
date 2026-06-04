@@ -105,7 +105,7 @@ pub struct WorkspaceConfig {
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
     /// Per-workspace runtime backend configuration. When set, overrides the
-    /// global `[runtime] default_backend` from config.toml. Introduced in v1alpha7.
+    /// global `[runtime] default_backend` from config.toml. Introduced in v1alpha6.
     #[serde(default, skip_serializing_if = "WorkspaceRuntimeConfig::is_default")]
     pub runtime: WorkspaceRuntimeConfig,
 }

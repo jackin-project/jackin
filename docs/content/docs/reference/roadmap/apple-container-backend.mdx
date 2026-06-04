@@ -302,17 +302,14 @@ All methods shell out to `container run`, `container exec -it`, `container stop`
 
 ## Schema Version Sequencing
 
-These two features require separate PRs for each schema version bump (AGENTS.md one-bump-per-PR rule):
+The on-demand credential fields (jackin-exec: `on_demand` on `OpRef`, the `Extended` `EnvValue` variant) and the per-workspace runtime backend field (apple-container: `[workspaces.X.runtime]`) are both additive workspace-schema changes and land together under a single workspace version bump, alongside the config `default_backend` bump:
 
-| PR | Schema change | Source version | Target version |
-|---|---|---|---|
-| jackin-exec | `CURRENT_WORKSPACE_VERSION` | `v1alpha5` | `v1alpha6` |
-| apple-container | `CURRENT_WORKSPACE_VERSION` | `v1alpha6` (after jackin-exec merges) | `v1alpha7` |
-| apple-container | `CURRENT_CONFIG_VERSION` | `v1alpha5` | `v1alpha6` |
+| Schema change | Source version | Target version |
+|---|---|---|
+| `CURRENT_WORKSPACE_VERSION` (on-demand credentials + runtime backend) | `v1alpha5` | `v1alpha6` |
+| `CURRENT_CONFIG_VERSION` (`[runtime] default_backend`) | `v1alpha5` | `v1alpha6` |
 
-The apple-container `CURRENT_CONFIG_VERSION` bump and `CURRENT_WORKSPACE_VERSION` bump can land in the same PR (one version transition per type per PR is allowed; they are independent constants).
-
-If Docker hardening PR #528 merges to `main` before jackin-exec opens, `CURRENT_WORKSPACE_VERSION` will already be `v1alpha6`, so jackin-exec targets `v1alpha6 → v1alpha7` and apple-container targets `v1alpha7 → v1alpha8`. The implementing agent must check the current value of `CURRENT_WORKSPACE_VERSION` in <RepoFile path="src/config/migrations.rs" /> when the PR is opened and target the next version.
+Per the AGENTS.md one-bump-per-PR rule, a single PR introduces exactly one version bump per file kind; multiple additive fields land under that one bump. The config and workspace constants are independent, so both transitions land in the same PR. An implementing agent extending this further must check the current value of `CURRENT_WORKSPACE_VERSION` in <RepoFile path="src/config/migrations.rs" /> when the PR is opened and target the next version.
 
 ## Open Before Implementation Can Start
 

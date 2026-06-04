@@ -1026,7 +1026,8 @@ impl Dialog {
             Self::ConfirmAction { .. } => 9,
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
-            Self::ExecPicker(s) => s.items.len() as u16 + 2,
+            // +3: top border + command-preview row + items + bottom border.
+            Self::ExecPicker(s) => s.items.len() as u16 + 3,
         };
         let max_height = term_rows
             .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
@@ -1958,14 +1959,25 @@ fn render_exec_picker(
         width,
         "Allow credentials?",
     );
-    let interior_items = height.saturating_sub(2) as usize;
+    // First interior row: the exact command the operator is approving
+    // credential injection into. The command is attacker-controlled (a
+    // compromised in-container agent chooses it), so binding approval to a
+    // visible command — not just a credential set — is the security control.
+    let cmd_label = if state.args.is_empty() {
+        format!("Run: {}", state.command)
+    } else {
+        format!("Run: {} {}", state.command, state.args.join(" "))
+    };
+    render_row(buf, start_row + 1, start_col + 1, width, &cmd_label, false);
+
+    let interior_items = (height.saturating_sub(2) as usize).saturating_sub(1);
     let drawn = state.items.len().min(interior_items);
     for (i, item) in state.items.iter().enumerate().take(drawn) {
         let toggle = if item.selected { "[x]" } else { "[ ]" };
         let label = format!("{toggle} {} ({})", item.name, item.display);
         render_row(
             buf,
-            start_row + 1 + i as u16,
+            start_row + 2 + i as u16,
             start_col + 1,
             width,
             &label,

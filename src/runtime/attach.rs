@@ -634,33 +634,20 @@ pub async fn inspect_hardline_instance(
     let manifest_result: Result<Option<InstanceManifest>, String> =
         InstanceManifest::read_optional(&state_dir).map_err(|e| e.to_string());
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);
-    let dind_name = manifest.map_or_else(
-        || format!("{container_name}-dind"),
-        |manifest| match &manifest.backend {
-            crate::instance::BackendResources::Docker(d) => d.dind_container.clone(),
-            crate::instance::BackendResources::AppleContainer(_) => {
-                format!("{container_name}-dind")
-            }
-        },
-    );
-    let network_name = manifest.as_ref().map_or_else(
-        || format!("{container_name}-net"),
-        |manifest| match &manifest.backend {
-            crate::instance::BackendResources::Docker(d) => d.network.clone(),
-            crate::instance::BackendResources::AppleContainer(_) => {
-                format!("{container_name}-net")
-            }
-        },
-    );
-    let certs_volume = manifest.as_ref().map_or_else(
-        || dind_certs_volume(container_name),
-        |manifest| match &manifest.backend {
-            crate::instance::BackendResources::Docker(d) => d.certs_volume.clone(),
-            crate::instance::BackendResources::AppleContainer(_) => {
-                dind_certs_volume(container_name)
-            }
-        },
-    );
+    // The DinD sidecar / network / certs volume only exist for the Docker
+    // backend; for a missing manifest or the apple-container backend the names
+    // fall back to the derived defaults. Extract the Docker resources once so
+    // each field reads from the same backend discrimination.
+    let docker_resources = manifest.and_then(|manifest| match &manifest.backend {
+        crate::instance::BackendResources::Docker(d) => Some(d),
+        crate::instance::BackendResources::AppleContainer(_) => None,
+    });
+    let dind_name =
+        docker_resources.map_or_else(|| format!("{container_name}-dind"), |d| d.dind_container.clone());
+    let network_name =
+        docker_resources.map_or_else(|| format!("{container_name}-net"), |d| d.network.clone());
+    let certs_volume =
+        docker_resources.map_or_else(|| dind_certs_volume(container_name), |d| d.certs_volume.clone());
 
     let (role_container_state, dind_state_raw, network_result) = tokio::join!(
         docker.inspect_container_state(container_name),

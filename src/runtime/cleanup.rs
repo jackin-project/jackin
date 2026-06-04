@@ -110,9 +110,10 @@ pub async fn eject_role(
     );
 
     if is_apple_container {
-        // Apple Container eject: remove() stops then deletes atomically.
-        // Calling stop() separately first would swallow its error before remove()
-        // runs, which could leave the container stopped-but-not-removed on failure.
+        // Apple Container eject: remove() best-effort-stops then deletes. The
+        // stop error is intentionally ignored — an already-stopped or missing
+        // container is the desired end state, and a real failure surfaces from
+        // the subsequent `container rm`.
         let _ = super::apple_container::remove(container_name).await;
         remove_socket_dir(paths, container_name);
         return Ok(());

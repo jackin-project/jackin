@@ -19,7 +19,7 @@ pub enum ClientMsg {
     /// on-demand credentials the operator selects in the picker dialog.
     /// The daemon shows the picker, resolves selected credentials via
     /// the host.sock callback, and replies with `ExecResult` or
-    /// `ExecDenied`. Must be placed before `Unknown`.
+    /// `ExecDenied`.
     ExecCommand { command: String, args: Vec<String> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]

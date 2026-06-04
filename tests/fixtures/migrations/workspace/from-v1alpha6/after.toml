@@ -1,9 +1,0 @@
-version = "v1alpha7"
-workdir = "/workspace/app"
-
-[[mounts]]
-src = "/home/operator/projects/app"
-dst = "/workspace/app"
-
-[env]
-PUBLIC_ENDPOINT = "https://api.example.com"

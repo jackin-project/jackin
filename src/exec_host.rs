@@ -44,6 +44,16 @@ pub struct ExecCredRef {
     pub source: String,
 }
 
+impl From<&jackin_protocol::ExecBinding> for ExecCredRef {
+    fn from(b: &jackin_protocol::ExecBinding) -> Self {
+        Self {
+            name: b.name.clone(),
+            kind: b.kind.clone(),
+            source: b.source.clone(),
+        }
+    }
+}
+
 /// Request from capsule → host.
 #[derive(Debug, Deserialize)]
 struct CredRequest {
@@ -82,11 +92,42 @@ pub fn start(
     })
 }
 
+/// Start the host.sock listener for a named container.
+///
+/// Resolves the per-container socket path under
+/// `<jackin_home>/sockets/<container>/host.sock` — the directory the launch
+/// path bind-mounts to `/jackin/run` — maps the operator's `exec_bindings`
+/// to the allowed-resolution set, and spawns the listener. Shared by both the
+/// Docker and apple-container launch paths.
+pub fn start_for_container(
+    jackin_home: &Path,
+    container_name: &str,
+    exec_bindings: &[jackin_protocol::ExecBinding],
+) -> tokio::task::JoinHandle<()> {
+    let sock_path = jackin_home
+        .join("sockets")
+        .join(container_name)
+        .join("host.sock");
+    let allowed = exec_bindings.iter().map(ExecCredRef::from).collect();
+    start(sock_path, allowed)
+}
+
 async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecCredRef]) -> Result<()> {
     // Remove stale socket from a previous session.
     let _ = std::fs::remove_file(sock_path);
     if let Some(parent) = sock_path.parent() {
         std::fs::create_dir_all(parent)?;
+        // host.sock is the credential-resolution boundary: any process that can
+        // connect and send an allow-listed (name,kind,source) triple gets the
+        // secret resolved. Lock the directory to 0o700 so only the operator's
+        // UID can reach the socket — independent of which backend created the
+        // dir (the Docker launch path also sets this; the apple-container path
+        // does not, so enforce it here at the shared listener choke point).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
+        }
     }
     let listener = UnixListener::bind(sock_path)
         .with_context(|| format!("binding host.sock at {}", sock_path.display()))?;
@@ -249,5 +290,108 @@ async fn resolve_op(op_ref: &str) -> Result<String> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("`op read` failed: {}", stderr.trim())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_op_source_accepts_well_formed_ref() {
+        assert!(validate_op_source("op://vault/item/field").is_ok());
+    }
+
+    #[test]
+    fn validate_op_source_rejects_non_op_scheme() {
+        assert!(validate_op_source("https://evil/x").is_err());
+        assert!(validate_op_source("vault/item/field").is_err());
+    }
+
+    #[test]
+    fn validate_op_source_rejects_flag_segments() {
+        // A path segment that looks like a CLI flag could inject arguments into
+        // `op read` — must be rejected before the subprocess is spawned.
+        assert!(validate_op_source("op://vault/-rf/field").is_err());
+        assert!(validate_op_source("op://-vault/item").is_err());
+    }
+
+    /// Drive `handle_connection` over an in-memory socket pair and return the
+    /// decoded JSON reply (`{"values":…}` or `{"error":…}`).
+    async fn roundtrip(allowed: Vec<ExecCredRef>, request_refs: serde_json::Value) -> serde_json::Value {
+        let (mut client, server) = UnixStream::pair().unwrap();
+        let server_task = tokio::spawn(async move { handle_connection(server, &allowed).await });
+
+        let body = serde_json::to_vec(&serde_json::json!({ "refs": request_refs })).unwrap();
+        client
+            .write_all(&(body.len() as u32).to_be_bytes())
+            .await
+            .unwrap();
+        client.write_all(&body).await.unwrap();
+
+        let mut len_buf = [0u8; 4];
+        client.read_exact(&mut len_buf).await.unwrap();
+        let len = u32::from_be_bytes(len_buf) as usize;
+        let mut reply = vec![0u8; len];
+        client.read_exact(&mut reply).await.unwrap();
+
+        server_task.await.unwrap().unwrap();
+        serde_json::from_slice(&reply).unwrap()
+    }
+
+    #[tokio::test]
+    async fn approved_literal_ref_resolves() {
+        let allowed = vec![ExecCredRef {
+            name: "TOKEN".into(),
+            kind: "literal".into(),
+            source: "s3cr3t".into(),
+        }];
+        let reply = roundtrip(
+            allowed,
+            serde_json::json!([{ "name": "TOKEN", "kind": "literal", "source": "s3cr3t" }]),
+        )
+        .await;
+        assert_eq!(reply["values"]["TOKEN"], "s3cr3t");
+        assert!(reply.get("error").is_none());
+    }
+
+    #[tokio::test]
+    async fn unapproved_source_is_rejected() {
+        // Same name + kind, but a `source` the operator never approved. A
+        // name-only match would let a compromised container swap the source to
+        // read a different secret — the allow-list must reject this.
+        let allowed = vec![ExecCredRef {
+            name: "TOKEN".into(),
+            kind: "literal".into(),
+            source: "approved".into(),
+        }];
+        let reply = roundtrip(
+            allowed,
+            serde_json::json!([{ "name": "TOKEN", "kind": "literal", "source": "attacker-swapped" }]),
+        )
+        .await;
+        assert!(reply.get("values").is_none());
+        assert!(
+            reply["error"]
+                .as_str()
+                .unwrap()
+                .contains("not in the approved binding set")
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_name_is_rejected() {
+        let allowed = vec![ExecCredRef {
+            name: "TOKEN".into(),
+            kind: "literal".into(),
+            source: "x".into(),
+        }];
+        let reply = roundtrip(
+            allowed,
+            serde_json::json!([{ "name": "OTHER", "kind": "literal", "source": "x" }]),
+        )
+        .await;
+        assert!(reply.get("values").is_none());
+        assert!(reply.get("error").is_some());
     }
 }

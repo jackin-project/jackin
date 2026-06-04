@@ -40,16 +40,6 @@ pub fn print_session_contract(
     mount_pairs: &[(std::path::PathBuf, std::path::PathBuf)],
     debug: bool,
 ) {
-    let mounts_summary: String = if mount_pairs.is_empty() {
-        "none".to_string()
-    } else {
-        mount_pairs
-            .iter()
-            .map(|(h, g)| format!("  {}:{}", h.display(), g.display()))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
     eprintln!();
     eprintln!("[jackin] session contract");
     eprintln!("  backend:              apple-container");
@@ -81,7 +71,6 @@ pub fn print_session_contract(
         eprintln!("  debug mode:           on (JACKIN_DEBUG=1)");
     }
     eprintln!();
-    let _ = mounts_summary; // used above inline
 }
 
 /// DNS health check — called after attach returns to detect sleep/wake hiccup.
@@ -181,30 +170,54 @@ pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<
     Ok(())
 }
 
+/// Inputs for the apple-container launch path. Grouped into a struct so the
+/// many backend-specific parameters travel together from the `load_role_with`
+/// call site instead of as a long positional argument list.
+pub struct AppleContainerLaunch<'a> {
+    pub paths: &'a JackinPaths,
+    pub container_name: &'a str,
+    pub image: &'a str,
+    pub workspace_name: Option<&'a str>,
+    pub workspace_label: &'a str,
+    pub workdir: &'a str,
+    pub role_key: &'a str,
+    pub role_display_name: &'a str,
+    pub agent: crate::agent::Agent,
+    pub role_source_git: &'a str,
+    pub role_source_ref: Option<&'a str>,
+    pub image_tag: &'a str,
+    pub env_pairs: &'a [(String, String)],
+    pub mount_pairs: &'a [(PathBuf, PathBuf)],
+    pub host_workdir_fingerprint: &'a str,
+    pub capsule_config: &'a jackin_protocol::CapsuleConfig,
+    pub debug: bool,
+}
+
 /// Full launch path for the `apple-container` backend.
 ///
 /// Called from `load_role_with` after the image build step when the resolved
 /// backend is `"apple-container"`.
-#[allow(clippy::too_many_arguments)]
-pub async fn launch(
-    paths: &JackinPaths,
-    container_name: &str,
-    image: &str,
-    workspace_name: Option<&str>,
-    workspace_label: &str,
-    workdir: &str,
-    role_key: &str,
-    role_display_name: &str,
-    agent: crate::agent::Agent,
-    role_source_git: &str,
-    role_source_ref: Option<&str>,
-    image_tag: &str,
-    env_pairs: &[(String, String)],
-    mount_pairs: &[(PathBuf, PathBuf)],
-    host_workdir_fingerprint: &str,
-    capsule_config: &jackin_protocol::CapsuleConfig,
-    debug: bool,
-) -> Result<()> {
+pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
+    let AppleContainerLaunch {
+        paths,
+        container_name,
+        image,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        role_display_name,
+        agent,
+        role_source_git,
+        role_source_ref,
+        image_tag,
+        env_pairs,
+        mount_pairs,
+        host_workdir_fingerprint,
+        capsule_config,
+        debug,
+    } = args;
+
     crate::debug_log!(
         "apple-container",
         "container_run name={container_name} image={image} force_daemon=yes inner_docker=no"
@@ -249,9 +262,10 @@ pub async fn launch(
         );
     }
 
-    // socket dir bind-mount so /jackin/run/host.sock is reachable inside.
+    // socket dir bind-mount to /jackin/run: carries Capsule's launch config
+    // (agent.toml, which the daemon requires at startup) and host.sock.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
-    std::fs::create_dir_all(&socket_dir)?;
+    super::prepare_socket_dir(&socket_dir, capsule_config)?;
     let mut mounts: Vec<(PathBuf, PathBuf)> = mount_pairs.to_vec();
     mounts.push((socket_dir, PathBuf::from("/jackin/run")));
 
@@ -302,21 +316,11 @@ pub async fn launch(
     );
 
     // Start host.sock credential resolver before the blocking attach call.
-    let host_sock_path = paths
-        .jackin_home
-        .join("sockets")
-        .join(container_name)
-        .join("host.sock");
-    let allowed_bindings: Vec<crate::exec_host::ExecCredRef> = capsule_config
-        .exec_bindings
-        .iter()
-        .map(|b| crate::exec_host::ExecCredRef {
-            name: b.name.clone(),
-            kind: b.kind.clone(),
-            source: b.source.clone(),
-        })
-        .collect();
-    let _exec_host_handle = crate::exec_host::start(host_sock_path, allowed_bindings);
+    let _exec_host_handle = crate::exec_host::start_for_container(
+        &paths.jackin_home,
+        container_name,
+        &capsule_config.exec_bindings,
+    );
 
     // Wait for capsule daemon readiness.
     wait_for_capsule(container_name).await?;
@@ -385,59 +389,18 @@ pub async fn reconnect(container_name: &str, focus_session: Option<u64>) -> Resu
 
 /// Stop the container (eject — preserves manifest).
 pub async fn stop(container_name: &str) -> Result<()> {
-    crate::debug_log!(
-        "apple-container",
-        "container_state action=stop name={container_name}"
-    );
-    let output = tokio::process::Command::new("container")
-        .args(["stop", container_name])
-        .output()
+    crate::apple_container_client::AppleContainerClient::new()
+        .stop_container(container_name)
         .await
-        .context("container stop failed")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        crate::debug_log!(
-            "apple-container",
-            "container_state action=stop name={container_name} result=failure reason={}",
-            stderr.trim()
-        );
-        bail!("container stop failed: {}", stderr.trim());
-    }
-    crate::debug_log!(
-        "apple-container",
-        "container_state action=stop name={container_name} result=ok"
-    );
-    Ok(())
 }
 
 /// Remove the container (purge).
 pub async fn remove(container_name: &str) -> Result<()> {
     // Stop first (ignore errors — may already be stopped).
     let _ = stop(container_name).await;
-
-    crate::debug_log!(
-        "apple-container",
-        "container_state action=rm name={container_name}"
-    );
-    let output = tokio::process::Command::new("container")
-        .args(["rm", container_name])
-        .output()
+    crate::apple_container_client::AppleContainerClient::new()
+        .remove_container(container_name)
         .await
-        .context("container rm failed")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        crate::debug_log!(
-            "apple-container",
-            "container_state action=rm name={container_name} result=failure reason={}",
-            stderr.trim()
-        );
-        bail!("container rm failed: {}", stderr.trim());
-    }
-    crate::debug_log!(
-        "apple-container",
-        "container_state action=rm name={container_name} result=ok"
-    );
-    Ok(())
 }
 
 /// Probe the `container` CLI version. Returns `None` if not installed.

@@ -1038,38 +1038,16 @@ async fn launch_role_runtime(
     // image) from creating and chmod'ing `jackin.sock`. The same
     // directory carries Capsule's normalized launch config.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
-    let capsule_config_contents = toml::to_string(capsule_config)
-        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    // Run the filesystem syscalls on the blocking pool — the tokio
-    // runtime is built without the `fs` feature here, and blocking on
-    // a slow / NFS host parks the worker driving the docker-run RPC
-    // for every other future scheduled on it.
-    let socket_dir_for_mkdir = socket_dir.clone();
-    let capsule_config_contents_for_write = capsule_config_contents.clone();
-    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::create_dir_all(&socket_dir_for_mkdir)?;
-        std::fs::write(
-            socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
-            capsule_config_contents_for_write,
-        )?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(
-                &socket_dir_for_mkdir,
-                std::fs::Permissions::from_mode(0o700),
-            )?;
-        }
-        Ok(())
+    // Run the filesystem syscalls on the blocking pool — the tokio runtime is
+    // built without the `fs` feature here, and blocking on a slow / NFS host
+    // parks the worker driving the docker-run RPC for every other future.
+    let socket_dir_for_worker = socket_dir.clone();
+    let capsule_config_for_worker = (**capsule_config).clone();
+    tokio::task::spawn_blocking(move || {
+        super::prepare_socket_dir(&socket_dir_for_worker, &capsule_config_for_worker)
     })
     .await
-    .context("socket dir mkdir worker join")?
-    .with_context(|| {
-        format!(
-            "creating host-side socket dir {} for container {container_name}",
-            socket_dir.display(),
-        )
-    })?;
+    .context("socket dir mkdir worker join")??;
     // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
     // different host dir than the one we just created. Bail rather than
     // smuggle U+FFFD into a `-v` argument.
@@ -1123,26 +1101,12 @@ async fn launch_role_runtime(
     // Start the host.sock credential resolver BEFORE the blocking docker exec.
     // The listener runs as a tokio::spawn task alongside the blocking attach call
     // so the in-container jackin-exec can resolve on-demand credentials at runtime.
-    // The socket path is ~/.jackin/sockets/<container>/host.sock, which is
-    // bind-mounted into the container at /jackin/run/host.sock.
-    let host_sock_path = paths
-        .jackin_home
-        .join("sockets")
-        .join(container_name)
-        .join("host.sock");
-    // Build the allowed bindings list for the host.sock listener.
-    // Only these exact (name, kind, source) triples can be resolved.
-    let allowed_bindings: Vec<crate::exec_host::ExecCredRef> = ctx
-        .capsule_config
-        .exec_bindings
-        .iter()
-        .map(|b| crate::exec_host::ExecCredRef {
-            name: b.name.clone(),
-            kind: b.kind.clone(),
-            source: b.source.clone(),
-        })
-        .collect();
-    let _exec_host_handle = crate::exec_host::start(host_sock_path, allowed_bindings);
+    // Only the configured (name, kind, source) triples can be resolved.
+    let _exec_host_handle = crate::exec_host::start_for_container(
+        &paths.jackin_home,
+        container_name,
+        &ctx.capsule_config.exec_bindings,
+    );
 
     // Tear down the loading cockpit before the interactive attach: the
     // capsule's `docker exec -it` must own a clean terminal, and leaving the
@@ -2302,17 +2266,19 @@ async fn load_role_with(
 
         crate::debug_log!("launch", "backend resolved={resolved_backend}");
 
+        // The capsule runtime config is backend-independent — compute once and
+        // share it with whichever launch path runs below.
+        let launch_config = capsule_config(
+            selector,
+            &workspace.workdir,
+            &validated_repo.manifest,
+            opts.initial_provider(),
+            config,
+            workspace.label.as_str(),
+        );
+
         // For the apple-container backend, fork into a separate launch path.
         if resolved_backend == crate::apple_container_client::BACKEND_NAME {
-            let ac_launch_config = capsule_config(
-                selector,
-                &workspace.workdir,
-                &validated_repo.manifest,
-                opts.initial_provider(),
-                config,
-                workspace.label.as_str(),
-            );
-
             // Build env pairs: resolved_env + github env, filtering reserved names.
             let mut env_pairs: Vec<(String, String)> = resolved_env.vars.clone();
             for (k, v) in &github_resolved_env {
@@ -2334,39 +2300,31 @@ async fn load_role_with(
                 .collect();
 
             steps.finish_progress();
-            super::apple_container::launch(
+            super::apple_container::launch(super::apple_container::AppleContainerLaunch {
                 paths,
-                &container_name,
-                &image,
-                workspace_name.as_deref(),
-                workspace.label.as_str(),
-                &workspace.workdir,
-                &role_key,
-                &agent_display_name,
+                container_name: &container_name,
+                image: &image,
+                workspace_name: workspace_name.as_deref(),
+                workspace_label: workspace.label.as_str(),
+                workdir: &workspace.workdir,
+                role_key: &role_key,
+                role_display_name: &agent_display_name,
                 agent,
-                &source.git,
-                opts.role_branch.as_deref(),
-                &image_tag,
-                &env_pairs,
-                &mount_pairs,
-                &host_workdir_fingerprint,
-                &ac_launch_config,
-                opts.debug,
-            ).await?;
+                role_source_git: &source.git,
+                role_source_ref: opts.role_branch.as_deref(),
+                image_tag: &image_tag,
+                env_pairs: &env_pairs,
+                mount_pairs: &mount_pairs,
+                host_workdir_fingerprint: &host_workdir_fingerprint,
+                capsule_config: &launch_config,
+                debug: opts.debug,
+            })
+            .await?;
             return Ok(container_name);
         }
 
         // Step 3: Create network and start Docker-in-Docker (Docker backend)
         steps.next("Starting Docker-in-Docker").await;
-
-        let launch_config = capsule_config(
-            selector,
-            &workspace.workdir,
-            &validated_repo.manifest,
-            opts.initial_provider(),
-            config,
-            workspace.label.as_str(),
-        );
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
