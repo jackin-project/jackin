@@ -2425,6 +2425,27 @@ async fn load_role_with(
             }
         }
 
+        // Network policy enforcement: hardened/locked require allowlist or deny.
+        // If the operator explicitly granted open network (via grants.network = "open"),
+        // the choice is accepted but reported as a posture downgrade.
+        if profile_requires_limits
+            && effective_grants_early.network == super::docker_profile::NetworkGrant::Open
+        {
+            crate::tui::emit_compact_line(
+                "warning",
+                &format!(
+                    "[docker] profile={:?} requires allowlist or deny network but \
+                     network=open is active — egress is unrestricted",
+                    resolved_profile_early.0,
+                ),
+            );
+            crate::debug_log!(
+                "launch",
+                "network_policy_degraded profile={:?} reason=operator-granted-open",
+                resolved_profile_early.0,
+            );
+        }
+
         // Validate explicit grants before any container work starts.
         // Collect all errors so the operator sees the full list at once.
         if let Some(ref grants) = config.docker.grants {
