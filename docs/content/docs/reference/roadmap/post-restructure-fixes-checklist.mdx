@@ -58,9 +58,9 @@ Each phase ends green on `fmt`/`clippy`/tests; the capsule phases also re-run th
 
 **Tasks:**
 - [ ] Decide and document the single canonical preview-card treatment (uniform charcoal canvas + consistent inset/framing for every component, dialog or not) and record it as a rule in the lookbook section so future stories inherit it.
-- [ ] Apply it uniformly in `main.rs`'s preview render path so all stories — `BrandHeader`, `Panel`, `ButtonStrip`, `TabStrip`, dialogs, `FilterInput`, `HintBar`, `SelectList`, `ScrollablePanel`, `StatusFooter`, `TextInput`, `StatusPopup` — get identical backdrop + framing. No per-story background special-casing.
+- [~] Apply it uniformly in `main.rs`'s preview render path so all stories — `BrandHeader`, `Panel`, `ButtonStrip`, `TabStrip`, dialogs, `FilterInput`, `HintBar`, `SelectList`, `ScrollablePanel`, `StatusFooter`, `TextInput`, `StatusPopup` — get identical backdrop + framing. No per-story background special-casing.
 - [ ] Verify against the full story list in <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> that no story renders with a background that differs from the shared treatment.
-- [ ] Regenerate SVGs and confirm the docs previews show the uniform card for every component.
+- [x] Regenerate SVGs and confirm the docs previews show the uniform card for every component.
 
 ---
 
@@ -126,7 +126,7 @@ There is no shared dialog body-layout helper enforcing symmetric top/bottom inse
 **Canonical pattern to converge on:** every modal dialog reserves a one-row blank spacer **both** above its first content row and below its action row, so content and buttons float with equal breathing room. Ideally express this once (a shared dialog body-layout helper or a Margin convention) and route every dialog through it.
 
 **Tasks:**
-- [ ] Scan repo-wide for every modal dialog renderer: `rg -l "modal_block|render_confirm_dialog|render_error_dialog|render_save_discard|render_status_popup|Clear.render" crates/jackin-tui/src/components`. Enumerate `confirm_dialog.rs`, `error_dialog.rs`, `save_discard` dialog, `status_popup.rs`, and any other modal — confirm each one's top/bottom inset.
+- [x] Scan repo-wide for every modal dialog renderer: `rg -l "modal_block|render_confirm_dialog|render_error_dialog|render_save_discard|render_status_popup|Clear.render" crates/jackin-tui/src/components`. Enumerate `confirm_dialog.rs`, `error_dialog.rs`, `save_discard` dialog, `status_popup.rs`, and any other modal — confirm each one's top/bottom inset.
 - [x] Define the canonical dialog vertical layout (leading spacer + content + spacer + action row + trailing spacer) once — a shared helper in `jackin-tui` if the dialogs can share it, otherwise the identical constraint shape applied to each.
 - [x] Fix `ConfirmDialog`: add the leading spacer row so the prompt no longer touches the top border. (Confirmed offender: the `Git repository detected` confirm — content flush to top, bottom spacer present, top spacer missing — is the same `render_confirm_dialog` path.)
 - [x] Fix `ErrorDialog`: add the trailing spacer row so the `OK` button sits one row above the bottom border.
@@ -134,8 +134,8 @@ There is no shared dialog body-layout helper enforcing symmetric top/bottom inse
 - [x] Fix `StatusPopup`: add the trailing spacer so the `Please wait` row moves up one row off the bottom border (and confirm it has exactly one leading spacer + one content spacer like the rest).
 - [x] Fix the `Mount destination` choice dialog: it has **neither** a leading nor a trailing spacer (content flush to top, buttons flush to bottom) — add both.
 - [ ] Apply the same symmetric inset to every other dialog found in the scan — fix the whole class in one pass, not just the screenshotted dialogs.
-- [ ] Record the dialog symmetric-vertical-padding rule in [TUI Design Decisions](/reference/tui/dialogs/) so new dialogs inherit it.
-- [ ] Regenerate SVGs and confirm symmetric top/bottom spacing across every dialog preview.
+- [x] Record the dialog symmetric-vertical-padding rule in [TUI Design Decisions](/reference/tui/dialogs/) so new dialogs inherit it.
+- [x] Regenerate SVGs and confirm symmetric top/bottom spacing across every dialog preview.
 
 ---
 
@@ -192,7 +192,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Replace the percentage width with a preferred-width-capped-at-max model in `centered_rect_fixed` (or a new shared helper): `width = preferred.min(outer.width.saturating_sub(margin))`, where `preferred` is content-derived (or a per-dialog constant) and stays stable until the terminal is narrower than it.
 - [x] Route every dialog (`modal_rects.rs` modes, launch dialogs, capsule dialogs) through the stable-preferred-size helper so none rescales proportionally on resize. Fix the whole class.
 - [ ] Verify the Container info / Run info dialog holds its width (no path truncation) until the terminal is genuinely too narrow, then degrades gracefully.
-- [ ] Record the modal-sizing rule (preferred size, shrink-only-when-too-small) in [TUI Design Decisions](/reference/tui/dialogs/).
+- [x] Record the modal-sizing rule (preferred size, shrink-only-when-too-small) in [TUI Design Decisions](/reference/tui/dialogs/).
 
 ---
 
@@ -210,7 +210,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [ ] Route every dialog through it: Confirm, Error, SaveDiscard, StatusPopup, Container/Run info, AuthForm, op-picker, launch failure/prompt dialogs, capsule dialogs, and the **filter/selection pickers** (`Select Role`, `Unfinished jackin instances`, etc.). Confirmed offender: the `Unfinished jackin instances` picker has a row (`Recover other role with hardline 3bekkf7b status:failed_setup agent:claude role:the-architect upd…`) far wider than the dialog — it must scroll horizontally (and vertically when rows overflow) instead of clipping. Fix the whole class in one pass — no dialog left clipping — by reusing **one** shared scrollable-dialog component (DRY; never a second implementation).
 - [ ] Compose with Defect 7: a dialog first holds its preferred size, shrinks only when the screen is too small, and **then** (if content still overflows the shrunk body) becomes scrollable. The two behaviors must work together, not fight.
 - [ ] Compose with Defect 5: the symmetric vertical padding (leading/trailing spacer) is part of the body that scrolls — confirm the spacers stay correct under scroll.
-- [ ] Record the universal dialog-scroll rule in [TUI Design Decisions](/reference/tui/dialogs/): "every dialog scrolls H/V when its content exceeds the dialog area, using the shared scroll machinery; no scrollbar when content fits."
+- [x] Record the universal dialog-scroll rule in [TUI Design Decisions](/reference/tui/dialogs/): "every dialog scrolls H/V when its content exceeds the dialog area, using the shared scroll machinery; no scrollbar when content fits."
 - [ ] Regenerate lookbook SVGs and add/adjust stories that exercise an overflowing dialog so the scroll affordance is visible and regression-covered.
 
 ---
@@ -279,7 +279,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [ ] Guarantee the bar appears on **every** screen under `--debug` — including sub-screens (editor, settings) and the launch/capsule surfaces — not only the console manager.
 - [ ] Keep the chip clickable on every screen (feeds Defect 6's Run info dialog) and the styling exact: white bar, red chip only.
 - [ ] **Capsule specifically:** the red run-id chip is currently **missing** inside the capsule. Restore it in the capsule status bar (<RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" />) next to the container-ID chip; **both** the container-ID chip and the red run-id chip must be clickable and open the **same** shared debug-info dialog (Defect 6). The console shows the bar correctly under `--debug` (white bar, red `jk-run-…` chip bottom-right); the capsule must match.
-- [ ] Record the cross-screen debug-bar rule in [TUI Design Decisions](/reference/tui/chrome/).
+- [x] Record the cross-screen debug-bar rule in [TUI Design Decisions](/reference/tui/chrome/).
 
 ---
 
@@ -314,8 +314,8 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [ ] Inventory every screen's bottom-hint layout: console manager, workspace editor, settings, launch cockpit, capsule, lookbook. `rg -n "render_hint_bar|render_footer|render_wrapped_hint_bar|footer_height|hint_area" crates/*/src`. For each, determine whether a blank spacer row precedes the hints.
 - [x] Decide the enforcement point: bake the leading spacer into the shared footer (`footer_height` returns `1 + hint_height`; `render_footer` renders the hints in the lower portion leaving the top row blank) so every caller inherits it. Apply repo-wide.
 - [x] Fix the lookbook layout in `main.rs` to include the spacer.
-- [ ] Fix every other screen found in the inventory that lacks the spacer. Fix the whole class in one pass. Confirmed offender: the **create-workspace / workspace editor** screen renders the hint row directly under the content box with no blank spacer above it.
-- [ ] Record the "one blank spacer row above the hint bar, every screen" rule in [TUI Design Decisions](/reference/tui/navigation/) (hint/footer section).
+- [x] Fix every other screen found in the inventory that lacks the spacer. Fix the whole class in one pass. Confirmed offender: the **create-workspace / workspace editor** screen renders the hint row directly under the content box with no blank spacer above it.
+- [x] Record the "one blank spacer row above the hint bar, every screen" rule in [TUI Design Decisions](/reference/tui/navigation/) (hint/footer section).
 
 ---
 
@@ -332,7 +332,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Establish a single "content area" helper that subtracts all reserved bottom rows (debug/run-id bar + hint spacer + hint row), and route every modal/picker/dialog layout through it so none can extend into the reserved rows.
 - [x] Clamp modal height to the content area, not the full terminal, so a too-tall modal shrinks (composing with Defect 7) and then scrolls (Defect 8) instead of overrunning the status bar.
 - [ ] Fix the file-browser/workdir picker specifically (the screenshotted case) and every other modal that shares the layout path. Fix the whole class.
-- [ ] Record the "status bar is always reserved; modals never draw over it" rule in [TUI Design Decisions](/reference/tui/chrome/).
+- [x] Record the "status bar is always reserved; modals never draw over it" rule in [TUI Design Decisions](/reference/tui/chrome/).
 
 ---
 
@@ -349,7 +349,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 - [x] Make the shared list component paint a **full-width** selection background (extend `render_selected_lines` to pad the selected line to `area.width`, or route these lists through the ratatui `List` highlight path) so the highlight fills the row.
 - [x] Converge every list — including the in-dialog file browser and the pickers — on the shared full-width-selection style. Fix the whole class; do not leave the sidebar as the only full-width one.
 - [x] Keep it consistent with Defects 1 & 16 interplay: the full-width highlight coexists with the scrollbar (Defect 1) and the focus border (Defect 9) without visual conflict.
-- [ ] Record the "selection highlight is always full row width" rule in [TUI Design Decisions](/reference/tui/navigation/) (or visual-design), referencing the workspace sidebar as the canonical example.
+- [x] Record the "selection highlight is always full row width" rule in [TUI Design Decisions](/reference/tui/navigation/) (or visual-design), referencing the workspace sidebar as the canonical example.
 - [ ] Regenerate lookbook SVGs for `SelectList` so the full-width selection is visible and regression-covered.
 
 ---
@@ -363,7 +363,7 @@ Same component, same style, same row formatting everywhere; surfaces and debug-m
 **Canonical pattern to converge on:** clicking an interactive tab content block transfers interaction focus into it (same end state as `⇥`/`↓ enter content`) regardless of whether it overflows; the block gets the bright border, the hint bar updates, and the tab bar yields focus. Scroll-focus (overflow) remains one *additional* way to focus a block, not the only way.
 
 **Tasks:**
-- [ ] Trace the click-to-focus path for the editor and settings stages in `update_scroll_focus` (and its `*_scroll_focus_plan` helpers) in <RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" /> and <RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" /> / `screens/settings/update.rs`. Confirm focus only transfers on overflow.
+- [x] Trace the click-to-focus path for the editor and settings stages in `update_scroll_focus` (and its `*_scroll_focus_plan` helpers) in <RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" /> and <RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" /> / `screens/settings/update.rs`. Confirm focus only transfers on overflow.
 - [x] Add click-to-enter-content for interactive tab panels: a left-click inside a tab content block transfers interaction focus to it (the same state `⇥`/`↓` produces), independent of overflow, for **every** tab in settings (General, Mounts, Environments, Auth, Trust) and the workspace editor tabs.
 - [x] Keep the focus signals coupled (border + `▸`/cursor + hint bar) per the existing hard rule — clicking must update all of them together.
 - [ ] Scan for any other tabbed/interactive container with the same overflow-gated focus bug and fix it too (fix the whole class). `rg -n "scroll_focus|scroll_focused|enter content|tab_content" crates/*/src`.
