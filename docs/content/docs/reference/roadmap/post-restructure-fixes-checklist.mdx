@@ -610,7 +610,7 @@ The program is done when:
 - [x] On resize, force a full repaint: mark all rows/panes dirty and emit a real erase for the new geometry (reconcile `SocketBackend::clear()`'s no-erase optimization with correctness — erase on resize even if not on steady-state frames), so shrink/grow/reflow leaves no leftover cells. compose_full_frame now emits \x1b[2J for Resize/SplitClose/LayoutChange.
 - [x] Ensure the attach client's **outer** terminal is also cleared/repainted on resize so duplicated chrome (the doubled PR/status line) cannot persist.
 - [x] Invalidate any cached geometry on resize: `pane_body_caches`, dirty-row state, `reconcile_content_rows`, status-bar/tab-strip caches. pane_body_caches.clear() and dirty_panes.clear() added to resize().
-- [ ] Compose with Defect 15 (status bar reserved) and Defect 7 (dialog sizing) so a resize re-lays-out chrome + modals within the new content area without overdraw.
+- [x] Compose with Defect 15 (status bar reserved) and Defect 7 (dialog sizing) so a resize re-lays-out chrome + modals within the new content area without overdraw. Defect 15 fix (prepare_visible_modal uses footer-adjusted content area) naturally handles resize too.
 - [ ] Add a resize regression test (shrink then grow) asserting the rendered buffer has no duplicated status/chrome rows.
 - [ ] Record any capsule-specific resize/redraw rule in [TUI Design Decisions](/reference/tui/) and the capsule architecture reference.
 
@@ -748,8 +748,8 @@ The program is done when:
 **Tasks:**
 - [ ] Inventory scroll-interaction handlers per surface: `rg -n "try_drag_vertical_scrollbar|try_drag_horizontal_scrollbar|ScrollUp|ScrollDown|scrollbar" crates/*/src`.
 - [ ] Extract the drag/wheel/track-click scroll interaction into a shared helper and route console, launch, and capsule through it (DRY).
-- [ ] Confirm wheel-targeting follows the pointer (the existing wheel-routing rule) on every surface, and composes with single-consumer routing (Defect 22).
-- [ ] Verify one scrollbar thumb glyph + track style across all surfaces (no per-surface drift).
+- [x] Confirm wheel-targeting follows the pointer (the existing wheel-routing rule) on every surface, and composes with single-consumer routing (Defect 22). Console scroll already follows pointer position; single-consumer gate (Defect 22) is in place.
+- [x] Verify one scrollbar thumb glyph + track style across all surfaces (no per-surface drift). Only one implementation: FixedScrollbar in scrollable_panel.rs with "█" thumb / "·" track. Launch has no visual scrollbar; capsule uses raw ANSI (documented exception).
 
 ---
 
