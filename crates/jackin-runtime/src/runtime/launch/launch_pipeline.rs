@@ -1,7 +1,8 @@
 //! Role load pipeline: public entry points and the full launch-to-attach sequence.
 
 use crate::instance::{
-    DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest, RoleState,
+    DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest, PrepareResolvers,
+    RoleState,
 };
 use anyhow::Context;
 use jackin_config::AppConfig;
@@ -769,7 +770,10 @@ pub(crate) async fn load_role_with(
                     &paths_owned,
                     &container_name_owned,
                     &manifest_owned,
-                    &resolve_mode,
+                    &PrepareResolvers {
+                        auth_modes: &resolve_mode,
+                        sync_source_dirs: &|_| None,
+                    },
                     &github_ctx_owned,
                     &paths_owned.home_dir,
                     agent,

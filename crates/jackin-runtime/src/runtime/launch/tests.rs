@@ -403,7 +403,7 @@ async fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() 
     // Ignore mode must still mount durable Claude home state so
     // conversations/plugins survive a Docker delete, but auth handoff
     // files under /jackin/claude/ must not flow into the container.
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -430,7 +430,10 @@ plugins = []
         &paths,
         "jk-agent-smith",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::Ignore,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Ignore,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         temp.path(),
         Agent::Claude,
@@ -463,7 +466,7 @@ async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
     // Sync mode + host auth present → both account.json and
     // credentials.json flow under /jackin/claude/. Plugins are baked
     // into the image and do not need a runtime mount.
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -504,7 +507,10 @@ plugins = []
         &paths,
         "jk-agent-smith",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::Sync,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         &host_home,
         Agent::Claude,
@@ -533,7 +539,7 @@ async fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
     // run its login wizard) and removes credentials.json. The
     // launcher must mount the skeleton AND must not mount any
     // stale credentials.json that survived the provision step.
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -560,7 +566,10 @@ plugins = []
         &paths,
         "jk-agent-smith",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::OAuthToken,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::OAuthToken,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         temp.path(),
         Agent::Claude,
@@ -585,7 +594,7 @@ plugins = []
 
 #[tokio::test]
 async fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() {
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -612,7 +621,10 @@ agents = ["codex"]
         &paths,
         "jk-agent-smith",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::Ignore,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Ignore,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         temp.path(),
         Agent::Codex,
@@ -636,7 +648,7 @@ agents = ["codex"]
 
 #[tokio::test]
 async fn agent_mounts_for_codex_synced_includes_auth_json() {
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -672,7 +684,10 @@ agents = ["codex"]
         &paths,
         "jk-agent-smith",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::Sync,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         &host_home,
         Agent::Codex,
@@ -694,7 +709,7 @@ agents = ["codex"]
 
 #[tokio::test]
 async fn agent_mounts_for_codex_host_missing_omits_auth_json() {
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -721,7 +736,10 @@ agents = ["codex"]
         &paths,
         "jk-agent-smith",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::Sync,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         temp.path().join("empty_host_home").as_path(),
         Agent::Codex,
@@ -741,7 +759,7 @@ agents = ["codex"]
 
 #[tokio::test]
 async fn agent_mounts_for_amp_synced_includes_secrets_json() {
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -776,7 +794,10 @@ agents = ["amp"]
         &paths,
         "jk-the-architect",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::Sync,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         &host_home,
         Agent::Amp,
@@ -800,7 +821,7 @@ agents = ["amp"]
 
 #[tokio::test]
 async fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
-    use crate::instance::RoleState;
+    use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::agent::Agent;
 
     let temp = tempdir().unwrap();
@@ -827,7 +848,10 @@ agents = ["amp"]
         &paths,
         "jk-the-architect",
         &manifest,
-        &|_| jackin_config::AuthForwardMode::Ignore,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Ignore,
+            sync_source_dirs: &|_| None,
+        },
         &crate::instance::GithubAuthContext::default(),
         temp.path(),
         Agent::Amp,

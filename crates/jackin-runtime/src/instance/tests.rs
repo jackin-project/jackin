@@ -4,6 +4,13 @@ use jackin_core::paths::JackinPaths;
 use jackin_manifest::load_role_manifest;
 use tempfile::tempdir;
 
+fn ignoring_resolvers() -> PrepareResolvers<'static> {
+    PrepareResolvers {
+        auth_modes: &|_| AuthForwardMode::Ignore,
+        sync_source_dirs: &|_| None,
+    }
+}
+
 fn simple_manifest(temp: &tempfile::TempDir) -> jackin_manifest::RoleManifest {
     std::fs::write(
         temp.path().join("jackin.role.toml"),
@@ -33,7 +40,7 @@ fn prepares_persisted_claude_state() {
         &paths,
         "jk-k7p9m2xq-agentsmith",
         &manifest,
-        &|_| AuthForwardMode::Ignore,
+        &ignoring_resolvers(),
         &GithubAuthContext::default(),
         temp.path(),
         jackin_core::agent::Agent::Claude,
@@ -104,7 +111,7 @@ model = "gpt-5"
         &paths,
         "jk-k7p9m2xq-agentsmith",
         &manifest,
-        &|_| AuthForwardMode::Ignore,
+        &ignoring_resolvers(),
         &GithubAuthContext::default(),
         temp.path(),
         jackin_core::agent::Agent::Codex,
@@ -182,7 +189,10 @@ plugins = []
         &paths,
         "jk-k7p9m2xq-agentsmith",
         &manifest,
-        &auth_modes,
+        &PrepareResolvers {
+            auth_modes: &auth_modes,
+            sync_source_dirs: &|_| None,
+        },
         &GithubAuthContext::default(),
         temp.path(),
         jackin_core::agent::Agent::Codex,

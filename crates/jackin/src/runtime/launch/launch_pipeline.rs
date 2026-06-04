@@ -741,7 +741,10 @@ pub(crate) async fn load_role_with(
             paths,
             &container_name,
             &validated_repo.manifest,
-            &resolve_supported_mode,
+            &crate::instance::PrepareResolvers {
+                auth_modes: &resolve_supported_mode,
+                sync_source_dirs: &|_| None,
+            },
             &github_ctx,
             &paths.home_dir,
             agent,

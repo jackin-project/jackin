@@ -476,10 +476,7 @@ async fn extract_agent_version(
         return;
     }
     if debug {
-        jackin_diagnostics::emit_debug_line(
-            "image",
-            &format!("{} {version}", runtime.label()),
-        );
+        jackin_diagnostics::emit_debug_line("image", &format!("{} {version}", runtime.label()));
     }
     if let Some(semver) = runtime.parse_version(version) {
         version_check::store_version(paths, agent, image, semver);

@@ -389,20 +389,29 @@ impl std::fmt::Debug for GithubAuthContext {
     }
 }
 
+/// Resolver closures for [`RoleState::prepare`].
+pub struct PrepareResolvers<'a> {
+    pub auth_modes: &'a dyn Fn(jackin_core::agent::Agent) -> AuthForwardMode,
+    pub sync_source_dirs: &'a dyn Fn(jackin_core::agent::Agent) -> Option<std::path::PathBuf>,
+}
+
 impl RoleState {
     /// Provision per-supported-agent auth state.
     ///
-    /// `auth_modes` is invoked once per agent in `manifest.supported_agents()`
+    /// `resolvers.auth_modes` is invoked once per agent in `manifest.supported_agents()`
     /// — pass `jackin_config::resolve_mode(config, a, ws, role)` so each
     /// agent gets its own configured forward mode. Reusing the *selected*
     /// agent's mode for sibling agents silently wipes their durable state
     /// when modes diverge (e.g. `claude.auth_forward = sync` next to
     /// `codex.auth_forward = api_key`).
+    ///
+    /// `resolvers.sync_source_dirs` returns an optional override source
+    /// directory for each agent's auth sync, overriding `host_home`.
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
         manifest: &RoleManifest,
-        auth_modes: &dyn Fn(jackin_core::agent::Agent) -> AuthForwardMode,
+        resolvers: &PrepareResolvers<'_>,
         github: &GithubAuthContext,
         host_home: &Path,
         agent: jackin_core::agent::Agent,
@@ -423,35 +432,52 @@ impl RoleState {
         let mut selected_outcome = AuthProvisionOutcome::Skipped;
 
         for supported in manifest.supported_agents() {
-            let mode = auth_modes(supported);
+            let mode = (resolvers.auth_modes)(supported);
+            let sync_src = (resolvers.sync_source_dirs)(supported);
+            let sync_src_ref = sync_src.as_deref();
             let outcome = match supported {
                 jackin_core::agent::Agent::Claude => {
-                    let (slot, outcome) =
-                        Self::provision_claude_slot(&root, &home_dir, mode, host_home)?;
+                    let (slot, outcome) = Self::provision_claude_slot(
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
                     auth.claude = Some(slot);
                     outcome
                 }
                 jackin_core::agent::Agent::Codex => {
-                    let (slot, outcome) =
-                        Self::provision_codex_slot(&root, &home_dir, mode, host_home)?;
+                    let (slot, outcome) = Self::provision_codex_slot(
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
                     auth.codex = Some(slot);
                     outcome
                 }
                 jackin_core::agent::Agent::Amp => {
                     let (slot, outcome) =
-                        Self::provision_amp_slot(&root, &home_dir, mode, host_home)?;
+                        Self::provision_amp_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
                     auth.amp = Some(slot);
                     outcome
                 }
                 jackin_core::agent::Agent::Kimi => {
                     let (slot, outcome) =
-                        Self::provision_kimi_slot(&root, &home_dir, mode, host_home)?;
+                        Self::provision_kimi_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
                     auth.kimi = Some(slot);
                     outcome
                 }
                 jackin_core::agent::Agent::Opencode => {
-                    let (slot, outcome) =
-                        Self::provision_opencode_slot(&root, &home_dir, mode, host_home)?;
+                    let (slot, outcome) = Self::provision_opencode_slot(
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
                     auth.opencode = Some(slot);
                     outcome
                 }
@@ -494,6 +520,7 @@ impl RoleState {
         home_dir: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
+        sync_source_dir: Option<&Path>,
     ) -> anyhow::Result<(ClaudeAuth, AuthProvisionOutcome)> {
         let claude_dir = root.join("claude");
         let claude_home_dir = home_dir.join(".claude");
@@ -505,8 +532,9 @@ impl RoleState {
         auth::create_private_file_if_absent(&claude_account_home, b"{}")?;
         let account_json = claude_dir.join("account.json");
         let credentials_json = claude_dir.join("credentials.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
         let (outcome, forward_auth) =
-            Self::provision_claude_auth(&account_json, &credentials_json, mode, host_home)?;
+            Self::provision_claude_auth(&account_json, &credentials_json, mode, effective_home)?;
         Ok((
             ClaudeAuth {
                 account_json,
@@ -522,13 +550,16 @@ impl RoleState {
         home_dir: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
+        sync_source_dir: Option<&Path>,
     ) -> anyhow::Result<(CodexAuth, AuthProvisionOutcome)> {
         let codex_dir = root.join("codex");
         let codex_home_dir = home_dir.join(".codex");
         std::fs::create_dir_all(&codex_dir)?;
         std::fs::create_dir_all(&codex_home_dir)?;
         let auth_json_path = codex_dir.join("auth.json");
-        let (outcome, auth_json) = Self::provision_codex_auth(&auth_json_path, mode, host_home)?;
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, auth_json) =
+            Self::provision_codex_auth(&auth_json_path, mode, effective_home)?;
         Ok((CodexAuth { auth_json }, outcome))
     }
 
@@ -537,14 +568,16 @@ impl RoleState {
         home_dir: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
+        sync_source_dir: Option<&Path>,
     ) -> anyhow::Result<(AmpAuth, AuthProvisionOutcome)> {
         let amp_dir = root.join("amp");
         let amp_home_dir = home_dir.join(".local/share/amp");
         std::fs::create_dir_all(&amp_dir)?;
         std::fs::create_dir_all(&amp_home_dir)?;
         let secrets_json_path = amp_dir.join("secrets.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
         let (outcome, secrets_json) =
-            Self::provision_amp_auth(&secrets_json_path, mode, host_home)?;
+            Self::provision_amp_auth(&secrets_json_path, mode, effective_home)?;
         Ok((AmpAuth { secrets_json }, outcome))
     }
 
@@ -553,12 +586,14 @@ impl RoleState {
         home_dir: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
+        sync_source_dir: Option<&Path>,
     ) -> anyhow::Result<(KimiAuth, AuthProvisionOutcome)> {
         let kimi_dir = root.join("kimi-code");
         let kimi_home_dir = home_dir.join(".kimi-code");
         std::fs::create_dir_all(&kimi_dir)?;
         std::fs::create_dir_all(&kimi_home_dir)?;
-        let (outcome, forward_auth) = Self::provision_kimi_auth(&kimi_dir, mode, host_home)?;
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, forward_auth) = Self::provision_kimi_auth(&kimi_dir, mode, effective_home)?;
         Ok((KimiAuth { forward_auth }, outcome))
     }
 
@@ -567,13 +602,16 @@ impl RoleState {
         home_dir: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
+        sync_source_dir: Option<&Path>,
     ) -> anyhow::Result<(OpencodeAuth, AuthProvisionOutcome)> {
         let opencode_dir = root.join("opencode");
         let opencode_home_dir = home_dir.join(".local/share/opencode");
         std::fs::create_dir_all(&opencode_dir)?;
         std::fs::create_dir_all(&opencode_home_dir)?;
         let auth_json_path = opencode_dir.join("auth.json");
-        let (outcome, auth_json) = Self::provision_opencode_auth(&auth_json_path, mode, host_home)?;
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, auth_json) =
+            Self::provision_opencode_auth(&auth_json_path, mode, effective_home)?;
         Ok((OpencodeAuth { auth_json }, outcome))
     }
 }
