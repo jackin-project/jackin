@@ -1021,19 +1021,21 @@ async fn launch_role_runtime(
         );
     }
 
-    // Session contract table — factual summary of effective grants.
-    // Emitted under JACKIN_DEBUG=1 so operators can verify what was applied.
-    let contract = super::docker_profile::format_session_contract(
-        *profile,
-        &profile_source.to_string(),
-        grants,
-        *apparmor_available,
-        apparmor_layer,
-        cgroup_version,
-        agent_auth_mode_str,
-        *gh_auth_forwarded,
+    // Session contract table — only built when debug is on (gated inside debug_log!).
+    crate::debug_log!(
+        "launch",
+        "session_contract:\n{}",
+        super::docker_profile::format_session_contract(
+            *profile,
+            &format!("{profile_source}"),
+            grants,
+            *apparmor_available,
+            apparmor_layer,
+            cgroup_version,
+            agent_auth_mode_str,
+            *gh_auth_forwarded,
+        )
     );
-    crate::debug_log!("launch", "session_contract:\n{contract}");
 
     // User override — only emit --user when not the default agent user.
     if grants.user != "agent" {
@@ -2369,13 +2371,24 @@ async fn load_role_with(
         let certs_volume = dind_certs_volume(&container_name);
         let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
 
+        // Resolve profile first so is_compat correctly reflects all precedence
+        // levels (CLI > workspace > config > default) — not just CLI + config.
+        let workspace_docker_for_grants = config
+            .workspaces
+            .get(&workspace.label)
+            .and_then(|wc| wc.docker.as_ref());
+        let resolved_profile_early = super::docker_profile::resolve_profile(
+            opts.docker_profile,
+            workspace_docker_for_grants.and_then(|wd| wd.profile),
+            config.docker.profile,
+        );
+
         // Detect cgroup version and AppArmor availability.
-        // Skip for compat: both values are unused by compat (no fail-close branch,
-        // no AppArmor flag). `docker info` is non-trivial under heavy load.
-        let is_compat = opts.docker_profile
-            == Some(super::docker_profile::DockerSecurityProfile::Compat)
-            || (opts.docker_profile.is_none()
-                && config.docker.profile == Some(super::docker_profile::DockerSecurityProfile::Compat));
+        // Skip for compat: values are unused (no fail-close branch, no AppArmor flag).
+        // `docker info` is non-trivial under heavy load; gate on resolved profile
+        // so workspace-level compat overrides are also respected.
+        let is_compat = resolved_profile_early.0
+            == super::docker_profile::DockerSecurityProfile::Compat;
         let cgroup_version = if is_compat {
             "skipped(compat)".to_string()
         } else {
@@ -2394,18 +2407,6 @@ async fn load_role_with(
             apparmor_info.available,
             apparmor_info.profile,
             apparmor_info.layer,
-        );
-
-        // Resolve Docker security profile and effective grants early so they
-        // can inform the instance manifest (dind enablement) and the launch.
-        let workspace_docker_for_grants = config
-            .workspaces
-            .get(&workspace.label)
-            .and_then(|wc| wc.docker.as_ref());
-        let resolved_profile_early = super::docker_profile::resolve_profile(
-            opts.docker_profile,
-            workspace_docker_for_grants.and_then(|wd| wd.profile),
-            config.docker.profile,
         );
         let mut effective_grants_early = super::docker_profile::resolve_effective_grants(
             resolved_profile_early.0,
@@ -2541,9 +2542,10 @@ async fn load_role_with(
         }
 
         // Network policy enforcement: hardened/locked require allowlist or deny.
-        // If the operator explicitly granted open network (via grants.network = "open"),
-        // the choice is accepted but reported as a posture downgrade.
-        if profile_requires_limits
+        // If the operator explicitly granted open network, accept but warn.
+        // This uses drops_all_caps() rather than profile_requires_limits because
+        // these are independent invariants that happen to share the same profile set today.
+        if super::docker_profile::drops_all_caps(resolved_profile_early.0)
             && effective_grants_early.network == super::docker_profile::NetworkGrant::Open
         {
             crate::tui::emit_compact_line(

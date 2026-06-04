@@ -676,10 +676,7 @@ pub fn format_session_contract(
     agent_auth_mode: &str,
     gh_auth_forwarded: bool,
 ) -> String {
-    let caps_line = if matches!(
-        profile,
-        DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
-    ) {
+    let caps_line = if drops_all_caps(profile) {
         let extra = if grants.capabilities_add.is_empty() {
             String::new()
         } else {
@@ -721,7 +718,6 @@ pub fn format_session_contract(
         .pids
         .map(|p| p.to_string())
         .unwrap_or_else(|| "unlimited".to_string());
-    let cred_line = agent_auth_mode;
     let gh_line = if gh_auth_forwarded { "forwarded" } else { "not forwarded" };
     let residual = if grants.dind != DindGrant::None {
         "shared host kernel; writable workspace mounts can still be changed; DinD sidecar has kernel access"
@@ -766,7 +762,7 @@ pub fn format_session_contract(
         memory_line,
         cpus_line,
         pids_line,
-        cred_line,
+        agent_auth_mode,
         gh_line,
         residual,
     )
@@ -821,10 +817,7 @@ pub fn resource_flags(grants: &EffectiveGrants) -> Vec<String> {
 /// the sidecar. Returns empty when the profile uses Docker's default cap set
 /// (`standard`/`compat`) to avoid redundant flags.
 pub fn capability_flags(profile: DockerSecurityProfile, extra_caps: &[String]) -> Vec<String> {
-    let drops_all = matches!(
-        profile,
-        DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
-    );
+    let drops_all = drops_all_caps(profile);
     if !drops_all && extra_caps.is_empty() {
         return Vec::new();
     }
@@ -964,10 +957,7 @@ pub fn to_host_config_fields(
     profile: DockerSecurityProfile,
     grants: &EffectiveGrants,
 ) -> HostConfigFields {
-    let drops_all = matches!(
-        profile,
-        DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
-    );
+    let drops_all = drops_all_caps(profile);
     let cap_drop = if drops_all {
         vec!["ALL".to_string()]
     } else {
