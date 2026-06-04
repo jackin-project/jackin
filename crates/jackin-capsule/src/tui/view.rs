@@ -117,45 +117,6 @@ pub(crate) fn render_capsule_selection_highlight(
     paint_selection_highlight(buf, rows, selection, dim);
 }
 
-pub(crate) struct CapsuleChromeHoverFrame<'a> {
-    pub(crate) term_rows: u16,
-    pub(crate) term_cols: u16,
-    pub(crate) tabs: &'a [Tab],
-    pub(crate) active_tab: usize,
-    pub(crate) session_states: &'a [(u64, VisibleAgentState)],
-    pub(crate) branch: Option<&'a str>,
-    pub(crate) pull_request: Option<&'a PullRequestInfo>,
-    pub(crate) pull_request_loading: bool,
-    pub(crate) hover_target: Option<HoverTarget>,
-}
-
-pub(crate) fn render_capsule_chrome_hover_frame(
-    buf: &mut Vec<u8>,
-    status_bar: &mut StatusBar,
-    view: CapsuleChromeHoverFrame<'_>,
-) {
-    render_capsule_status_bar(
-        buf,
-        status_bar,
-        CapsuleStatusBarFrame {
-            term_cols: view.term_cols,
-            tabs: view.tabs,
-            active_tab: view.active_tab,
-            session_states: view.session_states,
-            hover_target: view.hover_target,
-        },
-    );
-    render_branch_context_bar(
-        buf,
-        view.term_rows,
-        view.term_cols,
-        view.branch,
-        view.pull_request,
-        view.pull_request_loading,
-        status_bar.instance_id_label(),
-        view.hover_target,
-    );
-}
 
 pub(crate) struct CapsuleStatusBarFrame<'a> {
     pub(crate) term_cols: u16,

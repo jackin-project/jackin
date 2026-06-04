@@ -12,7 +12,7 @@ use super::*;
 impl Multiplexer {
     fn compose_action_frame_plan(&mut self, plan: ActionFramePlan) -> Vec<u8> {
         match plan {
-            ActionFramePlan::Full(reason) => self.compose_full_frame(reason),
+            ActionFramePlan::Full(reason) => self.compose_full_redraw(reason),
             ActionFramePlan::Overlay(reason) => self.compose_dialog_overlay_frame(reason),
         }
     }
@@ -157,7 +157,7 @@ impl Multiplexer {
             }
         }
         match frame_plan {
-            DialogActionFramePlan::Full(reason) => self.compose_full_frame(reason),
+            DialogActionFramePlan::Full(reason) => self.compose_full_redraw(reason),
             DialogActionFramePlan::Overlay(reason) => self.compose_dialog_overlay_frame(reason),
         }
     }
@@ -385,11 +385,11 @@ impl Multiplexer {
                     focused,
                     session.scrollback_offset
                 );
-                Some(self.compose_full_frame(wheel_scrollback_redraw_reason()))
+                Some(self.compose_full_redraw(wheel_scrollback_redraw_reason()))
             }
             Action::FocusPaneAt { row, col } => {
                 focus_change_redraw_reason(self.focus_pane_at(row, col))
-                    .map(|reason| self.compose_full_frame(reason))
+                    .map(|reason| self.compose_full_redraw(reason))
             }
             Action::PanePrimaryPress { row, col } => {
                 // Press on a shared pane border starts a drag — skip focus
@@ -494,7 +494,7 @@ impl Multiplexer {
                     session.send_input(&bytes);
                 }
                 pane_data_redraw_reason(snapped, unblocked)
-                    .map(|reason| self.compose_full_frame(reason))
+                    .map(|reason| self.compose_full_redraw(reason))
             }
             Action::StartDragResize { row, col } => {
                 self.drag = self.detect_drag_start(row, col);
@@ -503,12 +503,12 @@ impl Multiplexer {
             Action::DragMotion { row, col } => self.drag_motion(row, col),
             Action::EndDragResize => {
                 self.drag = None;
-                Some(self.compose_full_frame(drag_resize_redraw_reason()))
+                Some(self.compose_full_redraw(drag_resize_redraw_reason()))
             }
             Action::StartSelection { row, col } => {
                 self.selection = self.detect_selection_start(row, col);
                 selection_start_redraw_reason(self.selection.is_some())
-                    .map(|reason| self.compose_full_frame(reason))
+                    .map(|reason| self.compose_full_redraw(reason))
             }
             Action::SelectionMotion { row, col } => self.selection_motion(row, col),
             Action::FinalizeSelection => self.finalize_selection(),
@@ -595,7 +595,7 @@ impl Multiplexer {
         {
             return Some(frame);
         }
-        Some(self.compose_full_frame(full_redraw_reason))
+        Some(self.compose_full_redraw(full_redraw_reason))
     }
 
     pub(super) fn handle_palette_command(&mut self, cmd: PaletteCommand) -> Option<Vec<u8>> {
@@ -650,7 +650,7 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.clear_focused_pane();
                 if let Some(reason) = palette_route_redraw_reason(route) {
-                    return Some(self.compose_full_frame(reason));
+                    return Some(self.compose_full_redraw(reason));
                 }
             }
         }

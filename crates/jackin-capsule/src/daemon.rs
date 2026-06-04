@@ -791,7 +791,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     }
                 }
                 let mut initial = b"\x1b[2J".to_vec();
-                initial.extend(mux.compose_full_frame(first_attach_redraw_reason()));
+                initial.extend(mux.compose_full_redraw(first_attach_redraw_reason()));
                 initial_frames.push((
                     InitialFrameKind::FirstAttach,
                     encode_server(ServerFrame::Output(initial)),
@@ -1032,7 +1032,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 mux.refresh_tab_labels();
-                let sbuf = mux.compose_chrome_hover_frame();
+                let sbuf = mux.compose_chrome_refresh();
                 mux.send_output(sbuf);
             }
         }
@@ -1048,7 +1048,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::Resize { rows, cols } => {
             crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
             mux.resize(rows, cols);
-            let frame_data = mux.compose_full_frame(resize_redraw_reason());
+            let frame_data = mux.compose_full_redraw(resize_redraw_reason());
             mux.send_output(frame_data);
         }
         ClientFrame::Input(bytes) => {
@@ -1075,7 +1075,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);
-                let frame_data = mux.compose_full_frame(explicit_redraw_reason());
+                let frame_data = mux.compose_full_redraw(explicit_redraw_reason());
                 mux.send_output(frame_data);
             }
         }

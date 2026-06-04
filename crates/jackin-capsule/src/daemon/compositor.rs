@@ -8,9 +8,8 @@ use std::time::Instant;
 
 use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
 use crate::tui::view::{
-    CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleDialogBottomChrome,
-    CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar, grid_scroll_affordance_metrics,
-    render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
+    CapsuleBottomChrome, CapsuleDialogBottomChrome, CapsuleRawDialogOverlay, CapsuleStatusBarFrame,
+    PaneScrollbar, grid_scroll_affordance_metrics, render_capsule_bottom_chrome,
     render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
     render_capsule_pane_body_snapshot, render_capsule_pane_chrome,
     render_capsule_raw_dialog_overlay, render_capsule_selection_highlight,
@@ -575,31 +574,24 @@ impl Multiplexer {
             .collect()
     }
 
-    pub(super) fn compose_chrome_hover_frame(&mut self) -> Vec<u8> {
+    /// Repaint chrome (status bar + branch bar + hover state) as a Ratatui
+    /// *diff* — no buffer clear — so the 1 s state ticker and mouse-hover
+    /// updates emit only the cells that changed (the tab state glyph, a hover
+    /// background) instead of a full repaint. Replaces the raw
+    /// `compose_chrome_hover_frame`: routing the ticker through the same
+    /// Ratatui buffer as every other frame is what removes the third,
+    /// competing raw renderer.
+    pub(super) fn compose_chrome_refresh(&mut self) -> Vec<u8> {
         self.refresh_tab_labels();
-        let mut buf = b"\x1b7".to_vec();
-        let states = self.snapshot_session_states();
-        let branch = self.context_bar_branch().map(str::to_string);
-        let pull_request = self.pull_request_context.clone();
-        let pull_request_loading = self.pull_request_context_loading();
-        render_capsule_chrome_hover_frame(
-            &mut buf,
-            &mut self.status_bar,
-            CapsuleChromeHoverFrame {
-                term_rows: self.term_rows,
-                term_cols: self.term_cols,
-                tabs: &self.tabs,
-                active_tab: self.active_tab,
-                session_states: &states,
-                branch: branch.as_deref(),
-                pull_request: pull_request.as_deref(),
-                pull_request_loading,
-                hover_target: self.hover_target,
-            },
-        );
-        buf.extend_from_slice(b"\x1b8");
-        buf
+        if let Some(out) = self.compose_ratatui_frame() {
+            let mut buf = Vec::with_capacity(out.len() + 64);
+            self.append_outer_terminal_title(&mut buf);
+            buf.extend_from_slice(&out);
+            return buf;
+        }
+        Vec::new()
     }
+
 
     pub(super) fn compose_partial_frame(&mut self, dirty_panes: HashSet<u64>) -> Vec<u8> {
         match partial_frame_plan(PartialFrameState {
