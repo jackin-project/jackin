@@ -133,3 +133,59 @@ fn details_prompt_renders_readable_source_details() {
     assert!(rendered.contains("External content may run commands."));
     assert!(rendered.contains("Review the source before continuing."));
 }
+
+#[test]
+fn default_dialog_has_symmetric_vertical_padding() {
+    // The canonical dialog layout has exactly 1 leading spacer (row 1, after the top border)
+    // and 1 trailing spacer (last inner row, before the bottom border). Verify that neither
+    // the prompt nor the button row touches the top or bottom border.
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+    let s = ConfirmState::new("Delete workspace?");
+    let height = required_height(&s);
+    let area = Rect::new(0, 0, 40, height);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| render_confirm_dialog(f, area, &s)).unwrap();
+    let buf = term.backend().buffer();
+
+    let row_content = |y: u16| {
+        (0..area.width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect::<String>()
+    };
+
+    // Row 0 is the top border — must not contain prompt text.
+    assert!(
+        !row_content(0).contains("Delete"),
+        "prompt must not be on the top border row"
+    );
+    // Last row (height-1) is the bottom border — must not contain button text.
+    assert!(
+        !row_content(height - 1).contains("Yes"),
+        "buttons must not be on the bottom border row"
+    );
+    // Row 1 (first inner row) is the leading spacer — must be blank inside the border.
+    let leading = row_content(1);
+    // Strip the first and last characters (border glyphs, possibly multi-byte).
+    let leading_inner: String = leading
+        .chars()
+        .skip(1)
+        .take(leading.chars().count() - 2)
+        .collect();
+    assert!(
+        leading_inner.trim().is_empty(),
+        "row 1 must be the leading spacer (blank): {leading_inner:?}"
+    );
+    // Last inner row (height-2) is the trailing spacer — must be blank inside the border.
+    let trailing = row_content(height - 2);
+    let trailing_inner: String = trailing
+        .chars()
+        .skip(1)
+        .take(trailing.chars().count() - 2)
+        .collect();
+    assert!(
+        trailing_inner.trim().is_empty(),
+        "last inner row must be the trailing spacer (blank): {trailing_inner:?}"
+    );
+}
