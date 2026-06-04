@@ -22,7 +22,7 @@ fn border_fg(block: Block<'_>) -> Color {
 fn modal_block_uses_phosphor_green() {
     assert_eq!(
         border_fg(modal_block()),
-        Color::Rgb(0, 255, 65),
+        crate::theme::PHOSPHOR_GREEN,
         "modal_block must use PHOSPHOR_GREEN so focused containers are visually distinct"
     );
 }
@@ -31,7 +31,7 @@ fn modal_block_uses_phosphor_green() {
 fn unfocused_block_uses_phosphor_dark() {
     assert_eq!(
         border_fg(unfocused_block()),
-        Color::Rgb(0, 80, 18),
+        crate::theme::PHOSPHOR_DARK,
         "unfocused_block must use PHOSPHOR_DARK"
     );
 }
@@ -40,7 +40,7 @@ fn unfocused_block_uses_phosphor_dark() {
 fn panel_focused_uses_phosphor_green() {
     assert_eq!(
         border_fg(Panel::new().focus(PanelFocus::Focused).block()),
-        Color::Rgb(0, 255, 65),
+        crate::theme::PHOSPHOR_GREEN,
         "PanelFocus::Focused must use PHOSPHOR_GREEN (WCAG focus-visible)"
     );
 }
@@ -49,7 +49,7 @@ fn panel_focused_uses_phosphor_green() {
 fn panel_unfocused_uses_phosphor_dark() {
     assert_eq!(
         border_fg(Panel::new().focus(PanelFocus::Unfocused).block()),
-        Color::Rgb(0, 80, 18),
+        crate::theme::PHOSPHOR_DARK,
         "PanelFocus::Unfocused must use PHOSPHOR_DARK"
     );
 }
