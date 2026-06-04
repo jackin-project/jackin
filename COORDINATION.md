@@ -4,15 +4,24 @@
 
 **Deprecated files (superseded by this file, do not use):** `.claude/agent-coordination.md` and `.claude/AGENT_COORDINATION.md` are local-only (gitignored) stub files that redirect here. `AGENT-COORDINATION.md` was deleted. This `COORDINATION.md` is the only one that matters.
 
+## Agent names
+
+Each Claude instance picks a unique name for attribution. Check this list before using a name.
+
+| Name | Description |
+|---|---|
+| **Verdant** | The agent that implemented B.1/B.2/B.3, schema bump, docs fixes |
+| *Other agents* | Use different names — pick anything except A/B/C and the names above |
+
 ---
 
 ## Protocol
 
 1. **Pull before claiming** — `git pull --ff-only` to sync, then re-read this file.
-2. **Claim before coding** — add `[AGENT-X WORKING]` + one-line note to the table below.
+2. **Claim before coding** — add `[NAME WORKING]` + one-line note to the table below.
 3. **Commit + push the claim** — `git add COORDINATION.md && git commit -m "chore: claim <item>" && git push`.
 4. If push fails (parallel conflict): pull, re-read, pick a different item.
-5. **Release when done** — replace `[AGENT-X WORKING]` with `[DONE in <commit>]`, push.
+5. **Release when done** — replace `[NAME WORKING]` with `[DONE in <commit> by NAME]`, push.
 6. **Avoid files the other agent has unstaged** — `git status` shows in-progress work.
 7. **Prefer small, atomic commits** — push after every logical unit.
 
@@ -29,7 +38,7 @@
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
 | Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR-split point |
-| Defect 46 acceptance gates | **[AGENT-A WORKING]** | Running clippy --workspace; checking schema fixtures |
+| Defect 46 acceptance gates | **[VERDANT WORKING]** | Docs gates green (repo-links, roadmap-sidebar, tsc); schema fixtures pass; clippy --workspace clean |
 
 ---
 
