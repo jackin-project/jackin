@@ -10,6 +10,19 @@
 //! for the session and this listener runs as a `tokio::spawn` task alongside
 //! the blocking `docker exec -it` call. Future work: migrate to the jackin'
 //! daemon so all running containers share one host-side resolver.
+//!
+//! # Security
+//!
+//! The listener validates every incoming resolution request against the
+//! `allowed_bindings` set configured at session start. Only (name, kind,
+//! source) triples that exactly match an operator-configured binding are
+//! resolved. Unknown refs are rejected with a `CredError` without calling
+//! `op` or reading any host env var. This prevents a compromised in-container
+//! process from requesting arbitrary secret resolution via the host socket.
+//!
+//! For `kind = "op"`, `source` must start with `op://` and the `--`
+//! end-of-options sentinel is inserted before passing to `op read` to prevent
+//! argument injection via crafted op:// values.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -54,17 +67,19 @@ struct CredError {
 /// caller is responsible for ensuring the parent directory is already
 /// bind-mounted into the container.
 ///
-/// The listener accepts one connection at a time (serialised) since
-/// the capsule daemon sends exactly one request per `jackin-exec` call.
-pub fn start(sock_path: PathBuf) -> tokio::task::JoinHandle<()> {
+/// `allowed_bindings` is the exhaustive set of credential refs the operator
+/// configured for this session. Only refs in this set are resolved; any
+/// incoming request that references an unknown (name, kind, source) triple
+/// is rejected, preventing escalation from a compromised in-container process.
+pub fn start(sock_path: PathBuf, allowed_bindings: Vec<ExecCredRef>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        if let Err(e) = run_listener(&sock_path).await {
+        if let Err(e) = run_listener(&sock_path, &allowed_bindings).await {
             crate::debug_log!("exec_host", "listener error: {e:#}");
         }
     })
 }
 
-async fn run_listener(sock_path: &Path) -> Result<()> {
+async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecCredRef]) -> Result<()> {
     // Remove stale socket from a previous session.
     let _ = std::fs::remove_file(sock_path);
     if let Some(parent) = sock_path.parent() {
@@ -75,14 +90,15 @@ async fn run_listener(sock_path: &Path) -> Result<()> {
 
     crate::debug_log!(
         "exec_host",
-        "listening at {}",
-        sock_path.display()
+        "listening at {} with {} allowed bindings",
+        sock_path.display(),
+        allowed_bindings.len()
     );
 
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
-                if let Err(e) = handle_connection(stream).await {
+                if let Err(e) = handle_connection(stream, allowed_bindings).await {
                     crate::debug_log!("exec_host", "connection error: {e:#}");
                 }
             }
@@ -95,7 +111,7 @@ async fn run_listener(sock_path: &Path) -> Result<()> {
     }
 }
 
-async fn handle_connection(mut stream: UnixStream) -> Result<()> {
+async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredRef]) -> Result<()> {
     // Read 4-byte BE length + JSON body (same framing as control channel).
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
@@ -108,9 +124,37 @@ async fn handle_connection(mut stream: UnixStream) -> Result<()> {
 
     let req: CredRequest = serde_json::from_slice(&body).context("parsing CredRequest")?;
 
+    // Validate every requested ref against the operator-approved bindings.
+    // Reject any ref that wasn't explicitly configured — this prevents a
+    // compromised in-container process from escalating privileges by requesting
+    // arbitrary op:// URIs or host env vars.
+    for r in &req.refs {
+        let approved = allowed_bindings.iter().any(|b| {
+            b.name == r.name && b.kind == r.kind && b.source == r.source
+        });
+        if !approved {
+            crate::debug_log!(
+                "exec_host",
+                "rejected unauthorized ref: name={:?} kind={:?} source={:?}",
+                r.name, r.kind, r.source
+            );
+            let err = CredError {
+                error: format!(
+                    "credential {:?} is not in the approved binding set for this session",
+                    r.name
+                ),
+            };
+            let reply_bytes = serde_json::to_vec(&err)?;
+            let len_bytes = (reply_bytes.len() as u32).to_be_bytes();
+            stream.write_all(&len_bytes).await?;
+            stream.write_all(&reply_bytes).await?;
+            return Ok(());
+        }
+    }
+
     crate::debug_log!(
         "exec_host",
-        "resolving {} credential(s)",
+        "resolving {} approved credential(s)",
         req.refs.len()
     );
 
@@ -147,9 +191,31 @@ async fn resolve_all(
     Ok(values)
 }
 
+fn validate_op_source(source: &str) -> Result<()> {
+    anyhow::ensure!(
+        source.starts_with("op://"),
+        "invalid op:// reference {:?}: must start with op://",
+        source
+    );
+    // Reject values that look like CLI flags (start with -) after stripping the scheme.
+    let path = &source["op://".len()..];
+    for segment in path.split('/') {
+        anyhow::ensure!(
+            !segment.starts_with('-'),
+            "invalid op:// reference segment {:?}: looks like a flag",
+            segment
+        );
+    }
+    Ok(())
+}
+
 async fn resolve_one(r: &ExecCredRef) -> Result<String> {
     match r.kind.as_str() {
-        "op" => resolve_op(&r.source).await,
+        "op" => {
+            validate_op_source(&r.source)
+                .with_context(|| format!("credential {:?}", r.name))?;
+            resolve_op(&r.source).await
+        }
         "env" => {
             let var_name = r.source.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
             std::env::var(var_name)
@@ -162,7 +228,9 @@ async fn resolve_one(r: &ExecCredRef) -> Result<String> {
 
 async fn resolve_op(op_ref: &str) -> Result<String> {
     let output = tokio::process::Command::new("op")
-        .args(["read", op_ref])
+        // Insert -- end-of-options sentinel to prevent argument injection
+        // via crafted op:// values containing flags.
+        .args(["read", "--", op_ref])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

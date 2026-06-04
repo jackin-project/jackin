@@ -1130,7 +1130,19 @@ async fn launch_role_runtime(
         .join("sockets")
         .join(container_name)
         .join("host.sock");
-    let _exec_host_handle = crate::exec_host::start(host_sock_path);
+    // Build the allowed bindings list for the host.sock listener.
+    // Only these exact (name, kind, source) triples can be resolved.
+    let allowed_bindings: Vec<crate::exec_host::ExecCredRef> = ctx
+        .capsule_config
+        .exec_bindings
+        .iter()
+        .map(|b| crate::exec_host::ExecCredRef {
+            name: b.name.clone(),
+            kind: b.kind.clone(),
+            source: b.source.clone(),
+        })
+        .collect();
+    let _exec_host_handle = crate::exec_host::start(host_sock_path, allowed_bindings);
 
     // Tear down the loading cockpit before the interactive attach: the
     // capsule's `docker exec -it` must own a clean terminal, and leaving the
@@ -7485,7 +7497,7 @@ plugins = []
             .join(&container_name)
             .join(".jackin/instance.json");
         let body = std::fs::read_to_string(manifest_path).unwrap();
-        assert!(body.contains(r#""version": 1"#));
+        assert!(body.contains(r#""version": 2"#));
         assert!(body.contains(&format!(r#""container_base": "{container_name}""#)));
         assert!(body.contains(r#""role_key": "agent-smith""#));
         assert!(body.contains(r#""agent_runtime": "claude""#));

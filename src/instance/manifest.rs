@@ -5,7 +5,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-pub const INSTANCE_MANIFEST_VERSION: u32 = 1;
+/// Instance manifest version. Bumped to 2 when the `backend` field
+/// (BackendResources tagged union) replaced the Docker-only `docker` field.
+/// Old manifests with `"docker": {...}` are read via the `#[serde(alias = "docker")]`
+/// backward-compat attribute — no fixture chain required since this is ephemeral
+/// per-instance metadata, not a user-edited versioned config file.
+pub const INSTANCE_MANIFEST_VERSION: u32 = 2;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
 const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
@@ -684,7 +689,7 @@ mod tests {
         manifest.write(temp.path()).unwrap();
 
         let body = std::fs::read_to_string(temp.path().join(".jackin/instance.json")).unwrap();
-        assert!(body.contains(r#""version": 1"#));
+        assert!(body.contains(r#""version": 2"#));
         assert!(body.contains(r#""status": "running""#));
         assert!(body.contains(r#""role_key": "org/agent""#));
     }
@@ -898,7 +903,7 @@ mod tests {
         std::fs::write(state_dir.join(".jackin/instance.json"), b"{ partial").unwrap();
         sample_manifest().write(state_dir).unwrap();
         let body = std::fs::read_to_string(state_dir.join(".jackin/instance.json")).unwrap();
-        assert!(body.contains(r#""version": 1"#));
+        assert!(body.contains(r#""version": 2"#));
         assert!(!body.contains("partial"));
     }
 
