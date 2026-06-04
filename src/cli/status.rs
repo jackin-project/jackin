@@ -1,16 +1,17 @@
 use clap::Args;
 use std::collections::HashMap;
 
-/// Run a collection of futures concurrently, collecting all results.
-async fn tokio_join_all<F, T>(futs: impl IntoIterator<Item = F>) -> Vec<T>
+/// Poll futures sequentially and collect results.
+///
+/// Sequential is adequate for small fleet sizes (< ~20 containers); each Docker
+/// inspect round-trip is fast on localhost. Replace with `tokio::task::JoinSet`
+/// if fleet size grows large enough to make serial inspects a bottleneck.
+async fn poll_sequential<F, T>(futs: impl IntoIterator<Item = F>) -> Vec<T>
 where
     F: std::future::Future<Output = T>,
 {
-    let handles: Vec<_> = futs.into_iter().collect();
-    let mut results = Vec::with_capacity(handles.len());
-    // Use tokio::join_all via a sequential collect since we don't need true parallelism
-    // for small fleet sizes; upgrade to tokio::task::JoinSet if fleet grows large.
-    for fut in handles {
+    let mut results = Vec::new();
+    for fut in futs {
         results.push(fut.await);
     }
     results
@@ -140,10 +141,10 @@ async fn run_level0(
     print!("{BANNER}");
     println!("fleet status\n");
 
-    // Check container states in parallel using tokio::join_all for all instances.
+    // Query container states for each workspace (sequential; fast enough for small fleets).
     let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new(); // (name, total, running, stopped)
     for (ws_name, entries) in &sorted_ws {
-        let states = tokio_join_all(
+        let states = poll_sequential(
             entries
                 .iter()
                 .map(|e| docker.inspect_container_state(&e.container_base)),
@@ -241,7 +242,7 @@ async fn run_level1(
     }
 
     // Gather state for each instance.
-    let states = tokio_join_all(
+    let states = poll_sequential(
         instances
             .iter()
             .map(|e| docker.inspect_container_state(&e.container_base)),
@@ -354,12 +355,22 @@ async fn run_level2(
     let is_running = matches!(state, ContainerState::Running);
 
     // Fetch agents registry (only when running).
+    #[allow(clippy::option_if_let_else)]
     let agents_json: Option<Vec<jackin_protocol::control::AgentRegistryEntry>> = if is_running {
-        let output = docker
+        match docker
             .exec_capture(container_name, &["sh", "-c", JACKIN_AGENTS_CMD])
             .await
-            .ok();
-        output.and_then(|s| serde_json::from_str(&s).ok())
+        {
+            Err(_) => None, // socket not yet up or container exec failed — expected transient
+            Ok(s) => match serde_json::from_str(&s) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    // Exec succeeded but output is not valid JSON — protocol or version mismatch.
+                    eprintln!("warning: agents registry parse error for {container_name}: {e:#}");
+                    None
+                }
+            },
+        }
     } else {
         None
     };
@@ -384,9 +395,10 @@ async fn run_level2(
     };
 
     if format == OutputFormat::Json {
-        let agents_value = agents_json.as_ref().map_or(serde_json::Value::Null, |a| {
-            serde_json::to_value(a).unwrap_or(serde_json::Value::Null)
-        });
+        let agents_value = match &agents_json {
+            None => serde_json::Value::Null,
+            Some(a) => serde_json::to_value(a)?,
+        };
         let pr_value = pr_info.as_ref().map_or(serde_json::Value::Null, |p| {
             serde_json::json!({
                 "number": p.number,
@@ -497,6 +509,8 @@ impl PrInfo {
 }
 
 async fn fetch_pr_info(docker: &impl DockerApi, container_name: &str) -> Option<PrInfo> {
+    // Both exec failure (gh absent / no token) and parse failure mean "no PR info available";
+    // .ok()? is intentional — these are expected, not bugs.
     let output = docker
         .exec_capture(container_name, &["sh", "-c", GH_PR_CMD])
         .await

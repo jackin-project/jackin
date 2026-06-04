@@ -53,8 +53,9 @@ pub struct AgentRegistryEntry {
     pub codename: String,
     /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
     pub agent: Option<String>,
-    /// Provider label (e.g. `"Z.AI"`, `"Anthropic"`), or `None` when no
-    /// provider was selected.
+    /// Provider label (e.g. `"anthropic"`, `"openai"`), or `None` when no
+    /// provider was selected. Default for `claude` is `"anthropic"`;
+    /// for `codex` is `"openai"`. Other runtimes have no inferred default.
     pub provider: Option<String>,
     /// ISO 8601 UTC timestamp when the tab was opened.
     pub started_at: String,
@@ -62,6 +63,10 @@ pub struct AgentRegistryEntry {
     pub exited_at: Option<String>,
     /// `"active"` or `"exited"`.
     pub status: String,
+    /// `true` when this entry represents the calling process's own tab.
+    /// Set by `run_agents` by comparing `JACKIN_AGENT_CODENAME` against the codename.
+    #[serde(default)]
+    pub is_self: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

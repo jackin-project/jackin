@@ -46,10 +46,10 @@ jackin-capsule agents --format json
 
 ```json
 [
-  {"codename": "badger", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:15:02Z", "exited_at": null, "status": "active", "self": true},
-  {"codename": "falcon", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:32:15Z", "exited_at": null, "status": "active", "self": false},
-  {"codename": "reef",   "agent": "codex",  "provider": "openai",    "started_at": "2026-06-04T10:17:45Z", "exited_at": null, "status": "active", "self": false},
-  {"codename": "crater", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:12:00Z", "exited_at": "2026-06-04T10:40:11Z", "status": "exited", "self": false}
+  {"codename": "badger", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:15:02Z", "exited_at": null, "status": "active", "is_self": true},
+  {"codename": "falcon", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:32:15Z", "exited_at": null, "status": "active", "is_self": false},
+  {"codename": "reef",   "agent": "codex",  "provider": "openai",    "started_at": "2026-06-04T10:17:45Z", "exited_at": null, "status": "active", "is_self": false},
+  {"codename": "crater", "agent": "claude", "provider": "anthropic", "started_at": "2026-06-04T10:12:00Z", "exited_at": "2026-06-04T10:40:11Z", "status": "exited", "is_self": false}
 ]
 ```
 
@@ -112,7 +112,7 @@ COORDINATION.md
 
 ## Viewing codenames from the host
 
-The Capsule tab strip shows the agent type and provider for each tab. The codename for a tab is visible in the **hover tooltip** — move your mouse cursor over a tab cell to see its codename, agent, provider, start time, and exit time.
+The Capsule tab strip shows the agent type and provider for each tab. The codename for a tab is visible in the **hover tooltip** — move your mouse cursor over a tab cell to see the codename as a coloured label directly below the tab strip.
 
 From the host CLI, `jackin status <workspace> <instance-id>` shows the full per-agent table including codenames for every running and exited tab in that instance.
 

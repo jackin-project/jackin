@@ -179,6 +179,17 @@ pub async fn preflight(
         }
     }
     if !failures.is_empty() {
+        // Emit a structured JackinError for Docker-daemon failures so the
+        // E001 error block fires at the entry point.
+        if failures.contains(&"docker_daemon") {
+            return Err(crate::error::JackinError::DockerDaemonUnreachable {
+                source: anyhow::anyhow!(
+                    "pre-flight checks failed: {}. Run `jackin doctor` for details.",
+                    failures.join(", ")
+                ),
+            }
+            .into());
+        }
         anyhow::bail!(
             "pre-flight checks failed: {}. Run `jackin doctor` for details.",
             failures.join(", ")
@@ -223,14 +234,25 @@ async fn check_docker_version() -> CheckResult {
             let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
             CheckResult::ok("docker_version", format!("Docker server {version}"))
         }
-        Ok(_) => CheckResult::warn(
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let msg = if stderr.trim().is_empty() {
+                format!(
+                    "Could not read Docker server version (exit {})",
+                    out.status.code().unwrap_or(-1)
+                )
+            } else {
+                format!("Could not read Docker server version: {}", stderr.trim())
+            };
+            CheckResult::warn(
+                "docker_version",
+                msg,
+                "Upgrade Docker to the latest stable release",
+            )
+        }
+        Err(e) => CheckResult::skip(
             "docker_version",
-            "Could not read Docker server version",
-            "Upgrade Docker to the latest stable release",
-        ),
-        Err(_) => CheckResult::skip(
-            "docker_version",
-            "docker CLI not found; skipping version check",
+            format!("docker CLI not found or could not spawn: {e}"),
         ),
     }
 }
@@ -360,7 +382,12 @@ fn check_mise() -> CheckResult {
             let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
             CheckResult::ok("mise", format!("mise {version}"))
         }
-        _ => CheckResult::warn(
+        Ok(_) => CheckResult::warn(
+            "mise",
+            "mise returned a non-zero exit code (installation may be broken)",
+            "Check `mise --version` manually; reinstall if corrupted",
+        ),
+        Err(_) => CheckResult::warn(
             "mise",
             "mise not found in PATH",
             "Run: curl https://mise.run | sh",
@@ -371,12 +398,19 @@ fn check_mise() -> CheckResult {
 fn check_clock_skew() -> CheckResult {
     use std::time::{SystemTime, UNIX_EPOCH};
     // We can only check the local clock against itself; a meaningful skew
-    // check requires an NTP query. For now, verify the system clock is
-    // post-2024 as a sanity check for wildly wrong clocks.
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    // check requires an NTP query. For now, verify the system clock is after
+    // late 2023 (Unix epoch 1,700,000,000 ≈ November 2023) as a sanity
+    // check for wildly wrong clocks.
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_secs(),
+        Err(_) => {
+            return CheckResult::fail(
+                "clock_skew",
+                "System clock is set before the Unix epoch (pre-1970)",
+                "Sync your system clock via NTP",
+            );
+        }
+    };
     if now < 1_700_000_000 {
         CheckResult::fail(
             "clock_skew",

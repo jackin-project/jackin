@@ -280,10 +280,7 @@ pub async fn run_snapshot() -> Result<()> {
         "tabs": tabs,
         "active_tab": active_tab,
     });
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string())
-    );
+    println!("{}", serde_json::to_string_pretty(&payload)?);
     Ok(())
 }
 
@@ -331,29 +328,29 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
     };
 
+    // Determine caller's own codename and annotate matching records.
+    let my_codename = std::env::var("JACKIN_AGENT_CODENAME").unwrap_or_default();
+    let mut records = records;
+    if !my_codename.is_empty() {
+        for r in &mut records {
+            r.is_self = r.codename == my_codename;
+        }
+    }
+
     if format == AgentsFormat::Json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&records).unwrap_or_else(|_| "[]".to_string())
-        );
+        println!("{}", serde_json::to_string_pretty(&records)?);
         return Ok(());
     }
 
-    // Human-readable table. Annotate the caller's own row with "← you".
-    let my_codename = std::env::var("JACKIN_AGENT_CODENAME").unwrap_or_default();
-
     print!("{}", jackin_tui::ansi::BRAND_BANNER);
     println!("agent registry");
-    if !my_codename.is_empty() {
-        let my_record = records.iter().find(|r| r.codename == my_codename);
-        if let Some(r) = my_record {
-            println!(
-                "\nYou are: {} ({} · {})",
-                r.codename,
-                r.agent.as_deref().unwrap_or("shell"),
-                r.provider.as_deref().unwrap_or("—"),
-            );
-        }
+    if let Some(r) = records.iter().find(|r| r.is_self) {
+        println!(
+            "\nYou are: {} ({} · {})",
+            r.codename,
+            r.agent.as_deref().unwrap_or("shell"),
+            r.provider.as_deref().unwrap_or("—"),
+        );
     }
 
     // Split active first, then exited — within each group sort by started_at.
@@ -370,11 +367,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     println!("  {}", "─".repeat(83));
 
     for r in active.iter().chain(exited.iter()) {
-        let you = if r.codename == my_codename {
-            "  ← you"
-        } else {
-            ""
-        };
+        let you = if r.is_self { "  ← you" } else { "" };
         println!(
             "  {:<12} {:<10} {:<14} {:<20} {:<20} {}{}",
             r.codename,

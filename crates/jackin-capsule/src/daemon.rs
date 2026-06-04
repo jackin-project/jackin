@@ -190,8 +190,8 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
-    /// Codenames currently assigned to open tabs. Keyed by codename string.
-    /// A codename in `live_codenames` is NOT in `retired_codenames`.
+    /// Codenames currently assigned to open tabs.
+    /// A codename in `codename_live` is NOT in `codename_retired`.
     codename_live: HashSet<String>,
     /// All codenames ever assigned in this container lifetime. Never shrinks.
     /// A codename that moves from `live` to here on tab close is never
@@ -1665,6 +1665,8 @@ impl Multiplexer {
                 } else {
                     "active".to_string()
                 },
+                // is_self is determined client-side from JACKIN_AGENT_CODENAME.
+                is_self: false,
             })
             .collect()
     }
@@ -4856,11 +4858,11 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     }
 }
 
-/// Render a small tooltip box below the hovered tab cell.
+/// Render the codename label below the hovered tab cell.
 ///
-/// Positioned at screen row 2 (1-indexed), left-aligned with `col_start`.
-/// Uses a single-line Unicode border, ~30 chars wide.
-/// Painted with ANSI absolute cursor positioning; caller wraps in ESC-7/ESC-8.
+/// Painted at row 3 (1-indexed), left-aligned with `col_start` — one blank row
+/// below the tab strip. Emits a coloured pill (dark bg + phosphor green text);
+/// must be called inside an ESC-7/ESC-8 save-restore block.
 fn render_tab_tooltip(codename: &str, col_start: u16) -> Vec<u8> {
     // Codename label: dark bg (TAB_BG_INACTIVE 30,30,30) + phosphor green text + bold.
     // Reads as a contextual label in jackin's color language without duplicating the
