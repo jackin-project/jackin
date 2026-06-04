@@ -487,20 +487,14 @@ impl RoleState {
             }
         }
 
+        // Collapse 5-arm model lookup to manifest.agent_model(agent) (Phase 2).
+        let model = manifest.agent_model(agent).map(str::to_owned);
         let agent_runtime = match agent {
-            jackin_core::agent::Agent::Claude => AgentRuntimeState::Claude {
-                model: manifest.claude.as_ref().and_then(|cfg| cfg.model.clone()),
-            },
-            jackin_core::agent::Agent::Codex => AgentRuntimeState::Codex {
-                model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
-            },
+            jackin_core::agent::Agent::Claude => AgentRuntimeState::Claude { model },
+            jackin_core::agent::Agent::Codex => AgentRuntimeState::Codex { model },
             jackin_core::agent::Agent::Amp => AgentRuntimeState::Amp,
-            jackin_core::agent::Agent::Kimi => AgentRuntimeState::Kimi {
-                model: manifest.kimi.as_ref().and_then(|cfg| cfg.model.clone()),
-            },
-            jackin_core::agent::Agent::Opencode => AgentRuntimeState::Opencode {
-                model: manifest.opencode.as_ref().and_then(|cfg| cfg.model.clone()),
-            },
+            jackin_core::agent::Agent::Kimi => AgentRuntimeState::Kimi { model },
+            jackin_core::agent::Agent::Opencode => AgentRuntimeState::Opencode { model },
         };
 
         Ok((
