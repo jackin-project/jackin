@@ -33,6 +33,15 @@ impl SelectListState {
         }
     }
 
+    /// Set an initial filter string. Recomputes the visible-item list immediately.
+    /// Useful for lookbook stories showing filtered-empty or partially-filtered states.
+    #[must_use]
+    pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
+        self.filter = filter.into();
+        self.recompute_filtered();
+        self
+    }
+
     fn recompute_filtered(&mut self) {
         let needle = self.filter.to_ascii_lowercase();
         self.filtered = self

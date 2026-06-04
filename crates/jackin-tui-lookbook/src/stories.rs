@@ -294,6 +294,15 @@ pub fn stories() -> Vec<Story> {
             8,
             story_scrollable_panel_scrolled,
         ),
+        Story::new(
+            "select-list/filtered-empty",
+            "Select list filtered-empty",
+            "SelectList",
+            "Select list with a non-matching filter showing the 'no matches' placeholder.",
+            48,
+            8,
+            story_select_list_filtered_empty,
+        ),
     ]
 }
 
@@ -579,6 +588,17 @@ fn story_save_discard_focus_discard(frame: &mut Frame<'_>, area: Rect) {
     let mut state = SaveDiscardState::new("Discard all uncommitted changes?");
     state.focus = SaveDiscardFocus::Discard;
     render_save_discard_dialog(frame, area, &state);
+}
+
+fn story_select_list_filtered_empty(frame: &mut Frame<'_>, area: Rect) {
+    // Filter "xyz" matches none of the items — shows the "no matches" placeholder.
+    let state = SelectListState::new(vec![
+        "the-architect".into(),
+        "agent-smith".into(),
+        "neo".into(),
+    ])
+    .with_filter("xyz");
+    render_select_list(frame, area, &state, "Select Role", &[]);
 }
 
 fn story_scrollable_panel_scrolled(frame: &mut Frame<'_>, area: Rect) {

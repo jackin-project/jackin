@@ -2942,3 +2942,20 @@ fn apply_action_pane_button_motion_updates_selection() {
         "selection repaint frame should be emitted"
     );
 }
+
+#[test]
+fn split_close_frame_contains_screen_erase() {
+    // Regression for Defect 29: pane/tab close must produce a full repaint
+    // with \x1b[2J so stale cells from the removed pane are cleared.
+    // compose_full_frame(SplitClose) is the path triggered after close_focused_pane/tab.
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    let _ = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+
+    let frame = mux.compose_full_frame(FullRedrawReason::SplitClose);
+    assert!(!frame.is_empty(), "SplitClose must produce a repaint frame");
+    // \x1b[2J is the screen-erase sequence required by the layout-change path.
+    assert!(
+        frame.windows(4).any(|w| w == b"\x1b[2J"),
+        "SplitClose frame must include \\x1b[2J screen erase to flush stale cells"
+    );
+}

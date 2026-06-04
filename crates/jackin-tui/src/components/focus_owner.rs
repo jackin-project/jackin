@@ -56,4 +56,3 @@ impl<Tab: Copy> FocusOwner<Tab> {
         matches!(self, Self::Content(ref owned) if tab == owned)
     }
 }
-
