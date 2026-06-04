@@ -11,6 +11,7 @@ pub mod focus_owner;
 pub mod hint_bar;
 pub mod hover_tracker;
 pub mod modal_backdrop;
+pub mod modal_lifecycle;
 pub mod panel;
 pub mod save_discard_dialog;
 pub mod scrollable_panel;
@@ -42,6 +43,7 @@ pub use hint_bar::{
 };
 pub use hover_tracker::HoverTracker;
 pub use modal_backdrop::ModalBackdrop;
+pub use modal_lifecycle::{ModalClickResult, classify_click, render_backdrop};
 pub use panel::{
     FocusPalette, Panel, PanelFocus, modal_block, modal_block_inactive, panel_body_area,
     unfocused_block,
