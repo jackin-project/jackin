@@ -593,7 +593,7 @@ The program is done when:
 - [ ] **Lookbook audit:** every shared component + state variant has a story; SVGs regenerated and `--check` clean.
 - [ ] **Capsule render/lifecycle audit:** resize, tab/pane close, filter reflow, and exit never garble, panic, or leave stale cells; panic hook captures any crash; re-attach after exit works.
 - [ ] **Styling audit:** no inline color literals outside `theme.rs` (31); every list shows an empty state (32); hint bars are exhaustive/deduped/focus-scoped (33); scrollbar drag+wheel work on every surface (34); the host console resizes cleanly without garble or flicker (35).
-- [ ] `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, full test suite, and the docs gate are all green.
+- [~] `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, full test suite, and the docs gate are all green. fmt ✓, clippy (lib) ✓, 2043 tests ✓, docs gate ✓. Workspace-wide clippy blocked by pre-existing capsule compile issues in non-lib targets (binaries).
 
 ---
 
