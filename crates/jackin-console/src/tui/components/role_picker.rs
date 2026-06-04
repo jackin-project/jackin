@@ -150,10 +150,19 @@ pub fn render<R: RoleChoice>(frame: &mut Frame, area: Rect, state: &RolePickerSt
 
     render_filter_input(frame, rows[0], &state.filter);
 
-    // List body. When the filter narrows the visible set to nothing,
-    // render no rows — the blank space below the filter row IS the
-    // empty state. No `(no roles match)` placeholder per the canonical
-    // list-modal layout.
+    // List body. When the filter narrows the visible set to nothing, show
+    // a dim centered placeholder so the operator knows the list is empty,
+    // not broken.
+    if state.filtered.is_empty() {
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
+                ratatui::text::Span::styled("no matches", jackin_tui::theme::DIM),
+            ))
+            .alignment(ratatui::layout::Alignment::Center),
+            rows[2],
+        );
+        return;
+    }
     let lines: Vec<Line> = state
         .filtered
         .iter()
