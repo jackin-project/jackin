@@ -1508,6 +1508,9 @@ impl Multiplexer {
         self.token_monitor.deregister_session(session_id);
         self.pane_body_caches.remove(&session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
+        let _ = self
+            .state_broadcast_tx
+            .send(jackin_protocol::control::ServerMsg::SessionExited { session_id });
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
@@ -1859,14 +1862,35 @@ impl Multiplexer {
         let _ = self.state_broadcast_tx.send(
             jackin_protocol::control::ServerMsg::AgentStateChanged {
                 session_id: id,
+                raw_state: None,
                 effective: "unknown".to_string(),
                 seen: true,
                 source: "spawn".to_string(),
+                confidence: None,
+                detected_agent: None,
+                foreground_pgid: None,
+                visible_blocker: false,
+                visible_idle: false,
+                visible_working: false,
+                process_exited: false,
+                stale_report: false,
+                seq: None,
+                ts_ns: None,
                 revision: 0,
+                last_seen_revision: None,
                 reason: Some("spawned".to_string()),
             }
         );
-        if let Some(ref agent) = self.sessions[&id].agent {
+        let session_agent = self.sessions[&id].agent.clone();
+        let session_label = self.sessions[&id].label.clone();
+        let _ = self.state_broadcast_tx.send(
+            jackin_protocol::control::ServerMsg::SessionSpawned {
+                session_id: id,
+                agent: session_agent.clone(),
+                label: session_label,
+            }
+        );
+        if let Some(ref agent) = session_agent {
             self.token_monitor.register_session(id, agent);
         }
         if self.tabs.is_empty() {
@@ -1966,14 +1990,35 @@ impl Multiplexer {
         let _ = self.state_broadcast_tx.send(
             jackin_protocol::control::ServerMsg::AgentStateChanged {
                 session_id: new_id,
+                raw_state: None,
                 effective: "unknown".to_string(),
                 seen: true,
                 source: "spawn".to_string(),
+                confidence: None,
+                detected_agent: None,
+                foreground_pgid: None,
+                visible_blocker: false,
+                visible_idle: false,
+                visible_working: false,
+                process_exited: false,
+                stale_report: false,
+                seq: None,
+                ts_ns: None,
                 revision: 0,
+                last_seen_revision: None,
                 reason: Some("spawned".to_string()),
             }
         );
-        if let Some(ref agent) = self.sessions[&new_id].agent {
+        let new_session_agent = self.sessions[&new_id].agent.clone();
+        let new_session_label = self.sessions[&new_id].label.clone();
+        let _ = self.state_broadcast_tx.send(
+            jackin_protocol::control::ServerMsg::SessionSpawned {
+                session_id: new_id,
+                agent: new_session_agent.clone(),
+                label: new_session_label,
+            }
+        );
+        if let Some(ref agent) = new_session_agent {
             self.token_monitor.register_session(new_id, agent);
         }
         let tab = &mut self.tabs[self.active_tab];
@@ -3347,10 +3392,22 @@ impl Multiplexer {
                     let _ = self.state_broadcast_tx.send(
                         jackin_protocol::control::ServerMsg::AgentStateChanged {
                             session_id: id,
+                            raw_state: None,
                             effective: new_state.label().to_string(),
                             seen: session.status.seen,
                             source: "screen-detector".to_string(),
+                            confidence: None,
+                            detected_agent: None,
+                            foreground_pgid: None,
+                            visible_blocker: false,
+                            visible_idle: false,
+                            visible_working: false,
+                            process_exited: false,
+                            stale_report: false,
+                            seq: None,
+                            ts_ns: None,
                             revision: session.status.revision,
+                            last_seen_revision: None,
                             reason: None,
                         }
                     );
@@ -3377,10 +3434,22 @@ impl Multiplexer {
                         let _ = self.state_broadcast_tx.send(
                             jackin_protocol::control::ServerMsg::AgentStateChanged {
                                 session_id: id,
+                                raw_state: None,
                                 effective: new_state.label().to_string(),
                                 seen: session.status.seen,
                                 source: "screen-detector".to_string(),
+                                confidence: None,
+                                detected_agent: None,
+                                foreground_pgid: None,
+                                visible_blocker: false,
+                                visible_idle: false,
+                                visible_working: false,
+                                process_exited: false,
+                                stale_report: false,
+                                seq: None,
+                                ts_ns: None,
                                 revision: session.status.revision,
+                                last_seen_revision: None,
                                 reason: None,
                             }
                         );
@@ -3437,6 +3506,40 @@ impl Multiplexer {
                 session.stuck_since = None;
             }
         }
+        // Emit workspace roll-up event after processing all sessions.
+        let blocked_count = self
+            .sessions
+            .values()
+            .filter(|s| s.state() == crate::protocol::control::AgentState::Blocked)
+            .count() as u32;
+        let done_count = self
+            .sessions
+            .values()
+            .filter(|s| s.state() == crate::protocol::control::AgentState::Done)
+            .count() as u32;
+        let working_count = self
+            .sessions
+            .values()
+            .filter(|s| s.state() == crate::protocol::control::AgentState::Working)
+            .count() as u32;
+        let _ = self.state_broadcast_tx.send(
+            jackin_protocol::control::ServerMsg::WorkspaceStatusChanged {
+                effective: if blocked_count > 0 {
+                    "blocked".to_string()
+                } else if done_count > 0 {
+                    "done".to_string()
+                } else if working_count > 0 {
+                    "working".to_string()
+                } else {
+                    "idle".to_string()
+                },
+                session_count: self.sessions.len() as u32,
+                blocked_count,
+                done_count,
+                working_count,
+                ts_ns: 0,
+            },
+        );
     }
 
     fn snapshot_stuck_sessions(&self) -> std::collections::HashSet<u64> {
@@ -3720,10 +3823,22 @@ impl Multiplexer {
                                 let _ = self.state_broadcast_tx.send(
                                     jackin_protocol::control::ServerMsg::AgentStateChanged {
                                         session_id,
+                                        raw_state: None,
                                         effective: new_state.label().to_string(),
                                         seen: session.status.seen,
                                         source: "hook".to_string(),
+                                        confidence: None,
+                                        detected_agent: None,
+                                        foreground_pgid: None,
+                                        visible_blocker: false,
+                                        visible_idle: false,
+                                        visible_working: false,
+                                        process_exited: false,
+                                        stale_report: false,
+                                        seq: None,
+                                        ts_ns: None,
                                         revision: session.status.revision,
+                                        last_seen_revision: None,
                                         reason: None,
                                     }
                                 );
@@ -4332,6 +4447,30 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             totals.input_tokens,
                             totals.output_tokens,
                             totals.cost_usd,
+                        );
+                        let agent = mux
+                            .sessions
+                            .get(session_id)
+                            .and_then(|s| s.agent.clone())
+                            .unwrap_or_default();
+                        let model = totals.model.clone();
+                        let input_tokens = totals.input_tokens;
+                        let output_tokens = totals.output_tokens;
+                        let cache_read_tokens = totals.cache_read_tokens;
+                        let cache_write_tokens = totals.cache_write_tokens;
+                        let cost_usd = totals.cost_usd;
+                        let _ = mux.state_broadcast_tx.send(
+                            jackin_protocol::control::ServerMsg::TokenUsageChanged {
+                                session_id: *session_id,
+                                agent,
+                                model,
+                                input_tokens,
+                                output_tokens,
+                                cache_read_tokens,
+                                cache_write_tokens,
+                                cost_usd,
+                                ts_ns: 0,
+                            },
                         );
                     }
                 }

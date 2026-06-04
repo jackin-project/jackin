@@ -289,6 +289,7 @@ pub async fn handle_control_request(
         ClientMsg::ReportAgentState { .. }
             | ClientMsg::HeartbeatAgentAuthority { .. }
             | ClientMsg::ClearAgentAuthority { .. }
+            | ClientMsg::ReportChildAgentState { .. }
     ) {
         let _ = control_msg_tx.send(msg);
         return;

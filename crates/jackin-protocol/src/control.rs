@@ -40,6 +40,13 @@ pub enum ClientMsg {
         session_id: u64,
         source_id: String,
     },
+    /// Runtime bridge reports descendant/subagent lifecycle.
+    ReportChildAgentState {
+        parent_session_id: u64,
+        child_session_id: u64,
+        raw_state: String,
+        seq: u64,
+    },
     /// Subscribe to agent state change events. After this message the
     /// connection becomes a persistent streaming channel.
     EventsSubscribe {
@@ -88,14 +95,83 @@ pub enum ServerMsg {
     /// Pushed to subscribed clients on every effective-status change.
     AgentStateChanged {
         session_id: u64,
+        /// Raw detector state: "working", "blocked", "idle", "unknown"
+        #[serde(skip_serializing_if = "Option::is_none")]
+        raw_state: Option<String>,
         /// Effective status: "working", "blocked", "done", "idle", "unknown"
         effective: String,
         seen: bool,
         /// Authority source description
         source: String,
+        /// Confidence tier: "authoritative", "strong", "weak", "unknown"
+        #[serde(skip_serializing_if = "Option::is_none")]
+        confidence: Option<String>,
+        /// Detected agent slug, if identified
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detected_agent: Option<String>,
+        /// Foreground process group ID
+        #[serde(skip_serializing_if = "Option::is_none")]
+        foreground_pgid: Option<u32>,
+        /// Screen detector saw an explicit approval/input prompt
+        #[serde(default)]
+        visible_blocker: bool,
+        /// Screen detector saw an idle prompt
+        #[serde(default)]
+        visible_idle: bool,
+        /// Screen detector saw active working chrome
+        #[serde(default)]
+        visible_working: bool,
+        /// Child process has exited
+        #[serde(default)]
+        process_exited: bool,
+        /// Hook report was found stale and cleared
+        #[serde(default)]
+        stale_report: bool,
+        /// Monotonic sequence number (nanosecond timestamp)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        seq: Option<u64>,
+        /// Nanoseconds since UNIX epoch when the event was emitted
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ts_ns: Option<u64>,
         revision: u64,
+        /// Last revision seen by the operator
+        #[serde(skip_serializing_if = "Option::is_none")]
+        last_seen_revision: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+    },
+    /// A new session has been created.
+    SessionSpawned {
+        session_id: u64,
+        agent: Option<String>,
+        label: String,
+    },
+    /// A session has exited.
+    SessionExited {
+        session_id: u64,
+    },
+    /// Token totals for a session have been updated.
+    TokenUsageChanged {
+        session_id: u64,
+        agent: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_read_tokens: u64,
+        cache_write_tokens: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cost_usd: Option<f64>,
+        ts_ns: u64,
+    },
+    /// Workspace-level roll-up status changed.
+    WorkspaceStatusChanged {
+        effective: String,
+        session_count: u32,
+        blocked_count: u32,
+        done_count: u32,
+        working_count: u32,
+        ts_ns: u64,
     },
     /// Response to TokenGetSession.
     TokenSessionResult {

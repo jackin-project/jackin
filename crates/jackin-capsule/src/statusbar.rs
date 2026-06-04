@@ -26,6 +26,9 @@ use jackin_tui::{
     lay_out_tabs,
 };
 
+const AMBER_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::AMBER);
+const PHOSPHOR_DARK_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_DARK);
+
 use crate::layout::Tab;
 
 /// Column width in terminal cells for a label, measured with
@@ -370,12 +373,12 @@ impl StatusBar {
                 buf.extend_from_slice(restore_fg.as_bytes());
             }
             TabGlyph::Working => {
-                buf.extend_from_slice(b"\x1b[38;2;0;80;18m"); // #005012 PHOSPHOR_DARK
+                buf.extend_from_slice(PHOSPHOR_DARK_FG.as_bytes());
                 buf.extend_from_slice("◌".as_bytes());
                 buf.extend_from_slice(restore_fg.as_bytes());
             }
             TabGlyph::Stuck => {
-                buf.extend_from_slice(b"\x1b[38;2;255;170;0m"); // #ffaa00 AMBER
+                buf.extend_from_slice(AMBER_FG.as_bytes());
                 buf.push(b'!');
                 buf.extend_from_slice(restore_fg.as_bytes());
             }
@@ -416,7 +419,7 @@ impl StatusBar {
         let color: &[u8] = if pct < 10.0 {
             b"\x1b[38;2;255;68;85m"
         } else if pct < 20.0 {
-            b"\x1b[38;2;255;170;0m"
+            AMBER_FG.as_bytes()
         } else {
             b"\x1b[38;2;0;255;65m\x1b[2m"
         };
