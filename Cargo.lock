@@ -1991,7 +1991,6 @@ name = "jackin-term"
 version = "0.6.0-dev"
 dependencies = [
  "compact_str",
- "criterion",
  "unicode-width",
  "vt100",
  "vte",

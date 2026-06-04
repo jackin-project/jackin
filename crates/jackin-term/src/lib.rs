@@ -5,8 +5,12 @@
 //! ## Pipeline
 //!
 //! ```text
-//! vte (depend) → DamageGrid (build) → PassthroughEvents (build) → [WireDiff emit]
+//! vte (depend) → DamageGrid (build) → GridSnapshot (dump) → Ratatui PaneBodyWidget (emit)
 //! ```
+//!
+//! jackin-term owns the per-pane terminal *model*; the capsule paints each
+//! `GridSnapshot` into a Ratatui buffer and lets the Ratatui `SocketBackend`
+//! diff and emit the bytes. There is no jackin-term ANSI emitter.
 //!
 //! ## Status
 //!
@@ -23,11 +27,9 @@ pub mod damage;
 pub mod grid;
 pub mod passthrough;
 pub mod snapshot;
-pub mod wire;
 
 pub use cell::{Attrs, Cell, Color};
 pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
 pub use snapshot::{GridSnapshot, SnapCell};
-pub use wire::WireEmitter;

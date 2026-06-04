@@ -5,10 +5,10 @@ title: "Terminal Emulation Crate (jackin-term)"
 **Status**: **Partially implemented** — Phases 0–5 complete; Ghostty `PageList` arena deferred (pending Experiments 1–4 benchmark confirmation).
 
 - **Phase 0 (baseline):** Complete — `vt100` coupling surface frozen in this roadmap item; fork consciously owned; TODO.md updated.
-- **Phase 1 (differential harness):** Complete — `crates/jackin-term/tests/differential.rs` with 41 tests (DamageGrid vs `vt100` oracle) + 12 wire-emit round-trip tests; `cargo-fuzz` target; corpus directory. Harness found and fixed 3 DamageGrid bugs (ESC M/RI, ICH/`@`, DECSTBM cursor homing).
-- **Phase 2 (`DamageGrid` v0):** Complete — `vte::Perform` grid, `dirty_spans()`, typed `PassthroughEvents`, `CompactString` cells, `WireEmitter`, `GridSnapshot::dump()`.
+- **Phase 1 (differential harness):** Complete — `crates/jackin-term/tests/differential.rs` (DamageGrid vs `vt100` oracle); `cargo-fuzz` target; corpus directory. Harness found and fixed 3 DamageGrid bugs (ESC M/RI, ICH/`@`, DECSTBM cursor homing).
+- **Phase 2 (`DamageGrid` v0):** Complete — `vte::Perform` grid, `dirty_spans()`, typed `PassthroughEvents`, `CompactString` cells, `GridSnapshot::dump()`. The capsule renders each `GridSnapshot` through `PaneBodyWidget` (a Ratatui widget) into the multiplexer's frame buffer; `SocketBackend` diffs the buffer and emits the minimal ANSI byte sequence over the attach socket.
 - **Phase 3 (capsule feature flag):** Complete — `jackin-term` feature flag in `jackin-capsule`; `DamageGrid` used for live pane rendering when feature is on.
-- **Phase 4 (optimize):** Complete — `CompactString` inline cells shipped (≤24-byte graphemes = zero heap alloc per cell); criterion benchmarks in place; Ghostty `PageList` arena deferred pending Experiments 1–4 showing current `Vec<Vec<Cell>>` model is the bottleneck.
+- **Phase 4 (optimize):** Complete — `CompactString` inline cells shipped (≤24-byte graphemes = zero heap alloc per cell); Ghostty `PageList` arena deferred pending Experiments 1–4 showing current `Vec<Vec<Cell>>` model is the bottleneck.
 - **Phase 5 (delete old path):** Complete — `vt100` removed from all production capsule paths (`session.rs`, `tui/render.rs`, mode accessors, compositor, PaneBodyWidget); `DamageGrid` is unconditional; `vt100` retained only as dev-dependency differential oracle; vt100-backed integration tests (`osc_passthrough.rs`, `vt_round_trip.rs`) removed.
 
 The executable plan lives in the [post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 45), which is the primary implementation tracking surface. The crate README (`crates/jackin-term/README.md`) is the self-contained engineering record.
@@ -231,10 +231,11 @@ PassthroughEvents   ← typed stream: TitleChanged, IconName, ClipboardWrite,
    │                  KittyPush(n)/KittyPop, FocusMode(bool), ModifyOtherKeys,
    │                  CwdChanged (OSC 7), PassthroughCsi, ScrollbackCleared.
    ▼
-WireDiff            ← present stage: minimal escape byte sequence for the dirty
-                      spans only, into a reused output buffer (no per-frame
-                      String), optionally wrapped in DEC ?2026 synchronized-
-                      output markers and frame-coalesced per refresh.
+GridSnapshot        ← present stage: DamageGrid::dump() produces an owned screen
+                      snapshot, rendered by the capsule's PaneBodyWidget (a
+                      Ratatui widget) into the multiplexer frame buffer.
+                      SocketBackend then diffs the Ratatui buffer and emits the
+                      minimal ANSI byte sequence over the attach socket.
 ```
 
 Cross-cutting: a multi-session arena so N sessions share slab row storage and one scrollback ring.
@@ -243,7 +244,7 @@ Cross-cutting: a multi-session arena so N sessions share slab row storage and on
 
 - **Parse:** `vte` consumes borrowed input slices; no copy into the parser.
 - **Model:** cells store style as packed bitflags + indexed color; grapheme content references interned storage rather than a per-cell heap `String`.
-- **Present:** `WireDiff` writes into a daemon-owned reusable `Vec<u8>` that is cleared, not reallocated, each frame.
+- **Present:** the capsule renders the `GridSnapshot` through `PaneBodyWidget` into the Ratatui buffer; `SocketBackend` diffs the buffer and writes the minimal escape bytes over the attach socket.
 
 ### Ideas worth borrowing from Ghostty (MIT-licensed)
 
@@ -266,7 +267,7 @@ This is the heart of the proposal. `jackin-term` is not "yet another terminal em
 | Source | The one idea worth taking | What it buys jackin' | How we take it |
 | --- | --- | --- | --- |
 | **`vte`** (Alacritty) | The canonical Williams-state-machine parser with the `Perform` trait. | A fast, correct, UTF-8-aware byte→event front end we never have to write or maintain. | **Depend** (the one external Rust crate at the core). |
-| **`vt100`** (doy) | The **re-emit model**: `contents_diff` / `contents_formatted` serialize a screen back to the *minimal* escape sequence; plus the `Callbacks` interception shape. | The only off-the-shelf implementation of our actual hot stage — proof the diff-to-escape approach is right, and a baseline to beat. | **Re-implement and evolve** into `WireDiff` (damage-driven, not full-screen compare) + typed events. |
+| **`vt100`** (doy) | The **re-emit model**: `contents_diff` / `contents_formatted` serialize a screen back to the *minimal* escape sequence; plus the `Callbacks` interception shape. | The only off-the-shelf implementation of our actual hot stage — proof the diff-to-escape approach is right. | **Reference** for the diff-to-escape idea + typed events; the realized emit is Ratatui's `SocketBackend` buffer diff over a `GridSnapshot` rendered by `PaneBodyWidget`. |
 | **Zellij** | The **`OutputBuffer`**: damage-track the grid and emit ANSI only for cells/attributes that changed since the last character. | Independent validation that a pure-Rust `vte` + own-grid + damage-emit multiplexer works and is fast — our exact architecture, shipping in production. | **Reference** (not published; we re-implement the pattern and benchmark against it). |
 | **Alacritty (`alacritty_terminal`)** | The **ring-buffer `Storage` grid**: O(1) scroll, packed cache-friendly `Cell`, line-level damage. | Cheap scroll and mutation without per-row copying. | **Re-implement the idea** (superseded by Ghostty's pages where they go further). |
 | **Ghostty** | The **`PageList` memory model**: pooled arena pages, `RefCountedSet` style interning, grapheme side-map, offset addressing, serial+pin invalidation. | Best-in-field memory economy: near-zero per-cell allocation, cheap huge scrollback, a relocatable store that makes the multi-session arena real. | **Re-implement in Rust** (MIT, with attribution). |
@@ -289,7 +290,7 @@ Now that the decision is **build**, every project is classified by **how** we ta
 | **`vte`** (Alacritty) | Rust | **DEPEND** | The Williams-state-machine parser + `Perform` trait. The *only* core dependency. | Byte-level VT correctness is a solved, canonical, multi-maintained problem. Rewriting it adds bug surface with zero quality upside and violates the "don't hand-roll parsers" rule. Stability *comes from* depending here. |
 | **Ghostty** (`libghostty`) | Zig (MIT) | **STORE** | `PageList`: pooled arena pages (doubly-linked, drawn from a pre-heated `MemoryPool`); `RefCountedSet` style/hyperlink interning; grapheme side-map; `OffsetBuf` offset-addressing; serial+pin invalidation. | Best-in-field memory economy: near-zero per-cell allocation, cheap huge scrollback, relocatable pages that make a multi-session arena real and session teardown O(1). This is the answer to our per-cell `String` alloc storm. |
 | **Alacritty** (`alacritty_terminal`) | Rust | **STORE** + **REFERENCE** | The ring-buffer `Storage`/`Grid`: O(1) scroll via row rotation, packed cache-friendly `Cell`, **line-level damage flags**. | A simpler, proven packing if Ghostty's pages are over-engineered for our pane sizes. Also the **reference grid** to differential-test against — it's the closest-correct Rust grid with damage. |
-| **`vt100`** (doy) | Rust | **BORROW** + **REFERENCE** | The **re-emit idea** (`contents_diff`/`contents_formatted`: minimal escape bytes between two states) and the `Callbacks` interception shape. | Proof the diff-to-escape approach is right; the *baseline our `WireDiff` must beat*. We re-implement it **damage-driven** (not full-screen compare) and use stock `vt100` as the **differential oracle** for grid correctness during the parity phase. |
+| **`vt100`** (doy) | Rust | **REFERENCE** | The **re-emit idea** (`contents_diff`/`contents_formatted`: minimal escape bytes between two states) and the `Callbacks` interception shape. | Proof the diff-to-escape approach is right. The realized emit is Ratatui's `SocketBackend` buffer diff over a `GridSnapshot`, not a `jackin-term`-owned emit stage; stock `vt100` stays as the **differential oracle** for grid correctness. |
 | **Zellij** (`OutputBuffer`) | Rust | **BORROW** + **REFERENCE** | The **damage-tracked ANSI emit discipline**: record dirty cells/attrs at mutation, emit ANSI only for what changed since the last character. Aram Drevekenin's [perf write-up](https://poor.dev/blog/performance/) is a field report on this exact stage. | Independent production proof that `vte` + own-grid + damage-emit is fast and correct — *our exact architecture*. The closest prior art; the best reference target for both design and benchmarks. |
 | **libvterm** (LeoNerd) | C | **BORROW** + **REFERENCE** | The **damage-callback discipline** and an exhaustive **VT-coverage checklist** (DEC private modes, mouse encodings, query/report responses, scroll regions). | The correctness spec for "what state and passthrough must be first-class so nothing silently drops." A 15-year-maintained model neovim/emacs-vterm embed — the conformance bar. Never linked (non-Rust). |
 | **`termwiz`** / `wezterm-term` | Rust | **REFERENCE** | The `Surface`/`Change` diff-emit **API ergonomics** and emit completeness. | A "how should a Rust diff-emit API *feel*" reference, and a secondary differential oracle. Not a dependency (`wezterm-term` unpublished; heavy tree). |
@@ -297,7 +298,7 @@ Now that the decision is **build**, every project is classified by **how** we ta
 | **Rio** (`copa`) | Rust | **BORROW (optional)** | SIMD UTF-8 validation with runtime CPU-feature detection. | Parse-throughput headroom *only if* profiling ever shows a parse wall (unlikely — `vte` already handles UTF-8). Held in reserve. |
 | **tmux** | C | **REFERENCE** | Battle-tested grid + redraw heuristics; decades of edge-case handling. | Behavioral oracle for "what does a real multiplexer do here" (resize, alt-screen, scroll regions). Never linked. |
 
-**The concept that emerges, stated plainly:** `jackin-term` is **`vte` (depend) + a Ghostty-memory-model damage grid (store) + Zellij/libvterm damage discipline (borrow) + a `vt100`-idea-but-damage-driven `WireDiff` emit (borrow), validated against `vt100`/Alacritty/`termwiz` as oracles (reference).** It is not "a new terminal emulator" — it is the **one missing reusable piece** (minimal-byte re-emission of a PTY screen to a host terminal, damage-driven, zero-alloc) assembled from the single best answer each project already proved, re-implemented in Rust so the whole pipeline is one coherent, owned, harness-guarded unit. Nobody ships this as a crate; that gap is the crate's reason to exist.
+**The concept that emerges, stated plainly:** `jackin-term` is **`vte` (depend) + a Ghostty-memory-model damage grid (store) + Zellij/libvterm damage discipline (borrow), validated against `vt100`/Alacritty/`termwiz` as oracles (reference).** It produces a `GridSnapshot` per pane; the capsule renders that snapshot through `PaneBodyWidget` (a Ratatui widget) and lets Ratatui's `SocketBackend` do the minimal-byte buffer diff to the host terminal. It is not "a new terminal emulator" — it is the owned, harness-guarded terminal **model** assembled from the single best answer each project already proved, re-implemented in Rust.
 
 ### Prior art for the use case — and why the niche is still open
 
@@ -325,10 +326,10 @@ Typed PassthroughEvents              ← supersede vt100 Callbacks + the capsule
    │                                     OscCapture: title/icon/clipboard/kitty/
    │                                     focus/cwd/csi/scrollback as first-class
    ▼
-WireDiff                             ← present: vt100's minimal-escape idea, but
-   │                                     damage-driven and wire-byte-tuned, into a
-   │                                     reused buffer (zero per-frame alloc),
-   │                                     DEC ?2026 synchronized, frame-coalesced
+GridSnapshot present                 ← DamageGrid::dump() → PaneBodyWidget (Ratatui)
+   │                                     paints cells into the multiplexer buffer;
+   │                                     SocketBackend diffs the buffer and emits the
+   │                                     minimal escape bytes over the attach socket
    ▼
 + avt-style dump()                   ← snapshot/record for the observation item
 + multi-session arena                ← Ghostty offset addressing → cheap N panes

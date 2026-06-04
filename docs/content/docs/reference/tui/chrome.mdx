@@ -32,7 +32,7 @@ There is exactly **one** container info dialog across the entire jackin' experie
 - Non-debug: container ID, role, agent, workdir, version rows only.
 - Debug mode: all non-debug rows plus run ID and every relevant diagnostics path. Debug mode does NOT produce a separate dialog — it enriches the same dialog with more rows. There is no "debug info dialog" and "container info dialog" — only one dialog with a variable field set.
 
-**Implementation rule:** The dialog must be a single shared component instantiated by every surface. The host console version lives in `jackin-tui` as a proper Ratatui widget (`ContainerInfoState` + `render_container_info`). The capsule version mirrors the identical layout in its own raw-ANSI renderer (same as the confirm dialog pattern — different binary, same visual contract). Any deviation in layout, padding, or border color between surfaces is a design violation.
+**Implementation rule:** The dialog must be a single shared component instantiated by every surface. The host console version lives in `jackin-tui` as a proper Ratatui widget (`ContainerInfoState` + `render_container_info`). The capsule version is also a Ratatui widget painted into the multiplexer's frame buffer, with the identical layout (same as the confirm dialog pattern — different binary, same visual contract). Any deviation in layout, padding, or border color between surfaces is a design violation.
 
 **Trigger:** A clickable chip in the status bar or status footer opens this dialog. The chip is always clickable — in non-debug mode it shows the instance/container ID chip; in debug mode it shows the combined `run_id:instance_id` chip. One click → one dialog.
 

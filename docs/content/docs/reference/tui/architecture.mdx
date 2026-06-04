@@ -15,7 +15,7 @@ Each layer has a strict scope:
 | Message | `tui/message.rs` | Semantic TUI events and results: key/mouse intent, resize, tick, background completion, dialog outcome, screen transition |
 | Update | `tui/update.rs` | Deterministic state transitions: apply `Message` to the model and return typed effects |
 | Effect / Subscription | `tui/effect.rs`, `tui/subscriptions.rs` | Typed descriptions of non-TUI work and long-lived event sources; they describe work but do not execute external commands |
-| View | `tui/view.rs`, screen `view.rs` | Pure Ratatui/raw-ANSI frame composition from the current model |
+| View | `tui/view.rs`, screen `view.rs` | Pure Ratatui frame composition from the current model; the only residual raw-ANSI is a small tail appended after the frame (cursor positioning/visibility, the OSC outer-terminal title, and the bottom chrome) |
 | Terminal / run loop | `tui/run.rs`, `tui/terminal.rs` | Terminal lifecycle, backend adapter, event-loop wiring, and routing of completed effects back into messages |
 | Components | `tui/components/` | Surface-local visual components not reusable enough for `jackin-tui` |
 
@@ -135,7 +135,7 @@ src/
 - Update functions that mutate only TUI state and return typed effects
 - Effect and subscription type definitions
 - Event-loop wiring and terminal lifecycle/backend adapters
-- Ratatui widget implementations and raw-ANSI rendering where still required
+- Ratatui widget implementations; the only residual raw-ANSI is the small post-frame tail (cursor, OSC title, bottom chrome)
 - Frame composition, geometry helpers, hitboxes, focus-visible rendering, hint bars, and local lookbook stories
 
 **What does NOT belong in `src/tui/`:**
@@ -174,18 +174,20 @@ No renderer, component, or update function calls Docker, git, `op`, `gh`, the fi
 
 ## Capsule terminal model pipeline (jackin-term)
 
-The `jackin-capsule` render path has a two-layer model:
+The `jackin-capsule` render is **all Ratatui**. jackin-term is the per-pane terminal **model**, not a separate render pipeline:
 
-1. **Host Ratatui layer** — the multiplexer chrome (status bar, pane borders, dialog overlays, hint row) is composed by `view.rs` using `ratatui`. This is the same Elm Architecture layer as every other jackin' TUI surface.
+1. **Ratatui composition.** The whole multiplexer frame — status bar (`StatusBarWidget`), pane borders and bodies (`PaneBodyWidget`), dialogs, selection highlight, and scrollbar — is painted by `view.rs` into one `ratatui` `Buffer`. This is the same Elm Architecture layer as every other jackin' TUI surface.
 
-2. **Pane content layer (ANSI / `jackin-term`)** — each pane's body is raw terminal output from the agent's PTY. The capsule maintains a terminal model per pane that parses the agent's escape bytes and produces a cell grid for re-emission. This layer is **not** Ratatui — it is the `vte → DamageGrid → PassthroughEvents → WireDiff` pipeline in `crates/jackin-term/`.
+2. **Per-pane terminal model (`jackin-term`).** Each pane's body comes from the agent's PTY. jackin-term parses the agent's escape bytes and maintains a cell grid for that pane — the `vte → DamageGrid → GridSnapshot` model in `crates/jackin-term/`. That model is then *rendered* by `PaneBodyWidget`, a Ratatui `Widget` that paints the `GridSnapshot`'s cells into the same Ratatui buffer as everything else.
+
+The only raw-ANSI is a small tail appended after the Ratatui frame (`take_output()`): cursor positioning/visibility, the OSC outer-terminal title, and the bottom chrome (branch/PR bar, hint row, debug run-id chip). These ride outside the cell buffer by design.
 
 **Terminal model pipeline decisions:**
 
 - **Depend on `vte`, never rebuild the parser.** `vte` (by doy, MIT) is the canonical VT/ANSI parser crate. The capsule feeds raw PTY bytes to a `vte::Parser` which calls `vte::Perform` methods on the `DamageGrid`. No second parser.
 - **Own the grid.** `DamageGrid` (`crates/jackin-term/src/grid.rs`) is a `Vec<Vec<Cell>>` grid owned by jackin-term. It records dirty rows at mutation time (`DirtyTracker`). It is the capsule's sole terminal model: screen cells, alternate screen, scrollback, cursor, mouse/focus/bracketed-paste/kitty-keyboard mode state, and the typed OSC/CSI passthrough stream all live here. The capsule previously used a forked `vt100::Parser`; that dependency has been removed from `jackin-capsule` entirely. The fork survives only as a dev-dependency oracle for jackin-term's own differential test harness.
-- **Own the emit.** `WireEmitter` (`crates/jackin-term/src/wire.rs`) converts a `GridSnapshot` + `DirtySpans` into a minimal ANSI byte sequence — cursor repositioning + SGR run-length compression + erase-to-EOL. This is NOT Ratatui. It runs after the Ratatui chrome compose and writes directly to the socket backend.
-- **Erase-to-EOL after each row is mandatory.** After emitting all cells in a row, the emit path must write `\x1b[K` (EL). This clears any stale cells from a previous wider frame. Omitting it is a correctness violation (Defect 44 class).
+- **Render the model through Ratatui.** `PaneBodyWidget` (`crates/jackin-capsule/src/tui/components/pane.rs`) is a Ratatui `Widget` that paints a `GridSnapshot`'s cells into the Ratatui buffer alongside the rest of the chrome. `SocketBackend` (`crates/jackin-capsule/src/tui/socket_backend.rs`) implements the ratatui `Backend` trait: it diffs the buffer (`Buffer::diff`) and emits the minimal ANSI byte sequence over the attach socket.
+- **Cell-level diffing and clearing is Ratatui's job.** `SocketBackend` serializes only the buffer's per-cell diff, so stale cells from a previous, differently-sized frame are overwritten by the next frame. The capsule's resize path additionally emits a full-screen erase on geometry change (see *Capsule resize* in the chrome reference).
 - **`CompactString` for cell contents.** `Cell::contents` uses `compact_str::CompactString` which stores ≤24 bytes inline with no heap allocation. This covers all ASCII and most Unicode grapheme clusters. The public `contents() -> &str` API is unchanged.
 - **Cutover complete.** `DamageGrid` is unconditional in `jackin-capsule` — there is no feature flag and no `vt100` fallback. `vt100` is no longer a `jackin-capsule` dependency.
 - **Correctness gate: differential harness.** `tests/differential.rs` in `jackin-term` feeds identical byte streams to `DamageGrid` (left) and `vt100::Parser` (right, oracle, a jackin-term dev-dependency) and asserts identical final grids. Any behavior change to `DamageGrid` must keep the harness green.
