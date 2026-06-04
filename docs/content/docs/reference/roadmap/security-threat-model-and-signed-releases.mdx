@@ -326,6 +326,49 @@ Write `docs/content/docs/getting-started/verifying-releases.mdx`. Lands after Ph
 - **PR 3**: Phase 3 (operator verification docs — lands after PR 2 so examples are accurate)
 - **PR 4**: Phase 4 (`sigstore` dep + <RepoFile path="src/capsule_binary.rs" /> changes) — **must land after PR 2**; PR 4 does not add additional CI changes (the capsule manifest signing step is already part of PR 2)
 
+## Implementation checklist
+
+Check off each item as it lands in the PR. All four phases ship in one PR on this branch.
+
+### Phase 1 — Security implementation doc
+
+- [ ] Create `docs/content/docs/reference/security-implementation.mdx` with threat model table, six-function walk, external tools rationale, and YOLO flags for all five agents
+- [ ] Add `"security-implementation"` entry to <RepoFile path="docs/content/docs/reference/meta.json" />
+- [ ] Docs build passes: `bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` from `docs/`
+
+### Phase 2 — CI changes (`release.yml` + `preview.yml`)
+
+- [ ] Add `permissions: { contents: read, id-token: write, attestations: write }` to the `build` job in <RepoFile path=".github/workflows/release.yml" />
+- [ ] Add `permissions: { contents: read, id-token: write, attestations: write }` to the `build-jackin-capsule` job in <RepoFile path=".github/workflows/release.yml" />
+- [ ] Add `cosign syft` to the mise `install_args` in both build jobs in `release.yml`
+- [ ] Add `echo "archive=$archive" >> "$GITHUB_ENV"` at the end of every `Package` step in `release.yml`
+- [ ] Add sign + SBOM + attest steps after each `Package` step in `release.yml` (both build jobs)
+- [ ] Update every `upload-artifact` path in `release.yml` to include `*.bundle` and `*.sbom.json`
+- [ ] Add `id-token: write` to `release` job permissions in `release.yml`
+- [ ] Add cosign install + capsule manifest generation + signing to `release` job in `release.yml` (after "Read platform SHA256s")
+- [ ] Update `gh release create` in `release.yml` to include bundles, SBOMs, and manifest files
+- [ ] Mirror all of the above changes in <RepoFile path=".github/workflows/preview.yml" /> (`build-preview`, `build-jackin-capsule`, and `publish-preview` jobs)
+- [ ] Trigger `gh workflow run --ref chore/security-threat-model-roadmap-design` for both workflows to smoke-test signing (push-only jobs)
+
+### Phase 3 — Operator verification docs
+
+- [ ] Create `docs/content/docs/getting-started/verifying-releases.mdx` with "operators need to do nothing" section and three verification paths (SLSA, cosign, SBOM)
+- [ ] Add `"verifying-releases"` after `"installation"` in <RepoFile path="docs/content/docs/getting-started/meta.json" />
+- [ ] Docs build passes
+
+### Phase 4 — Rust manifest verification
+
+- [ ] Add `sigstore = { version = "0.14", default-features = false, features = ["cosign"] }` to `[dependencies]` in <RepoFile path="Cargo.toml" />
+- [ ] Confirm bundle v0.3 is fully supported in sigstore-rs 0.14 (`SIGSTORE_BUNDLE_V03_MEDIA_TYPE` constant exists — confirmed in research)
+- [ ] Confirm TUF trust root behavior (`SigstoreTrustRoot::new()` — one network call, acceptable in this code path)
+- [ ] Write `async fn fetch_and_verify_manifest(version: &str, base_url: &str, arch: &str) -> Result<String>` in <RepoFile path="src/capsule_binary.rs" />
+  - Concurrent fetch of `capsule-manifest.json` + `capsule-manifest.json.bundle` via `fetch_text(...).await?.into_bytes()`
+  - sigstore-rs bundle verification with identity constraint `^https://github.com/jackin-project/jackin/` and issuer `https://token.actions.githubusercontent.com`
+  - Parse verified manifest, extract SHA for `arch` target
+- [ ] Replace `fetch_remote_sha256(&sha_url)` with `fetch_and_verify_manifest(version, &base_url, arch)` in `download_and_cache`
+- [ ] `cargo nextest run` passes
+- [ ] Update roadmap Rust dep note: no `[workspace.dependencies]` section exists — dep goes directly in `[dependencies]`
+
 ## Non-goals
 
 - Do not claim hostile multi-tenant safety from Docker hardening alone — that is the [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) scope.
