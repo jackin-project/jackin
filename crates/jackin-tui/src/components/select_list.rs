@@ -196,9 +196,15 @@ impl Widget for SelectList<'_> {
         }
 
         if self.state.filtered.is_empty() {
+            // Distinguish "genuinely empty" (no items) from "filtered to nothing".
+            let placeholder = if self.state.items.is_empty() {
+                self.empty_label
+            } else {
+                "no matches"
+            };
             // Dim centered placeholder so operators can distinguish "empty" from "broken".
             Paragraph::new(Line::from(Span::styled(
-                self.empty_label.to_string(),
+                placeholder.to_string(),
                 crate::theme::DIM,
             )))
             .alignment(Alignment::Center)
