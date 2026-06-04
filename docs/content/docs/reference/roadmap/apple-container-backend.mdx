@@ -2,7 +2,7 @@
 title: "Apple Container Backend"
 ---
 
-**Status**: Open — research complete, Phase 0 pending (prerequisite: Docker hardening rootless DinD validation)
+**Status**: Open — Phase 1–4 code landed; Phase 0 empirical validation pending. Run <RepoFile path="scripts/phase0-apple-container.sh" /> on macOS 26 ARM with `apple/container` installed to validate the decision gate.
 
 ## What This Is
 
@@ -218,20 +218,27 @@ apple-container launch name=jackin-<id> image=the-architect inner_docker=rootles
 
 ### Phase 0 — empirical validation (prerequisite gate)
 
-Run on a real macOS 26 ARM machine with apple/container v0.11.0+. This phase is empirical only — no code lands.
+Run on a real macOS 26 ARM machine with apple/container v0.11.0+. This phase is empirical only — no production code lands, but the validation scaffold is in place.
 
-- Apply `JACKIN_CAPSULE_FORCE_DAEMON` patch to capsule (Prerequisite 2 above)
-- Run `container run -it <jackin-role-image> bash` — does the role OCI image boot?
-- Run capsule with `JACKIN_CAPSULE_FORCE_DAEMON=1` — does daemon mode activate? Does SIGTERM propagate? Does exit-code flow back correctly?
-- Run `container exec -it <name> jackin-capsule` — does PTY work? SIGWINCH on resize? Ctrl+C passthrough?
-- Attempt rootless DinD with `--cap-add`:
-  - Does apple/container allow `--cap-add CAP_SYS_ADMIN`?
-  - Run `docker build`, `docker run`, Compose, Testcontainers inside rootless DinD
-- Test workspace bind mount — read/write correctness, read-only enforcement
-- Measure cold start (container launch to capsule ready), warm attach (reconnect)
-- Test DNS stability across macOS sleep/wake cycle
+**Run the validation script:**
 
-**Decision gate**: if rootless DinD passes → proceed to Phase 1. If it fails → fall back to smolvm Phase 0.
+```bash
+./scripts/phase0-apple-container.sh [--role-image <image>]
+```
+
+The script (<RepoFile path="scripts/phase0-apple-container.sh" />) automates all checks, records PASS/FAIL for each, and produces a `scripts/phase0-results.md` decision gate summary. Checks covered:
+
+1. Prerequisites: `container` CLI installed, Apple Silicon ARM64, macOS ≥ 26
+2. `JACKIN_CAPSULE_FORCE_DAEMON=1` — non-PID-1 daemon mode activates correctly
+3. Role OCI image boots inside apple/container VM
+4. `container exec -it` PTY works (SIGWINCH and Ctrl+C require manual verification)
+5. Workspace bind mounts: read, write-back to host, read-only enforcement
+6. `--cap-add CAP_SYS_ADMIN` — **critical gate for rootless DinD**
+7. Rootless DinD (if cap check passed): dockerd starts, `docker build`/Compose/Testcontainers
+8. Cold start latency: container run → capsule socket ready (target: < 5 s)
+9. DNS stability after macOS sleep/wake (manual step)
+
+**Decision gate**: if rootless DinD passes → Phase 2 launch path is unblocked. If it fails → fall back to smolvm Phase 0 (see [smolvm backend research](/reference/roadmap/smolvm-backend-research/)).
 
 ### Phase 1 — backend-neutral instance registry
 
