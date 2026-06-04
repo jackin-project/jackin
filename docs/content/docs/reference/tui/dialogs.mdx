@@ -107,7 +107,7 @@ Concrete obligations:
 
 - **Open**: push the new modal *on top of* the parent — do not overwrite the slot.
 - **Esc / Cancel**: pop one frame. Operator returns to whichever modal was visible immediately before.
-- **Mouse-click outside the box**: pops one frame, matching Esc.
+- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss).
 - **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
 - **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
 
