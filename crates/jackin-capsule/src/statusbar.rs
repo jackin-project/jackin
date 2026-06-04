@@ -577,7 +577,7 @@ mod tests {
         // cell is 10 cols wide; the region is stable regardless of
         // the agent state.
         let mut bar = StatusBar::new();
-        let tab = Tab::new_single("Claude", 1);
+        let tab = Tab::new_single("Claude", 1, "test");
         let tabs = vec![tab];
         let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn active_tab_emits_row1_underline() {
         let mut bar = StatusBar::new();
-        let tabs = vec![Tab::new_single("Claude", 1)];
+        let tabs = vec![Tab::new_single("Claude", 1, "test")];
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &tabs, 0, &[], None, false);
         let s = String::from_utf8_lossy(&buf);
