@@ -398,6 +398,7 @@ impl RoleState {
     ///
     /// `resolvers.sync_source_dirs` returns an optional override source
     /// directory for each agent's auth sync, overriding `host_home`.
+    #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
