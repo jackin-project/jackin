@@ -75,8 +75,8 @@ fn debug_chip_renders_in_amber_to_the_right_of_the_instance_chip() {
         "run id must be right of the instance id: {row:?}"
     );
     assert!(
-        (0..60).any(|x| buffer[(x, 0)].fg == DEBUG_AMBER),
-        "run-id chip must use the debug amber accent"
+        (0..60).any(|x| buffer[(x, 0)].bg == crate::theme::DANGER_RED),
+        "run-id chip must use DANGER_RED background"
     );
 }
 

@@ -6,7 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget};
 
-use crate::theme::{DEBUG_AMBER, LINK_BLUE, WHITE, faded};
+use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusFooterHover {
@@ -97,11 +97,14 @@ impl Widget for StatusFooter<'_> {
             ));
         }
         if let Some(debug) = self.right_debug.filter(|debug| !debug.is_empty()) {
+            // Canonical debug chip: DANGER_RED background, white text — identical to
+            // the console's render_debug_bar so the operator sees the same chip on
+            // every surface. The red background is the "you are in a debug run" signal.
             right_spans.push(Span::styled(
                 format!(" {debug} "),
                 Style::default()
-                    .bg(faded(WHITE, self.alpha))
-                    .fg(faded(DEBUG_AMBER, self.alpha))
+                    .bg(faded(DANGER_RED, self.alpha))
+                    .fg(faded(WHITE, self.alpha))
                     .add_modifier(Modifier::BOLD),
             ));
         }
