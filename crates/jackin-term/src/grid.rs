@@ -191,6 +191,31 @@ impl DamageGrid {
         (self.rows, self.cols)
     }
 
+    /// Return scrollback rows starting at `offset` lines from the live tail.
+    ///
+    /// Used by the capsule to render the scrollback view: when `offset > 0`
+    /// the operator has scrolled up `offset` lines into history. This function
+    /// returns up to `max_rows` rows from the scrollback buffer at that offset.
+    ///
+    /// The rows are returned newest-first (index 0 = closest to the live tail),
+    /// matching how the capsule overlays them above the visible screen.
+    ///
+    /// Returns an empty slice when `offset == 0` (live view) or when the
+    /// scrollback buffer is empty. Clamps `offset` to the actual scrollback length.
+    #[must_use]
+    pub fn scrollback_rows_at_offset(&self, offset: usize, max_rows: usize) -> &[Vec<Cell>] {
+        let len = self.scrollback.len();
+        if offset == 0 || len == 0 || max_rows == 0 {
+            return &[];
+        }
+        // scrollback is oldest-first; we want the `offset` most recent rows.
+        // start = the index of the row that is `offset` lines back from the tail.
+        let clamped = offset.min(len);
+        let start = len.saturating_sub(clamped);
+        let end = (start + max_rows).min(len);
+        &self.scrollback[start..end]
+    }
+
     /// Resize the grid. Marks all rows dirty.
     pub fn set_size(&mut self, rows: u16, cols: u16) {
         self.rows = rows;

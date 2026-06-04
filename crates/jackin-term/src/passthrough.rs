@@ -34,6 +34,55 @@ pub enum PassthroughEvent {
     ScrollbackClear,
 }
 
+impl PassthroughEvent {
+    /// Encode the event as a raw ANSI/OSC byte sequence for forwarding to an
+    /// outer terminal.
+    ///
+    /// This is the encode half of the typed-passthrough model: the capsule
+    /// can convert `PassthroughEvent`s back to bytes and forward them to the
+    /// operator's outer terminal, replacing the raw-byte pass-through used by
+    /// `OscCapture`.
+    ///
+    /// `ScrollbackClear` has no outer-terminal representation (it is an
+    /// internal capsule instruction) and returns `None`.
+    #[must_use]
+    pub fn encode(&self) -> Option<Vec<u8>> {
+        match self {
+            // OSC sequences — use BEL terminator (ST `\x07` is widely supported).
+            Self::TitleChanged(title) => Some(format!("\x1b]0;{title}\x07").into_bytes()),
+            Self::IconNameChanged(name) => Some(format!("\x1b]1;{name}\x07").into_bytes()),
+            Self::ClipboardWrite(b64) => Some(format!("\x1b]52;c;{b64}\x07").into_bytes()),
+            Self::CwdChanged(uri) => Some(format!("\x1b]7;{uri}\x07").into_bytes()),
+            Self::Notification(msg) => Some(format!("\x1b]9;{msg}\x07").into_bytes()),
+            // DEC private mode toggles.
+            Self::SynchronizedOutput(on) => Some(if *on {
+                b"\x1b[?2026h".to_vec()
+            } else {
+                b"\x1b[?2026l".to_vec()
+            }),
+            Self::ApplicationCursorKeys(on) => Some(if *on {
+                b"\x1b[?1h".to_vec()
+            } else {
+                b"\x1b[?1l".to_vec()
+            }),
+            Self::FocusEvents(on) => Some(if *on {
+                b"\x1b[?1004h".to_vec()
+            } else {
+                b"\x1b[?1004l".to_vec()
+            }),
+            Self::BracketedPaste(on) => Some(if *on {
+                b"\x1b[?2004h".to_vec()
+            } else {
+                b"\x1b[?2004l".to_vec()
+            }),
+            // Raw pass-through — emit as-is.
+            Self::UnhandledCsi(bytes) => Some(bytes.clone()),
+            // Capsule-internal instruction; no outer-terminal output.
+            Self::ScrollbackClear => None,
+        }
+    }
+}
+
 /// Collects `PassthroughEvent`s during a `process()` call.
 #[derive(Debug, Default)]
 pub struct PassthroughBuffer {
