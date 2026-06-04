@@ -288,6 +288,82 @@ fn redact_pem(s: &mut String, count: &mut u32) {
 // Client binary entry point
 // ---------------------------------------------------------------------------
 
+/// Result of an exec call when captured (for MCP tool integration).
+pub struct ExecCapture {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub redacted_count: u32,
+    pub denied: Option<String>,
+}
+
+/// Run `jackin-exec` and return the result as a captured struct instead of
+/// writing to stdout/stderr and calling `process::exit`. Used by the MCP
+/// server to return structured output to Claude Code.
+pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
+    if args.is_empty() {
+        bail!("usage: jackin-exec <command> [args…]");
+    }
+
+    let command = args[0].clone();
+    let cmd_args = args[1..].to_vec();
+
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .with_context(|| format!("connecting to capsule socket at {SOCKET_PATH}"))?;
+
+    let msg = ClientMsg::ExecCommand {
+        command,
+        args: cmd_args,
+    };
+    let framed = frame(&msg);
+    stream
+        .write_all(&framed)
+        .await
+        .context("sending ExecCommand")?;
+
+    let mut len_buf = [0u8; 4];
+    stream
+        .read_exact(&mut len_buf)
+        .await
+        .context("reading ExecResult length")?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    const MAX_REPLY: usize = 8 * 1024 * 1024;
+    if len > MAX_REPLY {
+        bail!("ExecResult reply too large: {len} bytes");
+    }
+    let mut body = vec![0u8; len];
+    stream
+        .read_exact(&mut body)
+        .await
+        .context("reading ExecResult body")?;
+
+    let reply: ServerMsg = serde_json::from_slice(&body).context("parsing ExecResult")?;
+
+    match reply {
+        ServerMsg::ExecResult {
+            exit_code,
+            stdout,
+            stderr,
+            redacted_count,
+        } => Ok(ExecCapture {
+            exit_code,
+            stdout,
+            stderr,
+            redacted_count,
+            denied: None,
+        }),
+        ServerMsg::ExecDenied { reason } => Ok(ExecCapture {
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: String::new(),
+            redacted_count: 0,
+            denied: Some(reason),
+        }),
+        other => bail!("unexpected reply to ExecCommand: {other:?}"),
+    }
+}
+
 /// Entry point for `jackin-capsule exec <command> [args…]`
 /// and the `jackin-exec <command> [args…]` symlink form.
 pub async fn run(args: &[String]) -> Result<()> {

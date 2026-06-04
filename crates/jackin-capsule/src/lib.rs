@@ -9,6 +9,7 @@ pub mod exec;
 pub mod input;
 pub mod layout;
 pub mod logging;
+pub mod mcp_server;
 pub mod pid1;
 pub mod protocol;
 pub mod render;

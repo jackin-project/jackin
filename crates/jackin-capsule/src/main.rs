@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, exec, protocol::attach::SpawnRequest, runtime_setup,
+    client, config, daemon, exec, mcp_server, protocol::attach::SpawnRequest, runtime_setup,
     session::validate_agent_slug,
 };
 use std::path::Path;
@@ -44,6 +44,7 @@ async fn main() -> Result<()> {
         let focus_session = parse_focus_flag(&args);
         match subcommand {
             Some("exec") => exec::run(&args[2..]).await,
+            Some("mcp-server") => mcp_server::run().await,
             None => client::run_client(None, focus_session).await,
             Some("--version") | Some("-V") => {
                 println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
@@ -95,7 +96,7 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: exec <cmd> [args…], status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: exec <cmd> [args…], mcp-server, status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
                 )
             }
         }

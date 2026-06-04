@@ -212,6 +212,25 @@ fn setup_claude() -> Result<()> {
     } else {
         println!("[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)");
     }
+
+    // Register the jackin-exec MCP server so Claude Code can invoke jackin-exec
+    // as a structured tool rather than relying only on system prompt injection.
+    // The MCP server handles tools/list (exposing jackin_exec with available
+    // bindings from JACKIN_EXEC_BINDINGS) and tools/call (delegating to the
+    // exec subcommand handler + picker dialog).
+    if !env_is_one("JACKIN_DISABLE_JACKIN_EXEC_MCP") {
+        run_optional_command(
+            "claude",
+            &[
+                "mcp",
+                "add",
+                "jackin-exec",
+                "--",
+                "/jackin/runtime/jackin-capsule",
+                "mcp-server",
+            ],
+        );
+    }
     Ok(())
 }
 
