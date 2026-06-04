@@ -99,7 +99,11 @@ pub fn init() {
     let _ = PANIC_HOOK_INSTALLED.get_or_init(|| {
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            write_line(&format!("[jackin-capsule] panic: {info}"));
+            // Capture a backtrace immediately — before the default hook runs — so
+            // it appears in the run log even when RUST_BACKTRACE is not set.
+            let bt = std::backtrace::Backtrace::force_capture();
+            write_line(&format!("[jackin-capsule] PANIC: {info}"));
+            write_line(&format!("[jackin-capsule] BACKTRACE:\n{bt}"));
             default_hook(info);
         }));
     });
