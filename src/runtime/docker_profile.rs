@@ -200,6 +200,7 @@ pub const DEFAULT_CAPABILITIES: &[&str] = &[
 /// All fields are optional — `None` means "use the profile's default for this
 /// dimension." Validated at launch time before any container is started.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DockerGrants {
     /// Outbound network tier. Overrides the profile default for this dimension.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -398,6 +399,29 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
             errors.push(GrantValidationError::MemoryReservationExceedsMemory {
                 reservation: res,
                 memory: mem,
+            });
+        }
+    }
+
+    // Validate memory values fit in i64 for the Bollard/Docker API boundary.
+    for (field, bytes_opt) in [("memory", memory_bytes), ("memory_reservation", reservation_bytes)] {
+        if let Some(bytes) = bytes_opt {
+            if bytes > i64::MAX as u64 {
+                errors.push(GrantValidationError::UnparsableSize {
+                    field,
+                    value: format!("{bytes}B (exceeds i64::MAX, too large for Docker API)"),
+                });
+            }
+        }
+    }
+
+    // pids must be positive. Docker uses -1 as "unlimited", but that would
+    // disable the limit that hardened/locked profiles are designed to enforce.
+    if let Some(pids) = grants.pids {
+        if pids <= 0 {
+            errors.push(GrantValidationError::UnparsableSize {
+                field: "pids",
+                value: format!("{pids} (must be > 0; omit the field for no limit)"),
             });
         }
     }
@@ -1001,6 +1025,7 @@ pub fn to_host_config_fields(
         cap_add,
         cap_drop,
         security_opt,
+        // Validated in validate_grants to be ≤ i64::MAX, so cast is safe here.
         memory: grants.memory_bytes.map(|b| b as i64),
         nano_cpus,
         pids_limit: grants.pids,
@@ -1275,5 +1300,159 @@ mod tests {
     fn dind_grant_ord() {
         assert!(DindGrant::None < DindGrant::Rootless);
         assert!(DindGrant::Rootless < DindGrant::Privileged);
+    }
+
+    // ── Test gap fixes ────────────────────────────────────────────────────────
+
+    /// locked tmpfs: minimal set only (no package-manager paths).
+    #[test]
+    fn locked_tmpfs_is_minimal_subset() {
+        let grants = profile_base_grants(DockerSecurityProfile::Locked);
+        // system_writes=false → read-only root; flags include --read-only + tmpfs entries.
+        let flags = readonly_root_flags(DockerSecurityProfile::Locked, &grants);
+        assert!(flags.contains(&"--read-only".to_string()), "locked must be read-only");
+        // Minimal paths present — check in the tmpfs mount values (odd-indexed args).
+        let tmpfs_values: Vec<&str> = flags
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i > 0 && flags.get(*i - 1).map(|f| f == "--tmpfs").unwrap_or(false))
+            .map(|(_, v)| v.split(':').next().unwrap_or(""))
+            .collect();
+        assert!(tmpfs_values.contains(&"/tmp"), "locked must have /tmp tmpfs");
+        assert!(tmpfs_values.contains(&"/run"), "locked must have /run tmpfs");
+        // Package-manager paths absent from locked.
+        for path in TMPFS_PATHS_HARDENED_EXTRA {
+            assert!(
+                !tmpfs_values.contains(path),
+                "locked must not have {path} (package-manager path, hardened only)"
+            );
+        }
+    }
+
+    /// hardened tmpfs includes both minimal + package-manager paths.
+    #[test]
+    fn hardened_tmpfs_includes_extra_paths() {
+        let grants = profile_base_grants(DockerSecurityProfile::Hardened);
+        let flags = readonly_root_flags(DockerSecurityProfile::Hardened, &grants);
+        let tmpfs_values: Vec<&str> = flags
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i > 0 && flags.get(*i - 1).map(|f| f == "--tmpfs").unwrap_or(false))
+            .map(|(_, v)| v.split(':').next().unwrap_or(""))
+            .collect();
+        for path in TMPFS_PATHS_HARDENED_EXTRA {
+            assert!(
+                tmpfs_values.contains(path),
+                "hardened tmpfs must include {path}"
+            );
+        }
+    }
+
+    /// network_enforcement_label: full, partial-sudo, partial-dind, n/a.
+    #[test]
+    fn network_enforcement_label_all_cases() {
+        // n/a for open network.
+        let open = EffectiveGrants {
+            network: NetworkGrant::Open,
+            ..profile_base_grants(DockerSecurityProfile::Standard)
+        };
+        assert_eq!(network_enforcement_label(&open), "n/a");
+
+        // full: allowlist, no sudo, no dind.
+        let full = profile_base_grants(DockerSecurityProfile::Locked);
+        assert_eq!(network_enforcement_label(&full), "full");
+
+        // partial: allowlist + sudo.
+        let partial_sudo = EffectiveGrants {
+            network: NetworkGrant::Allowlist,
+            sudo: true,
+            ..profile_base_grants(DockerSecurityProfile::Hardened)
+        };
+        assert_eq!(
+            network_enforcement_label(&partial_sudo),
+            "partial (sudo grants iptables access)"
+        );
+
+        // partial: allowlist + dind active.
+        let partial_dind = EffectiveGrants {
+            network: NetworkGrant::Allowlist,
+            dind: DindGrant::Privileged,
+            ..profile_base_grants(DockerSecurityProfile::Hardened)
+        };
+        assert_eq!(
+            network_enforcement_label(&partial_dind),
+            "partial (DinD inner containers bypass host iptables)"
+        );
+    }
+
+    /// Implicit NET_ADMIN/NET_RAW caps injected when apply_grants sees network = allowlist.
+    #[test]
+    fn allowlist_network_adds_implicit_caps() {
+        // The implicit caps are injected inside apply_grants when network == Allowlist.
+        // Trigger it by applying an empty grants struct over a locked base.
+        let base = profile_base_grants(DockerSecurityProfile::Locked);
+        assert_eq!(base.network, NetworkGrant::Allowlist);
+        let resolved = apply_grants(base, &DockerGrants::default());
+        assert!(
+            resolved.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
+            "apply_grants over Allowlist network must inject implicit NET_ADMIN; got: {:?}",
+            resolved.capabilities_add
+        );
+        assert!(
+            resolved.capabilities_add.iter().any(|c| c == "NET_RAW"),
+            "apply_grants over Allowlist network must inject implicit NET_RAW; got: {:?}",
+            resolved.capabilities_add
+        );
+    }
+
+    /// Grant layering: workspace wins over config when raising.
+    #[test]
+    fn grant_layering_workspace_wins_over_config() {
+        let config_grants = DockerGrants {
+            memory: Some("4G".to_string()),
+            cpus: Some(2.0),
+            ..Default::default()
+        };
+        let workspace_grants = DockerGrants {
+            memory: Some("16G".to_string()),  // workspace raises memory
+            ..Default::default()
+        };
+        let grants = resolve_effective_grants(
+            DockerSecurityProfile::Standard,
+            Some(&config_grants),
+            Some(&workspace_grants),
+        );
+        // Workspace memory wins (higher).
+        assert_eq!(grants.memory_bytes, Some(16 * 1024 * 1024 * 1024));
+        // Config cpus preserved (workspace didn't override).
+        assert_eq!(grants.cpus, Some(4.0_f64.max(2.0))); // profile default 4.0 wins over config 2.0
+    }
+
+    /// validate_grants rejects pids <= 0.
+    #[test]
+    fn validate_grants_pids_must_be_positive() {
+        let grants = DockerGrants {
+            pids: Some(-1),
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(!errors.is_empty(), "pids = -1 should be an error");
+        assert!(
+            matches!(&errors[0], GrantValidationError::UnparsableSize { field, .. } if *field == "pids"),
+            "error should be UnparsableSize for pids"
+        );
+    }
+
+    /// validate_grants rejects memory exceeding i64::MAX.
+    #[test]
+    fn validate_grants_memory_overflow_is_error() {
+        // u64 value > i64::MAX — would silently wrap to negative without the check.
+        let huge = format!("{}B", i64::MAX as u64 + 1);
+        let grants = DockerGrants {
+            memory: Some(huge),
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(!errors.is_empty(), "memory > i64::MAX should be an error");
     }
 }

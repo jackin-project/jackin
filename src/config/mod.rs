@@ -235,6 +235,7 @@ pub struct RoleSource {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DockerConfig {
     #[serde(default)]
     pub mounts: DockerMounts,

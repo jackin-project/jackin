@@ -113,8 +113,9 @@ pub struct WorkspaceConfig {
 }
 
 /// Docker security settings scoped to one workspace.
-// `PartialEq` only because `DockerGrants` contains `Option<f64>`.
+// `PartialEq` only (not `Eq`) because `DockerGrants` contains `Option<f64>`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceDockerConfig {
     /// Override the global `[docker] profile` for launches in this workspace.
     #[serde(default, skip_serializing_if = "Option::is_none")]

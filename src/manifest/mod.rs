@@ -47,9 +47,8 @@ pub struct RoleManifest {
     /// ```toml
     /// [docker]
     /// min_profile = "standard"
-    /// requires_inner_engine = false
     /// dind = "rootless"
-    /// network_allow = ["crates.io"]
+    /// allowed_hosts = ["crates.io"]
     /// capabilities_add = ["SYS_PTRACE"]
     /// ```
     #[serde(default)]

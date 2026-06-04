@@ -19,7 +19,12 @@ set -euo pipefail
 ALLOWED_HOSTS="${JACKIN_ALLOWED_HOSTS:-}"
 
 if [ -z "$ALLOWED_HOSTS" ]; then
-    echo "[firewall] JACKIN_ALLOWED_HOSTS is empty; no allowlist installed" >&2
+    # Empty host list: install DROP-only policy so network = "allowlist" with
+    # no hosts is fail-closed (no egress) rather than fail-open (full egress).
+    echo "[firewall] JACKIN_ALLOWED_HOSTS is empty; installing DROP-only policy (no egress)" >&2
+    iptables -P OUTPUT DROP
+    iptables -A OUTPUT -o lo -j ACCEPT
+    iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
     exit 0
 fi
 

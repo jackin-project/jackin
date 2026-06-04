@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const ENTRYPOINT_SH: &str = include_str!("../docker/runtime/entrypoint.sh");
+const INIT_FIREWALL_SH: &str = include_str!("../docker/runtime/init-firewall.sh");
 
 #[derive(Debug)]
 pub struct DerivedBuildContext {
@@ -199,7 +200,8 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
-RUN chmod +x /jackin/runtime/entrypoint.sh
+COPY .jackin-runtime/init-firewall.sh /jackin/runtime/init-firewall.sh
+RUN chmod +x /jackin/runtime/entrypoint.sh /jackin/runtime/init-firewall.sh
 {shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
@@ -332,6 +334,7 @@ pub fn create_derived_build_context(
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
+    std::fs::write(runtime_dir.join("init-firewall.sh"), INIT_FIREWALL_SH)?;
 
     // Copy jackin-capsule binary into the build context so the Dockerfile
     // can COPY it into the image without a network fetch at build time.
@@ -450,6 +453,7 @@ fn ensure_runtime_assets_are_included(
     let mut rules = vec![
         "!.jackin-runtime/".to_string(),
         "!.jackin-runtime/entrypoint.sh".to_string(),
+        "!.jackin-runtime/init-firewall.sh".to_string(),
         "!.jackin-runtime/jackin-capsule".to_string(),
         "!.jackin-runtime/agent-binaries/".to_string(),
         "!.jackin-runtime/agent-binaries/*".to_string(),

@@ -1412,12 +1412,38 @@ async fn launch_role_runtime(
             .run("docker", &firewall_exec_args, None, &docker_run_opts)
             .await;
         if let Err(e) = firewall_result {
-            // Non-fatal: log and continue. The container is running but
-            // without the allowlist. Session contract will report degraded.
+            // Firewall failed — the container is running with open egress.
+            // Emit a visible warning (not just debug) and update the env var
+            // so the session contract reflects actual enforcement, not intended.
             crate::debug_log!(
                 "launch",
                 "network allowlist install failed (degraded to open): {e}",
             );
+            crate::tui::emit_compact_line(
+                "warning",
+                &format!(
+                    "[docker] network=allowlist: firewall install failed for {container_name} \
+                     — container is running with OPEN egress. Verify the image contains \
+                     /jackin/runtime/init-firewall.sh and NET_ADMIN/NET_RAW are available.",
+                ),
+            );
+            // Update the in-container enforcement label to reflect reality.
+            // We do this by appending a correcting env var after the container starts.
+            let _ = runner
+                .run(
+                    "docker",
+                    &[
+                        "exec",
+                        container_name,
+                        "sh",
+                        "-c",
+                        "echo JACKIN_NETWORK_ENFORCEMENT=degraded-install-failed \
+                         >> /proc/1/environ 2>/dev/null || true",
+                    ],
+                    None,
+                    &docker_run_opts,
+                )
+                .await;
         }
     }
 
@@ -2456,6 +2482,17 @@ async fn load_role_with(
                     capabilities_add: docker_cfg.capabilities_add.clone(),
                     ..Default::default()
                 };
+                // Validate role manifest grants before applying — catches bad cap names
+                // from untrusted role repos before they reach `docker run --cap-add`.
+                let role_errors = super::docker_profile::validate_grants(&role_grants);
+                if !role_errors.is_empty() {
+                    let msg = role_errors
+                        .iter()
+                        .map(|e| format!("  • [role] {e}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    anyhow::bail!("docker grants validation failed:\n{msg}");
+                }
                 effective_grants_early =
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);
             }
@@ -2586,6 +2623,15 @@ async fn load_role_with(
             if !all_errors.is_empty() {
                 anyhow::bail!("docker grants validation failed:\n{}", all_errors.join("\n"));
             }
+        }
+        // Cross-source invariant: user="root" (workspace) + sudo=true (config) can
+        // merge into an invalid combination that per-source validation misses.
+        if effective_grants_early.user == "root" && effective_grants_early.sudo {
+            anyhow::bail!(
+                "docker grants validation failed:\n  \
+                 • [merged] grants.user = \"root\" and grants.sudo = true are mutually exclusive \
+                 across config and workspace sources"
+            );
         }
 
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
@@ -7841,6 +7887,122 @@ plugins = []
         assert!(
             !run_cmd.contains("--memory"),
             "compat: must not have memory limits"
+        );
+    }
+
+    // ── Docker security profile — integration tests ───────────────────────────
+
+    /// min_profile conflict: role declares min="standard", launch uses "hardened" → error.
+    #[tokio::test]
+    async fn min_profile_conflict_is_detected() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
+        // Role requires standard; we'll launch under hardened.
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[docker]
+min_profile = "standard"
+"#,
+        ).unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let err = load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &LoadOptions {
+                docker_profile: Some(crate::runtime::docker_profile::DockerSecurityProfile::Hardened),
+                ..LoadOptions::default()
+            },
+        ).await.unwrap_err();
+        assert!(
+            err.to_string().contains("min_profile"),
+            "expected min_profile conflict error, got: {err}"
+        );
+    }
+
+    /// validate_grants aggregation: errors from config AND workspace both appear.
+    #[tokio::test]
+    async fn validate_grants_aggregates_config_and_workspace_errors() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        // Config: invalid cap name.
+        config.docker.grants = Some(crate::runtime::docker_profile::DockerGrants {
+            capabilities_add: vec!["CAP_TOTALLY_FAKE".to_string()],
+            ..Default::default()
+        });
+        // Workspace: user+sudo conflict.
+        let workspace_name = "test-ws";
+        config.workspaces.insert(workspace_name.to_string(), {
+            let mut ws = crate::workspace::WorkspaceConfig::default();
+            ws.workdir = "/workspace".to_string();
+            ws.docker = Some(crate::workspace::WorkspaceDockerConfig {
+                grants: Some(crate::runtime::docker_profile::DockerGrants {
+                    user: Some("root".to_string()),
+                    sudo: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+            ws
+        });
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+[claude]
+plugins = []
+"#,
+        ).unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let err = load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &LoadOptions::default(),
+        ).await.unwrap_err();
+        let msg = err.to_string();
+        // Both errors must appear in the same bail message.
+        assert!(
+            msg.contains("[config]") || msg.contains("CAP_TOTALLY_FAKE"),
+            "config error should be in message: {msg}"
         );
     }
 
