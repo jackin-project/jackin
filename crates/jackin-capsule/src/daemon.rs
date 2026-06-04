@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 /// The multiplexer daemon — runs as PID 1, manages sessions and clients.
 ///
 /// Architecture:
@@ -192,6 +193,18 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
+    /// Codenames currently assigned to open tabs.
+    /// A codename in `codename_live` is NOT in `codename_retired`.
+    codename_live: HashSet<String>,
+    /// All codenames ever assigned in this container lifetime. Never shrinks.
+    /// A codename that moves from `live` to here on tab close is never
+    /// reassigned — prevents agents from confusing a new tab for a closed one.
+    codename_retired: HashSet<String>,
+    /// Append-only history of every tab ever opened. Never pruned.
+    agent_history: Vec<AgentRecord>,
+    /// Offset into the wordlist for the next codename pick, seeded once at
+    /// daemon construction from the current time subsecond nanos.
+    wordlist_offset: usize,
 }
 
 /// Outcome of an exec credential picker session, stored on the
@@ -270,6 +283,20 @@ impl WorkdirContext {
         }
         matches!(branch, "main" | "master")
     }
+}
+
+/// In-memory record of one tab ever opened in this container lifetime.
+/// The history is append-only and never pruned; it is the authoritative
+/// data source for `jackin-capsule agents` and the tab hover tooltip.
+#[derive(Debug, Clone)]
+pub struct AgentRecord {
+    pub codename: String,
+    /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
+    pub agent: Option<String>,
+    /// Provider label (e.g. `"Z.AI"`), or `None` when no provider selected.
+    pub provider: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub exited_at: Option<DateTime<Utc>>,
 }
 
 /// Probe `name --version` once at construction. Stdin/stdout/stderr
@@ -679,6 +706,16 @@ impl Multiplexer {
             zai_key,
             minimax_key,
             kimi_key,
+            codename_live: HashSet::new(),
+            codename_retired: HashSet::new(),
+            agent_history: Vec::new(),
+            wordlist_offset: {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos() as usize)
+                    .unwrap_or(42)
+            },
         }
     }
 
@@ -719,9 +756,17 @@ impl Multiplexer {
         if self.hover_target == next {
             return None;
         }
+        let prev = self.hover_target;
         self.hover_target = next;
         if self.dialog_open() {
             Some(self.compose_full_frame(FullRedrawReason::DialogChange))
+        } else if matches!(prev, Some(HoverTarget::Tab(_)))
+            || matches!(next, Some(HoverTarget::Tab(_)))
+        {
+            // Full repaint when entering or leaving a tab hover so the tooltip
+            // painted at the tooltip row is cleaned up by the pane repaint and
+            // never sticks when the operator moves to a different tab or away.
+            Some(self.compose_full_frame(FullRedrawReason::StatusChange))
         } else {
             Some(self.compose_chrome_hover_frame())
         }
@@ -1398,6 +1443,7 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let tab_ids = self.tabs[self.active_tab].tree.all_ids();
+        let closed_codename = self.tabs[self.active_tab].codename.clone();
         crate::clog!(
             "action: close_focused_tab tab_idx={} pane_count={}",
             self.active_tab,
@@ -1410,6 +1456,17 @@ impl Multiplexer {
             self.pane_body_caches.remove(&id);
         }
         self.tabs.remove(self.active_tab);
+        self.codename_live.remove(&closed_codename);
+        self.codename_retired.insert(closed_codename.clone());
+        // Mark the history record as exited.
+        if let Some(record) = self
+            .agent_history
+            .iter_mut()
+            .rev()
+            .find(|r| r.codename == closed_codename)
+        {
+            record.exited_at = Some(Utc::now());
+        }
         if self.active_tab >= self.tabs.len() {
             self.active_tab = self.tabs.len().saturating_sub(1);
         }
@@ -1473,8 +1530,19 @@ impl Multiplexer {
                 // branch the tab persists with a dangling session
                 // id and the operator sees a `Done` tab they
                 // cannot interact with.
+                let closed_codename = self.tabs[tab_idx].codename.clone();
                 let was_active = tab_idx == self.active_tab;
                 self.tabs.remove(tab_idx);
+                self.codename_live.remove(&closed_codename);
+                self.codename_retired.insert(closed_codename.clone());
+                if let Some(record) = self
+                    .agent_history
+                    .iter_mut()
+                    .rev()
+                    .find(|r| r.codename == closed_codename)
+                {
+                    record.exited_at = Some(Utc::now());
+                }
                 if was_active {
                     // Move to the tab on the left when it exists;
                     // otherwise stay at index 0 (the leftmost tab
@@ -1592,11 +1660,48 @@ impl Multiplexer {
         }
     }
 
+    /// Returns a snapshot of the agent history for the control-channel `Agents` query.
+    /// Active agents have `exited_at == None`; exited agents have a timestamp.
+    pub fn agent_registry_snapshot(&self) -> Vec<jackin_protocol::control::AgentRegistryEntry> {
+        self.agent_history
+            .iter()
+            .map(|r| jackin_protocol::control::AgentRegistryEntry {
+                codename: r.codename.clone(),
+                agent: r.agent.clone(),
+                provider: r.provider.clone(),
+                started_at: r.started_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                exited_at: r
+                    .exited_at
+                    .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+                status: if r.exited_at.is_some() {
+                    "exited".to_string()
+                } else {
+                    "active".to_string()
+                },
+                // is_self is determined client-side from JACKIN_AGENT_CODENAME.
+                is_self: false,
+            })
+            .collect()
+    }
+
+    /// Pick the next available codename and record it as live.
+    /// Increments `wordlist_offset` so consecutive tabs get different words.
+    fn pick_next_codename(&mut self) -> String {
+        let codename = crate::wordlist::pick_codename(
+            &self.codename_live,
+            &self.codename_retired,
+            self.wordlist_offset,
+        );
+        self.wordlist_offset = self.wordlist_offset.wrapping_add(1);
+        codename
+    }
+
     fn session_launch(
         &self,
         agent: Option<&str>,
         provider_label: Option<&str>,
         env_passthrough: &[(String, String)],
+        codename: &str,
     ) -> SessionLaunch {
         let cwd = self.workdir.as_path();
         match agent {
@@ -1617,12 +1722,12 @@ impl Multiplexer {
                 };
                 SessionLaunch {
                     label,
-                    cmd: build_agent_command(slug, model, env_passthrough, cwd),
+                    cmd: build_agent_command(slug, model, env_passthrough, cwd, codename),
                 }
             }
             None => SessionLaunch {
                 label: "Shell".to_string(),
-                cmd: build_shell_command(env_passthrough, cwd),
+                cmd: build_shell_command(env_passthrough, cwd, codename),
             },
         }
     }
@@ -1843,6 +1948,7 @@ impl Multiplexer {
         // under typical limits, but well past the size any operator
         // can usefully navigate.
         self.ensure_capacity_for_new_session(true)?;
+        let codename = self.pick_next_codename();
         // Mirror split_focused_into: resize_panes below reflows every
         // pane's interior rect, and the new tab swaps the visible
         // content. Drop any in-flight gesture anchored to a now-stale
@@ -1851,7 +1957,12 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent.as_deref(), provider_label, &env_passthrough);
+        let launch = self.session_launch(
+            agent.as_deref(),
+            provider_label,
+            &env_passthrough,
+            &codename,
+        );
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
@@ -1867,12 +1978,32 @@ impl Multiplexer {
         let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
         if self.tabs.is_empty() {
-            self.tabs.push(Tab::new_single(tab_label, id));
+            self.tabs
+                .push(Tab::new_single(tab_label, id, codename.clone()));
             self.active_tab = 0;
         } else {
-            self.tabs.push(Tab::new_single(tab_label, id));
+            self.tabs
+                .push(Tab::new_single(tab_label, id, codename.clone()));
             self.active_tab = self.tabs.len() - 1;
         }
+        self.codename_live.insert(codename.clone());
+        // Use the explicit provider label when given; otherwise infer the default
+        // provider from the agent slug so the registry always shows a meaningful value.
+        let provider = provider_label
+            .map(str::to_string)
+            .or_else(|| match agent.as_deref() {
+                Some("claude") => Some("anthropic".to_string()),
+                Some("codex") => Some("openai".to_string()),
+                _ => None,
+            });
+        let agent_name = agent.clone();
+        self.agent_history.push(AgentRecord {
+            codename,
+            agent: agent_name,
+            provider,
+            started_at: Utc::now(),
+            exited_at: None,
+        });
         // Reflow so the new pane's PTY gets the correct interior
         // dimensions (outer rect minus border rows/cols). Without
         // this, the session keeps its initial `content_rows ×
@@ -1925,6 +2056,7 @@ impl Multiplexer {
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return Ok(());
         };
+        let tab_codename = tab.codename.clone();
         let from_id = tab.focused_id;
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let from_rect = tab
@@ -1945,7 +2077,12 @@ impl Multiplexer {
             ),
         };
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent_slug.as_deref(), provider_label, &env_passthrough);
+        let launch = self.session_launch(
+            agent_slug.as_deref(),
+            provider_label,
+            &env_passthrough,
+            &tab_codename,
+        );
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
@@ -3291,6 +3428,19 @@ impl Multiplexer {
             self.status_bar.instance_id_label(),
             self.hover_target,
         );
+        // Tab hover tooltip: render codename below the hovered tab cell.
+        #[allow(clippy::collapsible_if)]
+        if let Some(HoverTarget::Tab(idx)) = self.hover_target {
+            if let Some(tab) = self.tabs.get(idx) {
+                let col_start = self
+                    .status_bar
+                    .tab_regions
+                    .get(idx)
+                    .map(|&(s, _)| s)
+                    .unwrap_or(0);
+                buf.extend_from_slice(&render_tab_tooltip(&tab.codename, col_start));
+            }
+        }
         buf.extend_from_slice(b"\x1b8");
         buf
     }
@@ -3805,6 +3955,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let handshake_tx = handshake_tx.clone();
                 let sessions_snapshot = mux.session_infos();
                 let tabs_snapshot = mux.tab_snapshots();
+                let history_snapshot = mux.agent_registry_snapshot();
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
                 let exec_tx_clone = exec_tx.clone();
                 tokio::spawn(perform_handshake(
@@ -3813,6 +3964,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     handshake_tx,
                     sessions_snapshot,
                     tabs_snapshot,
+                    history_snapshot,
                     active_tab,
                     Some(exec_tx_clone),
                 ));
@@ -4291,6 +4443,7 @@ async fn perform_handshake(
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
+    history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
     exec_tx: Option<mpsc::UnboundedSender<ExecRequest>>,
 ) {
@@ -4326,6 +4479,7 @@ async fn perform_handshake(
             first[0],
             sessions_snapshot,
             tabs_snapshot,
+            history_snapshot,
             active_tab,
             exec_tx,
         )
@@ -4903,6 +5057,28 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
         Some(HoverTarget::Tab(idx)) => Some(idx),
         _ => None,
     }
+}
+
+/// Render the codename label below the hovered tab cell.
+///
+/// Painted at row 3 (1-indexed), left-aligned with `col_start` — one blank row
+/// below the tab strip. Emits a coloured pill (dark bg + phosphor green text);
+/// must be called inside an ESC-7/ESC-8 save-restore block.
+fn render_tab_tooltip(codename: &str, col_start: u16) -> Vec<u8> {
+    // Codename label: dark bg (TAB_BG_INACTIVE 30,30,30) + phosphor green text + bold.
+    // Reads as a contextual label in jackin's color language without duplicating the
+    // brand pill (which is green bg + black text). Row 3 leaves one blank line of
+    // breathing room below the tab strip.
+    let tooltip_row = 3u16;
+    let col = col_start + 1;
+    let mut buf = Vec::new();
+    buf.extend_from_slice(
+        format!(
+            "\x1b[{tooltip_row};{col}H\x1b[1m\x1b[48;2;30;30;30m\x1b[38;2;0;255;65m {codename} \x1b[0m"
+        )
+        .as_bytes(),
+    );
+    buf
 }
 
 const fn hovered_menu(target: Option<HoverTarget>) -> bool {
@@ -6225,7 +6401,7 @@ mod tests {
     fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
         let mut mux = test_mux(24, 80);
         mux.resize(rows, cols);
-        mux.tabs.push(Tab::new_single("Shell", 1));
+        mux.tabs.push(Tab::new_single("Shell", 1, "test"));
         mux
     }
 
@@ -6523,7 +6699,7 @@ mod tests {
         let mut mux = test_mux(24, 80);
         let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);
         mux.sessions.insert(1, session);
-        mux.tabs.push(Tab::new_single("Claude", 1));
+        mux.tabs.push(Tab::new_single("Claude", 1, "test"));
 
         mux.refresh_tab_labels();
 
@@ -6540,7 +6716,7 @@ mod tests {
             .map(|p| p.env_overrides.clone())
             .unwrap_or_default();
         mux.sessions.insert(1, session);
-        mux.tabs.push(Tab::new_single("Claude (Z.AI)", 1));
+        mux.tabs.push(Tab::new_single("Claude (Z.AI)", 1, "test"));
 
         let (agent, env, provider) = mux.focused_spawn_metadata();
 
@@ -6551,7 +6727,7 @@ mod tests {
 
     fn split_tab_mux() -> Multiplexer {
         let mut mux = test_mux(24, 80);
-        let mut tab = Tab::new_single("Shell", 1);
+        let mut tab = Tab::new_single("Shell", 1, "test");
         assert!(tab.tree.split_h(1, 2, SplitPosition::After));
         mux.tabs.push(tab);
         mux

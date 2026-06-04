@@ -52,6 +52,15 @@ pub const JACKIN_INSTANCE_ID_ENV_NAME: &str = "JACKIN_INSTANCE_ID";
 /// itself; the initial agent is passed to PID 1 as argv.
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 
+/// Env var injected into every process spawned within a Capsule tab.
+///
+/// Carries the unique human-readable codename assigned to the tab at creation
+/// (e.g. `"badger"`, `"falcon"`). Stable across agent process restarts and
+/// context-window resets because it is a tab property, not a process property.
+/// Codenames are never reused within a container lifetime — once a word is
+/// assigned it is permanently retired from the pool even after the tab closes.
+pub const JACKIN_AGENT_CODENAME_ENV_NAME: &str = "JACKIN_AGENT_CODENAME";
+
 /// Reserved runtime name for role identity. Capsule receives the actual role
 /// key through `/jackin/run/agent.toml`.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
@@ -132,6 +141,7 @@ pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_CONTAINER_NAME_ENV_NAME, None),
     (JACKIN_INSTANCE_ID_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
+    (JACKIN_AGENT_CODENAME_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
     (JACKIN_WORKDIR_ENV_NAME, None),
     (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, None),
@@ -265,6 +275,7 @@ mod tests {
             "JACKIN_CONTAINER_NAME",
             "JACKIN_INSTANCE_ID",
             "JACKIN_AGENT", // injected per agent session — agent slug (claude/codex/amp)
+            "JACKIN_AGENT_CODENAME", // unique per-tab codename, never reused in container lifetime
             "JACKIN_ROLE",  // runtime-owned role selector key
             "JACKIN_GIT_COAUTHOR_TRAILER",
             "JACKIN_GIT_DCO",
@@ -288,6 +299,7 @@ mod tests {
             "JACKIN_CONTAINER_NAME",
             "JACKIN_INSTANCE_ID",
             "JACKIN_AGENT",
+            "JACKIN_AGENT_CODENAME",
             "JACKIN_ROLE",
             "JACKIN_GIT_COAUTHOR_TRAILER",
             "JACKIN_GIT_DCO",

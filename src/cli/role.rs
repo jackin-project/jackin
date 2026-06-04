@@ -61,6 +61,18 @@ pub struct LoadArgs {
     /// Pass `"apple-container"` to use the Apple Container backend on macOS 26 ARM.
     #[arg(long, value_name = "BACKEND")]
     pub backend: Option<String>,
+    /// Print the resolved launch plan (workspace, role, mounts, auth decisions,
+    /// derived image) and exit without spawning any containers.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Output format for `--dry-run` (`human` or `json`)
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        default_value = "human",
+        requires = "dry_run"
+    )]
+    pub format: String,
 }
 
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {

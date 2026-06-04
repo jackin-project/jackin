@@ -21,6 +21,8 @@ pub enum ClientMsg {
     /// the host.sock callback, and replies with `ExecResult` or
     /// `ExecDenied`.
     ExecCommand { command: String, args: Vec<String> },
+    /// Request the agent registry (codenames, agent types, providers, timestamps).
+    Agents,
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -53,9 +55,37 @@ pub enum ServerMsg {
     /// The exec was denied — operator cancelled the picker, host.sock
     /// was unavailable, or credential resolution failed.
     ExecDenied { reason: String },
+    /// Agent registry: every tab ever opened in this container lifetime.
+    AgentRegistry { records: Vec<AgentRegistryEntry> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+/// One entry in the agent registry, representing a tab that was (or is) open.
+///
+/// Active agents have `exited_at == None`. Exited agents retain their record
+/// permanently so `jackin-capsule agents` can show session history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRegistryEntry {
+    /// Human-readable codename assigned to the tab (e.g. `"badger"`).
+    pub codename: String,
+    /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
+    pub agent: Option<String>,
+    /// Provider label (e.g. `"anthropic"`, `"openai"`), or `None` when no
+    /// provider was selected. Default for `claude` is `"anthropic"`;
+    /// for `codex` is `"openai"`. Other runtimes have no inferred default.
+    pub provider: Option<String>,
+    /// ISO 8601 UTC timestamp when the tab was opened.
+    pub started_at: String,
+    /// ISO 8601 UTC timestamp when the tab was closed, or `None` if still active.
+    pub exited_at: Option<String>,
+    /// `"active"` or `"exited"`.
+    pub status: String,
+    /// `true` when this entry represents the calling process's own tab.
+    /// Set by `run_agents` by comparing `JACKIN_AGENT_CODENAME` against the codename.
+    #[serde(default)]
+    pub is_self: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,5 +193,10 @@ mod tests {
         assert_eq!(json, r#"{"type":"status"}"#);
         let decoded: ClientMsg = serde_json::from_str(&json).unwrap();
         assert!(matches!(decoded, ClientMsg::Status));
+
+        let json = serde_json::to_string(&ClientMsg::Agents).unwrap();
+        assert_eq!(json, r#"{"type":"agents"}"#);
+        let decoded: ClientMsg = serde_json::from_str(&json).unwrap();
+        assert!(matches!(decoded, ClientMsg::Agents));
     }
 }

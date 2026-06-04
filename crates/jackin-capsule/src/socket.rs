@@ -272,6 +272,7 @@ pub async fn handle_control_request(
     first_byte: u8,
     sessions: Vec<SessionInfo>,
     tabs: Vec<crate::protocol::control::TabSnapshot>,
+    history: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
     exec_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::exec::ExecRequest>>,
 ) {
@@ -324,6 +325,7 @@ pub async fn handle_control_request(
                 }
             }
         },
+        ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.

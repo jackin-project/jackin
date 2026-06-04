@@ -904,6 +904,8 @@ mod tests {
             .unwrap();
         assert!(kimi_section.contains("LAUNCH=(kimi --yolo)"));
         assert!(kimi_section.contains("LAUNCH+=(\"$@\")"));
+        // Guard against re-adding incompatible flags (--yolo and --auto are mutually exclusive).
+        assert!(!kimi_section.contains("--auto"));
     }
 
     #[test]

@@ -134,6 +134,9 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::ExecResult { .. } | ServerMsg::ExecDenied { .. } => {
             bail!("daemon replied with an exec result; expected Snapshot")
         }
+        ServerMsg::AgentRegistry { .. } => {
+            bail!("daemon replied with AgentRegistry; expected Snapshot")
+        }
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
     }
 }
