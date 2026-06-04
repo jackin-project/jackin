@@ -1959,6 +1959,7 @@ dependencies = [
  "tokio",
  "toml 1.1.2+spec-1.1.0",
  "toml_edit 0.25.12+spec-1.1.0",
+ "tracing",
 ]
 
 [[package]]

@@ -26,6 +26,7 @@ pub fn init_tracing(debug: bool) -> anyhow::Result<()> {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .compact()
         .with_target(false)
+        .with_writer(std::io::stderr)
         .with_filter(EnvFilter::new(level));
 
     let subscriber = tracing_subscriber::registry().with(fmt_layer);

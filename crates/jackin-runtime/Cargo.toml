@@ -25,6 +25,7 @@ jackin-launch = { path = "../jackin-launch" }
 jackin-protocol = { path = "../jackin-protocol" }
 jackin-tui = { path = "../jackin-tui" }
 
+tracing = "0.1"
 bollard = { version = "0.21", features = ["aws-lc-rs"] }
 tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 futures-util = "0.3"

@@ -70,6 +70,7 @@ impl LaunchHostTerminal for HostTerminal {
 
     fn emit_compact_line(&self, kind: &str, line: &str) {
         jackin_diagnostics::emit_compact_line(kind, line);
+        tracing::info!(kind, "{line}");
     }
 
     fn set_pointer_shape(&self, pointer: bool) {
