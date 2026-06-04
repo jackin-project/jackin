@@ -399,6 +399,24 @@ jobs:
             echo "version=${base_version}-preview.${commit_count}+${short_sha}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Read platform SHA256s
+        id: shas
+        run: |
+          echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+
+      - name: Produce and sign capsule manifest
+        uses: ./.github/actions/sign-capsule-manifest
+        with:
+          version: ${{ steps.meta.outputs.version }}
+          arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
+          x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
+          github-token: ${{ secrets.GH_READONLY_TOKEN }}
+
       - name: Publish preview GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -447,24 +465,6 @@ jobs:
             echo "::error::gh release view failed: $view_output"
             exit "$status"
           fi
-
-      - name: Read platform SHA256s
-        id: shas
-        run: |
-          echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-
-      - name: Produce and sign capsule manifest
-        uses: ./.github/actions/sign-capsule-manifest
-        with:
-          version: ${{ steps.meta.outputs.version }}
-          arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
-          x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
-          github-token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:

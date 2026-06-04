@@ -167,9 +167,10 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
         .join("jackin-capsule")
 }
 
-/// Remove a file, logging via `cdebug!` if the removal fails rather than
-/// silently discarding the error. Used on all error-path cleanup sites in
-/// `download_and_cache` so a stale `.tmp` or `.tar.gz.tmp` is observable.
+/// Remove a file, logging via `debug_log!` if the removal fails rather than
+/// silently discarding the error. Used at every cleanup site in
+/// `download_and_cache` — both error paths and the success-path archive removal
+/// after extraction — so a failed cleanup is always observable in debug output.
 fn remove_with_debug_log(path: &Path) {
     if let Err(e) = std::fs::remove_file(path) {
         crate::debug_log!(
@@ -180,6 +181,13 @@ fn remove_with_debug_log(path: &Path) {
     }
 }
 
+// The function is a sequential download pipeline with cleanup at each error
+// site. Splitting it for line-count would spread the cleanup logic across
+// disconnected helpers without reducing conceptual complexity.
+#[expect(
+    clippy::too_many_lines,
+    reason = "sequential download pipeline with per-step cleanup"
+)]
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let base_url = base_download_url(version);
@@ -193,6 +201,8 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // Fetch the signed capsule manifest (verifies cosign bundle + identity) and
     // download the archive concurrently. The manifest returns the expected SHA-256
     // for this arch, replacing the bare .sha256 file fetch.
+    // Resolve once; both the manifest verification and the post-download
+    // version check use the same channel determination.
     let is_preview = is_preview_version(version);
     let (expected_sha_result, download_result) = tokio::join!(
         fetch_and_verify_manifest(version, &base_url, arch, is_preview),
@@ -235,7 +245,13 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     let archive_for_hash = tmp_archive.clone();
     let actual_sha = tokio::task::spawn_blocking(move || hash_file_sha256(&archive_for_hash))
         .await
-        .context("hash worker join")?
+        .with_context(|| {
+            format!(
+                "SHA-256 hash worker panicked or was cancelled for {}; \
+                 delete the partial archive and retry",
+                tmp_archive.display()
+            )
+        })?
         .with_context(|| {
             format!(
                 "hashing downloaded jackin-capsule archive at {}",
@@ -250,16 +266,30 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         );
     }
 
-    extract_tar_gz_member(&tmp_archive, "jackin-capsule", &tmp)
-        .with_context(|| format!("extracting jackin-capsule from {}", tmp_archive.display()))?;
+    if let Err(e) = extract_tar_gz_member(&tmp_archive, "jackin-capsule", &tmp) {
+        remove_with_debug_log(&tmp_archive);
+        return Err(e).with_context(|| {
+            format!(
+                "extracting jackin-capsule from {} (archive passed SHA-256 check — \
+                 if retrying fails, the release asset may be malformed; \
+                 check https://github.com/jackin-project/jackin/releases)",
+                tmp_archive.display()
+            )
+        });
+    }
     remove_with_debug_log(&tmp_archive);
 
-    chmod_executable(&tmp).with_context(|| {
-        format!(
-            "setting executable bit on cached jackin-capsule at {}",
-            tmp.display()
-        )
-    })?;
+    if let Err(e) = chmod_executable(&tmp) {
+        remove_with_debug_log(&tmp);
+        return Err(e).with_context(|| {
+            format!(
+                "setting executable bit on cached jackin-capsule at {}; \
+                 ensure {} is not mounted noexec",
+                tmp.display(),
+                tmp.parent().unwrap_or(&tmp).display()
+            )
+        });
+    }
 
     // Verify BEFORE rename so a verification failure leaves nothing in
     // the final cache path. Promoting the tmp file to `dest` first and
@@ -336,7 +366,9 @@ const SIGSTORE_REKOR_KEY_ID: &str = "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0
 ///
 /// Decoded once and cached: the key is a compile-time constant we own, so a
 /// decode failure is a programming error — hence `expect` rather than a
-/// propagated error.
+/// propagated error. The `rekor_keys_decode_and_contain_expected_id` unit test
+/// is the regression guard; a malformed constant panics there at test time
+/// rather than silently at first production download.
 fn rekor_verification_keys()
 -> &'static std::collections::BTreeMap<String, sigstore::crypto::CosignVerificationKey> {
     use base64::Engine as _;
@@ -568,10 +600,20 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
             .await
             .context("failed to run jackin-capsule --version")?;
         if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
+            let detail = match (stdout.trim().is_empty(), stderr.trim().is_empty()) {
+                (false, false) => format!("stdout: {stdout}\nstderr: {stderr}"),
+                (false, true) => format!("stdout: {stdout}"),
+                (true, false) => format!("stderr: {stderr}"),
+                (true, true) => "(no output — possible signal/crash)".to_string(),
+            };
             anyhow::bail!(
-                "jackin-capsule --version exited with {}: {stderr}",
-                output.status
+                "jackin-capsule --version at {} exited with {}\n{detail}\n\
+                 If the binary is corrupted, delete it and retry: rm -f {}",
+                binary.display(),
+                output.status,
+                binary.display()
             );
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -737,5 +779,22 @@ mod tests {
             keys.contains_key(SIGSTORE_REKOR_KEY_ID),
             "expected key ID {SIGSTORE_REKOR_KEY_ID} not found in decoded map"
         );
+        // Confirm the key variant is ECDSA P-256, matching Sigstore production Rekor.
+        let key = keys.get(SIGSTORE_REKOR_KEY_ID).unwrap();
+        assert!(
+            format!("{key:?}").contains("ECDSA_P256"),
+            "expected Rekor key to be ECDSA_P256 variant, got: {key:?}"
+        );
+    }
+
+    #[test]
+    fn is_preview_version_matches_dev_and_preview_suffixes() {
+        assert!(is_preview_version("0.6.0-dev+bf7df07"));
+        assert!(is_preview_version("0.6.0-preview.411+bf7df07"));
+        // Any string containing "-dev" is preview (substring match by design).
+        assert!(is_preview_version("0.6.0-developer"));
+        assert!(!is_preview_version("0.6.0"));
+        // "-preview1" lacks the required trailing dot — not a preview channel version.
+        assert!(!is_preview_version("0.6.0-preview1"));
     }
 }
