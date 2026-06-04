@@ -1,10 +1,8 @@
 # Parallel Agent Coordination — `feature/tui-architecture`
 
-This is the **single source of truth** for coordinating parallel Claude Code agents on this branch.
-**Always read and update this file before claiming or releasing work.**
+**Single source of truth.** Read and update this file before claiming work.
 
-> **Other coordination files (AGENT-COORDINATION.md, .claude/*.md) are superseded by this one.**
-> Keep this as the only coordination file going forward.
+**Deprecated files (do not use):** `AGENT-COORDINATION.md` (deleted in `6a6c2940`), `.claude/agent-coordination.md` (local-only, gitignored), `.claude/AGENT_COORDINATION.md` (local-only, gitignored). Those are all superseded by this file.
 
 ---
 
@@ -16,7 +14,7 @@ This is the **single source of truth** for coordinating parallel Claude Code age
 4. If push fails (parallel conflict): pull, re-read, pick a different item.
 5. **Release when done** — replace `[AGENT-X WORKING]` with `[DONE in <commit>]`, push.
 6. **Avoid files the other agent has unstaged** — `git status` shows in-progress work.
-7. **Prefer small, atomic commits** — push after every logical unit so the other agent can pull and see progress.
+7. **Prefer small, atomic commits** — push after every logical unit.
 
 ---
 
@@ -24,15 +22,12 @@ This is the **single source of truth** for coordinating parallel Claude Code age
 
 | Checklist item | Status | Notes |
 |---|---|---|
-| Defect 45 Phase 4 (PageList memory model) | **[DONE in f7088721]** | CompactString + wire-minimal emit + dump() |
-| Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Depends on Phase 4 gate (real session smoke) |
-| Defect 46 Phase 2 (dispatch migration) | **[DONE in 2c8cdb37+]** | auth_forward_for(), make_agent_runtime_state(), parse_version() |
-| Defect 46 Phase 3 (serde newtype collapse) | **[DONE in 5991a106]** | CodexAuthConfig etc. removed; WorkspaceConfig::validate_auth_modes() added |
-| Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Judgement call; do after Phase B |
-| Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Decision already made = `crates/jackin/src/console/` |
-| Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | **[AGENT-A WORKING]** | B.1: resolver fn in app_config_roles.rs; B.2: provisioning via state_paths() |
+| Defect 46 Phase B.1-B.5 (auth-sync-source-folder) | **[AGENT-A WORKING]** | B.1 schema done; B.2 provisioning next |
+| Defect 46 Phase A.0 (canonical console reconcile) | AVAILABLE | Decision: `crates/jackin/src/console/` is canonical |
+| Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
+| Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
 | Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR-split point |
-| Defect 46 acceptance gates | AVAILABLE | Green gates + smoke tests |
+| Defect 46 acceptance gates | AVAILABLE | Needs Phase B + Phase 3 + green smoke |
 
 ---
 
@@ -40,24 +35,25 @@ This is the **single source of truth** for coordinating parallel Claude Code age
 
 | Commit | What |
 |---|---|
-| `5991a106` | Phase 3 — fix .0.auth_forward refs + WorkspaceConfig::validate_auth_modes |
+| `3e9b4a2a` | Defect 43 — RoleState::prepare wrapped in spawn_blocking |
+| `4390f408` | TUI architecture — capsule terminal model pipeline decisions |
+| `8cb8429b` | codebase-map — jackin-term entry; Defect 43/46 checklist |
+| `5ed76cd1` | Defect 43/46 — capsule daemon audit + architecture.mdx registry |
+| `5991a106` | Phase 3 — collapse CodexAuthConfig → AgentAuthConfig |
 | `f7088721` | jackin-term Phase 4 — wire-minimal emit + attribution |
-| `180f7110` | jackin-term — dump() snapshot + GridSnapshot |
-| `1e4da536` | jackin-term Phase 4 — CompactString per-cell alloc elimination |
-| `9ead2dad` | coordination: claim Phase 3 |
+| `180f7110` | jackin-term — dump() + GridSnapshot |
+| `1e4da536` | jackin-term Phase 4 — CompactString (no alloc for ≤24-byte graphemes) |
 | `14a1e3c5` | Defect 43 docs — async architecture in architecture.mdx |
-| `b26f310e` | coordination + checklist: Phase A.1 done |
-| `2c8cdb37` | Phase 2 auth-forward + auth_forward_for() accessors |
-| `480ec132` | Checklist Phase 3 + lib.rs status |
-| `6088787f` | jackin-term Phase 3 — capsule feature flag wired |
-| `720e18e8` | jackin-term Phase 2 — DamageGrid wired as harness left model |
-| `c0591f46` | Phase 2 — parse_version + version_check consolidation |
+| `6088787f` | jackin-term Phase 3 — capsule feature flag |
+| `720e18e8` | jackin-term Phase 2 — DamageGrid as harness left model |
+| `c0591f46` | Phase 2 — AgentRuntime::parse_version + version_check |
 | `cd106ca2` | Defect 43 — spawn_blocking for blocking calls |
-| `62fb7ddd` | jackin-term Phase 1-2 — harness + DamageGrid v0 |
+| `62fb7ddd` | jackin-term Phase 1-2 — differential harness + DamageGrid v0 |
 | `ce3986c9` | Phase 0 close-out |
+| `2c8cdb37` | Phase 2 — auth-forward accessors |
 | `ca76d9d5` | Defects 36/37 docs + Phase 2 partial |
 | `4930c2fe` | Phase 2 dispatch + Defect 42 debug capsule build |
-| `846a87fa` | #523 MiniMax/Kimi provider catalog port |
+| `846a87fa` | #523 MiniMax/Kimi catalog port |
 | `d8a08f68` | Phase 1 — AgentRuntime trait + sealed adapters |
 
 ---
@@ -66,23 +62,24 @@ This is the **single source of truth** for coordinating parallel Claude Code age
 
 | Area | Why safe |
 |---|---|
-| `crates/jackin-term/src/` | Isolated new crate |
-| `docs/content/docs/reference/` | Docs; pick non-overlapping sections |
-| `crates/jackin-diagnostics/` | Stable; not being modified |
+| `crates/jackin-term/src/` | Isolated new crate, no workspace deps |
+| `docs/content/docs/reference/` | Docs only; pick non-overlapping sections |
+| `crates/jackin-diagnostics/` | Stable |
 
 ## Current conflict zones (check before touching)
 
 | File / Area | Status |
 |---|---|
-| `crates/jackin-config/src/auth.rs` | sync_source_dir field added (uncommitted) — Phase B in progress |
-| All test files with `AgentAuthConfig { ... }` | double-comma fixes applied (uncommitted) |
+| `crates/jackin-config/src/auth.rs` | sync_source_dir — Phase B in progress (Agent A) |
+| `crates/jackin-config/src/app_config*.rs` | Phase B schema changes pending (Agent A) |
+| `crates/jackin/src/runtime/launch/tests.rs` | Phase B test updates pending (Agent A) |
 
 ---
 
 ## Notes
 
-- Both agents share the **same git working tree** — commits are visible immediately after `git push`.
+- Both agents share the **same git working tree** — `git push` = immediate visibility.
 - Priority: Phase B → Phase A.0 → Phase 4 → Phase 5 → acceptance gates.
-- Defect 47.6 (OTLP) is the natural PR-split point — defer if this PR is getting large.
-- `cargo test --workspace --lib` must stay green; run before every commit.
+- Defect 47.6 (OTLP) is the natural PR-split point — defer if PR is getting large.
+- `cargo test --workspace --lib` must stay green before every commit.
 - **Do NOT create more coordination files** — this is the only one.
