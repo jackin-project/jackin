@@ -30,7 +30,6 @@ pub(crate) enum FullRedrawReason {
     PaneClear,
     ExplicitRedraw,
     StatusChange,
-    PaneCacheMiss,
 }
 
 impl FullRedrawReason {
@@ -51,7 +50,6 @@ impl FullRedrawReason {
             Self::PaneClear => "pane-clear",
             Self::ExplicitRedraw => "explicit-redraw",
             Self::StatusChange => "status-change",
-            Self::PaneCacheMiss => "pane-cache-miss",
         }
     }
 }
@@ -142,39 +140,6 @@ pub(crate) fn drag_resize_ratio(orient: SplitOrient, rect: Rect, row: u16, col: 
             let off = row.saturating_sub(rect.row);
             (off as f32 / rect.rows as f32).clamp(0.05, 0.95)
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PartialFramePlan {
-    Empty,
-    OverlayDiff,
-    Full(FullRedrawReason),
-    Partial,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct PartialFrameState {
-    pub(crate) dirty_empty: bool,
-    pub(crate) overlay_active: bool,
-    pub(crate) any_dirty_visible_pane: bool,
-    pub(crate) dirty_pane_scrollback_active: bool,
-    pub(crate) dirty_pane_cache_invalid: bool,
-}
-
-pub(crate) fn partial_frame_plan(state: PartialFrameState) -> PartialFramePlan {
-    if state.dirty_empty {
-        PartialFramePlan::Empty
-    } else if state.overlay_active {
-        PartialFramePlan::OverlayDiff
-    } else if !state.any_dirty_visible_pane {
-        PartialFramePlan::Empty
-    } else if state.dirty_pane_scrollback_active {
-        PartialFramePlan::Full(FullRedrawReason::ScrollbackMovement)
-    } else if state.dirty_pane_cache_invalid {
-        PartialFramePlan::Full(FullRedrawReason::PaneCacheMiss)
-    } else {
-        PartialFramePlan::Partial
     }
 }
 

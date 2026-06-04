@@ -2,7 +2,6 @@
 use crate::protocol::AgentState;
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::layout::{PaneTree, Rect, SplitOrient, Tab};
-use crate::tui::render::PaneBodyDim;
 
 use super::{
     ChromeHitState, CursorVisibilityState, HoverState, HoverTarget, MuxMode, MuxModeState,
@@ -229,10 +228,8 @@ fn visible_panes_mark_unfocused_split_bodies_inactive() {
     assert_eq!(panes.len(), 2);
     assert_eq!(panes[0].id, 1);
     assert!(!panes[0].focused);
-    assert_eq!(panes[0].body_dim, PaneBodyDim::Inactive);
     assert_eq!(panes[1].id, 2);
     assert!(panes[1].focused);
-    assert_eq!(panes[1].body_dim, PaneBodyDim::Normal);
 }
 
 #[test]
@@ -245,7 +242,6 @@ fn zoomed_visible_pane_uses_whole_content_rect() {
     assert_eq!(panes[0].outer, Rect::new(1, 0, 10, 20));
     assert_eq!(panes[0].inner, Rect::new(2, 1, 8, 18));
     assert!(panes[0].focused);
-    assert_eq!(panes[0].body_dim, PaneBodyDim::Normal);
 }
 
 #[test]

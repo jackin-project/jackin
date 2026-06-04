@@ -1,10 +1,10 @@
 //! Tests for `update`.
 use super::{
-    ActionFramePlan, DialogActionFramePlan, HoverFramePlan, PartialFramePlan, PartialFrameState,
-    action_frame_plan, dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
+    ActionFramePlan, DialogActionFramePlan, HoverFramePlan, action_frame_plan,
+    dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
     drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
     focus_change_redraw_reason, hover_frame_plan, palette_route_redraw_reason,
-    pane_data_redraw_reason, partial_frame_plan, prefix_full_redraw_reason, resize_redraw_reason,
+    pane_data_redraw_reason, prefix_full_redraw_reason, resize_redraw_reason,
     selection_change_redraw_reason, selection_start_redraw_reason, session_exit_redraw_reason,
     status_change_redraw_reason, wheel_scrollback_redraw_reason,
 };
@@ -94,53 +94,6 @@ fn drag_resize_ratio_clamps_to_visible_resize_bounds() {
     assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 0, 4), 0.05);
     assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 40, 4), 0.95);
     assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 12, 4), 0.5);
-}
-
-#[test]
-fn partial_frame_plan_promotes_unsafe_cases_to_full_redraw() {
-    let base = PartialFrameState {
-        dirty_empty: false,
-        overlay_active: false,
-        any_dirty_visible_pane: true,
-        dirty_pane_scrollback_active: false,
-        dirty_pane_cache_invalid: false,
-    };
-    assert_eq!(partial_frame_plan(base), PartialFramePlan::Partial);
-    assert_eq!(
-        partial_frame_plan(PartialFrameState {
-            dirty_empty: true,
-            ..base
-        }),
-        PartialFramePlan::Empty
-    );
-    assert_eq!(
-        partial_frame_plan(PartialFrameState {
-            overlay_active: true,
-            ..base
-        }),
-        PartialFramePlan::OverlayDiff
-    );
-    assert_eq!(
-        partial_frame_plan(PartialFrameState {
-            any_dirty_visible_pane: false,
-            ..base
-        }),
-        PartialFramePlan::Empty
-    );
-    assert_eq!(
-        partial_frame_plan(PartialFrameState {
-            dirty_pane_scrollback_active: true,
-            ..base
-        }),
-        PartialFramePlan::Full(FullRedrawReason::ScrollbackMovement)
-    );
-    assert_eq!(
-        partial_frame_plan(PartialFrameState {
-            dirty_pane_cache_invalid: true,
-            ..base
-        }),
-        PartialFramePlan::Full(FullRedrawReason::PaneCacheMiss)
-    );
 }
 
 #[test]

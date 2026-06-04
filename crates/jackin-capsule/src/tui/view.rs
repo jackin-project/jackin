@@ -8,9 +8,7 @@ use crate::tui::components::branch_context_bar::{
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
-use crate::tui::components::status_bar::draw_pane_box;
 use crate::tui::layout::Tab;
-use crate::tui::render::draw_scrollbar;
 use ratatui::{Frame, layout::Rect as RatatuiRect};
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
@@ -22,58 +20,6 @@ pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 
 pub(crate) const fn hovered_menu(target: Option<HoverTarget>) -> bool {
     matches!(target, Some(HoverTarget::Menu))
-}
-
-#[derive(Default)]
-pub(crate) struct PaneScrollbar {
-    pub(crate) offset: usize,
-    pub(crate) filled: usize,
-}
-
-impl PaneScrollbar {
-    pub(crate) const fn visible(&self) -> bool {
-        self.filled > 0
-    }
-}
-
-/// Draw the pane box and optional scrollbar for one visible pane.
-///
-/// Used by `compose_partial_frame` for the dirty-pane incremental path (the
-/// full-frame path renders pane borders via the Ratatui `PaneBorderWidget`).
-pub(crate) fn render_capsule_pane_chrome(
-    buf: &mut Vec<u8>,
-    pane: &VisiblePane,
-    title: &str,
-    scrollbar: PaneScrollbar,
-    zoomed: bool,
-    multi_pane: bool,
-) {
-    // Focused-border highlight: show the bright focus ring when the
-    // operator must look at this pane to understand scroll state.
-    let highlight_focus = if zoomed {
-        scrollbar.visible()
-    } else {
-        multi_pane || scrollbar.visible()
-    };
-    draw_pane_box(
-        buf,
-        pane.outer.row,
-        pane.outer.col,
-        pane.outer.rows,
-        pane.outer.cols,
-        title,
-        pane.focused && highlight_focus,
-    );
-    draw_scrollbar(
-        buf,
-        pane.outer.row,
-        pane.outer.col,
-        pane.outer.rows,
-        pane.outer.cols,
-        scrollbar.offset,
-        scrollbar.filled,
-        pane.focused && highlight_focus,
-    );
 }
 
 pub(crate) struct CapsuleBottomChrome<'a> {
@@ -250,8 +196,7 @@ fn apply_selection_highlight(
     buf: &mut ratatui::buffer::Buffer,
     sel: &crate::tui::selection::SelectionState,
 ) {
-    let (start_row, start_col, end_row, end_col) =
-        crate::tui::selection::canonical_selection(sel);
+    let (start_row, start_col, end_row, end_col) = crate::tui::selection::canonical_selection(sel);
     let inner = sel.inner;
     for r in start_row..=end_row {
         let from_col = if r == start_row { start_col } else { 0 };
@@ -361,8 +306,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
 
     // Per-pane scrollback thumbs on the right border.
     for pane in view.panes {
-        if let Some(&(_, offset, filled)) =
-            view.scrollbars.iter().find(|(id, _, _)| *id == pane.id)
+        if let Some(&(_, offset, filled)) = view.scrollbars.iter().find(|(id, _, _)| *id == pane.id)
             && filled > 0
         {
             let focused = Some(pane.id) == view.focused_id;
@@ -375,56 +319,6 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
     if let Some(sel) = view.selection {
         apply_selection_highlight(frame.buffer_mut(), &sel);
     }
-}
-
-pub(crate) struct ScrollAffordanceMetrics {
-    pub(crate) screen_rows: u16,
-    pub(crate) screen_cols: u16,
-    pub(crate) cursor_row: u16,
-    pub(crate) cursor_col: u16,
-    pub(crate) occupied_rows: usize,
-    pub(crate) first_occupied_row: Option<u16>,
-    pub(crate) last_occupied_row: Option<u16>,
-}
-
-/// DamageGrid-based scrollbar affordance metrics.
-/// Uses a `GridSnapshot` so the debug scrollbar path does not need the live grid.
-pub(crate) fn grid_scroll_affordance_metrics(
-    snap: &jackin_term::GridSnapshot,
-    viewport_rows: u16,
-    viewport_cols: u16,
-) -> Option<ScrollAffordanceMetrics> {
-    let (screen_rows, screen_cols) = (snap.rows, snap.cols);
-    let rows = viewport_rows.min(screen_rows);
-    let cols = viewport_cols.min(screen_cols);
-    if rows == 0 || cols == 0 {
-        return None;
-    }
-
-    let mut occupied_rows = 0usize;
-    let mut first_occupied_row = None;
-    let mut last_occupied_row = None;
-    for row in 0..rows {
-        if (0..cols).any(|col| {
-            snap.cell(row, col)
-                .is_some_and(|c| !c.text.is_empty() && !c.is_wide_continuation)
-        }) {
-            occupied_rows += 1;
-            first_occupied_row.get_or_insert(row);
-            last_occupied_row = Some(row);
-        }
-    }
-    let (cursor_row, cursor_col) = snap.cursor;
-
-    Some(ScrollAffordanceMetrics {
-        screen_rows,
-        screen_cols,
-        cursor_row,
-        cursor_col,
-        occupied_rows,
-        first_occupied_row,
-        last_occupied_row,
-    })
 }
 
 /// Format a spawn-failure banner: save cursor → jump to row 1, col 1

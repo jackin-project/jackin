@@ -402,12 +402,25 @@ fn render_filter_picker(
         ..inner
     };
 
+    // Width available to a row's content. render_picker_list indents every row
+    // by the 2-col highlight gutter, so section separators fill width - 2.
+    let row_width = usize::from(list_area.width).saturating_sub(2);
     let list_items: Vec<ratatui::widgets::ListItem<'_>> = items
         .iter()
         .map(|item| match item {
-            PickerItem::Section(label) => ratatui::widgets::ListItem::new(Line::from(
-                Span::styled(format!(" {label}"), jackin_tui::theme::DIM),
-            )),
+            PickerItem::Section(label) => {
+                // Dashed separator `──── label ────`, matching the raw dialog:
+                // dashes in PHOSPHOR_DARK, the label dim and centered.
+                let label_disp = format!(" {label} ");
+                let dashes = row_width.saturating_sub(jackin_tui::display_cols(&label_disp));
+                let left = dashes / 2;
+                let right = dashes - left;
+                ratatui::widgets::ListItem::new(Line::from(vec![
+                    Span::styled("─".repeat(left), Style::default().fg(PHOSPHOR_DARK)),
+                    Span::styled(label_disp, jackin_tui::theme::DIM),
+                    Span::styled("─".repeat(right), Style::default().fg(PHOSPHOR_DARK)),
+                ]))
+            }
             PickerItem::Item(label) => ratatui::widgets::ListItem::new(Line::from(Span::styled(
                 label.clone(),
                 Style::default().fg(PHOSPHOR_GREEN),

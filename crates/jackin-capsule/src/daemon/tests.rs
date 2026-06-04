@@ -235,8 +235,9 @@ fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
         "first frame should set branch title: {first:?}"
     );
 
-    let second = String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
-        .to_string();
+    let second =
+        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
+            .to_string();
     assert!(
         !second.contains("\x1b]2;jackin · feat/capsule-pr-context-bar\x1b\\"),
         "unchanged full frame should not spam title: {second:?}"
@@ -511,7 +512,6 @@ fn full_redraw_always_emits_screen_erase() {
         FullRedrawReason::SplitClose,
         FullRedrawReason::LayoutChange,
         FullRedrawReason::StatusChange,
-        FullRedrawReason::PaneCacheMiss,
         FullRedrawReason::ScrollbackMovement,
     ] {
         let mut mux = single_pane_tab_mux_with_size(24, 80);

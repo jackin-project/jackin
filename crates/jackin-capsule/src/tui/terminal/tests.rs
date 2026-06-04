@@ -5,6 +5,7 @@ use super::*;
 fn client_owned_mode_state_captures_mouse_focus_and_alternate_scroll() {
     let state = client_owned_mode_state();
     for needle in [
+        &b"\x1b[?7l"[..],
         &b"\x1b[?1003h"[..],
         &b"\x1b[?1006h"[..],
         &b"\x1b[?1004h"[..],
@@ -36,6 +37,16 @@ fn outer_terminal_reset_disables_alternate_scroll() {
     assert!(
         reset.windows(needle.len()).any(|w| w == needle),
         "outer terminal reset missing alternate-scroll disable: {reset:?}"
+    );
+}
+
+#[test]
+fn outer_terminal_reset_restores_autowrap() {
+    let reset = outer_terminal_reset_sequence();
+    let needle = b"\x1b[?7h";
+    assert!(
+        reset.windows(needle.len()).any(|w| w == needle),
+        "outer terminal reset missing autowrap restore: {reset:?}"
     );
 }
 

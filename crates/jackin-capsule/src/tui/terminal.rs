@@ -26,7 +26,7 @@ pub fn normalize_size(rows: u16, cols: u16) -> (u16, u16) {
 /// the alternate-screen leave (`?1049l`). The leave is appended only when this
 /// client entered its own alternate screen.
 const OUTER_TERMINAL_RESET_BASE: &[u8] =
-    b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h";
+    b"\x1b]22;default\x1b\\\x1b[?7h\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h";
 const ALTERNATE_SCREEN_LEAVE: &[u8] = b"\x1b[?1049l";
 
 /// True when the host orchestrator owns one continuous alternate screen for the
@@ -53,8 +53,14 @@ fn outer_terminal_reset_sequence() -> Vec<u8> {
 /// translate wheel gestures in the alternate screen into cursor keys; jackin'
 /// needs the wheel to stay as mouse input so the daemon can decide whether
 /// scrollback, PTY mouse forwarding, or a no-op owns it.
+///
+/// Autowrap (`?7l`) is disabled because the Ratatui compositor positions every
+/// cell absolutely and paints the bottom-right cell every full redraw. With
+/// autowrap on, writing that last cell pends a wrap and the next byte scrolls
+/// the whole screen up one row — the brand/tab status row scrolls off and the
+/// frame drifts. Cell-positioned compositors must own autowrap off.
 pub(crate) fn client_owned_mode_state() -> &'static [u8] {
-    b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
+    b"\x1b[?7l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
 }
 
 pub(crate) fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {

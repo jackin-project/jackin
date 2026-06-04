@@ -7,7 +7,6 @@
 use crate::protocol::AgentState;
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::layout::{Rect, SplitOrient, Tab};
-use crate::tui::render::PaneBodyDim;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuxMode {
@@ -223,7 +222,6 @@ pub(crate) struct VisiblePane {
     pub(crate) outer: Rect,
     pub(crate) inner: Rect,
     pub(crate) focused: bool,
-    pub(crate) body_dim: PaneBodyDim,
 }
 
 pub(crate) fn visible_panes_for_layout(
@@ -239,14 +237,12 @@ pub(crate) fn visible_panes_for_layout(
             outer,
             inner: outer.shrink(1),
             focused: Some(zoom_id) == focused_id,
-            body_dim: PaneBodyDim::Normal,
         }];
     }
     let Some(tab) = active_tab else {
         return Vec::new();
     };
     let leaves = tab.tree.leaves(content_rect);
-    let multi_pane = leaves.len() > 1;
     leaves
         .into_iter()
         .map(|(id, outer)| {
@@ -256,11 +252,6 @@ pub(crate) fn visible_panes_for_layout(
                 outer,
                 inner: outer.shrink(1),
                 focused,
-                body_dim: if multi_pane && !focused {
-                    PaneBodyDim::Inactive
-                } else {
-                    PaneBodyDim::Normal
-                },
             }
         })
         .collect()

@@ -8,66 +8,11 @@ use std::time::Instant;
 
 use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
 use crate::tui::view::{
-    CapsuleBottomChrome, CapsuleDialogBottomChrome, PaneScrollbar, grid_scroll_affordance_metrics,
-    render_capsule_bottom_chrome, render_capsule_dialog_bottom_chrome, render_capsule_pane_chrome,
+    CapsuleBottomChrome, CapsuleDialogBottomChrome, render_capsule_bottom_chrome,
+    render_capsule_dialog_bottom_chrome,
 };
 
 use super::*;
-
-fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16) -> PaneScrollbar {
-    let debug_enabled = crate::logging::debug_enabled();
-    let (filled, vt_filled, inline_filled) = if debug_enabled {
-        let (vt_filled, inline_filled) = session.scrollback_counts();
-        (
-            vt_filled.saturating_add(inline_filled),
-            vt_filled,
-            inline_filled,
-        )
-    } else {
-        (session.scrollback_filled(), 0, 0)
-    };
-    let scrollbar = PaneScrollbar {
-        offset: session.scrollback_offset,
-        filled,
-    };
-    let metrics = if debug_enabled {
-        let snap = session.shadow_grid.dump();
-        grid_scroll_affordance_metrics(&snap, viewport_rows, viewport_cols)
-    } else {
-        None
-    };
-    crate::cdebug!(
-        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} first_occupied_row={} last_occupied_row={} vt_scrollback={} inline_scrollback={} scrollback_filled={} visible={} reason={}",
-        session.agent,
-        session.shadow_grid.alternate_screen(),
-        session.mouse_enabled(),
-        viewport_rows,
-        viewport_cols,
-        metrics.as_ref().map_or(0, |m| m.screen_rows),
-        metrics.as_ref().map_or(0, |m| m.screen_cols),
-        metrics.as_ref().map_or(0, |m| m.cursor_row),
-        metrics.as_ref().map_or(0, |m| m.cursor_col),
-        metrics.as_ref().map_or(0, |m| m.occupied_rows),
-        metrics
-            .as_ref()
-            .and_then(|m| m.first_occupied_row)
-            .map_or(-1, i32::from),
-        metrics
-            .as_ref()
-            .and_then(|m| m.last_occupied_row)
-            .map_or(-1, i32::from),
-        vt_filled,
-        inline_filled,
-        filled,
-        scrollbar.visible(),
-        if scrollbar.visible() {
-            "retained-scrollback"
-        } else {
-            "none"
-        }
-    );
-    scrollbar
-}
 
 impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
@@ -95,7 +40,7 @@ impl Multiplexer {
 
     /// Single entry point for every full frame, regardless of which path
     /// requested it (initial pending-redraw, an interactive action, the chrome
-    /// ticker, or a partial frame that escalated to `PartialFramePlan::Full`).
+    /// ticker, or an interactive action).
     /// Routing *all* full frames through here keeps one compositor in charge:
     /// the Ratatui `SocketBackend` paints status + panes and `compose_ratatui_frame`
     /// appends the raw bottom chrome + cursor. This is the only full-frame
@@ -192,9 +137,17 @@ impl Multiplexer {
         let pane_scrollbars: Vec<(u64, usize, usize)> = panes
             .iter()
             .filter_map(|pane| {
-                self.sessions
-                    .get_mut(&pane.id)
-                    .map(|s| (pane.id, s.scrollback_offset, s.scrollback_filled()))
+                self.sessions.get_mut(&pane.id).map(|s| {
+                    // Alt-screen apps (Claude Code, vim, …) own their own
+                    // scroll — jackin keeps no scrollback for them, so report
+                    // filled=0 to suppress the scrollbar thumb on their border.
+                    let filled = if s.shadow_grid.alternate_screen() {
+                        0
+                    } else {
+                        s.scrollback_filled()
+                    };
+                    (pane.id, s.scrollback_offset, filled)
+                })
             })
             .collect();
         // Pane bodies as GridSnapshots. A pane the operator has scrolled up in
@@ -377,125 +330,30 @@ impl Multiplexer {
     }
 
     pub(super) fn compose_partial_frame(&mut self, dirty_panes: HashSet<u64>) -> Vec<u8> {
-        match partial_frame_plan(PartialFrameState {
-            dirty_empty: dirty_panes.is_empty(),
-            overlay_active: self.dialog_open() || self.selection.is_some(),
-            any_dirty_visible_pane: true,
-            dirty_pane_scrollback_active: false,
-            dirty_pane_cache_invalid: false,
-        }) {
-            PartialFramePlan::Empty => return Vec::new(),
-            PartialFramePlan::OverlayDiff => {
-                // Ratatui diff path: unchanged dialog state produces an empty
-                // diff instead of a full repaint. No raw fallback — skip the
-                // frame on the impossible draw error.
-                if let Some(ratatui_output) = self.compose_ratatui_frame() {
-                    let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-                    self.append_outer_terminal_title(&mut out);
-                    out.extend_from_slice(&ratatui_output);
-                    return out;
-                }
-                crate::clog!("compose_partial_frame overlay: ratatui draw failed; skipping frame");
-                return Vec::new();
-            }
-            PartialFramePlan::Full(reason) => return self.compose_full_redraw(reason),
-            PartialFramePlan::Partial => {}
-        }
-
-        let started = Instant::now();
-        let panes = self.visible_panes();
-        let focused_id = self.active_focused_id();
-        let focused_pane_rect = panes
-            .iter()
-            .find(|pane| pane.focused)
-            .map(|pane| pane.inner);
-
-        let any_dirty_visible_pane = panes.iter().any(|pane| dirty_panes.contains(&pane.id));
-        if let PartialFramePlan::Empty = partial_frame_plan(PartialFrameState {
-            dirty_empty: false,
-            overlay_active: false,
-            any_dirty_visible_pane,
-            dirty_pane_scrollback_active: false,
-            dirty_pane_cache_invalid: false,
-        }) {
-            crate::cdebug!(
-                "render: kind=partial reason=pty-output dirty_panes={} panes=0 rows=0 pane_bytes=0 bytes=0 duration_us={}",
-                dirty_panes.len(),
-                started.elapsed().as_micros()
-            );
+        // A dirty-pane frame (PTY output / hover / selection change) is a
+        // Ratatui DIFF — NOT a full redraw. compose_ratatui_frame draws without
+        // clearing the double-buffer, so the SocketBackend emits only the cells
+        // that changed since the previous frame: no `\x1b[2J`, no full repaint.
+        // This keeps streaming agent output incremental and flicker-free.
+        // (compose_full_redraw, which clears the screen, is reserved for
+        // geometry/layout changes that must wipe the previous layout.)
+        if dirty_panes.is_empty() && !self.dialog_open() && self.selection.is_none() {
             return Vec::new();
         }
-
-        let mut dirty_pane_scrollback_active = false;
-        let mut dirty_pane_cache_invalid = false;
-        for pane in panes.iter().filter(|pane| dirty_panes.contains(&pane.id)) {
-            let Some(session) = self.sessions.get(&pane.id) else {
-                continue;
-            };
-            if session.scrollback_offset != 0 {
-                dirty_pane_scrollback_active = true;
-            }
-            if !self.pane_body_caches.get(&pane.id).is_some_and(|cache| {
-                cache.is_valid_for(pane.inner.rows, pane.inner.cols, pane.body_dim)
-            }) {
-                dirty_pane_cache_invalid = true;
-            }
-        }
-        if let PartialFramePlan::Full(reason) = partial_frame_plan(PartialFrameState {
-            dirty_empty: false,
-            overlay_active: false,
-            any_dirty_visible_pane,
-            dirty_pane_scrollback_active,
-            dirty_pane_cache_invalid,
-        }) {
-            return self.compose_full_redraw(reason);
-        }
-
-        let mut buf = Vec::with_capacity(16384);
+        let started = Instant::now();
+        let Some(ratatui_output) = self.compose_ratatui_frame() else {
+            crate::clog!("compose_partial_frame: ratatui draw failed; skipping frame");
+            return Vec::new();
+        };
+        let mut buf = Vec::with_capacity(ratatui_output.len() + 64);
         self.append_outer_terminal_title(&mut buf);
-        buf.extend_from_slice(b"\x1b[?25l");
-        let mut rows_emitted = 0usize;
-        let mut panes_rendered = 0usize;
-        let mut pane_body_bytes = 0usize;
-        let multi_pane = panes.len() > 1;
-        let zoomed = self.active_zoomed_id().is_some();
-        for pane in panes.iter().filter(|pane| dirty_panes.contains(&pane.id)) {
-            let mut scrollbar = PaneScrollbar::default();
-            let mut title = None;
-            if let Some(session) = self.sessions.get_mut(&pane.id) {
-                scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
-                title = Some(session_display_title(session));
-                let before = buf.len();
-                // Phase 5: dirty-pane incremental render uses WireEmitter
-                // (dirty_spans only, no PaneBodyCache snapshot diffing).
-                let (snap, spans) = session.take_damagegrid_frame();
-                let mut emitter = jackin_term::WireEmitter::new();
-                emitter.emit_pane(&snap, &spans, pane.inner.row, pane.inner.col);
-                buf.extend_from_slice(emitter.as_bytes());
-                let rows_count = emitter.as_bytes().len();
-                if rows_count > 0 {
-                    panes_rendered += 1;
-                }
-                rows_emitted += snap.rows as usize;
-                pane_body_bytes += buf.len() - before;
-            }
-            if let Some(title) = title {
-                render_capsule_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
-            }
-        }
-
-        self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
-
+        buf.extend_from_slice(&ratatui_output);
         crate::cdebug!(
-            "render: kind=partial reason=pty-output dirty_panes={} panes={} rows={} pane_bytes={} bytes={} duration_us={}",
+            "render: kind=partial reason=pty-output dirty_panes={} bytes={} duration_us={}",
             dirty_panes.len(),
-            panes_rendered,
-            rows_emitted,
-            pane_body_bytes,
             buf.len(),
             started.elapsed().as_micros()
         );
-
         buf
     }
 
