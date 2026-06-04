@@ -318,6 +318,12 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             if component_rect.height > 0 && component_rect.width > 0 {
+                // Clear the component area so every story renders on the
+                // terminal's default background, with PREVIEW_CARD visible as
+                // the dark surround. Dialog stories already call Clear
+                // internally via render_dialog_shell; non-dialog stories need
+                // this so they get the same visual treatment.
+                frame.render_widget(ratatui::widgets::Clear, component_rect);
                 interactor.render(frame, component_rect);
             }
 

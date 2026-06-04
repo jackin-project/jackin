@@ -61,23 +61,34 @@ fn hit_footer_container_chip(
     if instance.is_empty() {
         return false;
     }
+    let footer_row = Rect {
+        x: 0,
+        y: area.height.saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
     let debug_chip = debug_mode.then_some(run_id);
-    jackin_tui::components::status_footer_right_chip_rect(
-        Rect {
-            x: 0,
-            y: area.height.saturating_sub(1),
-            width: area.width,
-            height: 1,
-        },
-        &instance,
-        debug_chip,
-    )
-    .is_some_and(|rect| {
-        row >= rect.y
-            && row < rect.y.saturating_add(rect.height)
-            && col >= rect.x
-            && col < rect.x.saturating_add(rect.width)
-    })
+    let hit_instance =
+        jackin_tui::components::status_footer_right_chip_rect(footer_row, &instance, debug_chip)
+            .is_some_and(|rect| {
+                row >= rect.y
+                    && row < rect.y.saturating_add(rect.height)
+                    && col >= rect.x
+                    && col < rect.x.saturating_add(rect.width)
+            });
+    // The debug chip (rightmost) opens the same container-info dialog as the
+    // instance-ID chip — both show the same content, just from different entry
+    // points. Check it too so clicking either chip works.
+    let hit_debug = debug_mode
+        && jackin_tui::components::status_footer_debug_chip_rect(footer_row, run_id).is_some_and(
+            |rect| {
+                row >= rect.y
+                    && row < rect.y.saturating_add(rect.height)
+                    && col >= rect.x
+                    && col < rect.x.saturating_add(rect.width)
+            },
+        );
+    hit_instance || hit_debug
 }
 
 fn handle_cockpit_mouse_down(
@@ -155,14 +166,34 @@ fn handle_cockpit_mouse_move(
         !v.build_log_open && !v.build_log_lines.is_empty() && hit_activity(v, col, row);
     let container_hovering =
         hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode());
+    // Track debug chip hover separately so its color inverts on hover.
+    let debug_chip_hovering = terminal.is_debug_mode()
+        && !v.build_log_open
+        && v.failure.is_none()
+        && !footer_instance(v).is_empty()
+        && jackin_tui::components::status_footer_debug_chip_rect(
+            Rect {
+                x: 0,
+                y: area.height.saturating_sub(1),
+                width: area.width,
+                height: 1,
+            },
+            run_id,
+        )
+        .is_some_and(|rect| {
+            row >= rect.y
+                && row < rect.y.saturating_add(rect.height)
+                && col >= rect.x
+                && col < rect.x.saturating_add(rect.width)
+        });
     let hover = StatusFooterHover {
         left: activity_hovering,
         right: container_hovering,
-        right_debug: false,
+        right_debug: debug_chip_hovering,
     };
     if hover != v.footer_hover {
         let _dirty = update_launch_view(v, LaunchMessage::FooterHoverChanged(hover));
-        terminal.set_pointer_shape(activity_hovering || container_hovering);
+        terminal.set_pointer_shape(activity_hovering || container_hovering || debug_chip_hovering);
     }
 }
 
