@@ -103,9 +103,20 @@ pub async fn eject_role(
     // instance. DinD-free launches (locked/hardened profile without a dind
     // grant) record `None` for both `dind_container` and `certs_volume`.
     let container_state = paths.data_dir.join(container_name);
-    let manifest = crate::instance::manifest::InstanceManifest::read_optional(&container_state)
-        .ok()
-        .flatten();
+    let manifest = match crate::instance::manifest::InstanceManifest::read_optional(&container_state) {
+        Ok(m) => m,
+        Err(e) => {
+            // Manifest exists but is unreadable or corrupt — log and fall back to
+            // assuming DinD was started (the pre-manifest default) so cleanup is
+            // conservative rather than leaving a dangling DinD container.
+            crate::debug_log!(
+                "cleanup",
+                "eject_role {container_name}: could not read instance manifest, \
+                 assuming dind_was_started=true: {e:#}"
+            );
+            None
+        }
+    };
     let dind = manifest
         .as_ref()
         .and_then(|m| m.docker.dind_container.as_deref())

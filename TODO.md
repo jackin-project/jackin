@@ -51,7 +51,7 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 - **Blocked by:** `TODO(docker-security-profile-sudo-audit)` below.
 - **Code change:** one line in `impl Default for DockerSecurityProfile` in `src/runtime/docker_profile.rs`; one field change in `profile_base_grants(Standard)` (`sudo: false`); remove the "deferred pending sudo audit" note from the `no_new_privileges` block in `launch_role_runtime`.
 - **Done when:** `NOPASSWD:ALL` is removed from the base image, the sudo audit entry below is resolved, and the two-line code change is made. Update the profile defaults table in `docs/content/docs/reference/roadmap/docker-runtime-hardening-contract.mdx` and `docs/content/docs/guides/docker-profiles.mdx`.
-- **Marker:** `TODO(docker-security-profile-default)` — none in code yet; add to `docker_profile.rs` default impl when this follow-up is opened.
+- **Marker:** `TODO(docker-security-profile-default)` — in `src/runtime/docker_profile.rs`, `impl Default for DockerSecurityProfile`.
 
 ### Docker security profile — audit `NOPASSWD:ALL` sudo in base image
 
@@ -61,6 +61,14 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 - **Resolution path:** (a) Replace `NOPASSWD:ALL` with a scoped sudoers entry for each privileged binary the base image ships (if any). (b) For roles that call `sudo` in hooks, role authors must either declare `min_profile = "standard"` (keeping full sudo) or replace sudo calls with file capabilities in their Dockerfile. (c) Update `profile_base_grants(Standard)` and the default to flip after this lands.
 - **Done when:** `NOPASSWD:ALL` is removed from `Dockerfile:113`, every built-in agent runtime (`the-architect`, `agent-smith`) passes the compatibility test matrix under `standard` profile with `no-new-privileges` enforced, and the `TODO(docker-security-profile-default)` entry above is executed.
 - **Marker:** `TODO(docker-security-profile-sudo-audit)` — add to `docker/construct/Dockerfile` near line 113.
+
+### Docker security profile — rootless DinD requires cgroup v2 confirmation
+
+- **What:** The DinD sidecar start in `src/runtime/launch.rs` has a `TODO(docker-security-profile-rootless-dind)` marker on the block that starts `docker:dind`. When `grants.dind == DindGrant::Rootless`, the image should switch to `docker:dind-rootless` and drop `--privileged`. This requires: (a) detecting cgroup v2 on the host, (b) confirming the rootless image works with Testcontainers/Compose on cgroup v2, (c) updating the DinD start block to use `docker:dind-rootless` and remove `--privileged`.
+- **Why:** `standard` profile uses `DindGrant::Rootless` as its DinD default on cgroup v2 hosts, but the code currently falls back to `docker:dind --privileged` regardless (the TODO is in place). Rootless DinD reduces the blast radius of a sidecar compromise.
+- **Blocked by:** compatibility test matrix (Testcontainers, Compose, BuildKit on rootless) — see [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) Phase B.
+- **Done when:** `grants.dind == Rootless` uses `docker:dind-rootless` + no `--privileged` on cgroup v2 hosts; falls back to `docker:dind --privileged` on cgroup v1 with a session-contract note; compatibility matrix passes.
+- **Marker:** `TODO(docker-security-profile-rootless-dind)` — in `src/runtime/launch.rs` near the DinD sidecar start block.
 
 ### Internal cleanups
 

@@ -40,9 +40,12 @@ for entry in $(echo "$ALLOWED_HOSTS" | tr ',' '\n'); do
     host="${entry%%:*}"
 
     # If the entry looks like an IPv4/IPv6 address or CIDR, add directly.
-    if echo "$host" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]' || \
-       echo "$host" | grep -qE '^[0-9a-fA-F:]+/'; then
-        ipset add jackin-allowed "$entry" 2>/dev/null || true
+    # Use $host (port-stripped) for the ipset entry so "1.2.3.4:443" is added
+    # as "1.2.3.4" which is a valid hash:net entry.
+    # IPv4: dotted-quad prefix; IPv6: colon-hex with optional /prefix.
+    if echo "$host" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$' || \
+       echo "$host" | grep -qE '^[0-9a-fA-F:]+(/[0-9]+)?$'; then
+        ipset add jackin-allowed "$host" 2>/dev/null || true
         continue
     fi
 

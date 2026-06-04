@@ -161,8 +161,10 @@ pub const VALID_CAPABILITIES: &[&str] = &[
     "WAKE_ALARM",
 ];
 
-/// The 8-cap minimum set applied under `hardened` and `locked` when DinD is
-/// disabled. Derived from common role workflows (package managers, build tools,
+/// The 8-cap minimum set applied under `hardened` and `locked` — regardless of
+/// DinD status (with DinD active the caps can be circumvented via `docker run
+/// --privileged` against the sidecar, but they are still emitted for defense in
+/// depth). Derived from common role workflows (package managers, build tools,
 /// process supervisors). Everything else is dropped from Docker's 14-cap default.
 pub const MINIMUM_CAPABILITIES: &[&str] = &[
     "CHOWN",
@@ -314,12 +316,12 @@ impl std::fmt::Display for GrantValidationError {
 
 impl std::error::Error for GrantValidationError {}
 
-/// Parse a human-readable byte size (`"512M"`, `"4G"`, `"16G"`, `"2048K"`)
-/// into a byte count. Case-insensitive suffix.
+/// Parse a human-readable byte size into a byte count. Case-insensitive suffix.
+/// Accepts K/M/G/T (with or without trailing B) and bare numeric bytes.
+/// Examples: `"512M"`, `"4G"`, `"16G"`, `"2048K"`, `"2T"`.
 ///
-/// # Errors
-///
-/// Returns `None` if the string cannot be parsed.
+/// Returns `None` if the string is empty, the numeric part cannot be parsed,
+/// or the suffix is unrecognized.
 pub fn parse_memory_bytes(s: &str) -> Option<u64> {
     let s = s.trim();
     if s.is_empty() {
@@ -471,8 +473,10 @@ pub struct EffectiveGrants {
     pub nofile: Option<u64>,
     /// Additional capabilities beyond the profile's base set.
     pub capabilities_add: Vec<String>,
-    /// Whether `--security-opt no-new-privileges` should be applied.
-    /// Currently schema-only (sudo audit pending); enforcement is deferred.
+    /// Whether `--security-opt no-new-privileges` is applied to the container.
+    /// `true` for `hardened` and `locked`; `false` for `standard` (sudo audit
+    /// pending — blanket sudo in the base image blocks this, see TODO.md) and
+    /// `compat`.
     pub no_new_privileges: bool,
 }
 
@@ -701,10 +705,30 @@ pub fn resolve_effective_grants(
         Some(g) => apply_grants(base, g),
         None => base,
     };
-    match workspace_grants {
+    let merged = match workspace_grants {
         Some(g) => apply_grants(after_config, g),
         None => after_config,
+    };
+    // Apply implicit caps that depend on the MERGED network tier. This must
+    // run after all source layers are applied so a workspace that raises the
+    // network to Allowlist also picks up the required NET_ADMIN + NET_RAW.
+    // (profile_base_grants starts with Allowlist for locked/hardened; when
+    // no explicit grants are provided apply_grants is never called, so the
+    // injection in apply_grants is never triggered — hence this finalization.)
+    apply_implicit_grants(merged)
+}
+
+/// Apply grants that depend on the fully-resolved state rather than any
+/// single source. Called once at the end of `resolve_effective_grants`.
+fn apply_implicit_grants(mut grants: EffectiveGrants) -> EffectiveGrants {
+    if grants.network == NetworkGrant::Allowlist {
+        for cap in ["NET_ADMIN", "NET_RAW"] {
+            if !grants.capabilities_add.iter().any(|c| c == cap) {
+                grants.capabilities_add.push(cap.to_string());
+            }
+        }
     }
+    grants
 }
 
 // ── Docker flag emission ─────────────────────────────────────────────────────
@@ -990,112 +1014,6 @@ pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
 }
 
-/// Emit most security and resource Docker CLI flags for `run_args` in one call.
-///
-/// Combines `capability_flags`, `readonly_root_flags`, and `resource_flags`.
-/// The caller still handles:
-/// - `--network <name>` (network is created before flags are assembled)
-/// - `-v`, `-e`, `--label`, `--name`, `--hostname`, `--workdir` (structural flags)
-/// - `--user` (string value lives in `grants.user`)
-/// - `--security-opt no-new-privileges` (string value must live in caller scope)
-/// - `--security-opt apparmor=…` (requires `apparmor_available` from host probe)
-pub fn to_docker_flags(
-    profile: DockerSecurityProfile,
-    grants: &EffectiveGrants,
-) -> Vec<String> {
-    let mut flags = Vec::new();
-    flags.extend(capability_flags(profile, &grants.capabilities_add));
-    flags.extend(readonly_root_flags(profile, grants));
-    flags.extend(resource_flags(grants));
-    if grants.no_new_privileges {
-        flags.push("--security-opt".to_string());
-        flags.push("no-new-privileges".to_string());
-    }
-    if grants.user != "agent" {
-        flags.push("--user".to_string());
-        flags.push(grants.user.clone());
-    }
-    flags
-}
-
-/// Produce a Bollard `ContainerSpec`-compatible security/resource configuration
-/// from resolved grants. Used by the Bollard test path to stay in sync with
-/// the CLI flag path.
-///
-/// Returns `(cap_add, cap_drop, security_opt, memory_bytes, nano_cpus,
-/// pids_limit, read_only_rootfs, tmpfs)` as a tuple. The caller wires these
-/// into `ContainerSpec` fields.
-pub fn to_host_config_fields(
-    profile: DockerSecurityProfile,
-    grants: &EffectiveGrants,
-) -> HostConfigFields {
-    let drops_all = drops_all_caps(profile);
-    let cap_drop = if drops_all {
-        vec!["ALL".to_string()]
-    } else {
-        vec![]
-    };
-    let mut cap_add = if drops_all {
-        MINIMUM_CAPABILITIES
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    } else {
-        vec![]
-    };
-    cap_add.extend(grants.capabilities_add.iter().cloned());
-
-    let mut security_opt = Vec::new();
-    if grants.no_new_privileges {
-        security_opt.push("no-new-privileges".to_string());
-    }
-
-    // Use the same const arrays as `readonly_root_flags` to keep both paths in sync.
-    let tmpfs: std::collections::HashMap<String, String> = if !grants.system_writes {
-        let extra: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
-            &[]
-        } else {
-            TMPFS_PATHS_HARDENED_EXTRA
-        };
-        TMPFS_PATHS_MINIMAL
-            .iter()
-            .chain(extra.iter())
-            .map(|p| ((*p).to_string(), "rw,nosuid,nodev".to_string()))
-            .collect()
-    } else {
-        std::collections::HashMap::new()
-    };
-
-    // nano_cpus = cpus * 1e9 (Docker's internal representation)
-    let nano_cpus = grants.cpus.map(|c| (c * 1_000_000_000.0) as i64);
-
-    HostConfigFields {
-        cap_add,
-        cap_drop,
-        security_opt,
-        // Validated in validate_grants to be ≤ i64::MAX, so cast is safe here.
-        memory: grants.memory_bytes.map(|b| b as i64),
-        nano_cpus,
-        pids_limit: grants.pids,
-        read_only_rootfs: !grants.system_writes,
-        tmpfs,
-    }
-}
-
-/// Security and resource fields extracted from `EffectiveGrants` for the
-/// Bollard `ContainerSpec`/`HostConfig` path.
-pub struct HostConfigFields {
-    pub cap_add: Vec<String>,
-    pub cap_drop: Vec<String>,
-    pub security_opt: Vec<String>,
-    /// Hard memory limit in bytes for `HostConfig.memory`.
-    pub memory: Option<i64>,
-    /// CPU quota in nanocpus for `HostConfig.nano_cpus`.
-    pub nano_cpus: Option<i64>,
-    pub pids_limit: Option<i64>,
-    pub read_only_rootfs: bool,
-    pub tmpfs: std::collections::HashMap<String, String>,
-}
 
 #[cfg(test)]
 mod tests {
@@ -1348,6 +1266,73 @@ mod tests {
     fn dind_grant_ord() {
         assert!(DindGrant::None < DindGrant::Rootless);
         assert!(DindGrant::Rootless < DindGrant::Privileged);
+    }
+
+    // ── validate_effective_grants ─────────────────────────────────────────────
+
+    #[test]
+    fn validate_effective_grants_catches_cross_source_root_and_sudo() {
+        let grants = EffectiveGrants {
+            user: "root".to_string(),
+            sudo: true,
+            ..profile_base_grants(DockerSecurityProfile::Compat)
+        };
+        let errors = validate_effective_grants(&grants);
+        assert!(
+            !errors.is_empty(),
+            "user=root + sudo=true must be caught by validate_effective_grants"
+        );
+        assert!(matches!(errors[0], GrantValidationError::RootAndSudo));
+    }
+
+    #[test]
+    fn validate_effective_grants_catches_cross_source_reservation_exceeds_memory() {
+        let grants = EffectiveGrants {
+            memory_bytes: Some(4 * 1024 * 1024 * 1024),         // 4G
+            memory_reservation_bytes: Some(8 * 1024 * 1024 * 1024), // 8G
+            ..profile_base_grants(DockerSecurityProfile::Standard)
+        };
+        let errors = validate_effective_grants(&grants);
+        assert!(
+            !errors.is_empty(),
+            "memory_reservation > memory must be caught by validate_effective_grants"
+        );
+        assert!(matches!(
+            errors[0],
+            GrantValidationError::MemoryReservationExceedsMemory { .. }
+        ));
+    }
+
+    #[test]
+    fn validate_effective_grants_passes_when_invariants_hold() {
+        let grants = EffectiveGrants {
+            memory_bytes: Some(16 * 1024 * 1024 * 1024),
+            memory_reservation_bytes: Some(12 * 1024 * 1024 * 1024),
+            ..profile_base_grants(DockerSecurityProfile::Standard)
+        };
+        let errors = validate_effective_grants(&grants);
+        assert!(errors.is_empty(), "valid grants should produce no errors: {errors:?}");
+    }
+
+    #[test]
+    fn resolve_effective_grants_no_grants_still_gets_implicit_caps() {
+        // When locked profile launches with no config/workspace grants,
+        // resolve_effective_grants must inject NET_ADMIN/NET_RAW so the
+        // iptables allowlist (init-firewall.sh) can run.
+        let grants = resolve_effective_grants(
+            DockerSecurityProfile::Locked,
+            None,
+            None,
+        );
+        assert_eq!(grants.network, NetworkGrant::Allowlist);
+        assert!(
+            grants.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
+            "Locked with no grants must have implicit NET_ADMIN from resolve_effective_grants"
+        );
+        assert!(
+            grants.capabilities_add.iter().any(|c| c == "NET_RAW"),
+            "Locked with no grants must have implicit NET_RAW from resolve_effective_grants"
+        );
     }
 
     // ── Test gap fixes ────────────────────────────────────────────────────────

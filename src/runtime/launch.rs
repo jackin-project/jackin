@@ -761,7 +761,8 @@ async fn launch_role_runtime(
         } else {
             "docker:dind"
         };
-        // TODO Phase 3: only start rootless DinD on confirmed cgroup v2 hosts.
+        // TODO(docker-security-profile-rootless-dind): only start rootless DinD on
+        // confirmed cgroup v2 hosts. See TODO.md for the full follow-up entry.
         let dind_args: Vec<&str> = vec![
             "run",
             "-d",
@@ -962,8 +963,10 @@ async fn launch_role_runtime(
     }
 
     // no-new-privileges: applied for hardened/locked profiles.
-    // Sudoers open question (#5) only blocks this for *standard* profile —
-    // hardened/locked intentionally do not grant sudo (grants.sudo = false).
+    // Standard profile defers this: sudo needs setuid-root escalation, which
+    // no-new-privileges blocks at the kernel level; the base image still carries
+    // NOPASSWD:ALL sudo (see TODO(docker-security-profile-sudo-audit) in TODO.md).
+    // Hardened/locked intentionally do not grant sudo (grants.sudo = false).
     if grants.no_new_privileges {
         run_args.extend_from_slice(&["--security-opt", "no-new-privileges"]);
         crate::debug_log!(
@@ -2420,8 +2423,9 @@ async fn load_role_with(
         );
         // Validate config and workspace grants BEFORE applying them.
         // `apply_grants` (called inside `resolve_effective_grants`) requires
-        // validated inputs per its doc comment; invalid strings would be silently
-        // skipped otherwise.
+        // validated inputs per its doc comment: invalid memory sizes are silently
+        // skipped; invalid cap names and root+sudo combinations would reach
+        // docker run unchecked without this guard.
         {
             let mut all_errors: Vec<String> = Vec::new();
             if let Some(ref grants) = config.docker.grants {
@@ -3729,7 +3733,10 @@ async fn detect_cgroup_version(runner: &mut impl CommandRunner) -> String {
         Ok(output) if output.trim() == "cgroup2fs" => "v2".to_string(),
         Ok(output) if output.trim() == "tmpfs" => "v1".to_string(),
         Ok(output) => format!("unknown({})", output.trim()),
-        Err(_) => "unknown".to_string(),
+        Err(e) => {
+            crate::debug_log!("launch", "detect_cgroup_version: stat failed: {e}");
+            "unknown".to_string()
+        }
     }
 }
 
@@ -3742,14 +3749,27 @@ struct AppArmorInfo {
 
 /// Probe AppArmor availability from `docker info --format '{{.SecurityOptions}}'`.
 async fn detect_apparmor(runner: &mut impl CommandRunner) -> AppArmorInfo {
-    let output = runner
+    let output = match runner
         .capture(
             "docker",
             &["info", "--format", "{{.SecurityOptions}}"],
             None,
         )
         .await
-        .unwrap_or_default();
+    {
+        Ok(s) => s,
+        Err(e) => {
+            // `docker info` failed (daemon not running, binary not found, etc.).
+            // Log and return a distinct "probe-failed" state so the session
+            // contract distinguishes this from "AppArmor genuinely absent".
+            crate::debug_log!("launch", "detect_apparmor: docker info failed: {e}");
+            return AppArmorInfo {
+                available: false,
+                profile: "probe-failed".to_string(),
+                layer: "unknown".to_string(),
+            };
+        }
+    };
     let available = output.contains("apparmor");
     // On macOS, Docker Desktop and OrbStack run inside a VM; AppArmor
     // enforcement happens inside the VM, not on macOS itself.
@@ -7878,6 +7898,112 @@ plugins = []
     }
 
     // ── Docker security profile — integration tests ───────────────────────────
+
+    /// Role declares dind="none" — DinD must be suppressed even under standard/compat.
+    #[tokio::test]
+    async fn role_dind_none_suppresses_dind_under_standard_profile() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[docker]
+dind = "none"
+"#,
+        ).unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &LoadOptions {
+                docker_profile: Some(crate::runtime::docker_profile::DockerSecurityProfile::Standard),
+                ..LoadOptions::default()
+            },
+        ).await.unwrap();
+        // No DinD sidecar command must appear.
+        assert!(
+            !runner.recorded.iter().any(|c| c.contains("jackin.kind=dind")),
+            "role dind=none must suppress DinD under standard profile; got: {:?}",
+            runner.recorded.iter().filter(|c| c.contains("docker run")).collect::<Vec<_>>()
+        );
+        // Role container must not inject DOCKER_HOST.
+        let run_cmd = runner.recorded.iter()
+            .find(|c| c.contains("jackin.kind=role"))
+            .unwrap();
+        assert!(
+            !run_cmd.contains("DOCKER_HOST="),
+            "role dind=none must not inject DOCKER_HOST into role container"
+        );
+    }
+
+    /// Role declares bad capabilities_add — must be caught before docker run.
+    #[tokio::test]
+    async fn role_invalid_capabilities_add_is_rejected() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM projectjackin/construct:0.1-trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[docker]
+capabilities_add = ["MADE_UP_CAPABILITY"]
+"#,
+        ).unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let err = load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &LoadOptions::default(),
+        ).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("[role]") || msg.contains("MADE_UP_CAPABILITY"),
+            "bad role capability must produce a clear error before docker run; got: {msg}"
+        );
+    }
 
     /// min_profile conflict: role declares min="standard", launch uses "hardened" → error.
     #[tokio::test]

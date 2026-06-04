@@ -67,7 +67,7 @@ trusted = true
 |---|---|---|---|
 | Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml" /> |
 
-**Summary**: introduces `[docker].min_profile` (optional string), `[docker].dind` (optional string), and `network_allow` (optional array of strings). All additive with serde defaults. The migration is a no-op restamp.
+**Summary**: introduces `[docker].min_profile` (optional string), `[docker].dind` (optional string), `[docker].allowed_hosts` (optional array of strings), and `[docker].capabilities_add` (optional array of strings). All additive with serde defaults. The migration is a no-op restamp.
 
 ### Workspace `v1alpha5` — 2026-05-26
 
