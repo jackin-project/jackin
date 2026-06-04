@@ -29,7 +29,7 @@
 | Defect 46 Phase 4 (collapse parallel struct fields) | AVAILABLE | Do after Phase B |
 | Defect 45 Phase 5 (delete vt100, typed passthrough) | AVAILABLE | Gate: real multi-pane smoke session |
 | Defect 47.6 (OTLP export) | AVAILABLE | Heavy deps; natural PR-split point |
-| Defect 46 acceptance gates | AVAILABLE | Needs Phase B + Phase 3 + green smoke |
+| Defect 46 acceptance gates | **[AGENT-A WORKING]** | Running clippy --workspace; checking schema fixtures |
 
 ---
 
