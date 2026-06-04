@@ -552,7 +552,7 @@ The capsule (`crates/jackin-capsule/src/tui`) reimplements several things at the
 The lookbook is the regression surface; many components/states are unexercised, so these defects could regress invisibly. Add stories so every shared component and every state variant is visible and SVG-checked.
 
 - [x] Add missing component stories: `ContainerInfo` / debug-info dialog (incl. overflowing→scrollable), `ModalBackdrop` (full-screen), and any other `jackin-tui/src/components/` file with no story.
-- [ ] Add missing **state** variants: `Panel` Unfocused / Focused / FocusedScrollable; `ButtonStrip` all-disabled; `ConfirmDialog` focus=Yes; `SaveDiscardDialog` focus=Save/Discard; `SelectList` no-selection **and** full-width selection (Defect 16); `ScrollablePanel` actively scrolled (H and V) with visible thumbs (Defects 8, 24); hover states for buttons/tabs/chips (Defect 13); stacked dialogs showing one-bright-border (Defect 9).
+- [~] Add missing **state** variants: `Panel` Unfocused ✓ / Focused ✓ / FocusedScrollable (not yet); `ButtonStrip` all-disabled ✓; `ConfirmDialog` focus=Yes ✓; `SaveDiscardDialog` focus=Save ✓ /Discard (not yet); `SelectList` no-selection ✓ and full-width selection (visible in agent-picker ✓); `ScrollablePanel` actively scrolled (H and V) with visible thumbs (not yet); hover states (not yet); stacked dialogs (not yet).
 - [x] Make the lookbook stories sidebar itself the reference for Defects 1, 14, 16 (scrollbar + spacer + full-width selection) once fixed.
 - [x] Regenerate SVGs (`cargo run -p jackin-tui-lookbook -- docs/public/tui-lookbook`) and verify no drift (`--check`).
 
