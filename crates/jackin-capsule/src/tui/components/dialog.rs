@@ -1030,9 +1030,9 @@ impl Dialog {
                 }
             }
             Self::GitHubContext { .. } => 9,
-            // 8 = border(2) + empty(1) + question(1) + empty(1) + message(1) + empty(1) + button(1)
-            // One empty row before button (not two).
-            Self::ConfirmAction { .. } => 8,
+            // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
+            // Matches the canonical symmetric dialog layout (Defect 5).
+            Self::ConfirmAction { .. } => 9,
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };
@@ -1804,7 +1804,8 @@ fn render_confirm_action(
     let no_label = "  No  ";
     let buttons_w = yes_label.chars().count() + gap.chars().count() + no_label.chars().count();
     let button_col = interior_left + (interior_cols.saturating_sub(buttons_w) / 2) as u16;
-    let button_row = start_row + height.saturating_sub(2);
+    // Place buttons at height-3 to leave one trailing spacer row before the bottom border.
+    let button_row = start_row + height.saturating_sub(3);
     move_to(buf, button_row, button_col);
     write_confirm_button(buf, yes_label, selected_yes);
     buf.extend_from_slice(BG_DARK.as_bytes());
