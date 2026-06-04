@@ -19,10 +19,12 @@ pub(super) const BANNER: &str = jackin_tui::ansi::BRAND_BANNER;
 pub mod cleanup;
 pub mod config;
 pub mod dispatch;
+pub mod format;
 pub mod help;
 pub mod logs;
 pub mod prune;
 pub mod role;
+pub mod status;
 pub mod workspace;
 
 pub use config::{
@@ -106,6 +108,9 @@ pub enum Command {
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
     Logs(LogsArgs),
+    /// Show fleet status — workspaces, instances, and agents
+    #[command(before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
+    Status(status::StatusArgs),
     /// Print help documentation for a jackin command
     ///
     /// With no arguments, displays the jackin manual.

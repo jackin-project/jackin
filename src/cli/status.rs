@@ -1,0 +1,512 @@
+use clap::Args;
+use std::collections::HashMap;
+
+/// Run a collection of futures concurrently, collecting all results.
+async fn tokio_join_all<F, T>(futs: impl IntoIterator<Item = F>) -> Vec<T>
+where
+    F: std::future::Future<Output = T>,
+{
+    let handles: Vec<_> = futs.into_iter().collect();
+    let mut results = Vec::with_capacity(handles.len());
+    // Use tokio::join_all via a sequential collect since we don't need true parallelism
+    // for small fleet sizes; upgrade to tokio::task::JoinSet if fleet grows large.
+    for fut in handles {
+        results.push(fut.await);
+    }
+    results
+}
+
+use crate::cli::format::OutputFormat;
+use crate::docker_client::{BollardDockerClient, ContainerState, DockerApi};
+use crate::instance::manifest::InstanceIndex;
+use crate::paths::JackinPaths;
+
+/// Command string for querying the agent registry over the capsule socket.
+const JACKIN_AGENTS_CMD: &str =
+    "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule agents --format json";
+
+/// Command for getting the current git branch inside the container workdir.
+const GIT_BRANCH_CMD: &str =
+    "git -C \"$JACKIN_WORKDIR\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown";
+
+/// Command for getting PR info including CI status. Requires `gh` and `GH_TOKEN`.
+const GH_PR_CMD: &str =
+    "gh pr view --json number,title,url,statusCheckRollup 2>/dev/null";
+
+/// `jackin status` — three-level fleet overview.
+///
+/// - `jackin status`                     workspace summary
+/// - `jackin status <workspace>`         instances in that workspace
+/// - `jackin status <workspace> <id>`    full instance detail
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    about = "Show fleet status — workspaces, instances, and agents",
+    long_about = "Show a three-level fleet overview.\n\n\
+        Run `jackin status` for a workspace summary.\n\
+        Run `jackin status <workspace>` to list instances in a workspace.\n\
+        Run `jackin status <workspace> <instance-id>` for full detail including\n\
+        branch, PR, CI, and per-agent codename table."
+)]
+pub struct StatusArgs {
+    /// Workspace name to drill into (optional)
+    pub workspace: Option<String>,
+    /// Instance ID to show full detail for (requires workspace)
+    pub instance_id: Option<String>,
+    /// Show agent counts at Level 0 (requires in-container queries per instance)
+    #[arg(long)]
+    pub detail: bool,
+    /// Filter by instance state
+    #[arg(long, value_name = "STATE")]
+    pub state: Option<String>,
+    /// Filter by agent type (e.g. `--filter agent=claude`)
+    #[arg(long, value_name = "KEY=VALUE")]
+    pub filter: Option<String>,
+    /// Output format
+    #[arg(long, value_name = "FORMAT", default_value = "human")]
+    pub format: String,
+}
+
+impl StatusArgs {
+    pub fn output_format(&self) -> OutputFormat {
+        if self.format == "json" { OutputFormat::Json } else { OutputFormat::Human }
+    }
+}
+
+pub async fn run(args: &StatusArgs, paths: &JackinPaths) -> anyhow::Result<()> {
+    let docker = BollardDockerClient::connect()?;
+    let format = args.output_format();
+
+    match (&args.workspace, &args.instance_id) {
+        (None, _) => run_level0(args, paths, &docker, format).await,
+        (Some(ws), None) => run_level1(ws, args, paths, &docker, format).await,
+        (Some(ws), Some(id)) => run_level2(ws, id, paths, &docker, format).await,
+    }
+}
+
+// ── Level 0 — workspace summary ─────────────────────────────────────────────
+
+async fn run_level0(
+    args: &StatusArgs,
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    format: OutputFormat,
+) -> anyhow::Result<()> {
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+
+    // Group by workspace name/label.
+    let mut workspaces: HashMap<String, Vec<&crate::instance::manifest::InstanceIndexEntry>> =
+        HashMap::new();
+    for entry in &index.instances {
+        let key = entry
+            .workspace_name
+            .clone()
+            .unwrap_or_else(|| entry.workspace_label.clone());
+        workspaces.entry(key).or_default().push(entry);
+    }
+
+    if format == OutputFormat::Json {
+        // Full JSON always has complete data — gather running state per instance.
+        let mut workspace_data = Vec::new();
+        for (name, entries) in &workspaces {
+            let mut instances = Vec::new();
+            for entry in entries {
+                let state = docker.inspect_container_state(&entry.container_base).await;
+                instances.push(serde_json::json!({
+                    "instance_id": entry.instance_id,
+                    "container_base": entry.container_base,
+                    "role": entry.role_key,
+                    "state": state.short_label(),
+                }));
+            }
+            workspace_data.push(serde_json::json!({
+                "workspace": name,
+                "instances": instances,
+            }));
+        }
+        let envelope = serde_json::json!({
+            "schema_version": "v1",
+            "workspaces": workspace_data,
+        });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+        return Ok(());
+    }
+
+    // Human output.
+    let mut sorted_ws: Vec<(String, Vec<&crate::instance::manifest::InstanceIndexEntry>)> =
+        workspaces.into_iter().collect();
+    sorted_ws.sort_by(|a, b| a.0.cmp(&b.0));
+
+    println!("jackin' fleet status\n");
+
+    // Check container states in parallel using tokio::join_all for all instances.
+    let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new(); // (name, total, running, stopped)
+    for (ws_name, entries) in &sorted_ws {
+        let states = tokio_join_all(
+            entries.iter().map(|e| docker.inspect_container_state(&e.container_base))
+        ).await;
+        let running = states.iter().filter(|s| matches!(s, ContainerState::Running)).count();
+        let stopped = entries.len() - running;
+        workspace_rows.push((ws_name.clone(), entries.len(), running, stopped));
+    }
+
+    // Apply --state filter.
+    let state_filter = args.state.as_deref();
+    let filtered: Vec<_> = workspace_rows.iter().filter(|(_, _, running, stopped)| {
+        match state_filter {
+            Some("running") => *running > 0,
+            Some("stopped") => *stopped > 0,
+            _ => true,
+        }
+    }).collect();
+
+    if filtered.is_empty() {
+        println!("No workspaces found.");
+        return Ok(());
+    }
+
+    // Column widths.
+    let ws_width = filtered.iter().map(|(n, _, _, _)| n.len()).max().unwrap_or(9).max(9);
+    println!(
+        "  {:<ws_width$}  {:<9}  {}",
+        "workspace", "instances", "state"
+    );
+    println!("  {}", "─".repeat(ws_width + 2 + 9 + 2 + 30));
+
+    for (ws_name, total, running, stopped) in &filtered {
+        let state = if *running > 0 && *stopped > 0 {
+            format!("{running} running · {stopped} stopped")
+        } else if *running > 0 {
+            format!("{running} running")
+        } else {
+            format!("{stopped} stopped")
+        };
+        println!("  {:<ws_width$}  {:<9}  {}", ws_name, total, state);
+    }
+
+    let _total_instances: usize = filtered.iter().map(|(_, t, _, _)| t).sum();
+    let total_running: usize = filtered.iter().map(|(_, _, r, _)| r).sum();
+    let total_stopped: usize = filtered.iter().map(|(_, _, _, s)| s).sum();
+    println!();
+    print!(
+        "  {} workspace{}, {} instance{} running",
+        filtered.len(),
+        if filtered.len() == 1 { "" } else { "s" },
+        total_running,
+        if total_running == 1 { "" } else { "s" },
+    );
+    if total_stopped > 0 {
+        print!(", {total_stopped} stopped");
+    }
+    println!("\n");
+    println!("  jackin status <workspace>           show instances");
+    println!("  jackin status <workspace> <id>      show full detail");
+    if !args.detail {
+        println!("  jackin status --detail              include per-instance agent counts");
+    }
+
+    Ok(())
+}
+
+// ── Level 1 — instance list for a workspace ──────────────────────────────────
+
+async fn run_level1(
+    workspace: &str,
+    args: &StatusArgs,
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    format: OutputFormat,
+) -> anyhow::Result<()> {
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    let instances: Vec<_> = index.instances.iter().filter(|e| {
+        e.workspace_name.as_deref() == Some(workspace)
+            || e.workspace_label == workspace
+    }).collect();
+
+    if instances.is_empty() {
+        anyhow::bail!("no instances found for workspace {workspace:?}");
+    }
+
+    // Gather state for each instance.
+    let states = tokio_join_all(
+        instances.iter().map(|e| docker.inspect_container_state(&e.container_base))
+    ).await;
+
+    // Apply state filter.
+    let state_filter = args.state.as_deref();
+    let rows: Vec<_> = instances.iter().zip(states.iter()).filter(|(_, s)| {
+        match state_filter {
+            Some("running") => matches!(s, ContainerState::Running),
+            Some("stopped") => !matches!(s, ContainerState::Running),
+            _ => true,
+        }
+    }).collect();
+
+    if format == OutputFormat::Json {
+        let json_rows: Vec<_> = rows.iter().map(|(e, s)| {
+            serde_json::json!({
+                "instance_id": e.instance_id,
+                "workspace": workspace,
+                "role": e.role_key,
+                "state": s.short_label(),
+            })
+        }).collect();
+        let envelope = serde_json::json!({
+            "schema_version": "v1",
+            "workspace": workspace,
+            "instances": json_rows,
+        });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+        return Ok(());
+    }
+
+    let running = rows.iter().filter(|(_, s)| matches!(s, ContainerState::Running)).count();
+    println!("{workspace}   {} instance{}  ·  {running} running\n", rows.len(), if rows.len() == 1 { "" } else { "s" });
+
+    let id_width = rows.iter().map(|(e, _)| e.instance_id.len()).max().unwrap_or(11).max(11);
+    let role_width = rows.iter().map(|(e, _)| e.role_key.len()).max().unwrap_or(4).max(4);
+
+    println!(
+        "  {:<id_width$}  {:<role_width$}  {:<8}  {}",
+        "instance", "role", "state", "pr"
+    );
+    println!("  {}", "─".repeat(id_width + 2 + role_width + 2 + 8 + 2 + 10));
+
+    for (entry, state) in &rows {
+        println!(
+            "  {:<id_width$}  {:<role_width$}  {:<8}  {}",
+            entry.instance_id,
+            entry.role_key,
+            state.short_label(),
+            "—",  // PR info requires Level 2 detail query
+        );
+    }
+
+    println!();
+    println!("  jackin status {workspace} <id>      show full detail");
+
+    Ok(())
+}
+
+// ── Level 2 — full instance detail ───────────────────────────────────────────
+
+async fn run_level2(
+    workspace: &str,
+    instance_id: &str,
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    format: OutputFormat,
+) -> anyhow::Result<()> {
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    let entry = index.instances.iter().find(|e| {
+        e.instance_id == instance_id
+            && (e.workspace_name.as_deref() == Some(workspace)
+                || e.workspace_label == workspace)
+    });
+
+    let entry = entry.ok_or_else(|| {
+        anyhow::anyhow!("instance {instance_id:?} not found in workspace {workspace:?}")
+    })?;
+
+    let container_name = &entry.container_base;
+    let state = docker.inspect_container_state(container_name).await;
+    let is_running = matches!(state, ContainerState::Running);
+
+    // Fetch agents registry (only when running).
+    let agents_json: Option<Vec<jackin_protocol::control::AgentRegistryEntry>> =
+        if is_running {
+            let output = docker
+                .exec_capture(container_name, &["sh", "-c", JACKIN_AGENTS_CMD])
+                .await
+                .ok();
+            output.and_then(|s| serde_json::from_str(&s).ok())
+        } else {
+            None
+        };
+
+    // Fetch git branch (only when running).
+    let branch: Option<String> = if is_running {
+        docker.exec_capture(container_name, &["sh", "-c", GIT_BRANCH_CMD]).await
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s != "unknown")
+    } else {
+        None
+    };
+
+    // Fetch PR info via gh (only when running and branch is known).
+    let pr_info: Option<PrInfo> = if is_running && branch.is_some() {
+        fetch_pr_info(docker, container_name).await
+    } else {
+        None
+    };
+
+    if format == OutputFormat::Json {
+        let agents_value = agents_json.as_ref().map(|a| serde_json::to_value(a).unwrap_or(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null);
+        let pr_value = pr_info.as_ref().map(|p| serde_json::json!({
+            "number": p.number,
+            "title": p.title,
+            "url": p.url,
+            "ci_status": p.ci_status,
+            "ci_failing_check": p.ci_failing_check,
+        })).unwrap_or(serde_json::Value::Null);
+        let envelope = serde_json::json!({
+            "schema_version": "v1",
+            "instances": [{
+                "instance_id": entry.instance_id,
+                "workspace": workspace,
+                "role": entry.role_key,
+                "state": state.short_label(),
+                "branch": branch,
+                "pull_request": pr_value,
+                "agents": agents_value,
+            }],
+        });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+        return Ok(());
+    }
+
+    // Human output.
+    println!(
+        "\n{}   {} / {}   {}",
+        entry.instance_id, workspace, entry.role_key, state.short_label()
+    );
+    println!();
+
+    // Branch / PR / CI block.
+    println!(
+        "  branch   {}",
+        branch.as_deref().unwrap_or("—")
+    );
+    if let Some(pr) = &pr_info {
+        println!("  pr       #{}  {}", pr.number, pr.title);
+        println!("  url      {}", pr.url);
+        println!("  ci       {}", pr.ci_display());
+    } else {
+        println!("  pr       —");
+        println!("  url      —");
+        println!("  ci       —");
+    }
+    println!();
+
+    // Agent table.
+    if let Some(agents) = &agents_json {
+        println!(
+            "  {:<12}  {:<10}  {:<14}  {:<20}  {:<20}  {}",
+            "codename", "agent", "provider", "started", "exited", "status"
+        );
+        println!("  {}", "─".repeat(83));
+
+        let mut active: Vec<_> = agents.iter().filter(|a| a.status == "active").collect();
+        let mut exited: Vec<_> = agents.iter().filter(|a| a.status != "active").collect();
+        active.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+        exited.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+
+        for a in active.iter().chain(exited.iter()) {
+            println!(
+                "  {:<12}  {:<10}  {:<14}  {:<20}  {:<20}  {}",
+                a.codename,
+                a.agent.as_deref().unwrap_or("shell"),
+                a.provider.as_deref().unwrap_or("—"),
+                compact_ts(&a.started_at),
+                a.exited_at.as_deref().map(compact_ts).unwrap_or_else(|| "—".to_string()),
+                a.status,
+            );
+        }
+    } else if is_running {
+        println!("  agents   pending");
+    } else {
+        println!("  agents   —");
+    }
+    println!();
+
+    Ok(())
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+struct PrInfo {
+    number: u64,
+    title: String,
+    url: String,
+    ci_status: String,
+    ci_failing_check: Option<String>,
+}
+
+impl PrInfo {
+    fn ci_display(&self) -> String {
+        match self.ci_status.as_str() {
+            "passing" | "success" => format!("✓ passing"),
+            "pending" => "⏳ pending".to_string(),
+            "failing" | "failure" | "error" => {
+                if let Some(check) = &self.ci_failing_check {
+                    format!("✗ failing — {check}")
+                } else {
+                    "✗ failing".to_string()
+                }
+            }
+            _ => "—".to_string(),
+        }
+    }
+}
+
+async fn fetch_pr_info(docker: &impl DockerApi, container_name: &str) -> Option<PrInfo> {
+    let output = docker
+        .exec_capture(container_name, &["sh", "-c", GH_PR_CMD])
+        .await
+        .ok()?;
+    let value: serde_json::Value = serde_json::from_str(output.trim()).ok()?;
+    let number = value["number"].as_u64()?;
+    let title = value["title"].as_str()?.to_string();
+    let url = value["url"].as_str()?.to_string();
+
+    // Aggregate statusCheckRollup into a single ci_status.
+    let (ci_status, ci_failing_check) = aggregate_ci_status(&value["statusCheckRollup"]);
+
+    Some(PrInfo { number, title, url, ci_status, ci_failing_check })
+}
+
+fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
+    let checks = match rollup.as_array() {
+        Some(a) => a,
+        None => return ("—".to_string(), None),
+    };
+    if checks.is_empty() {
+        return ("—".to_string(), None);
+    }
+    let mut failing_check = None;
+    let mut any_pending = false;
+    let mut all_pass = true;
+    for check in checks {
+        let conclusion = check.get("conclusion").and_then(|v| v.as_str()).unwrap_or("");
+        let status = check.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        match conclusion {
+            "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" => {
+                all_pass = false;
+                if failing_check.is_none() {
+                    failing_check = check.get("name").and_then(|v| v.as_str()).map(str::to_string);
+                }
+            }
+            "SUCCESS" | "NEUTRAL" | "SKIPPED" => {}
+            _ => {
+                if status == "IN_PROGRESS" || status == "QUEUED" || status == "WAITING" {
+                    any_pending = true;
+                }
+            }
+        }
+    }
+    if failing_check.is_some() {
+        ("failing".to_string(), failing_check)
+    } else if any_pending {
+        ("pending".to_string(), None)
+    } else if all_pass {
+        ("passing".to_string(), None)
+    } else {
+        ("—".to_string(), None)
+    }
+}
+
+/// Compact ISO 8601 timestamp for table display: `2026-06-04 10:15:02`.
+fn compact_ts(ts: &str) -> String {
+    ts.trim_end_matches('Z').replace('T', " ")
+}

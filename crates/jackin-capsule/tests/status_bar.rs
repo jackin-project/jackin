@@ -41,7 +41,7 @@ fn brand_pill_renders_before_menu_hint() {
 #[test]
 fn active_tab_background_differs_from_brand_pill() {
     let mut bar = StatusBar::new();
-    let tab = Tab::new_single("Codex", 7);
+    let tab = Tab::new_single("Codex", 7, "test");
     let s = render(&mut bar, 80, &[tab], 0, &[]);
     let brand_green_bg = jackin_tui::ansi::rgb_bg(jackin_tui::PHOSPHOR_GREEN);
     let active_tab_graphite_bg = jackin_tui::ansi::rgb_bg(jackin_tui::TAB_BG_ACTIVE);
@@ -59,7 +59,7 @@ fn active_tab_background_differs_from_brand_pill() {
 #[test]
 fn hovered_tab_uses_lifted_background() {
     let mut bar = StatusBar::new();
-    let tabs = vec![Tab::new_single("Codex", 7), Tab::new_single("Shell", 8)];
+    let tabs = vec![Tab::new_single("Codex", 7, "test"), Tab::new_single("Shell", 8, "test")];
     let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(1));
     assert!(
         s.contains("\x1b[48;2;48;48;48m"),
@@ -70,7 +70,7 @@ fn hovered_tab_uses_lifted_background() {
 #[test]
 fn active_tab_hover_uses_lifted_graphite_background() {
     let mut bar = StatusBar::new();
-    let tabs = vec![Tab::new_single("Codex", 7), Tab::new_single("Shell", 8)];
+    let tabs = vec![Tab::new_single("Codex", 7, "test"), Tab::new_single("Shell", 8, "test")];
     let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(0));
     assert!(
         s.contains("\x1b[48;2;58;58;58m"),
@@ -81,7 +81,7 @@ fn active_tab_hover_uses_lifted_graphite_background() {
 #[test]
 fn tab_click_region_includes_state_glyph_width() {
     let mut bar = StatusBar::new();
-    let tab = Tab::new_single("Codex", 7);
+    let tab = Tab::new_single("Codex", 7, "test");
     let tabs = vec![tab];
     let states = vec![(7u64, AgentState::Done)];
     let _ = render(&mut bar, 80, &tabs, 0, &states);
@@ -109,7 +109,7 @@ fn overflow_indicator_appears_when_tabs_exceed_width() {
     // Tabs of label "AAAAA" plus separator. With cols=30 only a handful
     // fit, so we should see the overflow `›` rendered.
     let tabs: Vec<Tab> = (0..10)
-        .map(|i| Tab::new_single(format!("Tab{i:02}"), i as u64))
+        .map(|i| Tab::new_single(format!("Tab{i:02}"), i as u64, "test"))
         .collect();
     let s = render(&mut bar, 30, &tabs, 0, &[]);
     assert!(s.contains("›"), "expected overflow indicator: {s:?}");
@@ -118,7 +118,7 @@ fn overflow_indicator_appears_when_tabs_exceed_width() {
 #[test]
 fn click_outside_tab_region_returns_none() {
     let mut bar = StatusBar::new();
-    let tab = Tab::new_single("Foo", 1);
+    let tab = Tab::new_single("Foo", 1, "test");
     let _ = render(&mut bar, 80, &[tab], 0, &[]);
     let (start, _) = bar.tab_regions[0];
     assert!(start > 0);

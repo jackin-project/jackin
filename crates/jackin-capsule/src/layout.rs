@@ -646,15 +646,21 @@ pub struct Tab {
     custom_label: Option<String>,
     pub tree: PaneTree,
     pub focused_id: u64,
+    /// Unique human-readable codename assigned at tab creation (e.g. `"badger"`).
+    /// Never reassigned; persists across agent process restarts and context resets
+    /// because it is a tab property, not a process property. Injected into every
+    /// child process as `JACKIN_AGENT_CODENAME`.
+    pub codename: String,
 }
 
 impl Tab {
-    pub fn new_single(label: impl Into<String>, session_id: u64) -> Self {
+    pub fn new_single(label: impl Into<String>, session_id: u64, codename: impl Into<String>) -> Self {
         Self {
             auto_label: label.into(),
             custom_label: None,
             tree: PaneTree::Leaf(session_id),
             focused_id: session_id,
+            codename: codename.into(),
         }
     }
 
