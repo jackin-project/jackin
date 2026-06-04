@@ -332,7 +332,6 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) zoomed: bool,
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
-    pub(crate) scrollback_active: bool,
     pub(crate) pane_screens: &'a [(u64, jackin_term::GridSnapshot)],
 }
 
@@ -368,33 +367,22 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         return;
     }
 
-    let hint_spans = crate::tui::components::dialog::main_view_hint(view.scrollback_active);
-    let hint_area = RatatuiRect {
-        x: 0,
-        y: view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
-        width: view.term_cols,
-        height: 1,
-    };
+    // Bottom chrome (hint row, separator pad, branch/PR bar) is NOT a Ratatui
+    // widget: the caller appends it as raw ANSI after the Ratatui diff so a
+    // single compositor owns each bottom row. Ratatui still clears these rows
+    // (default blank cells in the swapped buffer) before the raw append paints
+    // over them, so no stale chrome survives a resize.
     crate::cdebug!(
         "bottom-chrome: site=ratatui term={}x{} frame_area={}x{} hint_y={} sep_y={} branch_bar_y={} panes={}",
         view.term_cols,
         view.term_rows,
         frame.area().width,
         frame.area().height,
-        hint_area.y,
+        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
         view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
         view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS),
         view.panes.len(),
     );
-    jackin_tui::components::render_hint_bar(frame, hint_area, hint_spans);
-
-    let sep_area = RatatuiRect {
-        x: 0,
-        y: view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
-        width: view.term_cols,
-        height: 1,
-    };
-    frame.render_widget(ratatui::widgets::Block::default(), sep_area);
 
     for pane in view.panes {
         let title = view

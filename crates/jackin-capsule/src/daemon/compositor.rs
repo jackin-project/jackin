@@ -92,32 +92,44 @@ impl Multiplexer {
             self.dialog_open(),
         );
         if let Some(reason) = self.pending_full_redraw.take() {
-            self.dirty_panes.clear();
-            // Reset Ratatui's internal double-buffer before a full redraw so the
-            // diff treats every cell as "changed". Without this, a layout change
-            // (e.g. tab close) leaves stale cells from the previous layout in the
-            // buffer; the diff skips them because their values happen to match new
-            // content at the same screen position, causing visible corruption.
-            // SocketBackend::clear() deliberately does NOT emit \x1b[2J so this
-            // reset is flicker-free — the next draw() sends every cell instead.
-            let _ = self.ratatui_terminal.clear();
-            // Use the Ratatui compositor for all full frames; visible widget
-            // rendering lives under the capsule TUI boundary.
-            if let Some(ratatui_output) = self.compose_ratatui_frame() {
-                crate::cdebug!(
-                    "render: kind=full reason={} via=ratatui bytes={}",
-                    reason.as_str(),
-                    ratatui_output.len()
-                );
-                let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-                self.append_outer_terminal_title(&mut out);
-                out.extend_from_slice(&ratatui_output);
-                return out;
-            }
-            return self.compose_full_frame(reason);
+            return self.compose_full_redraw(reason);
         }
         let dirty_panes = std::mem::take(&mut self.dirty_panes);
         self.compose_partial_frame(dirty_panes)
+    }
+
+    /// Single entry point for every full frame, regardless of which path
+    /// requested it (initial pending-redraw, or a partial frame that
+    /// escalated to `PartialFramePlan::Full`). Routing *all* full frames
+    /// through here keeps one compositor in charge: the Ratatui
+    /// `SocketBackend` paints status + panes, and `compose_ratatui_frame`
+    /// appends the raw bottom chrome. The previous split — pending-redraw
+    /// via Ratatui, partial-escalation via raw `compose_full_frame` — left
+    /// the two compositors painting the same rows through shadow buffers
+    /// that did not know about each other, so neither erased the other's
+    /// output and stale chrome accumulated on resize.
+    pub(super) fn compose_full_redraw(&mut self, reason: FullRedrawReason) -> Vec<u8> {
+        self.dirty_panes.clear();
+        // Reset Ratatui's internal double-buffer before a full redraw so the
+        // diff treats every cell as "changed". Without this, a layout change
+        // (e.g. tab close) leaves stale cells from the previous layout in the
+        // buffer; the diff skips them because their values happen to match new
+        // content at the same screen position, causing visible corruption.
+        // SocketBackend::clear() deliberately does NOT emit \x1b[2J so this
+        // reset is flicker-free — the next draw() sends every cell instead.
+        let _ = self.ratatui_terminal.clear();
+        if let Some(ratatui_output) = self.compose_ratatui_frame() {
+            crate::cdebug!(
+                "render: kind=full reason={} via=ratatui bytes={}",
+                reason.as_str(),
+                ratatui_output.len()
+            );
+            let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+            self.append_outer_terminal_title(&mut out);
+            out.extend_from_slice(&ratatui_output);
+            return out;
+        }
+        self.compose_full_frame(reason)
     }
 
     pub(super) fn append_outer_terminal_title(&mut self, buf: &mut Vec<u8>) {
@@ -213,7 +225,6 @@ impl Multiplexer {
                     zoomed,
                     dialog_open,
                     dialog_snapshot: dialog_snapshot.as_ref(),
-                    scrollback_active,
                     pane_screens: &pane_screens,
                 },
             );
@@ -222,6 +233,11 @@ impl Multiplexer {
         match result {
             Ok(_) => {
                 let mut output = self.ratatui_terminal.backend_mut().take_output();
+                // Bottom chrome (branch/PR bar, hint row, debug chip) is raw
+                // ANSI appended after the Ratatui diff for both the dialog and
+                // non-dialog cases. Ratatui owns status + panes; the raw append
+                // owns the bottom rows. Keeping a single compositor in charge of
+                // each row is what stops the two shadow buffers from drifting.
                 if dialog_open {
                     render_capsule_dialog_bottom_chrome(
                         &mut output,
@@ -233,6 +249,27 @@ impl Multiplexer {
                             pull_request_loading: self.pull_request_context_loading(),
                             instance_id_label: self.status_bar.instance_id_label(),
                             hint_spans: dialog_hint_spans,
+                        },
+                    );
+                } else {
+                    let debug_run_id_owned: Option<String> = if crate::logging::debug_enabled() {
+                        let diag = crate::container_context::resolve_container_diagnostics();
+                        (!diag.run_id.is_empty()).then_some(diag.run_id)
+                    } else {
+                        None
+                    };
+                    render_capsule_bottom_chrome(
+                        &mut output,
+                        CapsuleBottomChrome {
+                            term_rows: self.term_rows,
+                            term_cols: self.term_cols,
+                            branch: self.context_bar_branch(),
+                            pull_request: self.pull_request_context.as_deref(),
+                            pull_request_loading: self.pull_request_context_loading(),
+                            instance_id_label: self.status_bar.instance_id_label(),
+                            hover_target: self.hover_target,
+                            scrollback_active,
+                            debug_run_id: debug_run_id_owned.as_deref(),
                         },
                     );
                 }
@@ -506,7 +543,7 @@ impl Multiplexer {
                 }
                 return self.compose_full_frame(unsafe_partial_fallback_redraw_reason());
             }
-            PartialFramePlan::Full(reason) => return self.compose_full_frame(reason),
+            PartialFramePlan::Full(reason) => return self.compose_full_redraw(reason),
             PartialFramePlan::Partial => {}
         }
 
@@ -556,7 +593,7 @@ impl Multiplexer {
             dirty_pane_scrollback_active,
             dirty_pane_cache_invalid,
         }) {
-            return self.compose_full_frame(reason);
+            return self.compose_full_redraw(reason);
         }
 
         let mut buf = Vec::with_capacity(16384);
