@@ -33,10 +33,7 @@ pub use app_config_roles::{
     BUILTIN_ROLES, build_github_env_layers, resolve_github_mode, resolve_mode,
     resolve_mode_with_trace,
 };
-pub use auth::{
-    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, GithubAuthMode,
-    KimiAuthConfig, OpencodeAuthConfig,
-};
+pub use auth::{AgentAuthConfig, GithubAuthConfig, GithubAuthMode};
 pub use editor::{ConfigEditor, EnvScope};
 pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, MountIsolation, OpRef};
 pub use migrations::{

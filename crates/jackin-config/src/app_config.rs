@@ -15,10 +15,7 @@ use jackin_core::agent::Agent;
 
 use jackin_core::AuthForwardMode;
 
-use crate::auth::{
-    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
-    OpencodeAuthConfig,
-};
+use crate::auth::{AgentAuthConfig, GithubAuthConfig};
 use crate::schema::{DockerConfig, GitConfig, RoleSource, WorkspaceConfig};
 use crate::versions::CURRENT_CONFIG_VERSION;
 
@@ -33,13 +30,13 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<CodexAuthConfig>,
+    pub codex: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub amp: Option<AmpAuthConfig>,
+    pub amp: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kimi: Option<KimiAuthConfig>,
+    pub kimi: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opencode: Option<OpencodeAuthConfig>,
+    pub opencode: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -55,6 +52,33 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// Validates that no configured agent uses an auth mode unsupported by that agent.
+    ///
+    /// Preserves the "`OAuthToken` not supported" check formerly enforced by the
+    /// per-agent serde newtypes (Defect 46 Phase 3).
+    pub fn validate_auth_modes(&self) -> anyhow::Result<()> {
+        let pairs: &[(Agent, Option<&AgentAuthConfig>)] = &[
+            (Agent::Codex, self.codex.as_ref()),
+            (Agent::Amp, self.amp.as_ref()),
+            (Agent::Kimi, self.kimi.as_ref()),
+            (Agent::Opencode, self.opencode.as_ref()),
+        ];
+        for (agent, cfg) in pairs {
+            if cfg.is_some_and(|c| {
+                c.auth_forward == AuthForwardMode::OAuthToken
+                    && !agent
+                        .supported_modes()
+                        .contains(&AuthForwardMode::OAuthToken)
+            }) {
+                anyhow::bail!(
+                    "auth_forward 'oauth_token' is not supported for {}",
+                    agent.slug()
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Auth-forward mode for `agent` at the global (top-level) config layer.
     ///
     /// Collapses the five-arm `match agent { Agent::Claude => self.claude…, … }`

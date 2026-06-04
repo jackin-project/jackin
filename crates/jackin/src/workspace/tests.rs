@@ -616,6 +616,7 @@ allowed_roles = ["smith"]
 
 #[test]
 fn reject_codex_oauth_token_in_workspace() {
+    // Phase 3: post-parse validation replaces the serde newtype check.
     let toml = r#"
 workdir = "/tmp/proj"
 allowed_roles = ["smith"]
@@ -623,7 +624,8 @@ allowed_roles = ["smith"]
 [codex]
 auth_forward = "oauth_token"
 "#;
-    let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
+    let err = cfg.validate_auth_modes().expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("not supported for codex"),
@@ -633,6 +635,7 @@ auth_forward = "oauth_token"
 
 #[test]
 fn reject_codex_oauth_token_in_workspace_role_override() {
+    // Phase 3: post-parse validation replaces the serde newtype check.
     let toml = r#"
 workdir = "/tmp/proj"
 allowed_roles = ["smith"]
@@ -641,7 +644,8 @@ allowed_roles = ["smith"]
 [roles.smith.codex]
 auth_forward = "oauth_token"
 "#;
-    let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
+    let err = cfg.validate_auth_modes().expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("not supported for codex"),
@@ -651,6 +655,7 @@ auth_forward = "oauth_token"
 
 #[test]
 fn reject_amp_oauth_token_in_workspace() {
+    // Phase 3: post-parse validation replaces the serde newtype check.
     let toml = r#"
 workdir = "/tmp/proj"
 allowed_roles = ["smith"]
@@ -658,7 +663,8 @@ allowed_roles = ["smith"]
 [amp]
 auth_forward = "oauth_token"
 "#;
-    let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
+    let err = cfg.validate_auth_modes().expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("not supported for amp"),
@@ -668,6 +674,7 @@ auth_forward = "oauth_token"
 
 #[test]
 fn reject_amp_oauth_token_in_workspace_role_override() {
+    // Phase 3: post-parse validation replaces the serde newtype check.
     let toml = r#"
 workdir = "/tmp/proj"
 allowed_roles = ["smith"]
@@ -676,7 +683,8 @@ allowed_roles = ["smith"]
 [roles.smith.amp]
 auth_forward = "oauth_token"
 "#;
-    let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
+    let err = cfg.validate_auth_modes().expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("not supported for amp"),

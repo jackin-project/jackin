@@ -155,7 +155,7 @@ fn role_with_override_renders_collapsed_header_then_sentinel() {
 
 #[test]
 fn role_with_override_when_expanded_emits_kind_rows() {
-    use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
+    use crate::config::{AgentAuthConfig, AuthForwardMode};
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
     let mut ws = WorkspaceConfig {
         allowed_roles: vec!["the-architect".into()],
@@ -165,9 +165,9 @@ fn role_with_override_when_expanded_emits_kind_rows() {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::Ignore,
         }),
-        codex: Some(CodexAuthConfig(AgentAuthConfig {
+        codex: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
-        })),
+        }),
         ..Default::default()
     };
     ws.roles.insert("the-architect".into(), over);

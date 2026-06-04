@@ -284,11 +284,14 @@ fn parse_app_config_no_agent_blocks() {
 
 #[test]
 fn reject_codex_oauth_token_global() {
+    // Phase 3: oauth_token is now rejected by validate_auth_modes() after
+    // parse (not at serde time) since the newtype validator is gone.
     let toml = r#"
 [codex]
 auth_forward = "oauth_token"
 "#;
-    let err = toml::from_str::<AppConfig>(toml).expect_err("must reject");
+    let cfg = toml::from_str::<AppConfig>(toml).expect("parse should succeed");
+    let err = cfg.validate_auth_modes().expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("not supported for codex"),
@@ -298,11 +301,13 @@ auth_forward = "oauth_token"
 
 #[test]
 fn reject_amp_oauth_token_global() {
+    // Phase 3: same as codex — post-parse validation replaces serde newtype check.
     let toml = r#"
 [amp]
 auth_forward = "oauth_token"
 "#;
-    let err = toml::from_str::<AppConfig>(toml).expect_err("must reject");
+    let cfg = toml::from_str::<AppConfig>(toml).expect("parse should succeed");
+    let err = cfg.validate_auth_modes().expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("not supported for amp"),
@@ -699,11 +704,11 @@ fn agent_auth_config_rejects_legacy_oauth_token_field() {
     );
 }
 
-/// `oauth_token` in `[codex]` is rejected as an unknown field.
+/// `oauth_token` is not a field on `AgentAuthConfig` — unknown fields are rejected.
 #[test]
 fn codex_auth_config_rejects_oauth_token_field() {
     let toml = "auth_forward = \"api_key\"\noauth_token = \"doesnt-belong\"";
-    let err = toml::from_str::<CodexAuthConfig>(toml).expect_err("must reject");
+    let err = toml::from_str::<AgentAuthConfig>(toml).expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("unknown field"),

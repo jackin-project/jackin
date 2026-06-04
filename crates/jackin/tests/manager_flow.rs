@@ -3055,12 +3055,9 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
         claude: Some(jackin::config::AgentAuthConfig {
             auth_forward: jackin::config::AuthForwardMode::Ignore,
         }),
-        codex: Some(
-            jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
-                auth_forward: jackin::config::AuthForwardMode::ApiKey,
-            })
-            .unwrap(),
-        ),
+        codex: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        }),
         ..Default::default()
     };
     ws.roles.insert("the-architect".into(), over);
@@ -3109,12 +3106,9 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
         claude: Some(jackin::config::AgentAuthConfig {
             auth_forward: jackin::config::AuthForwardMode::Ignore,
         }),
-        codex: Some(
-            jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
-                auth_forward: jackin::config::AuthForwardMode::ApiKey,
-            })
-            .unwrap(),
-        ),
+        codex: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        }),
         ..Default::default()
     };
     ws.roles.insert("the-architect".into(), over);

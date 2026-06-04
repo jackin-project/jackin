@@ -2,8 +2,7 @@
 use super::*;
 use crate::agent::Agent;
 use crate::config::{
-    AgentAuthConfig, AmpAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig, GithubAuthConfig,
-    GithubAuthMode,
+    AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode,
 };
 use crate::operator_env::EnvValue;
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
@@ -137,9 +136,9 @@ fn codex_isolated_from_claude_global() {
 #[test]
 fn codex_uses_codex_layer() {
     let cfg = AppConfig {
-        codex: Some(CodexAuthConfig(AgentAuthConfig {
+        codex: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
-        })),
+        }),
         ..AppConfig::default()
     };
     assert_eq!(
@@ -151,9 +150,9 @@ fn codex_uses_codex_layer() {
 #[test]
 fn amp_uses_amp_layer() {
     let cfg = AppConfig {
-        amp: Some(AmpAuthConfig(AgentAuthConfig {
+        amp: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
-        })),
+        }),
         ..AppConfig::default()
     };
     assert_eq!(

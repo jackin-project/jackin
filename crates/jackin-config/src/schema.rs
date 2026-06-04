@@ -16,10 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use jackin_core::AuthForwardMode;
 
-use crate::auth::{
-    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
-    OpencodeAuthConfig,
-};
+use crate::auth::{AgentAuthConfig, GithubAuthConfig};
 use crate::versions::current_workspace_version;
 
 // ─── Serde helper ────────────────────────────────────────────────────────────
@@ -73,13 +70,13 @@ pub struct WorkspaceRoleOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<CodexAuthConfig>,
+    pub codex: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub amp: Option<AmpAuthConfig>,
+    pub amp: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kimi: Option<KimiAuthConfig>,
+    pub kimi: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opencode: Option<OpencodeAuthConfig>,
+    pub opencode: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
 }
@@ -124,13 +121,13 @@ pub struct WorkspaceConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<CodexAuthConfig>,
+    pub codex: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub amp: Option<AmpAuthConfig>,
+    pub amp: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kimi: Option<KimiAuthConfig>,
+    pub kimi: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opencode: Option<OpencodeAuthConfig>,
+    pub opencode: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -176,6 +173,55 @@ impl WorkspaceConfig {
             Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
             Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
         }
+    }
+
+    /// Validates that no configured agent uses an auth mode unsupported by that agent.
+    ///
+    /// Mirrors `AppConfig::validate_auth_modes` for the workspace layer.
+    /// Checks both the workspace-level config and every per-role override.
+    pub fn validate_auth_modes(&self) -> anyhow::Result<()> {
+        let workspace_pairs: &[(Agent, Option<&crate::auth::AgentAuthConfig>)] = &[
+            (Agent::Codex, self.codex.as_ref()),
+            (Agent::Amp, self.amp.as_ref()),
+            (Agent::Kimi, self.kimi.as_ref()),
+            (Agent::Opencode, self.opencode.as_ref()),
+        ];
+        for (agent, cfg) in workspace_pairs {
+            if cfg.is_some_and(|c| {
+                c.auth_forward == AuthForwardMode::OAuthToken
+                    && !agent
+                        .supported_modes()
+                        .contains(&AuthForwardMode::OAuthToken)
+            }) {
+                anyhow::bail!(
+                    "auth_forward 'oauth_token' is not supported for {}",
+                    agent.slug()
+                );
+            }
+        }
+        for (role, override_cfg) in &self.roles {
+            let role_pairs: &[(Agent, Option<&crate::auth::AgentAuthConfig>)] = &[
+                (Agent::Codex, override_cfg.codex.as_ref()),
+                (Agent::Amp, override_cfg.amp.as_ref()),
+                (Agent::Kimi, override_cfg.kimi.as_ref()),
+                (Agent::Opencode, override_cfg.opencode.as_ref()),
+            ];
+            for (agent, cfg) in role_pairs {
+                if cfg.is_some_and(|c| {
+                    c.auth_forward == AuthForwardMode::OAuthToken
+                        && !agent
+                            .supported_modes()
+                            .contains(&AuthForwardMode::OAuthToken)
+                }) {
+                    anyhow::bail!(
+                        "auth_forward 'oauth_token' is not supported for {} in role {}",
+                        agent.slug(),
+                        role
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 }
 

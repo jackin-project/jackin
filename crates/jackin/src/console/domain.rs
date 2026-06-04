@@ -5,9 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::agent::Agent;
 use crate::app::context::eligible_roles_for_workspace;
 use crate::config::{
-    AgentAuthConfig, AmpAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig, GithubAuthConfig,
-    GithubAuthMode, KimiAuthConfig, MountEntry, OpencodeAuthConfig, RoleSource,
-    WorkspaceRoleOverride,
+    AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode, MountEntry,
+    RoleSource, WorkspaceRoleOverride,
 };
 use crate::isolation::MountIsolation;
 use crate::selector::RoleSelector;
@@ -108,10 +107,10 @@ pub(super) fn set_role_auth_mode(
 trait AuthLayerMut {
     fn github_auth(&self) -> Option<&GithubAuthConfig>;
     fn set_claude_auth(&mut self, auth: Option<AgentAuthConfig>);
-    fn set_codex_auth(&mut self, auth: Option<CodexAuthConfig>);
-    fn set_amp_auth(&mut self, auth: Option<AmpAuthConfig>);
-    fn set_kimi_auth(&mut self, auth: Option<KimiAuthConfig>);
-    fn set_opencode_auth(&mut self, auth: Option<OpencodeAuthConfig>);
+    fn set_codex_auth(&mut self, auth: Option<AgentAuthConfig>);
+    fn set_amp_auth(&mut self, auth: Option<AgentAuthConfig>);
+    fn set_kimi_auth(&mut self, auth: Option<AgentAuthConfig>);
+    fn set_opencode_auth(&mut self, auth: Option<AgentAuthConfig>);
     fn set_github_auth(&mut self, auth: Option<GithubAuthConfig>);
 }
 
@@ -124,19 +123,19 @@ impl AuthLayerMut for WorkspaceConfig {
         self.claude = auth;
     }
 
-    fn set_codex_auth(&mut self, auth: Option<CodexAuthConfig>) {
+    fn set_codex_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.codex = auth;
     }
 
-    fn set_amp_auth(&mut self, auth: Option<AmpAuthConfig>) {
+    fn set_amp_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.amp = auth;
     }
 
-    fn set_kimi_auth(&mut self, auth: Option<KimiAuthConfig>) {
+    fn set_kimi_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.kimi = auth;
     }
 
-    fn set_opencode_auth(&mut self, auth: Option<OpencodeAuthConfig>) {
+    fn set_opencode_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.opencode = auth;
     }
 
@@ -154,19 +153,19 @@ impl AuthLayerMut for WorkspaceRoleOverride {
         self.claude = auth;
     }
 
-    fn set_codex_auth(&mut self, auth: Option<CodexAuthConfig>) {
+    fn set_codex_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.codex = auth;
     }
 
-    fn set_amp_auth(&mut self, auth: Option<AmpAuthConfig>) {
+    fn set_amp_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.amp = auth;
     }
 
-    fn set_kimi_auth(&mut self, auth: Option<KimiAuthConfig>) {
+    fn set_kimi_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.kimi = auth;
     }
 
-    fn set_opencode_auth(&mut self, auth: Option<OpencodeAuthConfig>) {
+    fn set_opencode_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.opencode = auth;
     }
 
@@ -186,25 +185,25 @@ fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<Aut
         AuthKind::Codex => {
             layer.set_codex_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward })),
+                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
             );
         }
         AuthKind::Amp => {
             layer.set_amp_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward })),
+                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
             );
         }
         AuthKind::Kimi => {
             layer.set_kimi_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| KimiAuthConfig(AgentAuthConfig { auth_forward })),
+                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
             );
         }
         AuthKind::Opencode => {
             layer.set_opencode_auth(
                 mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward })),
+                    .map(|auth_forward| AgentAuthConfig { auth_forward }),
             );
         }
         AuthKind::Github => {
@@ -407,22 +406,22 @@ pub(super) fn workspace_auth_mode_and_credential(
             kind,
         ),
         AuthKind::Codex => agent_workspace_mode_and_credential(
-            workspace.codex.as_ref().map(|c| c.0.auth_forward),
+            workspace.codex.as_ref().map(|c| c.auth_forward),
             &workspace.env,
             kind,
         ),
         AuthKind::Amp => agent_workspace_mode_and_credential(
-            workspace.amp.as_ref().map(|c| c.0.auth_forward),
+            workspace.amp.as_ref().map(|c| c.auth_forward),
             &workspace.env,
             kind,
         ),
         AuthKind::Kimi => agent_workspace_mode_and_credential(
-            workspace.kimi.as_ref().map(|c| c.0.auth_forward),
+            workspace.kimi.as_ref().map(|c| c.auth_forward),
             &workspace.env,
             kind,
         ),
         AuthKind::Opencode => agent_workspace_mode_and_credential(
-            workspace.opencode.as_ref().map(|c| c.0.auth_forward),
+            workspace.opencode.as_ref().map(|c| c.auth_forward),
             &workspace.env,
             kind,
         ),
@@ -551,25 +550,25 @@ pub(super) fn role_auth_mode_and_credential(
         ),
         AuthKind::Codex => agent_role_mode_and_credential(
             role.and_then(|role| role.codex.as_ref())
-                .map(|config| config.0.auth_forward),
+                .map(|config| config.auth_forward),
             role,
             kind,
         ),
         AuthKind::Amp => agent_role_mode_and_credential(
             role.and_then(|role| role.amp.as_ref())
-                .map(|config| config.0.auth_forward),
+                .map(|config| config.auth_forward),
             role,
             kind,
         ),
         AuthKind::Kimi => agent_role_mode_and_credential(
             role.and_then(|role| role.kimi.as_ref())
-                .map(|config| config.0.auth_forward),
+                .map(|config| config.auth_forward),
             role,
             kind,
         ),
         AuthKind::Opencode => agent_role_mode_and_credential(
             role.and_then(|role| role.opencode.as_ref())
-                .map(|config| config.0.auth_forward),
+                .map(|config| config.auth_forward),
             role,
             kind,
         ),
@@ -1006,10 +1005,7 @@ pub(in crate::console) fn providers_for_launch(
     // auth) always pass — the adapter's needs_key_for_agent gate handles that case.
     let key = |env_var: &str| operator_key_present(config, workspace_name, role_selector, env_var);
     jackin_protocol::Provider::available_for(agent.slug(), |provider| {
-        provider
-            .adapter()
-            .key_env_var()
-            .is_none_or(|env_var| key(env_var))
+        provider.adapter().key_env_var().is_none_or(&key)
     })
 }
 

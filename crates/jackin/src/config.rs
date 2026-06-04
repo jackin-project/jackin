@@ -14,12 +14,12 @@ pub(crate) mod workspaces;
 // here. They live in runtime::drift and must be imported from there directly.
 pub use crate::workspace::validate_workspace_config;
 pub use jackin_config::{
-    AgentAuthConfig, AmpAuthConfig, AppConfig, AuthForwardMode, CURRENT_CONFIG_VERSION,
-    CURRENT_WORKSPACE_VERSION, CodexAuthConfig, ConfigEditor, DockerConfig, DockerMounts, EnvScope,
-    GitConfig, GithubAuthConfig, GithubAuthMode, GlobalMountConfig, GlobalMountRow,
-    KeepAwakeConfig, KimiAuthConfig, MountConfig, MountEntry, MountIsolation, OpencodeAuthConfig,
-    RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceGlobalMountRows, WorkspaceRoleOverride,
-    build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
+    AgentAuthConfig, AppConfig, AuthForwardMode, CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION,
+    ConfigEditor, DockerConfig, DockerMounts, EnvScope, GitConfig, GithubAuthConfig,
+    GithubAuthMode, GlobalMountConfig, GlobalMountRow, KeepAwakeConfig, MountConfig, MountEntry,
+    MountIsolation, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceGlobalMountRows,
+    WorkspaceRoleOverride, build_github_env_layers, resolve_github_mode, resolve_mode,
+    resolve_mode_with_trace,
 };
 pub use jackin_config::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
 
