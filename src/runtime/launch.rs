@@ -2454,13 +2454,13 @@ async fn load_role_with(
         // than or equal to what the role requires).
         if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile) {
             if resolved_profile_early.0 < min {
-                let active = resolved_profile_early.0;
                 anyhow::bail!(
                     "role {:?} declares min_profile = \"{min}\"; the active profile \
-                     \"{active}\" is below that minimum — use \
+                     \"{}\" is below that minimum — use \
                      `--docker-profile {min}` or set `[docker] default_profile = \"{min}\"` \
                      in your config",
                     selector.key(),
+                    resolved_profile_early.0,
                 );
             }
         }
@@ -2496,12 +2496,10 @@ async fn load_role_with(
                 // from untrusted role repos before they reach `docker run --cap-add`.
                 let role_errors = super::docker_profile::validate_grants(&role_grants);
                 if !role_errors.is_empty() {
-                    let msg = role_errors
-                        .iter()
-                        .map(|e| format!("  • [role] {e}"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    anyhow::bail!("docker grants validation failed:\n{msg}");
+                    anyhow::bail!(
+                        "docker grants validation failed:\n{}",
+                        role_errors.iter().map(|e| format!("  • [role] {e}")).collect::<Vec<_>>().join("\n")
+                    );
                 }
                 effective_grants_early =
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);

@@ -770,7 +770,7 @@ pub fn format_session_contract(
     let network_enforcement = network_enforcement_label(grants);
     let memory_line = grants
         .memory_bytes
-        .map(|b| format!("{}", format_bytes(b)))
+        .map(format_bytes)
         .unwrap_or_else(|| "unlimited".to_string());
     let cpus_line = grants
         .cpus
@@ -814,8 +814,18 @@ pub fn format_session_contract(
         if grants.system_writes {
             "none (writable root)".to_string()
         } else {
-            "/tmp,/run,/var/run,/var/tmp,/var/cache,/var/log,/var/lib/apt/lists,\
-             /var/cache/apt/archives,/var/lib/dpkg,/home/agent/.cache".to_string()
+            // Use the same consts as readonly_root_flags so the contract stays in sync.
+            let extra: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
+                &[]
+            } else {
+                TMPFS_PATHS_HARDENED_EXTRA
+            };
+            TMPFS_PATHS_MINIMAL
+                .iter()
+                .chain(extra.iter())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(",")
         },
         grants.dind,  // Display impl emits "none"/"rootless"/"privileged"
         network_mode,
