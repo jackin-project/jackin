@@ -388,15 +388,26 @@ impl Multiplexer {
                 let before = buf.len();
 
                 // Phase 5: WireEmitter is the primary render path.
-                // Live view: use DamageGrid dirty_spans for wire-minimal emit.
-                // Scrollback / selection: render_snapshot() handles both
-                // (uses DamageGrid scrollback rows for the scrollback view).
+                // Live view: this is a FULL frame, so emit every row
+                // (DirtySpans::All) — a dirty-span emit would paint nothing
+                // when the pane is unchanged, leaving whatever was on screen
+                // (dialog backdrop, prior-geometry cells) un-erased. The dialog
+                // -dismiss ghost was exactly this: closing the menu repainted
+                // via compose_full_frame, the idle pane had no dirty rows, and
+                // the backdrop survived. take_damagegrid_frame still drains the
+                // dirty tracker so the next partial frame skips these rows.
+                // Scrollback / selection: render_snapshot() handles both.
                 let pane_body_stats = if session.scrollback_offset == 0
                     && selection_for_pane.is_none()
                 {
-                    let (snap, spans) = session.take_damagegrid_frame();
+                    let (snap, _drained) = session.take_damagegrid_frame();
                     let mut emitter = jackin_term::WireEmitter::new();
-                    emitter.emit_pane(&snap, &spans, pane.inner.row, pane.inner.col);
+                    emitter.emit_pane(
+                        &snap,
+                        &jackin_term::DirtySpans::All,
+                        pane.inner.row,
+                        pane.inner.col,
+                    );
                     buf.extend_from_slice(emitter.as_bytes());
                     crate::tui::render::PaneBodyRenderStats {
                         mode: crate::tui::render::PaneBodyRenderMode::Full,

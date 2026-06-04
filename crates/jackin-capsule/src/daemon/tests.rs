@@ -458,6 +458,43 @@ fn resize_then_full_frame_repaints_with_new_geometry() {
 }
 
 #[test]
+fn full_frame_repaints_pane_body_even_when_not_dirty() {
+    // Dialog-dismiss ghost regression (PR #495): a full frame must repaint
+    // pane bodies in full, not just dirty spans. After the first full frame
+    // drains the damage tracker, a second full frame (closing a dialog over an
+    // idle pane) must still emit the pane content — otherwise whatever covered
+    // the pane (the dialog backdrop) survives on screen.
+    let needle = b"HELLO-PANE-BODY";
+    let contains = |frame: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(8, 20);
+    session.feed_pty(b"\x1b[1;1HHELLO-PANE-BODY");
+    mux.sessions.insert(1, session);
+
+    let first = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+    assert!(contains(&first), "first full frame must paint pane body");
+
+    // No new PTY output: the damage tracker is now drained.
+    let second = mux.compose_full_frame(FullRedrawReason::DialogChange);
+    assert!(
+        contains(&second),
+        "second full frame over an idle pane must still repaint the body"
+    );
+}
+
+#[test]
+fn scan_emitted_frame_reports_geometry_fingerprint() {
+    // \x1b[2J (erase) + move to (5,10) + move to (40,160).
+    let frame = b"\x1b[2J\x1b[5;10Hx\x1b[40;160Hy".to_vec();
+    assert_eq!(super::scan_emitted_frame(&frame), (2, 40, 160, 1));
+
+    // A move with no col defaults col to 1; `f` is an alias for `H`.
+    let frame = b"\x1b[12Hz".to_vec();
+    assert_eq!(super::scan_emitted_frame(&frame), (1, 12, 1, 0));
+}
+
+#[test]
 fn geometry_changing_redraws_emit_screen_erase_others_do_not() {
     // PR #495 regression: the bottom chrome (branch bar, debug chip) is raw
     // ANSI the Ratatui SocketBackend diff cannot track. When a geometry change

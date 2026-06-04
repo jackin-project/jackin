@@ -463,8 +463,77 @@ impl Multiplexer {
     }
 
     fn send_output(&mut self, bytes: Vec<u8>) {
+        if crate::logging::debug_enabled() {
+            let (moves, max_row, max_col, erases) = scan_emitted_frame(&bytes);
+            crate::cdebug!(
+                "send: bytes={} cursor_moves={} max_row_addressed={} max_col_addressed={} erases={} term={}x{} over_rows={} over_cols={}",
+                bytes.len(),
+                moves,
+                max_row,
+                max_col,
+                erases,
+                self.term_cols,
+                self.term_rows,
+                max_row > self.term_rows,
+                max_col > self.term_cols,
+            );
+        }
         self.send_to_client(ServerFrame::Output(bytes));
     }
+}
+
+/// Scan an emitted frame for the diagnostic fingerprint a render bug leaves:
+/// how many absolute cursor moves it contains, the largest row/col it
+/// addresses (1-based, from `CSI row;col H`), and how many full-screen erases
+/// (`CSI 2 J`) it carries. A `max_row_addressed` greater than `term_rows` (or
+/// col greater than `term_cols`) is the signature of a geometry the capsule and
+/// the outer terminal disagree on — content lands off-screen or wraps. Two
+/// chrome blocks in one frame show up as a doubled cursor-move count. The scan
+/// is over our own trusted output, so the few lines of hand parsing are cheaper
+/// than a dependency.
+fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
+    let mut moves = 0usize;
+    let mut erases = 0usize;
+    let mut max_row = 0u16;
+    let mut max_col = 0u16;
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == 0x1b && bytes[i + 1] == b'[' {
+            let params_start = i + 2;
+            let mut j = params_start;
+            while j < bytes.len() && (bytes[j].is_ascii_digit() || bytes[j] == b';') {
+                j += 1;
+            }
+            if j < bytes.len() {
+                let final_byte = bytes[j];
+                let params = &bytes[params_start..j];
+                match final_byte {
+                    b'H' | b'f' => {
+                        moves += 1;
+                        let mut parts = params.split(|&b| b == b';');
+                        let row = parts
+                            .next()
+                            .and_then(|p| std::str::from_utf8(p).ok())
+                            .and_then(|s| s.parse::<u16>().ok())
+                            .unwrap_or(1);
+                        let col = parts
+                            .next()
+                            .and_then(|p| std::str::from_utf8(p).ok())
+                            .and_then(|s| s.parse::<u16>().ok())
+                            .unwrap_or(1);
+                        max_row = max_row.max(row);
+                        max_col = max_col.max(col);
+                    }
+                    b'J' if params == b"2" => erases += 1,
+                    _ => {}
+                }
+                i = j + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    (moves, max_row, max_col, erases)
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
