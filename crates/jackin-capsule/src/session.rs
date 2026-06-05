@@ -935,6 +935,14 @@ impl Session {
                 PassthroughEvent::UnhandledCsi(ref raw) => {
                     self.handle_unhandled_csi(raw);
                 }
+                // Device/mode query the emulator answered itself. The reply
+                // goes back to the agent's own PTY stdin — never the outer
+                // terminal — so the agent's capability detection reflects the
+                // grid, not the host. (Root fix for the alt-screen corruption:
+                // the host was answering DA/DSR/DECRQM with its own caps.)
+                PassthroughEvent::Reply(bytes) => {
+                    let _ = self.input_tx.send(bytes);
+                }
                 // ScrollbackClear is a grid-internal instruction with no
                 // outer-terminal byte form; the grid already cleared its
                 // own scrollback in `erase_display`. Reset the view offset.
@@ -976,6 +984,17 @@ impl Session {
         if let Some(level) = parse_modify_other_keys(raw) {
             self.modify_other_keys = (level != 0).then_some(level);
         }
+        // Forwarding raw CSI to the attach client mutates the screen the
+        // Ratatui cell-diff compositor owns, out of band from its prev-buffer.
+        // Rich/alt-screen agents (Claude, Amp) emit many of these and desync
+        // the diff → stale/overlapping cells; plain agents emit ~none. Log the
+        // exact bytes so the fix can decide per-sequence (handle in grid vs
+        // drop) from a real repro rather than a guess.
+        crate::cdebug!(
+            "forwarding unhandled CSI to client (agent={:?}): {}",
+            self.agent.as_deref(),
+            raw.escape_ascii(),
+        );
         self.pending_passthrough.push(raw.to_vec());
     }
 

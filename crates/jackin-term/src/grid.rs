@@ -973,15 +973,74 @@ impl vte::Perform for DamageGrid {
                     format!("\x1b[<{count}u").into_bytes(),
                 ));
             }
-            // Kitty keyboard set/report (`\x1b[?{flags}u` / `\x1b[?u`).
+            // Kitty keyboard query (`\x1b[?u`). The agent is asking the
+            // capsule's emulator which kitty-keyboard flags it supports.
+            // Answer 0 (no enhancement) so the agent uses the legacy key
+            // encoding the capsule's input layer handles — do NOT forward to
+            // the host, whose richer kitty support the grid does not emulate.
             'u' if intermediates == b"?" => {
                 self.passthrough
-                    .push(PassthroughEvent::UnhandledCsi(reconstruct_csi(
-                        params,
-                        intermediates,
-                        action as u8,
-                    )));
+                    .push(PassthroughEvent::Reply(b"\x1b[?0u".to_vec()));
             }
+            // Primary / secondary Device Attributes query (DA1 `\x1b[c`,
+            // DA2 `\x1b[>c`). Answer as the emulator itself with a conservative
+            // VT220 identity and no optional features, so the agent does not
+            // light up capabilities (sixel, etc.) the grid cannot render.
+            'c' => match intermediates {
+                b"" => self
+                    .passthrough
+                    .push(PassthroughEvent::Reply(b"\x1b[?62c".to_vec())),
+                b">" => self
+                    .passthrough
+                    .push(PassthroughEvent::Reply(b"\x1b[>0;0;0c".to_vec())),
+                _ => {}
+            },
+            // Device Status Report. `5n` → terminal-OK; `6n` → cursor position.
+            // The cursor reply MUST use the grid's own cursor, not the host's:
+            // forwarding `6n` to the host returned the outer terminal's cursor,
+            // which the agent then used for layout math against the wrong
+            // origin. DEC form (`?6n`, DECXCPR) carries a trailing page param.
+            'n' if intermediates == b"" || intermediates == b"?" => {
+                let reply = match p0 {
+                    5 => b"\x1b[0n".to_vec(),
+                    6 => {
+                        let row = self.cursor_row + 1;
+                        let col = self.cursor_col + 1;
+                        if intermediates == b"?" {
+                            format!("\x1b[?{row};{col};1R").into_bytes()
+                        } else {
+                            format!("\x1b[{row};{col}R").into_bytes()
+                        }
+                    }
+                    _ => Vec::new(),
+                };
+                if !reply.is_empty() {
+                    self.passthrough.push(PassthroughEvent::Reply(reply));
+                }
+            }
+            // DECRQM — request mode (`\x1b[?{mode}$p` / `\x1b[{mode}$p`). Answer
+            // 0 ("mode not recognized") for every mode so the agent renders in
+            // the capsule's baseline: critically this declines mode 2027
+            // (grapheme-cluster width), whose enable would make the agent
+            // advance columns by grapheme while the grid advances by
+            // `unicode_width`, desyncing every wide/combining glyph. `$` marks
+            // DECRQM; `!p` (DECSTR soft reset) has no `$` and falls through.
+            'p' if intermediates.contains(&b'$') => {
+                let dec = intermediates.contains(&b'?');
+                let reply = if dec {
+                    format!("\x1b[?{p0};0$y")
+                } else {
+                    format!("\x1b[{p0};0$y")
+                };
+                self.passthrough
+                    .push(PassthroughEvent::Reply(reply.into_bytes()));
+            }
+            // XTVERSION query (`\x1b[>q`). Suppress: the grid has no meaningful
+            // terminal-version identity to advertise, and forwarding it let the
+            // host answer with a real terminal's name + version, which steered
+            // the agent into host-specific rendering paths. No reply needed —
+            // agents fall back when the query goes unanswered.
+            'q' if intermediates == b">" => {}
             _ => {
                 // Unhandled CSI — reconstruct the original bytes and forward
                 // raw so the capsule can pass it to the outer terminal.
@@ -1321,5 +1380,63 @@ mod scrollback_view_tests {
         assert_eq!(view.cells.len(), 2);
         // The scrolled-up view differs from the live tail — it shows history.
         assert_ne!(view.cells, g.dump().cells);
+    }
+}
+
+#[cfg(test)]
+mod device_query_tests {
+    use super::DamageGrid;
+    use crate::PassthroughEvent;
+
+    fn replies(g: &mut DamageGrid) -> Vec<Vec<u8>> {
+        g.drain_passthrough()
+            .into_iter()
+            .filter_map(|e| match e {
+                PassthroughEvent::Reply(b) => Some(b),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn da1_answers_conservative_vt220() {
+        let mut g = DamageGrid::new(4, 20, 100);
+        g.process(b"\x1b[c");
+        assert_eq!(replies(&mut g), vec![b"\x1b[?62c".to_vec()]);
+    }
+
+    #[test]
+    fn dsr_cursor_position_uses_grid_cursor_not_host() {
+        let mut g = DamageGrid::new(10, 40, 100);
+        g.process(b"\x1b[4;6H\x1b[6n"); // home to row4/col6 (1-based), then query
+        assert_eq!(replies(&mut g), vec![b"\x1b[4;6R".to_vec()]);
+    }
+
+    #[test]
+    fn decrqm_declines_grapheme_width_mode_2027() {
+        let mut g = DamageGrid::new(4, 20, 100);
+        g.process(b"\x1b[?2027$p");
+        // 0 = "mode not recognized" → agent renders with legacy column widths.
+        assert_eq!(replies(&mut g), vec![b"\x1b[?2027;0$y".to_vec()]);
+    }
+
+    #[test]
+    fn kitty_keyboard_query_answers_no_enhancement() {
+        let mut g = DamageGrid::new(4, 20, 100);
+        g.process(b"\x1b[?u");
+        assert_eq!(replies(&mut g), vec![b"\x1b[?0u".to_vec()]);
+    }
+
+    #[test]
+    fn device_queries_are_not_forwarded_to_host() {
+        let mut g = DamageGrid::new(4, 20, 100);
+        g.process(b"\x1b[c\x1b[6n\x1b[?2026$p\x1b[?u");
+        // Every event is an agent-bound Reply; none is a host-bound UnhandledCsi.
+        for e in g.drain_passthrough() {
+            assert!(
+                matches!(e, PassthroughEvent::Reply(_)),
+                "device query leaked to host as {e:?}"
+            );
+        }
     }
 }

@@ -38,6 +38,14 @@ pub enum PassthroughEvent {
     Hyperlink { id: String, uri: String },
     /// Unhandled CSI — forwarded raw for passthrough.
     UnhandledCsi(Vec<u8>),
+    /// Reply to a device/mode query (DA, DSR, DECRQM, kitty-keyboard query)
+    /// the emulator answered itself. The bytes go back to the AGENT's PTY
+    /// stdin, never to the outer terminal — the agent queried the capsule's
+    /// emulator, not the host. Forwarding such queries to the host let the
+    /// host advertise capabilities (grapheme-width mode 2027, kitty keyboard,
+    /// …) the grid does not emulate, which desynced the agent's column math
+    /// from the grid and corrupted alt-screen rendering.
+    Reply(Vec<u8>),
     /// Capsule-specific: clear the scrollback buffer (CSI 3J).
     ScrollbackClear,
 }
@@ -95,6 +103,8 @@ impl PassthroughEvent {
             }
             // Raw pass-through — emit as-is.
             Self::UnhandledCsi(bytes) => Some(bytes.clone()),
+            // Query replies go to the agent PTY, not the outer terminal.
+            Self::Reply(_) => None,
             // Capsule-internal instruction; no outer-terminal output.
             Self::ScrollbackClear => None,
         }
