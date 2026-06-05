@@ -138,6 +138,13 @@ Compliance is covered by focused tests for the container palette stack, editor e
 
 Every keyboard shortcut active on the current screen must appear in the footer. No hidden keys. See `AGENTS.md` → **Navigation hints** for the complete rule.
 
+**This includes modals.** A modal is not a special case — when one is open, its keys replace the screen keys in the **same reserved footer rows**. There is no floating hint bar under a dialog; hints always live in the fixed footer. Two rules make this un-forgettable and keep it visible:
+
+- **Exhaustive matcher.** Every modal family maps to its hints through an exhaustive `match` (e.g. `console::tui::components::footer::modal::modal_footer_items` over `ConsoleModal`, and the `settings_*_modal_footer_items` siblings). Adding a modal variant without a hint arm is a compile error — a new dialog cannot ship hint-less. Screen footer selectors (`workspace_footer_items`, `editor_footer_items`, `settings_footer_items`) return the active modal's items when a modal is open.
+- **Backdrop never covers the footer.** The modal backdrop is rendered over the screen minus the reserved footer rows, so the modal-aware footer stays visible beneath the dialog. The footer is inviolable; a backdrop that fills the whole area (hiding the keys) is a violation.
+
+The in-container capsule follows the same contract via its own exhaustive `Dialog::footer_hint_spans` rendered in the bottom chrome.
+
 When a scrollable block is focused, the footer must show scroll direction hints:
 - Horizontal-only block: `←/→ scroll block`
 - Vertical-only block: `↑/↓ scroll block`  
