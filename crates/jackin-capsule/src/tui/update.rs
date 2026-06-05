@@ -45,7 +45,10 @@ impl FullRedrawReason {
     /// `SocketBackend` diff repaints precisely. Clearing on those causes the
     /// flicker operators see on every interaction, so it is suppressed.
     pub(crate) const fn forces_screen_clear(self) -> bool {
-        matches!(self, Self::FirstAttach | Self::Resize | Self::ExplicitRedraw)
+        matches!(
+            self,
+            Self::FirstAttach | Self::Resize | Self::ExplicitRedraw
+        )
     }
 
     pub(crate) fn as_str(self) -> &'static str {
