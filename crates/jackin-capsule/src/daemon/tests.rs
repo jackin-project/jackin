@@ -850,7 +850,7 @@ fn apply_pull_request_context_loaded_refreshes_open_github_dialog() {
     assert!(changed, "dialog refresh should request redraw");
     assert!(matches!(
         mux.dialog_top(),
-        Some(Dialog::GitHubContext { copied: false })
+        Some(Dialog::GitHubContext { copied: false, .. })
     ));
     assert_eq!(mux.pull_request_context_branch.as_deref(), Some("feat/x"));
     assert_eq!(
@@ -877,7 +877,7 @@ fn transient_pull_request_failure_clears_open_dialog_loading_state() {
     assert!(changed, "dialog loading state changed");
     assert!(matches!(
         mux.dialog_top(),
-        Some(Dialog::GitHubContext { copied: false })
+        Some(Dialog::GitHubContext { copied: false, .. })
     ));
     assert_eq!(mux.pull_request_context_branch.as_deref(), Some("feat/x"));
     assert!(mux.pull_request_context.is_none());
@@ -2407,7 +2407,7 @@ fn bottom_context_click_opens_github_context_dialog() {
     );
     assert!(matches!(
         mux.dialog_top(),
-        Some(Dialog::GitHubContext { copied: false })
+        Some(Dialog::GitHubContext { copied: false, .. })
     ));
     assert_eq!(
         mux.pull_request_context_branch.as_deref(),

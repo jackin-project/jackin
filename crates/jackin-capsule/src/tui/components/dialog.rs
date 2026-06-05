@@ -198,7 +198,11 @@ pub enum Dialog {
     /// Branch / PR / loading state come from `GithubContextView` at
     /// render time so a mid-life branch flip reflects without an
     /// explicit refresh step.
-    GitHubContext { copied: bool },
+    GitHubContext {
+        copied: bool,
+        /// Persisted scroll offsets (rebuilt each frame like ContainerInfo).
+        scroll: jackin_tui::components::DialogBodyScroll,
+    },
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
     /// on confirm, the dialog is replaced with an `AgentPicker` carrying
@@ -440,7 +444,10 @@ impl Dialog {
     }
 
     pub fn new_github_context() -> Self {
-        Self::GitHubContext { copied: false }
+        Self::GitHubContext {
+            copied: false,
+            scroll: jackin_tui::components::DialogBodyScroll::new(),
+        }
     }
 
     pub fn new_provider_picker(
@@ -501,10 +508,15 @@ impl Dialog {
                 return DialogAction::Dismiss;
             }
             // Scroll the read-only body (offsets clamp at render time): Up/Down +
-            // k/j vertical, Left/Right + h/l horizontal. The shared
-            // ContainerInfoState is rebuilt each frame, so the offset lives on
-            // the dialog enum.
-            if let Self::ContainerInfo { scroll, .. } = self {
+            // k/j vertical, Left/Right + h/l horizontal. The shared state is
+            // rebuilt each frame, so the offset lives on the dialog enum.
+            let body_scroll = match self {
+                Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => {
+                    Some(scroll)
+                }
+                _ => None,
+            };
+            if let Some(scroll) = body_scroll {
                 if is_arrow_up(key) || key == b"k" || key == b"K" {
                     scroll.scroll_y = scroll.scroll_y.saturating_sub(1);
                     return DialogAction::Redraw;
@@ -1266,7 +1278,7 @@ impl Dialog {
             // ContainerInfo copy is handled directly via the shared hit-test
             // (handle_click / handle_key) so it can target any copyable row,
             // not a single fixed offset.
-            Self::GitHubContext { copied } => {
+            Self::GitHubContext { copied, .. } => {
                 let url = github.and_then(|view| view.status.loaded())?.url.clone();
                 Some(CopyTarget {
                     payload: url,

@@ -10,7 +10,7 @@
 //! terminal so there are no borrow conflicts.
 
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
@@ -73,6 +73,8 @@ pub(crate) enum DialogRatatuiSnapshot {
         copy_row: Option<usize>,
         /// Whether the copy was just triggered (shows "✓ Copied!").
         copied: bool,
+        /// Scroll offsets so long values (e.g. PR URLs) scroll instead of clip.
+        scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// The "Debug info" dialog, rendered through the shared jackin-tui
     /// `ContainerInfoState` so its rows, copy affordances, link styling, and
@@ -248,7 +250,7 @@ impl Dialog {
                     .expect("container_info_state is Some for ContainerInfo"),
             ),
 
-            Dialog::GitHubContext { copied } => {
+            Dialog::GitHubContext { copied, scroll } => {
                 let branch = pr_branch
                     .map(String::from)
                     .unwrap_or_else(|| "(unknown)".into());
@@ -284,6 +286,7 @@ impl Dialog {
                     ],
                     copy_row: Some(3),
                     copied: *copied,
+                    scroll: scroll.clone(),
                 }
             }
         }
@@ -345,8 +348,9 @@ pub(crate) fn render_dialog_ratatui(
             rows,
             copy_row,
             copied,
+            scroll,
         } => {
-            render_info_rows_dialog(frame, area, dialog_title, rows, *copy_row, *copied);
+            render_info_rows_dialog(frame, area, dialog_title, rows, *copy_row, *copied, scroll);
         }
         DialogRatatuiSnapshot::DebugInfo(state) => {
             jackin_tui::components::render_container_info(frame, area, state);
@@ -510,6 +514,7 @@ fn render_info_rows_dialog(
     rows: &[(String, String)],
     copy_row: Option<usize>,
     copied: bool,
+    scroll: &jackin_tui::components::DialogBodyScroll,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -528,35 +533,29 @@ fn render_info_rows_dialog(
         .max()
         .unwrap_or(0);
 
-    for (i, (label, value)) in rows.iter().enumerate() {
-        if i as u16 >= inner.height {
-            break;
-        }
-        let row_area = Rect {
-            y: inner.y + i as u16,
-            height: 1,
-            ..inner
-        };
-
-        let is_copy_row = copy_row == Some(i);
-        let suffix = if is_copy_row && copied {
-            " ✓ Copied!"
-        } else {
-            ""
-        };
-
-        let padded_label = format!("{label:<width$}", width = label_width);
-        let line = if is_copy_row {
-            Line::from(vec![
-                Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
-                Span::styled(format!("{value}{suffix}"), jackin_tui::theme::BOLD_WHITE),
-            ])
-        } else {
-            Line::from(vec![
-                Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
-                Span::styled(value.as_str(), Style::default().fg(WHITE)),
-            ])
-        };
-        frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), row_area);
-    }
+    // Build the body once and render it through the shared scrollable dialog
+    // body so long values (e.g. PR URLs) scroll horizontally instead of
+    // clipping — same mechanism as the Debug-info dialog.
+    let lines: Vec<Line<'static>> = rows
+        .iter()
+        .enumerate()
+        .map(|(i, (label, value))| {
+            let is_copy_row = copy_row == Some(i);
+            let padded_label = format!("{label:<width$}", width = label_width);
+            if is_copy_row {
+                let suffix = if copied { " ✓ Copied!" } else { "" };
+                Line::from(vec![
+                    Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
+                    Span::styled(format!("{value}{suffix}"), jackin_tui::theme::BOLD_WHITE),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
+                    Span::styled(value.clone(), Style::default().fg(WHITE)),
+                ])
+            }
+        })
+        .collect();
+    let mut scroll = scroll.clone();
+    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
 }

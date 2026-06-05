@@ -533,7 +533,10 @@ fn github_view_for_fixture(pr: &PullRequestInfo) -> GithubContextView<'_> {
 fn github_context_enter_copies_pr_url_and_shows_feedback() {
     let pr = pull_request_fixture();
     let view = github_view_for_fixture(&pr);
-    let mut d = Dialog::GitHubContext { copied: false };
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
 
     match d.handle_key(b"\r", Some(&view)) {
         DialogAction::CopyToClipboard(payload) => {
@@ -548,7 +551,10 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
 fn github_context_url_click_copies_pr_url() {
     let pr = pull_request_fixture();
     let view = github_view_for_fixture(&pr);
-    let mut d = Dialog::GitHubContext { copied: false };
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
     let (row, col, _, _) = d.box_rect(40, 120);
 
     assert!(d.clickable_at(row + 5, col + 2, 40, 120, Some(&view)));
