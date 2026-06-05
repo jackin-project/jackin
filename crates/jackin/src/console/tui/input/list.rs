@@ -460,6 +460,20 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
 
 /// Dispatch a key into whatever modal currently sits on `state.list_modal`.
 pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
+    // Pre-compute the Debug-info dialog rect (immutable borrow) so the scroll
+    // can be clamped to the content after the key is handled — without this the
+    // offset inflates past the end and the opposite key feels dead while it
+    // unwinds.
+    let container_info_rect = state
+        .list_modal
+        .as_ref()
+        .filter(|modal| matches!(modal, Modal::ContainerInfo { .. }))
+        .map(|modal| {
+            crate::console::tui::components::modal_layout::modal_outer_rect(
+                modal,
+                state.cached_term_size,
+            )
+        });
     let Some(modal) = state.list_modal.as_mut() else {
         return InputOutcome::Continue;
     };
@@ -494,13 +508,19 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
-        Modal::ContainerInfo { state: info } => match info.handle_key(key) {
-            ModalOutcome::Commit(()) | ModalOutcome::Cancel => {
-                dispatch_manager(state, ManagerMessage::DismissListModal);
-                InputOutcome::Continue
+        Modal::ContainerInfo { state: info } => {
+            let outcome = info.handle_key(key);
+            if let Some(rect) = container_info_rect {
+                info.clamp_scroll(rect);
             }
-            ModalOutcome::Continue => InputOutcome::Continue,
-        },
+            match outcome {
+                ModalOutcome::Commit(()) | ModalOutcome::Cancel => {
+                    dispatch_manager(state, ManagerMessage::DismissListModal);
+                    InputOutcome::Continue
+                }
+                ModalOutcome::Continue => InputOutcome::Continue,
+            }
+        }
         _ => {
             dispatch_manager(state, ManagerMessage::DismissListModal);
             InputOutcome::Continue

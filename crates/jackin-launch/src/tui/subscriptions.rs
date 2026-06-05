@@ -21,6 +21,27 @@ const BUILD_LOG_PAGE_STEP: usize = 10;
 
 pub type SharedView = Arc<Mutex<LaunchView>>;
 
+/// Clamp the Debug-info dialog scroll to its content so over-scrolling cannot
+/// accumulate (which would make the opposite key/wheel feel dead while it
+/// unwinds). Called after every scroll key/wheel on the dialog.
+fn clamp_container_info_scroll(
+    view: &mut LaunchView,
+    area: Rect,
+    run_id: &str,
+    terminal: &dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) {
+    let state =
+        launch_container_info_state(view, run_id, "", terminal.is_debug_mode(), jackin_version);
+    let rect = launch_container_info_rect(area, &state);
+    jackin_tui::components::clamp_container_info_scroll(
+        &mut view.container_info_scroll,
+        state.content_width(),
+        state.content_height(),
+        rect,
+    );
+}
+
 fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
     let _dirty = update_launch_view(
         view,
@@ -277,6 +298,7 @@ pub fn handle_cockpit_input(
                     // (both axes) via the shared handler; offsets clamp at render.
                     kind if v.container_info_open => {
                         v.container_info_scroll.on_mouse_scroll(kind, m.modifiers);
+                        clamp_container_info_scroll(&mut v, area, run_id, terminal, jackin_version);
                     }
                     _ => {}
                 }
@@ -296,6 +318,7 @@ pub fn handle_cockpit_input(
             {
                 v.container_info_scroll
                     .handle_key(k, usize::MAX, 0, usize::MAX, 0);
+                clamp_container_info_scroll(&mut v, area, run_id, terminal, jackin_version);
             }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press

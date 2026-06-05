@@ -206,14 +206,33 @@ impl ContainerInfoState {
 
     /// Display-column width of the widest rendered body line (label column +
     /// `" : "` + value), including the 2-space indent. Drives horizontal scroll.
+    /// Matches the unpadded width `render_scrollable_dialog_body` measures.
     #[must_use]
-    fn content_width(&self) -> usize {
+    pub fn content_width(&self) -> usize {
         let label_width = self.label_width();
         self.rows
             .iter()
             .map(|row| INDENT_COLS + label_width + SEP_COLS + crate::display_cols(&row.value))
             .max()
             .unwrap_or(0)
+    }
+
+    /// Rendered body height: one leading spacer row + one row per fact.
+    #[must_use]
+    pub fn content_height(&self) -> usize {
+        self.rows.len().saturating_add(1)
+    }
+
+    /// Clamp the scroll offsets to the content given the dialog's outer rect, so
+    /// over-scrolling (holding →/↓ past the end, or a wheel that out-runs the
+    /// content) cannot inflate the stored offset and make the opposite key feel
+    /// dead while it unwinds. Call after handling a scroll key/wheel. `vp` is the
+    /// inner viewport (rect minus the 1-col border on each side), matching what
+    /// `render_scrollable_dialog_body` uses.
+    pub fn clamp_scroll(&mut self, dialog_rect: Rect) {
+        let content_width = self.content_width();
+        let content_height = self.content_height();
+        clamp_dialog_scroll(&mut self.scroll, content_width, content_height, dialog_rect);
     }
 
     fn label_width(&self) -> usize {
@@ -244,6 +263,23 @@ impl ContainerInfoState {
     pub const fn hovered_row(&self) -> Option<usize> {
         self.hovered_row
     }
+}
+
+/// Clamp a dialog body's scroll offsets to the content within `dialog_rect`'s
+/// inner viewport. Shared by surfaces whose scroll state lives outside a
+/// persistent `ContainerInfoState` (the cockpit's `LaunchView`, the capsule's
+/// `Dialog` enum) so they get the same over-scroll guard as `clamp_scroll`.
+pub fn clamp_dialog_scroll(
+    scroll: &mut DialogBodyScroll,
+    content_width: usize,
+    content_height: usize,
+    dialog_rect: Rect,
+) {
+    use crate::components::scrollable_panel::effective_offset;
+    let vp_w = usize::from(dialog_rect.width.saturating_sub(2));
+    let vp_h = usize::from(dialog_rect.height.saturating_sub(2));
+    scroll.scroll_x = effective_offset(content_width, vp_w, scroll.scroll_x);
+    scroll.scroll_y = effective_offset(content_height, vp_h, scroll.scroll_y);
 }
 
 /// Keys for the Debug-info dialog hint bar: scroll + dismiss. (Enter dismisses

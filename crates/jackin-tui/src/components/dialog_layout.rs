@@ -184,9 +184,14 @@ pub fn render_scrollable_dialog_body(
     lines: &[Line<'_>],
     scroll: &mut DialogBodyScroll,
 ) -> (usize, usize) {
-    use crate::components::scrollable_panel::{effective_offset, max_line_width};
+    use crate::components::scrollable_panel::{effective_offset, line_width};
 
-    let content_width = max_line_width(lines);
+    // Real rendered width — NOT max_line_width, which mirrors a row's leading
+    // indent as trailing scroll-pad (that is for the mounts *panel*, which
+    // appends padding). A dialog body is scrolled by Paragraph::scroll with no
+    // appended padding, so the padded width would let the body scroll past its
+    // last column into blank and keep the thumb from sitting flush at the end.
+    let content_width = lines.iter().map(line_width).max().unwrap_or(0);
     let content_height = lines.len();
     let vp_w = usize::from(content_area.width);
     let vp_h = usize::from(content_area.height);

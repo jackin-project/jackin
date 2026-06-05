@@ -96,10 +96,18 @@ pub(crate) fn handle_mouse_with_config(
 
     // A scrollable modal (Debug info) captures the wheel so its own body scrolls
     // rather than the panel behind it. Shared handler → identical behaviour on
-    // every surface; offsets clamp at render time.
+    // every surface; clamp to content so over-scroll cannot accumulate.
+    let container_info_rect = state
+        .list_modal
+        .as_ref()
+        .filter(|modal| matches!(modal, Modal::ContainerInfo { .. }))
+        .map(|modal| modal_outer_rect(modal, term_size));
     if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
         && info.scroll.on_mouse_scroll(mouse.kind, mouse.modifiers)
     {
+        if let Some(rect) = container_info_rect {
+            info.clamp_scroll(rect);
+        }
         return super::InputOutcome::Continue;
     }
 
