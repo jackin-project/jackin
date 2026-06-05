@@ -90,6 +90,13 @@ pub struct DamageGrid {
     cursor_col: u16,
     saved_cursor_row: u16,
     saved_cursor_col: u16,
+    /// DECAWM deferred wrap. A printable written in the last column does NOT
+    /// move the cursor; it parks here with `pending_wrap` armed. The next
+    /// printable performs the wrap first; any explicit cursor move (CR, LF,
+    /// CUP, CHA, …) cancels it. Eager-wrapping instead drifts the cursor one
+    /// row down per last-column write, which is how box-drawing TUIs (Claude
+    /// Code, Amp) desynced and corrupted the screen.
+    pending_wrap: bool,
 
     // ── Modes ─────────────────────────────────────────────────────────────────
     mouse_mode: MouseProtocolMode,
@@ -142,6 +149,7 @@ impl DamageGrid {
             cursor_col: 0,
             saved_cursor_row: 0,
             saved_cursor_col: 0,
+            pending_wrap: false,
             mouse_mode: MouseProtocolMode::None,
             mouse_encoding: MouseProtocolEncoding::Default,
             hide_cursor: false,
@@ -433,6 +441,13 @@ impl DamageGrid {
 
     /// Write a character at the current cursor position, advance cursor.
     fn write_char_at_cursor(&mut self, ch: char) {
+        // DECAWM deferred wrap: a previous last-column write parked here. Now
+        // that another printable has arrived, perform the wrap before writing.
+        if self.pending_wrap {
+            self.pending_wrap = false;
+            self.cursor_col = 0;
+            self.newline_action();
+        }
         if self.cursor_row >= self.rows || self.cursor_col >= self.cols {
             return;
         }
@@ -473,9 +488,13 @@ impl DamageGrid {
 
         self.cursor_col += width;
         if self.cursor_col >= self.cols {
-            // Wrap to next line.
-            self.cursor_col = 0;
-            self.newline_action();
+            // Last-column write: defer the wrap (DECAWM). Park the cursor at
+            // the phantom column (== cols, matching vt100's reported cursor)
+            // and arm pending_wrap; the next printable performs the wrap, and
+            // any explicit cursor move cancels it. Eager wrapping here is what
+            // drifted the cursor one row down per border line.
+            self.cursor_col = self.cols;
+            self.pending_wrap = true;
         }
     }
 
@@ -492,6 +511,9 @@ impl DamageGrid {
                 }
                 self.scrollback.push(row);
             }
+            // Scroll-introduced blank lines use the DEFAULT background, not the
+            // current one — vt100/xterm only apply back-colour-erase to the
+            // explicit erase ops (EL/ED/ECH), never to scroll/insert-line.
             let cols = self.cols;
             let grid = self.active_grid();
             if bottom < grid.len() && top < bottom {
@@ -550,9 +572,36 @@ impl DamageGrid {
         }
     }
 
+    /// Cancel a deferred (DECAWM) wrap. Any explicit cursor move clears the
+    /// pending state, and un-parks the cursor from the phantom column (== cols)
+    /// back into the addressable range so the subsequent move computes from a
+    /// valid column.
+    fn clear_pending_wrap(&mut self) {
+        self.pending_wrap = false;
+        if self.cursor_col >= self.cols {
+            self.cursor_col = self.cols.saturating_sub(1);
+        }
+    }
+
     fn clamp_cursor(&mut self) {
         self.cursor_row = self.cursor_row.min(self.rows.saturating_sub(1));
         self.cursor_col = self.cursor_col.min(self.cols.saturating_sub(1));
+    }
+
+    /// A blank cell carrying the current background colour (back-colour-erase).
+    /// Erase (EL/ED/ECH), scroll, and insert/delete-line introduce blanks that
+    /// must inherit the active SGR background — vt100 and xterm-with-`bce` both
+    /// do this. Without it, a region an agent clears while a background colour
+    /// is selected loses that colour, and its differential redraws (CHA-
+    /// positioned, cell-at-a-time) desync from the grid, corrupting the screen.
+    fn blank_cell(&self) -> Cell {
+        let mut cell = Cell::default();
+        cell.attrs.background = self.current_attrs.background;
+        cell
+    }
+
+    fn blank_row_bce(&self) -> Vec<Cell> {
+        vec![self.blank_cell(); self.cols as usize]
     }
 
     fn erase_line(&mut self, mode: u16) {
@@ -561,17 +610,19 @@ impl DamageGrid {
         let cols_u16 = self.cols;
         let cols = cols_u16 as usize;
         let cursor_row = self.cursor_row;
+        let blank = self.blank_cell();
+        let blank_row = self.blank_row_bce();
         {
             let grid = self.active_grid();
             match mode {
                 0 => {
-                    grid[row][col..cols].fill(Cell::default());
+                    grid[row][col..cols].fill(blank);
                 }
                 1 => {
-                    grid[row][0..=col.min(cols - 1)].fill(Cell::default());
+                    grid[row][0..=col.min(cols - 1)].fill(blank);
                 }
                 2 => {
-                    grid[row] = blank_row(cols_u16);
+                    grid[row] = blank_row;
                 }
                 _ => {}
             }
@@ -584,7 +635,7 @@ impl DamageGrid {
         let cursor_col = self.cursor_col as usize;
         let rows = self.rows as usize;
         let cols_usize = self.cols as usize;
-        let cols_u16 = self.cols;
+        let blank = self.blank_cell();
         match mode {
             0 => {
                 // ED0 at the home cursor is the normal-screen clear/redraw
@@ -594,35 +645,39 @@ impl DamageGrid {
                 if self.cursor_row == 0 && self.cursor_col == 0 {
                     self.preserve_visible_rows_to_scrollback();
                 }
+                let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
-                grid[cursor_row][cursor_col..cols_usize].fill(Cell::default());
+                grid[cursor_row][cursor_col..cols_usize].fill(blank);
                 for row in grid.iter_mut().take(rows).skip(cursor_row + 1) {
-                    *row = blank_row(cols_u16);
+                    *row = blank_row.clone();
                 }
             }
             1 => {
+                let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(cursor_row) {
-                    *row = blank_row(cols_u16);
+                    *row = blank_row.clone();
                 }
-                grid[cursor_row][0..=cursor_col.min(cols_usize - 1)].fill(Cell::default());
+                grid[cursor_row][0..=cursor_col.min(cols_usize - 1)].fill(blank);
             }
             2 => {
                 // ED2 clears the whole visible display; preserve those rows
                 // as scrollback. ED3 below is the explicit saved-lines clear
                 // and must NOT preserve them.
                 self.preserve_visible_rows_to_scrollback();
+                let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
-                    *row = blank_row(cols_u16);
+                    *row = blank_row.clone();
                 }
             }
             3 => {
                 self.scrollback.clear();
                 self.scrollback_offset = 0;
+                let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
-                    *row = blank_row(cols_u16);
+                    *row = blank_row.clone();
                 }
                 // Emit ScrollbackClear so the capsule can clear its retained history.
                 self.passthrough.push(PassthroughEvent::ScrollbackClear);
@@ -703,21 +758,25 @@ impl vte::Perform for DamageGrid {
         match byte {
             // LF / VT / FF — newline.
             0x0a..=0x0c => {
+                self.clear_pending_wrap();
                 self.newline_action();
                 self.dirty.mark_row(self.cursor_row);
             }
             // CR — carriage return.
             0x0d => {
+                self.clear_pending_wrap();
                 self.cursor_col = 0;
             }
             // BS — backspace.
             0x08 => {
+                self.clear_pending_wrap();
                 if self.cursor_col > 0 {
                     self.cursor_col -= 1;
                 }
             }
             // HT — horizontal tab (move to next tab stop, 8-col aligned).
             0x09 => {
+                self.clear_pending_wrap();
                 let next_tab = ((self.cursor_col / 8) + 1) * 8;
                 self.cursor_col = next_tab.min(self.cols.saturating_sub(1));
             }
@@ -742,6 +801,17 @@ impl vte::Perform for DamageGrid {
         let p0 = p.first().copied().unwrap_or(0);
         let p1 = p.get(1).copied().unwrap_or(0);
 
+        // Any explicit cursor positioning cancels a deferred (DECAWM) wrap.
+        // SGR, mode toggles, erases, and edit ops do NOT move the cursor and
+        // must preserve a pending wrap (e.g. "write last column, change color,
+        // write" still wraps), so this is gated to the cursor-moving finals.
+        if matches!(
+            action,
+            'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'f' | 'd' | 'r'
+        ) {
+            self.clear_pending_wrap();
+        }
+
         match action {
             // Insert Characters (ICH) — insert n blank chars at cursor, shift right.
             '@' => {
@@ -756,7 +826,7 @@ impl vte::Perform for DamageGrid {
                 for c in (col..end.saturating_sub(n)).rev() {
                     row_cells[c + n] = row_cells[c].clone();
                 }
-                // Fill inserted cells with blanks.
+                // Inserted cells use the DEFAULT background (ICH is not a BCE op).
                 for cell in row_cells.iter_mut().take((col + n).min(end)).skip(col) {
                     *cell = Cell::default();
                 }
@@ -818,7 +888,7 @@ impl vte::Perform for DamageGrid {
             'K' => {
                 self.erase_line(p0);
             }
-            // Insert Lines.
+            // Insert Lines. Inserted blanks use the DEFAULT background (not BCE).
             'L' => {
                 let n = p0.max(1) as usize;
                 let row = self.cursor_row as usize;
@@ -833,7 +903,7 @@ impl vte::Perform for DamageGrid {
                 }
                 self.dirty.mark_all();
             }
-            // Delete Lines.
+            // Delete Lines. Inserted blanks use the DEFAULT background (not BCE).
             'M' => {
                 let n = p0.max(1) as usize;
                 let row = self.cursor_row as usize;
@@ -850,7 +920,7 @@ impl vte::Perform for DamageGrid {
                 }
                 self.dirty.mark_all();
             }
-            // Delete Characters.
+            // Delete Characters. Tail fill uses the DEFAULT background (not BCE).
             'P' => {
                 let n = p0.max(1) as usize;
                 let row = self.cursor_row as usize;
@@ -870,7 +940,7 @@ impl vte::Perform for DamageGrid {
                 let n = p0.max(1);
                 self.scroll_up(n);
             }
-            // Scroll Down.
+            // Scroll Down. Inserted blanks use the DEFAULT background (not BCE).
             'T' => {
                 let n = p0.max(1) as usize;
                 let top = self.scroll_top as usize;
@@ -890,9 +960,10 @@ impl vte::Perform for DamageGrid {
                 let n = p0.max(1) as usize;
                 let row = self.cursor_row as usize;
                 let col = self.cursor_col as usize;
+                let blank = self.blank_cell();
                 let grid = self.active_grid();
                 let end = (col + n).min(grid[row].len());
-                grid[row][col..end].fill(Cell::default());
+                grid[row][col..end].fill(blank);
                 self.dirty.mark_row(self.cursor_row);
             }
             // Cursor Vertical Absolute.
@@ -1057,8 +1128,11 @@ impl vte::Perform for DamageGrid {
             // ESC M — Reverse Index (RI): move cursor up one row.
             // If cursor is at the top margin, scroll content DOWN one row instead.
             b'M' => {
+                self.clear_pending_wrap();
                 if self.cursor_row == self.scroll_top {
-                    // Scroll down: insert blank row at scroll_top, remove from scroll_bottom.
+                    // Scroll down: insert blank row at scroll_top, remove from
+                    // scroll_bottom. The new blank uses the DEFAULT background —
+                    // RI scroll is not a back-colour-erase op.
                     let top = self.scroll_top as usize;
                     let bottom = self.scroll_bottom as usize;
                     let cols = self.cols;
@@ -1079,6 +1153,7 @@ impl vte::Perform for DamageGrid {
             }
             // DECRC — restore cursor.
             b'8' => {
+                self.clear_pending_wrap();
                 self.cursor_row = self.saved_cursor_row;
                 self.cursor_col = self.saved_cursor_col;
                 self.clamp_cursor();
@@ -1089,6 +1164,7 @@ impl vte::Perform for DamageGrid {
                 self.primary = blank.clone();
                 self.alternate = blank;
                 self.alt_screen = false;
+                self.pending_wrap = false;
                 self.cursor_row = 0;
                 self.cursor_col = 0;
                 self.current_attrs = Attrs::default();

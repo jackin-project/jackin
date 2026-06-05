@@ -234,6 +234,20 @@ fn run_differential(rows: u16, cols: u16, bytes: &[u8], label: &str) {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn claude_welcome_live_differential() {
+    // Real Claude Code v2 welcome render captured from a live 159x44 session
+    // (pane body 39 rows × 157 cols). Claude draws box borders that hit the
+    // last column on most lines and paints the welcome on a coloured field —
+    // it caught both the missing DECAWM deferred wrap (cursor drifted one row
+    // per border line) and the missing back-colour-erase (cleared regions lost
+    // the active background). Regression guard for both.
+    // Kept under tests/data/ (not tests/fixtures/) so the 24x80 corpus walker
+    // does not replay this 157-col-specific capture at the wrong geometry.
+    let bytes = std::fs::read("tests/data/claude_welcome_live.bin").expect("fixture");
+    run_differential(39, 157, &bytes, "claude welcome live");
+}
+
+#[test]
 fn sanity_empty_bytes() {
     run_differential(24, 80, b"", "empty bytes");
 }
