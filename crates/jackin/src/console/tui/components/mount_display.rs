@@ -74,11 +74,8 @@ pub(crate) fn settings_global_mounts_content_width_with_cache(
     // clamp agrees with the renderer. Selection is width-invariant (the `▸ `
     // and `  ` prefixes are both 2 cols), so building without a selection is
     // safe; the sentinel row is included to match the rendered block.
-    let lines = jackin_console::tui::screens::settings::view::global_mount_lines(
-        &display_rows,
-        None,
-        true,
-    );
+    let lines =
+        jackin_console::tui::screens::settings::view::global_mount_lines(&display_rows, None, true);
     jackin_tui::components::scrollable_panel::max_line_width(&lines)
 }
 

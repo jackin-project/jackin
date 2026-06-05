@@ -74,7 +74,14 @@ fn dialog_lets_wheel_events_through_for_body_scroll() {
     };
     for button in [64u8, 65, 66, 67] {
         assert_eq!(
-            input_event_action(&InputEvent::MousePress { row: 5, col: 9, button }, context),
+            input_event_action(
+                &InputEvent::MousePress {
+                    row: 5,
+                    col: 9,
+                    button
+                },
+                context
+            ),
             Some(Action::Wheel {
                 row: 5,
                 col: 9,
