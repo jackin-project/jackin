@@ -55,17 +55,20 @@ pub fn flush_terminal_input_queue() {}
 
 pub fn enable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
     // ?1000h press/release, ?1002h drag, ?1003h any-event motion (drives tab
-    // hover, matching the in-container multiplexer), ?1015h+?1006h SGR
-    // coordinates. ?1003h motion floods only matter across a pty under inertia;
-    // host events are local and the manager batches renders at 20Hz, so the
-    // cost is paid once per coalesced frame.
-    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1015h\x1b[?1006h")?;
+    // hover, matching the in-container multiplexer), ?1006h SGR coordinates.
+    //
+    // SGR (?1006h) only — NOT urxvt (?1015h). Enabling both is contradictory
+    // (they are mutually-exclusive coordinate encodings), and on some terminals
+    // urxvt mode makes a trackpad scroll surface as pointer *motion* rather than
+    // wheel events, so dialog/panel scroll silently stops working. The capsule,
+    // which scrolls correctly, uses SGR-only; the console now matches it.
+    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")?;
     out.flush()
 }
 
 pub fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    // Disable the exact modes we enable, plus ?1003l defensively in case
-    // an older build or another library enabled any-event tracking.
+    // Disable the exact modes we enable, plus ?1015l defensively in case an
+    // older build (which enabled urxvt mode) left it on.
     out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
     out.flush()
 }
