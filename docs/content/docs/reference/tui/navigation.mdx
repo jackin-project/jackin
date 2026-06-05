@@ -190,6 +190,8 @@ This means the rule is **impossible to accidentally violate** through the shared
 
 Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the input handler clamps scroll to the wrong maximum — the scrollbar thumb stops short of the track end even though the operator has not reached the actual content limit.
 
+**Derive content extents from the rendered lines, never from a parallel column-sum.** A block's `content_width` must be `jackin_tui::components::scrollable_panel::max_line_width(&lines)` over the exact `Vec<Line>` the block renders, and its `content_height` must be that line count. Build the lines once in a pure function (e.g. `mount_display::workspace_mount_block_lines`) and feed the *same* function to both `render_scrollable_block_at` and the scroll-clamp width. Do not re-derive width by summing column widths in a separate helper: `render_scrollable_block` mirrors a row's leading indent as trailing scroll padding (`padded_line_display_cols`), so a hand-rolled column-sum is short by the indent width and the thumb stops that many cells short of the end. This is the failure mode that hid in the mount blocks — a `*_content_width` that summed columns while the renderer measured `max_line_width`.
+
 ### Click hit-test area must cover the full rendered block
 
 **The mouse hit-test rect for a scrollable block must exactly match (or be a superset of) the `area` passed to `render_scrollable_block`.** Never compute the hit-test area from content dimensions or row counts — use the full rendered block height.

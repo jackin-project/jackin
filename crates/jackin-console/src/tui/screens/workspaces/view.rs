@@ -8,13 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use crate::{
-    tui::components::mount_rows::{
-        render_global_mount_header, render_global_mount_lines, render_mount_header,
-        render_mount_lines,
-    },
-    tui::mount_display::{MountDisplayRow, mount_path_width},
-};
+use crate::tui::mount_display::MountDisplayRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disclosure {
@@ -623,22 +617,10 @@ pub fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    let mut lines: Vec<Line> = Vec::new();
-    if rows.is_empty() {
-        lines.push(render_mount_header(mount_path_width(&[])));
-        lines.push(Line::from(Span::styled(
-            "  (none)",
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
-        )));
-    } else {
-        let path_w = mount_path_width(rows);
-        lines.push(render_mount_header(path_w));
-        lines.extend(render_mount_lines(rows, path_w));
-    }
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
-        lines,
+        crate::tui::mount_display::workspace_mount_block_lines(rows),
         scroll_x,
         scroll_y,
         focused,
@@ -655,21 +637,10 @@ pub fn render_global_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    let mut lines = Vec::new();
-    if rows.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  (none)",
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
-        )));
-    } else {
-        let path_w = mount_path_width(rows);
-        lines.push(render_global_mount_header(path_w));
-        lines.extend(render_global_mount_lines(rows, path_w));
-    }
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
-        lines,
+        crate::tui::mount_display::global_mount_block_lines(rows),
         scroll_x,
         scroll_y,
         focused,

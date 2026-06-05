@@ -70,7 +70,16 @@ pub(crate) fn settings_global_mounts_content_width_with_cache(
 ) -> usize {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_mount_rows_with_cache(&mounts, cache);
-    jackin_console::tui::mount_display::settings_global_mounts_content_width(&display_rows)
+    // Width comes from the exact lines the settings tab renders, so the scroll
+    // clamp agrees with the renderer. Selection is width-invariant (the `▸ `
+    // and `  ` prefixes are both 2 cols), so building without a selection is
+    // safe; the sentinel row is included to match the rendered block.
+    let lines = jackin_console::tui::screens::settings::view::global_mount_lines(
+        &display_rows,
+        None,
+        true,
+    );
+    jackin_tui::components::scrollable_panel::max_line_width(&lines)
 }
 
 pub(crate) fn settings_global_mounts_content_height(

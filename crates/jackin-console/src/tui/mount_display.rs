@@ -1,6 +1,18 @@
-//! Mount row display data and width math shared by update and render.
+//! Mount row display data and the lines rendered for each mount block.
+//!
+//! Scroll extents are derived from the rendered lines, never recomputed: a
+//! block's `content_width` is `max_line_width(&<block>_lines(rows))` and its
+//! height is the line count. The input-side scroll clamp consumes the same
+//! values, so the clamp can never disagree with what the renderer draws — the
+//! disagreement that made the horizontal scrollbar thumb stop short of the end.
 
-use crate::tui::components::mount_rows::{MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH};
+use ratatui::text::{Line, Span};
+
+use jackin_tui::components::scrollable_panel::max_line_width;
+
+use crate::tui::components::mount_rows::{
+    render_global_mount_header, render_global_mount_lines, render_mount_header, render_mount_lines,
+};
 
 /// Pre-formatted mount row. `host_source` is `Some` only when src != dst.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -65,49 +77,49 @@ pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
         .max("Destination".len())
 }
 
+/// Dim `(none)` placeholder shown when a read-only mount block has no rows.
+fn none_placeholder_line() -> Line<'static> {
+    Line::from(Span::styled(
+        "  (none)",
+        ratatui::style::Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+    ))
+}
+
+/// Canonical lines for the read-only **Mounts** block. The single source both
+/// the renderer and the scroll-extent math consume — see the module docs.
+#[must_use]
+pub fn workspace_mount_block_lines(rows: &[MountDisplayRow]) -> Vec<Line<'static>> {
+    if rows.is_empty() {
+        return vec![render_mount_header(mount_path_width(&[])), none_placeholder_line()];
+    }
+    let path_w = mount_path_width(rows);
+    let mut lines = Vec::with_capacity(rows.len() * 2 + 1);
+    lines.push(render_mount_header(path_w));
+    lines.extend(render_mount_lines(rows, path_w));
+    lines
+}
+
+/// Canonical lines for a read-only **Global mounts** / role-global block.
+#[must_use]
+pub fn global_mount_block_lines(rows: &[MountDisplayRow]) -> Vec<Line<'static>> {
+    if rows.is_empty() {
+        return vec![none_placeholder_line()];
+    }
+    let path_w = mount_path_width(rows);
+    let mut lines = Vec::with_capacity(rows.len() * 2 + 1);
+    lines.push(render_global_mount_header(path_w));
+    lines.extend(render_global_mount_lines(rows, path_w));
+    lines
+}
+
 #[must_use]
 pub fn workspace_mounts_content_width(rows: &[MountDisplayRow]) -> usize {
-    let path_w = mount_path_width(rows);
-    rows.iter()
-        .flat_map(|row| {
-            [
-                workspace_mount_row_width(path_w, row),
-                row.host_source.as_ref().map_or(0, |_| 2 + path_w),
-            ]
-        })
-        .chain([workspace_mount_header_width(path_w)])
-        .max()
-        .unwrap_or(0)
+    max_line_width(&workspace_mount_block_lines(rows))
 }
 
 #[must_use]
 pub fn global_mounts_content_width(rows: &[MountDisplayRow]) -> usize {
-    let path_w = mount_path_width(rows);
-    rows.iter()
-        .flat_map(|row| {
-            [
-                global_mount_row_width(path_w),
-                row.host_source.as_ref().map_or(0, |_| 2 + path_w),
-            ]
-        })
-        .chain([global_mount_header_width(path_w)])
-        .max()
-        .unwrap_or(0)
-}
-
-#[must_use]
-pub fn settings_global_mounts_content_width(rows: &[MountDisplayRow]) -> usize {
-    let path_w = mount_path_width(rows);
-    rows.iter()
-        .flat_map(|row| {
-            [
-                settings_global_mount_row_width(path_w, row),
-                row.host_source.as_ref().map_or(0, |_| 2 + path_w),
-            ]
-        })
-        .chain((!rows.is_empty()).then_some(settings_global_mount_header_width(path_w)))
-        .max()
-        .unwrap_or(0)
+    max_line_width(&global_mount_block_lines(rows))
 }
 
 #[must_use]
@@ -134,32 +146,61 @@ pub fn settings_global_mounts_content_height(
         + 3
 }
 
-fn workspace_mount_header_width(path_w: usize) -> usize {
-    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + MOUNT_ISOLATION_COL_WIDTH + 2 + "Type".len()
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jackin_tui::display_cols;
 
-fn workspace_mount_row_width(path_w: usize, row: &MountDisplayRow) -> usize {
-    2 + path_w
-        + 2
-        + MOUNT_MODE_COL_WIDTH
-        + 2
-        + MOUNT_ISOLATION_COL_WIDTH
-        + 2
-        + jackin_tui::display_cols(&row.kind)
-}
+    fn wide_row() -> MountDisplayRow {
+        MountDisplayRow {
+            destination: "/home/agent/projects/jackin-project/jackin".into(),
+            host_source: Some("host: ~/.cache/jackin/global/cargo/registry".into()),
+            mode: "rw",
+            isolation: "shared",
+            kind: "github · feature/tui-architecture".into(),
+        }
+    }
 
-fn global_mount_header_width(path_w: usize) -> usize {
-    2 + path_w + 2 + "Mode".len()
-}
+    fn widest_unpadded(lines: &[Line<'_>]) -> usize {
+        lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| display_cols(&s.content)).sum::<usize>())
+            .max()
+            .unwrap_or(0)
+    }
 
-fn global_mount_row_width(path_w: usize) -> usize {
-    2 + path_w + 2 + 2
-}
+    #[test]
+    fn workspace_width_equals_rendered_line_width() {
+        // Single-source invariant: the scroll-clamp width is exactly the width
+        // the renderer measures over the same lines. If a parallel column-sum
+        // is ever reintroduced, this catches the drift.
+        let rows = vec![wide_row()];
+        assert_eq!(
+            workspace_mounts_content_width(&rows),
+            max_line_width(&workspace_mount_block_lines(&rows)),
+        );
+    }
 
-fn settings_global_mount_header_width(path_w: usize) -> usize {
-    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + "Type".len()
-}
+    #[test]
+    fn workspace_width_includes_trailing_scroll_pad() {
+        // Mount lines carry a 2-space indent that render_scrollable_block mirrors
+        // as 2 trailing pad columns. content_width MUST include that pad, or the
+        // horizontal scrollbar thumb stops 2 cells short of the end — the bug
+        // this guards.
+        let rows = vec![wide_row()];
+        let lines = workspace_mount_block_lines(&rows);
+        assert_eq!(
+            workspace_mounts_content_width(&rows),
+            widest_unpadded(&lines) + 2,
+        );
+    }
 
-fn settings_global_mount_row_width(path_w: usize, row: &MountDisplayRow) -> usize {
-    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + jackin_tui::display_cols(&row.kind)
+    #[test]
+    fn global_width_equals_rendered_line_width() {
+        let rows = vec![wide_row()];
+        assert_eq!(
+            global_mounts_content_width(&rows),
+            max_line_width(&global_mount_block_lines(&rows)),
+        );
+    }
 }
