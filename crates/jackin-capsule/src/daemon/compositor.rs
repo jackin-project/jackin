@@ -57,6 +57,8 @@ impl Multiplexer {
         // so no clear is needed.
         if reason.forces_screen_clear() {
             let _ = self.ratatui_terminal.clear();
+            // The 2J wiped the bottom rows too; force the chrome to re-emit.
+            self.last_bottom_chrome = None;
         }
         let Some(ratatui_output) = self.compose_ratatui_frame() else {
             // compose_ratatui_frame only returns None if the Ratatui draw
@@ -246,13 +248,17 @@ impl Multiplexer {
                     );
                 }
                 // Bottom chrome (branch/PR bar, hint row, debug chip) is raw
-                // ANSI appended after the Ratatui diff for both the dialog and
-                // non-dialog cases. Ratatui owns status + panes; the raw append
-                // owns the bottom rows. Keeping a single compositor in charge of
-                // each row is what stops the two shadow buffers from drifting.
+                // ANSI appended after the Ratatui diff — Ratatui owns status +
+                // panes, the raw append owns the bottom rows. Build it into its
+                // own buffer and only re-emit when it actually changed: it sits
+                // at fixed rows and rarely differs, so re-appending it on every
+                // frame (under streaming output) flickers the bottom bar. The
+                // cache is reset to None after a screen-clearing frame (see
+                // compose_full_redraw) so it is re-asserted after the wipe.
+                let mut chrome_buf = Vec::new();
                 if dialog_open {
                     render_capsule_dialog_bottom_chrome(
-                        &mut output,
+                        &mut chrome_buf,
                         CapsuleDialogBottomChrome {
                             term_rows: self.term_rows,
                             term_cols: self.term_cols,
@@ -271,7 +277,7 @@ impl Multiplexer {
                         None
                     };
                     render_capsule_bottom_chrome(
-                        &mut output,
+                        &mut chrome_buf,
                         CapsuleBottomChrome {
                             term_rows: self.term_rows,
                             term_cols: self.term_cols,
@@ -284,6 +290,10 @@ impl Multiplexer {
                             debug_run_id: debug_run_id_owned.as_deref(),
                         },
                     );
+                }
+                if self.last_bottom_chrome.as_deref() != Some(chrome_buf.as_slice()) {
+                    output.extend_from_slice(&chrome_buf);
+                    self.last_bottom_chrome = Some(chrome_buf);
                 }
                 // Position (or hide) the operator's cursor at the focused pane's
                 // live VT cursor. Ratatui's draw hides the cursor by default and

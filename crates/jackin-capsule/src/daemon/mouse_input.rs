@@ -176,6 +176,13 @@ impl Multiplexer {
             // Pane's program wants the mouse — defer to PTY forward.
             return None;
         }
+        crate::cdebug!(
+            "selection start: session={id} press=({row},{col}) inner=({},{},{}x{})",
+            inner.row,
+            inner.col,
+            inner.rows,
+            inner.cols
+        );
         selection_start_for_inner_rect(id, inner, row, col)
     }
 
@@ -185,6 +192,17 @@ impl Multiplexer {
     pub(super) fn selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
         let sel = self.selection.as_mut()?;
         move_selection_end(sel, row, col);
+        crate::cdebug!(
+            "selection motion: motion=({row},{col}) anchor=({},{}) end=({},{}) inner=({},{},{}x{})",
+            sel.anchor_row,
+            sel.anchor_col,
+            sel.end_row,
+            sel.end_col,
+            sel.inner.row,
+            sel.inner.col,
+            sel.inner.rows,
+            sel.inner.cols
+        );
         Some(self.compose_full_redraw(selection_change_redraw_reason()))
     }
 

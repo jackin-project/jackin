@@ -227,6 +227,12 @@ pub struct Multiplexer {
     /// tab list on every redraw. Reset to `None` when a child pane
     /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
+    /// Last raw bottom-chrome bytes (branch/PR bar, hint row, debug chip). The
+    /// chrome is appended after every Ratatui frame but rarely changes; skipping
+    /// the re-append when it is byte-identical stops the bottom bar flickering on
+    /// every frame under streaming output. Reset to `None` whenever a frame
+    /// clears the screen so the chrome is re-asserted after the wipe.
+    last_bottom_chrome: Option<Vec<u8>>,
     hover_target: Option<HoverTarget>,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
@@ -455,6 +461,7 @@ impl Multiplexer {
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
             last_outer_terminal_title: None,
+            last_bottom_chrome: None,
             hover_target: None,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
