@@ -45,14 +45,18 @@ pub(crate) enum DialogRatatuiSnapshot {
         body: String,
         selected_yes: bool,
     },
-    /// Type-to-filter list picker (CommandPalette, AgentPicker, SplitPicker,
-    /// ClosePicker, ProviderPicker).
+    /// List picker (CommandPalette, AgentPicker, SplitPicker, ClosePicker,
+    /// ProviderPicker). `show_filter` draws the type-to-filter input + gap
+    /// above the items; ProviderPicker is a flat list and clears it so its
+    /// `box_rect` (border + items + border) is not under-allocated by the
+    /// two reserved filter rows, which clipped the list.
     FilterPicker {
         title: String,
         filter: String,
         items: Vec<PickerItem>,
         /// Index into `items` (includes Section rows) for the focused row.
         selected: usize,
+        show_filter: bool,
     },
     /// Single-line text input (RenameTab).
     TextInputDialog {
@@ -119,6 +123,7 @@ impl Dialog {
                     filter: filter.clone(),
                     items,
                     selected: *selected,
+                    show_filter: true,
                 }
             }
 
@@ -165,6 +170,7 @@ impl Dialog {
                     filter: filter.clone(),
                     items,
                     selected: *selected,
+                    show_filter: true,
                 }
             }
 
@@ -183,6 +189,7 @@ impl Dialog {
                     filter: filter.clone(),
                     items,
                     selected: *selected,
+                    show_filter: true,
                 }
             }
 
@@ -201,6 +208,7 @@ impl Dialog {
                     filter: filter.clone(),
                     items,
                     selected: *selected,
+                    show_filter: true,
                 }
             }
 
@@ -224,6 +232,7 @@ impl Dialog {
                     filter: String::new(),
                     items,
                     selected: *selected,
+                    show_filter: false,
                 }
             }
 
@@ -319,8 +328,9 @@ pub(crate) fn render_dialog_ratatui(
             filter,
             items,
             selected,
+            show_filter,
         } => {
-            render_filter_picker(frame, area, title, filter, items, *selected);
+            render_filter_picker(frame, area, title, filter, items, *selected, *show_filter);
         }
         DialogRatatuiSnapshot::TextInputDialog {
             dialog_title,
@@ -369,6 +379,7 @@ fn render_filter_picker(
     filter: &str,
     items: &[PickerItem],
     selected: usize,
+    show_filter: bool,
 ) {
     // Reuse the shared modal panel so the menu/pickers match every other
     // jackin' dialog: PHOSPHOR_GREEN focused border + bold-white title.
@@ -381,25 +392,31 @@ fn render_filter_picker(
     Clear.render(area, frame.buffer_mut());
     block.render(area, frame.buffer_mut());
 
-    if inner.height < 2 {
+    if inner.height < 1 {
         return;
     }
 
-    // Filter input on row 0 (shared component).
-    let filter_area = Rect { height: 1, ..inner };
-    render_filter_input(frame, filter_area, filter);
-
-    if inner.height < 3 {
-        return;
-    }
-
-    // Items from row 2 onward (row 1 = separator gap). Section rows are dim;
-    // item rows are white and let the shared render_picker_list paint the
-    // selected-row highlight (green background, ▸ cursor) + scroll thumb.
-    let list_area = Rect {
-        y: inner.y + 2,
-        height: inner.height.saturating_sub(2),
-        ..inner
+    // A flat list (ProviderPicker) fills the whole inner area from row 0; a
+    // filterable picker reserves row 0 for the input and row 1 as a gap, so
+    // its items start at row 2. box_rect mirrors this: +2 rows flat, +4 with
+    // the filter — keep the two in lockstep or the list clips.
+    let list_area = if show_filter {
+        let filter_area = Rect { height: 1, ..inner };
+        render_filter_input(frame, filter_area, filter);
+        if inner.height < 3 {
+            return;
+        }
+        // Items from row 2 onward (row 1 = separator gap). Section rows are
+        // dim; item rows are white and let the shared render_picker_list paint
+        // the selected-row highlight (green background, ▸ cursor) + scroll
+        // thumb.
+        Rect {
+            y: inner.y + 2,
+            height: inner.height.saturating_sub(2),
+            ..inner
+        }
+    } else {
+        inner
     };
 
     // Width available to a row's content. render_picker_list indents every row
