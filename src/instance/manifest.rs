@@ -122,20 +122,8 @@ pub struct AppleContainerResources {
 /// missing file) is logged before falling back to Docker, so a misclassified
 /// apple instance is debuggable rather than silently orphaned.
 pub fn is_apple_container_instance(state_dir: &Path) -> bool {
-    match InstanceManifest::read_optional(state_dir) {
-        Ok(manifest) => matches!(
-            manifest.map(|m| m.backend),
-            Some(BackendResources::AppleContainer(_))
-        ),
-        Err(error) => {
-            crate::debug_log!(
-                "instance",
-                "is_apple_container_instance: {} unreadable, defaulting to docker teardown: {error:#}",
-                state_dir.display(),
-            );
-            false
-        }
-    }
+    InstanceManifest::read_or_log(state_dir, "is_apple_container_instance")
+        .is_some_and(|m| matches!(m.backend, BackendResources::AppleContainer(_)))
 }
 
 /// Backend-specific resource handles.

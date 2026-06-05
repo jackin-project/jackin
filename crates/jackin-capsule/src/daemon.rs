@@ -4128,6 +4128,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 handle_client_frame(&mut mux, frame).await;
                 // Process any ExecPicker result that was set during input handling.
                 if let Some(result) = mux.exec_picker_result.take() {
+                    // The picker_state in pending_exec is dropped (`_`): command/args
+                    // now ride on `ExecPickerResult::Confirmed` (the authoritative
+                    // post-approval copy). pending_exec is retained only as the
+                    // in-flight sentinel and response_tx carrier — do not re-wire the
+                    // executed command back to its stale copy.
                     if let Some((_, response_tx)) = pending_exec.take() {
                         match result {
                             ExecPickerResult::Confirmed {

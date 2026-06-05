@@ -424,6 +424,26 @@ pub async fn reconnect(
     Ok(())
 }
 
+/// Guard for the purge path: bail if the apple-container VM still exists
+/// (running or stopped). Mirrors the Docker `ensure_role_resources_absent_for_purge`
+/// guard — purge is the safe path and must refuse while the container is live,
+/// directing the operator to eject first; an already-removed container is the
+/// success case (so purging a torn instance whose VM is gone is not blocked).
+pub async fn ensure_absent_for_purge(container_name: &str) -> Result<()> {
+    let exists = crate::apple_container_client::AppleContainerClient::new()
+        .list_containers(container_name)
+        .await?
+        .iter()
+        .any(|c| c.name == container_name);
+    if exists {
+        bail!(
+            "cannot purge local state: apple-container `{container_name}` still exists; \
+             run `jackin eject {container_name} --purge` to remove the container and state together"
+        );
+    }
+    Ok(())
+}
+
 /// Stop the container (eject — preserves manifest).
 pub async fn stop(container_name: &str) -> Result<()> {
     crate::apple_container_client::AppleContainerClient::new()
