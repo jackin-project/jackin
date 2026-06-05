@@ -10,8 +10,8 @@ use crate::{
     ACTION_ACCENT as ACTION_ACCENT_RGB, BORDER_GRAY as BORDER_GRAY_RGB,
     CAPSULE_PANE_FOCUSED as CAPSULE_PANE_FOCUSED_RGB, CYAN as CYAN_RGB, CYAN_DIM as CYAN_DIM_RGB,
     DANGER_RED as DANGER_RED_RGB, DEBUG_AMBER as DEBUG_AMBER_RGB,
-    DIALOG_BACKDROP as DIALOG_BACKDROP_RGB, DIALOG_SCROLL_THUMB as DIALOG_SCROLL_THUMB_RGB,
-    DIALOG_SCROLL_TRACK as DIALOG_SCROLL_TRACK_RGB, DIALOG_SURFACE as DIALOG_SURFACE_RGB,
+    DIALOG_SCROLL_THUMB as DIALOG_SCROLL_THUMB_RGB,
+    DIALOG_SCROLL_TRACK as DIALOG_SCROLL_TRACK_RGB,
     DISCLOSURE_ACCENT as DISCLOSURE_ACCENT_RGB, INPUT_BG_DIM as INPUT_BG_DIM_RGB,
     LINK_BLUE as LINK_BLUE_RGB, LINK_FG as LINK_FG_RGB, LINK_FG_HOVER as LINK_FG_HOVER_RGB,
     PHOSPHOR_DARK as PHOSPHOR_DARK_RGB, PHOSPHOR_DIM as PHOSPHOR_DIM_RGB,
@@ -30,8 +30,13 @@ pub const PHOSPHOR_GREEN: Color = color(PHOSPHOR_GREEN_RGB);
 pub const PHOSPHOR_DIM: Color = color(PHOSPHOR_DIM_RGB);
 pub const PHOSPHOR_DARK: Color = color(PHOSPHOR_DARK_RGB);
 pub const INPUT_BG_DIM: Color = color(INPUT_BG_DIM_RGB);
-pub const DIALOG_BACKDROP: Color = color(DIALOG_BACKDROP_RGB);
-pub const DIALOG_SURFACE: Color = color(DIALOG_SURFACE_RGB);
+// Dialog backdrop and surface paint the terminal's DEFAULT background, not a
+// fixed colour: `Color::Reset` emits `\x1b[49m`, so modal overlays match the
+// operator's terminal theme instead of forcing pure black that stands out
+// against a themed (non-black) default. Occlusion still holds — Reset cells
+// overwrite the chrome behind them with a space on the default background.
+pub const DIALOG_BACKDROP: Color = Color::Reset;
+pub const DIALOG_SURFACE: Color = Color::Reset;
 pub const DIALOG_SCROLL_THUMB: Color = color(DIALOG_SCROLL_THUMB_RGB);
 pub const DIALOG_SCROLL_TRACK: Color = color(DIALOG_SCROLL_TRACK_RGB);
 pub const WHITE: Color = color(WHITE_RGB);

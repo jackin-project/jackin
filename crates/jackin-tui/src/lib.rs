@@ -72,15 +72,12 @@ pub const PHOSPHOR_DARK: Rgb = Rgb::new(0, 80, 18);
 /// Pure black base colour.
 pub const BLACK: Rgb = Rgb::new(0, 0, 0);
 
-/// Opaque full-screen backdrop behind modal dialogs. Capsule and the
-/// host launch cockpit both use this colour so overlays do not drift
-/// between terminal surfaces.
-pub const DIALOG_BACKDROP: Rgb = BLACK;
-
-/// Dialog box surface colour. Kept distinct from `DIALOG_BACKDROP` as
-/// a named token even though the current visual contract uses the same
-/// pure black for both.
-pub const DIALOG_SURFACE: Rgb = BLACK;
+// Dialog backdrop and surface deliberately have no RGB token: both paint the
+// terminal's DEFAULT background, not a fixed colour, so overlays match the
+// operator's terminal theme instead of forcing pure black that stands out
+// against a themed (non-black) default. The Ratatui side is
+// `theme::DIALOG_BACKDROP` / `theme::DIALOG_SURFACE` (= `Color::Reset`); the
+// raw-ANSI side is `ansi::BG_DARK` (= `\x1b[49m`, default-background SGR).
 
 /// Focused scroll/thumb accent for modal scroll regions.
 pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_GREEN;
@@ -200,15 +197,17 @@ pub const CAPSULE_PANE_FOCUSED: Rgb = Rgb::new(180, 180, 180);
 /// placement) in one place stops the two surfaces from drifting
 /// apart when one side picks up a tweak the other forgets.
 pub mod ansi {
-    use super::{DIALOG_SURFACE, Rgb};
+    use super::Rgb;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use std::io::Write as _;
 
     pub use crate::components::text_input::{TextInputDialogRect, render_text_input_dialog};
 
-    /// Pure-black dialog surface background for modal overlays.
-    pub const BG_DARK: &str = rgb_bg(DIALOG_SURFACE);
+    /// Dialog surface / input-band background SGR. Emits the terminal's DEFAULT
+    /// background (`\x1b[49m`), not a fixed colour, so raw-ANSI overlays match
+    /// the operator's terminal theme instead of forcing pure black.
+    pub const BG_DARK: &str = "\x1b[49m";
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
 

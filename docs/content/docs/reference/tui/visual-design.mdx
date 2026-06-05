@@ -21,6 +21,10 @@ The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path=
 
 Every lookbook story preview card and lookbook background must use the `PREVIEW_CARD` token, never an inline `Color::Rgb(28, 28, 28)` literal. The general rule (no inline `Color::Rgb(...)` outside `theme.rs`) already covers this, but `PREVIEW_CARD` is the token to reach for whenever a dark card background is needed.
 
+### Background fills use the terminal default, never forced black
+
+**Modal backdrops and dialog surfaces paint the terminal's *default* background, not a fixed black.** The Ratatui tokens `theme::DIALOG_BACKDROP` and `theme::DIALOG_SURFACE` are `Color::Reset`; the raw-ANSI token `ansi::BG_DARK` is `\x1b[49m` (the default-background SGR). A dialog backdrop or surface must never set `Color::Black`, `Color::Rgb(0, 0, 0)`, or a `48;2;0;0;0m` fill. Forcing pure black makes overlays stand out as a dark rectangle against a themed (non-black) terminal background; emitting the default background lets every overlay match the operator's terminal theme. Occlusion still holds — a `Color::Reset` cell with a space overwrites the chrome behind it, just on the operator's background instead of black. This applies to every surface (console, launch cockpit, capsule) because all three consume the same shared tokens. Black as a **foreground** (e.g. black text on a light status chip) is unaffected by this rule; it governs background fills only.
+
 ## Panel Title Spacing
 
 Every titled block passes its title through `Panel::title()`, which normalizes the string to `" {trimmed_title} "` (one space, trimmed title, one space) internally. Callers must **not** pre-pad the title string with spaces. The resulting display is `┌ Title ┐` with exactly one space on each side of the title text.

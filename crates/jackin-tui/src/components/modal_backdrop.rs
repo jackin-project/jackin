@@ -6,12 +6,15 @@ use ratatui::{
     widgets::Widget,
 };
 
-/// Fills the target area with the canonical dialog backdrop.
+/// Fills the target area with the canonical dialog backdrop. The fill uses the
+/// terminal's DEFAULT background (`theme::DIALOG_BACKDROP` = `Color::Reset`):
+/// the cells still overwrite the chrome behind them (occlusion), but with the
+/// operator's terminal background instead of forced pure black.
 pub struct ModalBackdrop;
 
 impl Widget for ModalBackdrop {
     fn render(self, area: ratatui::layout::Rect, buf: &mut Buffer) {
-        let bg = crate::theme::color(crate::DIALOG_BACKDROP);
+        let bg = crate::theme::DIALOG_BACKDROP;
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
                 let cell = &mut buf[(x, y)];

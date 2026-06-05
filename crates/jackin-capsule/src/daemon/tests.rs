@@ -622,10 +622,10 @@ fn dialog_opaque_backdrop_hides_multiplexer_chrome() {
             String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::DialogChange))
                 .to_string();
 
-        assert!(
-            frame.contains(&jackin_tui::ansi::rgb_bg_dyn(jackin_tui::DIALOG_BACKDROP)),
-            "{context} should paint an opaque black backdrop: {frame:?}"
-        );
+        // The backdrop fills with the terminal DEFAULT background (Color::Reset),
+        // not a fixed colour, so we cannot assert a specific bg SGR. Opacity is
+        // the real contract: the backdrop must overwrite the chrome behind it.
+        // The two negative assertions below verify that occlusion.
         assert!(
             !frame.contains("jackin'"),
             "{context} should hide the top status brand pill behind the dialog: {frame:?}"
@@ -639,8 +639,8 @@ fn dialog_opaque_backdrop_hides_multiplexer_chrome() {
         );
         // The dialog itself renders with a PHOSPHOR_GREEN border, so we cannot
         // assert the absence of PHOSPHOR_GREEN + "┌" in the frame — the dialog's
-        // own box corner will always be there. The opaque backdrop assertion above
-        // already guarantees pane chrome is painted over.
+        // own box corner will always be there. The occlusion assertions above
+        // already guarantee pane chrome is painted over.
     }
 
     let mut menu_mux = mux_with_two_sessions();
