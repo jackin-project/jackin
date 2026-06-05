@@ -34,15 +34,15 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else { continue };
 
         // Thread JSON: array of messages, each may have usage metadata
-        let messages = match val.as_array() {
-            Some(arr) => arr.to_owned(),
+        let messages: &[serde_json::Value] = match val.as_array() {
+            Some(arr) => arr,
             None => match val.get("messages").and_then(|m| m.as_array()) {
-                Some(arr) => arr.to_owned(),
+                Some(arr) => arr,
                 None => continue,
             },
         };
 
-        for msg in &messages {
+        for msg in messages {
             if let Some(usage) = msg.get("usage") {
                 let input = usage
                     .get("input_tokens")

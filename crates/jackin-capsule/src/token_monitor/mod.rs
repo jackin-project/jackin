@@ -180,6 +180,25 @@ pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::pat
     paths
 }
 
+/// Seek a file to `offset`, resetting the offset to 0 on failure.
+///
+/// The `let _ = file.seek()` pattern silently continues from the wrong
+/// position if the seek fails (e.g. on a truncated/rotated log file).
+/// This helper logs the failure and resets so the next read starts
+/// from the beginning instead of a phantom offset.
+pub(crate) fn seek_or_reset(
+    file: &mut std::fs::File,
+    offset: &mut u64,
+    path: &std::path::Path,
+) {
+    use std::io::{Seek, SeekFrom};
+    if file.seek(SeekFrom::Start(*offset)).is_err() {
+        crate::cdebug!("token monitor: seek failed for {:?}, resetting offset", path);
+        *offset = 0;
+        let _ = file.seek(SeekFrom::Start(0));
+    }
+}
+
 /// The token monitor manages per-session polling.
 #[derive(Default)]
 pub struct TokenMonitor {

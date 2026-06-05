@@ -4,7 +4,7 @@
 //! or `/home/agent/.claude/projects/**/*.jsonl` (legacy).
 
 use std::fs;
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -106,11 +106,7 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
         let Ok(mut file) = fs::File::open(path) else {
             continue;
         };
-        if file.seek(SeekFrom::Start(session.file_offset)).is_err() {
-            crate::cdebug!("token monitor: seek failed for {:?}, resetting offset", path);
-            session.file_offset = 0;
-            let _ = file.seek(SeekFrom::Start(0));
-        }
+        super::seek_or_reset(&mut file, &mut session.file_offset, path);
         let reader = BufReader::new(&file);
         let mut bytes_read: u64 = session.file_offset;
 
