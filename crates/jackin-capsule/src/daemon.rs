@@ -79,7 +79,6 @@ pub struct Multiplexer {
     /// canonical "is a dialog visible" check.
     dialog_stack: Vec<Dialog>,
     exec_picker_result: Option<ExecPickerResult>,
-    exec_picker_cmd: Option<(String, Vec<String>)>,
     content_rows: u16,
     available_agents: Vec<String>,
     launch_config: CapsuleConfig,
@@ -211,7 +210,14 @@ pub struct Multiplexer {
 /// multiplexer and drained by the event loop after the dialog closes.
 #[derive(Debug)]
 pub(crate) enum ExecPickerResult {
-    Confirmed { refs: Vec<crate::exec::CredRef> },
+    // command/args travel with the result, sourced from the approved
+    // `ExecPickerState` — so the command the operator saw is the command that
+    // runs (no separate `exec_picker_cmd` store that could drift).
+    Confirmed {
+        command: String,
+        args: Vec<String>,
+        refs: Vec<crate::exec::CredRef>,
+    },
     Cancelled,
 }
 
@@ -669,7 +675,6 @@ impl Multiplexer {
             status_bar,
             dialog_stack: Vec::new(),
             exec_picker_result: None,
-            exec_picker_cmd: None,
             content_rows,
             available_agents: agents,
             launch_config,
@@ -1875,8 +1880,11 @@ impl Multiplexer {
             }
             DialogAction::ExecPickerConfirm => {
                 if let Some(Dialog::ExecPicker(state)) = self.dialog_stack.pop() {
+                    let refs = state.selected_refs();
                     self.exec_picker_result = Some(ExecPickerResult::Confirmed {
-                        refs: state.selected_refs(),
+                        command: state.command,
+                        args: state.args,
+                        refs,
                     });
                 }
             }
@@ -3771,22 +3779,16 @@ async fn handle_exec_request(
         req.command,
         bindings.len()
     );
-    mux.exec_picker_cmd = Some((req.command, req.args));
     mux.dialog_push(Dialog::ExecPicker(picker_state.clone()));
     *pending_exec = Some((picker_state, req.response_tx));
 }
 
 async fn run_exec_with_refs(
-    cmd_and_args: Option<(String, Vec<String>)>,
+    command: String,
+    args: Vec<String>,
     refs: Vec<crate::exec::CredRef>,
     host_sock: String,
 ) -> ExecOutcome {
-    let Some((command, args)) = cmd_and_args else {
-        return ExecOutcome::Denied {
-            reason: "no command stored".to_string(),
-        };
-    };
-
     let ref_count = refs.len();
     let values = match crate::exec::resolve_credentials(&host_sock, refs).await {
         Ok(v) => v,
@@ -4128,12 +4130,19 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 if let Some(result) = mux.exec_picker_result.take() {
                     if let Some((_, response_tx)) = pending_exec.take() {
                         match result {
-                            ExecPickerResult::Confirmed { refs } => {
-                                let host_sock = mux.launch_config.host_sock_path.clone()
+                            ExecPickerResult::Confirmed {
+                                command,
+                                args,
+                                refs,
+                            } => {
+                                let host_sock = mux
+                                    .launch_config
+                                    .host_sock_path
+                                    .clone()
                                     .unwrap_or_else(|| "/jackin/run/host.sock".to_string());
-                                let picker_cmd = mux.exec_picker_cmd.take();
                                 tokio::spawn(async move {
-                                    let outcome = run_exec_with_refs(picker_cmd, refs, host_sock).await;
+                                    let outcome =
+                                        run_exec_with_refs(command, args, refs, host_sock).await;
                                     let _ = response_tx.send(outcome);
                                 });
                             }

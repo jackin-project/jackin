@@ -31,6 +31,34 @@ fn redact_pem_redacts_block_and_counts() {
     assert!(s.contains("before") && s.contains("after"));
 }
 
+#[test]
+fn selected_refs_wire_shape_is_stable() {
+    // The host (src/exec_host.rs) deserializes this exact JSON into its own
+    // ExecCredRef. A field rename on either side breaks credential resolution
+    // silently, so pin the on-the-wire shape here.
+    let state = ExecPickerState {
+        command: "gh".to_string(),
+        args: vec![],
+        items: vec![ExecPickerItem {
+            name: "GH_TOKEN".to_string(),
+            display: "gh".to_string(),
+            kind: ExecItemKind::Op,
+            source: "op://vault/item/field".to_string(),
+            selected: true,
+        }],
+        cursor: 0,
+    };
+    let req = CredRequest {
+        refs: state.selected_refs(),
+    };
+    assert_eq!(
+        serde_json::to_value(&req).unwrap(),
+        serde_json::json!({
+            "refs": [{ "name": "GH_TOKEN", "kind": "op", "source": "op://vault/item/field" }]
+        })
+    );
+}
+
 #[tokio::test]
 async fn execute_command_redacts_secret_straddling_1mib_cap() {
     // The redact-before-cap ordering exists so a secret straddling the 1 MiB

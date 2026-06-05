@@ -120,10 +120,6 @@ impl ExecPickerState {
             self.cursor += 1;
         }
     }
-
-    pub fn has_items(&self) -> bool {
-        !self.items.is_empty()
-    }
 }
 
 // ---------------------------------------------------------------------------

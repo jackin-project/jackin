@@ -113,6 +113,31 @@ pub struct AppleContainerResources {
     pub inner_docker_enabled: bool,
 }
 
+/// Whether the instance at `state_dir` runs on the apple-container backend.
+///
+/// A missing manifest is treated as Docker — legacy/torn instances still need
+/// the Docker teardown path — so the contract is: apple iff the manifest is
+/// present and its backend is `AppleContainer`. The eject / purge / reconnect
+/// paths all dispatch through this single predicate. A parse/IO error (not a
+/// missing file) is logged before falling back to Docker, so a misclassified
+/// apple instance is debuggable rather than silently orphaned.
+pub fn is_apple_container_instance(state_dir: &Path) -> bool {
+    match InstanceManifest::read_optional(state_dir) {
+        Ok(manifest) => matches!(
+            manifest.map(|m| m.backend),
+            Some(BackendResources::AppleContainer(_))
+        ),
+        Err(error) => {
+            crate::debug_log!(
+                "instance",
+                "is_apple_container_instance: {} unreadable, defaulting to docker teardown: {error:#}",
+                state_dir.display(),
+            );
+            false
+        }
+    }
+}
+
 /// Backend-specific resource handles.
 ///
 /// Discriminated by struct shape via `#[serde(untagged)]` —
@@ -125,22 +150,6 @@ pub struct AppleContainerResources {
 /// Old manifests lack a `"kind"` discriminator — untagged serde handles
 /// this transparently by trying `AppleContainer` first (fails: no
 /// `container_name`), then `Docker` (succeeds: has `role_container`).
-/// Whether the instance at `state_dir` runs on the apple-container backend.
-///
-/// A missing or unreadable manifest is treated as Docker — legacy/torn
-/// instances still need the Docker teardown path — so the contract is: apple
-/// iff the manifest is present and its backend is `AppleContainer`. The
-/// eject / purge / reconnect paths all dispatch through this single predicate.
-pub fn is_apple_container_instance(state_dir: &Path) -> bool {
-    matches!(
-        InstanceManifest::read_optional(state_dir)
-            .ok()
-            .flatten()
-            .map(|m| m.backend),
-        Some(BackendResources::AppleContainer(_))
-    )
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum BackendResources {
@@ -681,6 +690,68 @@ mod tests {
                 certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
             }),
         })
+    }
+
+    fn apple_manifest() -> InstanceManifest {
+        InstanceManifest::new(NewInstanceManifest {
+            container_base: "jk-k7p9m2xq-workspace-agent",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "org/agent",
+            role_display_name: "Agent",
+            agent_runtime: Agent::Claude,
+            role_source_git: "https://example.invalid/role.git",
+            role_source_ref: Some("main"),
+            image_tag: "jk_org_agent",
+            backend: BackendResources::AppleContainer(AppleContainerResources {
+                container_name: "jk-k7p9m2xq-workspace-agent".to_string(),
+                role_image_ref: "jk_org_agent".to_string(),
+                inner_docker_enabled: false,
+            }),
+        })
+    }
+
+    #[test]
+    fn is_apple_container_instance_true_for_apple_manifest() {
+        let temp = tempdir().unwrap();
+        let state = temp.path().join("jk-apple");
+        apple_manifest().write(&state).unwrap();
+        assert!(is_apple_container_instance(&state));
+    }
+
+    #[test]
+    fn is_apple_container_instance_false_for_docker_and_missing() {
+        let temp = tempdir().unwrap();
+        let state = temp.path().join("jk-docker");
+        sample_manifest().write(&state).unwrap();
+        assert!(!is_apple_container_instance(&state));
+        // Missing manifest falls back to Docker (returns false).
+        assert!(!is_apple_container_instance(
+            &temp.path().join("nonexistent")
+        ));
+    }
+
+    #[test]
+    fn apple_manifest_round_trips_through_untagged_serde() {
+        let json = serde_json::to_string(&apple_manifest()).unwrap();
+        let parsed: InstanceManifest = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            parsed.backend,
+            BackendResources::AppleContainer(_)
+        ));
+    }
+
+    #[test]
+    fn legacy_docker_key_alias_still_deserializes_as_docker() {
+        // Old manifests stored the backend under the `"docker"` JSON key; the
+        // `#[serde(alias = "docker")]` path must still load them as Docker.
+        let json = serde_json::to_string(&sample_manifest()).unwrap();
+        assert!(json.contains("\"backend\""));
+        let legacy = json.replace("\"backend\"", "\"docker\"");
+        let parsed: InstanceManifest = serde_json::from_str(&legacy).unwrap();
+        assert!(matches!(parsed.backend, BackendResources::Docker(_)));
     }
 
     #[test]

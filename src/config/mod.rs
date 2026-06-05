@@ -298,8 +298,9 @@ pub struct AppConfig {
 pub struct RuntimeConfig {
     /// Default backend for all `jackin load` / `jackin console` invocations.
     /// `"docker"` (default) uses the existing Docker+DinD backend.
-    /// `"apple-container"` uses the Apple Container backend (macOS 26 ARM,
-    /// requires Phase 0 validation to complete first).
+    /// `"apple-container"` uses the Apple Container backend (macOS 26 ARM;
+    /// inner Docker/DinD inside the VM is gated on Phase 0 validation, basic
+    /// container use is not).
     #[serde(default = "RuntimeConfig::default_backend")]
     pub default_backend: String,
 }

@@ -3900,6 +3900,19 @@ mod tests {
     use crate::config::AppConfig;
 
     #[test]
+    fn exec_binding_names_joins_with_commas() {
+        let mk = |n: &str| jackin_protocol::ExecBinding {
+            name: n.to_string(),
+            display: String::new(),
+            kind: "literal".to_string(),
+            source: String::new(),
+        };
+        assert_eq!(exec_binding_names(&[]), "");
+        assert_eq!(exec_binding_names(&[mk("A")]), "A");
+        assert_eq!(exec_binding_names(&[mk("A"), mk("B")]), "A,B");
+    }
+
+    #[test]
     fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
         let sensitive = vec![
             crate::workspace::SensitiveMount {

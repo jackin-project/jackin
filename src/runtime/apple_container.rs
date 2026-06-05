@@ -28,10 +28,8 @@ const ATTACH_MAX_WAIT_MS: u64 = 60_000;
 const ATTACH_POLL_MS: u64 = 500;
 
 /// Print the session contract — the security boundary summary shown to the
-/// operator before the interactive attach begins.
-///
-/// Equivalent to the `docker profile: hardened` output block in the Docker
-/// hardening contract, but for the apple-container backend.
+/// operator before the interactive attach begins, so they see the isolation
+/// model and residual risks before the session starts.
 pub fn print_session_contract(
     container_name: &str,
     image: &str,
@@ -304,7 +302,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         .await
         .context("container run failed — required capabilities or image may be unavailable")?;
 
-    // Compact launch telemetry line (always-on tier, equivalent to clog! in capsule).
+    // Compact launch telemetry line (debug-gated on the host's --debug flag).
     crate::debug_log!(
         "apple-container",
         "apple-container launch name={container_name} image={} inner_docker=none caps=0 mounts={}",

@@ -76,7 +76,18 @@ async fn purge_container_filesystem(
     // instance it would report "absent" while leaving the VM running, so purge
     // would delete the state dir and orphan the container. Remove the VM here.
     if crate::instance::is_apple_container_instance(&paths.data_dir.join(container_name)) {
-        let _ = super::apple_container::remove(container_name).await;
+        // Purge is the safe path (eject is the force path): propagate the removal
+        // error so the state dir survives and the caller reports a skip, rather
+        // than deleting the manifest and orphaning a still-running VM — mirroring
+        // the Docker `ensure_role_resources_absent_for_purge` guard below.
+        super::apple_container::remove(container_name)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "cannot purge local state for `{container_name}`: apple-container VM removal \
+                     failed ({e:#}); run `jackin eject {container_name} --purge` to force-remove it"
+                )
+            })?;
     } else {
         ensure_role_resources_absent_for_purge(docker, container_name).await?;
     }
