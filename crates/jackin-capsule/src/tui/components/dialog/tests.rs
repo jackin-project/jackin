@@ -415,6 +415,7 @@ fn container_info_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
     }
 }
 
@@ -510,6 +511,7 @@ fn container_info_clear_copy_feedback_hides_badge() {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
     };
     assert!(d.clear_copy_feedback());
     let Dialog::ContainerInfo { copied_row, .. } = d else {

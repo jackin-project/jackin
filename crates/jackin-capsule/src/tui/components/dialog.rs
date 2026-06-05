@@ -189,6 +189,10 @@ pub enum Dialog {
         copied_row: Option<usize>,
         /// Index of the copyable row under the pointer (link hover colour).
         hovered_row: Option<usize>,
+        /// Persisted scroll offsets. The shared `ContainerInfoState` is rebuilt
+        /// every frame, so the scroll must live here on the dialog enum to
+        /// survive across redraws.
+        scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// Read-only modal opened from the bottom branch/PR context.
     /// Branch / PR / loading state come from `GithubContextView` at
@@ -370,6 +374,7 @@ impl Dialog {
             diagnostics,
             copied_row: None,
             hovered_row: None,
+            scroll: jackin_tui::components::DialogBodyScroll::new(),
         }
     }
 
@@ -393,6 +398,7 @@ impl Dialog {
             diagnostics,
             copied_row,
             hovered_row,
+            scroll,
         } = self
         else {
             return None;
@@ -429,6 +435,7 @@ impl Dialog {
             state.mark_copied(row);
         }
         state.set_hovered_row(*hovered_row);
+        state.scroll = scroll.clone();
         Some(state)
     }
 
@@ -492,6 +499,28 @@ impl Dialog {
         ) {
             if is_dismiss_key(key) {
                 return DialogAction::Dismiss;
+            }
+            // Scroll the read-only body (offsets clamp at render time): Up/Down +
+            // k/j vertical, Left/Right + h/l horizontal. The shared
+            // ContainerInfoState is rebuilt each frame, so the offset lives on
+            // the dialog enum.
+            if let Self::ContainerInfo { scroll, .. } = self {
+                if is_arrow_up(key) || key == b"k" || key == b"K" {
+                    scroll.scroll_y = scroll.scroll_y.saturating_sub(1);
+                    return DialogAction::Redraw;
+                }
+                if is_arrow_down(key) || key == b"j" || key == b"J" {
+                    scroll.scroll_y = scroll.scroll_y.saturating_add(1);
+                    return DialogAction::Redraw;
+                }
+                if key == b"\x1b[D" || key == b"h" || key == b"H" {
+                    scroll.scroll_x = scroll.scroll_x.saturating_sub(1);
+                    return DialogAction::Redraw;
+                }
+                if key == b"\x1b[C" || key == b"l" || key == b"L" {
+                    scroll.scroll_x = scroll.scroll_x.saturating_add(1);
+                    return DialogAction::Redraw;
+                }
             }
             return match key {
                 b"\r" | b"\n" => {

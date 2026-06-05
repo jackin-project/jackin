@@ -2430,6 +2430,7 @@ fn container_info_copy_feedback_expires() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
     });
     let now = Instant::now();
     mux.dialog_copy_feedback_deadline = Some(now);
@@ -2456,6 +2457,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
