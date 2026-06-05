@@ -28,15 +28,15 @@ pub use confirm_dialog::{
     required_height as confirm_required_height, width_pct as confirm_width_pct,
 };
 pub use container_info::{
-    ContainerInfoRow, ContainerInfoState, DEBUG_INFO_HINT, DebugInfo,
+    ContainerInfoRow, ContainerInfoState, DebugInfo, debug_info_hint_spans,
     clamp_dialog_scroll as clamp_container_info_scroll,
     copy_payload_at as container_info_copy_payload_at,
     hyperlink_overlay as container_info_hyperlink_overlay, render_container_info,
     render_debug_info_hint, required_height as container_info_required_height,
 };
 pub use dialog_layout::{
-    DialogBodyScroll, dialog_inner_chunks, dialog_inner_height, render_dialog_shell,
-    render_scrollable_dialog_body,
+    DialogBodyScroll, ScrollAxes, dialog_inner_chunks, dialog_inner_height, dialog_scroll_axes,
+    render_dialog_shell, render_scrollable_dialog_body, scroll_hint_spans,
 };
 pub use error_dialog::{
     ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,

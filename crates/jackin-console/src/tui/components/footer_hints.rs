@@ -1,6 +1,7 @@
 //! Shared footer hint fragments for modal pickers and confirmations.
 
 use jackin_tui::HintSpan;
+use jackin_tui::components::{ScrollAxes, scroll_hint_spans};
 
 use crate::tui::components::op_picker::OpPickerStage;
 use crate::tui::screens::settings::model::AuthFormFocus;
@@ -611,7 +612,11 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::ConfirmSave { scrollable } => confirm_save_footer_items(scrollable),
         ModalFooterMode::SaveDiscardCancel => save_discard_cancel_footer_items(),
         ModalFooterMode::ErrorPopup => error_popup_footer_items(),
-        ModalFooterMode::ContainerInfo => container_info_footer_items(),
+        // Generic default: no scroll segment. The actual render path (the host
+        // console's frame builder) has the dialog rect and re-derives the real
+        // axes, so this `none()` only guards a path that never reaches the
+        // screen — and even then it never claims an axis the body cannot move.
+        ModalFooterMode::ContainerInfo => container_info_footer_items(ScrollAxes::none()),
         ModalFooterMode::StatusPopup => status_popup_footer_items(),
         ModalFooterMode::OpSection => op_section_footer_items(),
         ModalFooterMode::FilteredPicker { include_refresh } => {
@@ -670,15 +675,24 @@ pub fn error_popup_footer_items() -> Vec<HintSpan<'static>> {
     vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")]
 }
 
+/// Debug-info modal footer: the *available* scroll axes (per `axes`), dismiss,
+/// and click-to-copy. The scroll segment is omitted when the body fits and
+/// shows only the axis/axes that actually overflow, so the footer never
+/// advertises a scroll direction the operator cannot move.
 #[must_use]
-pub fn container_info_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
+pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
+    let mut items = scroll_hint_spans(axes);
+    if !items.is_empty() {
+        items.push(HintSpan::GroupSep);
+    }
+    items.extend([
         HintSpan::Key("↵/Esc"),
         HintSpan::Text("dismiss"),
         HintSpan::GroupSep,
         HintSpan::Key("click"),
         HintSpan::Text("copy value"),
-    ]
+    ]);
+    items
 }
 
 #[must_use]

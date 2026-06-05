@@ -1193,26 +1193,32 @@ impl Dialog {
     /// Footer hint spans for this dialog. Rendered by the multiplexer
     /// compositor near the bottom chrome so every dialog follows the same
     /// hint contract without competing with the branch/container status row.
+    ///
+    /// `axes` reflects the dialog body's *actual* per-axis overflow (computed
+    /// by the caller from the rendered snapshot + rect), so the scrollable info
+    /// dialogs advertise only the scroll direction(s) the operator can move —
+    /// never both axes when the body fits one.
     pub(crate) fn footer_hint_spans(
         &self,
         github: Option<&GithubContextView<'_>>,
-    ) -> &'static [HintSpan<'static>] {
+        axes: jackin_tui::components::ScrollAxes,
+    ) -> Vec<HintSpan<'static>> {
         match self {
-            Self::CommandPalette { .. } => PALETTE_HINT,
+            Self::CommandPalette { .. } => PALETTE_HINT.to_vec(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
             | Self::CloseTargetPicker { .. }
-            | Self::ProviderPicker { .. } => PICKER_HINT,
-            Self::RenameTab { .. } => RENAME_HINT,
-            Self::ContainerInfo { .. } => CONTAINER_INFO_HINT,
+            | Self::ProviderPicker { .. } => PICKER_HINT.to_vec(),
+            Self::RenameTab { .. } => RENAME_HINT.to_vec(),
+            Self::ContainerInfo { .. } => info_dialog_hint("copy container ID", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
-                    GITHUB_CONTEXT_HINT
+                    info_dialog_hint("copy GitHub URL", axes)
                 } else {
-                    READ_ONLY_HINT
+                    READ_ONLY_HINT.to_vec()
                 }
             }
-            Self::ConfirmAction { .. } => CONFIRM_HINT,
+            Self::ConfirmAction { .. } => CONFIRM_HINT.to_vec(),
         }
     }
 
@@ -1630,27 +1636,26 @@ const RENAME_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("empty = auto name"),
 ];
 
-const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("copy container ID"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↑↓←→"),
-    HintSpan::Text("scroll"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
-];
-
-const GITHUB_CONTEXT_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("copy GitHub URL"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↑↓←→"),
-    HintSpan::Text("scroll"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
-];
+/// Read-only info-dialog hint: copy key, the *available* scroll axes (per
+/// `axes`, omitted when the body fits), then dismiss — built from the shared
+/// `scroll_hint_spans` primitive so it never advertises a scroll direction the
+/// body cannot move. Used by both ContainerInfo (Debug info) and a loaded
+/// GitHubContext, which differ only in their copy label.
+fn info_dialog_hint(
+    copy_label: &'static str,
+    axes: jackin_tui::components::ScrollAxes,
+) -> Vec<HintSpan<'static>> {
+    let mut spans = vec![HintSpan::Key("↵"), HintSpan::Text(copy_label)];
+    let scroll = jackin_tui::components::scroll_hint_spans(axes);
+    if !scroll.is_empty() {
+        spans.push(HintSpan::GroupSep);
+        spans.extend(scroll);
+    }
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Key("Esc"));
+    spans.push(HintSpan::Text("dismiss"));
+    spans
+}
 
 const READ_ONLY_HINT: &[HintSpan<'static>] = &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
 

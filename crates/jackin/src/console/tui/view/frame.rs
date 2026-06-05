@@ -11,11 +11,12 @@ use crate::console::tui::components::footer::modal::modal_footer_items;
 use crate::console::tui::components::footer::settings::settings_footer_items;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
+use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::components::settings::{
     render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
 };
 use crate::console::tui::components::workspace_list::render_list_body;
-use crate::console::tui::state::{ManagerStage, ManagerState};
+use crate::console::tui::state::{ManagerStage, ManagerState, Modal};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
@@ -48,7 +49,11 @@ pub fn render(
             render_list_body(frame, areas.body, state, config, cwd);
         }
 
-        render_footer(frame, areas.footer, &workspace_footer_items(state, config));
+        render_footer(
+            frame,
+            areas.footer,
+            &workspace_footer_items(state, config, area),
+        );
     }
 
     if has_modal_overlay(state) {
@@ -136,11 +141,15 @@ pub fn render(
 /// screen keys in the reserved footer rows (hints always live in the fixed
 /// footer). The exhaustive `modal_footer_items` matcher means a new modal
 /// variant cannot ship without a hint — it won't compile.
-fn workspace_footer_items(state: &ManagerState<'_>, config: &AppConfig) -> Vec<HintSpan<'static>> {
+fn workspace_footer_items(
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    area: Rect,
+) -> Vec<HintSpan<'static>> {
     match &state.stage {
         ManagerStage::List => state.list_modal.as_ref().map_or_else(
             || workspace_list_footer_items_for_state(state, config),
-            |modal| modal_footer_items(modal, false),
+            |modal| list_modal_footer_items(modal, area),
         ),
         ManagerStage::CreatePrelude(prelude) => prelude
             .modal
@@ -154,6 +163,24 @@ fn workspace_footer_items(state: &ManagerState<'_>, config: &AppConfig) -> Vec<H
         ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
         ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),
     }
+}
+
+/// Footer for an open list-anchored modal. The Debug-info dialog is intercepted
+/// here — the only place with both the modal rect and its state — so its scroll
+/// keys reflect the body's actual overflow (the axis-aware footer never claims a
+/// scroll direction the operator cannot move). Every other modal routes through
+/// the exhaustive `modal_footer_items` matcher.
+fn list_modal_footer_items(modal: &Modal<'_>, area: Rect) -> Vec<HintSpan<'static>> {
+    if let Modal::ContainerInfo { state } = modal {
+        let rect = modal_outer_rect(modal, area);
+        let axes = jackin_tui::components::dialog_scroll_axes(
+            state.content_width(),
+            state.content_height(),
+            rect,
+        );
+        return jackin_console::tui::components::footer_hints::container_info_footer_items(axes);
+    }
+    modal_footer_items(modal, false)
 }
 
 /// Rows the current screen reserves for its footer — excluded from the modal

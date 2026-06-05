@@ -121,10 +121,6 @@ impl Multiplexer {
         // Selection highlight is only meaningful in the unzoomed multi-pane
         // view; a zoom toggle cancels it, matching the raw path's gate.
         let selection = if zoomed { None } else { self.selection };
-        let github_view_for_hint = self.github_context_view();
-        let dialog_hint_spans = self
-            .dialog_top()
-            .map(|dialog| dialog.footer_hint_spans(Some(&github_view_for_hint)));
 
         // Snapshot session display titles before the draw closure borrows self.
         let pane_titles: Vec<(u64, String)> = panes
@@ -185,6 +181,25 @@ impl Multiplexer {
         } else {
             None
         };
+
+        // Dialog footer hint. Built from the snapshot + rect so the scrollable
+        // info dialogs advertise only the scroll axes their body actually
+        // overflows — the hint and the dialog scrollbar are measured the same
+        // way and never disagree.
+        let github_view_for_hint = self.github_context_view();
+        let dialog_hint_spans: Option<Vec<jackin_tui::HintSpan<'static>>> = dialog_snapshot
+            .as_ref()
+            .and_then(|(snapshot, rect)| {
+                self.dialog_top().map(|dialog| {
+                    let block = ratatui::layout::Rect {
+                        x: rect.1,
+                        y: rect.0,
+                        width: rect.3,
+                        height: rect.2,
+                    };
+                    dialog.footer_hint_spans(Some(&github_view_for_hint), snapshot.scroll_axes(block))
+                })
+            });
 
         // Snapshot scrollback state for the focused session before the draw closure.
         let scrollback_active = focused_id
@@ -265,7 +280,7 @@ impl Multiplexer {
                             pull_request: self.pull_request_context.as_deref(),
                             pull_request_loading: self.pull_request_context_loading(),
                             instance_id_label: self.status_bar.instance_id_label(),
-                            hint_spans: dialog_hint_spans,
+                            hint_spans: dialog_hint_spans.as_deref(),
                         },
                     );
                 } else {

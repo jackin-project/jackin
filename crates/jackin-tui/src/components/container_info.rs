@@ -282,22 +282,41 @@ pub fn clamp_dialog_scroll(
     scroll.scroll_y = effective_offset(content_height, vp_h, scroll.scroll_y);
 }
 
-/// Keys for the Debug-info dialog hint bar: scroll + dismiss. (Enter dismisses
-/// on the console + cockpit; copy is click-only there. The capsule, where Enter
-/// copies, renders its own hint with the extra copy key via its bottom chrome.)
-pub const DEBUG_INFO_HINT: &[crate::HintSpan<'static>] = &[
-    crate::HintSpan::Key("↑↓←→"),
-    crate::HintSpan::Text("scroll"),
-    crate::HintSpan::GroupSep,
-    crate::HintSpan::Key("Esc"),
-    crate::HintSpan::Text("dismiss"),
-];
+/// Keys for the Debug-info dialog hint bar: the *available* scroll axes (per
+/// `axes`) then dismiss. The scroll segment is omitted entirely when the body
+/// fits, and shows only the axis/axes that actually overflow — the dialog never
+/// advertises a direction the operator cannot move. (Enter dismisses on the
+/// console + cockpit; copy is click-only there. The capsule, where Enter copies,
+/// composes its own hint with the extra copy key via its bottom chrome.)
+#[must_use]
+pub fn debug_info_hint_spans(
+    axes: crate::components::ScrollAxes,
+) -> Vec<crate::HintSpan<'static>> {
+    let mut spans = crate::components::scroll_hint_spans(axes);
+    if axes.any() {
+        spans.push(crate::HintSpan::GroupSep);
+    }
+    spans.push(crate::HintSpan::Key("Esc"));
+    spans.push(crate::HintSpan::Text("dismiss"));
+    spans
+}
 
 /// Render the Debug-info hint bar one row below `dialog_rect`, clamped to
 /// `area`. Surfaces that show this dialog inline (console manager, launch
 /// cockpit) call this right after `render_container_info` so the keys are
-/// always visible — the dialog is never shown without its hints.
-pub fn render_debug_info_hint(frame: &mut Frame<'_>, dialog_rect: Rect, area: Rect) {
+/// always visible — the dialog is never shown without its hints. The scroll
+/// keys reflect `state`'s actual overflow within `dialog_rect`.
+pub fn render_debug_info_hint(
+    frame: &mut Frame<'_>,
+    dialog_rect: Rect,
+    area: Rect,
+    state: &ContainerInfoState,
+) {
+    let axes = crate::components::dialog_scroll_axes(
+        state.content_width(),
+        state.content_height(),
+        dialog_rect,
+    );
     let hint_y = dialog_rect
         .y
         .saturating_add(dialog_rect.height)
@@ -309,7 +328,7 @@ pub fn render_debug_info_hint(frame: &mut Frame<'_>, dialog_rect: Rect, area: Re
             width: area.width,
             height: 1,
         };
-        crate::components::render_hint_bar(frame, hint_area, DEBUG_INFO_HINT);
+        crate::components::render_hint_bar(frame, hint_area, &debug_info_hint_spans(axes));
     }
 }
 

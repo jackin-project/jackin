@@ -215,6 +215,18 @@ Any block whose content is wider than its viewport renders the shared horizontal
 
 The `H/L scroll` hint must only appear in the footer when horizontal scrolling is actually possible (content overflows the viewport). Showing `H/L scroll` when content fits is a false affordance.
 
+### Scroll hints advertise only the axes that actually overflow
+
+**Every scroll hint must reflect the body's real per-axis overflow. A surface may show `↑↓ scroll` only when its content overflows vertically, `←→ scroll` only when it overflows horizontally, `↑↓←→ scroll` only when both overflow, and no scroll hint at all when the content fits.** Showing both arrows when only one axis can move — or any scroll hint on a body that fits — is a false affordance, exactly like the `H/L scroll` rule above: the operator presses a key, nothing moves, and the convention loses trust.
+
+The hint must be derived from the **same `is_scrollable` gate the scrollbar uses**, so a hint advertises an axis if and only if that axis's scrollbar is drawn — the two never disagree. This is not optional polish: a static `↑↓←→ scroll` constant baked into a dialog is the violation this rule exists to catch (the Debug-info dialog regressed exactly this way — it advertised vertical scroll on a body that only overflowed horizontally).
+
+**Enforcement — one shared primitive, no per-surface glyph choices:**
+
+- `scroll_hint_spans(ScrollAxes { vertical, horizontal })` in <RepoFile path="crates/jackin-tui/src/components/dialog_layout.rs" /> is the single source for the scroll-key `HintSpan`s. It returns `↑↓←→`/`↑↓`/`←→`/empty. Every surface composes its full hint from this primitive plus its own dismiss/copy keys; no surface hand-writes `↑↓←→ scroll`.
+- `dialog_scroll_axes(content_width, content_height, block_area)` derives the `ScrollAxes` from content vs viewport using the scrollbar's `is_scrollable` test. Dialogs measure `content_width`/`content_height` the same way `render_scrollable_dialog_body` measures them (unpadded line width, line count), so the axes match the rendered overflow.
+- The Debug-info dialog (`debug_info_hint_spans`), the host console's modal footer (`container_info_footer_items`), the capsule's read-only info dialogs (`info_dialog_hint`, fed by `DialogRatatuiSnapshot::scroll_axes`), and the launch build-log overlay (`build_log_hint`) all route through these two functions. A new scrollable dialog that prints its own fixed scroll glyphs instead of calling `scroll_hint_spans` is a design-decision violation.
+
 ### Scrollbar glyphs read identically across both axes
 
 A screen's vertical and horizontal scrollbars must look like the same control at two angles, never two different controls. The weight is governed by `ScrollbarStyle` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />), and both axes of one style render at the same weight — only the orientation glyph rotates:

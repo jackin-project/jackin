@@ -293,6 +293,38 @@ impl Dialog {
     }
 }
 
+impl DialogRatatuiSnapshot {
+    /// Per-axis scroll availability for this snapshot's body within `block_area`
+    /// (the dialog's outer rect). `ScrollAxes::none()` for dialogs that do not
+    /// scroll. Measured the same way `render_scrollable_dialog_body` measures,
+    /// so a hint built from this advertises exactly the axes whose scrollbar is
+    /// drawn — the hint and the scrollbar never disagree.
+    pub(crate) fn scroll_axes(&self, block_area: Rect) -> jackin_tui::components::ScrollAxes {
+        match self {
+            Self::DebugInfo(state) => jackin_tui::components::dialog_scroll_axes(
+                state.content_width(),
+                state.content_height(),
+                block_area,
+            ),
+            Self::InfoRows {
+                rows,
+                copy_row,
+                copied,
+                ..
+            } => {
+                let lines = info_rows_lines(rows, *copy_row, *copied);
+                let content_width = lines
+                    .iter()
+                    .map(jackin_tui::components::line_width)
+                    .max()
+                    .unwrap_or(0);
+                jackin_tui::components::dialog_scroll_axes(content_width, lines.len(), block_area)
+            }
+            _ => jackin_tui::components::ScrollAxes::none(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Rendering — called from compose_ratatui_frame() inside the draw closure
 // ---------------------------------------------------------------------------
@@ -527,22 +559,32 @@ fn render_info_rows_dialog(
     Clear.render(area, frame.buffer_mut());
     block.render(area, frame.buffer_mut());
 
+    // Build the body once and render it through the shared scrollable dialog
+    // body so long values (e.g. PR URLs) scroll horizontally instead of
+    // clipping — same mechanism as the Debug-info dialog.
+    let lines = info_rows_lines(rows, copy_row, copied);
+    let mut scroll = scroll.clone();
+    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+}
+
+/// Build the InfoRows dialog body lines (label/value, copy-row emphasis +
+/// "✓ Copied!" suffix). Shared between the renderer and the scroll-axis
+/// measurement so the hint and the rendered content measure the same width.
+fn info_rows_lines(
+    rows: &[(String, String)],
+    copy_row: Option<usize>,
+    copied: bool,
+) -> Vec<Line<'static>> {
     let label_width = rows
         .iter()
         .map(|(label, _)| label.chars().count())
         .max()
         .unwrap_or(0);
-
-    // Build the body once and render it through the shared scrollable dialog
-    // body so long values (e.g. PR URLs) scroll horizontally instead of
-    // clipping — same mechanism as the Debug-info dialog.
-    let lines: Vec<Line<'static>> = rows
-        .iter()
+    rows.iter()
         .enumerate()
         .map(|(i, (label, value))| {
-            let is_copy_row = copy_row == Some(i);
             let padded_label = format!("{label:<width$}", width = label_width);
-            if is_copy_row {
+            if copy_row == Some(i) {
                 let suffix = if copied { " ✓ Copied!" } else { "" };
                 Line::from(vec![
                     Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
@@ -555,7 +597,5 @@ fn render_info_rows_dialog(
                 ])
             }
         })
-        .collect();
-    let mut scroll = scroll.clone();
-    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+        .collect()
 }

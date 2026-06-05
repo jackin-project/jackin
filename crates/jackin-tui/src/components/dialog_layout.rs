@@ -207,6 +207,61 @@ pub fn render_scrollable_dialog_body(
     (content_width, content_height)
 }
 
+/// Which scroll axes a body can actually move, given its content and viewport.
+///
+/// Derived with the same `is_scrollable` test [`DialogBodyScroll::render_scrollbars`]
+/// uses, so a hint built from this advertises an axis if and only if that axis's
+/// scrollbar is drawn — the hint and the scrollbar never disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ScrollAxes {
+    pub vertical: bool,
+    pub horizontal: bool,
+}
+
+impl ScrollAxes {
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            vertical: false,
+            horizontal: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.vertical || self.horizontal
+    }
+}
+
+/// Per-axis scroll availability for a dialog body whose scrollbars sit on
+/// `block_area`'s border (the dialog's outer rect). Mirrors the scrollbar
+/// `is_scrollable` gate exactly.
+#[must_use]
+pub fn dialog_scroll_axes(content_width: usize, content_height: usize, block_area: Rect) -> ScrollAxes {
+    use crate::components::scrollable_panel::{is_scrollable, viewport_height, viewport_width};
+    ScrollAxes {
+        vertical: is_scrollable(content_height, viewport_height(block_area)),
+        horizontal: is_scrollable(content_width, viewport_width(block_area)),
+    }
+}
+
+/// Scroll-key hint spans reflecting *actual* per-axis availability: `↑↓←→` when
+/// both axes overflow, `↑↓` for vertical-only, `←→` for horizontal-only, and an
+/// empty vec when neither — so a surface never advertises an axis the operator
+/// cannot move. The single source for the "scroll" hint vocabulary; every
+/// scrollable dialog/overlay composes its full hint from this primitive plus
+/// its own dismiss/copy keys.
+#[must_use]
+pub fn scroll_hint_spans(axes: ScrollAxes) -> Vec<crate::HintSpan<'static>> {
+    let key = match (axes.vertical, axes.horizontal) {
+        (true, true) => "↑↓←→",
+        (true, false) => "↑↓",
+        (false, true) => "←→",
+        (false, false) => return Vec::new(),
+    };
+    vec![crate::HintSpan::Key(key), crate::HintSpan::Text("scroll")]
+}
+
 /// Split `inner` into the canonical five-slot dialog layout.
 ///
 /// `content_rows` is the number of content rows (slot 1). Pass `None` to use
@@ -295,6 +350,69 @@ mod tests {
         assert_eq!(chunks[2].y, chunks[1].y + 3);
         assert_eq!(chunks[3].y, chunks[2].y + 1);
         assert_eq!(chunks[4].y, chunks[3].y + 1);
+    }
+
+    #[test]
+    fn scroll_hint_spans_reflect_available_axes_only() {
+        fn keys(axes: ScrollAxes) -> Vec<&'static str> {
+            scroll_hint_spans(axes)
+                .into_iter()
+                .filter_map(|s| match s {
+                    crate::HintSpan::Key(k) => Some(k),
+                    _ => None,
+                })
+                .collect()
+        }
+        assert_eq!(
+            keys(ScrollAxes {
+                vertical: true,
+                horizontal: true
+            }),
+            vec!["↑↓←→"]
+        );
+        assert_eq!(
+            keys(ScrollAxes {
+                vertical: true,
+                horizontal: false
+            }),
+            vec!["↑↓"]
+        );
+        assert_eq!(
+            keys(ScrollAxes {
+                vertical: false,
+                horizontal: true
+            }),
+            vec!["←→"]
+        );
+        assert!(
+            scroll_hint_spans(ScrollAxes::none()).is_empty(),
+            "no overflow → no scroll hint at all"
+        );
+    }
+
+    #[test]
+    fn dialog_scroll_axes_match_scrollbar_overflow_gate() {
+        // 10-wide / 4-tall inner viewport (rect minus the 1-cell border each side).
+        let rect = Rect::new(0, 0, 12, 6);
+        // Fits both axes → no scroll advertised.
+        assert_eq!(dialog_scroll_axes(10, 4, rect), ScrollAxes::none());
+        // Wide content, short height → horizontal only.
+        assert_eq!(
+            dialog_scroll_axes(40, 4, rect),
+            ScrollAxes {
+                vertical: false,
+                horizontal: true
+            },
+            "wide-but-short body must advertise ←→ only"
+        );
+        // Tall content, narrow → vertical only.
+        assert_eq!(
+            dialog_scroll_axes(10, 40, rect),
+            ScrollAxes {
+                vertical: true,
+                horizontal: false
+            }
+        );
     }
 
     #[test]

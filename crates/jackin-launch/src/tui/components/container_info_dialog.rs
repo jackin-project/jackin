@@ -58,9 +58,10 @@ pub fn render_launch_container_info(
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state);
     render_container_info(frame, rect, &state);
-    // Always show the keys (scroll + dismiss) beneath the dialog — shared with
-    // the console manager so the dialog is never shown without its hints.
-    render_debug_info_hint(frame, rect, area);
+    // Always show the keys beneath the dialog — shared with the console manager
+    // so the dialog is never shown without its hints. The scroll keys reflect
+    // the dialog's actual overflow (no axis advertised that cannot move).
+    render_debug_info_hint(frame, rect, area, &state);
 }
 
 #[must_use]

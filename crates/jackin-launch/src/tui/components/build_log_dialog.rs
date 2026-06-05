@@ -2,7 +2,8 @@
 
 use jackin_tui::HintSpan;
 use jackin_tui::components::{
-    render_hint_bar, render_scrollable_block, viewport_height, viewport_width,
+    ScrollAxes, is_scrollable, render_hint_bar, render_scrollable_block, scroll_hint_spans,
+    viewport_height, viewport_width,
 };
 use jackin_tui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
@@ -29,18 +30,27 @@ pub fn build_log_scroll_filled_for_lines(area: Rect, raw: &[String]) -> usize {
     jackin_tui::scroll::max_offset(line_count, viewport_h)
 }
 
-/// Footer-hint keys for the build-log overlay. Shared `HintSpan` vocabulary,
-/// rendered by the shared host hint renderer so it matches every other footer.
-const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("scroll"),
-    HintSpan::GroupSep,
-    HintSpan::Key("PgUp/PgDn"),
-    HintSpan::Text("page"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("close"),
-];
+/// Footer-hint keys for the build-log overlay. The scroll + page keys appear
+/// only when the wrapped output overflows the viewport (`vertical`) — when the
+/// log fits, the overlay shows just "Esc close" rather than advertising a
+/// scroll the operator cannot perform. The body is vertical-only (long lines
+/// wrap), so there is never a horizontal-scroll hint.
+fn build_log_hint(vertical: bool) -> Vec<HintSpan<'static>> {
+    let mut spans = scroll_hint_spans(ScrollAxes {
+        vertical,
+        horizontal: false,
+    });
+    if vertical {
+        spans.extend([
+            HintSpan::GroupSep,
+            HintSpan::Key("PgUp/PgDn"),
+            HintSpan::Text("page"),
+            HintSpan::GroupSep,
+        ]);
+    }
+    spans.extend([HintSpan::Key("Esc"), HintSpan::Text("close")]);
+    spans
+}
 
 /// Full-screen opaque overlay over the live docker-build output, scrollable.
 /// Opened by clicking the footer activity; dismissed by `Esc`/`q` or a click.
@@ -73,7 +83,8 @@ pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchV
     // `build_log_scroll` counts lines up from the tail (0 = follow newest).
     // Convert through the shared tail adapter to the block's top-offset.
     let viewport_h = viewport_height(box_area);
-    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines.len(), viewport_h))
+    let lines_len = lines.len();
+    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
         .unwrap_or(u16::MAX);
     let mut scroll_x = 0u16;
     render_scrollable_block(
@@ -86,7 +97,8 @@ pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchV
         Some(title),
     );
 
-    render_hint_bar(frame, hint_area, BUILD_LOG_HINT);
+    let vertical = is_scrollable(lines_len, viewport_h);
+    render_hint_bar(frame, hint_area, &build_log_hint(vertical));
 }
 
 pub const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";
