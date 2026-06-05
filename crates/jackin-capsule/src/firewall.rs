@@ -16,10 +16,12 @@
 //! than open. Domains resolve through the DNS accept window before the
 //! allowlisted-destination rule lands.
 
+use crate::runtime_setup::run_command;
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeSet;
+use std::io::Write;
 use std::net::{IpAddr, ToSocketAddrs};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// ipset name holding the allowed destination addresses/CIDRs.
 const IPSET: &str = "jackin-allowed";
@@ -101,20 +103,20 @@ pub fn apply() -> Result<()> {
     iptables(&["-A", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "ACCEPT"])?;
     iptables(&["-A", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "ACCEPT"])?;
 
-    ensure_ipset()?;
-
-    // Deduped so the count is the true number of distinct addresses installed.
-    let mut added: BTreeSet<String> = BTreeSet::new();
+    // Resolve every entry to its destination addresses, deduped so the set and
+    // the operator-facing count carry distinct members only.
+    let mut members: BTreeSet<String> = BTreeSet::new();
     for entry in entries {
         match entry {
-            Entry::Net(net) => ipset_add(&net, &mut added),
+            Entry::Net(net) => {
+                members.insert(net);
+            }
             Entry::Domain(domain) => {
-                for ip in resolve(&domain) {
-                    ipset_add(&ip.to_string(), &mut added);
-                }
+                members.extend(resolve(&domain).into_iter().map(|ip| ip.to_string()));
             }
         }
     }
+    install_ipset(&members)?;
 
     // Permit the populated allowlist last; the set already has its members.
     iptables(&[
@@ -131,7 +133,7 @@ pub fn apply() -> Result<()> {
 
     eprintln!(
         "[firewall] OUTPUT allowlist active: {} entries",
-        added.len()
+        members.len()
     );
     Ok(())
 }
@@ -140,51 +142,47 @@ pub fn apply() -> Result<()> {
 /// resolution failure yields no addresses (the host is simply not allowlisted),
 /// matching the old script's `dig … 2>/dev/null` behaviour.
 fn resolve(domain: &str) -> Vec<IpAddr> {
-    // Port 0 is irrelevant — only the addresses are used.
-    match (domain, 0u16).to_socket_addrs() {
-        Ok(addrs) => addrs.map(|sa| sa.ip()).collect(),
-        Err(_) => Vec::new(),
-    }
+    // Port 0 is irrelevant — only the addresses are used. `Result::into_iter`
+    // drops the error arm, so a resolution failure yields an empty list.
+    (domain, 0u16)
+        .to_socket_addrs()
+        .into_iter()
+        .flatten()
+        .map(|sa| sa.ip())
+        .collect()
 }
 
-/// Add one address/CIDR to the ipset, deduping into `added`. Membership errors
-/// (duplicate, already-present) are ignored exactly like the shell `|| true`.
-fn ipset_add(member: &str, added: &mut BTreeSet<String>) {
-    if !added.insert(member.to_string()) {
-        return;
+/// Create the `hash:net` set and load every member in a single `ipset restore`,
+/// instead of one `ipset add` process per address. The stream re-creates and
+/// flushes the set first so a re-apply starts clean; `-exist` makes the `create`
+/// idempotent and tolerates duplicate members (the old per-add `|| true`).
+fn install_ipset(members: &BTreeSet<String>) -> Result<()> {
+    let mut stream = format!("create {IPSET} hash:net maxelem 65536\nflush {IPSET}\n");
+    for member in members {
+        stream.push_str(&format!("add {IPSET} {member}\n"));
     }
-    let _ = Command::new("ipset").args(["add", IPSET, member]).status();
-}
 
-/// Create the `hash:net` ipset, or flush it if it already exists.
-fn ensure_ipset() -> Result<()> {
-    let created = Command::new("ipset")
-        .args(["create", IPSET, "hash:net", "maxelem", "65536"])
-        .status()
-        .context("running ipset create")?;
-    if !created.success() {
-        // Already exists — flush so a re-apply starts from a clean set.
-        let flushed = Command::new("ipset")
-            .args(["flush", IPSET])
-            .status()
-            .context("running ipset flush")?;
-        if !flushed.success() {
-            bail!("ipset create and flush both failed for {IPSET}");
-        }
+    let mut child = Command::new("ipset")
+        .args(["restore", "-exist"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .context("spawning ipset restore")?;
+    child
+        .stdin
+        .take()
+        .expect("ipset restore stdin was piped")
+        .write_all(stream.as_bytes())
+        .context("writing ipset restore stream")?;
+    let status = child.wait().context("waiting for ipset restore")?;
+    if !status.success() {
+        bail!("ipset restore exited with {status}");
     }
     Ok(())
 }
 
 /// Run one `iptables` invocation, erroring (fail-closed) on non-zero exit.
 fn iptables(args: &[&str]) -> Result<()> {
-    let status = Command::new("iptables")
-        .args(args)
-        .status()
-        .with_context(|| format!("running iptables {}", args.join(" ")))?;
-    if !status.success() {
-        bail!("iptables {} exited with {status}", args.join(" "));
-    }
-    Ok(())
+    run_command("iptables", args)
 }
 
 #[cfg(test)]

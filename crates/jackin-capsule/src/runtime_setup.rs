@@ -770,7 +770,9 @@ fn gh_auth_status_ok() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn run_command(program: &str, args: &[&str]) -> Result<()> {
+/// Run `program args`, capturing output; `Err` (with stderr) on non-zero exit.
+/// Shared with `firewall::apply` for its `iptables` invocations.
+pub(crate) fn run_command(program: &str, args: &[&str]) -> Result<()> {
     let output = Command::new(program)
         .args(args)
         .output()
