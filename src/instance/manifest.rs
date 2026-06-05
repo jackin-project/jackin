@@ -87,13 +87,13 @@ pub struct SessionRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
     pub role_container: String,
-    /// DinD sidecar container name. `None` when the launch used
+    /// `DinD` sidecar container name. `None` when the launch used
     /// `dind = "none"` (DinD-free role or `locked`/`hardened` profile without
-    /// an explicit DinD grant).
+    /// an explicit `DinD` grant).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dind_container: Option<String>,
     pub network: String,
-    /// DinD TLS cert volume name. `None` when there is no DinD sidecar.
+    /// `DinD` TLS cert volume name. `None` when there is no `DinD` sidecar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub certs_volume: Option<String>,
 }

@@ -549,6 +549,10 @@ fn seed_codex_project_trust(
     Ok(())
 }
 
+// Launch toggles (debug, git_dco, apparmor_available, …) are independent
+// booleans threaded straight through to docker-run; grouping them would not
+// express any real invariant.
+#[allow(clippy::struct_excessive_bools)]
 struct LaunchContext<'a> {
     container_name: &'a str,
     image: &'a str,
@@ -580,7 +584,7 @@ struct LaunchContext<'a> {
     /// `keep_awake` count is back to zero.
     paths: &'a JackinPaths,
     /// Resolved Docker security profile for this launch. Determines which
-    /// capability grants are applied to the role container and DinD sidecar.
+    /// capability grants are applied to the role container and `DinD` sidecar.
     /// Phase 1: all profiles produce identical `Compat`-equivalent flags;
     /// profile-specific flag generation lands in Phase 2–4.
     profile: crate::runtime::docker_profile::DockerSecurityProfile,
@@ -590,9 +594,9 @@ struct LaunchContext<'a> {
     profile_source: crate::runtime::docker_profile::ProfileSource,
     /// Cgroup version detected on the host (`"v1"`, `"v2"`, `"unknown"`).
     cgroup_version: String,
-    /// AppArmor availability on the host.
+    /// `AppArmor` availability on the host.
     apparmor_available: bool,
-    /// AppArmor enforcement layer (`"host"` or `"backend-vm"`).
+    /// `AppArmor` enforcement layer (`"host"` or `"backend-vm"`).
     apparmor_layer: String,
     /// Auth mode string for the agent (e.g. `"sync"`, `"api_key"`).
     agent_auth_mode_str: String,
@@ -937,10 +941,10 @@ async fn launch_role_runtime(
     let readonly_flags = super::docker_profile::readonly_root_flags(*profile, grants);
     run_args.extend(readonly_flags.iter().map(String::as_str));
     {
-        let (enforced, reason) = if !grants.system_writes {
-            ("yes", "profile")
-        } else {
+        let (enforced, reason) = if grants.system_writes {
             ("no", "system_writes=true")
+        } else {
+            ("yes", "profile")
         };
         let tmpfs_list = if grants.system_writes {
             String::new()
@@ -993,8 +997,10 @@ async fn launch_role_runtime(
     // be consumed by `docker run`. Declare it in the outer scope so the borrow
     // inside `run_args` does not dangle.
     let apparmor_secopt = if *apparmor_available
-        && !matches!(*profile, super::docker_profile::DockerSecurityProfile::Compat)
-    {
+        && !matches!(
+            *profile,
+            super::docker_profile::DockerSecurityProfile::Compat
+        ) {
         Some("apparmor=docker-default".to_string())
     } else {
         None
@@ -1012,7 +1018,11 @@ async fn launch_role_runtime(
             "apparmor available={} profile=docker-default layer={apparmor_layer} \
              applied={} container={container_name}",
             apparmor_available,
-            if !apparmor_available { "no(unavailable)" } else { "no(compat)" },
+            if *apparmor_available {
+                "no(compat)"
+            } else {
+                "no(unavailable)"
+            },
         );
     }
 
@@ -1091,8 +1101,12 @@ async fn launch_role_runtime(
          read_only_root={} \
          dind={} \
          network={:?}",
-        if grants.no_new_privileges { "on" } else { "off" },
-        if !grants.system_writes { "on" } else { "off" },
+        if grants.no_new_privileges {
+            "on"
+        } else {
+            "off"
+        },
+        if grants.system_writes { "off" } else { "on" },
         if dind_enabled { "enabled" } else { "disabled" },
         grants.network,
     );
@@ -1353,10 +1367,12 @@ async fn launch_role_runtime(
     debug_assert!(
         !run_args.iter().any(|a| a.contains("docker.sock")),
         "host Docker socket must never be mounted into the role container; \
-         use the DinD sidecar path instead; offending args: {:?}",
-        run_args,
+         use the DinD sidecar path instead; offending args: {run_args:?}",
     );
-    crate::debug_log!("launch", "host_socket_check passed=yes container={container_name}");
+    crate::debug_log!(
+        "launch",
+        "host_socket_check passed=yes container={container_name}"
+    );
 
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
@@ -2434,8 +2450,8 @@ async fn load_role_with(
         // Check role manifest min_profile against the resolved profile.
         // The profile must be >= the role's declared minimum (more capable
         // than or equal to what the role requires).
-        if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile) {
-            if resolved_profile_early.0 < min {
+        if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile)
+            && resolved_profile_early.0 < min {
                 anyhow::bail!(
                     "role {:?} declares min_profile = \"{min}\"; the active profile \
                      \"{}\" is below that minimum — use \
@@ -2445,12 +2461,11 @@ async fn load_role_with(
                     resolved_profile_early.0,
                 );
             }
-        }
         // Apply role-declared dind requirement: if role declares dind and
         // the effective grants don't enable it, raise to the declared level.
         // (Role can only raise, not lower, the profile's dind grant.)
-        if let Some(role_dind) = validated_repo.manifest.docker.as_ref().and_then(|d| d.dind) {
-            if effective_grants_early.dind < role_dind {
+        if let Some(role_dind) = validated_repo.manifest.docker.as_ref().and_then(|d| d.dind)
+            && effective_grants_early.dind < role_dind {
                 crate::debug_log!(
                     "launch",
                     "role declared dind={:?} raises profile dind={:?}",
@@ -2464,7 +2479,6 @@ async fn load_role_with(
                 effective_grants_early =
                     super::docker_profile::apply_grants(effective_grants_early, &role_grants);
             }
-        }
         // Apply role-level allowed_hosts and capabilities_add via apply_grants
         // so both fields go through the same dedup/normalization path.
         if let Some(ref docker_cfg) = validated_repo.manifest.docker {
@@ -2538,7 +2552,7 @@ async fn load_role_with(
                         "cgroup_v1_memory_reservation_downgrade profile=standard",
                     );
                 }
-                _ => {}
+                super::docker_profile::DockerSecurityProfile::Compat => {}
             }
         }
 
@@ -2903,7 +2917,7 @@ async fn load_role_with(
             cgroup_version: cgroup_version.clone(),
             apparmor_available: apparmor_info.available,
             apparmor_layer: apparmor_info.layer.clone(),
-            agent_auth_mode_str: format!("{:?}", auth_mode),
+            agent_auth_mode_str: format!("{auth_mode:?}"),
             gh_auth_forwarded: !github_resolved_env.is_empty(),
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
@@ -3718,14 +3732,14 @@ async fn detect_cgroup_version(runner: &mut impl CommandRunner) -> String {
     }
 }
 
-/// AppArmor availability information probed from `docker info`.
+/// `AppArmor` availability information probed from `docker info`.
 struct AppArmorInfo {
     available: bool,
     profile: String,
     layer: String,
 }
 
-/// Probe AppArmor availability from `docker info --format '{{.SecurityOptions}}'`.
+/// Probe `AppArmor` availability from `docker info --format '{{.SecurityOptions}}'`.
 async fn detect_apparmor(runner: &mut impl CommandRunner) -> AppArmorInfo {
     let output = match runner
         .capture(
@@ -7546,7 +7560,9 @@ plugins = []
 
         // TLS cert verification also via docker.exec_capture
         assert!(docker_recorded.iter().any(|call| {
-            call.contains(&format!("docker exec {dind} test -f /jackin/run/dind-certs/client/ca.pem"))
+            call.contains(&format!(
+                "docker exec {dind} test -f /jackin/run/dind-certs/client/ca.pem"
+            ))
         }));
         let _ = dind_start_runner;
     }
@@ -7612,7 +7628,7 @@ plugins = []
             "DinD must use /jackin/run/dind-certs per container path convention"
         );
         assert!(
-            dind_cmd.contains(&format!("dind-certs:/jackin/run/dind-certs")),
+            dind_cmd.contains(&"dind-certs:/jackin/run/dind-certs".to_string()),
             "DinD must mount cert volume"
         );
         // DinD's auto-generated server cert must include the container name as a
@@ -7653,7 +7669,7 @@ plugins = []
             "role must know cert path at /jackin/run/dind-certs/client"
         );
         assert!(
-            run_cmd.contains(&format!("dind-certs:/jackin/run/dind-certs:ro")),
+            run_cmd.contains(&"dind-certs:/jackin/run/dind-certs:ro".to_string()),
             "role must mount cert volume read-only"
         );
     }
@@ -7782,20 +7798,27 @@ plugins = []
     // Verifies that each profile produces the correct Docker flags, following
     // the compatibility test matrix in the Docker Runtime Hardening Contract.
 
-    /// `locked` profile must: disable DinD, drop all caps + 8-cap minimum,
+    /// `locked` profile must: disable `DinD`, drop all caps + 8-cap minimum,
     /// use --read-only, apply no-new-privileges, enforce resource limits.
     #[tokio::test]
     async fn locked_profile_compliance_matrix() {
         let (run_cmd, _) =
-            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Locked).await;
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Locked)
+                .await;
         // DinD disabled — no dind container started, no DOCKER_HOST env.
         assert!(
             !run_cmd.contains("DOCKER_HOST="),
             "locked: DOCKER_HOST must not be injected"
         );
         // Capability drops.
-        assert!(run_cmd.contains("--cap-drop=ALL"), "locked: must drop all caps");
-        assert!(run_cmd.contains("--cap-add"), "locked: must add minimum caps");
+        assert!(
+            run_cmd.contains("--cap-drop=ALL"),
+            "locked: must drop all caps"
+        );
+        assert!(
+            run_cmd.contains("--cap-add"),
+            "locked: must add minimum caps"
+        );
         // Read-only root.
         assert!(run_cmd.contains("--read-only"), "locked: must be read-only");
         // no-new-privileges.
@@ -7804,36 +7827,56 @@ plugins = []
             "locked: must set no-new-privileges"
         );
         // Resource limits present (profile defaults: 4G memory, 512 pids).
-        assert!(run_cmd.contains("--memory"), "locked: memory limit required");
-        assert!(run_cmd.contains("--pids-limit"), "locked: pids limit required");
+        assert!(
+            run_cmd.contains("--memory"),
+            "locked: memory limit required"
+        );
+        assert!(
+            run_cmd.contains("--pids-limit"),
+            "locked: pids limit required"
+        );
     }
 
-    /// `hardened` profile must: disable DinD by default, drop caps, read-only
+    /// `hardened` profile must: disable `DinD` by default, drop caps, read-only
     /// root, no-new-privileges, resource limits.
     #[tokio::test]
     async fn hardened_profile_compliance_matrix() {
         let (run_cmd, _) =
-            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Hardened).await;
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Hardened)
+                .await;
         assert!(
             !run_cmd.contains("DOCKER_HOST="),
             "hardened: DOCKER_HOST must not be injected by default"
         );
-        assert!(run_cmd.contains("--cap-drop=ALL"), "hardened: must drop all caps");
-        assert!(run_cmd.contains("--read-only"), "hardened: must be read-only");
+        assert!(
+            run_cmd.contains("--cap-drop=ALL"),
+            "hardened: must drop all caps"
+        );
+        assert!(
+            run_cmd.contains("--read-only"),
+            "hardened: must be read-only"
+        );
         assert!(
             run_cmd.contains("no-new-privileges"),
             "hardened: must set no-new-privileges"
         );
-        assert!(run_cmd.contains("--memory"), "hardened: memory limit required");
-        assert!(run_cmd.contains("--pids-limit"), "hardened: pids limit required");
+        assert!(
+            run_cmd.contains("--memory"),
+            "hardened: memory limit required"
+        );
+        assert!(
+            run_cmd.contains("--pids-limit"),
+            "hardened: pids limit required"
+        );
     }
 
-    /// `standard` profile must: enable DinD, NOT drop caps, NOT read-only,
+    /// `standard` profile must: enable `DinD`, NOT drop caps, NOT read-only,
     /// NOT set no-new-privileges, apply resource limits.
     #[tokio::test]
     async fn standard_profile_compliance_matrix() {
         let (run_cmd, _) =
-            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Standard).await;
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Standard)
+                .await;
         assert!(
             run_cmd.contains("DOCKER_HOST="),
             "standard: DOCKER_HOST must be injected (DinD active)"
@@ -7842,20 +7885,27 @@ plugins = []
             !run_cmd.contains("--cap-drop=ALL"),
             "standard: must not drop all caps"
         );
-        assert!(!run_cmd.contains("--read-only"), "standard: must not be read-only");
+        assert!(
+            !run_cmd.contains("--read-only"),
+            "standard: must not be read-only"
+        );
         assert!(
             !run_cmd.contains("no-new-privileges"),
             "standard: must not set no-new-privileges"
         );
-        assert!(run_cmd.contains("--memory"), "standard: memory limit required");
+        assert!(
+            run_cmd.contains("--memory"),
+            "standard: memory limit required"
+        );
     }
 
-    /// `compat` profile must: enable privileged DinD, no cap drops, no
+    /// `compat` profile must: enable privileged `DinD`, no cap drops, no
     /// read-only, no no-new-privileges, no resource limits.
     #[tokio::test]
     async fn compat_profile_compliance_matrix() {
         let (run_cmd, _) =
-            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Compat).await;
+            run_load_with_profile(crate::runtime::docker_profile::DockerSecurityProfile::Compat)
+                .await;
         assert!(
             run_cmd.contains("DOCKER_HOST="),
             "compat: DOCKER_HOST must be injected (DinD active)"
@@ -7864,7 +7914,10 @@ plugins = []
             !run_cmd.contains("--cap-drop=ALL"),
             "compat: must not drop all caps"
         );
-        assert!(!run_cmd.contains("--read-only"), "compat: must not be read-only");
+        assert!(
+            !run_cmd.contains("--read-only"),
+            "compat: must not be read-only"
+        );
         assert!(
             !run_cmd.contains("no-new-privileges"),
             "compat: must not set no-new-privileges"
@@ -7877,7 +7930,7 @@ plugins = []
 
     // ── Docker security profile — integration tests ───────────────────────────
 
-    /// Role declares dind="none" — DinD must be suppressed even under standard/compat.
+    /// Role declares dind="none" — `DinD` must be suppressed even under standard/compat.
     #[tokio::test]
     async fn role_dind_none_suppresses_dind_under_standard_profile() {
         let manifest = r#"version = "v1alpha5"
@@ -7898,9 +7951,16 @@ dind = "none"
         .await;
         let run_cmd = result.unwrap();
         assert!(
-            !runner.recorded.iter().any(|c| c.contains("jackin.kind=dind")),
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("jackin.kind=dind")),
             "role dind=none must suppress DinD under standard profile; got: {:?}",
-            runner.recorded.iter().filter(|c| c.contains("docker run")).collect::<Vec<_>>()
+            runner
+                .recorded
+                .iter()
+                .filter(|c| c.contains("docker run"))
+                .collect::<Vec<_>>()
         );
         assert!(
             !run_cmd.contains("DOCKER_HOST="),
@@ -7908,7 +7968,7 @@ dind = "none"
         );
     }
 
-    /// Role declares bad capabilities_add — must be caught before docker run.
+    /// Role declares bad `capabilities_add` — must be caught before docker run.
     #[tokio::test]
     async fn role_invalid_capabilities_add_is_rejected() {
         let manifest = r#"version = "v1alpha5"
@@ -7920,8 +7980,7 @@ plugins = []
 [docker]
 capabilities_add = ["MADE_UP_CAPABILITY"]
 "#;
-        let (err, _temp) =
-            run_load_with_manifest_expecting_err(manifest, None).await;
+        let (err, _temp) = run_load_with_manifest_expecting_err(manifest, None).await;
         let msg = err.to_string();
         assert!(
             msg.contains("[role]") || msg.contains("MADE_UP_CAPABILITY"),
@@ -7929,7 +7988,7 @@ capabilities_add = ["MADE_UP_CAPABILITY"]
         );
     }
 
-    /// min_profile conflict: role declares min="standard", launch uses "hardened" → error.
+    /// `min_profile` conflict: role declares min="standard", launch uses "hardened" → error.
     #[tokio::test]
     async fn min_profile_conflict_is_detected() {
         let manifest = r#"version = "v1alpha5"
@@ -7952,38 +8011,40 @@ min_profile = "standard"
         );
     }
 
-    /// validate_grants aggregation: errors from config AND workspace both appear.
+    /// `validate_grants` aggregation: errors from config AND workspace both appear.
     #[tokio::test]
     async fn validate_grants_aggregates_config_and_workspace_errors() {
-        let (err, _temp) = run_load_with_manifest_expecting_err_with_config(
-            None,
-            None,
-            |config, repo_dir| {
+        let (err, _temp) =
+            run_load_with_manifest_expecting_err_with_config(None, None, |config, repo_dir| {
                 // Config: invalid cap name.
                 config.docker.grants = Some(crate::runtime::docker_profile::DockerGrants {
                     capabilities_add: vec!["CAP_TOTALLY_FAKE".to_string()],
                     ..Default::default()
                 });
                 // Label must match repo_workspace()'s label: repo_dir.display().to_string().
-                config.workspaces.insert(repo_dir.display().to_string(), {
-                    let mut ws = crate::workspace::WorkspaceConfig::default();
-                    ws.workdir = "/workspace".to_string();
-                    // Workspace: user+sudo conflict (will appear as [workspace] in merged error).
-                    ws.docker = Some(crate::workspace::WorkspaceDockerConfig {
-                        grants: Some(crate::runtime::docker_profile::DockerGrants {
-                            user: Some("root".to_string()),
-                            sudo: Some(true),
+                config.workspaces.insert(
+                    repo_dir.display().to_string(),
+                    crate::workspace::WorkspaceConfig {
+                        workdir: "/workspace".to_string(),
+                        // Workspace: user+sudo conflict (appears as [workspace] in merged error).
+                        docker: Some(crate::workspace::WorkspaceDockerConfig {
+                            grants: Some(crate::runtime::docker_profile::DockerGrants {
+                                user: Some("root".to_string()),
+                                sudo: Some(true),
+                                ..Default::default()
+                            }),
                             ..Default::default()
                         }),
                         ..Default::default()
-                    });
-                    ws
-                });
-            },
-        )
-        .await;
+                    },
+                );
+            })
+            .await;
         let msg = err.to_string();
-        assert!(msg.contains("CAP_TOTALLY_FAKE"), "config error must appear: {msg}");
+        assert!(
+            msg.contains("CAP_TOTALLY_FAKE"),
+            "config error must appear: {msg}"
+        );
         assert!(
             msg.contains("[workspace]") || msg.contains("user") || msg.contains("sudo"),
             "workspace error must appear: {msg}"
@@ -7993,7 +8054,7 @@ min_profile = "standard"
     // ── Docker security profile — host socket guard ───────────────────────────
 
     /// The host Docker socket must never be mounted into the role container.
-    /// Agents reach Docker exclusively through the per-instance DinD sidecar
+    /// Agents reach Docker exclusively through the per-instance `DinD` sidecar
     /// over TLS. This test is the machine-enforceable form of the hard rule
     /// documented in AGENTS.md and the Docker Runtime Hardening Contract.
     #[tokio::test]
@@ -8007,8 +8068,8 @@ min_profile = "standard"
         );
     }
 
-    /// The DinD sidecar must also never receive the host Docker socket.
-    /// A rogue DinD with access to the host socket collapses the isolation
+    /// The `DinD` sidecar must also never receive the host Docker socket.
+    /// A rogue `DinD` with access to the host socket collapses the isolation
     /// boundary — the sidecar is effectively the same as no isolation at all.
     #[tokio::test]
     async fn dind_sidecar_never_mounts_host_docker_socket() {
@@ -8083,17 +8144,17 @@ min_profile = "standard"
     async fn run_load_with_profile(
         profile: crate::runtime::docker_profile::DockerSecurityProfile,
     ) -> (String, tempfile::TempDir) {
-        let (run_cmd, _, temp) =
-            run_load_core(&[], Some(profile)).await;
+        let (run_cmd, _, temp) = run_load_core(&[], Some(profile)).await;
         (run_cmd, temp)
     }
 
-    /// Shared scaffolding for all run_load_* test helpers. Returns `(role_run_cmd, runner, tempdir)`.
+    /// Shared scaffolding for all `run_load`_* test helpers. Returns `(role_run_cmd, runner, tempdir)`.
     async fn run_load_core(
         env_entries: &[(&str, &str)],
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
     ) -> (String, FakeRunner, tempfile::TempDir) {
-        let (result, runner, temp) = run_load_core_with_manifest(env_entries, profile, None, None).await;
+        let (result, runner, temp) =
+            run_load_core_with_manifest(env_entries, profile, None, None).await;
         let run_cmd = result.unwrap();
         (run_cmd, runner, temp)
     }
@@ -8103,6 +8164,7 @@ min_profile = "standard"
     /// before `load_role`, allowing tests to inject custom grants or workspaces.
     /// Returns `(anyhow::Result<String>, FakeRunner, TempDir)` where the `String`
     /// is the matched `docker run` command on success.
+    #[allow(clippy::type_complexity)] // one-off test-helper closure param
     async fn run_load_core_with_manifest(
         env_entries: &[(&str, &str)],
         profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
@@ -8164,7 +8226,7 @@ plugins = []
             },
         )
         .await;
-        let run_cmd = load_result.map(|_| {
+        let run_cmd = load_result.map(|()| {
             runner
                 .recorded
                 .iter()

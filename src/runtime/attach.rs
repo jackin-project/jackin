@@ -620,9 +620,10 @@ pub async fn inspect_hardline_instance(
     let dind_name = manifest
         .and_then(|m| m.docker.dind_container.clone())
         .unwrap_or_else(|| dind_container_name(container_name));
-    let network_name = manifest
-        .map(|m| m.docker.network.clone())
-        .unwrap_or_else(|| role_network_name(container_name));
+    let network_name = manifest.map_or_else(
+        || role_network_name(container_name),
+        |m| m.docker.network.clone(),
+    );
     let certs_volume = manifest
         .and_then(|m| m.docker.certs_volume.clone())
         .unwrap_or_else(|| dind_certs_volume(container_name));

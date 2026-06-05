@@ -103,33 +103,32 @@ pub async fn eject_role(
     // instance. DinD-free launches (locked/hardened profile without a dind
     // grant) record `None` for both `dind_container` and `certs_volume`.
     let container_state = paths.data_dir.join(container_name);
-    let manifest = match crate::instance::manifest::InstanceManifest::read_optional(&container_state) {
-        Ok(m) => m,
-        Err(e) => {
-            // Manifest exists but is unreadable or corrupt — log and fall back to
-            // assuming DinD was started (the pre-manifest default) so cleanup is
-            // conservative rather than leaving a dangling DinD container.
-            crate::debug_log!(
-                "cleanup",
-                "eject_role {container_name}: could not read instance manifest, \
+    let manifest =
+        match crate::instance::manifest::InstanceManifest::read_optional(&container_state) {
+            Ok(m) => m,
+            Err(e) => {
+                // Manifest exists but is unreadable or corrupt — log and fall back to
+                // assuming DinD was started (the pre-manifest default) so cleanup is
+                // conservative rather than leaving a dangling DinD container.
+                crate::debug_log!(
+                    "cleanup",
+                    "eject_role {container_name}: could not read instance manifest, \
                  assuming dind_was_started=true: {e}"
-            );
-            None
-        }
-    };
+                );
+                None
+            }
+        };
     let dind = manifest
         .as_ref()
         .and_then(|m| m.docker.dind_container.as_deref())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| dind_container_name(container_name));
+        .map_or_else(|| dind_container_name(container_name), ToOwned::to_owned);
     let certs_volume = manifest
         .as_ref()
         .and_then(|m| m.docker.certs_volume.as_deref())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| dind_certs_volume(container_name));
+        .map_or_else(|| dind_certs_volume(container_name), ToOwned::to_owned);
     let dind_was_started = manifest
         .as_ref()
-        .map_or(true, |m| m.docker.dind_container.is_some());
+        .is_none_or(|m| m.docker.dind_container.is_some());
 
     // Remove role container first; DinD only if it was started.
     if dind_was_started {

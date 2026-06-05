@@ -66,12 +66,13 @@ pub struct ManifestDockerConfig {
     /// a clear conflict message. Absent = accepts any profile.
     #[serde(default)]
     pub min_profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
-    /// DinD tier this role needs:
-    /// - `"none"` — role explicitly opts out of DinD; jackin' skips the sidecar
+    /// `DinD` tier this role needs:
+    /// - `"none"` — role explicitly opts out of `DinD`; jackin' skips the sidecar
     ///   even under profiles that would normally enable it (e.g. `standard`).
-    /// - `"rootless"` — role requires at least rootless DinD.
-    /// - `"privileged"` — role requires privileged DinD.
-    /// Absent = DinD controlled entirely by profile + operator grants.
+    /// - `"rootless"` — role requires at least rootless `DinD`.
+    /// - `"privileged"` — role requires privileged `DinD`.
+    ///
+    /// Absent = `DinD` controlled entirely by profile + operator grants.
     #[serde(default)]
     pub dind: Option<crate::runtime::docker_profile::DindGrant>,
     /// Extra allowed hosts merged into `JACKIN_ALLOWED_HOSTS` when

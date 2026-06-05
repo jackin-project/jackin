@@ -7,33 +7,28 @@ use serde::{Deserialize, Serialize};
 
 // ── Profile enum ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DockerSecurityProfile {
-    /// Minimal — allowlist network, no DinD, no sudo, read-only root, 4G memory.
+    /// Minimal — allowlist network, no `DinD`, no sudo, read-only root, 4G memory.
     /// Purpose-built read-only analysis roles. Highest confidence in container
     /// boundary.
     Locked,
-    /// Restricted — allowlist network, no DinD by default, no sudo, read-only
+    /// Restricted — allowlist network, no `DinD` by default, no sudo, read-only
     /// root, 16G memory. For untrusted repos or long autonomous runs where
     /// inner Docker is not needed.
     Hardened,
-    /// Typical dev work — open network, DinD, sudo, writable root, 16G memory.
+    /// Typical dev work — open network, `DinD`, sudo, writable root, 16G memory.
     /// Intended eventual default after the sudo audit.
     Standard,
-    /// Maximum compatibility — today's behavior. Privileged DinD, open network,
+    /// Maximum compatibility — today's behavior. Privileged `DinD`, open network,
     /// NOPASSWD:ALL sudo, no resource limits. Explicit opt-in for roles that
     /// need everything.
+    // TODO(docker-security-profile-default): flip the default to `Standard` once
+    // the base-image sudo audit resolves — see TODO.md "Docker security profile
+    // — flip default from compat to standard".
+    #[default]
     Compat,
-}
-
-impl Default for DockerSecurityProfile {
-    fn default() -> Self {
-        // TODO(docker-security-profile-default): flip to `Standard` once the
-        // base-image sudo audit resolves — see TODO.md "Docker security profile
-        // — flip default from compat to standard".
-        Self::Compat
-    }
 }
 
 impl std::fmt::Display for DockerSecurityProfile {
@@ -161,11 +156,13 @@ pub const VALID_CAPABILITIES: &[&str] = &[
     "WAKE_ALARM",
 ];
 
-/// The 8-cap minimum set applied under `hardened` and `locked` — regardless of
-/// DinD status (with DinD active the caps can be circumvented via `docker run
-/// --privileged` against the sidecar, but they are still emitted for defense in
-/// depth). Derived from common role workflows (package managers, build tools,
-/// process supervisors). Everything else is dropped from Docker's 14-cap default.
+/// The 8-cap minimum set applied under `hardened` and `locked`.
+///
+/// Applied regardless of `DinD` status (with `DinD` active the caps can be
+/// circumvented via `docker run --privileged` against the sidecar, but they are
+/// still emitted for defense in depth). Derived from common role workflows
+/// (package managers, build tools, process supervisors). Everything else is
+/// dropped from Docker's 14-cap default.
 pub const MINIMUM_CAPABILITIES: &[&str] = &[
     "CHOWN",
     "DAC_OVERRIDE",
@@ -199,6 +196,7 @@ pub const DEFAULT_CAPABILITIES: &[&str] = &[
 // ── Grant overrides struct ───────────────────────────────────────────────────
 
 /// Per-dimension explicit overrides that layer on top of a profile's defaults.
+///
 /// All fields are optional — `None` means "use the profile's default for this
 /// dimension." Validated at launch time before any container is started.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -272,8 +270,11 @@ pub enum GrantValidationError {
     MemoryReservationExceedsMemory { reservation: u64, memory: u64 },
     /// A size string could not be parsed.
     UnparsableSize { field: &'static str, value: String },
-    /// A numeric field is outside its valid range (e.g. `pids <= 0`, memory > i64::MAX).
-    ValueOutOfRange { field: &'static str, reason: &'static str },
+    /// A numeric field is outside its valid range (e.g. `pids <= 0`, memory > `i64::MAX`).
+    ValueOutOfRange {
+        field: &'static str,
+        reason: &'static str,
+    },
 }
 
 impl std::fmt::Display for GrantValidationError {
@@ -306,10 +307,9 @@ impl std::fmt::Display for GrantValidationError {
                 "cannot parse {value:?} as a size for grants.{field} — \
                  use format \"512M\", \"4G\", \"32G\""
             ),
-            Self::ValueOutOfRange { field, reason } => write!(
-                f,
-                "grants.{field} is out of range: {reason}"
-            ),
+            Self::ValueOutOfRange { field, reason } => {
+                write!(f, "grants.{field} is out of range: {reason}")
+            }
         }
     }
 }
@@ -317,6 +317,7 @@ impl std::fmt::Display for GrantValidationError {
 impl std::error::Error for GrantValidationError {}
 
 /// Parse a human-readable byte size into a byte count. Case-insensitive suffix.
+///
 /// Accepts K/M/G/T (with or without trailing B) and bare numeric bytes.
 /// Examples: `"512M"`, `"4G"`, `"16G"`, `"2048K"`, `"2T"`.
 ///
@@ -328,9 +329,7 @@ pub fn parse_memory_bytes(s: &str) -> Option<u64> {
         return None;
     }
     // Find where the numeric part ends.
-    let split = s
-        .find(|c: char| c.is_alphabetic())
-        .unwrap_or(s.len());
+    let split = s.find(|c: char| c.is_alphabetic()).unwrap_or(s.len());
     let number: u64 = s[..split].trim().parse().ok()?;
     let suffix = s[split..].trim().to_ascii_uppercase();
     let multiplier = match suffix.as_str() {
@@ -348,11 +347,11 @@ fn format_bytes(bytes: u64) -> String {
     const GB: u64 = 1_024 * 1_024 * 1_024;
     const MB: u64 = 1_024 * 1_024;
     const KB: u64 = 1_024;
-    if bytes % GB == 0 {
+    if bytes.is_multiple_of(GB) {
         format!("{}G", bytes / GB)
-    } else if bytes % MB == 0 {
+    } else if bytes.is_multiple_of(MB) {
         format!("{}M", bytes / MB)
-    } else if bytes % KB == 0 {
+    } else if bytes.is_multiple_of(KB) {
         format!("{}K", bytes / KB)
     } else {
         format!("{bytes}B")
@@ -402,42 +401,42 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
         v
     });
 
-    if let (Some(res), Some(mem)) = (reservation_bytes, memory_bytes) {
-        if res > mem {
-            errors.push(GrantValidationError::MemoryReservationExceedsMemory {
-                reservation: res,
-                memory: mem,
-            });
-        }
+    if let (Some(res), Some(mem)) = (reservation_bytes, memory_bytes)
+        && res > mem
+    {
+        errors.push(GrantValidationError::MemoryReservationExceedsMemory {
+            reservation: res,
+            memory: mem,
+        });
     }
 
     // Memory values must fit in i64 for the Bollard/Docker API boundary.
-    if let Some(bytes) = memory_bytes {
-        if bytes > i64::MAX as u64 {
-            errors.push(GrantValidationError::ValueOutOfRange {
-                field: "memory",
-                reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
-            });
-        }
+    if let Some(bytes) = memory_bytes
+        && bytes > i64::MAX as u64
+    {
+        errors.push(GrantValidationError::ValueOutOfRange {
+            field: "memory",
+            reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
+        });
     }
-    if let Some(bytes) = reservation_bytes {
-        if bytes > i64::MAX as u64 {
-            errors.push(GrantValidationError::ValueOutOfRange {
-                field: "memory_reservation",
-                reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
-            });
-        }
+    if let Some(bytes) = reservation_bytes
+        && bytes > i64::MAX as u64
+    {
+        errors.push(GrantValidationError::ValueOutOfRange {
+            field: "memory_reservation",
+            reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
+        });
     }
 
     // pids must be positive. Docker uses -1 as "unlimited", but that would
     // disable the limit that hardened/locked profiles are designed to enforce.
-    if let Some(pids) = grants.pids {
-        if pids <= 0 {
-            errors.push(GrantValidationError::ValueOutOfRange {
-                field: "pids",
-                reason: "must be > 0; omit the field to remove the limit",
-            });
-        }
+    if let Some(pids) = grants.pids
+        && pids <= 0
+    {
+        errors.push(GrantValidationError::ValueOutOfRange {
+            field: "pids",
+            reason: "must be > 0; omit the field to remove the limit",
+        });
     }
 
     errors
@@ -553,23 +552,24 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
 ///
 /// Grants must already have been validated by [`validate_grants`].
 pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> EffectiveGrants {
-    if let Some(network) = grants.network {
-        if network > base.network {
-            base.network = network;
-        }
+    if let Some(network) = grants.network
+        && network > base.network
+    {
+        base.network = network;
     }
     if !grants.allowed_hosts.is_empty() {
-        base.allowed_hosts.extend(grants.allowed_hosts.iter().cloned());
+        base.allowed_hosts
+            .extend(grants.allowed_hosts.iter().cloned());
         base.allowed_hosts.sort_unstable();
         base.allowed_hosts.dedup();
     }
-    if let Some(dind) = grants.dind {
-        if dind > base.dind {
-            base.dind = dind;
-        }
+    if let Some(dind) = grants.dind
+        && dind > base.dind
+    {
+        base.dind = dind;
     }
     if let Some(ref user) = grants.user {
-        base.user = user.clone();
+        base.user.clone_from(user);
     }
     if let Some(sudo) = grants.sudo {
         base.sudo = base.sudo || sudo;
@@ -577,16 +577,18 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
     if let Some(sw) = grants.system_writes {
         base.system_writes = base.system_writes || sw;
     }
-    if let Some(ref mem) = grants.memory {
-        if let Some(bytes) = parse_memory_bytes(mem) {
-            base.memory_bytes = Some(base.memory_bytes.map_or(bytes, |b| b.max(bytes)));
-        }
+    if let Some(ref mem) = grants.memory
+        && let Some(bytes) = parse_memory_bytes(mem)
+    {
+        base.memory_bytes = Some(base.memory_bytes.map_or(bytes, |b| b.max(bytes)));
     }
-    if let Some(ref res) = grants.memory_reservation {
-        if let Some(bytes) = parse_memory_bytes(res) {
-            base.memory_reservation_bytes =
-                Some(base.memory_reservation_bytes.map_or(bytes, |b| b.max(bytes)));
-        }
+    if let Some(ref res) = grants.memory_reservation
+        && let Some(bytes) = parse_memory_bytes(res)
+    {
+        base.memory_reservation_bytes = Some(
+            base.memory_reservation_bytes
+                .map_or(bytes, |b| b.max(bytes)),
+        );
     }
     if let Some(cpus) = grants.cpus {
         base.cpus = Some(base.cpus.map_or(cpus, |c: f64| c.max(cpus)));
@@ -670,13 +672,13 @@ pub fn validate_effective_grants(grants: &EffectiveGrants) -> Vec<GrantValidatio
     // memory_reservation > memory can emerge from cross-source merging: each
     // source passes per-source validation independently, but after apply_grants
     // raises each field to its maximum the merged result may violate the constraint.
-    if let (Some(res), Some(mem)) = (grants.memory_reservation_bytes, grants.memory_bytes) {
-        if res > mem {
-            errors.push(GrantValidationError::MemoryReservationExceedsMemory {
-                reservation: res,
-                memory: mem,
-            });
-        }
+    if let (Some(res), Some(mem)) = (grants.memory_reservation_bytes, grants.memory_bytes)
+        && res > mem
+    {
+        errors.push(GrantValidationError::MemoryReservationExceedsMemory {
+            reservation: res,
+            memory: mem,
+        });
     }
     errors
 }
@@ -724,9 +726,11 @@ fn apply_implicit_grants(mut grants: EffectiveGrants) -> EffectiveGrants {
 
 // ── Docker flag emission ─────────────────────────────────────────────────────
 
-/// Returns the network enforcement quality label for session contract output
-/// and `JACKIN_NETWORK_ENFORCEMENT`. Shared between `format_session_contract`
-/// and `launch_role_runtime` so both surfaces stay in sync.
+/// Returns the network enforcement quality label.
+///
+/// Used for session contract output and `JACKIN_NETWORK_ENFORCEMENT`. Shared
+/// between `format_session_contract` and `launch_role_runtime` so both surfaces
+/// stay in sync.
 pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
     if !matches!(grants.network, NetworkGrant::Allowlist) {
         return "n/a";
@@ -741,8 +745,12 @@ pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
 }
 
 /// Format a human-readable session contract table for the active grants.
+///
 /// Emitted via `crate::debug_log!` at launch; surfaced to the operator in
 /// `--debug` mode as a factual summary of what the container can do.
+// Eight contract dimensions are one flat argument list by design; bundling them
+// into a struct would just move the same fields without aiding any caller.
+#[allow(clippy::too_many_arguments)]
 pub fn format_session_contract(
     profile: DockerSecurityProfile,
     profile_source: &str,
@@ -774,17 +782,18 @@ pub fn format_session_contract(
     let network_enforcement = network_enforcement_label(grants);
     let memory_line = grants
         .memory_bytes
-        .map(format_bytes)
-        .unwrap_or_else(|| "unlimited".to_string());
+        .map_or_else(|| "unlimited".to_string(), format_bytes);
     let cpus_line = grants
         .cpus
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "unlimited".to_string());
+        .map_or_else(|| "unlimited".to_string(), |c| c.to_string());
     let pids_line = grants
         .pids
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| "unlimited".to_string());
-    let gh_line = if gh_auth_forwarded { "forwarded" } else { "not forwarded" };
+        .map_or_else(|| "unlimited".to_string(), |p| p.to_string());
+    let gh_line = if gh_auth_forwarded {
+        "forwarded"
+    } else {
+        "not forwarded"
+    };
     let residual_base = "shared host kernel; writable workspace mounts can still be changed";
     let residual = if grants.dind != DindGrant::None {
         format!("{residual_base}; DinD sidecar has kernel access")
@@ -811,17 +820,29 @@ pub fn format_session_contract(
          Residual risk:\n  {}",
         profile,
         profile_source,
-        if apparmor_available { "docker-default" } else { "unavailable" },
+        if apparmor_available {
+            "docker-default"
+        } else {
+            "unavailable"
+        },
         apparmor_layer,
-        if grants.no_new_privileges { "enforced" } else { "not applied" },
+        if grants.no_new_privileges {
+            "enforced"
+        } else {
+            "not applied"
+        },
         caps_line,
-        if grants.system_writes { "writable" } else { "read-only" },
+        if grants.system_writes {
+            "writable"
+        } else {
+            "read-only"
+        },
         if grants.system_writes {
             "none (writable root)".to_string()
         } else {
             tmpfs_paths(profile).join(",")
         },
-        grants.dind,  // Display impl emits "none"/"rootless"/"privileged"
+        grants.dind, // Display impl emits "none"/"rootless"/"privileged"
         network_mode,
         network_enforcement,
         cgroup_version,
@@ -850,7 +871,7 @@ pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
 
 /// Emit resource limit Docker CLI flags from resolved grants.
 /// Returns an owned `Vec<String>` of alternating flag/value pairs ready to
-/// extend a `Vec<&str>` run_args via `.iter().map(String::as_str)`.
+/// extend a `Vec<&str>` `run_args` via `.iter().map(String::as_str)`.
 pub fn resource_flags(grants: &EffectiveGrants) -> Vec<String> {
     let mut flags = Vec::new();
     if let Some(bytes) = grants.memory_bytes {
@@ -878,7 +899,7 @@ pub fn resource_flags(grants: &EffectiveGrants) -> Vec<String> {
 
 /// Emit capability flags for the profile's base cap set.
 ///
-/// Only meaningful when `grants.dind == DindGrant::None` — with DinD active,
+/// Only meaningful when `grants.dind == DindGrant::None` — with `DinD` active,
 /// capability drops are circumventable via `docker run --privileged` against
 /// the sidecar. Returns empty when the profile uses Docker's default cap set
 /// (`standard`/`compat`) to avoid redundant flags.
@@ -936,10 +957,11 @@ const TMPFS_PATHS_HARDENED_EXTRA: &[&str] = &[
     "/home/agent/.cache",
 ];
 
-/// Resolved tmpfs path set for a read-only-root profile. `locked` uses the
-/// minimal set (apt is unsupported); `hardened` adds package-manager paths.
-/// Single source of truth for `--tmpfs` flags and the session contract's
-/// "writable tmpfs" line so the two never drift.
+/// Resolved tmpfs path set for a read-only-root profile.
+///
+/// `locked` uses the minimal set (apt is unsupported); `hardened` adds
+/// package-manager paths. Single source of truth for `--tmpfs` flags and the
+/// session contract's "writable tmpfs" line so the two never drift.
 pub fn tmpfs_paths(profile: DockerSecurityProfile) -> Vec<&'static str> {
     let extra: &[&str] = if matches!(profile, DockerSecurityProfile::Locked) {
         &[]
@@ -970,23 +992,22 @@ pub fn readonly_root_flags(
 
 /// Returns `true` when the profile uses `--cap-drop=ALL` + minimum cap set.
 /// Centralises the Hardened/Locked check so callers don't re-spell it.
-pub fn drops_all_caps(profile: DockerSecurityProfile) -> bool {
+pub const fn drops_all_caps(profile: DockerSecurityProfile) -> bool {
     matches!(
         profile,
         DockerSecurityProfile::Hardened | DockerSecurityProfile::Locked
     )
 }
 
-/// Returns `true` when the effective grants enable any DinD tier.
+/// Returns `true` when the effective grants enable any `DinD` tier.
 pub fn dind_enabled(grants: &EffectiveGrants) -> bool {
     grants.dind != DindGrant::None
 }
 
-/// Returns `true` when the effective DinD tier is `Privileged`.
+/// Returns `true` when the effective `DinD` tier is `Privileged`.
 pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1015,7 +1036,10 @@ mod tests {
 
     #[test]
     fn default_is_compat() {
-        assert_eq!(DockerSecurityProfile::default(), DockerSecurityProfile::Compat);
+        assert_eq!(
+            DockerSecurityProfile::default(),
+            DockerSecurityProfile::Compat
+        );
     }
 
     #[test]
@@ -1054,11 +1078,7 @@ mod tests {
 
     #[test]
     fn resolve_config_source_tracked() {
-        let (profile, source) = resolve_profile(
-            None,
-            None,
-            Some(DockerSecurityProfile::Standard),
-        );
+        let (profile, source) = resolve_profile(None, None, Some(DockerSecurityProfile::Standard));
         assert_eq!(profile, DockerSecurityProfile::Standard);
         assert_eq!(source, ProfileSource::Config);
     }
@@ -1094,7 +1114,9 @@ mod tests {
         };
         let errors = validate_grants(&grants);
         assert!(!errors.is_empty());
-        assert!(matches!(&errors[0], GrantValidationError::UnknownCapability(s) if s == "MAGIC_CAP"));
+        assert!(
+            matches!(&errors[0], GrantValidationError::UnknownCapability(s) if s == "MAGIC_CAP")
+        );
     }
 
     #[test]
@@ -1104,7 +1126,10 @@ mod tests {
             ..Default::default()
         };
         let errors = validate_grants(&grants);
-        assert!(errors.is_empty(), "CAP_NET_RAW should be valid after stripping prefix");
+        assert!(
+            errors.is_empty(),
+            "CAP_NET_RAW should be valid after stripping prefix"
+        );
     }
 
     #[test]
@@ -1171,8 +1196,7 @@ mod tests {
 
     #[test]
     fn capability_flags_hardened_drops_all() {
-        let flags =
-            capability_flags(DockerSecurityProfile::Hardened, &[]);
+        let flags = capability_flags(DockerSecurityProfile::Hardened, &[]);
         assert!(flags.contains(&"--cap-drop=ALL".to_string()));
         for cap in MINIMUM_CAPABILITIES {
             assert!(
@@ -1261,7 +1285,7 @@ mod tests {
     #[test]
     fn validate_effective_grants_catches_cross_source_reservation_exceeds_memory() {
         let grants = EffectiveGrants {
-            memory_bytes: Some(4 * 1024 * 1024 * 1024),         // 4G
+            memory_bytes: Some(4 * 1024 * 1024 * 1024), // 4G
             memory_reservation_bytes: Some(8 * 1024 * 1024 * 1024), // 8G
             ..profile_base_grants(DockerSecurityProfile::Standard)
         };
@@ -1284,7 +1308,10 @@ mod tests {
             ..profile_base_grants(DockerSecurityProfile::Standard)
         };
         let errors = validate_effective_grants(&grants);
-        assert!(errors.is_empty(), "valid grants should produce no errors: {errors:?}");
+        assert!(
+            errors.is_empty(),
+            "valid grants should produce no errors: {errors:?}"
+        );
     }
 
     #[test]
@@ -1292,11 +1319,7 @@ mod tests {
         // When locked profile launches with no config/workspace grants,
         // resolve_effective_grants must inject NET_ADMIN/NET_RAW so the
         // iptables allowlist (init-firewall.sh) can run.
-        let grants = resolve_effective_grants(
-            DockerSecurityProfile::Locked,
-            None,
-            None,
-        );
+        let grants = resolve_effective_grants(DockerSecurityProfile::Locked, None, None);
         assert_eq!(grants.network, NetworkGrant::Allowlist);
         assert!(
             grants.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
@@ -1311,13 +1334,11 @@ mod tests {
     // ── Test gap fixes ────────────────────────────────────────────────────────
 
     /// Extract the path component from every `--tmpfs <path>:opts` pair in a flags vec.
-    fn tmpfs_paths_from_flags<'a>(flags: &'a [String]) -> Vec<&'a str> {
+    fn tmpfs_paths_from_flags(flags: &[String]) -> Vec<&str> {
         flags
             .iter()
             .enumerate()
-            .filter(|(i, _)| {
-                *i > 0 && flags.get(*i - 1).map(|f| f == "--tmpfs").unwrap_or(false)
-            })
+            .filter(|(i, _)| *i > 0 && flags.get(*i - 1).is_some_and(|f| f == "--tmpfs"))
             .map(|(_, v)| v.split(':').next().unwrap_or(""))
             .collect()
     }
@@ -1327,10 +1348,19 @@ mod tests {
     fn locked_tmpfs_is_minimal_subset() {
         let grants = profile_base_grants(DockerSecurityProfile::Locked);
         let flags = readonly_root_flags(DockerSecurityProfile::Locked, &grants);
-        assert!(flags.contains(&"--read-only".to_string()), "locked must be read-only");
+        assert!(
+            flags.contains(&"--read-only".to_string()),
+            "locked must be read-only"
+        );
         let tmpfs_values = tmpfs_paths_from_flags(&flags);
-        assert!(tmpfs_values.contains(&"/tmp"), "locked must have /tmp tmpfs");
-        assert!(tmpfs_values.contains(&"/run"), "locked must have /run tmpfs");
+        assert!(
+            tmpfs_values.contains(&"/tmp"),
+            "locked must have /tmp tmpfs"
+        );
+        assert!(
+            tmpfs_values.contains(&"/run"),
+            "locked must have /run tmpfs"
+        );
         // Package-manager paths absent from locked.
         for path in TMPFS_PATHS_HARDENED_EXTRA {
             assert!(
@@ -1354,7 +1384,7 @@ mod tests {
         }
     }
 
-    /// network_enforcement_label: full, partial-sudo, partial-dind, n/a.
+    /// `network_enforcement_label`: full, partial-sudo, partial-dind, n/a.
     #[test]
     fn network_enforcement_label_all_cases() {
         // n/a for open network.
@@ -1391,8 +1421,8 @@ mod tests {
         );
     }
 
-    /// Implicit NET_ADMIN/NET_RAW caps injected by resolve_effective_grants for Allowlist network.
-    /// Tests via the public API (resolve_effective_grants) so the test exercises the same
+    /// Implicit `NET_ADMIN/NET_RAW` caps injected by `resolve_effective_grants` for Allowlist network.
+    /// Tests via the public API (`resolve_effective_grants`) so the test exercises the same
     /// path an operator launch uses, not an internal function.
     #[test]
     fn allowlist_network_adds_implicit_caps() {
@@ -1413,7 +1443,7 @@ mod tests {
     }
 
     /// Implicit caps are also present when hardened profile (Allowlist) has config grants.
-    /// apply_implicit_grants must fire even when apply_grants already ran.
+    /// `apply_implicit_grants` must fire even when `apply_grants` already ran.
     #[test]
     fn allowlist_network_with_grants_still_gets_implicit_caps() {
         // Hardened profile has Allowlist network; add a memory config grant.
@@ -1422,11 +1452,8 @@ mod tests {
             memory: Some("8G".to_string()),
             ..Default::default()
         };
-        let grants = resolve_effective_grants(
-            DockerSecurityProfile::Hardened,
-            Some(&config_grants),
-            None,
-        );
+        let grants =
+            resolve_effective_grants(DockerSecurityProfile::Hardened, Some(&config_grants), None);
         assert_eq!(grants.network, NetworkGrant::Allowlist);
         assert!(
             grants.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
@@ -1444,7 +1471,7 @@ mod tests {
             ..Default::default()
         };
         let workspace_grants = DockerGrants {
-            memory: Some("16G".to_string()),  // workspace raises memory
+            memory: Some("16G".to_string()), // workspace raises memory
             ..Default::default()
         };
         let grants = resolve_effective_grants(
@@ -1458,7 +1485,7 @@ mod tests {
         assert_eq!(grants.cpus, Some(4.0_f64.max(2.0))); // profile default 4.0 wins over config 2.0
     }
 
-    /// validate_grants rejects pids <= 0.
+    /// `validate_grants` rejects pids <= 0.
     #[test]
     fn validate_grants_pids_must_be_positive() {
         let grants = DockerGrants {
@@ -1473,7 +1500,7 @@ mod tests {
         );
     }
 
-    /// validate_grants rejects memory exceeding i64::MAX.
+    /// `validate_grants` rejects memory exceeding `i64::MAX`.
     #[test]
     fn validate_grants_memory_overflow_is_error() {
         // u64 value > i64::MAX — would silently wrap to negative without the check.

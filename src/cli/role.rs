@@ -81,9 +81,7 @@ fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
 }
 
-fn parse_docker_profile(
-    s: &str,
-) -> Result<crate::runtime::DockerSecurityProfile, String> {
+fn parse_docker_profile(s: &str) -> Result<crate::runtime::DockerSecurityProfile, String> {
     s.parse()
         .map_err(|e: crate::runtime::docker_profile::ParseProfileError| e.to_string())
 }

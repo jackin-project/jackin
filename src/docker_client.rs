@@ -83,7 +83,7 @@ pub enum RemoveImageOutcome {
     NotFound,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerSpec {
     pub image: String,
     pub hostname: Option<String>,
@@ -558,14 +558,34 @@ impl DockerApi for BollardDockerClient {
                         network_mode: Some(spec.network),
                         binds: Some(spec.binds),
                         privileged: Some(spec.privileged),
-                        cap_add: if spec.cap_add.is_empty() { None } else { Some(spec.cap_add) },
-                        cap_drop: if spec.cap_drop.is_empty() { None } else { Some(spec.cap_drop) },
-                        security_opt: if spec.security_opt.is_empty() { None } else { Some(spec.security_opt) },
+                        cap_add: if spec.cap_add.is_empty() {
+                            None
+                        } else {
+                            Some(spec.cap_add)
+                        },
+                        cap_drop: if spec.cap_drop.is_empty() {
+                            None
+                        } else {
+                            Some(spec.cap_drop)
+                        },
+                        security_opt: if spec.security_opt.is_empty() {
+                            None
+                        } else {
+                            Some(spec.security_opt)
+                        },
                         memory: spec.memory,
                         nano_cpus: spec.nano_cpus,
                         pids_limit: spec.pids_limit,
-                        readonly_rootfs: if spec.read_only_rootfs { Some(true) } else { None },
-                        tmpfs: if spec.tmpfs.is_empty() { None } else { Some(spec.tmpfs) },
+                        readonly_rootfs: if spec.read_only_rootfs {
+                            Some(true)
+                        } else {
+                            None
+                        },
+                        tmpfs: if spec.tmpfs.is_empty() {
+                            None
+                        } else {
+                            Some(spec.tmpfs)
+                        },
                         ..Default::default()
                     }),
                     entrypoint: spec.entrypoint,
