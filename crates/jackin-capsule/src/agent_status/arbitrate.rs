@@ -2,7 +2,8 @@
 //!
 //! `arbitrate_session_status` is a side-effect-free function that
 //! consumes evidence from all signal sources and returns the best-
-//! confidence raw state. Called by the daemon's 1Hz ticker.
+//! confidence raw state. Planned integration point for multi-signal
+//! arbitration; currently used in tests only.
 
 use std::time::{Duration, Instant};
 

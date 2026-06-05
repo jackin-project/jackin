@@ -10,7 +10,7 @@
 //! ```text
 //! Signal sources (multiple, concurrent):
 //!   • Screen detectors   (`detectors/`)  — vt100::Screen pattern matching
-//!   • OSC 133 markers    (`osc133`)       — shell integration sequences
+//!   • OSC 133 markers    (`scan_osc133`)  — shell integration sequences
 //!   • Hook/API reports   (Phase 3+)       — in-container reporter events
 //!   • /proc process      (Phase 2+)       — foreground process identity
 //!   • Cursor probes      (Phase 4+)       — CSI 6n readiness probes
@@ -225,14 +225,17 @@ impl SessionStatus {
     pub fn advance(&mut self, raw: AgentRawState) -> Option<AgentState> {
         let next = self.transition(raw);
         if next != self.effective {
+            let prev = self.effective;
             self.effective = next;
             self.revision += 1;
-            // Transitioning away from Done/Idle into Working or Blocked
-            // resets seen so the next idle transition produces Done again.
-            if matches!(
-                raw,
-                AgentRawState::HookTaskStart | AgentRawState::OperatorInput
-            ) {
+            // Reset seen whenever a new work cycle starts:
+            // - Explicit signals (HookTaskStart, OperatorInput)
+            // - Transitioning INTO Working or Blocked from a non-working state
+            //   so that the subsequent idle transition produces Done.
+            let entering_work_cycle = matches!(raw, AgentRawState::HookTaskStart | AgentRawState::OperatorInput)
+                || (matches!(next, AgentState::Working | AgentState::Blocked)
+                    && !matches!(prev, AgentState::Working | AgentState::Blocked));
+            if entering_work_cycle {
                 self.seen = false;
             }
             Some(next)
@@ -260,7 +263,7 @@ impl SessionStatus {
     /// Priority rules (highest wins):
     /// 1. `ProcessExited` always → `Idle` (session cleanup path clears it shortly)
     /// 2. `OperatorInput` always → `Working`
-    /// 3. `BlockedVisible` / `HookTaskStart` with blocked kind → `Blocked`
+    /// 3. `BlockedVisible` → `Blocked`
     ///    (only if not already Blocked to avoid re-triggering notifications)
     /// 4. `PromptVisible` / `HookTaskDone` → `Idle` (raw idle, then done-derivation)
     /// 5. `WorkingVisible` / `HookTaskStart` / `CursorProbeOk` → `Working`
@@ -330,9 +333,13 @@ mod tests {
 
     #[test]
     fn prompt_visible_after_working_produces_idle_when_seen() {
+        // Enter Working first (resets seen=false as a new work cycle starts).
         let mut s = SessionStatus::new();
-        s.seen = true;
         s.advance(AgentRawState::WorkingVisible);
+        // Simulate operator having reviewed this work (acknowledge clears Done → Idle
+        // in practice, but here we just mark seen directly).
+        s.seen = true;
+        // PromptVisible while Working+seen → Idle (not Done, because seen=true).
         let changed = s.advance(AgentRawState::PromptVisible);
         assert_eq!(changed, Some(AgentState::Idle));
     }

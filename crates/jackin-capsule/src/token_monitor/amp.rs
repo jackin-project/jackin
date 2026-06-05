@@ -21,7 +21,13 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
     if files.is_empty() {
         return false;
     }
-    let mut changed = false;
+
+    // Compute totals from scratch (Amp has no per-file byte offset).
+    let mut scratch_input: u64 = 0;
+    let mut scratch_output: u64 = 0;
+    let mut scratch_cache_read: u64 = 0;
+    let mut scratch_cache_write: u64 = 0;
+    let mut last_model: Option<String> = None;
 
     for path in &files {
         let Ok(content) = fs::read_to_string(path) else { continue };
@@ -54,22 +60,27 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
                     .get("cache_creation_input_tokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                if input > 0 || output > 0 {
-                    session.totals.input_tokens =
-                        session.totals.input_tokens.saturating_add(input);
-                    session.totals.output_tokens =
-                        session.totals.output_tokens.saturating_add(output);
-                    session.totals.cache_read_tokens =
-                        session.totals.cache_read_tokens.saturating_add(cache_read);
-                    session.totals.cache_write_tokens =
-                        session.totals.cache_write_tokens.saturating_add(cache_write);
-                    changed = true;
-                }
+                scratch_input = scratch_input.saturating_add(input);
+                scratch_output = scratch_output.saturating_add(output);
+                scratch_cache_read = scratch_cache_read.saturating_add(cache_read);
+                scratch_cache_write = scratch_cache_write.saturating_add(cache_write);
             }
             if let Some(model) = msg.get("model").and_then(|v| v.as_str()) {
-                session.totals.model = Some(model.to_string());
+                last_model = Some(model.to_string());
             }
         }
+    }
+
+    // Only report changed if the totals actually moved.
+    let changed = scratch_input != session.totals.input_tokens
+        || scratch_output != session.totals.output_tokens;
+
+    if changed {
+        session.totals.input_tokens = scratch_input;
+        session.totals.output_tokens = scratch_output;
+        session.totals.cache_read_tokens = scratch_cache_read;
+        session.totals.cache_write_tokens = scratch_cache_write;
+        session.totals.model = last_model;
     }
     changed
 }

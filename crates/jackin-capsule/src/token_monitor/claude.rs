@@ -106,7 +106,11 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
         let Ok(mut file) = fs::File::open(path) else {
             continue;
         };
-        let _ = file.seek(SeekFrom::Start(session.file_offset));
+        if file.seek(SeekFrom::Start(session.file_offset)).is_err() {
+            crate::cdebug!("token monitor: seek failed for {:?}, resetting offset", path);
+            session.file_offset = 0;
+            let _ = file.seek(SeekFrom::Start(0));
+        }
         let reader = BufReader::new(&file);
         let mut bytes_read: u64 = session.file_offset;
 

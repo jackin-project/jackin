@@ -55,23 +55,21 @@ else
   JSON="{\"type\":\"report_agent_state\",\"session_id\":$SESSION_ID,\"source_id\":\"$SOURCE_ID\",\"agent_label\":\"$AGENT_RUNTIME\",\"raw_state\":\"$STATE\",\"seq\":$SEQ,\"ts_ns\":$TS_NS}"
 fi
 
-# Send length-prefixed JSON to socket using nc or socat, whichever is available.
-LEN="${#JSON}"
-
 # Build a binary length prefix (4 bytes big-endian) and send.
-# Use printf to write raw bytes if possible; fall back to Python if available.
 if command -v python3 >/dev/null 2>&1; then
   printf '%s' "$JSON" | python3 -c "
 import sys, struct
 data = sys.stdin.buffer.read()
 header = struct.pack('>I', len(data))
 sys.stdout.buffer.write(header + data)
-" | nc -U "$SOCKET" >/dev/null 2>&1 || true
+" | nc -U "$SOCKET" >/dev/null 2>&1 || echo "report.sh: socket write failed (socket=$SOCKET)" >&2
 elif command -v python >/dev/null 2>&1; then
   printf '%s' "$JSON" | python -c "
 import sys, struct
 data = sys.stdin.read()
 header = struct.pack('>I', len(data))
 sys.stdout.write(header + data)
-" | nc -U "$SOCKET" >/dev/null 2>&1 || true
+" | nc -U "$SOCKET" >/dev/null 2>&1 || echo "report.sh: socket write failed (socket=$SOCKET)" >&2
+else
+  echo "report.sh: python3/python not available; cannot report state to $SOCKET" >&2
 fi

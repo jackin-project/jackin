@@ -59,13 +59,19 @@ impl ModelCatalog {
     /// Fetch fresh model list from a provider's API.
     /// Returns without mutating entries on error (fallback stays active).
     pub fn populate(&mut self, provider: &str) {
+        let before = self.entries.len();
         match provider {
             "claude" => self.fetch_anthropic(),
             "codex" => self.fetch_openai(),
             "kimi" => self.fetch_moonshot(),
             _ => {}
         }
-        self.fetched_at = Some(Instant::now());
+        // Only mark as refreshed if we actually got new data.
+        // On failure, leave fetched_at unchanged so needs_refresh() stays true
+        // and a retry happens on the next register_session call.
+        if self.entries.len() > before {
+            self.fetched_at = Some(Instant::now());
+        }
     }
 
     fn fetch_from_api(
@@ -81,9 +87,18 @@ impl ModelCatalog {
             return;
         }
         let req = ureq::get(url);
-        let Ok(resp) = build_req(req, &api_key).call() else { return };
-        let Ok(body) = resp.into_string() else { return };
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) else { return };
+        let Ok(resp) = build_req(req, &api_key).call() else {
+            crate::cdebug!("model catalog: HTTP request failed for provider={provider} url={url}");
+            return;
+        };
+        let Ok(body) = resp.into_string() else {
+            crate::cdebug!("model catalog: response body read failed for provider={provider}");
+            return;
+        };
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) else {
+            crate::cdebug!("model catalog: JSON parse failed for provider={provider}");
+            return;
+        };
         if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
             let new: Vec<ModelEntry> = arr
                 .iter()

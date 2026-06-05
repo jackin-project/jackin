@@ -1791,11 +1791,8 @@ impl Session {
     }
 
     pub fn refresh_state(&mut self) {
-        // Phase 0: no-op. The timer-based `BLOCKED_AFTER` heuristic has been
-        // removed because silence alone does not prove Blocked — a quiet agent
-        // can be thinking, running a long tool, or waiting at an input prompt.
-        // Phase 1 arbitration (screen detection, hook events, /proc identity)
-        // will replace this body with a real authority model.
+        // Intentional no-op. State authority lives in Daemon::refresh_session_statuses,
+        // not in the session itself. This method is kept for API surface compatibility.
     }
 }
 

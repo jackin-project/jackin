@@ -14,11 +14,13 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
         db_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     ) else {
+        crate::cdebug!("token monitor: opencode db open failed: {:?}", db_path);
         return false;
     };
 
     let query = "SELECT rowid, input, output, cost FROM message WHERE rowid > ? ORDER BY rowid ASC LIMIT 1000";
     let Ok(mut stmt) = conn.prepare(query) else {
+        crate::cdebug!("token monitor: opencode db schema mismatch, prepare failed");
         return poll_session_legacy(session, &conn);
     };
 
@@ -50,7 +52,8 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
     changed
 }
 
-// Pre-v1.2 schema stored messages as JSON files rather than SQLite rows.
+// Pre-v1.2 OpenCode stored messages as JSON files, not SQLite.
+// Reading that format is not yet implemented.
 fn poll_session_legacy(session: &mut TokenSession, conn: &rusqlite::Connection) -> bool {
     let _ = (session, conn);
     false
