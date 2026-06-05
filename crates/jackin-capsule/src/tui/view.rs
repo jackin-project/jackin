@@ -304,10 +304,14 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         }
     }
 
-    // Per-pane scrollback thumbs on the right border.
+    // Per-pane scrollback thumbs on the right border — shown only while the
+    // operator is actively scrolled back (offset > 0). At the live tail the
+    // thumb is persistent visual noise (and a small scrollback renders a
+    // near-full-height bar), so it stays hidden until a scroll moves off tail.
     for pane in view.panes {
         if let Some(&(_, offset, filled)) = view.scrollbars.iter().find(|(id, _, _)| *id == pane.id)
             && filled > 0
+            && offset > 0
         {
             let focused = Some(pane.id) == view.focused_id;
             apply_pane_scrollbar(frame.buffer_mut(), pane, offset, filled, focused);

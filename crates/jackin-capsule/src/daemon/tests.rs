@@ -459,12 +459,12 @@ fn resize_then_full_frame_repaints_with_new_geometry() {
 }
 
 #[test]
-fn full_frame_repaints_pane_body_even_when_not_dirty() {
-    // Dialog-dismiss ghost regression (PR #495): a full frame must repaint
-    // pane bodies in full, not just dirty spans. After the first full frame
-    // drains the damage tracker, a second full frame (closing a dialog over an
-    // idle pane) must still emit the pane content — otherwise whatever covered
-    // the pane (the dialog backdrop) survives on screen.
+fn dialog_dismiss_frame_repaints_covered_pane_body() {
+    // Dialog-dismiss ghost regression (PR #495): closing a dialog must repaint
+    // the pane cells the backdrop covered, with no 2J clear. The frame
+    // apply_action(Dismiss) returns is that repaint — the SocketBackend cell
+    // diff turns the backdrop spaces back into pane content, so HELLO-PANE-BODY
+    // (one same-style run) reappears and no backdrop ghost survives.
     let needle = b"HELLO-PANE-BODY";
     let contains = |frame: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
 
@@ -474,13 +474,25 @@ fn full_frame_repaints_pane_body_even_when_not_dirty() {
     mux.sessions.insert(1, session);
 
     let first = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
-    assert!(contains(&first), "first full frame must paint pane body");
+    assert!(contains(&first), "first frame must paint the pane body");
 
-    // No new PTY output: the damage tracker is now drained.
-    let second = mux.compose_full_redraw(FullRedrawReason::DialogChange);
+    // Open a dialog: the full-screen backdrop covers the pane body.
+    mux.open_container_info_dialog();
+    let opened = mux.compose_full_redraw(FullRedrawReason::DialogChange);
+    assert!(!contains(&opened), "backdrop must cover the pane body");
+
+    // Dismiss returns the repaint frame directly; it must restore the body.
+    let dismissed = mux
+        .apply_action(Action::Dialog(DialogAction::Dismiss))
+        .expect("dismiss must emit a repaint frame");
+    assert!(!mux.dialog_open(), "Dismiss must pop the dialog");
     assert!(
-        contains(&second),
-        "second full frame over an idle pane must still repaint the body"
+        !dismissed.windows(4).any(|w| w == b"\x1b[2J"),
+        "dialog dismiss must not 2J-clear (no flicker)"
+    );
+    assert!(
+        contains(&dismissed),
+        "dialog dismiss must repaint the covered pane body (no backdrop ghost)"
     );
 }
 
@@ -496,27 +508,41 @@ fn scan_emitted_frame_reports_geometry_fingerprint() {
 }
 
 #[test]
-fn full_redraw_always_emits_screen_erase() {
-    // Single-renderer invariant: every full frame goes through
-    // compose_full_redraw, which clears the Ratatui buffer
-    // (Terminal::clear -> SocketBackend::clear_region(All) -> `\x1b[2J\x1b[H`).
-    // That unconditional erase is what stops chrome from a prior geometry
-    // being orphaned — the raw-ANSI bottom bar the diff cannot track is wiped
-    // before every repaint, regardless of the redraw reason.
+fn full_redraw_emits_screen_erase_only_for_geometry_reasons() {
+    // The 2J clear is gated to geometry / fresh-surface causes
+    // (FullRedrawReason::forces_screen_clear). Same-geometry causes repaint via
+    // the SocketBackend cell diff with no clear, which is what stops the screen
+    // flickering on every focus swap, tab switch, scroll, and dialog toggle.
     let erase = b"\x1b[2J";
     let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
 
     for reason in [
         FullRedrawReason::FirstAttach,
         FullRedrawReason::Resize,
-        FullRedrawReason::SplitClose,
-        FullRedrawReason::LayoutChange,
-        FullRedrawReason::StatusChange,
-        FullRedrawReason::ScrollbackMovement,
+        FullRedrawReason::ExplicitRedraw,
     ] {
         let mut mux = single_pane_tab_mux_with_size(24, 80);
         let frame = mux.compose_full_redraw(reason);
         assert!(contains(&frame), "{reason:?} full frame must emit \\x1b[2J");
+    }
+
+    for reason in [
+        FullRedrawReason::FocusChange,
+        FullRedrawReason::TabSwitch,
+        FullRedrawReason::SplitClose,
+        FullRedrawReason::LayoutChange,
+        FullRedrawReason::StatusChange,
+        FullRedrawReason::ScrollbackMovement,
+        FullRedrawReason::DialogChange,
+    ] {
+        let mut mux = single_pane_tab_mux_with_size(24, 80);
+        // Establish the SocketBackend baseline so the next frame is a pure diff.
+        let _ = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+        let frame = mux.compose_full_redraw(reason);
+        assert!(
+            !contains(&frame),
+            "{reason:?} must NOT emit \\x1b[2J (same geometry → diff, no flicker)"
+        );
     }
 }
 
@@ -3020,18 +3046,18 @@ fn apply_action_pane_button_motion_updates_selection() {
 }
 
 #[test]
-fn split_close_frame_contains_screen_erase() {
-    // Regression for Defect 29: pane/tab close must produce a full repaint
-    // with \x1b[2J so stale cells from the removed pane are cleared.
-    // compose_full_frame(SplitClose) is the path triggered after close_focused_pane/tab.
+fn split_close_frame_repaints_without_screen_erase() {
+    // Defect 29 under the diff renderer: closing a pane reflows the remaining
+    // pane into the vacated cells. The SocketBackend whole-buffer diff re-emits
+    // those changed cells with no 2J clear (terminal geometry is unchanged), so
+    // stale cells are flushed without the per-interaction flicker the clear
+    // caused. Only a true geometry change (Resize) still clears.
     let mut mux = single_pane_tab_mux_with_size(24, 80);
     let _ = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
 
     let frame = mux.compose_full_redraw(FullRedrawReason::SplitClose);
-    assert!(!frame.is_empty(), "SplitClose must produce a repaint frame");
-    // \x1b[2J is the screen-erase sequence required by the layout-change path.
     assert!(
-        frame.windows(4).any(|w| w == b"\x1b[2J"),
-        "SplitClose frame must include \\x1b[2J screen erase to flush stale cells"
+        !frame.windows(4).any(|w| w == b"\x1b[2J"),
+        "SplitClose must not emit \\x1b[2J — the cell diff flushes stale cells"
     );
 }
