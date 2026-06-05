@@ -1,7 +1,7 @@
 //! Tests for `scrollable_panel`.
 use super::{
-    ScrollbarStyle, apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset,
-    cursor_follow_offset, render_horizontal_scrollbar_with_style,
+    SCROLLBAR_HORIZONTAL_THUMB, ScrollbarStyle, apply_scroll_delta, apply_scroll_delta_unclamped,
+    clamp_scroll_offset, cursor_follow_offset, render_horizontal_scrollbar,
     render_line_with_fixed_prefix_scroll, render_scrollable_block, render_scrollable_block_at,
     render_selected_lines_in_area, render_vertical_scrollbar_in_area,
     render_vertical_scrollbar_in_area_with_style, scrollbar_offset_for_track_position,
@@ -60,37 +60,31 @@ fn scrollbar_uses_shared_dialog_scroll_palette() {
 
 #[test]
 fn line_style_uses_matching_heavy_glyphs_per_axis() {
-    // The default Line style must read identically across axes: a heavy
-    // horizontal rule `━` and a heavy vertical rule `┃` (same weight).
-    assert_eq!(ScrollbarStyle::Line.horizontal_thumb(), "━");
+    // The default Line style reads identically across axes: a heavy horizontal
+    // rule `━` and a heavy vertical rule `┃` (same weight).
+    assert_eq!(SCROLLBAR_HORIZONTAL_THUMB, "━");
     assert_eq!(ScrollbarStyle::Line.vertical_thumb(), "┃");
 }
 
 #[test]
-fn block_style_uses_full_block_in_both_orientations() {
-    // The thick Block style is a full `█` bar in BOTH axes — proving the
-    // block can be a horizontal bar, not just vertical.
-    assert_eq!(ScrollbarStyle::Block.horizontal_thumb(), "█");
-    assert_eq!(ScrollbarStyle::Block.vertical_thumb(), "█");
-
-    // Rendered horizontally, the thumb cells carry `█`.
+fn horizontal_thumb_is_always_the_heavy_line_regardless_of_vertical_style() {
+    // Block weight is vertical-only; a horizontal bar always uses the heavy
+    // line `━` (the full block reads poorly as a horizontal bar).
     let backend = TestBackend::new(12, 3);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            render_horizontal_scrollbar_with_style(
-                frame,
-                Rect::new(0, 0, 12, 3),
-                40,
-                0,
-                ScrollbarStyle::Block,
-            );
+            render_horizontal_scrollbar(frame, Rect::new(0, 0, 12, 3), 40, 0);
         })
         .unwrap();
     let buffer = terminal.backend().buffer();
     assert!(
-        (0..12).any(|x| (0..3).any(|y| buffer[(x, y)].symbol() == "█")),
-        "Block horizontal scrollbar should paint full-block thumb cells"
+        (0..12).any(|x| (0..3).any(|y| buffer[(x, y)].symbol() == "━")),
+        "horizontal scrollbar must paint the heavy line `━`"
+    );
+    assert!(
+        (0..12).all(|x| (0..3).all(|y| buffer[(x, y)].symbol() != "█")),
+        "horizontal scrollbar must never paint a full block"
     );
 }
 

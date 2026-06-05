@@ -219,10 +219,12 @@ The `H/L scroll` hint must only appear in the footer when horizontal scrolling i
 
 A screen's vertical and horizontal scrollbars must look like the same control at two angles, never two different controls. The weight is governed by `ScrollbarStyle` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />), and both axes of one style render at the same weight — only the orientation glyph rotates:
 
-- **`ScrollbarStyle::Line` (default everywhere):** heavy box-drawing rule — `━` (`U+2501`) for a horizontal thumb, `┃` (`U+2503`) for a vertical thumb. This is the thin bar; it must be the default for every scrollbar so a screen's bottom-border and right-border bars match.
-- **`ScrollbarStyle::Block`:** a full block `█` (`U+2588`) thumb in **both** orientations — a solid, heavy bar (the block reads as thick horizontally just as it does vertically). This is the opt-in thick variant, selected via the `render_*_scrollbar_with_style` entry points.
+- **Horizontal thumb — always the heavy line `━` (`U+2501`).** There is no horizontal style variant (`SCROLLBAR_HORIZONTAL_THUMB`); a full block reads poorly as a horizontal bar, so `render_horizontal_scrollbar` has no `_with_style` form.
+- **Vertical thumb — chosen by `ScrollbarStyle` (the enum applies to the vertical axis only):**
+  - `ScrollbarStyle::Line` (default everywhere): heavy rule `┃` (`U+2503`), matching the horizontal `━` weight so a screen's bottom-border and right-border bars look like one control at two angles.
+  - `ScrollbarStyle::Block`: full block `█` (`U+2588`), the opt-in thick vertical bar, selected via `render_vertical_scrollbar_with_style` / `render_vertical_scrollbar_in_area_with_style`.
 
-The track is always the dim `·` (`SCROLLBAR_TRACK`) regardless of style or axis. A vertical scrollbar that renders a `█` thumb while the horizontal one renders `━` (or any other per-axis weight mismatch within a single style) is a violation: pick one `ScrollbarStyle` for a screen and let both axes inherit it. The shared `render_picker_list` scroll thumb follows the same `Line` glyphs so modal-picker scrollbars match the rest of the TUI.
+The track is always the dim `·` (`SCROLLBAR_TRACK`) regardless of style or axis. Default to `Line` for vertical bars unless a surface deliberately wants the thick block; the shared `render_picker_list` scroll thumb follows the `Line` glyph so modal-picker scrollbars match the rest of the TUI.
 
 ### Content height formula for each block type
 

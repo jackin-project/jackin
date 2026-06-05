@@ -55,15 +55,14 @@ pub use save_discard_dialog::{
     SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState, render_save_discard_dialog,
 };
 pub use scrollable_panel::{
-    SCROLLBAR_TRACK, ScrollbarStyle, apply_scroll_delta, apply_scroll_delta_unclamped,
-    apply_term_width_scroll_delta, clamp_scroll_offset, cursor_follow_offset, effective_offset,
-    horizontal_scrollbar_area, is_scrollable, line_width, max_line_width, max_offset,
-    render_horizontal_scrollbar, render_horizontal_scrollbar_with_style,
-    render_line_with_fixed_prefix_scroll, render_lines_with_offset_in_area,
-    render_scrollable_block, render_selected_lines_in_area, render_vertical_scrollbar,
-    render_vertical_scrollbar_in_area, render_vertical_scrollbar_in_area_with_style,
-    render_vertical_scrollbar_with_style, scrollbar_offset_for_track_position,
-    vertical_scrollbar_area, viewport_height, viewport_width,
+    SCROLLBAR_HORIZONTAL_THUMB, SCROLLBAR_TRACK, ScrollbarStyle, apply_scroll_delta,
+    apply_scroll_delta_unclamped, apply_term_width_scroll_delta, clamp_scroll_offset,
+    cursor_follow_offset, effective_offset, horizontal_scrollbar_area, is_scrollable, line_width,
+    max_line_width, max_offset, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
+    render_lines_with_offset_in_area, render_scrollable_block, render_selected_lines_in_area,
+    render_vertical_scrollbar, render_vertical_scrollbar_in_area,
+    render_vertical_scrollbar_in_area_with_style, render_vertical_scrollbar_with_style,
+    scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
 };
 pub use select_list::{
     PickerRow, SelectList, SelectListState, render_picker_list, render_select_list,

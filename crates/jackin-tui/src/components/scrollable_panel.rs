@@ -20,32 +20,26 @@ use super::{Panel, PanelFocus};
 /// Dim track glyph shared by every scrollbar, both orientations and styles.
 pub const SCROLLBAR_TRACK: &str = "·";
 
-/// Visual weight of a scrollbar thumb. The track is always [`SCROLLBAR_TRACK`].
-///
-/// Both styles render at the same weight in both orientations so a screen's
-/// vertical and horizontal bars look identical — only the thickness differs
-/// between the two styles, never between the two axes of one style.
+/// Horizontal scrollbar thumb glyph. Style-independent: the heavy line is the
+/// only horizontal thumb. A full block reads poorly as a horizontal bar, so
+/// [`ScrollbarStyle`] applies to the vertical thumb only.
+pub const SCROLLBAR_HORIZONTAL_THUMB: &str = "━";
+
+/// Visual weight of the **vertical** scrollbar thumb. The track is always
+/// [`SCROLLBAR_TRACK`] and the horizontal thumb is always
+/// [`SCROLLBAR_HORIZONTAL_THUMB`]; this enum only chooses the vertical glyph.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScrollbarStyle {
-    /// Heavy box-drawing line — `━` horizontal, `┃` vertical. A thin centre
-    /// rule; the default everywhere.
+    /// Heavy box-drawing line `┃` — a thin centre rule matching the horizontal
+    /// `━`. The default everywhere.
     #[default]
     Line,
-    /// Full block `█` in both orientations — a solid, heavy bar.
+    /// Full block `█` — a solid, heavy vertical bar.
     Block,
 }
 
 impl ScrollbarStyle {
-    /// Thumb glyph for a horizontal bar in this style.
-    #[must_use]
-    pub const fn horizontal_thumb(self) -> &'static str {
-        match self {
-            Self::Line => "━",
-            Self::Block => "█",
-        }
-    }
-
-    /// Thumb glyph for a vertical bar in this style.
+    /// Vertical thumb glyph: heavy line `┃` (Line) or full block `█` (Block).
     #[must_use]
     pub const fn vertical_thumb(self) -> &'static str {
         match self {
@@ -235,27 +229,13 @@ pub const fn vertical_scrollbar_area(block_area: Rect) -> Rect {
     }
 }
 
+/// Horizontal scrollbars have no style variant — the thumb is always
+/// [`SCROLLBAR_HORIZONTAL_THUMB`] (the full block reads poorly horizontally).
 pub fn render_horizontal_scrollbar(
     frame: &mut Frame,
     block_area: Rect,
     content_width: usize,
     scroll_x: u16,
-) {
-    render_horizontal_scrollbar_with_style(
-        frame,
-        block_area,
-        content_width,
-        scroll_x,
-        ScrollbarStyle::Line,
-    );
-}
-
-pub fn render_horizontal_scrollbar_with_style(
-    frame: &mut Frame,
-    block_area: Rect,
-    content_width: usize,
-    scroll_x: u16,
-    style: ScrollbarStyle,
 ) {
     let viewport = viewport_width(block_area);
     if !is_scrollable(content_width, viewport) {
@@ -268,7 +248,8 @@ pub fn render_horizontal_scrollbar_with_style(
             viewport,
             offset: scroll_x,
             orientation: FixedScrollbarOrientation::Horizontal,
-            style,
+            // Ignored for horizontal; the glyph is always the heavy line.
+            style: ScrollbarStyle::Line,
         },
         area,
     );
@@ -462,7 +443,7 @@ impl Widget for FixedScrollbar {
         let (thumb_sym, base_x, base_y, dx, dy): (&str, u16, u16, u16, u16) = match self.orientation
         {
             FixedScrollbarOrientation::Horizontal => {
-                (self.style.horizontal_thumb(), area.x, area.y, 1, 0)
+                (SCROLLBAR_HORIZONTAL_THUMB, area.x, area.y, 1, 0)
             }
             FixedScrollbarOrientation::Vertical => {
                 (self.style.vertical_thumb(), area.x, area.y, 0, 1)
