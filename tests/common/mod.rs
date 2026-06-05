@@ -2,7 +2,7 @@
 
 use jackin::docker::{CommandRunner, RunOptions};
 use jackin::docker_client::{
-    ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
+    ContainerRow, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
 use jackin::paths::JackinPaths;
 use std::collections::{HashMap, VecDeque};
@@ -42,9 +42,6 @@ impl DockerApi for NoOpDocker {
         _all: bool,
     ) -> anyhow::Result<Vec<ContainerRow>> {
         Ok(vec![])
-    }
-    async fn create_container(&self, _name: &str, _spec: ContainerSpec) -> anyhow::Result<()> {
-        Ok(())
     }
     async fn start_container(&self, _name: &str) -> anyhow::Result<()> {
         Ok(())

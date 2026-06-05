@@ -4,13 +4,10 @@ use anyhow::{Context, bail};
 use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-use bollard::models::{
-    ContainerCreateBody, ContainerStateStatusEnum, HostConfig, NetworkCreateRequest,
-};
+use bollard::models::{ContainerStateStatusEnum, NetworkCreateRequest};
 use bollard::query_parameters::{
-    CreateContainerOptions, InspectContainerOptions, ListContainersOptions, ListImagesOptions,
-    ListNetworksOptions, RemoveContainerOptions, RemoveImageOptions, RemoveVolumeOptions,
-    StartContainerOptions,
+    InspectContainerOptions, ListContainersOptions, ListImagesOptions, ListNetworksOptions,
+    RemoveContainerOptions, RemoveImageOptions, RemoveVolumeOptions, StartContainerOptions,
 };
 use futures_util::StreamExt;
 
@@ -83,19 +80,6 @@ pub enum RemoveImageOutcome {
     NotFound,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContainerSpec {
-    pub image: String,
-    pub hostname: Option<String>,
-    pub env: Vec<String>,
-    pub labels: HashMap<String, String>,
-    pub network: String,
-    pub binds: Vec<String>,
-    pub entrypoint: Option<Vec<String>>,
-    pub privileged: bool,
-    pub workdir: Option<String>,
-}
-
 pub trait DockerApi {
     #[must_use]
     async fn inspect_container_state(&self, name: &str) -> ContainerState;
@@ -105,7 +89,6 @@ pub trait DockerApi {
         label_filters: &[&str],
         all: bool,
     ) -> anyhow::Result<Vec<ContainerRow>>;
-    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()>;
     async fn start_container(&self, name: &str) -> anyhow::Result<()>;
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()>;
     /// `internal = true` creates a bridge with no external route (for `locked` profile).
@@ -525,34 +508,6 @@ impl DockerApi for BollardDockerClient {
             .collect())
     }
 
-    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
-        crate::debug_log!("docker", "create container {name} image={}", spec.image);
-        self.inner
-            .create_container(
-                Some(CreateContainerOptions {
-                    name: Some(name.to_string()),
-                    ..Default::default()
-                }),
-                ContainerCreateBody {
-                    image: Some(spec.image),
-                    hostname: spec.hostname,
-                    env: Some(spec.env),
-                    labels: Some(spec.labels),
-                    host_config: Some(HostConfig {
-                        network_mode: Some(spec.network),
-                        binds: Some(spec.binds),
-                        privileged: Some(spec.privileged),
-                        ..Default::default()
-                    }),
-                    entrypoint: spec.entrypoint,
-                    working_dir: spec.workdir,
-                    ..Default::default()
-                },
-            )
-            .await
-            .with_context(|| format!("creating container {name}"))?;
-        Ok(())
-    }
 
     async fn start_container(&self, name: &str) -> anyhow::Result<()> {
         crate::debug_log!("docker", "start container {name}");
@@ -800,7 +755,6 @@ pub(crate) struct FakeDockerClient {
     pub(crate) inspect_network_queue:
         std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
     pub(crate) fail_with: Vec<(String, String)>,
-    pub(crate) created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
     pub(crate) created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
 }
 
@@ -818,7 +772,6 @@ impl Default for FakeDockerClient {
             inspect_image_labels_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             fail_with: Vec::new(),
-            created_containers: std::cell::RefCell::new(Vec::new()),
             created_networks: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -953,15 +906,6 @@ impl DockerApi for FakeDockerClient {
         Ok(self.pop_list_containers())
     }
 
-    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
-        let op = format!("create_container:{name}");
-        self.record(&op);
-        self.check_fail(&op)?;
-        self.created_containers
-            .borrow_mut()
-            .push((name.to_string(), spec));
-        Ok(())
-    }
 
     async fn start_container(&self, name: &str) -> anyhow::Result<()> {
         let op = format!("start_container:{name}");
