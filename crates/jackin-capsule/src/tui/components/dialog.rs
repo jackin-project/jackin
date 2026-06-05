@@ -1634,6 +1634,9 @@ const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("copy container ID"),
     HintSpan::GroupSep,
+    HintSpan::Key("↑↓←→"),
+    HintSpan::Text("scroll"),
+    HintSpan::GroupSep,
     HintSpan::Key("Esc"),
     HintSpan::Text("dismiss"),
 ];
@@ -1641,6 +1644,9 @@ const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
 const GITHUB_CONTEXT_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("copy GitHub URL"),
+    HintSpan::GroupSep,
+    HintSpan::Key("↑↓←→"),
+    HintSpan::Text("scroll"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
     HintSpan::Text("dismiss"),

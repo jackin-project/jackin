@@ -230,42 +230,57 @@ pub fn handle_cockpit_input(
             return;
         };
         match ev {
-            Event::Mouse(m) => match m.kind {
-                MouseEventKind::Down(MouseButton::Left) => {
-                    handle_cockpit_mouse_down(
-                        &mut v,
-                        area,
-                        run_id,
-                        m.column,
-                        m.row,
-                        terminal,
-                        jackin_version,
-                    );
+            Event::Mouse(m) => {
+                // Durable telemetry: capture exactly what the terminal delivers
+                // for a dialog mouse event so a `--debug` run reveals whether a
+                // horizontal-scroll gesture even reaches the cockpit (and as what
+                // kind/modifiers), instead of guessing at the mapping.
+                if v.container_info_open || v.build_log_open {
+                    terminal.emit_compact_line(
+                      "cockpit-dialog-mouse",
+                      &format!(
+                          "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
+                          m.kind, m.modifiers, m.column, m.row, v.container_info_open, v.build_log_open
+                      ),
+                  );
                 }
-                MouseEventKind::Moved => {
-                    handle_cockpit_mouse_move(
-                        &mut v,
-                        area,
-                        run_id,
-                        m.column,
-                        m.row,
-                        terminal,
-                        jackin_version,
-                    );
+                match m.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        handle_cockpit_mouse_down(
+                            &mut v,
+                            area,
+                            run_id,
+                            m.column,
+                            m.row,
+                            terminal,
+                            jackin_version,
+                        );
+                    }
+                    MouseEventKind::Moved => {
+                        handle_cockpit_mouse_move(
+                            &mut v,
+                            area,
+                            run_id,
+                            m.column,
+                            m.row,
+                            terminal,
+                            jackin_version,
+                        );
+                    }
+                    MouseEventKind::ScrollUp if v.build_log_open => {
+                        update_build_log_scroll(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
+                    }
+                    MouseEventKind::ScrollDown if v.build_log_open => {
+                        update_build_log_scroll(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
+                    }
+                    // The Debug-info dialog scrolls its own body on the wheel
+                    // (both axes) via the shared handler; offsets clamp at render.
+                    kind if v.container_info_open => {
+                        v.container_info_scroll.on_mouse_scroll(kind, m.modifiers);
+                    }
+                    _ => {}
                 }
-                MouseEventKind::ScrollUp if v.build_log_open => {
-                    update_build_log_scroll(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
-                }
-                MouseEventKind::ScrollDown if v.build_log_open => {
-                    update_build_log_scroll(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
-                }
-                // The Debug-info dialog scrolls its own body on the wheel
-                // (both axes) via the shared handler; offsets clamp at render.
-                kind if v.container_info_open => {
-                    v.container_info_scroll.on_mouse_scroll(kind, m.modifiers);
-                }
-                _ => {}
-            },
+            }
             // Keyboard scroll for the Debug-info dialog body (both axes).
             Event::Key(k)
                 if k.kind == KeyEventKind::Press

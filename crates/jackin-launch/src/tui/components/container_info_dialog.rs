@@ -3,6 +3,7 @@
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
     ContainerInfoState, DebugInfo, container_info_required_height, render_container_info,
+    render_debug_info_hint,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -57,6 +58,9 @@ pub fn render_launch_container_info(
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state);
     render_container_info(frame, rect, &state);
+    // Always show the keys (scroll + dismiss) beneath the dialog — shared with
+    // the console manager so the dialog is never shown without its hints.
+    render_debug_info_hint(frame, rect, area);
 }
 
 #[must_use]

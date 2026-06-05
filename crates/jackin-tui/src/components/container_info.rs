@@ -246,6 +246,37 @@ impl ContainerInfoState {
     }
 }
 
+/// Keys for the Debug-info dialog hint bar: scroll + dismiss. (Enter dismisses
+/// on the console + cockpit; copy is click-only there. The capsule, where Enter
+/// copies, renders its own hint with the extra copy key via its bottom chrome.)
+pub const DEBUG_INFO_HINT: &[crate::HintSpan<'static>] = &[
+    crate::HintSpan::Key("↑↓←→"),
+    crate::HintSpan::Text("scroll"),
+    crate::HintSpan::GroupSep,
+    crate::HintSpan::Key("Esc"),
+    crate::HintSpan::Text("dismiss"),
+];
+
+/// Render the Debug-info hint bar one row below `dialog_rect`, clamped to
+/// `area`. Surfaces that show this dialog inline (console manager, launch
+/// cockpit) call this right after `render_container_info` so the keys are
+/// always visible — the dialog is never shown without its hints.
+pub fn render_debug_info_hint(frame: &mut Frame<'_>, dialog_rect: Rect, area: Rect) {
+    let hint_y = dialog_rect
+        .y
+        .saturating_add(dialog_rect.height)
+        .saturating_add(1);
+    if hint_y < area.y.saturating_add(area.height) {
+        let hint_area = Rect {
+            x: area.x,
+            y: hint_y,
+            width: area.width,
+            height: 1,
+        };
+        crate::components::render_hint_bar(frame, hint_area, DEBUG_INFO_HINT);
+    }
+}
+
 #[must_use]
 pub fn required_height(state: &ContainerInfoState) -> u16 {
     u16::try_from(state.rows.len())
