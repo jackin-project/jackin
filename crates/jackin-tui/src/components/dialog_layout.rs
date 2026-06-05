@@ -251,6 +251,44 @@ mod tests {
     }
 
     #[test]
+    fn scrollable_body_shows_horizontal_bar_only_on_overflow_and_scroll_reveals_tail() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        use ratatui::text::Line;
+
+        fn render(lines: &[Line<'static>], scroll_x: u16) -> String {
+            let mut terminal = Terminal::new(TestBackend::new(20, 6)).unwrap();
+            terminal
+                .draw(|frame| {
+                    let area = Rect::new(0, 0, 20, 6);
+                    let inner = Rect::new(1, 1, 18, 4);
+                    let mut scroll = DialogBodyScroll {
+                        scroll_x,
+                        scroll_y: 0,
+                    };
+                    render_scrollable_dialog_body(frame, area, inner, lines, &mut scroll);
+                })
+                .unwrap();
+            format!("{:?}", terminal.backend().buffer())
+        }
+
+        // Fits: no horizontal scrollbar.
+        let short = [Line::from("abc")];
+        assert!(!render(&short, 0).contains('\u{2501}'));
+
+        // Overflows: bar appears, head visible, tail hidden until scrolled.
+        let long = [Line::from("HEAD_0123456789_0123456789_0123456789_TAIL")];
+        let at_start = render(&long, 0);
+        assert!(at_start.contains('\u{2501}'), "overflow shows `━` bar");
+        assert!(at_start.contains("HEAD"));
+        assert!(!at_start.contains("TAIL"));
+        assert!(
+            render(&long, u16::MAX).contains("TAIL"),
+            "scroll reveals tail"
+        );
+    }
+
+    #[test]
     fn dialog_inner_chunks_leading_is_blank_trailing_is_blank() {
         // Slots 0 and 4 are spacers — they should be at the top and bottom of inner.
         let inner = Rect::new(2, 5, 50, 7);
