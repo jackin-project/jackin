@@ -32,11 +32,12 @@ run_hook() {
 /jackin/runtime/jackin-capsule runtime-setup
 
 # ── Network allowlist (allowlist tier) ────────────────────────────────
-# init-firewall.sh is run by jackin' via `docker exec --user root` BEFORE
-# the agent session starts, not here in the entrypoint. This avoids a
-# conflict with --security-opt no-new-privileges (docker exec as root does
-# not require setuid escalation; sudo inside the container does).
-# JACKIN_NETWORK_MODE is available here for informational use only.
+# The firewall (`jackin-capsule firewall-apply`) is run by jackin' via
+# `docker exec --user root` BEFORE the agent session starts, not here in the
+# entrypoint. This avoids a conflict with --security-opt no-new-privileges
+# (docker exec as root does not require setuid escalation; sudo inside the
+# container does). JACKIN_NETWORK_MODE is available here for informational
+# use only.
 if [ "${JACKIN_NETWORK_MODE:-open}" = "allowlist" ] && \
    [ "${JACKIN_FIREWALL_INSTALLED:-0}" != "1" ]; then
     echo "[entrypoint] WARNING: network=allowlist but firewall not installed" \

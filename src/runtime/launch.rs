@@ -1386,9 +1386,11 @@ async fn launch_role_runtime(
         run_role.await?;
     }
 
-    // Install network allowlist via `docker exec --user root` when the
+    // Install the network allowlist via `docker exec --user root` when the
     // allowlist tier is active. Running as root via docker exec (daemon-granted,
-    // not setuid) is compatible with --security-opt no-new-privileges.
+    // not setuid) is compatible with --security-opt no-new-privileges. The
+    // `firewall-apply` subcommand is fail-closed: it installs the default-DROP
+    // policy first, so a partial failure leaves egress denied, never open.
     if grants.network == super::docker_profile::NetworkGrant::Allowlist {
         // Set JACKIN_FIREWALL_INSTALLED=1 so entrypoint.sh doesn't warn.
         let firewall_env = "JACKIN_FIREWALL_INSTALLED=1";
@@ -1399,7 +1401,8 @@ async fn launch_role_runtime(
             "--user",
             "root",
             container_name,
-            "/jackin/runtime/init-firewall.sh",
+            "/jackin/runtime/jackin-capsule",
+            "firewall-apply",
         ];
         crate::debug_log!(
             "launch",
@@ -1409,20 +1412,17 @@ async fn launch_role_runtime(
             .run("docker", &firewall_exec_args, None, &docker_run_opts)
             .await;
         if let Err(e) = firewall_result {
-            // Firewall failed — the container is running with open egress.
-            // Emit a visible warning so the operator sees the degraded state.
-            // Note: JACKIN_NETWORK_ENFORCEMENT is set at `docker run` time; it
-            // cannot be updated post-launch (/proc/1/environ is read-only).
-            crate::debug_log!(
-                "launch",
-                "network allowlist install failed (degraded to open): {e}",
-            );
+            // Apply failed. Because `firewall-apply` lays down the DROP policy
+            // first, the container is most likely fail-closed (egress denied,
+            // agent may be unable to reach its model API) rather than open —
+            // surface it either way so the operator can investigate.
+            crate::debug_log!("launch", "network allowlist install failed: {e}");
             crate::tui::emit_compact_line(
                 "warning",
                 &format!(
-                    "[docker] network=allowlist: firewall install failed for {container_name} \
-                     — container is running with OPEN egress. Verify the image contains \
-                     /jackin/runtime/init-firewall.sh and NET_ADMIN/NET_RAW are available.",
+                    "[docker] network=allowlist: firewall apply failed for {container_name} \
+                     — egress enforcement is incomplete. Verify NET_ADMIN/NET_RAW are \
+                     available and the iptables/ipset binaries are present in the image.",
                 ),
             );
         }

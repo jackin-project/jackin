@@ -260,7 +260,7 @@ Everything described on this page is fully implemented and available now:
 - All four profiles with enforced capability sets
 - `[docker.grants]` in config and workspace for per-dimension overrides
 - `[docker]` in `jackin.role.toml` for role declarations (`min_profile`, `dind`, `allowed_hosts`, `capabilities_add`)
-- `allowlist` network tier via `init-firewall.sh` (iptables/ipset, `JACKIN_ALLOWED_HOSTS` assembled at launch)
+- `allowlist` network tier (iptables/ipset egress filtering, `JACKIN_ALLOWED_HOSTS` assembled at launch)
 - All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
 - Full telemetry under `--debug` (profile source, cap decisions, cgroup version, AppArmor, session contract)
 

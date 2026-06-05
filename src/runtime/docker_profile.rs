@@ -1318,7 +1318,7 @@ mod tests {
     fn resolve_effective_grants_no_grants_still_gets_implicit_caps() {
         // When locked profile launches with no config/workspace grants,
         // resolve_effective_grants must inject NET_ADMIN/NET_RAW so the
-        // iptables allowlist (init-firewall.sh) can run.
+        // iptables allowlist (`jackin-capsule firewall-apply`) can run.
         let grants = resolve_effective_grants(DockerSecurityProfile::Locked, None, None);
         assert_eq!(grants.network, NetworkGrant::Allowlist);
         assert!(

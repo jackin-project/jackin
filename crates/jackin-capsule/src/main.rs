@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, protocol::attach::SpawnRequest, runtime_setup,
+    client, config, daemon, firewall, protocol::attach::SpawnRequest, runtime_setup,
     session::validate_agent_slug,
 };
 use std::path::Path;
@@ -50,6 +50,7 @@ async fn main() -> Result<()> {
                 client::run_agents(format).await
             }
             Some("runtime-setup") => runtime_setup::run(),
+            Some("firewall-apply") => firewall::apply(),
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
                 let supported_agents = config::load_optional()
@@ -93,7 +94,7 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
                 )
             }
         }

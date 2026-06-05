@@ -5,6 +5,7 @@ pub mod client;
 pub mod config;
 pub mod daemon;
 pub mod dialog;
+pub mod firewall;
 pub mod input;
 pub mod layout;
 pub mod logging;
