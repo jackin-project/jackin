@@ -1421,8 +1421,9 @@ async fn launch_role_runtime(
                 "warning",
                 &format!(
                     "[docker] network=allowlist: firewall apply failed for {container_name} \
-                     — egress enforcement is incomplete. Verify NET_ADMIN/NET_RAW are \
-                     available and the iptables/ipset binaries are present in the image.",
+                     — egress is likely DENIED (fail-closed: the DROP policy lands first), so \
+                     the agent may be unable to reach its model API. Verify NET_ADMIN/NET_RAW \
+                     are available and the iptables/ipset binaries are present in the image.",
                 ),
             );
         }
