@@ -33,7 +33,9 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
 
     for path in &files {
         let Ok(mut file) = fs::File::open(path) else { continue };
-        super::seek_or_reset(&mut file, &mut session.file_offset, path);
+        if !super::seek_or_reset(&mut file, &mut session.file_offset, path) {
+            continue;
+        }
         let reader = BufReader::new(&file);
         let mut bytes_read = session.file_offset;
 

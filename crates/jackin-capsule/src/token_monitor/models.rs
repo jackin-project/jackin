@@ -59,17 +59,16 @@ impl ModelCatalog {
     /// Fetch fresh model list from a provider's API.
     /// Returns without mutating entries on error (fallback stays active).
     pub fn populate(&mut self, provider: &str) {
-        let before = self.entries.len();
-        match provider {
+        let fetched = match provider {
             "claude" => self.fetch_anthropic(),
             "codex" => self.fetch_openai(),
             "kimi" => self.fetch_moonshot(),
-            _ => {}
-        }
-        // Only mark as refreshed if we actually got new data.
+            _ => false,
+        };
+        // Only stamp fetched_at when the HTTP round-trip actually succeeded.
         // On failure, leave fetched_at unchanged so needs_refresh() stays true
         // and a retry happens on the next register_session call.
-        if self.entries.len() > before {
+        if fetched {
             self.fetched_at = Some(Instant::now());
         }
     }
@@ -81,23 +80,23 @@ impl ModelCatalog {
         url: &str,
         build_req: impl FnOnce(ureq::Request, &str) -> ureq::Request,
         filter: impl Fn(&str) -> bool,
-    ) {
+    ) -> bool {
         let api_key = std::env::var(env_key).unwrap_or_default();
         if api_key.is_empty() {
-            return;
+            return false;
         }
         let req = ureq::get(url);
         let Ok(resp) = build_req(req, &api_key).call() else {
             crate::cdebug!("model catalog: HTTP request failed for provider={provider} url={url}");
-            return;
+            return false;
         };
         let Ok(body) = resp.into_string() else {
             crate::cdebug!("model catalog: response body read failed for provider={provider}");
-            return;
+            return false;
         };
         let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) else {
             crate::cdebug!("model catalog: JSON parse failed for provider={provider}");
-            return;
+            return false;
         };
         if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
             let new: Vec<ModelEntry> = arr
@@ -124,19 +123,20 @@ impl ModelCatalog {
                 self.entries.extend(new);
             }
         }
+        true
     }
 
-    fn fetch_anthropic(&mut self) {
+    fn fetch_anthropic(&mut self) -> bool {
         self.fetch_from_api(
             "claude",
             "ANTHROPIC_API_KEY",
             "https://api.anthropic.com/v1/models",
             |req, key| req.set("x-api-key", key).set("anthropic-version", "2023-06-01"),
             |_| true,
-        );
+        )
     }
 
-    fn fetch_openai(&mut self) {
+    fn fetch_openai(&mut self) -> bool {
         self.fetch_from_api(
             "codex",
             "OPENAI_API_KEY",
@@ -149,17 +149,17 @@ impl ModelCatalog {
                     || id.starts_with("o3")
                     || id.starts_with("o4")
             },
-        );
+        )
     }
 
-    fn fetch_moonshot(&mut self) {
+    fn fetch_moonshot(&mut self) -> bool {
         self.fetch_from_api(
             "kimi",
             "KIMI_CODE_API_KEY",
             "https://api.moonshot.ai/v1/models",
             |req, key| req.set("Authorization", &format!("Bearer {key}")),
             |_| true,
-        );
+        )
     }
 }
 
@@ -228,6 +228,26 @@ mod tests {
         assert!(!catalog.needs_refresh());
         let models = catalog.available_models("claude");
         assert!(models.iter().any(|m| m.model_id == "claude-test-model"));
+    }
+
+    #[test]
+    fn populate_on_empty_api_key_leaves_needs_refresh_true() {
+        // When no API key is set, populate() should not stamp fetched_at.
+        // needs_refresh() must remain true so a retry fires on the next
+        // register_session call once a key becomes available.
+        let catalog = ModelCatalog::new();
+        assert!(catalog.needs_refresh(), "fresh catalog must need refresh");
+        let mut catalog = catalog;
+        // Call populate with no env key set — fetch_from_api returns false early.
+        // Save/restore env to avoid affecting other tests.
+        let key_was_set = std::env::var("ANTHROPIC_API_KEY").is_ok();
+        if key_was_set {
+            // Can't guarantee a clean test environment; skip.
+            return;
+        }
+        catalog.populate("claude");
+        assert!(catalog.needs_refresh(),
+            "populate with no API key must leave needs_refresh=true");
     }
 
     #[test]

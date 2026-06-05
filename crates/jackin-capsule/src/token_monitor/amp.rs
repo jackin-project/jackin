@@ -73,7 +73,9 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
 
     // Only report changed if the totals actually moved.
     let changed = scratch_input != session.totals.input_tokens
-        || scratch_output != session.totals.output_tokens;
+        || scratch_output != session.totals.output_tokens
+        || scratch_cache_read != session.totals.cache_read_tokens
+        || scratch_cache_write != session.totals.cache_write_tokens;
 
     if changed {
         session.totals.input_tokens = scratch_input;

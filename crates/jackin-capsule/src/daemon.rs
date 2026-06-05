@@ -3484,7 +3484,7 @@ impl Multiplexer {
                         raw,
                         agent
                     );
-                    let _ = self.state_broadcast_tx.send(
+                    if self.state_broadcast_tx.send(
                         Self::make_agent_state_changed(
                             id,
                             new_state.label(),
@@ -3493,7 +3493,9 @@ impl Multiplexer {
                             session.status.revision,
                             None,
                         )
-                    );
+                    ).is_err() {
+                        crate::cdebug!("state broadcast: no receivers for session {id}");
+                    }
                 }
             // Cursor-position probe for stuck detection.
             const PROBE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
@@ -3896,7 +3898,7 @@ impl Multiplexer {
                                 crate::clog!(
                                     "session {session_id}: hook report {raw_state} → {new_state:?}"
                                 );
-                                let _ = self.state_broadcast_tx.send(
+                                if self.state_broadcast_tx.send(
                                     Self::make_agent_state_changed(
                                         session_id,
                                         new_state.label(),
@@ -3905,7 +3907,9 @@ impl Multiplexer {
                                         session.status.revision,
                                         None,
                                     )
-                                );
+                                ).is_err() {
+                                    crate::cdebug!("state broadcast: no receivers for session {session_id}");
+                                }
                             }
                         }
                         session.hook_authority =
@@ -4553,7 +4557,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         let cache_read_tokens = totals.cache_read_tokens;
                         let cache_write_tokens = totals.cache_write_tokens;
                         let cost_usd = totals.cost_usd;
-                        let _ = mux.state_broadcast_tx.send(
+                        if mux.state_broadcast_tx.send(
                             jackin_protocol::control::ServerMsg::TokenUsageChanged {
                                 session_id: *session_id,
                                 agent,
@@ -4565,7 +4569,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                                 cost_usd,
                                 ts_ns: 0,
                             },
-                        );
+                        ).is_err() {
+                            crate::cdebug!("state broadcast: no receivers for session {session_id}");
+                        }
                     }
                 }
             }

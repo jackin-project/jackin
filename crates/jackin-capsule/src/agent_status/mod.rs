@@ -362,8 +362,6 @@ mod tests {
         let mut s = SessionStatus::new();
         s.advance(AgentRawState::BlockedVisible);
         assert_eq!(s.effective, AgentState::Blocked);
-        // Working-visible alone must not clear Blocked — needs an explicit
-        // operator-input or prompt signal.
         let changed = s.advance(AgentRawState::WorkingVisible);
         assert_eq!(changed, Some(AgentState::Working));
         // NOTE: WorkingVisible DOES override Blocked because a visible working
@@ -529,6 +527,46 @@ mod tests {
         let blocked_event = s.advance(AgentRawState::BlockedVisible);
         assert_eq!(blocked_event, Some(AgentState::Blocked),
             "Working→Blocked should produce Some(Blocked)");
+    }
+
+    #[test]
+    fn working_visible_from_fresh_session_produces_done_not_idle() {
+        // No explicit seen=false needed — WorkingVisible from Unknown
+        // must reset seen so the subsequent idle produces Done.
+        let mut s = SessionStatus::new();
+        // SessionStatus::new() starts with seen=true (neutral start).
+        // WorkingVisible should enter the work cycle and reset seen.
+        s.advance(AgentRawState::WorkingVisible);
+        assert_eq!(s.effective, AgentState::Working);
+        let changed = s.advance(AgentRawState::PromptVisible);
+        assert_eq!(changed, Some(AgentState::Done),
+            "WorkingVisible from Unknown must reset seen so PromptVisible produces Done");
+    }
+
+    #[test]
+    fn blocked_visible_from_fresh_session_produces_done_on_prompt() {
+        // BlockedVisible from Unknown should also enter the work cycle.
+        let mut s = SessionStatus::new();
+        s.advance(AgentRawState::BlockedVisible);
+        assert_eq!(s.effective, AgentState::Blocked);
+        let changed = s.advance(AgentRawState::PromptVisible);
+        assert_eq!(changed, Some(AgentState::Done),
+            "BlockedVisible from Unknown must reset seen so PromptVisible produces Done");
+    }
+
+    #[test]
+    fn working_visible_after_ack_produces_done_again() {
+        // Screen-signal re-entry after acknowledge must also produce Done.
+        let mut s = SessionStatus::new();
+        s.advance(AgentRawState::WorkingVisible);
+        s.advance(AgentRawState::PromptVisible); // → Done
+        s.acknowledge(); // → Idle
+        assert_eq!(s.effective, AgentState::Idle);
+        // New work cycle via screen detector.
+        s.advance(AgentRawState::WorkingVisible); // Idle → Working, seen reset
+        let changed = s.advance(AgentRawState::PromptVisible); // Working → Done
+        assert_eq!(changed, Some(AgentState::Done),
+            "Re-entry via WorkingVisible after acknowledge must produce Done again");
     }
 
     #[test]
