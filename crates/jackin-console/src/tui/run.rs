@@ -137,13 +137,11 @@ pub fn debug_run_id_label(run_id: Option<&str>) -> String {
 
 #[must_use]
 pub const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool {
-    !matches!(
-        mouse.kind,
-        crossterm::event::MouseEventKind::ScrollDown
-            | crossterm::event::MouseEventKind::ScrollUp
-            | crossterm::event::MouseEventKind::ScrollLeft
-            | crossterm::event::MouseEventKind::ScrollRight
-    )
+    // Skip only the high-frequency `Moved` (hover) flood. Clicks, drags, AND
+    // scroll/wheel events must be logged — scroll events are exactly what a
+    // "wheel does nothing" bug report needs, and filtering them out (as an
+    // earlier version did) sent triage chasing a phantom "no wheel events".
+    !matches!(mouse.kind, crossterm::event::MouseEventKind::Moved)
 }
 
 #[must_use]
