@@ -131,10 +131,8 @@ pub fn apply() -> Result<()> {
             Entry::Domain(domain) => {
                 let v4: Vec<String> = resolve(&domain)
                     .into_iter()
-                    .filter_map(|ip| match ip {
-                        IpAddr::V4(addr) => Some(addr.to_string()),
-                        IpAddr::V6(_) => None,
-                    })
+                    .filter(IpAddr::is_ipv4)
+                    .map(|ip| ip.to_string())
                     .collect();
                 if v4.is_empty() {
                     eprintln!(
