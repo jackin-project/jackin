@@ -3526,8 +3526,9 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .expect("GH_TOKEN must land on the workspace github env block");
     match value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
-        jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
-        jackin::operator_env::EnvValue::Extended(_) => panic!("expected literal credential"),
+        jackin::operator_env::EnvValue::OpRef(_) | jackin::operator_env::EnvValue::Extended(_) => {
+            panic!("expected literal credential")
+        }
     }
     assert!(
         !pending.env.contains_key("GH_TOKEN"),
@@ -3564,8 +3565,9 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .expect("reload must see GH_TOKEN on the github env block");
     match env_value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
-        jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
-        jackin::operator_env::EnvValue::Extended(_) => panic!("expected literal credential"),
+        jackin::operator_env::EnvValue::OpRef(_) | jackin::operator_env::EnvValue::Extended(_) => {
+            panic!("expected literal credential")
+        }
     }
     // GH_TOKEN must NOT leak into the regular workspace env map after
     // reload (the kind-scoped layer is the only place it should live).

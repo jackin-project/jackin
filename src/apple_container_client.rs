@@ -16,7 +16,7 @@
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` v0.11.0+ installed
-//! - Docker hardening rootless DinD must validate before Phase 0 starts
+//! - Docker hardening rootless `DinD` must validate before Phase 0 starts
 //! - `JACKIN_CAPSULE_FORCE_DAEMON=1` injected by `container run` (not a
 //!   static Dockerfile ENV — that would break the Docker backend)
 
@@ -59,6 +59,7 @@ impl AppleContainerInfo {
 }
 
 /// Trait for the apple-container backend lifecycle operations.
+///
 /// All methods shell out to the `container` CLI via `tokio::process::Command`.
 /// The Docker backend uses bollard (typed async API) — this trait is NOT
 /// compatible with `DockerApi` and requires a separate implementation.
@@ -93,7 +94,7 @@ pub trait AppleContainerApi: Send + Sync {
 pub struct AppleContainerClient;
 
 impl AppleContainerClient {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -219,7 +220,7 @@ impl AppleContainerApi for AppleContainerClient {
             anyhow::bail!("container ps failed: {}", stderr.trim());
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let all = parse_all_containers_json(&stdout)?;
+        let all = parse_all_containers_json(&stdout);
         Ok(all
             .into_iter()
             .filter(|c| c.name.starts_with(name_prefix))
@@ -230,10 +231,10 @@ impl AppleContainerApi for AppleContainerClient {
 /// Parse `container ps --format json` output into container info records.
 /// The exact JSON schema is determined empirically during Phase 0 testing;
 /// this implementation handles the most common shapes (array or NDJSON).
-fn parse_all_containers_json(json_output: &str) -> Result<Vec<AppleContainerInfo>> {
+fn parse_all_containers_json(json_output: &str) -> Vec<AppleContainerInfo> {
     let trimmed = json_output.trim();
     if trimmed.is_empty() {
-        return Ok(vec![]);
+        return vec![];
     }
 
     // apple/container may emit a JSON array or newline-delimited JSON objects.
@@ -246,7 +247,7 @@ fn parse_all_containers_json(json_output: &str) -> Result<Vec<AppleContainerInfo
                 results.push(info);
             }
         }
-        return Ok(results);
+        return results;
     }
 
     // Try newline-delimited JSON objects.
@@ -255,14 +256,14 @@ fn parse_all_containers_json(json_output: &str) -> Result<Vec<AppleContainerInfo
         if line.is_empty() {
             continue;
         }
-        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) {
-            if let Some(info) = extract_container_info(&obj) {
-                results.push(info);
-            }
+        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line)
+            && let Some(info) = extract_container_info(&obj)
+        {
+            results.push(info);
         }
     }
 
-    Ok(results)
+    results
 }
 
 fn extract_container_info(obj: &serde_json::Value) -> Option<AppleContainerInfo> {
@@ -286,6 +287,13 @@ fn extract_container_info(obj: &serde_json::Value) -> Option<AppleContainerInfo>
 #[cfg(test)]
 pub struct FakeAppleContainerClient {
     pub containers: std::sync::Mutex<Vec<AppleContainerInfo>>,
+}
+
+#[cfg(test)]
+impl Default for FakeAppleContainerClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -314,9 +322,11 @@ impl AppleContainerApi for FakeAppleContainerClient {
     }
 
     async fn stop_container(&self, name: &str) -> Result<()> {
-        let mut containers = self.containers.lock().unwrap();
-        if let Some(c) = containers.iter_mut().find(|c| c.name == name) {
-            c.status = "stopped".to_string();
+        {
+            let mut containers = self.containers.lock().unwrap();
+            if let Some(c) = containers.iter_mut().find(|c| c.name == name) {
+                c.status = "stopped".to_string();
+            }
         }
         Ok(())
     }

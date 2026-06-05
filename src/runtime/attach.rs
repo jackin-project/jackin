@@ -469,13 +469,12 @@ pub async fn hardline_agent_with_focus(
     let is_apple_container = crate::instance::InstanceManifest::read_optional(&container_state_dir)
         .ok()
         .flatten()
-        .map(|m| {
+        .is_some_and(|m| {
             matches!(
                 m.backend,
                 crate::instance::BackendResources::AppleContainer(_)
             )
-        })
-        .unwrap_or(false);
+        });
 
     if is_apple_container {
         return super::apple_container::reconnect(container_name, focus_session).await;

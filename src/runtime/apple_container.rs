@@ -10,11 +10,11 @@
 //! - `JACKIN_CAPSULE_FORCE_DAEMON=1` injected at `container run` time
 //!   (NOT a static Dockerfile ENV — that breaks the Docker backend)
 //!
-//! # DinD gating
+//! # `DinD` gating
 //!
-//! DinD inside the VM (rootless DinD via `--cap-add`) requires Phase 0
+//! `DinD` inside the VM (rootless `DinD` via `--cap-add`) requires Phase 0
 //! empirical validation. `inner_docker_enabled` defaults to `false` until
-//! Phase 0 results confirm DinD works inside apple/container VMs.
+//! Phase 0 results confirm `DinD` works inside apple/container VMs.
 
 use anyhow::{Context as _, Result, bail};
 use std::path::PathBuf;
@@ -197,6 +197,7 @@ pub struct AppleContainerLaunch<'a> {
 ///
 /// Called from `load_role_with` after the image build step when the resolved
 /// backend is `"apple-container"`.
+#[allow(clippy::too_many_lines)]
 pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     let AppleContainerLaunch {
         paths,
@@ -355,8 +356,7 @@ async fn is_container_running(container_name: &str) -> bool {
         .list_containers(container_name)
         .await
         .ok()
-        .map(|v| v.iter().any(|c| c.name == container_name && c.is_running()))
-        .unwrap_or(false)
+        .is_some_and(|v| v.iter().any(|c| c.name == container_name && c.is_running()))
 }
 
 /// Reconnect to a stopped or running apple/container container.

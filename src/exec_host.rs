@@ -35,7 +35,7 @@ use tokio::net::{UnixListener, UnixStream};
 /// A single on-demand credential binding resolved by the host.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecCredRef {
-    /// The env var name that will be injected (e.g. "GH_TOKEN").
+    /// The env var name that will be injected (e.g. "`GH_TOKEN`").
     pub name: String,
     /// Resolution kind: "op" → `op read <source>`, "env" → host env var,
     /// "literal" → return source verbatim.
@@ -72,10 +72,11 @@ struct CredError {
     error: String,
 }
 
-/// Start the host.sock listener. Returns a `JoinHandle` the caller can
-/// cancel or await. The socket file is created at `sock_path`; the
-/// caller is responsible for ensuring the parent directory is already
-/// bind-mounted into the container.
+/// Start the host.sock listener.
+///
+/// Returns a `JoinHandle` the caller can cancel or await. The socket file is
+/// created at `sock_path`; the caller is responsible for ensuring the parent
+/// directory is already bind-mounted into the container.
 ///
 /// `allowed_bindings` is the exhaustive set of credential refs the operator
 /// configured for this session. Only refs in this set are resolved; any
@@ -156,11 +157,11 @@ async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecCredRef]) -> Res
 }
 
 async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredRef]) -> Result<()> {
+    const MAX_REQ: usize = 512 * 1024;
     // Read 4-byte BE length + JSON body (same framing as control channel).
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_REQ: usize = 512 * 1024;
     anyhow::ensure!(len <= MAX_REQ, "request too large: {len}");
 
     let mut body = vec![0u8; len];
@@ -238,15 +239,13 @@ async fn resolve_all(refs: &[ExecCredRef]) -> Result<std::collections::BTreeMap<
 fn validate_op_source(source: &str) -> Result<()> {
     anyhow::ensure!(
         source.starts_with("op://"),
-        "invalid op:// reference {:?}: must start with op://",
-        source
+        "invalid op:// reference {source:?}: must start with op://"
     );
     // Reject segments that look like CLI flags (start with -) to prevent arg injection.
     let path = &source["op://".len()..];
     anyhow::ensure!(
         !path.split('/').any(|s| s.starts_with('-')),
-        "invalid op:// reference: segment looks like a flag in {:?}",
-        source
+        "invalid op:// reference: segment looks like a flag in {source:?}"
     );
     Ok(())
 }
@@ -262,12 +261,11 @@ async fn resolve_one(r: &ExecCredRef) -> Result<String> {
             let src = r.source.as_str();
             let var_name = src
                 .strip_prefix('$')
-                .map(|s| s.trim_matches('{').trim_matches('}'))
-                .unwrap_or(src);
+                .map_or(src, |s| s.trim_matches('{').trim_matches('}'));
             std::env::var(var_name).with_context(|| format!("host env var {var_name:?} is not set"))
         }
         "literal" => Ok(r.source.clone()),
-        other => anyhow::bail!("unknown credential kind {:?}", other),
+        other => anyhow::bail!("unknown credential kind {other:?}"),
     }
 }
 

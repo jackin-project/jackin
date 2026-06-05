@@ -141,9 +141,10 @@ pub enum EnvValue {
     Plain(String),
 }
 
-/// On-demand or plain-with-metadata env value. The `value` field
-/// supports the same `$VAR` / `${VAR}` host-env expansion as `Plain`.
-/// The table form (vs. scalar string) is what signals `Extended` to
+/// On-demand or plain-with-metadata env value.
+///
+/// The `value` field supports the same `$VAR` / `${VAR}` host-env expansion as
+/// `Plain`. The table form (vs. scalar string) is what signals `Extended` to
 /// serde's untagged discriminator.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -157,7 +158,7 @@ pub struct Extended {
     pub on_demand: bool,
 }
 
-fn return_true() -> bool {
+const fn return_true() -> bool {
     true
 }
 
@@ -250,7 +251,7 @@ impl EnvValue {
     /// (calling the 1Password CLI for `OpRef`) happens in
     /// `resolve_env_value`, not here — this is for internal merging,
     /// comparison, and migration paths.
-    pub fn as_persisted_str(&self) -> &str {
+    pub const fn as_persisted_str(&self) -> &str {
         match self {
             Self::Plain(s) => s.as_str(),
             Self::Extended(e) => e.value.as_str(),
@@ -265,7 +266,7 @@ impl EnvValue {
     /// Use this on operator-facing surfaces (CLI `env list`, launch
     /// auth-mode notice). For internal merging or comparison, use
     /// `as_persisted_str` (which returns the UUID-form URI for `OpRef`).
-    pub fn as_display_str(&self) -> &str {
+    pub const fn as_display_str(&self) -> &str {
         match self {
             Self::Plain(s) => s.as_str(),
             Self::Extended(e) => e.value.as_str(),
@@ -277,7 +278,7 @@ impl EnvValue {
     /// container at launch. on-demand vars are resolved at exec time via
     /// `jackin-capsule exec` when the operator selects them in the
     /// credential picker dialog.
-    pub fn is_on_demand(&self) -> bool {
+    pub const fn is_on_demand(&self) -> bool {
         match self {
             Self::OpRef(r) => r.on_demand,
             Self::Extended(e) => e.on_demand,

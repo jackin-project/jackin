@@ -3703,8 +3703,8 @@ fn build_env_layer_states(
 ) -> Vec<(String, EnvLayerState)> {
     const fn classify(value: &crate::operator_env::EnvValue) -> EnvLayerState {
         match value {
-            crate::operator_env::EnvValue::Plain(_) => EnvLayerState::ResolvedLiteral,
-            crate::operator_env::EnvValue::Extended(_) => EnvLayerState::ResolvedLiteral,
+            crate::operator_env::EnvValue::Plain(_)
+            | crate::operator_env::EnvValue::Extended(_) => EnvLayerState::ResolvedLiteral,
             crate::operator_env::EnvValue::OpRef(_) => EnvLayerState::ResolvedOpRef,
         }
     }

@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-/// Instance manifest version. Bumped to 2 when the `backend` field
-/// (BackendResources tagged union) replaced the Docker-only `docker` field.
-/// Old manifests with `"docker": {...}` are read via the `#[serde(alias = "docker")]`
-/// backward-compat attribute — no fixture chain required since this is ephemeral
-/// per-instance metadata, not a user-edited versioned config file.
+/// Instance manifest version.
+///
+/// Bumped to 2 when the `backend` field (`BackendResources` tagged union)
+/// replaced the Docker-only `docker` field. Old manifests with `"docker": {...}`
+/// are read via the `#[serde(alias = "docker")]` backward-compat attribute — no
+/// fixture chain required since this is ephemeral per-instance metadata, not a
+/// user-edited versioned config file.
 pub const INSTANCE_MANIFEST_VERSION: u32 = 2;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
@@ -98,6 +100,7 @@ pub struct DockerResources {
 }
 
 /// Resources owned by the `apple-container` backend for one jackin' instance.
+///
 /// Discriminated from `DockerResources` by the `container_name` field
 /// (vs `role_container`) so `BackendResources` untagged serde works cleanly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,13 +109,15 @@ pub struct AppleContainerResources {
     pub container_name: String,
     /// OCI image ref used to start the container.
     pub role_image_ref: String,
-    /// Whether an inner Docker daemon (rootless DinD) is running.
+    /// Whether an inner Docker daemon (rootless `DinD`) is running.
     pub inner_docker_enabled: bool,
 }
 
-/// Backend-specific resource handles. Discriminated by struct shape via
-/// `#[serde(untagged)]` — `AppleContainerResources` has `container_name`
-/// while `DockerResources` has `role_container` (disjoint field sets).
+/// Backend-specific resource handles.
+///
+/// Discriminated by struct shape via `#[serde(untagged)]` —
+/// `AppleContainerResources` has `container_name` while `DockerResources` has
+/// `role_container` (disjoint field sets).
 ///
 /// The `InstanceManifest.docker` field is renamed to `backend` in Rust
 /// and keeps the `"docker"` JSON key via `#[serde(alias = "docker")]`

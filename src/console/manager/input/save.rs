@@ -2140,7 +2140,7 @@ mod tests {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
-            runtime: Default::default(),
+            runtime: crate::workspace::WorkspaceRuntimeConfig::default(),
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 

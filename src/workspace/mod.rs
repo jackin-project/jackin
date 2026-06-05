@@ -121,7 +121,7 @@ pub struct WorkspaceRuntimeConfig {
 }
 
 impl WorkspaceRuntimeConfig {
-    pub fn is_default(&self) -> bool {
+    pub const fn is_default(&self) -> bool {
         self.backend.is_none()
     }
 }
@@ -146,7 +146,7 @@ impl Default for WorkspaceConfig {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
-            runtime: Default::default(),
+            runtime: crate::workspace::WorkspaceRuntimeConfig::default(),
         }
     }
 }
@@ -832,7 +832,7 @@ isolation = "clone"
             opencode: None,
             github: None,
             git_pull_on_entry: false,
-            runtime: Default::default(),
+            runtime: crate::workspace::WorkspaceRuntimeConfig::default(),
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

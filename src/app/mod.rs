@@ -884,7 +884,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     opencode: None,
                     github: None,
                     git_pull_on_entry: git_pull,
-                    runtime: Default::default(),
+                    runtime: crate::workspace::WorkspaceRuntimeConfig::default(),
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.create_workspace(&name, ws)?;
@@ -3633,7 +3633,7 @@ mod auth_set_tests {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
-            runtime: Default::default(),
+            runtime: crate::workspace::WorkspaceRuntimeConfig::default(),
         };
         let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
         assert!(out.contains("Isolation"));

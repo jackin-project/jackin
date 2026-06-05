@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn parse_json_array_shape() {
     let json = r#"[{"name":"jk-a","status":"running"},{"name":"jk-b","status":"stopped"}]"#;
-    let all = parse_all_containers_json(json).unwrap();
+    let all = parse_all_containers_json(json);
     assert_eq!(all.len(), 2);
     assert_eq!(all[0].name, "jk-a");
     assert!(all[0].is_running());
@@ -15,7 +15,7 @@ fn parse_json_array_shape() {
 fn parse_ndjson_shape() {
     let json =
         "{\"name\":\"jk-a\",\"status\":\"running\"}\n{\"name\":\"jk-b\",\"status\":\"stopped\"}";
-    let all = parse_all_containers_json(json).unwrap();
+    let all = parse_all_containers_json(json);
     assert_eq!(all.len(), 2);
 }
 
@@ -24,7 +24,7 @@ fn parse_capitalized_keys_and_missing_status() {
     // apple/container's exact JSON shape is empirically determined; tolerate
     // capitalized keys and default a missing status to "unknown".
     let json = r#"[{"Name":"jk-a","State":"Running"},{"name":"jk-b"}]"#;
-    let all = parse_all_containers_json(json).unwrap();
+    let all = parse_all_containers_json(json);
     assert_eq!(all[0].name, "jk-a");
     assert!(all[0].is_running());
     assert_eq!(all[1].status, "unknown");
@@ -33,11 +33,11 @@ fn parse_capitalized_keys_and_missing_status() {
 
 #[test]
 fn parse_empty_and_malformed() {
-    assert!(parse_all_containers_json("").unwrap().is_empty());
-    assert!(parse_all_containers_json("   ").unwrap().is_empty());
+    assert!(parse_all_containers_json("").is_empty());
+    assert!(parse_all_containers_json("   ").is_empty());
     // A malformed NDJSON line is skipped, not fatal.
     let json = "{\"name\":\"jk-a\",\"status\":\"running\"}\nnot json";
-    assert_eq!(parse_all_containers_json(json).unwrap().len(), 1);
+    assert_eq!(parse_all_containers_json(json).len(), 1);
 }
 
 #[tokio::test]

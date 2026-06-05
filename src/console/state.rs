@@ -204,7 +204,7 @@ mod tests {
                 opencode: None,
                 github: None,
                 git_pull_on_entry: false,
-                runtime: Default::default(),
+                runtime: crate::workspace::WorkspaceRuntimeConfig::default(),
             },
         );
 
@@ -248,7 +248,7 @@ mod tests {
             opencode: None,
             github: None,
             git_pull_on_entry: false,
-            runtime: Default::default(),
+            runtime: crate::workspace::WorkspaceRuntimeConfig::default(),
         }
     }
 
