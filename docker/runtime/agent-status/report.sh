@@ -10,7 +10,7 @@
 #   JACKIN_STATUS_SOURCE — source ID for this session's reporter.
 #   JACKIN_AGENT_RUNTIME — agent slug (claude, codex, amp, kimi, opencode).
 
-set -euo pipefail
+set -eu
 
 SOCKET="${JACKIN_STATUS_SOCKET:-/jackin/run/jackin.sock}"
 SESSION_ID="${JACKIN_SESSION_ID:-}"

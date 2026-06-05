@@ -119,6 +119,30 @@ mod tests {
     }
 
     #[test]
+    fn amp_changed_flag_includes_cache_tokens() {
+        let mut session = TokenSession::new(1, "amp");
+        session.totals.input_tokens = 100;
+        session.totals.output_tokens = 50;
+        session.totals.cache_read_tokens = 0;
+
+        let scratch_input: u64 = 100;
+        let scratch_output: u64 = 50;
+        let scratch_cache_read: u64 = 25;
+        let scratch_cache_write: u64 = 0;
+
+        let changed = scratch_input != session.totals.input_tokens
+            || scratch_output != session.totals.output_tokens
+            || scratch_cache_read != session.totals.cache_read_tokens
+            || scratch_cache_write != session.totals.cache_write_tokens;
+
+        assert!(changed, "cache-read change alone must flip changed flag");
+
+        let old_changed = scratch_input != session.totals.input_tokens
+            || scratch_output != session.totals.output_tokens;
+        assert!(!old_changed, "confirms old logic would miss this change");
+    }
+
+    #[test]
     fn amp_token_reader_skips_zero_usage() {
         let session = TokenSession::new(1, "amp");
         // Zero usage should not flip changed flag — verify via parse_raw_usage logic

@@ -43,10 +43,10 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
         return false;
     }
 
-    let mut prev_cumulative = (0u64, 0u64, 0u64, 0u64);
     let mut changed = false;
 
     for path in &files {
+        let mut prev_cumulative = (0u64, 0u64, 0u64, 0u64);
         let Ok(mut file) = fs::File::open(path) else { continue };
         if !super::seek_or_reset(&mut file, &mut session.file_offset, path) {
             continue;
@@ -72,15 +72,22 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
                     if let Some(info) = payload.get("info") {
                         if let Some(total) = info.get("total_token_usage") {
                             let current = parse_raw_usage(total);
-                            let delta = (
-                                current.0.saturating_sub(prev_cumulative.0),
-                                current.1.saturating_sub(prev_cumulative.1),
-                                current.2.saturating_sub(prev_cumulative.2),
-                                0u64,
-                            );
-                            session.totals.input_tokens += delta.0;
-                            session.totals.output_tokens += delta.1;
-                            session.totals.cache_read_tokens += delta.2;
+                            // If the cumulative counter is lower than prev (counter
+                            // regression or file re-read after seek reset), clamp to 0.
+                            let delta = |cur: u64, prev: u64, label: &str| -> u64 {
+                                if cur < prev {
+                                    crate::cdebug!(
+                                        "token monitor: codex counter regression {} {}<{} in {:?}, clamping to 0",
+                                        label, cur, prev, path
+                                    );
+                                    0
+                                } else {
+                                    cur - prev
+                                }
+                            };
+                            session.totals.input_tokens += delta(current.0, prev_cumulative.0, "input");
+                            session.totals.output_tokens += delta(current.1, prev_cumulative.1, "output");
+                            session.totals.cache_read_tokens += delta(current.2, prev_cumulative.2, "cached");
                             prev_cumulative = current;
                             changed = true;
                         }

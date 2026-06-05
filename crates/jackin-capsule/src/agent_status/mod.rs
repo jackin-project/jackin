@@ -228,13 +228,11 @@ impl SessionStatus {
             let prev = self.effective;
             self.effective = next;
             self.revision += 1;
-            // Reset seen whenever a new work cycle starts:
-            // - Explicit signals (HookTaskStart, OperatorInput)
-            // - Transitioning INTO Working or Blocked from a non-working state
-            //   so that the subsequent idle transition produces Done.
-            let entering_work_cycle = matches!(raw, AgentRawState::HookTaskStart | AgentRawState::OperatorInput)
-                || (matches!(next, AgentState::Working | AgentState::Blocked)
-                    && !matches!(prev, AgentState::Working | AgentState::Blocked));
+            // Reset seen whenever entering a work cycle from a non-work state.
+            // Covers both explicit signals (HookTaskStart, OperatorInput) and
+            // screen-detected transitions (WorkingVisible, BlockedVisible).
+            let entering_work_cycle = matches!(next, AgentState::Working | AgentState::Blocked)
+                && !matches!(prev, AgentState::Working | AgentState::Blocked);
             if entering_work_cycle {
                 self.seen = false;
             }

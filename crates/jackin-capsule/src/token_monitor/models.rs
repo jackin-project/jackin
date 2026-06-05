@@ -57,7 +57,9 @@ impl ModelCatalog {
     }
 
     /// Fetch fresh model list from a provider's API.
-    /// Returns without mutating entries on error (fallback stays active).
+    /// Stamps `fetched_at` only when the HTTP round-trip succeeded AND at least
+    /// one model passed the provider's filter. On failure or empty result, leaves
+    /// fetched_at unchanged so needs_refresh() stays true for the next retry.
     pub fn populate(&mut self, provider: &str) {
         let fetched = match provider {
             "claude" => self.fetch_anthropic(),
@@ -118,12 +120,18 @@ impl ModelCatalog {
                     })
                 })
                 .collect();
-            if !new.is_empty() {
-                self.entries.retain(|e| e.provider != provider);
-                self.entries.extend(new);
+            if new.is_empty() {
+                // API returned a valid response but no models matched the filter.
+                // Return false so the caller does not stamp fetched_at — this way
+                // needs_refresh() stays true and a retry fires on the next session.
+                return false;
             }
+            self.entries.retain(|e| e.provider != provider);
+            self.entries.extend(new);
+            true
+        } else {
+            false
         }
-        true
     }
 
     fn fetch_anthropic(&mut self) -> bool {
@@ -248,6 +256,28 @@ mod tests {
         catalog.populate("claude");
         assert!(catalog.needs_refresh(),
             "populate with no API key must leave needs_refresh=true");
+    }
+
+    #[test]
+    fn populate_stamps_fetched_at_only_on_success() {
+        let mut catalog = ModelCatalog::new();
+        assert!(catalog.needs_refresh());
+
+        let key_name = "ANTHROPIC_API_KEY";
+        if std::env::var(key_name).is_ok() {
+            return;
+        }
+        catalog.populate("claude");
+        assert!(
+            catalog.needs_refresh(),
+            "populate returning false must leave needs_refresh=true"
+        );
+
+        catalog.fetched_at = Some(Instant::now());
+        assert!(
+            !catalog.needs_refresh(),
+            "after stamping fetched_at, needs_refresh must be false"
+        );
     }
 
     #[test]

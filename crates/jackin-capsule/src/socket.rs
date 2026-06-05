@@ -365,8 +365,14 @@ pub async fn handle_control_request(
                                 break make_result(effective.clone(), revision, "satisfied");
                             }
                             Ok(Ok(_)) => continue,
-                            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
-                                continue;
+                            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(n))) => {
+                                // Events were dropped; the satisfying transition may have been among them.
+                                // Break with timeout so the caller can retry with fresh state rather than
+                                // silently waiting for an event that already happened.
+                                crate::cdebug!(
+                                    "session {session_id}: WaitSessionStatus lagged {n} events; returning timeout"
+                                );
+                                break make_result(cur.clone(), 0, "timeout");
                             }
                             _ => {
                                 crate::cdebug!(
