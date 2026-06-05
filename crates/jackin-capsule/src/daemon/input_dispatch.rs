@@ -309,10 +309,13 @@ impl Multiplexer {
                 if self.dialog_open() {
                     // A scrollable read-only dialog (Debug info, GitHub context)
                     // captures the wheel so its body scrolls. Wheel button bits:
-                    // bit1 = horizontal axis, bit0 = forward (down / right).
+                    // bit0 = forward (down / right), bit1 = native horizontal
+                    // wheel, bit2 = Shift (terminals that map a horizontal
+                    // trackpad swipe onto a shifted vertical wheel).
                     if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
                         let forward = (button & 1) != 0;
-                        if (button & 2) != 0 {
+                        let horizontal = (button & 2) != 0 || (button & 4) != 0;
+                        if horizontal {
                             scroll.scroll_x = if forward {
                                 scroll.scroll_x.saturating_add(3)
                             } else {
@@ -325,7 +328,9 @@ impl Multiplexer {
                                 scroll.scroll_y.saturating_sub(1)
                             };
                         }
-                        return Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange));
+                        return Some(
+                            self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange),
+                        );
                     }
                     return None;
                 }

@@ -36,6 +36,7 @@ pub fn initial_view() -> LaunchView {
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
+        container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
     }
 }
 
@@ -113,6 +114,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.container_info_open = true;
             view.container_info_copied = None;
             view.container_info_hover = None;
+            view.container_info_scroll = jackin_tui::components::DialogBodyScroll::new();
             view.footer_hover.right = false;
         }
         LaunchMessage::ContainerInfoClosed => {

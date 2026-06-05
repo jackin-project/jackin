@@ -259,8 +259,29 @@ pub fn handle_cockpit_input(
                 MouseEventKind::ScrollDown if v.build_log_open => {
                     update_build_log_scroll(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
                 }
+                // The Debug-info dialog scrolls its own body on the wheel
+                // (both axes) via the shared handler; offsets clamp at render.
+                kind if v.container_info_open => {
+                    v.container_info_scroll.on_mouse_scroll(kind, m.modifiers);
+                }
                 _ => {}
             },
+            // Keyboard scroll for the Debug-info dialog body (both axes).
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.container_info_open
+                    && matches!(
+                        k.code,
+                        KeyCode::Up
+                            | KeyCode::Down
+                            | KeyCode::Left
+                            | KeyCode::Right
+                            | KeyCode::Char('h' | 'H' | 'j' | 'J' | 'k' | 'K' | 'l' | 'L')
+                    ) =>
+            {
+                v.container_info_scroll
+                    .handle_key(k, usize::MAX, 0, usize::MAX, 0);
+            }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.container_info_open

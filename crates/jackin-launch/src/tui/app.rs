@@ -111,6 +111,10 @@ pub struct LaunchView {
     /// Row in the container info dialog the pointer is hovering (a copyable
     /// value), driving the link hover-colour change.
     pub container_info_hover: Option<usize>,
+    /// Scroll offsets for the container info dialog body. The state is rebuilt
+    /// each frame, so the offset persists here and is threaded into the rebuilt
+    /// `ContainerInfoState` — long paths scroll instead of clipping.
+    pub container_info_scroll: jackin_tui::components::DialogBodyScroll,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

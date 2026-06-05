@@ -23,11 +23,14 @@
 //! | 3     | Action / button row     |
 //! | 4     | Trailing spacer (1 row) |
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
+
+/// Columns scrolled per horizontal wheel notch in a dialog body.
+const DIALOG_HORIZONTAL_SCROLL_STEP: u16 = 4;
 
 /// Shared dialog body scroll state.
 ///
@@ -88,6 +91,45 @@ impl DialogBodyScroll {
             KeyCode::Right | KeyCode::Char('l' | 'L') => {
                 let max = content_width.saturating_sub(viewport_width) as u16;
                 self.scroll_x = self.scroll_x.saturating_add(1).min(max);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Apply a crossterm mouse-scroll event to the offsets, returning `true` if
+    /// it was a scroll the dialog consumed. Used by every surface's wheel
+    /// handler so dialog wheel-scroll behaves identically everywhere.
+    ///
+    /// Horizontal scroll is `ScrollLeft` / `ScrollRight`, **or** `Shift` +
+    /// `ScrollUp` / `ScrollDown` — some terminals map a horizontal trackpad
+    /// swipe onto a shifted vertical wheel rather than emitting native
+    /// horizontal-wheel events. Offsets are clamped at render time.
+    pub fn on_mouse_scroll(&mut self, kind: MouseEventKind, modifiers: KeyModifiers) -> bool {
+        let shift = modifiers.contains(KeyModifiers::SHIFT);
+        match kind {
+            MouseEventKind::ScrollUp if shift => {
+                self.scroll_x = self.scroll_x.saturating_sub(DIALOG_HORIZONTAL_SCROLL_STEP);
+                true
+            }
+            MouseEventKind::ScrollDown if shift => {
+                self.scroll_x = self.scroll_x.saturating_add(DIALOG_HORIZONTAL_SCROLL_STEP);
+                true
+            }
+            MouseEventKind::ScrollUp => {
+                self.scroll_y = self.scroll_y.saturating_sub(1);
+                true
+            }
+            MouseEventKind::ScrollDown => {
+                self.scroll_y = self.scroll_y.saturating_add(1);
+                true
+            }
+            MouseEventKind::ScrollLeft => {
+                self.scroll_x = self.scroll_x.saturating_sub(DIALOG_HORIZONTAL_SCROLL_STEP);
+                true
+            }
+            MouseEventKind::ScrollRight => {
+                self.scroll_x = self.scroll_x.saturating_add(DIALOG_HORIZONTAL_SCROLL_STEP);
                 true
             }
             _ => false,
@@ -248,6 +290,30 @@ mod tests {
         assert_eq!(chunks[2].y, chunks[1].y + 3);
         assert_eq!(chunks[3].y, chunks[2].y + 1);
         assert_eq!(chunks[4].y, chunks[3].y + 1);
+    }
+
+    #[test]
+    fn on_mouse_scroll_routes_axes_and_shift_fallback() {
+        use crossterm::event::{KeyModifiers, MouseEventKind};
+        let none = KeyModifiers::NONE;
+        let shift = KeyModifiers::SHIFT;
+
+        let mut s = DialogBodyScroll::new();
+        assert!(s.on_mouse_scroll(MouseEventKind::ScrollDown, none));
+        assert_eq!((s.scroll_x, s.scroll_y), (0, 1), "ScrollDown → vertical");
+        assert!(s.on_mouse_scroll(MouseEventKind::ScrollRight, none));
+        assert!(s.scroll_x > 0, "ScrollRight → horizontal");
+
+        // Shift + vertical wheel is the horizontal fallback for terminals that
+        // do not emit native horizontal-wheel events.
+        let mut s2 = DialogBodyScroll::new();
+        assert!(s2.on_mouse_scroll(MouseEventKind::ScrollDown, shift));
+        assert_eq!(s2.scroll_y, 0, "Shift+ScrollDown must not move vertical");
+        assert!(s2.scroll_x > 0, "Shift+ScrollDown → horizontal");
+
+        // Non-scroll events are not consumed.
+        let mut s3 = DialogBodyScroll::new();
+        assert!(!s3.on_mouse_scroll(MouseEventKind::Moved, none));
     }
 
     #[test]

@@ -41,6 +41,7 @@ pub fn launch_container_info_state(
         state.mark_copied(row);
     }
     state.set_hovered_row(view.container_info_hover);
+    state.scroll = view.container_info_scroll.clone();
     state
 }
 
