@@ -1058,9 +1058,19 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
+                // Snapshot visible agent state, refresh, snapshot again. The
+                // ticker's only time-based effect is Working→Idle transitions;
+                // tab labels derive from state and the status bar has no
+                // per-second counter, so when state is unchanged the chrome is
+                // identical. A full redraw (clear + repaint) every tick reads as
+                // a constant flicker, so skip it unless state actually changed.
+                let states_before: Vec<_> =
+                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
                 }
+                let states_after: Vec<_> =
+                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
                     let frame_data =
                         mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
@@ -1072,6 +1082,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // back over the fill. The hidden tab-state glyph has nothing
                 // to refresh, so skip the chrome frame while a dialog is open.
                 if mux.dialog_open() {
+                    continue;
+                }
+                if states_before == states_after {
                     continue;
                 }
                 mux.refresh_tab_labels();
