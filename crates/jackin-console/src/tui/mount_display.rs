@@ -90,7 +90,10 @@ fn none_placeholder_line() -> Line<'static> {
 #[must_use]
 pub fn workspace_mount_block_lines(rows: &[MountDisplayRow]) -> Vec<Line<'static>> {
     if rows.is_empty() {
-        return vec![render_mount_header(mount_path_width(&[])), none_placeholder_line()];
+        return vec![
+            render_mount_header(mount_path_width(&[])),
+            none_placeholder_line(),
+        ];
     }
     let path_w = mount_path_width(rows);
     let mut lines = Vec::with_capacity(rows.len() * 2 + 1);
@@ -164,7 +167,12 @@ mod tests {
     fn widest_unpadded(lines: &[Line<'_>]) -> usize {
         lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| display_cols(&s.content)).sum::<usize>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| display_cols(&s.content))
+                    .sum::<usize>()
+            })
             .max()
             .unwrap_or(0)
     }
