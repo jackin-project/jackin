@@ -4373,24 +4373,26 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             // Scan raw PTY bytes for OSC 133 shell integration markers.
                             // Model-independent: works with vt100 and future DamageGrid.
                             use crate::agent_status::{scan_osc133, OscShellMark};
-                            if let Some(mark) = scan_osc133(&data) {
-                                let raw = match mark {
-                                    OscShellMark::PromptEnd
-                                    | OscShellMark::CommandFinished { .. } => {
-                                        Some(crate::agent_status::AgentRawState::PromptVisible)
-                                    }
-                                    OscShellMark::PreExec => {
-                                        Some(crate::agent_status::AgentRawState::Osc133PreExec)
-                                    }
-                                    OscShellMark::PromptStart => None,
-                                };
-                                if let Some(raw) = raw {
-                                    if let Some(new_state) = session.apply_raw_state(raw) {
-                                        crate::cdebug!(
-                                            "session {session_id}: OSC 133 {:?} → {:?}",
-                                            mark,
-                                            new_state
-                                        );
+                            if data.len() >= 8 {
+                                if let Some(mark) = scan_osc133(&data) {
+                                    let raw = match mark {
+                                        OscShellMark::PromptEnd
+                                        | OscShellMark::CommandFinished { .. } => {
+                                            Some(crate::agent_status::AgentRawState::PromptVisible)
+                                        }
+                                        OscShellMark::PreExec => {
+                                            Some(crate::agent_status::AgentRawState::Osc133PreExec)
+                                        }
+                                        OscShellMark::PromptStart => None,
+                                    };
+                                    if let Some(raw) = raw {
+                                        if let Some(new_state) = session.apply_raw_state(raw) {
+                                            crate::cdebug!(
+                                                "session {session_id}: OSC 133 {:?} → {:?}",
+                                                mark,
+                                                new_state
+                                            );
+                                        }
                                     }
                                 }
                             }

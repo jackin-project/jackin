@@ -72,27 +72,13 @@ fn parse_line(line: &str) -> Option<ClaudeUsageLine> {
 
 /// Find the JSONL file(s) for the current session.
 fn find_jsonl_files() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    for base in &[
-        "/home/agent/.config/claude/projects",
-        "/home/agent/.claude/projects",
-    ] {
-        let Ok(dir) = fs::read_dir(base) else {
-            continue;
-        };
-        for project in dir.flatten() {
-            let Ok(sessions_dir) = fs::read_dir(project.path()) else {
-                continue;
-            };
-            for entry in sessions_dir.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    paths.push(p);
-                }
-            }
-        }
-    }
-    paths
+    super::find_provider_files(
+        &[
+            "/home/agent/.config/claude/projects",
+            "/home/agent/.claude/projects",
+        ],
+        "jsonl",
+    )
 }
 
 /// Poll Claude JSONL files for new token data.

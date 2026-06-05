@@ -7,20 +7,7 @@ use std::path::PathBuf;
 use super::TokenSession;
 
 fn find_jsonl_files() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    for base in &["/home/agent/.codex/sessions"] {
-        let Ok(dir) = fs::read_dir(base) else { continue };
-        for session in dir.flatten() {
-            let Ok(entries) = fs::read_dir(session.path()) else { continue };
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    paths.push(p);
-                }
-            }
-        }
-    }
-    paths
+    super::find_provider_files(&["/home/agent/.codex/sessions"], "jsonl")
 }
 
 fn parse_raw_usage(obj: &serde_json::Value) -> (u64, u64, u64, u64) {

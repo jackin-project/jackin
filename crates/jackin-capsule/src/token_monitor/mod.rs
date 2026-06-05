@@ -155,6 +155,31 @@ impl TokenSession {
     }
 }
 
+/// Walk `base_dirs` and return all files with extension `ext` found in any
+/// immediate subdirectory. Used by per-provider token readers to locate
+/// session JSONL files without duplicating the scan logic.
+pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+    for &base in base_dirs {
+        let Ok(dir) = std::fs::read_dir(base) else { continue };
+        for session in dir.flatten() {
+            let sp = session.path();
+            if sp.extension().and_then(|e| e.to_str()) == Some(ext) {
+                paths.push(sp);
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(&sp) else { continue };
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) == Some(ext) {
+                    paths.push(p);
+                }
+            }
+        }
+    }
+    paths
+}
+
 /// The token monitor manages per-session polling.
 #[derive(Default)]
 pub struct TokenMonitor {
@@ -191,14 +216,9 @@ impl TokenMonitor {
         let mut changed = Vec::new();
         for (id, session) in self.sessions.iter_mut() {
             if session.poll_due() && session.poll() {
-                changed.push(*id);
-            }
-        }
-        for id in &changed {
-            if let Some(session) = self.sessions.get(id) {
-                let snapshot =
-                    ProviderUsageSnapshot::from_totals(&session.agent, &session.totals);
+                let snapshot = ProviderUsageSnapshot::from_totals(&session.agent, &session.totals);
                 self.token_snapshots.insert(*id, snapshot);
+                changed.push(*id);
             }
         }
         changed
