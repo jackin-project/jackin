@@ -316,28 +316,26 @@ pub async fn handle_control_request(
                 .iter()
                 .find(|s| s.id == session_id)
                 .map(|s| s.state.label().to_string());
+            let make_result = |effective: String, revision: u64, outcome: &str| {
+                ServerMsg::SessionStatusResult {
+                    session_id,
+                    effective,
+                    revision,
+                    outcome: outcome.to_string(),
+                }
+            };
             match current {
                 None => {
                     crate::cdebug!(
                         "session {session_id}: WaitSessionStatus outcome=not_found"
                     );
-                    ServerMsg::SessionStatusResult {
-                        session_id,
-                        effective: "unknown".to_string(),
-                        revision: 0,
-                        outcome: "not_found".to_string(),
-                    }
+                    make_result("unknown".to_string(), 0, "not_found")
                 }
                 Some(ref cur) if target_statuses.contains(cur) => {
                     crate::cdebug!(
                         "session {session_id}: WaitSessionStatus outcome=satisfied effective={cur}"
                     );
-                    ServerMsg::SessionStatusResult {
-                        session_id,
-                        effective: cur.clone(),
-                        revision: 0,
-                        outcome: "satisfied".to_string(),
-                    }
+                    make_result(cur.clone(), 0, "satisfied")
                 }
                 Some(ref cur) => {
                     // Not yet satisfied — subscribe to broadcast and wait.
@@ -352,12 +350,7 @@ pub async fn handle_control_request(
                             crate::cdebug!(
                                 "session {session_id}: WaitSessionStatus outcome=timeout effective={cur}"
                             );
-                            break ServerMsg::SessionStatusResult {
-                                session_id,
-                                effective: cur,
-                                revision: 0,
-                                outcome: "timeout".to_string(),
-                            };
+                            break make_result(cur, 0, "timeout");
                         }
                         match tokio::time::timeout(rem, rx.recv()).await {
                             Ok(Ok(ServerMsg::AgentStateChanged {
@@ -369,12 +362,7 @@ pub async fn handle_control_request(
                                 crate::cdebug!(
                                     "session {session_id}: WaitSessionStatus outcome=satisfied effective={effective}"
                                 );
-                                break ServerMsg::SessionStatusResult {
-                                    session_id,
-                                    effective: effective.clone(),
-                                    revision,
-                                    outcome: "satisfied".to_string(),
-                                };
+                                break make_result(effective.clone(), revision, "satisfied");
                             }
                             Ok(Ok(_)) => continue,
                             Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
@@ -384,12 +372,7 @@ pub async fn handle_control_request(
                                 crate::cdebug!(
                                     "session {session_id}: WaitSessionStatus outcome=timeout (channel closed)"
                                 );
-                                break ServerMsg::SessionStatusResult {
-                                    session_id,
-                                    effective: cur.clone(),
-                                    revision: 0,
-                                    outcome: "timeout".to_string(),
-                                };
+                                break make_result(cur.clone(), 0, "timeout");
                             }
                         }
                     }

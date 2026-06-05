@@ -1967,26 +1967,7 @@ impl Multiplexer {
         let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
         let _ = self.state_broadcast_tx.send(
-            jackin_protocol::control::ServerMsg::AgentStateChanged {
-                session_id: id,
-                raw_state: None,
-                effective: "unknown".to_string(),
-                seen: true,
-                source: "spawn".to_string(),
-                confidence: None,
-                detected_agent: None,
-                foreground_pgid: None,
-                visible_blocker: false,
-                visible_idle: false,
-                visible_working: false,
-                process_exited: false,
-                stale_report: false,
-                seq: None,
-                ts_ns: None,
-                revision: 0,
-                last_seen_revision: None,
-                reason: Some("spawned".to_string()),
-            }
+            Self::make_agent_state_changed(id, "unknown", true, "spawn", 0, Some("spawned"))
         );
         let session_agent = self.sessions[&id].agent.clone();
         let session_label = self.sessions[&id].label.clone();
@@ -2121,26 +2102,7 @@ impl Multiplexer {
         )?;
         self.sessions.insert(new_id, session);
         let _ = self.state_broadcast_tx.send(
-            jackin_protocol::control::ServerMsg::AgentStateChanged {
-                session_id: new_id,
-                raw_state: None,
-                effective: "unknown".to_string(),
-                seen: true,
-                source: "spawn".to_string(),
-                confidence: None,
-                detected_agent: None,
-                foreground_pgid: None,
-                visible_blocker: false,
-                visible_idle: false,
-                visible_working: false,
-                process_exited: false,
-                stale_report: false,
-                seq: None,
-                ts_ns: None,
-                revision: 0,
-                last_seen_revision: None,
-                reason: Some("spawned".to_string()),
-            }
+            Self::make_agent_state_changed(new_id, "unknown", true, "spawn", 0, Some("spawned"))
         );
         let new_session_agent = self.sessions[&new_id].agent.clone();
         let new_session_label = self.sessions[&new_id].label.clone();
@@ -3523,26 +3485,14 @@ impl Multiplexer {
                         agent
                     );
                     let _ = self.state_broadcast_tx.send(
-                        jackin_protocol::control::ServerMsg::AgentStateChanged {
-                            session_id: id,
-                            raw_state: None,
-                            effective: new_state.label().to_string(),
-                            seen: session.status.seen,
-                            source: "screen-detector".to_string(),
-                            confidence: None,
-                            detected_agent: None,
-                            foreground_pgid: None,
-                            visible_blocker: false,
-                            visible_idle: false,
-                            visible_working: false,
-                            process_exited: false,
-                            stale_report: false,
-                            seq: None,
-                            ts_ns: None,
-                            revision: session.status.revision,
-                            last_seen_revision: None,
-                            reason: None,
-                        }
+                        Self::make_agent_state_changed(
+                            id,
+                            new_state.label(),
+                            session.status.seen,
+                            "screen-detector",
+                            session.status.revision,
+                            None,
+                        )
                     );
                 }
             // Cursor-position probe for stuck detection.
@@ -3595,21 +3545,15 @@ impl Multiplexer {
             }
         }
         // Emit workspace roll-up event after processing all sessions.
-        let blocked_count = self
-            .sessions
-            .values()
-            .filter(|s| s.state() == crate::protocol::control::AgentState::Blocked)
-            .count() as u32;
-        let done_count = self
-            .sessions
-            .values()
-            .filter(|s| s.state() == crate::protocol::control::AgentState::Done)
-            .count() as u32;
-        let working_count = self
-            .sessions
-            .values()
-            .filter(|s| s.state() == crate::protocol::control::AgentState::Working)
-            .count() as u32;
+        let (mut blocked_count, mut done_count, mut working_count) = (0u32, 0u32, 0u32);
+        for s in self.sessions.values() {
+            match s.state() {
+                crate::protocol::control::AgentState::Blocked => blocked_count += 1,
+                crate::protocol::control::AgentState::Done => done_count += 1,
+                crate::protocol::control::AgentState::Working => working_count += 1,
+                _ => {}
+            }
+        }
         let _ = self.state_broadcast_tx.send(
             jackin_protocol::control::ServerMsg::WorkspaceStatusChanged {
                 effective: if blocked_count > 0 {
@@ -3866,6 +3810,36 @@ impl Multiplexer {
             .collect()
     }
 
+    fn make_agent_state_changed(
+        session_id: u64,
+        effective: &str,
+        seen: bool,
+        source: &str,
+        revision: u64,
+        reason: Option<&str>,
+    ) -> jackin_protocol::control::ServerMsg {
+        jackin_protocol::control::ServerMsg::AgentStateChanged {
+            session_id,
+            raw_state: None,
+            effective: effective.to_string(),
+            seen,
+            source: source.to_string(),
+            confidence: None,
+            detected_agent: None,
+            foreground_pgid: None,
+            visible_blocker: false,
+            visible_idle: false,
+            visible_working: false,
+            process_exited: false,
+            stale_report: false,
+            seq: None,
+            ts_ns: None,
+            revision,
+            last_seen_revision: None,
+            reason: reason.map(str::to_string),
+        }
+    }
+
     /// Process a state-mutating control message forwarded from a handshake task.
     fn handle_control_msg(&mut self, msg: crate::protocol::control::ClientMsg) {
         use crate::agent_status::AgentRawState;
@@ -3923,26 +3897,14 @@ impl Multiplexer {
                                     "session {session_id}: hook report {raw_state} → {new_state:?}"
                                 );
                                 let _ = self.state_broadcast_tx.send(
-                                    jackin_protocol::control::ServerMsg::AgentStateChanged {
+                                    Self::make_agent_state_changed(
                                         session_id,
-                                        raw_state: None,
-                                        effective: new_state.label().to_string(),
-                                        seen: session.status.seen,
-                                        source: "hook".to_string(),
-                                        confidence: None,
-                                        detected_agent: None,
-                                        foreground_pgid: None,
-                                        visible_blocker: false,
-                                        visible_idle: false,
-                                        visible_working: false,
-                                        process_exited: false,
-                                        stale_report: false,
-                                        seq: None,
-                                        ts_ns: None,
-                                        revision: session.status.revision,
-                                        last_seen_revision: None,
-                                        reason: None,
-                                    }
+                                        new_state.label(),
+                                        session.status.seen,
+                                        "hook",
+                                        session.status.revision,
+                                        None,
+                                    )
                                 );
                             }
                         }
