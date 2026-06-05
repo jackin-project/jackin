@@ -94,22 +94,6 @@ pub struct ContainerSpec {
     pub entrypoint: Option<Vec<String>>,
     pub privileged: bool,
     pub workdir: Option<String>,
-    /// Linux capabilities to add (`--cap-add`). Empty = Docker default set.
-    pub cap_add: Vec<String>,
-    /// Linux capabilities to drop (`--cap-drop`).
-    pub cap_drop: Vec<String>,
-    /// Security options (`--security-opt`), e.g. `"no-new-privileges"`.
-    pub security_opt: Vec<String>,
-    /// Hard memory limit in bytes (`--memory`). `None` = no limit.
-    pub memory: Option<i64>,
-    /// CPU share quota (`--cpus` translated to `nano_cpus`). `None` = no limit.
-    pub nano_cpus: Option<i64>,
-    /// PID limit (`--pids-limit`). `None` = no limit.
-    pub pids_limit: Option<i64>,
-    /// Mount the container root filesystem read-only (`--read-only`).
-    pub read_only_rootfs: bool,
-    /// tmpfs mounts: path → options (e.g. `"rw,nosuid,nodev"`).
-    pub tmpfs: HashMap<String, String>,
 }
 
 pub trait DockerApi {
@@ -558,34 +542,6 @@ impl DockerApi for BollardDockerClient {
                         network_mode: Some(spec.network),
                         binds: Some(spec.binds),
                         privileged: Some(spec.privileged),
-                        cap_add: if spec.cap_add.is_empty() {
-                            None
-                        } else {
-                            Some(spec.cap_add)
-                        },
-                        cap_drop: if spec.cap_drop.is_empty() {
-                            None
-                        } else {
-                            Some(spec.cap_drop)
-                        },
-                        security_opt: if spec.security_opt.is_empty() {
-                            None
-                        } else {
-                            Some(spec.security_opt)
-                        },
-                        memory: spec.memory,
-                        nano_cpus: spec.nano_cpus,
-                        pids_limit: spec.pids_limit,
-                        readonly_rootfs: if spec.read_only_rootfs {
-                            Some(true)
-                        } else {
-                            None
-                        },
-                        tmpfs: if spec.tmpfs.is_empty() {
-                            None
-                        } else {
-                            Some(spec.tmpfs)
-                        },
                         ..Default::default()
                     }),
                     entrypoint: spec.entrypoint,

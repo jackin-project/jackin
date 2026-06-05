@@ -773,9 +773,13 @@ pub fn format_session_contract(
     };
     let network_mode = match grants.network {
         NetworkGrant::None => "none (--network none)".to_string(),
+        // `allowed_hosts` is only the operator/role-configured set; the launch
+        // path also injects the agent's API endpoint(s) and (when forwarded)
+        // GitHub into JACKIN_ALLOWED_HOSTS. Report the configured count honestly
+        // rather than guessing the injected total with a fixed `+1`.
         NetworkGrant::Allowlist => format!(
-            "allowlist ({} hosts)",
-            grants.allowed_hosts.len() + 1 // +1 for agent endpoint always included
+            "allowlist ({} configured hosts + agent/GitHub endpoints)",
+            grants.allowed_hosts.len()
         ),
         NetworkGrant::Open => "open".to_string(),
     };
