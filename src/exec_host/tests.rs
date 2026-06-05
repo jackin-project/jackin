@@ -87,6 +87,24 @@ async fn unapproved_source_is_rejected() {
 }
 
 #[tokio::test]
+async fn approved_env_ref_resolves_from_host_env() {
+    // Use an existing var (PATH is always set) — the crate forbids `unsafe`, so
+    // `std::env::set_var` is unavailable.
+    let expected = std::env::var("PATH").expect("PATH is set in the test env");
+    let allowed = vec![ExecCredRef {
+        name: "X".into(),
+        kind: "env".into(),
+        source: "$PATH".into(),
+    }];
+    let reply = roundtrip(
+        allowed,
+        serde_json::json!([{ "name": "X", "kind": "env", "source": "$PATH" }]),
+    )
+    .await;
+    assert_eq!(reply["values"]["X"], expected);
+}
+
+#[tokio::test]
 async fn unknown_name_is_rejected() {
     let allowed = vec![ExecCredRef {
         name: "TOKEN".into(),

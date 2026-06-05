@@ -211,7 +211,7 @@ pub struct Multiplexer {
 /// multiplexer and drained by the event loop after the dialog closes.
 #[derive(Debug)]
 pub(crate) enum ExecPickerResult {
-    Confirmed { refs: Vec<serde_json::Value> },
+    Confirmed { refs: Vec<crate::exec::CredRef> },
     Cancelled,
 }
 
@@ -3778,7 +3778,7 @@ async fn handle_exec_request(
 
 async fn run_exec_with_refs(
     cmd_and_args: Option<(String, Vec<String>)>,
-    refs: Vec<serde_json::Value>,
+    refs: Vec<crate::exec::CredRef>,
     host_sock: String,
 ) -> ExecOutcome {
     let Some((command, args)) = cmd_and_args else {

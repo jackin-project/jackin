@@ -135,7 +135,11 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 /// Attach interactively to a running apple/container container.
 /// Uses `container exec -it <name> /jackin/runtime/jackin-capsule` which
 /// provides a proper PTY with SIGWINCH forwarding via vminitd's gRPC/vsock layer.
-pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<()> {
+///
+/// Returns the capsule's exit code (`None` if it was signalled) so the caller
+/// can record an attach outcome — a non-zero exit distinguishes a crash from a
+/// clean detach.
+pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
     let mut args: Vec<&str> = vec![
         "exec",
         "-it",
@@ -162,11 +166,21 @@ pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<
         .context("container exec failed — is apple/container installed?")?;
 
     crate::tui::reassert_alt_screen();
+    Ok(status.code())
+}
 
-    // Non-zero exit from the capsule (operator detached, role exited) — treat
-    // as clean so the caller can proceed to cleanup.
-    let _ = status;
-    Ok(())
+/// Record the post-attach outcome into the instance manifest, mirroring the
+/// Docker backend, so `jackin --inspect` can show whether a role crashed.
+/// Best-effort: a missing/corrupt manifest is a no-op (logged downstream).
+async fn record_attach_outcome(paths: &JackinPaths, container_name: &str, exit_code: Option<i32>) {
+    let outcome = if is_container_running(container_name).await {
+        crate::isolation::finalize::AttachOutcome::StillRunning
+    } else {
+        crate::isolation::finalize::AttachOutcome::Stopped(exit_code.unwrap_or(-1))
+    };
+    if let Err(e) = super::launch::record_instance_attach_outcome(paths, container_name, outcome) {
+        crate::debug_log!("apple-container", "record_attach_outcome failed: {e:#}");
+    }
 }
 
 /// Inputs for the apple-container launch path. Grouped into a struct so the
@@ -349,7 +363,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     );
 
     // Interactive attach — blocks until operator detaches.
-    attach(container_name, None).await?;
+    let exit_code = attach(container_name, None).await?;
+    record_attach_outcome(paths, container_name, exit_code).await;
 
     // Catches a sleep/wake DNS hiccup once the operator detaches.
     check_dns(container_name).await;
@@ -361,15 +376,30 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
 /// Delegates to `AppleContainerClient::list_containers` which owns all
 /// JSON parsing for `container ps` output.
 async fn is_container_running(container_name: &str) -> bool {
-    crate::apple_container_client::AppleContainerClient::new()
+    match crate::apple_container_client::AppleContainerClient::new()
         .list_containers(container_name)
         .await
-        .ok()
-        .is_some_and(|v| v.iter().any(|c| c.name == container_name && c.is_running()))
+    {
+        Ok(v) => v.iter().any(|c| c.name == container_name && c.is_running()),
+        Err(e) => {
+            // `list_containers` bails on `container ps` failure (CLI missing,
+            // daemon down). Log it so a later "start failed" doesn't mask the
+            // real cause; treat as not-running for the caller's decision.
+            crate::debug_log!(
+                "apple-container",
+                "is_container_running: container ps failed: {e:#}"
+            );
+            false
+        }
+    }
 }
 
 /// Reconnect to a stopped or running apple/container container.
-pub async fn reconnect(container_name: &str, focus_session: Option<u64>) -> Result<()> {
+pub async fn reconnect(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+) -> Result<()> {
     let running = is_container_running(container_name).await;
 
     if !running {
@@ -393,7 +423,9 @@ pub async fn reconnect(container_name: &str, focus_session: Option<u64>) -> Resu
     }
 
     wait_for_capsule(container_name).await?;
-    attach(container_name, focus_session).await
+    let exit_code = attach(container_name, focus_session).await?;
+    record_attach_outcome(paths, container_name, exit_code).await;
+    Ok(())
 }
 
 /// Stop the container (eject — preserves manifest).

@@ -88,6 +88,11 @@ pub fn start(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         if let Err(e) = run_listener(&sock_path, &allowed_bindings).await {
+            // A returned error is a startup failure (bind/chmod/mkdir) — the
+            // accept loop never returns otherwise. It means jackin-exec
+            // credential resolution is unavailable for the whole session, so
+            // surface it on the always-on tier rather than only under --debug.
+            eprintln!("[jackin] warning: jackin-exec credential resolver unavailable: {e:#}");
             crate::debug_log!("exec_host", "listener error: {e:#}");
         }
     })

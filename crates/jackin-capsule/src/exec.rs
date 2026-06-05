@@ -91,16 +91,14 @@ impl ExecItemKind {
 
 impl ExecPickerState {
     /// Returns the set of selected items, formatted for the host.sock request.
-    pub fn selected_refs(&self) -> Vec<serde_json::Value> {
+    pub fn selected_refs(&self) -> Vec<CredRef> {
         self.items
             .iter()
             .filter(|i| i.selected)
-            .map(|i| {
-                serde_json::json!({
-                    "name": i.name,
-                    "kind": i.kind.as_str(),
-                    "source": i.source,
-                })
+            .map(|i| CredRef {
+                name: i.name.clone(),
+                kind: i.kind.as_str().to_string(),
+                source: i.source.clone(),
             })
             .collect()
     }
@@ -162,7 +160,7 @@ pub struct CredError {
 /// `host_sock_path` is `/jackin/run/host.sock` inside the container.
 pub async fn resolve_credentials(
     host_sock_path: &str,
-    refs: Vec<serde_json::Value>,
+    refs: Vec<CredRef>,
 ) -> Result<std::collections::BTreeMap<String, String>> {
     if refs.is_empty() {
         return Ok(Default::default());
@@ -172,7 +170,7 @@ pub async fn resolve_credentials(
         .await
         .with_context(|| format!("connecting to host credential resolver at {host_sock_path}"))?;
 
-    let request = serde_json::json!({ "refs": refs });
+    let request = CredRequest { refs };
     let body = serde_json::to_vec(&request)?;
     let len = (body.len() as u32).to_be_bytes();
     stream.write_all(&len).await?;

@@ -32,6 +32,35 @@ fn redact_pem_redacts_block_and_counts() {
 }
 
 #[tokio::test]
+async fn execute_command_redacts_secret_straddling_1mib_cap() {
+    // The redact-before-cap ordering exists so a secret straddling the 1 MiB
+    // output cap can't have its tail truncated and leak its verbatim prefix.
+    // Drive >1 MiB of output via a file (a 1 MiB argv arg exceeds MAX_ARG_STRLEN),
+    // with the secret positioned to straddle the boundary.
+    const MAX: usize = 1024 * 1024;
+    let secret = "S3CR3T-STRADDLE-TOKEN";
+    let mut payload = "a".repeat(MAX - 5);
+    payload.push_str(secret); // starts at MAX-5, ends past MAX
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), &payload).unwrap();
+
+    let env = std::collections::BTreeMap::new();
+    let (code, stdout, _stderr, redacted) = execute_command(
+        "cat",
+        &[file.path().to_string_lossy().into_owned()],
+        &env,
+        &[secret.to_string()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(code, 0);
+    assert!(!stdout.contains(secret));
+    // Not even a prefix survives — the straddle bug would leave "S3CR3T-...".
+    assert!(!stdout.contains("S3CR3T"));
+    assert_eq!(redacted, 1);
+}
+
+#[tokio::test]
 async fn execute_command_redacts_plain_secret() {
     let env = std::collections::BTreeMap::new();
     let (code, stdout, _stderr, redacted) = execute_command(

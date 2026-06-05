@@ -477,7 +477,7 @@ pub async fn hardline_agent_with_focus(
         });
 
     if is_apple_container {
-        return super::apple_container::reconnect(container_name, focus_session).await;
+        return super::apple_container::reconnect(paths, container_name, focus_session).await;
     }
 
     // Reconcile keep_awake right before each `reconnect_or_create_session_with_focus`

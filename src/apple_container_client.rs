@@ -29,6 +29,9 @@ use anyhow::Result;
 /// Backend name used in CLI flags, config keys, and instance manifests.
 pub const BACKEND_NAME: &str = "apple-container";
 
+/// Backend name for the default Docker + `DinD` backend.
+pub const DOCKER_BACKEND_NAME: &str = "docker";
+
 /// Host.sock path inside the role container — the credential resolver
 /// socket that `jackin-exec` uses to resolve on-demand credentials.
 pub const HOST_SOCK_CONTAINER_PATH: &str = "/jackin/run/host.sock";
@@ -55,6 +58,10 @@ pub struct AppleContainerInfo {
 }
 
 impl AppleContainerInfo {
+    // TODO(apple-container): once Phase 0 pins the `container ps` JSON schema,
+    // parse `status` into a typed enum in `extract_container_info` and match on
+    // it here, instead of this substring heuristic (which would also match a
+    // hypothetical "not-running"). Empirical scaffold until the schema is known.
     pub fn is_running(&self) -> bool {
         self.status.to_lowercase().contains("running")
     }

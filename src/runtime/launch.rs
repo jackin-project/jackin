@@ -2266,6 +2266,17 @@ async fn load_role_with(
 
         crate::debug_log!("launch", "backend resolved={resolved_backend}");
 
+        // Reject an unknown backend rather than silently falling through to the
+        // Docker path — a typo'd config/flag value (e.g. "apple_container")
+        // would otherwise launch the wrong runtime with no error.
+        if resolved_backend != crate::apple_container_client::DOCKER_BACKEND_NAME
+            && resolved_backend != crate::apple_container_client::BACKEND_NAME
+        {
+            anyhow::bail!(
+                "unknown runtime backend {resolved_backend:?}; expected \"docker\" or \"apple-container\""
+            );
+        }
+
         // The capsule runtime config is backend-independent — compute once and
         // share it with whichever launch path runs below.
         let launch_config = capsule_config(
