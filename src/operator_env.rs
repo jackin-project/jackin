@@ -130,8 +130,10 @@ fn parse_host_ref(value: &str) -> Option<&str> {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EnvValue {
-    /// 1Password reference resolved via `op read`. Must stay first so
-    /// `#[serde(deny_unknown_fields)]` rejects tables with `value` here.
+    /// 1Password reference resolved via `op read`. Both `OpRef` and `Extended`
+    /// are inline tables; untagged serde tries variants top-down, and each
+    /// carries `deny_unknown_fields` so an `op`-keyed table matches only `OpRef`
+    /// and a `value`-keyed table only `Extended`.
     OpRef(OpRef),
     /// Extended value with metadata. `on_demand = true` means the var
     /// is withheld from the container at launch and injected only when
@@ -153,7 +155,9 @@ pub struct Extended {
     pub value: String,
     /// When `true`, this var is NOT injected into the container at
     /// launch. It is only materialized via `jackin-exec` when the
-    /// operator selects it in the credential picker dialog.
+    /// operator selects it in the credential picker dialog. Defaults to
+    /// `true` — unlike `OpRef`, an `Extended` table exists specifically to
+    /// carry on-demand metadata, so the table form opts in by default.
     #[serde(default = "return_true")]
     pub on_demand: bool,
 }
@@ -198,8 +202,9 @@ pub struct OpRef {
 
     /// When `true`, this ref is NOT injected into the container at
     /// launch. It is only resolved via `jackin-exec` when the operator
-    /// selects it in the credential picker dialog. Omitted from TOML
-    /// when `false` so existing configs are unchanged.
+    /// selects it in the credential picker dialog. Defaults to `false`
+    /// (and is omitted from TOML when `false`) so existing op refs keep
+    /// injecting at launch unchanged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_demand: bool,
 }

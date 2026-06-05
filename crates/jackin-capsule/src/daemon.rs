@@ -6370,6 +6370,61 @@ mod tests {
         )
     }
 
+    #[tokio::test]
+    async fn empty_bindings_exec_runs_without_picker() {
+        // No on-demand bindings configured: the command runs unattended (no
+        // picker), and the pending-exec slot is never occupied.
+        let mut mux = test_mux(24, 80);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let req = crate::exec::ExecRequest {
+            command: "true".to_string(),
+            args: vec![],
+            response_tx: tx,
+        };
+        let mut pending: Option<(
+            crate::exec::ExecPickerState,
+            tokio::sync::oneshot::Sender<ExecOutcome>,
+        )> = None;
+        handle_exec_request(&mut mux, req, &mut pending).await;
+        assert!(pending.is_none());
+        assert!(matches!(
+            rx.await.unwrap(),
+            ExecOutcome::Result { exit_code: 0, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn second_exec_denied_while_one_is_pending() {
+        // A second exec arriving while a picker is pending must be denied, not
+        // overwrite the first client's response channel (silent-denial guard).
+        let mut mux = test_mux(24, 80);
+        let (busy_tx, _busy_rx) = tokio::sync::oneshot::channel();
+        let mut pending = Some((
+            crate::exec::ExecPickerState {
+                command: "first".to_string(),
+                args: vec![],
+                items: vec![],
+                cursor: 0,
+            },
+            busy_tx,
+        ));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let req = crate::exec::ExecRequest {
+            command: "second".to_string(),
+            args: vec![],
+            response_tx: tx,
+        };
+        handle_exec_request(&mut mux, req, &mut pending).await;
+        // First slot untouched; second client denied.
+        assert_eq!(pending.as_ref().unwrap().0.command, "first");
+        match rx.await.unwrap() {
+            ExecOutcome::Denied { reason } => {
+                assert!(reason.contains("awaiting operator approval"), "{reason}");
+            }
+            other => panic!("expected Denied, got {other:?}"),
+        }
+    }
+
     #[test]
     fn token_for_provider_dispatches_each_key() {
         use jackin_protocol::Provider;

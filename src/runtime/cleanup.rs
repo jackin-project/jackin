@@ -71,7 +71,22 @@ async fn purge_container_filesystem(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    ensure_role_resources_absent_for_purge(docker, container_name).await?;
+    // Backend dispatch, mirroring eject_role: the Docker resource guard only
+    // knows about Docker (DinD/network/certs volumes). For an apple-container
+    // instance it would report "absent" while leaving the VM running, so purge
+    // would delete the state dir and orphan the container. Remove the VM here.
+    let is_apple_container = matches!(
+        crate::instance::InstanceManifest::read_optional(&paths.data_dir.join(container_name))
+            .ok()
+            .flatten()
+            .map(|m| m.backend),
+        Some(crate::instance::BackendResources::AppleContainer(_))
+    );
+    if is_apple_container {
+        let _ = super::apple_container::remove(container_name).await;
+    } else {
+        ensure_role_resources_absent_for_purge(docker, container_name).await?;
+    }
     crate::isolation::cleanup::purge_isolated_for_container(
         &paths.data_dir.join(container_name),
         runner,

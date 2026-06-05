@@ -1,6 +1,5 @@
 //! Apple Container backend launch, attach, reconnect, eject, and purge.
 //!
-//! Implements Phase 2–3 of the apple-container-backend roadmap item.
 //! All lifecycle operations shell out to the `container` CLI via
 //! `tokio::process::Command` — unlike the Docker backend which uses bollard.
 //!
@@ -29,7 +28,7 @@ const ATTACH_MAX_WAIT_MS: u64 = 60_000;
 const ATTACH_POLL_MS: u64 = 500;
 
 /// Print the session contract — the security boundary summary shown to the
-/// operator before the interactive attach begins (Phase 4).
+/// operator before the interactive attach begins.
 ///
 /// Equivalent to the `docker profile: hardened` output block in the Docker
 /// hardening contract, but for the apple-container backend.
@@ -73,8 +72,8 @@ pub fn print_session_contract(
     eprintln!();
 }
 
-/// DNS health check — called after attach returns to detect sleep/wake hiccup.
-/// Phase 4: "Detect DNS failure in capsule; surface 'reconnect required' to operator."
+/// DNS health check — an `nslookup` probe run after attach returns. macOS
+/// sleep/wake can drop the VM's DNS; surface a "reconnect" hint if affected.
 pub async fn check_dns(container_name: &str) {
     let result = tokio::process::Command::new("container")
         .args([
@@ -134,8 +133,8 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 }
 
 /// Attach interactively to a running apple/container container.
-/// Uses `container exec -it <name> jackin-capsule` which provides
-/// a proper PTY with SIGWINCH forwarding via vminitd's gRPC/vsock layer.
+/// Uses `container exec -it <name> /jackin/runtime/jackin-capsule` which
+/// provides a proper PTY with SIGWINCH forwarding via vminitd's gRPC/vsock layer.
 pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<()> {
     let mut args: Vec<&str> = vec![
         "exec",
@@ -252,6 +251,17 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         }
         env.push((k.clone(), v.clone()));
     }
+    // Mirror the Docker path: list on-demand credential var names so the
+    // in-container MCP tool advertises which commands need jackin-exec.
+    let exec_binding_names: String = capsule_config
+        .exec_bindings
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    if !exec_binding_names.is_empty() {
+        env.push(("JACKIN_EXEC_BINDINGS".to_string(), exec_binding_names));
+    }
 
     // Log mount telemetry before building spec.
     for (host, guest) in mount_pairs {
@@ -327,10 +337,9 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     wait_for_capsule(container_name).await?;
     crate::debug_log!("apple-container", "capsule ready name={container_name}");
 
-    // Phase 4: Session contract output.
-    // Printed once after the container starts, before the interactive attach.
-    // Shows the security boundary, isolation model, and residual risks so the
-    // operator knows exactly what is enforced before their session begins.
+    // Printed once after the container starts, before the interactive attach,
+    // so the operator sees the security boundary, isolation model, and residual
+    // risks before their session begins.
     print_session_contract(
         container_name,
         image,
@@ -342,7 +351,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // Interactive attach — blocks until operator detaches.
     attach(container_name, None).await?;
 
-    // Phase 4: DNS check after attach returns. Catches sleep/wake DNS hiccup.
+    // Catches a sleep/wake DNS hiccup once the operator detaches.
     check_dns(container_name).await;
 
     Ok(())

@@ -52,8 +52,7 @@ pub use self::launch::resolve_supported_agents_for_console;
 /// Both backends bind-mount this directory to `/jackin/run`; the capsule daemon
 /// reads `agent.toml` from there at startup and refuses to start without it.
 /// Sharing the routine keeps the Docker and apple-container paths from drifting
-/// — the apple-container path previously created the dir but never wrote the
-/// config, so its daemon could never come up.
+/// on the dir-create + config-write + chmod sequence.
 pub(crate) fn prepare_socket_dir(
     socket_dir: &std::path::Path,
     capsule_config: &jackin_protocol::CapsuleConfig,
@@ -85,4 +84,45 @@ pub(crate) async fn register_agent_repo(
     debug: bool,
 ) -> anyhow::Result<(crate::repo::CachedRepo, crate::repo::ValidatedRoleRepo)> {
     self::repo_cache::register_agent_repo(paths, selector, git_url, runner, debug).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prepare_socket_dir_writes_config_and_locks_0o700() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("sockets").join("jk-test");
+        let cfg = jackin_protocol::CapsuleConfig {
+            role: "r".into(),
+            workdir: "/workspace".into(),
+            agents: vec![],
+            models: std::collections::BTreeMap::new(),
+            initial_provider: None,
+            exec_bindings: vec![jackin_protocol::ExecBinding {
+                name: "GH_TOKEN".into(),
+                display: "gh".into(),
+                kind: "literal".into(),
+                source: "x".into(),
+            }],
+            host_sock_path: None,
+        };
+        prepare_socket_dir(&dir, &cfg).unwrap();
+
+        // agent.toml is written and round-trips back to the same config — the
+        // capsule daemon refuses to start without it.
+        let toml_path = dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+        let round: jackin_protocol::CapsuleConfig =
+            toml::from_str(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+        assert_eq!(round, cfg);
+
+        // The dir holds the credential socket; it must be operator-only (0o700).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+    }
 }

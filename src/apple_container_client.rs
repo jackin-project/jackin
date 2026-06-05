@@ -16,9 +16,11 @@
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` v0.11.0+ installed
-//! - Docker hardening rootless `DinD` must validate before Phase 0 starts
 //! - `JACKIN_CAPSULE_FORCE_DAEMON=1` injected by `container run` (not a
 //!   static Dockerfile ENV — that would break the Docker backend)
+//!
+//! Basic container lifecycle works without `DinD`; rootless `DinD` inside the
+//! VM is separately gated on Phase 0 validation (see `inner_docker_enabled`).
 
 use std::path::PathBuf;
 

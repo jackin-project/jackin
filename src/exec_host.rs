@@ -6,10 +6,10 @@
 //! selected credentials in the picker, the capsule connects here to resolve
 //! the on-demand env vars before running the command.
 //!
-//! This is a Phase 1 ad-hoc design — the `jackin load` process stays alive
-//! for the session and this listener runs as a `tokio::spawn` task alongside
-//! the blocking `docker exec -it` call. Future work: migrate to the jackin'
-//! daemon so all running containers share one host-side resolver.
+//! The `jackin load` process stays alive for the session and this listener
+//! runs as a `tokio::spawn` task alongside the blocking interactive attach.
+//! Future work: migrate to the jackin' daemon so all running containers share
+//! one host-side resolver.
 //!
 //! # Security
 //!

@@ -7,7 +7,7 @@ use std::path::Path;
 
 /// Instance manifest version.
 ///
-/// Bumped to 2 when the `backend` field (`BackendResources` tagged union)
+/// Bumped to 2 when the `backend` field (`BackendResources` untagged enum)
 /// replaced the Docker-only `docker` field. Old manifests with `"docker": {...}`
 /// are read via the `#[serde(alias = "docker")]` backward-compat attribute — no
 /// fixture chain required since this is ephemeral per-instance metadata, not a
