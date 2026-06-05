@@ -307,6 +307,26 @@ impl Multiplexer {
             }
             Action::Wheel { row, col, button } => {
                 if self.dialog_open() {
+                    // A scrollable read-only dialog (Debug info, GitHub context)
+                    // captures the wheel so its body scrolls. Wheel button bits:
+                    // bit1 = horizontal axis, bit0 = forward (down / right).
+                    if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
+                        let forward = (button & 1) != 0;
+                        if (button & 2) != 0 {
+                            scroll.scroll_x = if forward {
+                                scroll.scroll_x.saturating_add(3)
+                            } else {
+                                scroll.scroll_x.saturating_sub(3)
+                            };
+                        } else {
+                            scroll.scroll_y = if forward {
+                                scroll.scroll_y.saturating_add(1)
+                            } else {
+                                scroll.scroll_y.saturating_sub(1)
+                            };
+                        }
+                        return Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange));
+                    }
                     return None;
                 }
                 if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {

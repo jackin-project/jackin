@@ -450,6 +450,18 @@ impl Dialog {
         }
     }
 
+    /// Mutable body-scroll state for the read-only info dialogs whose content
+    /// can overflow (ContainerInfo, GitHubContext). `None` for dialogs that do
+    /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
+    pub(crate) fn body_scroll_mut(
+        &mut self,
+    ) -> Option<&mut jackin_tui::components::DialogBodyScroll> {
+        match self {
+            Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => Some(scroll),
+            _ => None,
+        }
+    }
+
     pub fn new_provider_picker(
         agent: Option<String>,
         providers: Vec<ProviderChoice>,
