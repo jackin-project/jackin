@@ -242,6 +242,10 @@ pub async fn run_console<H: InstanceActionHandler>(
     let mut last_debug_chip_area: Option<ratatui::layout::Rect> = None;
     // Track whether the pointer is currently over the debug chip (for hover color).
     let mut debug_chip_hovered = false;
+    // The Debug-info dialog paints OSC 8 hyperlinks as a raw overlay outside the
+    // Ratatui buffer; when it closes we must force a full clear so that residue
+    // does not linger on the screen behind it.
+    let mut container_info_overlay_active = false;
 
     let result = 'main: loop {
         // Drain a pending token-generate request before render: suspend the
@@ -303,6 +307,18 @@ pub async fn run_console<H: InstanceActionHandler>(
             let full_area: ratatui::layout::Rect = terminal.size()?.into();
             let (main_area, debug_bar_area) =
                 split_debug_area(full_area, crate::tui::is_debug_mode());
+            // If the Debug-info dialog's raw overlay was painted last frame and
+            // the dialog has since closed, force a full clear so the OSC 8 link
+            // residue (which Ratatui's diff does not track) is wiped.
+            if container_info_overlay_active
+                && !matches!(
+                    ms.list_modal,
+                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+                )
+            {
+                terminal.clear()?;
+                container_info_overlay_active = false;
+            }
             crate::console::tui::prepare_for_render(ms, &config, cwd, main_area);
             let confirm_state = state.quit_confirm.as_ref();
             terminal.draw(|frame| {
@@ -344,6 +360,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     let _ = std::io::Write::write_all(&mut out, &overlay);
                     let _ = std::io::Write::flush(&mut out);
                 }
+                container_info_overlay_active = true;
             }
             needs_redraw = false;
         }

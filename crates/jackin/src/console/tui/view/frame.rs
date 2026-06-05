@@ -12,7 +12,7 @@ use crate::console::tui::components::settings::{
     render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
 };
 use crate::console::tui::components::workspace_list::render_list_body;
-use crate::console::tui::state::{ManagerStage, ManagerState};
+use crate::console::tui::state::{ManagerStage, ManagerState, Modal};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
@@ -122,6 +122,19 @@ pub fn render(
                 }
             }
         }
+    }
+
+    // The Debug-info modal's keys live in the reserved footer like every other
+    // screen — but rendered AFTER the modal backdrop (which dims the footer
+    // drawn above) so they stay visible. The footer is never a floating bar.
+    if matches!(state.stage, ManagerStage::List)
+        && matches!(state.list_modal, Some(Modal::ContainerInfo { .. }))
+    {
+        render_footer(
+            frame,
+            workspace_frame_areas(area).footer,
+            jackin_tui::components::DEBUG_INFO_HINT,
+        );
     }
 
     if let Some(overlay) = &state.status_overlay {

@@ -38,9 +38,9 @@ pub(crate) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_tui::components::render_error_dialog(frame, modal_area, state);
         }
         Modal::ContainerInfo { state } => {
+            // Keys are shown in the reserved footer (see frame.rs), not floating
+            // under the dialog — hints always live in the fixed footer.
             jackin_tui::components::render_container_info(frame, modal_area, state);
-            // Always show the dialog's keys (scroll + dismiss) beneath it.
-            jackin_tui::components::render_debug_info_hint(frame, modal_area, area);
         }
         Modal::StatusPopup { state } => {
             jackin_tui::components::render_status_popup(frame, modal_area, state);
