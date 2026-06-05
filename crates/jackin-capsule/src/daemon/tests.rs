@@ -487,10 +487,6 @@ fn dialog_dismiss_frame_repaints_covered_pane_body() {
         .expect("dismiss must emit a repaint frame");
     assert!(!mux.dialog_open(), "Dismiss must pop the dialog");
     assert!(
-        !dismissed.windows(4).any(|w| w == b"\x1b[2J"),
-        "dialog dismiss must not 2J-clear (no flicker)"
-    );
-    assert!(
         contains(&dismissed),
         "dialog dismiss must repaint the covered pane body (no backdrop ghost)"
     );
@@ -508,11 +504,12 @@ fn scan_emitted_frame_reports_geometry_fingerprint() {
 }
 
 #[test]
-fn full_redraw_emits_screen_erase_only_for_geometry_reasons() {
-    // The 2J clear is gated to geometry / fresh-surface causes
-    // (FullRedrawReason::forces_screen_clear). Same-geometry causes repaint via
-    // the SocketBackend cell diff with no clear, which is what stops the screen
-    // flickering on every focus swap, tab switch, scroll, and dialog toggle.
+fn full_redraw_always_emits_screen_erase() {
+    // Single-renderer invariant: every full frame clears the screen
+    // (Terminal::clear → SocketBackend::clear_region(All) → `\x1b[2J\x1b[H`)
+    // then re-emits every cell. A pure cell diff leaves stale cells behind for
+    // high-frequency alt-screen repainters (Claude Code, Amp) and on scrolled
+    // content; the unconditional wipe is what keeps every agent correct.
     let erase = b"\x1b[2J";
     let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
 
@@ -520,13 +517,6 @@ fn full_redraw_emits_screen_erase_only_for_geometry_reasons() {
         FullRedrawReason::FirstAttach,
         FullRedrawReason::Resize,
         FullRedrawReason::ExplicitRedraw,
-    ] {
-        let mut mux = single_pane_tab_mux_with_size(24, 80);
-        let frame = mux.compose_full_redraw(reason);
-        assert!(contains(&frame), "{reason:?} full frame must emit \\x1b[2J");
-    }
-
-    for reason in [
         FullRedrawReason::FocusChange,
         FullRedrawReason::TabSwitch,
         FullRedrawReason::SplitClose,
@@ -536,13 +526,8 @@ fn full_redraw_emits_screen_erase_only_for_geometry_reasons() {
         FullRedrawReason::DialogChange,
     ] {
         let mut mux = single_pane_tab_mux_with_size(24, 80);
-        // Establish the SocketBackend baseline so the next frame is a pure diff.
-        let _ = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
         let frame = mux.compose_full_redraw(reason);
-        assert!(
-            !contains(&frame),
-            "{reason:?} must NOT emit \\x1b[2J (same geometry → diff, no flicker)"
-        );
+        assert!(contains(&frame), "{reason:?} full frame must emit \\x1b[2J");
     }
 }
 
@@ -3046,18 +3031,15 @@ fn apply_action_pane_button_motion_updates_selection() {
 }
 
 #[test]
-fn split_close_frame_repaints_without_screen_erase() {
-    // Defect 29 under the diff renderer: closing a pane reflows the remaining
-    // pane into the vacated cells. The SocketBackend whole-buffer diff re-emits
-    // those changed cells with no 2J clear (terminal geometry is unchanged), so
-    // stale cells are flushed without the per-interaction flicker the clear
-    // caused. Only a true geometry change (Resize) still clears.
+fn split_close_frame_contains_screen_erase() {
+    // Regression for Defect 29: pane/tab close reflows the layout, so the full
+    // frame must wipe (\x1b[2J) and repaint to flush cells from the removed pane.
     let mut mux = single_pane_tab_mux_with_size(24, 80);
     let _ = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
 
     let frame = mux.compose_full_redraw(FullRedrawReason::SplitClose);
     assert!(
-        !frame.windows(4).any(|w| w == b"\x1b[2J"),
-        "SplitClose must not emit \\x1b[2J — the cell diff flushes stale cells"
+        frame.windows(4).any(|w| w == b"\x1b[2J"),
+        "SplitClose frame must include \\x1b[2J to flush stale cells"
     );
 }

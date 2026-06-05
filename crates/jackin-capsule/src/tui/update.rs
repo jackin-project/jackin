@@ -33,24 +33,6 @@ pub(crate) enum FullRedrawReason {
 }
 
 impl FullRedrawReason {
-    /// Whether this redraw must wipe the screen with a real `\x1b[2J` clear.
-    ///
-    /// Only true for causes that change the screen *geometry* (or need a fresh
-    /// surface): an outer-terminal resize changes the cell grid and the width
-    /// of the raw bottom chrome the diff cannot track; first attach starts from
-    /// an unknown screen; an explicit redraw is the operator's force-repaint
-    /// escape hatch (and detach). Every other cause — focus/tab switch, scroll,
-    /// zoom, split open/close, dialog open/close, selection, status — only
-    /// changes cell *contents* at the same geometry, which the Ratatui
-    /// `SocketBackend` diff repaints precisely. Clearing on those causes the
-    /// flicker operators see on every interaction, so it is suppressed.
-    pub(crate) const fn forces_screen_clear(self) -> bool {
-        matches!(
-            self,
-            Self::FirstAttach | Self::Resize | Self::ExplicitRedraw
-        )
-    }
-
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::FirstAttach => "first-attach",

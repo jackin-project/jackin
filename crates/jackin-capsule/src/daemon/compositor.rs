@@ -47,19 +47,18 @@ impl Multiplexer {
     /// renderer — the legacy raw-ANSI `compose_full_frame` has been removed.
     pub(super) fn compose_full_redraw(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         self.dirty_panes.clear();
-        // Only wipe the screen for geometry-changing causes (see
-        // FullRedrawReason::forces_screen_clear). Terminal::clear() routes
-        // through SocketBackend::clear_region(All) → `\x1b[2J\x1b[H`; doing that
-        // on every full frame (focus swap, tab switch, scroll, zoom, dialog
-        // open/close) is what makes the screen flicker on every interaction.
-        // For same-geometry causes the SocketBackend diff repaints changed cells
-        // precisely and the raw bottom chrome is rewritten in place each frame,
-        // so no clear is needed.
-        if reason.forces_screen_clear() {
-            let _ = self.ratatui_terminal.clear();
-            // The 2J wiped the bottom rows too; force the chrome to re-emit.
-            self.last_bottom_chrome = None;
-        }
+        // Wipe + full repaint on every full frame. Terminal::clear() routes
+        // through SocketBackend::clear_region(All) → `\x1b[2J\x1b[H`, then the
+        // next draw re-emits every cell. This is deliberately heavier than a
+        // cell diff: the diff alone leaves stale cells behind for high-frequency
+        // alt-screen repainters (Claude Code, Amp) — dark-bg blocks and ghosted
+        // rows the diff never overwrites because its baseline disagrees with the
+        // terminal. A full repaint cannot desync, so it renders every agent
+        // correctly. (The interaction flicker this reintroduces is tracked as a
+        // follow-up; correctness wins over flicker.)
+        let _ = self.ratatui_terminal.clear();
+        // The 2J wiped the bottom rows too; force the chrome to re-emit.
+        self.last_bottom_chrome = None;
         let Some(ratatui_output) = self.compose_ratatui_frame() else {
             // compose_ratatui_frame only returns None if the Ratatui draw
             // itself errored — effectively impossible with SocketBackend. Skip
