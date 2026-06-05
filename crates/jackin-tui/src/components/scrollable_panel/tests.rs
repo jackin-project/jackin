@@ -1,9 +1,11 @@
 //! Tests for `scrollable_panel`.
 use super::{
-    apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset, cursor_follow_offset,
+    ScrollbarStyle, apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset,
+    cursor_follow_offset, render_horizontal_scrollbar_with_style,
     render_line_with_fixed_prefix_scroll, render_scrollable_block, render_scrollable_block_at,
     render_selected_lines_in_area, render_vertical_scrollbar_in_area,
-    scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
+    render_vertical_scrollbar_in_area_with_style, scrollbar_offset_for_track_position,
+    scrollbar_thumb_geometry,
 };
 use crate::theme::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_GREEN};
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Style, text::Line};
@@ -30,7 +32,7 @@ fn vertical_scrollbar_thumb_moves_without_resizing() {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        (0..10).filter(|y| buffer[(0, *y)].symbol() == "█").count()
+        (0..10).filter(|y| buffer[(0, *y)].symbol() == "┃").count()
     }
 
     assert_eq!(rendered_thumb_len(0), 9);
@@ -50,10 +52,67 @@ fn scrollbar_uses_shared_dialog_scroll_palette() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(0, 0)].symbol(), "█");
+    assert_eq!(buffer[(0, 0)].symbol(), "┃");
     assert_eq!(buffer[(0, 0)].fg, DIALOG_SCROLL_THUMB);
     assert_eq!(buffer[(0, 9)].symbol(), "·");
     assert_eq!(buffer[(0, 9)].fg, DIALOG_SCROLL_TRACK);
+}
+
+#[test]
+fn line_style_uses_matching_heavy_glyphs_per_axis() {
+    // The default Line style must read identically across axes: a heavy
+    // horizontal rule `━` and a heavy vertical rule `┃` (same weight).
+    assert_eq!(ScrollbarStyle::Line.horizontal_thumb(), "━");
+    assert_eq!(ScrollbarStyle::Line.vertical_thumb(), "┃");
+}
+
+#[test]
+fn block_style_uses_full_block_in_both_orientations() {
+    // The thick Block style is a full `█` bar in BOTH axes — proving the
+    // block can be a horizontal bar, not just vertical.
+    assert_eq!(ScrollbarStyle::Block.horizontal_thumb(), "█");
+    assert_eq!(ScrollbarStyle::Block.vertical_thumb(), "█");
+
+    // Rendered horizontally, the thumb cells carry `█`.
+    let backend = TestBackend::new(12, 3);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render_horizontal_scrollbar_with_style(
+                frame,
+                Rect::new(0, 0, 12, 3),
+                40,
+                0,
+                ScrollbarStyle::Block,
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    assert!(
+        (0..12).any(|x| (0..3).any(|y| buffer[(x, y)].symbol() == "█")),
+        "Block horizontal scrollbar should paint full-block thumb cells"
+    );
+}
+
+#[test]
+fn vertical_block_style_renders_full_block_thumb() {
+    let backend = TestBackend::new(1, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render_vertical_scrollbar_in_area_with_style(
+                frame,
+                Rect::new(0, 0, 1, 10),
+                20,
+                5,
+                0,
+                ScrollbarStyle::Block,
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(0, 0)].symbol(), "█");
+    assert_eq!(buffer[(0, 9)].symbol(), "·");
 }
 
 #[test]
@@ -217,7 +276,7 @@ fn scrollable_block_scrollbar_thumbs_reach_visible_ends() {
 
     let buffer = terminal.backend().buffer();
     assert_eq!(buffer[(10, 5)].symbol(), "━");
-    assert_eq!(buffer[(11, 4)].symbol(), "█");
+    assert_eq!(buffer[(11, 4)].symbol(), "┃");
 }
 
 #[test]
@@ -246,7 +305,7 @@ fn scrollable_block_scrollbar_thumbs_are_proportional_to_viewport() {
 
     let buffer = terminal.backend().buffer();
     let horizontal_thumb_len = (1..=10).filter(|x| buffer[(*x, 5)].symbol() == "━").count();
-    let vertical_thumb_len = (1..=4).filter(|y| buffer[(11, *y)].symbol() == "█").count();
+    let vertical_thumb_len = (1..=4).filter(|y| buffer[(11, *y)].symbol() == "┃").count();
 
     assert_eq!(horizontal_thumb_len, 9);
     assert_eq!(vertical_thumb_len, 3);
@@ -382,7 +441,7 @@ fn render_selected_lines_in_area_shows_scrollbar_when_content_overflows() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-    let has_scrollbar = (0..3).any(|y| ["█", "·"].contains(&buffer[(9, y)].symbol()));
+    let has_scrollbar = (0..3).any(|y| ["┃", "·"].contains(&buffer[(9, y)].symbol()));
     assert!(
         has_scrollbar,
         "scrollbar expected when 5 lines overflow 3-row area"
@@ -402,7 +461,7 @@ fn render_selected_lines_in_area_no_scrollbar_when_content_fits() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-    let has_scrollbar = (0..5).any(|y| ["█", "·"].contains(&buffer[(9, y)].symbol()));
+    let has_scrollbar = (0..5).any(|y| ["┃", "·"].contains(&buffer[(9, y)].symbol()));
     assert!(
         !has_scrollbar,
         "no scrollbar expected when 3 lines fit in 5-row area"

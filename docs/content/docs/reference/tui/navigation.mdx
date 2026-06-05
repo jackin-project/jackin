@@ -213,6 +213,15 @@ Any block whose content is wider than its viewport renders the shared horizontal
 
 The `H/L scroll` hint must only appear in the footer when horizontal scrolling is actually possible (content overflows the viewport). Showing `H/L scroll` when content fits is a false affordance.
 
+### Scrollbar glyphs read identically across both axes
+
+A screen's vertical and horizontal scrollbars must look like the same control at two angles, never two different controls. The weight is governed by `ScrollbarStyle` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />), and both axes of one style render at the same weight — only the orientation glyph rotates:
+
+- **`ScrollbarStyle::Line` (default everywhere):** heavy box-drawing rule — `━` (`U+2501`) for a horizontal thumb, `┃` (`U+2503`) for a vertical thumb. This is the thin bar; it must be the default for every scrollbar so a screen's bottom-border and right-border bars match.
+- **`ScrollbarStyle::Block`:** a full block `█` (`U+2588`) thumb in **both** orientations — a solid, heavy bar (the block reads as thick horizontally just as it does vertically). This is the opt-in thick variant, selected via the `render_*_scrollbar_with_style` entry points.
+
+The track is always the dim `·` (`SCROLLBAR_TRACK`) regardless of style or axis. A vertical scrollbar that renders a `█` thumb while the horizontal one renders `━` (or any other per-axis weight mismatch within a single style) is a violation: pick one `ScrollbarStyle` for a screen and let both axes inherit it. The shared `render_picker_list` scroll thumb follows the same `Line` glyphs so modal-picker scrollbars match the rest of the TUI.
+
 ### Content height formula for each block type
 
 These are the exact formulas that match what each render function passes to `render_scrollable_block`:

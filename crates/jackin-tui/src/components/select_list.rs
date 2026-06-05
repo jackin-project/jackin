@@ -379,15 +379,20 @@ pub fn render_picker_list(
     if is_scrollable(total, viewport)
         && let Some(thumb) = full_cell_thumb(total, viewport, area.height, offset)
     {
-        // Drawn after the dividers so the thumb column always wins.
+        // Drawn after the dividers so the thumb column always wins. Same glyphs
+        // as the shared FixedScrollbar (Line style): `┃` thumb over the dim `·`
+        // track, so picker scrollbars match every other bar in the TUI.
+        use crate::components::scrollable_panel::{SCROLLBAR_TRACK, ScrollbarStyle};
+        let thumb_sym = ScrollbarStyle::Line.vertical_thumb();
         let x = area.x + area.width.saturating_sub(1);
         for row in 0..area.height {
-            let style = if row >= thumb.start && row < thumb.start.saturating_add(thumb.len) {
-                crate::theme::GREEN
+            let in_thumb = row >= thumb.start && row < thumb.start.saturating_add(thumb.len);
+            let (sym, style) = if in_thumb {
+                (thumb_sym, crate::theme::GREEN)
             } else {
-                Style::default().fg(PHOSPHOR_DARK)
+                (SCROLLBAR_TRACK, Style::default().fg(PHOSPHOR_DARK))
             };
-            buf[(x, area.y + row)].set_symbol("█").set_style(style);
+            buf[(x, area.y + row)].set_symbol(sym).set_style(style);
         }
     }
 }

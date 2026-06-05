@@ -17,6 +17,44 @@ use crate::{
 
 use super::{Panel, PanelFocus};
 
+/// Dim track glyph shared by every scrollbar, both orientations and styles.
+pub const SCROLLBAR_TRACK: &str = "·";
+
+/// Visual weight of a scrollbar thumb. The track is always [`SCROLLBAR_TRACK`].
+///
+/// Both styles render at the same weight in both orientations so a screen's
+/// vertical and horizontal bars look identical — only the thickness differs
+/// between the two styles, never between the two axes of one style.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollbarStyle {
+    /// Heavy box-drawing line — `━` horizontal, `┃` vertical. A thin centre
+    /// rule; the default everywhere.
+    #[default]
+    Line,
+    /// Full block `█` in both orientations — a solid, heavy bar.
+    Block,
+}
+
+impl ScrollbarStyle {
+    /// Thumb glyph for a horizontal bar in this style.
+    #[must_use]
+    pub const fn horizontal_thumb(self) -> &'static str {
+        match self {
+            Self::Line => "━",
+            Self::Block => "█",
+        }
+    }
+
+    /// Thumb glyph for a vertical bar in this style.
+    #[must_use]
+    pub const fn vertical_thumb(self) -> &'static str {
+        match self {
+            Self::Line => "┃",
+            Self::Block => "█",
+        }
+    }
+}
+
 pub const fn viewport_width(area: Rect) -> usize {
     area.width.saturating_sub(2) as usize
 }
@@ -203,6 +241,22 @@ pub fn render_horizontal_scrollbar(
     content_width: usize,
     scroll_x: u16,
 ) {
+    render_horizontal_scrollbar_with_style(
+        frame,
+        block_area,
+        content_width,
+        scroll_x,
+        ScrollbarStyle::Line,
+    );
+}
+
+pub fn render_horizontal_scrollbar_with_style(
+    frame: &mut Frame,
+    block_area: Rect,
+    content_width: usize,
+    scroll_x: u16,
+    style: ScrollbarStyle,
+) {
     let viewport = viewport_width(block_area);
     if !is_scrollable(content_width, viewport) {
         return;
@@ -214,6 +268,7 @@ pub fn render_horizontal_scrollbar(
             viewport,
             offset: scroll_x,
             orientation: FixedScrollbarOrientation::Horizontal,
+            style,
         },
         area,
     );
@@ -225,12 +280,35 @@ pub fn render_vertical_scrollbar(
     content_height: usize,
     scroll_y: u16,
 ) {
+    render_vertical_scrollbar_with_style(
+        frame,
+        block_area,
+        content_height,
+        scroll_y,
+        ScrollbarStyle::Line,
+    );
+}
+
+pub fn render_vertical_scrollbar_with_style(
+    frame: &mut Frame,
+    block_area: Rect,
+    content_height: usize,
+    scroll_y: u16,
+    style: ScrollbarStyle,
+) {
     let viewport = viewport_height(block_area);
     if !is_scrollable(content_height, viewport) {
         return;
     }
     let area = vertical_scrollbar_area(block_area);
-    render_vertical_scrollbar_in_area(frame, area, content_height, viewport, scroll_y);
+    render_vertical_scrollbar_in_area_with_style(
+        frame,
+        area,
+        content_height,
+        viewport,
+        scroll_y,
+        style,
+    );
 }
 
 pub fn render_vertical_scrollbar_in_area(
@@ -239,6 +317,24 @@ pub fn render_vertical_scrollbar_in_area(
     content_height: usize,
     viewport: usize,
     scroll_y: u16,
+) {
+    render_vertical_scrollbar_in_area_with_style(
+        frame,
+        area,
+        content_height,
+        viewport,
+        scroll_y,
+        ScrollbarStyle::Line,
+    );
+}
+
+pub fn render_vertical_scrollbar_in_area_with_style(
+    frame: &mut Frame,
+    area: Rect,
+    content_height: usize,
+    viewport: usize,
+    scroll_y: u16,
+    style: ScrollbarStyle,
 ) {
     if !is_scrollable(content_height, viewport) || area.height == 0 {
         return;
@@ -249,6 +345,7 @@ pub fn render_vertical_scrollbar_in_area(
             viewport,
             offset: scroll_y,
             orientation: FixedScrollbarOrientation::Vertical,
+            style,
         },
         area,
     );
@@ -340,6 +437,7 @@ struct FixedScrollbar {
     viewport: usize,
     offset: u16,
     orientation: FixedScrollbarOrientation,
+    style: ScrollbarStyle,
 }
 
 impl Widget for FixedScrollbar {
@@ -359,12 +457,18 @@ impl Widget for FixedScrollbar {
             usize::from(self.offset),
         );
         let thumb_end = thumb_start.saturating_add(thumb_len);
-        // Hoist orientation constants out of the per-cell loop.
-        let (thumb_sym, track_sym, base_x, base_y, dx, dy): (&str, &str, u16, u16, u16, u16) =
-            match self.orientation {
-                FixedScrollbarOrientation::Horizontal => ("━", "·", area.x, area.y, 1, 0),
-                FixedScrollbarOrientation::Vertical => ("█", "·", area.x, area.y, 0, 1),
-            };
+        // Hoist orientation constants out of the per-cell loop. The thumb glyph
+        // is the only axis-dependent value; track is the shared dim dot.
+        let (thumb_sym, base_x, base_y, dx, dy): (&str, u16, u16, u16, u16) = match self.orientation
+        {
+            FixedScrollbarOrientation::Horizontal => {
+                (self.style.horizontal_thumb(), area.x, area.y, 1, 0)
+            }
+            FixedScrollbarOrientation::Vertical => {
+                (self.style.vertical_thumb(), area.x, area.y, 0, 1)
+            }
+        };
+        let track_sym = SCROLLBAR_TRACK;
         let thumb_style = Style::default().fg(DIALOG_SCROLL_THUMB);
         let track_style = Style::default().fg(DIALOG_SCROLL_TRACK);
         for idx in 0..track_len {
