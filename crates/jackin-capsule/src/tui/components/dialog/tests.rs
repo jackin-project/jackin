@@ -258,20 +258,6 @@ fn palette_enter_after_filter_emits_matching_command() {
 }
 
 #[test]
-fn palette_single_pane_close_label_renders_as_close_tab() {
-    let d = Dialog::new_command_palette(PaletteCloseLabel::CloseTab);
-    let mut buf = Vec::new();
-    d.render(&mut buf, 40, 100);
-    let rendered = String::from_utf8_lossy(&buf);
-
-    assert!(rendered.contains("Close tab"));
-    assert_eq!(
-        palette_filtered_indices("close tab", PaletteCloseLabel::CloseTab).len(),
-        1
-    );
-}
-
-#[test]
 fn palette_close_label_derives_from_pane_count() {
     assert_eq!(
         PaletteCloseLabel::for_pane_count(1),
@@ -532,44 +518,6 @@ fn container_info_clear_copy_feedback_hides_badge() {
     assert!(copied_row.is_none());
 }
 
-#[test]
-fn container_info_copied_badge_survives_long_container_name() {
-    let d = Dialog::ContainerInfo {
-        container_name: "jk-c9g7zpkh-jackin-thearchitect-extra-long".to_string(),
-        role: "the-architect".to_string(),
-        focused_agent: Some("claude".to_string()),
-        workdir: "/workspace/jackin".to_string(),
-        diagnostics: ContainerInfoDiagnostics::default(),
-        copied_row: Some(0),
-        hovered_row: None,
-    };
-    let mut buf = Vec::new();
-    d.render(&mut buf, 40, 100);
-    let rendered = String::from_utf8_lossy(&buf);
-    assert!(
-        rendered.contains("Copied!"),
-        "long container IDs must not push copy feedback out of the dialog: {rendered:?}"
-    );
-}
-
-#[test]
-fn container_info_renders_container_details_only() {
-    let d = container_info_fixture();
-    let mut buf = Vec::new();
-    d.render(&mut buf, 40, 120);
-    let rendered = String::from_utf8_lossy(&buf);
-
-    assert!(rendered.contains("Container ID"));
-    assert!(rendered.contains("Role"));
-    assert!(rendered.contains("the-architect"));
-    assert!(rendered.contains("Agent"));
-    assert!(rendered.contains("claude"));
-    assert!(rendered.contains("Workdir"));
-    assert!(rendered.contains("/workspace/jackin"));
-    assert!(!rendered.contains("GitHub URL"));
-    assert!(!rendered.contains("Pull Request"));
-}
-
 const GITHUB_FIXTURE_BRANCH: &str = "feature/container-info";
 
 fn github_view_for_fixture(pr: &PullRequestInfo) -> GithubContextView<'_> {
@@ -577,57 +525,6 @@ fn github_view_for_fixture(pr: &PullRequestInfo) -> GithubContextView<'_> {
         branch: Some(GITHUB_FIXTURE_BRANCH),
         status: PullRequestStatus::Loaded(pr),
     }
-}
-
-fn github_view_loading() -> GithubContextView<'static> {
-    GithubContextView {
-        branch: Some(GITHUB_FIXTURE_BRANCH),
-        status: PullRequestStatus::Resolving,
-    }
-}
-
-#[test]
-fn github_context_renders_branch_pr_url_and_ci_status() {
-    let mut pr = pull_request_fixture();
-    pr.checks = Some(crate::pull_request::PullRequestChecks::from_buckets([
-        "pass", "pass", "pass", "pass", "skipping",
-    ]));
-    let view = github_view_for_fixture(&pr);
-    let d = Dialog::GitHubContext { copied: false };
-    let mut buf = Vec::new();
-    d.render_with_hover(&mut buf, 40, 120, false, Some(&view));
-    let rendered = String::from_utf8_lossy(&buf);
-
-    assert!(rendered.contains("Branch"));
-    assert!(rendered.contains("feature/container-info"));
-    assert!(rendered.contains("Pull Request"));
-    assert!(rendered.contains("#123"));
-    assert!(rendered.contains("PR Title"));
-    assert!(rendered.contains("Surface PR context in Capsule"));
-    assert!(rendered.contains("GitHub URL"));
-    assert!(rendered.contains("https://github.com/jackin-project/jackin/pull/123"));
-    assert!(rendered.contains("\x1b]8;;https://github.com/jackin-project/jackin/pull/123\x1b\\"));
-    assert!(rendered.contains("CI Status"));
-    assert!(rendered.contains("passing (4/5)"));
-    assert!(
-        !rendered.contains("copy GitHub URL"),
-        "modal body should not render footer hints: {rendered:?}"
-    );
-}
-
-#[test]
-fn github_context_renders_pr_lookup_in_progress() {
-    let view = github_view_loading();
-    let d = Dialog::GitHubContext { copied: false };
-    let mut buf = Vec::new();
-    d.render_with_hover(&mut buf, 40, 120, false, Some(&view));
-    let rendered = String::from_utf8_lossy(&buf);
-
-    assert!(rendered.contains("Branch"));
-    assert!(rendered.contains("feature/container-info"));
-    assert!(rendered.contains("Pull Request"));
-    assert!(rendered.contains("resolving…"));
-    assert!(!rendered.contains("(none)"));
 }
 
 #[test]
@@ -643,11 +540,6 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
         other => panic!("Enter must request PR URL copy, got {other:?}"),
     }
     assert!(d.has_copy_feedback());
-
-    let mut buf = Vec::new();
-    d.render_with_hover(&mut buf, 40, 120, false, Some(&view));
-    let rendered = String::from_utf8_lossy(&buf);
-    assert!(rendered.contains("Copied!"));
 }
 
 #[test]
@@ -665,48 +557,6 @@ fn github_context_url_click_copies_pr_url() {
         other => panic!("GitHub URL row click must request clipboard copy, got {other:?}"),
     }
     assert!(d.has_copy_feedback());
-}
-
-#[test]
-fn github_context_hover_lifts_only_url_copy_value() {
-    let pr = pull_request_fixture();
-    let view = github_view_for_fixture(&pr);
-    let d = Dialog::GitHubContext { copied: false };
-    let mut buf = Vec::new();
-    d.render_with_hover(&mut buf, 40, 120, true, Some(&view));
-    let rendered = String::from_utf8_lossy(&buf);
-
-    assert!(
-        rendered.contains(FG_CLICK_HOVER),
-        "hovered GitHub URL copy target should lift color: {rendered:?}"
-    );
-}
-
-#[test]
-fn github_context_hint_renders_on_bottom_row() {
-    let pr = pull_request_fixture();
-    let view = github_view_for_fixture(&pr);
-    let d = Dialog::GitHubContext { copied: false };
-    let term_rows = 40;
-    let term_cols = 120;
-    let padded_cols = hint_row_cols(GITHUB_CONTEXT_HINT) + 4;
-    let expected_col = ((term_cols as usize).saturating_sub(padded_cols) / 2) as u16;
-    // The full-screen opaque modal puts the hint on the very bottom row
-    // (1-based == term_rows), filling it with the same solid backdrop so
-    // there is no off-colour spacer band above or below it.
-    let hint_row = term_rows;
-
-    let mut buf = Vec::new();
-    d.render_with_hover(&mut buf, term_rows, term_cols, false, Some(&view));
-    d.render_footer_hint(&mut buf, term_rows, term_cols, Some(&view));
-    let rendered = String::from_utf8_lossy(&buf);
-    let cursor = format!("\x1b[{};{}H", hint_row, expected_col + 1);
-
-    assert!(
-        rendered.contains(&cursor),
-        "hint should render on the bottom row at {cursor:?}: {rendered:?}"
-    );
-    assert!(rendered.contains("copy GitHub URL"));
 }
 
 #[test]

@@ -98,7 +98,14 @@ Generated-token 1Password item-name default construction also lives with the aut
 
 The lookbook is the visual regression surface for every component in the catalog — ensure lookbook stories for new components exercise their focused and unfocused states so color regressions are caught before they reach production.
 
-**Render primitives**: `modal_block` (<RepoFile path="crates/jackin-tui/src/components/panel.rs" />), `breadcrumb_title` (<RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />), `render_fatal` (<RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />), `render_filter_input` (<RepoFile path="crates/jackin-tui/src/components/filter_input.rs" />), and `render_scrollable_block_at` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />) — use these building blocks when composing new modals rather than hand-rolling border + layout from scratch.
+**Render primitives**: `modal_block` (<RepoFile path="crates/jackin-tui/src/components/panel.rs" />), `breadcrumb_title` (<RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />), `render_fatal` (<RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />), `render_filter_input` (<RepoFile path="crates/jackin-tui/src/components/filter_input.rs" />), `render_picker_list` (<RepoFile path="crates/jackin-tui/src/components/select_list.rs" />), and `render_scrollable_block_at` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />) — use these building blocks when composing new modals rather than hand-rolling border + layout from scratch.
+
+### One picker-list renderer, with full-width section dividers
+
+Every modal list — the host console pickers and the in-container capsule menu/pickers — draws its rows through the shared `render_picker_list` (<RepoFile path="crates/jackin-tui/src/components/select_list.rs" />), which takes a `Vec<PickerRow>`. There are exactly two row kinds, and a caller must not hand-roll either:
+
+- `PickerRow::Item` — a selectable row. The selected row gets the canonical highlight (`PHOSPHOR_GREEN` background, black bold text, `▸ ` cursor) in a reserved 2-column gutter, so item labels align whether or not they are selected.
+- `PickerRow::Separator(label)` — a non-selectable `──── label ────` section divider. **A section divider must span the full inner width, border to border, with the label centered.** `render_picker_list` repaints separator rows edge-to-edge *over* the selection gutter so the dashes reach both borders symmetrically — the divider is the one row that deliberately ignores the gutter. Dashes are `PHOSPHOR_DARK`, the label is dim. A divider that is indented on one side (gutter-shifted), shorter than the inner width, or whose label is not centered is a violation. Pass the bare label text (`"agents"`, `"shells"`) — never pre-build the dashes at the call site, or the width math drifts from the gutter.
 
 ### Two-button choice pattern
 

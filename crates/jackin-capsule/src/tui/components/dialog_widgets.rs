@@ -155,7 +155,7 @@ impl Dialog {
                 let shell_match = needle.is_empty() || "shell".contains(&needle);
                 let mut items: Vec<PickerItem> = Vec::with_capacity(agent_matches.len() + 3);
                 if !agent_matches.is_empty() {
-                    // Label only — render_separator in dialog.rs adds the ── dashes.
+                    // Label only — render_picker_list draws the ── dashes full-width.
                     items.push(PickerItem::Section("agents".into()));
                     for (_, label) in &agent_matches {
                         items.push(PickerItem::Item((*label).to_string()));
@@ -419,38 +419,24 @@ fn render_filter_picker(
         inner
     };
 
-    // Width available to a row's content. render_picker_list indents every row
-    // by the 2-col highlight gutter, so section separators fill width - 2.
-    let row_width = usize::from(list_area.width).saturating_sub(2);
-    let list_items: Vec<ratatui::widgets::ListItem<'_>> = items
+    // Section rows are full-width centered dividers drawn by render_picker_list;
+    // item rows are white and let the shared highlight paint the selected row.
+    let rows: Vec<jackin_tui::components::PickerRow<'_>> = items
         .iter()
         .map(|item| match item {
             PickerItem::Section(label) => {
-                // Dashed separator `──── label ────`, matching the raw dialog:
-                // dashes in PHOSPHOR_DARK, the label dim and centered.
-                let label_disp = format!(" {label} ");
-                let dashes = row_width.saturating_sub(jackin_tui::display_cols(&label_disp));
-                let left = dashes / 2;
-                let right = dashes - left;
-                ratatui::widgets::ListItem::new(Line::from(vec![
-                    Span::styled("─".repeat(left), Style::default().fg(PHOSPHOR_DARK)),
-                    Span::styled(label_disp, jackin_tui::theme::DIM),
-                    Span::styled("─".repeat(right), Style::default().fg(PHOSPHOR_DARK)),
-                ]))
+                jackin_tui::components::PickerRow::Separator(label.clone())
             }
-            PickerItem::Item(label) => ratatui::widgets::ListItem::new(Line::from(Span::styled(
-                label.clone(),
-                Style::default().fg(PHOSPHOR_GREEN),
-            ))),
+            PickerItem::Item(label) => jackin_tui::components::PickerRow::Item(
+                ratatui::widgets::ListItem::new(Line::from(Span::styled(
+                    label.clone(),
+                    Style::default().fg(PHOSPHOR_GREEN),
+                ))),
+            ),
         })
         .collect();
 
-    jackin_tui::components::render_picker_list(
-        list_area,
-        frame.buffer_mut(),
-        list_items,
-        Some(selected),
-    );
+    jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
 }
 
 fn render_text_input_dialog(

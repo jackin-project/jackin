@@ -503,8 +503,8 @@ impl DamageGrid {
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
         for _ in 0..n {
-            if !self.alt_screen && top == 0 {
-                // Push top row to scrollback.
+            if !self.alt_screen && top == 0 && self.scrollback_limit > 0 {
+                // Push top row to scrollback, evicting the oldest at the cap.
                 let row = self.primary[0].clone();
                 if self.scrollback.len() >= self.scrollback_limit {
                     self.scrollback.remove(0);
@@ -537,7 +537,7 @@ impl DamageGrid {
     /// transcript. No-op on the alternate screen — full-screen apps own
     /// their display and do not contribute scrollback.
     fn preserve_visible_rows_to_scrollback(&mut self) {
-        if self.alt_screen {
+        if self.alt_screen || self.scrollback_limit == 0 {
             return;
         }
         let Some(first) = self
@@ -1456,6 +1456,18 @@ mod scrollback_view_tests {
         assert_eq!(view.cells.len(), 2);
         // The scrolled-up view differs from the live tail — it shows history.
         assert_ne!(view.cells, g.dump().cells);
+    }
+
+    #[test]
+    fn zero_scrollback_limit_evicts_without_panic() {
+        // scrollback_limit == 0 means "no scrollback"; rows that would be
+        // preserved must be dropped, not pushed onto an empty buffer with a
+        // remove(0) that would panic (len 0).
+        let mut g = DamageGrid::new(2, 8, 0);
+        for i in 0..6 {
+            g.process(format!("line{i}\r\n").as_bytes());
+        }
+        assert_eq!(g.scrollback_len(), 0);
     }
 }
 

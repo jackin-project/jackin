@@ -220,7 +220,7 @@ impl Widget for SelectList<'_> {
             return;
         }
         let viewport_cols = usize::from(list_area.width);
-        let items: Vec<ListItem<'_>> = self
+        let rows: Vec<PickerRow<'_>> = self
             .state
             .filtered
             .iter()
@@ -235,13 +235,13 @@ impl Widget for SelectList<'_> {
                 } else {
                     label.clone()
                 };
-                ListItem::new(Line::from(Span::styled(
+                PickerRow::Item(ListItem::new(Line::from(Span::styled(
                     label_str,
                     Style::default().fg(PHOSPHOR_GREEN),
-                )))
+                ))))
             })
             .collect();
-        render_picker_list(list_area, buf, items, self.state.selected);
+        render_picker_list(list_area, buf, rows, self.state.selected);
     }
 }
 
@@ -255,21 +255,100 @@ pub fn render_select_list(
     frame.render_widget(SelectList::new(state, title).context(context), area);
 }
 
+/// A row in a modal picker list.
+pub enum PickerRow<'a> {
+    /// A selectable item. The caller styles its unselected appearance; the
+    /// selected row gets the canonical PHOSPHOR_GREEN highlight applied by
+    /// `render_picker_list`.
+    Item(ListItem<'a>),
+    /// Non-selectable section divider rendered as `──── label ────`. Drawn
+    /// edge-to-edge across the full list width with the label centered — it
+    /// deliberately ignores the 2-col selection gutter so the dashes reach
+    /// both dialog borders.
+    Separator(String),
+}
+
+/// Paint a `──── label ────` section divider across a full list row,
+/// edge-to-edge, with the label centered. Dashes use PHOSPHOR_DARK; the
+/// label is DIM. Shared so the capsule pickers and any future sectioned
+/// host list draw identical dividers.
+fn write_section_separator(buf: &mut Buffer, area: Rect, y: u16, label: &str) {
+    let width = usize::from(area.width);
+    if width == 0 {
+        return;
+    }
+    let label_disp = if label.is_empty() {
+        String::new()
+    } else {
+        format!(" {label} ")
+    };
+    let label_cols = crate::display_cols(&label_disp).min(width);
+    let dashes = width - label_cols;
+    let left = dashes / 2;
+    let right = dashes - left;
+    let mut spans = Vec::with_capacity(3);
+    if left > 0 {
+        spans.push(Span::styled(
+            "\u{2500}".repeat(left),
+            Style::default().fg(PHOSPHOR_DARK),
+        ));
+    }
+    if !label_disp.is_empty() {
+        spans.push(Span::styled(label_disp, crate::theme::DIM));
+    }
+    if right > 0 {
+        spans.push(Span::styled(
+            "\u{2500}".repeat(right),
+            Style::default().fg(PHOSPHOR_DARK),
+        ));
+    }
+    let row_area = Rect {
+        x: area.x,
+        y,
+        width: area.width,
+        height: 1,
+    };
+    Paragraph::new(Line::from(spans)).render(row_area, buf);
+}
+
 /// Render a vertical picker list into `area`: a ratatui `List` with the
 /// canonical selected-row highlight (PHOSPHOR_GREEN background, PHOSPHOR_DARK
 /// text, bold, `▸ ` cursor) plus a right-edge scroll thumb. Shared so every
 /// modal list — the capsule menu/pickers and the host console — gets the same
-/// look from one place. Callers pass pre-built `ListItem`s (style the
-/// unselected rows themselves) and the selected row index.
+/// look from one place. Callers pass pre-built `PickerRow`s (style the
+/// unselected item rows themselves) and the selected row index.
+///
+/// `PickerRow::Separator` rows are repainted edge-to-edge after the `List`
+/// draws, overwriting the gutter the List reserves so section dividers span
+/// the full width with a centered label.
 pub fn render_picker_list(
     area: Rect,
     buf: &mut Buffer,
-    items: Vec<ListItem<'_>>,
+    rows: Vec<PickerRow<'_>>,
     selected: Option<usize>,
 ) {
-    let total = items.len();
+    let total = rows.len();
     let viewport = usize::from(area.height);
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
+
+    // Record separator rows + labels before the items are consumed so the
+    // post-pass can repaint them full-width over the List's gutter.
+    let separators: Vec<(usize, String)> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(i, row)| match row {
+            PickerRow::Separator(label) => Some((i, label.clone())),
+            PickerRow::Item(_) => None,
+        })
+        .collect();
+    let items: Vec<ListItem<'_>> = rows
+        .into_iter()
+        .map(|row| match row {
+            PickerRow::Item(item) => item,
+            // Placeholder — write_section_separator overwrites this row.
+            PickerRow::Separator(_) => ListItem::new(""),
+        })
+        .collect();
 
     // Canonical modal-list look (matches the legacy raw dialog 1:1): the whole
     // list sits on the dark dialog surface, the selected row inverts to a
@@ -288,9 +367,19 @@ pub fn render_picker_list(
         .highlight_spacing(HighlightSpacing::Always);
     ratatui::widgets::StatefulWidget::render(list, area, buf, &mut state);
 
+    // Repaint section dividers edge-to-edge over the gutter the List reserved.
+    for (i, label) in separators {
+        if i < offset || i >= offset + viewport {
+            continue;
+        }
+        let y = area.y + u16::try_from(i - offset).unwrap_or(0);
+        write_section_separator(buf, area, y, &label);
+    }
+
     if is_scrollable(total, viewport)
         && let Some(thumb) = full_cell_thumb(total, viewport, area.height, offset)
     {
+        // Drawn after the dividers so the thumb column always wins.
         let x = area.x + area.width.saturating_sub(1);
         for row in 0..area.height {
             let style = if row >= thumb.start && row < thumb.start.saturating_add(thumb.len) {
@@ -300,5 +389,77 @@ pub fn render_picker_list(
             };
             buf[(x, area.y + row)].set_symbol("█").set_style(style);
         }
+    }
+}
+
+#[cfg(test)]
+mod picker_list_tests {
+    use super::{PickerRow, render_picker_list};
+    use crate::theme::PHOSPHOR_DARK;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::widgets::ListItem;
+
+    fn row_symbols(buf: &Buffer, y: u16, width: u16) -> String {
+        (0..width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn separator_spans_full_width_and_centers_label() {
+        let width = 24u16;
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: 4,
+        };
+        let mut buf = Buffer::empty(area);
+        let rows = vec![
+            PickerRow::Separator("agents".to_string()),
+            PickerRow::Item(ListItem::new("Claude")),
+            PickerRow::Item(ListItem::new("Codex")),
+        ];
+        render_picker_list(area, &mut buf, rows, Some(1));
+
+        let sep = row_symbols(&buf, 0, width);
+        // Edge-to-edge: dashes reach both borders, ignoring the 2-col gutter.
+        assert!(
+            sep.starts_with('\u{2500}') && sep.ends_with('\u{2500}'),
+            "divider must span full width: {sep:?}"
+        );
+        assert!(sep.contains("agents"), "label present: {sep:?}");
+        // Label centered: leading and trailing dash runs match (±1 for odd
+        // remainder). Count by character, not byte — dashes are multi-byte.
+        let chars: Vec<char> = sep.chars().collect();
+        let left = chars.iter().take_while(|c| **c == '\u{2500}').count();
+        let right = chars.iter().rev().take_while(|c| **c == '\u{2500}').count();
+        assert!(
+            left.abs_diff(right) <= 1,
+            "label not centered: left={left} right={right} in {sep:?}"
+        );
+
+        // The dashes are PHOSPHOR_DARK.
+        assert_eq!(buf[(0u16, 0u16)].fg, PHOSPHOR_DARK);
+    }
+
+    #[test]
+    fn item_rows_keep_selection_gutter() {
+        let width = 20u16;
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: 3,
+        };
+        let mut buf = Buffer::empty(area);
+        let rows = vec![
+            PickerRow::Item(ListItem::new("Claude")),
+            PickerRow::Item(ListItem::new("Codex")),
+        ];
+        render_picker_list(area, &mut buf, rows, Some(0));
+        // Selected row 0 shows the ▸ cursor in the reserved gutter.
+        assert_eq!(buf[(0u16, 0u16)].symbol(), "\u{25b8}");
     }
 }
