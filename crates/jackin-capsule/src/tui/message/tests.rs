@@ -64,6 +64,28 @@ fn dialog_captures_mouse_press_and_release() {
 }
 
 #[test]
+fn dialog_lets_wheel_events_through_for_body_scroll() {
+    // Regression: a dialog must NOT swallow wheel events — they scroll the
+    // dialog body. Vertical (64/65) and horizontal (66/67) wheel buttons both
+    // become Action::Wheel even while a dialog captures input.
+    let context = InputDispatchContext {
+        dialog_captures_input: true,
+        branch_context_hit: false,
+    };
+    for button in [64u8, 65, 66, 67] {
+        assert_eq!(
+            input_event_action(&InputEvent::MousePress { row: 5, col: 9, button }, context),
+            Some(Action::Wheel {
+                row: 5,
+                col: 9,
+                button,
+            }),
+            "wheel button {button} must reach the dialog scroll handler",
+        );
+    }
+}
+
+#[test]
 fn branch_context_click_wins_before_status_body_dispatch() {
     let event = InputEvent::MousePress {
         row: 4,

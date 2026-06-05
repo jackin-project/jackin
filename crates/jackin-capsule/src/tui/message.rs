@@ -133,6 +133,19 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
                 col: *col,
             })
         }
+        // A wheel event still reaches the dialog scroll handler while a dialog
+        // captures input — it scrolls the dialog body (Action::Wheel dispatch),
+        // not the pane behind it. Must precede the swallow arm below, which
+        // otherwise eats every non-left-click press including the wheel.
+        InputEvent::MousePress { col, row, button }
+            if context.dialog_captures_input && is_wheel_button(*button) =>
+        {
+            Some(Action::Wheel {
+                row: *row,
+                col: *col,
+                button: *button,
+            })
+        }
         InputEvent::MousePress { .. } if context.dialog_captures_input => None,
         InputEvent::MouseRelease { .. } if context.dialog_captures_input => None,
         InputEvent::MouseRelease { col, row, button } => Some(Action::MouseRelease {
