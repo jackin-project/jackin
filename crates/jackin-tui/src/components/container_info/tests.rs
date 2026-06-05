@@ -68,3 +68,62 @@ fn hyperlink_overlay_emits_osc8_for_link_rows() {
     assert!(overlay.contains("/tmp/run.jsonl"));
     assert!(overlay.contains("\u{1b}]8;;\u{1b}\\"));
 }
+
+#[test]
+fn long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail() {
+    // A value far wider than the dialog must not silently clip: a horizontal
+    // scrollbar appears and scrolling right reveals the tail.
+    let long = "/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/diagnostics/runs/jk-run-8e27f0.jsonl";
+    let mut state = ContainerInfoState::new(
+        "Debug info",
+        vec![ContainerInfoRow::new("Diagnostics log", long).copyable()],
+    );
+    let backend = TestBackend::new(50, 8);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| render_container_info(frame, frame.area(), &state))
+        .unwrap();
+    let at_start = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        at_start.contains('\u{2501}'),
+        "horizontal scrollbar `━` must appear on overflow"
+    );
+    assert!(
+        at_start.contains("/Users/donbeave"),
+        "head visible at scroll 0"
+    );
+    assert!(
+        !at_start.contains("jk-run-8e27f0"),
+        "tail hidden at scroll 0"
+    );
+
+    // Scroll fully right; the tail becomes visible.
+    state.scroll.scroll_x = u16::MAX; // clamped at render time
+    terminal
+        .draw(|frame| render_container_info(frame, frame.area(), &state))
+        .unwrap();
+    let scrolled = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        scrolled.contains("jk-run-8e27f0"),
+        "tail revealed after horizontal scroll"
+    );
+}
+
+#[test]
+fn short_content_shows_no_horizontal_scrollbar() {
+    let state = ContainerInfoState::new(
+        "Debug info",
+        vec![ContainerInfoRow::new("jackin", "0.6.0-dev")],
+    );
+    let backend = TestBackend::new(60, 8);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_container_info(frame, frame.area(), &state))
+        .unwrap();
+    let rendered = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        !rendered.contains('\u{2501}'),
+        "no horizontal scrollbar when content fits"
+    );
+}

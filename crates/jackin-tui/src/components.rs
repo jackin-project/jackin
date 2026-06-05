@@ -35,6 +35,7 @@ pub use container_info::{
 };
 pub use dialog_layout::{
     DialogBodyScroll, dialog_inner_chunks, dialog_inner_height, render_dialog_shell,
+    render_scrollable_dialog_body,
 };
 pub use error_dialog::{
     ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,

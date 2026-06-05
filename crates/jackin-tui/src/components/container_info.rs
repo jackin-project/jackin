@@ -6,14 +6,21 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
 };
 
 use crate::ModalOutcome;
 use crate::ansi;
-use crate::components::dialog_layout::render_dialog_shell;
+use crate::components::dialog_layout::{
+    DialogBodyScroll, render_dialog_shell, render_scrollable_dialog_body,
+};
 use crate::components::panel::{Panel, PanelFocus};
+use crate::components::scrollable_panel::effective_offset;
 use crate::theme::{LINK_FG, LINK_FG_HOVER, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+
+/// Body line indent (matches the canonical dialog content padding).
+const INDENT_COLS: usize = 2;
+/// Width of the `" : "` label/value separator.
+const SEP_COLS: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct ContainerInfoRow {
@@ -149,8 +156,10 @@ pub struct ContainerInfoState {
     rows: Vec<ContainerInfoRow>,
     copied_row: Option<usize>,
     hovered_row: Option<usize>,
-    /// Vertical scroll offset (in rows) for when content overflows the dialog area.
-    pub scroll_y: u16,
+    /// Scroll offsets for when the content overflows the dialog area. Shared
+    /// with every other dialog through [`DialogBodyScroll`] so vertical and
+    /// horizontal scroll behave identically everywhere.
+    pub scroll: DialogBodyScroll,
 }
 
 impl ContainerInfoState {
@@ -161,7 +170,7 @@ impl ContainerInfoState {
             rows,
             copied_row: None,
             hovered_row: None,
-            scroll_y: 0,
+            scroll: DialogBodyScroll::new(),
         }
     }
 
@@ -173,17 +182,46 @@ impl ContainerInfoState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
         match key.code {
             KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
-            KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                self.scroll_y = self.scroll_y.saturating_sub(1);
-                ModalOutcome::Continue
-            }
-            KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                let max = self.rows.len().saturating_sub(1) as u16;
-                self.scroll_y = self.scroll_y.saturating_add(1).min(max);
+            // Scroll keys (Up/Down/Left/Right + vim h/j/k/l + PageUp/PageDown).
+            // Content extents are clamped at render time, so the generous max
+            // here is harmless — the renderer never shows past the last row/col.
+            KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::PageUp
+            | KeyCode::PageDown
+            | KeyCode::Char('h' | 'H' | 'j' | 'J' | 'k' | 'K' | 'l' | 'L') => {
+                let content_height = self.rows.len().saturating_add(1);
+                let content_width = self.content_width();
+                // Viewport is unknown here; pass the full extent so the key is
+                // accepted and the render-time clamp settles the final offset.
+                self.scroll
+                    .handle_key(key, content_height, 0, content_width, 0);
                 ModalOutcome::Continue
             }
             _ => ModalOutcome::Continue,
         }
+    }
+
+    /// Display-column width of the widest rendered body line (label column +
+    /// `" : "` + value), including the 2-space indent. Drives horizontal scroll.
+    #[must_use]
+    fn content_width(&self) -> usize {
+        let label_width = self.label_width();
+        self.rows
+            .iter()
+            .map(|row| INDENT_COLS + label_width + SEP_COLS + crate::display_cols(&row.value))
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn label_width(&self) -> usize {
+        self.rows
+            .iter()
+            .map(|row| crate::display_cols(&row.label))
+            .max()
+            .unwrap_or(0)
     }
 
     pub fn mark_copied(&mut self, row: usize) {
@@ -221,50 +259,22 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
         return;
     }
     let inner = render_dialog_shell(frame, area, Some(&state.title));
-
-    let label_width = state
-        .rows
-        .iter()
-        .map(|row| crate::display_cols(&row.label))
-        .max()
-        .unwrap_or(0);
-    // Viewport: leave 1 leading and 1 trailing spacer row.
-    let viewport_rows = usize::from(inner.height.saturating_sub(2));
-    let total_rows = state.rows.len();
-    let offset = (state.scroll_y as usize).min(total_rows.saturating_sub(viewport_rows));
-    let visible_rows = total_rows.saturating_sub(offset).min(viewport_rows);
-    for (idx, row) in state
-        .rows
-        .iter()
-        .skip(offset)
-        .take(visible_rows)
-        .enumerate()
-    {
-        let y = inner
-            .y
-            .saturating_add(1)
-            .saturating_add(u16::try_from(idx).unwrap_or(u16::MAX));
-        let row_area = Rect {
-            x: inner.x.saturating_add(2),
-            y,
-            width: inner.width.saturating_sub(4),
-            height: 1,
-        };
-        frame.render_widget(
-            Paragraph::new(container_info_line(
-                row,
-                label_width,
-                state.copied_row == Some(offset + idx),
-                state.hovered_row == Some(offset + idx),
-            )),
-            row_area,
-        );
+    let label_width = state.label_width();
+    // The body is a single scrollable block: a leading spacer row then one
+    // line per fact. render_scrollable_dialog_body applies both-axis scroll and
+    // draws the scrollbars on the dialog border only when content overflows.
+    let mut lines = Vec::with_capacity(state.rows.len().saturating_add(1));
+    lines.push(Line::from(""));
+    for (idx, row) in state.rows.iter().enumerate() {
+        lines.push(container_info_line(
+            row,
+            label_width,
+            state.copied_row == Some(idx),
+            state.hovered_row == Some(idx),
+        ));
     }
-    // Show scrollbar when content overflows the viewport.
-    if total_rows > viewport_rows {
-        use crate::components::scrollable_panel::render_vertical_scrollbar;
-        render_vertical_scrollbar(frame, area, total_rows, state.scroll_y);
-    }
+    let mut scroll = state.scroll.clone();
+    render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
 }
 
 #[must_use]
@@ -274,88 +284,126 @@ pub fn copy_payload_at(
     col: u16,
     row: u16,
 ) -> Option<(usize, String)> {
-    value_rects(area, state)
+    value_placements(area, state)
         .into_iter()
-        .find(|(idx, rect)| {
-            let info_row = &state.rows[*idx];
-            info_row.copyable
-                && col >= rect.x
-                && col < rect.x.saturating_add(rect.width)
-                && row >= rect.y
-                && row < rect.y.saturating_add(rect.height)
+        .find(|p| {
+            state.rows[p.idx].copyable
+                && row == p.screen_y
+                && col >= p.screen_x
+                && col < p.screen_x.saturating_add(p.visible_cols)
         })
-        .map(|(idx, _)| (idx, state.rows[idx].value.clone()))
+        .map(|p| (p.idx, state.rows[p.idx].value.clone()))
 }
 
 #[must_use]
 pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
     let mut out = Vec::new();
-    for (idx, rect) in value_rects(area, state) {
-        let row = &state.rows[idx];
+    for p in value_placements(area, state) {
+        let row = &state.rows[p.idx];
         let Some(href) = row.href() else {
             continue;
         };
-        let link = if state.hovered_row == Some(idx) {
+        let link = if state.hovered_row == Some(p.idx) {
             crate::LINK_FG_HOVER
         } else {
             crate::LINK_FG
         };
-        ansi::move_to(&mut out, rect.y, rect.x);
+        // Render only the horizontally-visible slice of the value, matching what
+        // the scrolled Paragraph already painted, so the OSC 8 link lands on the
+        // exact visible cells.
+        let visible = display_cols_slice(row.value(), p.skip_cols, usize::from(p.visible_cols));
+        ansi::move_to(&mut out, p.screen_y, p.screen_x);
         ansi::emit_osc8_open(&mut out, href);
         ansi::fg(&mut out, link);
         out.extend_from_slice(b"\x1b[1;4m");
-        out.extend_from_slice(
-            crate::take_display_cols(row.value(), usize::from(rect.width)).as_bytes(),
-        );
+        out.extend_from_slice(visible.as_bytes());
         ansi::emit_osc8_close(&mut out);
         out.extend_from_slice(ansi::RESET.as_bytes());
     }
     out
 }
 
-fn value_rects(area: Rect, state: &ContainerInfoState) -> Vec<(usize, Rect)> {
+/// On-screen placement of one row's value text under the current scroll.
+struct ValuePlacement {
+    idx: usize,
+    screen_x: u16,
+    screen_y: u16,
+    /// Leading value columns scrolled off the left edge.
+    skip_cols: usize,
+    /// Visible value columns remaining after the skip + right clip.
+    visible_cols: u16,
+}
+
+/// Visible value placements for every row, accounting for both scroll axes.
+/// Used by the copy hit-test and the OSC 8 hyperlink overlay so both follow the
+/// content as it scrolls. Rows fully scrolled out of view are omitted.
+fn value_placements(area: Rect, state: &ContainerInfoState) -> Vec<ValuePlacement> {
     if area.width < 20 || area.height < 5 {
         return Vec::new();
     }
-    let block = Panel::new().focus(PanelFocus::Focused).block();
-    let inner = block.inner(area);
-    let label_width = state
-        .rows
-        .iter()
-        .map(|row| crate::display_cols(&row.label))
-        .max()
-        .unwrap_or(0);
-    let value_x = inner
-        .x
-        .saturating_add(2)
-        .saturating_add(u16::try_from(label_width + 3).unwrap_or(u16::MAX));
-    let value_width = inner
-        .width
-        .saturating_sub(4)
-        .saturating_sub(u16::try_from(label_width + 3).unwrap_or(u16::MAX));
-    let max_rows = usize::from(inner.height.saturating_sub(2));
+    let inner = Panel::new().focus(PanelFocus::Focused).block().inner(area);
+    let label_width = state.label_width();
+    let value_col = INDENT_COLS + label_width + SEP_COLS;
+    let content_height = state.rows.len().saturating_add(1);
+    let content_width = state.content_width();
+    let eff_x = usize::from(effective_offset(
+        content_width,
+        usize::from(inner.width),
+        state.scroll.scroll_x,
+    ));
+    let eff_y = usize::from(effective_offset(
+        content_height,
+        usize::from(inner.height),
+        state.scroll.scroll_y,
+    ));
+    let vp_right = eff_x + usize::from(inner.width);
+    let vp_bottom = eff_y + usize::from(inner.height);
     state
         .rows
         .iter()
-        .take(max_rows)
         .enumerate()
-        .map(|(idx, row)| {
-            let y = inner
-                .y
-                .saturating_add(1)
-                .saturating_add(u16::try_from(idx).unwrap_or(u16::MAX));
-            let drawn_width = u16::try_from(crate::display_cols(row.value())).unwrap_or(u16::MAX);
-            (
+        .filter_map(|(idx, row)| {
+            let line_index = idx + 1; // line 0 is the leading spacer
+            if line_index < eff_y || line_index >= vp_bottom {
+                return None;
+            }
+            let value_cols = crate::display_cols(row.value());
+            let visible_start = value_col.max(eff_x);
+            let visible_end = (value_col + value_cols).min(vp_right);
+            if visible_start >= visible_end {
+                return None;
+            }
+            Some(ValuePlacement {
                 idx,
-                Rect {
-                    x: value_x,
-                    y,
-                    width: drawn_width.min(value_width),
-                    height: 1,
-                },
-            )
+                screen_x: inner
+                    .x
+                    .saturating_add(u16::try_from(visible_start - eff_x).ok()?),
+                screen_y: inner
+                    .y
+                    .saturating_add(u16::try_from(line_index - eff_y).ok()?),
+                skip_cols: visible_start - value_col,
+                visible_cols: u16::try_from(visible_end - visible_start).unwrap_or(u16::MAX),
+            })
         })
         .collect()
+}
+
+/// Substring of `s` covering display columns `[skip, skip + width)`.
+fn display_cols_slice(s: &str, skip: usize, width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    let mut col = 0usize;
+    let mut out = String::new();
+    for ch in s.chars() {
+        let w = ch.width().unwrap_or(0);
+        if col >= skip && col + w <= skip + width {
+            out.push(ch);
+        }
+        col += w;
+        if col >= skip + width {
+            break;
+        }
+    }
+    out
 }
 
 fn container_info_line(
@@ -384,6 +432,9 @@ fn container_info_line(
         value_style = value_style.add_modifier(Modifier::UNDERLINED);
     }
     let mut spans = vec![
+        // 2-space indent (INDENT_COLS) baked in so the body renders flush in the
+        // dialog inner area and value_placements' column math stays in sync.
+        Span::raw("  "),
         Span::styled(format!("{:<label_width$}", row.label), label_style),
         Span::styled(" : ", sep_style),
         Span::styled(row.value.clone(), value_style),

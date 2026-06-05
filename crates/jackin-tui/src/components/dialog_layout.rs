@@ -26,6 +26,8 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::text::Line;
+use ratatui::widgets::{Paragraph, Widget};
 
 /// Shared dialog body scroll state.
 ///
@@ -116,6 +118,46 @@ impl DialogBodyScroll {
             render_horizontal_scrollbar(frame, block_area, content_width, self.scroll_x);
         }
     }
+}
+
+/// Render a dialog body (`lines`) into `content_area` with both-axis scroll,
+/// and draw scrollbars on `block_area`'s border when the content overflows.
+///
+/// **This is THE shared mechanism for scrollable dialog bodies.** Every dialog
+/// renders its line-based body through this helper so horizontal and vertical
+/// scroll behave identically everywhere, and a scrollbar appears only when the
+/// content exceeds the visible area. `content_area` is normally the dialog's
+/// inner area (the full area inside the border); pass `block_area` as the outer
+/// dialog rect so the scrollbars land on the dialog's own border and their
+/// thumb extents match the content viewport.
+///
+/// The offsets in `scroll` are clamped to the content in place (so a shrunk
+/// dialog never leaves the body scrolled past its end), and the clamped
+/// `(content_width, content_height)` is returned so the caller can dispatch
+/// scroll keys against the same extents the renderer measured.
+pub fn render_scrollable_dialog_body(
+    frame: &mut Frame,
+    block_area: Rect,
+    content_area: Rect,
+    lines: &[Line<'_>],
+    scroll: &mut DialogBodyScroll,
+) -> (usize, usize) {
+    use crate::components::scrollable_panel::{effective_offset, max_line_width};
+
+    let content_width = max_line_width(lines);
+    let content_height = lines.len();
+    let vp_w = usize::from(content_area.width);
+    let vp_h = usize::from(content_area.height);
+    let eff_x = effective_offset(content_width, vp_w, scroll.scroll_x);
+    let eff_y = effective_offset(content_height, vp_h, scroll.scroll_y);
+    scroll.scroll_x = eff_x;
+    scroll.scroll_y = eff_y;
+
+    Paragraph::new(lines.to_vec())
+        .scroll((eff_y, eff_x))
+        .render(content_area, frame.buffer_mut());
+    scroll.render_scrollbars(frame, block_area, content_height, content_width);
+    (content_width, content_height)
 }
 
 /// Split `inner` into the canonical five-slot dialog layout.
