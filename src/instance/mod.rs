@@ -9,7 +9,7 @@ pub mod naming;
 pub use manifest::{
     AppleContainerResources, BackendResources, DockerResources, InstanceIndex, InstanceIndexEntry,
     InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest, SessionRecord,
-    SessionStatus,
+    SessionStatus, is_apple_container_instance,
 };
 pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 

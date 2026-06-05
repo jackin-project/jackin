@@ -169,14 +169,17 @@ pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<
     Ok(status.code())
 }
 
-/// Record the post-attach outcome into the instance manifest, mirroring the
-/// Docker backend, so `jackin --inspect` can show whether a role crashed.
+/// Record the post-attach outcome into the instance manifest so
+/// `jackin --inspect` can show whether a role crashed. This records the outcome
+/// only; unlike the Docker reconnect path it does not run session
+/// finalization/teardown — apple-container finalization is not yet wired.
 /// Best-effort: a missing/corrupt manifest is a no-op (logged downstream).
 async fn record_attach_outcome(paths: &JackinPaths, container_name: &str, exit_code: Option<i32>) {
+    use crate::isolation::finalize::AttachOutcome;
     let outcome = if is_container_running(container_name).await {
-        crate::isolation::finalize::AttachOutcome::StillRunning
+        AttachOutcome::still_running()
     } else {
-        crate::isolation::finalize::AttachOutcome::Stopped(exit_code.unwrap_or(-1))
+        AttachOutcome::stopped(exit_code.unwrap_or(-1))
     };
     if let Err(e) = super::launch::record_instance_attach_outcome(paths, container_name, outcome) {
         crate::debug_log!("apple-container", "record_attach_outcome failed: {e:#}");
@@ -267,14 +270,9 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     }
     // Mirror the Docker path: list on-demand credential var names so the
     // in-container MCP tool advertises which commands need jackin-exec.
-    let exec_binding_names: String = capsule_config
-        .exec_bindings
-        .iter()
-        .map(|b| b.name.as_str())
-        .collect::<Vec<_>>()
-        .join(",");
-    if !exec_binding_names.is_empty() {
-        env.push(("JACKIN_EXEC_BINDINGS".to_string(), exec_binding_names));
+    let names = super::launch::exec_binding_names(&capsule_config.exec_bindings);
+    if !names.is_empty() {
+        env.push(("JACKIN_EXEC_BINDINGS".to_string(), names));
     }
 
     // Log mount telemetry before building spec.

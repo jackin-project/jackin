@@ -125,6 +125,22 @@ pub struct AppleContainerResources {
 /// Old manifests lack a `"kind"` discriminator — untagged serde handles
 /// this transparently by trying `AppleContainer` first (fails: no
 /// `container_name`), then `Docker` (succeeds: has `role_container`).
+/// Whether the instance at `state_dir` runs on the apple-container backend.
+///
+/// A missing or unreadable manifest is treated as Docker — legacy/torn
+/// instances still need the Docker teardown path — so the contract is: apple
+/// iff the manifest is present and its backend is `AppleContainer`. The
+/// eject / purge / reconnect paths all dispatch through this single predicate.
+pub fn is_apple_container_instance(state_dir: &Path) -> bool {
+    matches!(
+        InstanceManifest::read_optional(state_dir)
+            .ok()
+            .flatten()
+            .map(|m| m.backend),
+        Some(BackendResources::AppleContainer(_))
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum BackendResources {

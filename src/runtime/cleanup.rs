@@ -75,14 +75,7 @@ async fn purge_container_filesystem(
     // knows about Docker (DinD/network/certs volumes). For an apple-container
     // instance it would report "absent" while leaving the VM running, so purge
     // would delete the state dir and orphan the container. Remove the VM here.
-    let is_apple_container = matches!(
-        crate::instance::InstanceManifest::read_optional(&paths.data_dir.join(container_name))
-            .ok()
-            .flatten()
-            .map(|m| m.backend),
-        Some(crate::instance::BackendResources::AppleContainer(_))
-    );
-    if is_apple_container {
+    if crate::instance::is_apple_container_instance(&paths.data_dir.join(container_name)) {
         let _ = super::apple_container::remove(container_name).await;
     } else {
         ensure_role_resources_absent_for_purge(docker, container_name).await?;
@@ -112,19 +105,7 @@ pub async fn eject_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    // Check instance manifest to determine backend — fall back to Docker if absent.
-    let container_state = paths.data_dir.join(container_name);
-    let backend = crate::instance::InstanceManifest::read_optional(&container_state)
-        .ok()
-        .flatten()
-        .map(|m| m.backend);
-
-    let is_apple_container = matches!(
-        backend,
-        Some(crate::instance::BackendResources::AppleContainer(_))
-    );
-
-    if is_apple_container {
+    if crate::instance::is_apple_container_instance(&paths.data_dir.join(container_name)) {
         // Apple Container eject: remove() best-effort-stops then deletes. The
         // stop error is intentionally ignored — an already-stopped or missing
         // container is the desired end state, and a real failure surfaces from

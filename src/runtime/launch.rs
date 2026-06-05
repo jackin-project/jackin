@@ -680,6 +680,18 @@ fn build_exec_bindings(
     bindings
 }
 
+/// Comma-separated names of the on-demand credential bindings, for the
+/// `JACKIN_EXEC_BINDINGS` env var the in-container agent reads to learn which
+/// commands need jackin-exec. Empty when there are no bindings (the caller then
+/// skips the env entry). Shared by the Docker and apple-container launch paths.
+pub(super) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> String {
+    bindings
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Create the Docker network, start `DinD`, and launch the role container.
 #[allow(clippy::too_many_lines)]
 async fn launch_role_runtime(
@@ -931,17 +943,11 @@ async fn launch_role_runtime(
         crate::env_model::JACKIN_ENV_NAME,
         crate::env_model::JACKIN_ENV_VALUE
     ));
-    // Inject JACKIN_EXEC_BINDINGS listing names of on-demand credential vars.
-    // The agent reads this at startup to know which commands need jackin-exec.
-    let exec_binding_names: String = ctx
-        .capsule_config
-        .exec_bindings
-        .iter()
-        .map(|b| b.name.as_str())
-        .collect::<Vec<_>>()
-        .join(",");
-    if !exec_binding_names.is_empty() {
-        env_strings.push(format!("JACKIN_EXEC_BINDINGS={exec_binding_names}"));
+    // Inject JACKIN_EXEC_BINDINGS so the agent learns which commands need
+    // jackin-exec (shared name-CSV with the apple-container path).
+    let names = exec_binding_names(&ctx.capsule_config.exec_bindings);
+    if !names.is_empty() {
+        env_strings.push(format!("JACKIN_EXEC_BINDINGS={names}"));
     }
     // DinD reachable only via Docker network; route past HTTP_PROXY by adding
     // hostname to NO_PROXY in both casings — Go reads upper, curl/Python

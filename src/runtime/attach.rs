@@ -464,19 +464,8 @@ pub async fn hardline_agent_with_focus(
     docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    // Check if this is an apple-container backend instance.
-    let container_state_dir = paths.data_dir.join(container_name);
-    let is_apple_container = crate::instance::InstanceManifest::read_optional(&container_state_dir)
-        .ok()
-        .flatten()
-        .is_some_and(|m| {
-            matches!(
-                m.backend,
-                crate::instance::BackendResources::AppleContainer(_)
-            )
-        });
-
-    if is_apple_container {
+    // Apple-container instances reconnect through their own backend path.
+    if crate::instance::is_apple_container_instance(&paths.data_dir.join(container_name)) {
         return super::apple_container::reconnect(paths, container_name, focus_session).await;
     }
 
