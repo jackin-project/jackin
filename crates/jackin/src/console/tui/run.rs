@@ -651,9 +651,26 @@ pub async fn run_console<H: InstanceActionHandler>(
                         }
                         true
                     } else if let ConsoleStage::Manager(ms) = &mut state.stage
-                        && let Some(modal) = &ms.list_modal
+                        && ms.list_modal.is_some()
                     {
+                        // A wheel event over a scrollable read-only modal (Debug
+                        // info) must reach the base handler's modal-scroll
+                        // intercept — do NOT swallow it here. Every other event
+                        // is consumed by the open modal.
+                        let is_wheel = matches!(
+                            mouse.kind,
+                            crossterm::event::MouseEventKind::ScrollUp
+                                | crossterm::event::MouseEventKind::ScrollDown
+                                | crossterm::event::MouseEventKind::ScrollLeft
+                                | crossterm::event::MouseEventKind::ScrollRight
+                        );
+                        let scroll_to_base = is_wheel
+                            && matches!(
+                                ms.list_modal,
+                                Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+                            );
                         if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
+                            let modal = ms.list_modal.as_ref().expect("list_modal is Some");
                             let full_area: ratatui::layout::Rect = term_size;
                             let (main_area, _) =
                                 split_debug_area(full_area, crate::tui::is_debug_mode());
@@ -673,7 +690,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 );
                             }
                         }
-                        true
+                        !scroll_to_base
                     } else {
                         false
                     };
