@@ -1548,6 +1548,78 @@ All levels final from day one (Defect 61 hard rule: deny always, never staged). 
 **Tasks:**
 - [x] Add `"cargo:cargo-deny"` (pinned) to <RepoFile path="mise.toml" />; run `cargo deny init`; configure `deny.toml`: `advisories` deny-by-default (no unmaintained/unsound/yanked without a documented exception), `licenses` allowlist, `bans` with `multiple-versions = "warn"` initially (the duplicate-tree reality check) and named bans for crates the AGENTS rules already reject, `sources` allowing crates.io plus an explicit, commented entry for the `donbeave/vt100-rust` git dev-dependency. **Evidence (2026-06-06):** <RepoFile path="mise.toml" /> pins `cargo:cargo-deny = "0.19.8"`; `deny.toml` configures `advisories`, `licenses`, `bans`, and `sources`; `cargo deny check licenses bans sources` exits 0.
 - [ ] **License allowlist — operator decision (2026-06-06): `Apache-2.0` and `MIT` only.** Any dependency whose license falls outside those two is **not** silently allowlisted and **not** removed unilaterally: collect every such dependency (name, version, license, why it is in the tree) into a "Deferred license decisions" list in the executing agent's final report for the operator to rule on, add a temporary commented exception in `deny.toml` for each so the gate runs green in the interim, and leave this checklist item `[ ]` until the operator has ruled. (Expect at least common cases like `Unicode-3.0` on `unicode-ident` to land on this list — that is the process working, not a failure.)
+
+  **Deferred license decisions (prepared 2026-06-06; item stays `[ ]` until operator ruling):** `cargo deny check licenses` exits 0 only because `deny.toml` carries temporary exceptions for these crates.
+
+  | Crate | Non-Apache/MIT license(s) | Why in tree |
+  |---|---|---|
+  | `adler2@2.0.1` | `0BSD` | Compression/checksum stack via archive and HTTP dependencies. |
+  | `aho-corasick@1.1.4` | `Unlicense` | Regex/search stack used by CLI/docs/runtime parsing dependencies. |
+  | `aws-lc-rs@1.17.0` | `ISC` | TLS/crypto backend through `rustls`/`sigstore`/HTTP clients. |
+  | `aws-lc-sys@0.41.0` | `ISC`, `BSD-3-Clause`, `MIT-0` | Native crypto bindings for `aws-lc-rs`. |
+  | `bindgen@0.72.1` | `BSD-3-Clause` | Build-time/native binding tooling pulled by crypto/platform dependencies. |
+  | `const_format@0.2.36` | `Zlib` | Transitive formatting helper through OCI/sigstore dependencies. |
+  | `const_format_proc_macros@0.2.34` | `Zlib` | Proc-macro half of `const_format`. |
+  | `curve25519-dalek@4.1.3` | `BSD-3-Clause` | Signature/crypto stack through `ed25519-dalek` and `sigstore`. |
+  | `dunce@1.0.5` | `CC0-1.0`, `MIT-0` | Path normalization helper in build/test tooling dependencies. |
+  | `ed25519-dalek@2.2.0` | `BSD-3-Clause` | Signature verification through `sigstore`/crypto stack. |
+  | `fiat-crypto@0.2.9` | `BSD-1-Clause` | Constant-time arithmetic in Rust crypto stack. |
+  | `foldhash@0.1.5` | `Zlib` | Hashing dependency through transitive parser/data structures. |
+  | `foldhash@0.2.0` | `Zlib` | Hashing dependency through transitive parser/data structures. |
+  | `hyper-rustls@0.27.9` | `ISC` | Rustls-backed HTTP stack. |
+  | `icu_collections@2.2.0` | `Unicode-3.0` | IDNA/URL normalization through `url`/HTTP/Docker dependencies. |
+  | `icu_locale_core@2.2.0` | `Unicode-3.0` | IDNA/URL normalization through ICU stack. |
+  | `icu_normalizer@2.2.0` | `Unicode-3.0` | IDNA/URL normalization through ICU stack. |
+  | `icu_normalizer_data@2.2.0` | `Unicode-3.0` | Data crate for ICU normalization. |
+  | `icu_properties@2.2.0` | `Unicode-3.0` | IDNA/URL normalization through ICU stack. |
+  | `icu_properties_data@2.2.0` | `Unicode-3.0` | Data crate for ICU properties. |
+  | `icu_provider@2.2.0` | `Unicode-3.0` | Provider layer for ICU data. |
+  | `is_ci@1.2.0` | `ISC` | Test/CI environment helper via dev tooling. |
+  | `konst@0.2.20` | `Zlib` | Const-eval helper through OCI/sigstore dependencies. |
+  | `konst_macro_rules@0.2.19` | `Zlib` | Macro helper for `konst`. |
+  | `libloading@0.8.9` | `ISC` | Dynamic library helper through platform/native dependencies. |
+  | `linux-raw-sys@0.12.1` | `Apache-2.0 WITH LLVM-exception` | Linux syscall bindings through `rustix`. |
+  | `litemap@0.8.2` | `Unicode-3.0` | ICU data structure dependency. |
+  | `memchr@2.8.1` | `Unlicense` | Byte-search primitive used broadly by parser/regex/serde stacks. |
+  | `miniz_oxide@0.8.9` | `Zlib` | Deflate/zlib implementation through compression dependencies. |
+  | `option-ext@0.2.0` | `MPL-2.0` | Directory/path helper stack. |
+  | `potential_utf@0.1.5` | `Unicode-3.0` | ICU/URL Unicode validation stack. |
+  | `r-efi@5.3.0` | `LGPL-2.1-or-later` | WASI/getrandom platform dependency. |
+  | `r-efi@6.0.0` | `LGPL-2.1-or-later` | WASI/getrandom platform dependency. |
+  | `rustix@1.1.4` | `Apache-2.0 WITH LLVM-exception` | Unix syscall abstraction used by filesystem/terminal/process crates. |
+  | `rustls@0.23.40` | `ISC` | TLS stack for HTTP, Docker, and sigstore clients. |
+  | `rustls-native-certs@0.8.4` | `ISC` | Native certificate loading for rustls clients. |
+  | `rustls-webpki@0.103.13` | `ISC` | WebPKI verification for rustls. |
+  | `ryu@1.0.23` | `BSL-1.0` | Float formatting through serde/JSON stacks. |
+  | `ryu-js@1.0.2` | `BSL-1.0` | JS-compatible float formatting through docs/build dependencies. |
+  | `same-file@1.0.6` | `Unlicense` | Filesystem walk helper through `walkdir`. |
+  | `serial2@0.2.37` | `BSD-2-Clause` | Serial/PTY-related terminal dependency. |
+  | `subtle@2.6.1` | `BSD-3-Clause` | Constant-time comparison helper in crypto stack. |
+  | `tinystr@0.8.3` | `Unicode-3.0` | ICU small-string dependency. |
+  | `tinyvec@1.11.0` | `Zlib` | Unicode/normalization support dependency. |
+  | `tinyvec_macros@0.1.1` | `Zlib` | Macro helper for `tinyvec`. |
+  | `unicode-ident@1.0.24` | `Unicode-3.0` | Rust proc-macro parsing stack via `proc-macro2`/`syn`. |
+  | `untrusted@0.7.1` | `ISC` | Older crypto/WebPKI stack duplicate. |
+  | `untrusted@0.9.0` | `ISC` | Crypto/WebPKI stack. |
+  | `walkdir@2.5.0` | `Unlicense` | Filesystem traversal helper. |
+  | `wasi@0.11.1+wasi-snapshot-preview1` | `Apache-2.0 WITH LLVM-exception` | WASI target support through platform dependencies. |
+  | `wasip2@1.0.3+wasi-0.2.9` | `Apache-2.0 WITH LLVM-exception` | WASI target support through platform dependencies. |
+  | `wasip3@0.4.0+wasi-0.3.0-rc-2026-01-06` | `Apache-2.0 WITH LLVM-exception` | WASI target support through platform dependencies. |
+  | `webpki-root-certs@1.0.7` | `CDLA-Permissive-2.0` | Root certificate bundle for TLS stack. |
+  | `winapi-util@0.1.11` | `Unlicense` | Windows filesystem helper through `walkdir`. |
+  | `wit-bindgen@0.51.0` | `Apache-2.0 WITH LLVM-exception` | WASI/WIT platform codegen dependency. |
+  | `wit-bindgen@0.57.1` | `Apache-2.0 WITH LLVM-exception` | WASI/WIT platform codegen dependency. |
+  | `writeable@0.6.3` | `Unicode-3.0` | ICU formatting/data abstraction. |
+  | `yoke@0.8.3` | `Unicode-3.0` | ICU zero-copy data abstraction. |
+  | `yoke-derive@0.8.2` | `Unicode-3.0` | Proc-macro helper for `yoke`. |
+  | `zerocopy@0.8.50` | `BSD-2-Clause` | Zero-copy data layout helper used by platform/parser deps. |
+  | `zerocopy-derive@0.8.50` | `BSD-2-Clause` | Proc-macro helper for `zerocopy`. |
+  | `zerofrom@0.1.8` | `Unicode-3.0` | ICU zero-copy conversion helper. |
+  | `zerofrom-derive@0.1.7` | `Unicode-3.0` | Proc-macro helper for `zerofrom`. |
+  | `zerotrie@0.2.4` | `Unicode-3.0` | ICU trie/data structure dependency. |
+  | `zerovec@0.11.6` | `Unicode-3.0` | ICU zero-copy vector dependency. |
+  | `zerovec-derive@0.11.3` | `Unicode-3.0` | Proc-macro helper for `zerovec`. |
+
 - [x] Wire `cargo deny check` into CI: the `advisories` check belongs in the **scheduled** hygiene job (new advisories appear without code changes — a PR gate would fail PRs for unrelated CVE publications), while `licenses`/`bans`/`sources` are deterministic against the lockfile and run **PR-blocking** in the `check` job. Triage every initial finding to zero or a commented exception. **Evidence (2026-06-06):** <RepoFile path=".github/workflows/ci.yml" /> installs `cargo:cargo-deny` and runs `cargo deny check licenses bans sources`; <RepoFile path=".github/workflows/hygiene.yml" /> runs `cargo deny check advisories`; local `cargo deny check advisories` exits 0 after the documented `RUSTSEC-2023-0071` exception.
 - [x] Add `"cargo:cargo-hack"` (pinned) to <RepoFile path="mise.toml" />; add `cargo hack check --workspace --feature-powerset --all-targets` to the scheduled hygiene job; fix every combination that fails to compile (each failure is an unverified `#[cfg]` branch — the dead-code-adjacent class). **Evidence (2026-06-06):** `cargo hack check --workspace --feature-powerset --all-targets --locked` exits 0 (22/22 combinations).
 - [x] Record the not-adopted decisions (`cargo-vet`, `cargo-crev`, separate `cargo-audit`) with their rationale and retirement triggers in `crates/AGENTS.md`, alongside the Defect 61/62 policy block. **Evidence (2026-06-06):** `crates/AGENTS.md` records `cargo-deny` as the single supply-chain gate, separate `cargo-audit` as redundant, and `cargo-vet`/`cargo-crev` as deferred until jackin' has a real multi-person audit/review group or production provenance requirements.
