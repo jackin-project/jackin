@@ -12,11 +12,12 @@
 //! The `dump()` / snapshot-for-observation pattern: avt (MIT), Marcin Kulik /
 //! asciinema project.
 
-use std::slice;
+use std::collections::vec_deque;
 
 use crate::{
     cell::{Attrs, Cell, Color},
     damage::DirtySpans,
+    grid::RowStore,
 };
 
 /// A snapshot of a single cell at dump time.
@@ -115,7 +116,7 @@ pub struct GridPatch<'a> {
     /// Whether the alternate screen was active at snapshot time.
     pub alternate_screen: bool,
     /// The active screen at patch creation time.
-    screen: &'a [Vec<Cell>],
+    screen: &'a RowStore,
     /// Changed rows in display order.
     dirty: DirtySpans,
 }
@@ -126,7 +127,7 @@ impl<'a> GridPatch<'a> {
         cols: u16,
         cursor: (u16, u16),
         alternate_screen: bool,
-        screen: &'a [Vec<Cell>],
+        screen: &'a RowStore,
         dirty: DirtySpans,
     ) -> Self {
         Self {
@@ -177,14 +178,14 @@ impl<'a> GridPatch<'a> {
 
 #[derive(Debug)]
 pub struct ChangedRows<'a, 'dirty> {
-    screen: &'a [Vec<Cell>],
+    screen: &'a RowStore,
     state: ChangedRowsState<'a, 'dirty>,
 }
 
 #[derive(Debug)]
 enum ChangedRowsState<'a, 'dirty> {
-    All(std::iter::Enumerate<slice::Iter<'a, Vec<Cell>>>),
-    Rows(slice::Iter<'dirty, u16>),
+    All(std::iter::Enumerate<vec_deque::Iter<'a, Vec<Cell>>>),
+    Rows(std::slice::Iter<'dirty, u16>),
 }
 
 impl<'a> Iterator for ChangedRows<'a, '_> {

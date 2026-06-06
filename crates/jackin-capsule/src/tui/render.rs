@@ -159,7 +159,7 @@ pub(crate) fn pane_snapshot_from_damagegrid(
 /// `scrollback_rows` are the rows from `DamageGrid::scrollback_rows_at_offset()`.
 pub(crate) fn pane_snapshot_from_damagegrid_with_scrollback(
     grid: &jackin_term::DamageGrid,
-    scrollback_rows: &[Vec<jackin_term::Cell>],
+    scrollback_rows: &[&[jackin_term::Cell]],
     rect_rows: u16,
     rect_cols: u16,
 ) -> Vec<RowSnapshot> {

@@ -734,7 +734,7 @@ impl Session {
         }
         crate::tui::render::pane_snapshot_from_damagegrid_with_scrollback(
             &self.shadow_grid,
-            sb_rows,
+            &sb_rows,
             viewport_rows,
             viewport_cols,
         )

@@ -1,7 +1,8 @@
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 //!
-//! Uses a straightforward `Vec<Vec<Cell>>` grid (correctness before memory
-//! model — Phase 4 replaces this with the Ghostty-inspired `PageList` arena).
+//! Uses a ring-backed row store inspired by Alacritty's grid storage. Rows are
+//! stable `Vec<Cell>` slices for render borrowing, while scroll and scrollback
+//! rotation avoid shifting the whole backing vector.
 //!
 //! Key capability: `dirty_spans()` reports which rows were
 //! mutated since the last call, recorded *as* `Perform` mutates the grid —
@@ -14,6 +15,11 @@
 //! Grid structure inspired by Alacritty `alacritty_terminal::grid::Grid`
 //! (Apache-2.0/MIT) and Zellij `zellij-server::panes::grid::Grid` (MIT).
 //! Neither crate is a dependency; only the design pattern is borrowed.
+
+use std::{
+    collections::{VecDeque, vec_deque},
+    ops::{Index, IndexMut},
+};
 
 use unicode_width::UnicodeWidthChar;
 
@@ -74,13 +80,13 @@ pub struct DamageGrid {
     rows: u16,
     cols: u16,
     /// Primary screen cells.
-    primary: Vec<Vec<Cell>>,
+    primary: RowStore,
     /// Alternate screen cells (activated by `?1049h`).
-    alternate: Vec<Vec<Cell>>,
+    alternate: RowStore,
     /// True when the alternate screen is active.
     alt_screen: bool,
     /// Scrollback buffer (primary screen only). Newest entry = last item.
-    scrollback: Vec<Vec<Cell>>,
+    scrollback: RowStore,
     /// Max scrollback rows kept.
     scrollback_limit: usize,
     /// Current scrollback view offset (0 = live tail).
@@ -153,6 +159,80 @@ impl std::fmt::Debug for DamageGrid {
 /// 64 is well past any real terminal program's nested keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
 
+/// Ring-backed row storage.
+///
+/// This borrows the core idea from Alacritty's `Storage` grid
+/// (Apache-2.0/MIT): keep rows in a ring so line scroll/evict operations are
+/// row-rotation operations instead of shifting every visible row. Cells remain
+/// in plain row vectors so the capsule can borrow contiguous row slices for
+/// direct dirty-patch emission.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RowStore {
+    rows: VecDeque<Vec<Cell>>,
+}
+
+impl RowStore {
+    fn blank(rows: u16, cols: u16) -> Self {
+        Self {
+            rows: (0..rows).map(|_| blank_row(cols)).collect(),
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.rows.clear();
+    }
+
+    pub(crate) fn get(&self, row: usize) -> Option<&Vec<Cell>> {
+        self.rows.get(row)
+    }
+
+    pub(crate) fn iter(&self) -> vec_deque::Iter<'_, Vec<Cell>> {
+        self.rows.iter()
+    }
+
+    fn iter_mut(&mut self) -> vec_deque::IterMut<'_, Vec<Cell>> {
+        self.rows.iter_mut()
+    }
+
+    fn insert(&mut self, index: usize, row: Vec<Cell>) {
+        self.rows.insert(index.min(self.rows.len()), row);
+    }
+
+    fn remove(&mut self, index: usize) -> Option<Vec<Cell>> {
+        self.rows.remove(index)
+    }
+
+    fn push_back(&mut self, row: Vec<Cell>) {
+        self.rows.push_back(row);
+    }
+
+    fn pop_front(&mut self) -> Option<Vec<Cell>> {
+        self.rows.pop_front()
+    }
+}
+
+impl Index<usize> for RowStore {
+    type Output = Vec<Cell>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.rows[index]
+    }
+}
+
+impl IndexMut<usize> for RowStore {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.rows[index]
+    }
+}
+
 impl DamageGrid {
     /// Create a new grid with the given dimensions and scrollback limit.
     pub fn new(rows: u16, cols: u16, scrollback_limit: usize) -> Self {
@@ -165,7 +245,7 @@ impl DamageGrid {
             primary: blank.clone(),
             alternate: blank,
             alt_screen: false,
-            scrollback: Vec::new(),
+            scrollback: RowStore::default(),
             scrollback_limit,
             scrollback_offset: 0,
             cursor_row: 0,
@@ -344,17 +424,19 @@ impl DamageGrid {
     /// Returns an empty slice when `offset == 0` (live view) or when the
     /// scrollback buffer is empty. Clamps `offset` to the actual scrollback length.
     #[must_use]
-    pub fn scrollback_rows_at_offset(&self, offset: usize, max_rows: usize) -> &[Vec<Cell>] {
+    pub fn scrollback_rows_at_offset(&self, offset: usize, max_rows: usize) -> Vec<&[Cell]> {
         let len = self.scrollback.len();
         if offset == 0 || len == 0 || max_rows == 0 {
-            return &[];
+            return Vec::new();
         }
         // scrollback is oldest-first; we want the `offset` most recent rows.
         // start = the index of the row that is `offset` lines back from the tail.
         let clamped = offset.min(len);
         let start = len.saturating_sub(clamped);
         let end = (start + max_rows).min(len);
-        &self.scrollback[start..end]
+        (start..end)
+            .filter_map(|idx| self.scrollback.get(idx).map(Vec::as_slice))
+            .collect()
     }
 
     /// Dump a scrollback VIEW as a [`GridSnapshot`]: the scrollback rows at
@@ -496,7 +578,7 @@ impl DamageGrid {
 
     // ── Internal grid helpers ─────────────────────────────────────────────────
 
-    fn active_grid(&mut self) -> &mut Vec<Vec<Cell>> {
+    fn active_grid(&mut self) -> &mut RowStore {
         if self.alt_screen {
             &mut self.alternate
         } else {
@@ -572,9 +654,9 @@ impl DamageGrid {
                 // Push top row to scrollback, evicting the oldest at the cap.
                 let row = self.primary[0].clone();
                 if self.scrollback.len() >= self.scrollback_limit {
-                    self.scrollback.remove(0);
+                    self.scrollback.pop_front();
                 }
-                self.scrollback.push(row);
+                self.scrollback.push_back(row);
             }
             // Scroll-introduced blank lines use the DEFAULT background, not the
             // current one — xterm applies back-colour-erase to the
@@ -622,9 +704,9 @@ impl DamageGrid {
         for idx in first..=last {
             let row = self.primary[idx].clone();
             if self.scrollback.len() >= self.scrollback_limit {
-                self.scrollback.remove(0);
+                self.scrollback.pop_front();
             }
-            self.scrollback.push(row);
+            self.scrollback.push_back(row);
         }
     }
 
@@ -1047,11 +1129,11 @@ fn blank_row(cols: u16) -> Vec<Cell> {
     vec![Cell::default(); cols as usize]
 }
 
-fn make_blank_grid(rows: u16, cols: u16) -> Vec<Vec<Cell>> {
-    (0..rows).map(|_| blank_row(cols)).collect()
+fn make_blank_grid(rows: u16, cols: u16) -> RowStore {
+    RowStore::blank(rows, cols)
 }
 
-fn resize_grid(grid: &[Vec<Cell>], rows: u16, cols: u16) -> Vec<Vec<Cell>> {
+fn resize_grid(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
     let mut new = make_blank_grid(rows, cols);
     for (r, row) in grid.iter().enumerate() {
         if r >= rows as usize {

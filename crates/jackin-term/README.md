@@ -119,7 +119,7 @@ are not constraints.** Owning the layer is the only path where:
 |---|---|---|---|---|
 | `vte` | VT/ANSI parser state machine | **Depend** — never rebuild | MIT | `vte` crate, doy |
 | Ghostty `PageList` | Arena-page memory model for a future cell-grid rewrite if live RSS/CPU proves the current model is the bottleneck | **Reference / future re-implementation candidate** | MIT | Ghostty project, Mitchell Hashimoto |
-| Alacritty ring-`Storage` | Packed ring-buffer grid layout for a future cell-grid rewrite if pages over-serve jackin' pane sizes | **Reference / future re-implementation candidate** | Apache-2.0/MIT | Alacritty project |
+| Alacritty ring-`Storage` | Ring-backed row storage for primary, alternate, and scrollback rows | **Re-implemented** / reference | Apache-2.0/MIT | Alacritty project |
 | Zellij `OutputBuffer` / `changed_lines` | Damage discipline: track dirty rows, emit only changed | **Re-implement** / reference | MIT | Zellij project |
 | libvterm VT coverage checklist | Conformance test reference | **Reference** | MIT/X11 | libvterm, Leonard Richardson |
 | libvterm / vttest / esctest | Conformance coverage references | **Reference** | MIT/X11 / public test suites | upstream projects |
@@ -135,7 +135,7 @@ coverage with an inline comment pointing at the original where applicable.
 ```
 vte (dep)           ← parse: bytes → Perform events
    ↓
-DamageGrid (build)  ← Vec<Vec<Cell>>, CompactString cell contents, scrollback
+DamageGrid (build)  ← ring-backed RowStore, CompactString cell contents, scrollback
    │  dirty_spans() ← damage recorded AS Perform mutates (not recomputed by re-read)
    ↓
 PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-clear
