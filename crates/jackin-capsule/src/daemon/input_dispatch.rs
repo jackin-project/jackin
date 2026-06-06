@@ -553,6 +553,12 @@ impl Multiplexer {
                 //   click on border / padding -> swallowed
                 //   click anywhere outside the box -> dismiss
                 //
+                // Capsule exception to shared `classify_click`: this path
+                // starts from raw SGR bytes, applies an ANSI 0-based →
+                // render 1-based coordinate transform, and then delegates to
+                // dialog-specific hit tests. Move this to `classify_click`
+                // when capsule mouse input is ratatui-native end to end.
+                //
                 // SGR mouse coords are 0-based; `box_rect` returns
                 // render-side coords that are 1-based (the values passed to
                 // `move_to`, which emits `\x1b[r;cH`). Pass row+1 / col+1 here

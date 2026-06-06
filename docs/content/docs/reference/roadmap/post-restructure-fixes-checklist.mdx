@@ -1258,7 +1258,7 @@ A full re-analysis of the branch against this checklist's own acceptance criteri
 **Tasks:**
 - [ ] Migrate console, editor/settings, and capsule hover state onto `HoverTracker<K>`; delete the scattered bools. (Or, if the operator decides the primitive is not worth the migration, delete the unused primitive — one path, never two.)
 - [ ] Same decision for `FocusOwner<Tab>`: migrate the focus bools or delete the primitive. The focus-exclusivity tests should then assert through the single owner.
-- [ ] Route capsule modal click routing through `classify_click` (or record the ANSI-layer exception in code where the hand-rolled path lives, not only in prose).
+- [x] Route capsule modal click routing through `classify_click` (or record the ANSI-layer exception in code where the hand-rolled path lives, not only in prose). **Done:** `input_dispatch.rs` now documents the capsule exception at `Action::DialogClick`: raw SGR bytes need the ANSI 0-based → render 1-based coordinate transform before delegating to dialog-specific hit tests; the comment names `classify_click` as the migration target once capsule mouse input is ratatui-native end to end.
 - [ ] Unify scroll interaction: launch adopts the offset helpers where applicable; the capsule exception is documented at the call site.
 - [ ] Implement `SelectList` horizontal scroll (or re-scope the Defect 8/24 H-scroll promise for pickers with an operator decision).
 - [ ] Add `clippy.toml` `disallowed-methods` banning `std::process::Command::output`/`std::thread::sleep`/blocking `std::fs` in the render-thread crates, now that the Defect 43 conversions landed.
