@@ -2,13 +2,13 @@
 title: "Terminal Emulation Crate (jackin-term)"
 ---
 
-**Status**: **Partially implemented** — The production capsule path now uses `jackin-term` unconditionally and `vt100` is removed from production, test, fuzz, benchmark, lockfile, and source-policy paths. The verification and performance closure criteria are not complete. Open gaps: live capsule present-frame/RSS/CPU run ids, zero per-frame DHAT proof, the benchmark-backed `PageList`-vs-ring-`Storage` memory-model decision, and the Defect 54 real multi-pane smoke run.
+**Status**: **Partially implemented** — The production capsule path now uses `jackin-term` unconditionally and `vt100` is removed from production, test, fuzz, benchmark, lockfile, and source-policy paths. The verification and performance closure criteria are not complete. Open gaps: live capsule present-frame/RSS/CPU run ids, zero per-frame DHAT proof for the complete focused render path, and the Defect 54 real multi-pane smoke run.
 
 - **Phase 0 (baseline):** Complete — the old coupling surface was frozen, then replaced by jackin-term's owned API; TODO.md no longer carries the retired fork entry.
 - **Phase 1 (conformance harness):** Complete — <RepoFile path="crates/jackin-term/tests/conformance.rs" /> compares one-shot and byte-split `DamageGrid` processing, and the `damage_grid_process` cargo-fuzz target runs in CI/hygiene. The committed corpus includes vttest/esctest sequences, real Claude/Codex/vim/htop/tmux PTY captures, asciinema casts, expanded pathological fixtures, and legacy tool-shaped archetypes. A local long fuzz run (`cargo +nightly fuzz run damage_grid_process -- -max_total_time=300`) completed 137,997 runs in 374 seconds with no crash. Harness work found and fixed DamageGrid bugs (ESC M/RI, ICH/`@`, DECSTBM cursor homing, DECAWM deferred last-column wrap, back-colour-erase on EL/ED/ECH, cursor movement overflow).
 - **Phase 2 (`DamageGrid` v0):** Complete — `vte::Perform` grid, `dirty_spans()`, typed `PassthroughEvents`, `CompactString` cells, `GridSnapshot::dump()`. The capsule renders each `GridSnapshot` through `PaneBodyWidget` (a Ratatui widget) into the multiplexer's frame buffer; `SocketBackend` diffs the buffer and emits the minimal ANSI byte sequence over the attach socket.
 - **Phase 3 (capsule cutover):** Complete — the transitional `jackin-term` feature flag was removed; `DamageGrid` is the unconditional live pane renderer in `jackin-capsule`.
-- **Phase 4 (optimize):** Partially complete — `CompactString` inline cells shipped (≤24-byte graphemes = zero heap alloc per cell) and live partial frames consume `dirty_spans()` through `GridPatch`; the focused-pane path still allocates owned dirty-row snapshots, and the Ghostty `PageList`/Alacritty ring decision remains pending live RSS/CPU plus DHAT numbers.
+- **Phase 4 (optimize):** Partially complete — `CompactString` inline cells shipped (≤24-byte graphemes = zero heap alloc per cell), live partial frames consume `dirty_spans()` through borrowed `GridPatch` rows, and the headless benchmark-backed memory-model decision is to keep the current `Vec<Vec<Cell>>` + `CompactString` + fixed dirty-row list until live capsule RSS/CPU or full focused-render DHAT numbers prove a `PageList`/ring rewrite is needed.
 - **Phase 5 (delete old path):** Complete for dependency removal — `vt100` is absent from manifests, lockfiles, fuzz targets, benchmarks, and source-policy exceptions; `DamageGrid` is unconditional; old vt100-backed integration tests (`osc_passthrough.rs`, `vt_round_trip.rs`) are removed. Modern resize-shrink coverage now exercises terminal-edge, split-frame, and resize-storm paths through `PaneBodyWidget`/`SocketBackend`; the real multi-pane smoke run remains open in Defect 54.
 
 The executable plan lives in the [post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 45), which is the primary implementation tracking surface. The crate README (`crates/jackin-term/README.md`) is the self-contained engineering record.
@@ -25,7 +25,7 @@ Non-Rust emulators (libvterm, Ghostty) appear in this document **only as idea so
 
 ## Where this idea came from
 
-### Why we use `vt100` in the first place
+### Why the first rewrite used `vt100`
 
 `jackin-capsule` is an in-container PTY multiplexer. It runs as PID 1 inside a role container, spawns one PTY per agent session, and presents the focused session to whatever host terminal the operator attached. To do that it needs a **terminal model**: something that consumes the raw bytes an agent program writes to its PTY (escape sequences, UTF-8, cursor moves, colors, scroll regions) and maintains an in-memory picture of what the screen *should* look like — so the multiplexer can redraw that picture on demand, swap between panes, restore state on focus changes, and forward OSC sequences.
 
@@ -88,7 +88,7 @@ A pass over what the capsule **actually** calls from `vt100` changes the conclus
 
 > **The capsule does not use `vt100`'s emit stage at all.** `rg "contents_diff|contents_formatted" crates/jackin-capsule/src` returns **nothing**. The "diff two full `Screen`s and serialize to escapes" path — the thing the survey calls `vt100`'s defining strength and the reason GPU engines "don't fit" — is **dead code for us**. We replaced it long ago with our own snapshot + diff + emit in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />.
 
-### What we genuinely use `vt100` for (the real coupling surface)
+### What the old path used `vt100` for (the real coupling surface)
 
 A replacement must satisfy exactly this, and nothing more:
 

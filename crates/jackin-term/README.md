@@ -118,8 +118,8 @@ are not constraints.** Owning the layer is the only path where:
 | Source | What we take | How | License | Attribution |
 |---|---|---|---|---|
 | `vte` | VT/ANSI parser state machine | **Depend** — never rebuild | MIT | `vte` crate, doy |
-| Ghostty `PageList` | Arena-page memory model for the cell grid | **Re-implement** in Rust | MIT | Ghostty project, Mitchell Hashimoto |
-| Alacritty ring-`Storage` | Packed cell ring-buffer grid layout | **Re-implement** in Rust | Apache-2.0/MIT | Alacritty project |
+| Ghostty `PageList` | Arena-page memory model for a future cell-grid rewrite if live RSS/CPU proves the current model is the bottleneck | **Reference / future re-implementation candidate** | MIT | Ghostty project, Mitchell Hashimoto |
+| Alacritty ring-`Storage` | Packed ring-buffer grid layout for a future cell-grid rewrite if pages over-serve jackin' pane sizes | **Reference / future re-implementation candidate** | Apache-2.0/MIT | Alacritty project |
 | Zellij `OutputBuffer` / `changed_lines` | Damage discipline: track dirty rows, emit only changed | **Re-implement** / reference | MIT | Zellij project |
 | libvterm VT coverage checklist | Conformance test reference | **Reference** | MIT/X11 | libvterm, Leonard Richardson |
 | libvterm / vttest / esctest | Conformance coverage references | **Reference** | MIT/X11 / public test suites | upstream projects |
@@ -135,21 +135,24 @@ coverage with an inline comment pointing at the original where applicable.
 ```
 vte (dep)           ← parse: bytes → Perform events
    ↓
-DamageGrid (build)  ← packed Cell(style_id, grapheme_id), ring-buffer rows, scrollback
+DamageGrid (build)  ← Vec<Vec<Cell>>, CompactString cell contents, scrollback
    │  dirty_spans() ← damage recorded AS Perform mutates (not recomputed by re-read)
    ↓
 PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-clear
    ↓
 [existing WireDiff] ← render_snapshot_rows, fed dirty_spans() instead of full re-read
-                      erase-to-EOL after each row (Defect 44 fix; permanent invariant)
+                      full clear on geometry change (Defect 44 invariant)
 ```
 
 **Invariants:**
-- Every geometry change fully covers each rect: after any resize, the next emit erases to EOL
-  after each row, and vacated rows are blanked. No stale cell ever survives a frame.
+- Every geometry change fully covers each rect: after any resize, the next full frame clears
+  the terminal buffer and repaints through `PaneBodyWidget`/`SocketBackend`. No stale cell
+  should survive a frame.
 - Damage recorded at mutation, not recomputed by re-read.
-- Zero per-frame heap allocation in the focused-pane render path.
-- Minimal wire bytes: cursor-move + run-length SGR tuned for byte count.
+- Zero per-frame heap allocation in the `process()` + borrowed `dump_dirty_patch()` path after
+  warmup; the complete capsule focused-render handoff is tracked by the live acceptance ledger.
+- Minimal wire bytes come from Ratatui's `SocketBackend` buffer diff over full snapshots or
+  dirty patches, not from a second terminal model.
 - Pure Rust, no foreign bindings, no C/Zig libraries.
 
 ---
