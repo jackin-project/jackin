@@ -15,10 +15,10 @@ name = "jackin_image"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-core = { path = "../jackin-core" }
-jackin-manifest = { path = "../jackin-manifest" }
-jackin-docker = { path = "../jackin-docker" }
-jackin-diagnostics = { path = "../jackin-diagnostics" }
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
+jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
 sha2 = "0.11"
 tar = "0.4"
 flate2 = "1.1"
@@ -38,7 +38,7 @@ base64 = "0.22"
 x509-cert = { version = "0.2", default-features = false, features = ["pem"] }
 
 [build-dependencies]
-jackin-build-meta = { path = "../jackin-build-meta" }
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 
 [dev-dependencies]
 filetime = "=0.2.29"

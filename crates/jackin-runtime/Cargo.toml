@@ -15,16 +15,16 @@ name = "jackin_runtime"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-core = { path = "../jackin-core" }
-jackin-config = { path = "../jackin-config" }
-jackin-env = { path = "../jackin-env" }
-jackin-manifest = { path = "../jackin-manifest" }
-jackin-docker = { path = "../jackin-docker" }
-jackin-image = { path = "../jackin-image" }
-jackin-diagnostics = { path = "../jackin-diagnostics" }
-jackin-launch = { path = "../jackin-launch" }
-jackin-protocol = { path = "../jackin-protocol" }
-jackin-tui = { path = "../jackin-tui" }
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
+jackin-env = { version = "0.6.0-dev", path = "../jackin-env" }
+jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
+jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
+jackin-image = { version = "0.6.0-dev", path = "../jackin-image" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+jackin-launch = { version = "0.6.0-dev", path = "../jackin-launch" }
+jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 
 tracing = "0.1"
 tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
@@ -51,7 +51,7 @@ tempfile = "3.20"
 tokio = { version = "=1.52.3", features = ["test-util"] }
 
 [build-dependencies]
-jackin-build-meta = { path = "../jackin-build-meta" }
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 
 [features]
 test-support = []

@@ -33,7 +33,7 @@ compact_str = "0.9"
 [dev-dependencies]
 # vt100 fork: differential oracle for the Phase 1 harness.
 # Do NOT use vt100 in production jackin-term code — it is a test dependency only.
-vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
+vt100 = { version = "0.16.2", git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 
 [lints]
 workspace = true

@@ -79,3 +79,35 @@ Dead-code scanner layers:
 - `cargo shear` is PR-blocking in CI. It detects unused dependencies, misplaced dependencies, and unlinked Rust source files.
 - `cargo udeps` and `cargo workspace-unused-pub` are pinned in `mise.toml` for scheduled/manual hygiene sweeps.
 - Tools are installed through `mise`, not ad-hoc `cargo install` in workflows.
+
+## Supply-chain and feature-matrix hygiene
+
+`cargo-deny` is the single supply-chain gate. PR CI runs:
+
+```text
+cargo deny check licenses bans sources
+```
+
+The scheduled hygiene workflow runs:
+
+```text
+cargo deny check advisories
+cargo hack check --workspace --feature-powerset --all-targets --locked
+```
+
+`deny.toml` is strict by default: crates.io is the only allowed registry, the
+`donbeave/vt100-rust` oracle is the only allowed Git source, wildcard
+dependencies are denied, yanked crates are denied, and the license allowlist is
+Apache-2.0 plus MIT. Any non-Apache/MIT license must be a version-pinned
+exception with a short comment explaining that it awaits an operator ruling.
+
+Current transitive duplicate-version debt is recorded as version-pinned
+`bans.skip` entries. Keep `multiple-versions = "warn"` so a new duplicate
+version still trips the gate; do not add broad duplicate allows.
+
+`cargo-audit` is not a separate gate because `cargo-deny` already runs RustSec
+advisories. `cargo-vet` and `cargo-crev` are deliberately not adopted while
+jackin' is a solo-maintainer project: they are shared-audit systems, and there
+is no audit-sharing organization here. Revisit them only if jackin' gains a
+real multi-person review/audit group or production deployment requirements that
+need provenance attestations beyond RustSec advisory checks.

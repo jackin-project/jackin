@@ -10,9 +10,9 @@ repository.workspace = true
 [dependencies]
 anyhow = "1.0"
 crossterm = "0.29"
-jackin-diagnostics = { path = "../jackin-diagnostics" }
-jackin-protocol = { path = "../jackin-protocol" }
-jackin-tui = { path = "../jackin-tui" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 ratatui = "0.30"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.48", features = ["macros", "rt", "time"] }

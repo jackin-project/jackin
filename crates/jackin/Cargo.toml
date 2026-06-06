@@ -26,17 +26,17 @@ path = "src/bin/build_jackin_capsule.rs"
 
 [dependencies]
 anyhow = "1.0"
-jackin-config = { path = "../jackin-config" }
-jackin-core = { path = "../jackin-core" }
-jackin-docker = { path = "../jackin-docker" }
-jackin-manifest = { path = "../jackin-manifest" }
-jackin-diagnostics = { path = "../jackin-diagnostics" }
-jackin-env = { path = "../jackin-env" }
-jackin-image = { path = "../jackin-image" }
-jackin-runtime = { path = "../jackin-runtime" }
-jackin-tui = { path = "../jackin-tui" }
-jackin-console = { path = "../jackin-console" }
-jackin-protocol = { path = "../jackin-protocol" }
+jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
+jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+jackin-env = { version = "0.6.0-dev", path = "../jackin-env" }
+jackin-image = { version = "0.6.0-dev", path = "../jackin-image" }
+jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
+jackin-console = { version = "0.6.0-dev", path = "../jackin-console" }
+jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 clap = { version = "4.5", features = ["derive", "color", "env"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -55,11 +55,11 @@ tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros
 futures-util = "0.3"
 
 [build-dependencies]
-jackin-build-meta = { path = "../jackin-build-meta" }
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 
 [dev-dependencies]
 assert_cmd = "=2.2.2"
-jackin-runtime = { path = "../jackin-runtime", features = ["test-support"] }
+jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 insta = { version = "1", features = ["filters"] }
 predicates = "=3.1.4"

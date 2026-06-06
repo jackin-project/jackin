@@ -21,7 +21,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-jackin-protocol = { path = "../jackin-protocol" }
+jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tracing = "0.1"
@@ -32,17 +32,17 @@ portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process", "inotify"] }
 # jackin-term: the owned terminal model. `DamageGrid` is the sole VT parser /
 # screen / scrollback / passthrough model.
-jackin-term = { path = "../jackin-term" }
+jackin-term = { version = "0.6.0-dev", path = "../jackin-term" }
 url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-jackin-tui = { path = "../jackin-tui" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 ratatui = "0.30"
 # tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit
 # the capsule's owned-grid model. The custom cell widget approach is used instead.
 
 [build-dependencies]
-jackin-build-meta = { path = "../jackin-build-meta" }
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 
 [[bench]]
 name = "pane_body"
