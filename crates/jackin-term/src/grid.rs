@@ -19,6 +19,7 @@
 use std::{
     collections::{VecDeque, vec_deque},
     ops::{Index, IndexMut},
+    sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
 use unicode_width::UnicodeWidthChar;
@@ -169,12 +170,14 @@ const KITTY_KB_STACK_CAP: usize = 64;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RowStore {
     rows: VecDeque<Vec<Cell>>,
+    arena: RowArena,
 }
 
 impl RowStore {
-    fn blank(rows: u16, cols: u16) -> Self {
+    fn blank(rows: u16, cols: u16, arena: RowArena) -> Self {
         Self {
-            rows: (0..rows).map(|_| blank_row(cols)).collect(),
+            rows: (0..rows).map(|_| arena.blank_row(cols)).collect(),
+            arena,
         }
     }
 
@@ -187,7 +190,9 @@ impl RowStore {
     }
 
     fn clear(&mut self) {
-        self.rows.clear();
+        for row in self.rows.drain(..) {
+            self.arena.recycle(row);
+        }
     }
 
     pub(crate) fn get(&self, row: usize) -> Option<&Vec<Cell>> {
@@ -217,6 +222,84 @@ impl RowStore {
     fn pop_front(&mut self) -> Option<Vec<Cell>> {
         self.rows.pop_front()
     }
+
+    fn recycle_front(&mut self) {
+        if let Some(row) = self.pop_front() {
+            self.arena.recycle(row);
+        }
+    }
+}
+
+impl Drop for RowStore {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+/// Shared row arena for all terminal grids owned by one daemon.
+///
+/// This is deliberately small and row-level rather than a full Ghostty-style
+/// page allocator: prior headless benchmarks showed the hot path is already
+/// CPU-cheap, so the first shared store should remove per-session row churn
+/// without adding page pins or offset-addressed cell lifetimes.
+#[derive(Clone, Debug)]
+pub struct RowArena {
+    inner: Arc<RowArenaInner>,
+}
+
+#[derive(Debug, Default)]
+struct RowArenaInner {
+    rows: Mutex<Vec<Vec<Cell>>>,
+}
+
+impl Default for RowArena {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(RowArenaInner::default()),
+        }
+    }
+}
+
+impl RowArena {
+    /// Shared process-wide arena used by `DamageGrid::new`.
+    #[must_use]
+    pub fn shared() -> Self {
+        static SHARED: OnceLock<RowArena> = OnceLock::new();
+        SHARED.get_or_init(Self::default).clone()
+    }
+
+    fn lock_rows(&self) -> MutexGuard<'_, Vec<Vec<Cell>>> {
+        match self.inner.rows.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    fn blank_row(&self, cols: u16) -> Vec<Cell> {
+        let cols = cols as usize;
+        let mut rows = self.lock_rows();
+        if let Some(index) = rows.iter().position(|row| row.len() == cols) {
+            let mut row = rows.swap_remove(index);
+            row.fill(Cell::default());
+            row
+        } else {
+            vec![Cell::default(); cols]
+        }
+    }
+
+    fn recycle(&self, mut row: Vec<Cell>) {
+        const MAX_RECYCLED_ROWS: usize = 4096;
+        row.fill(Cell::default());
+        let mut rows = self.lock_rows();
+        if rows.len() < MAX_RECYCLED_ROWS {
+            rows.push(row);
+        }
+    }
+
+    #[cfg(test)]
+    fn recycled_rows(&self) -> usize {
+        self.lock_rows().len()
+    }
 }
 
 impl Index<usize> for RowStore {
@@ -236,7 +319,17 @@ impl IndexMut<usize> for RowStore {
 impl DamageGrid {
     /// Create a new grid with the given dimensions and scrollback limit.
     pub fn new(rows: u16, cols: u16, scrollback_limit: usize) -> Self {
-        let blank = make_blank_grid(rows, cols);
+        Self::with_row_arena(rows, cols, scrollback_limit, RowArena::shared())
+    }
+
+    /// Create a new grid backed by a caller-provided shared row arena.
+    pub fn with_row_arena(
+        rows: u16,
+        cols: u16,
+        scrollback_limit: usize,
+        row_arena: RowArena,
+    ) -> Self {
+        let blank = make_blank_grid(rows, cols, row_arena.clone());
         Self {
             parser: vte::Parser::new(),
             pending_utf8: Vec::new(),
@@ -245,7 +338,10 @@ impl DamageGrid {
             primary: blank.clone(),
             alternate: blank,
             alt_screen: false,
-            scrollback: RowStore::default(),
+            scrollback: RowStore {
+                rows: VecDeque::new(),
+                arena: row_arena,
+            },
             scrollback_limit,
             scrollback_offset: 0,
             cursor_row: 0,
@@ -654,7 +750,7 @@ impl DamageGrid {
                 // Push top row to scrollback, evicting the oldest at the cap.
                 let row = self.primary[0].clone();
                 if self.scrollback.len() >= self.scrollback_limit {
-                    self.scrollback.pop_front();
+                    self.scrollback.recycle_front();
                 }
                 self.scrollback.push_back(row);
             }
@@ -704,7 +800,7 @@ impl DamageGrid {
         for idx in first..=last {
             let row = self.primary[idx].clone();
             if self.scrollback.len() >= self.scrollback_limit {
-                self.scrollback.pop_front();
+                self.scrollback.recycle_front();
             }
             self.scrollback.push_back(row);
         }
@@ -1129,12 +1225,12 @@ fn blank_row(cols: u16) -> Vec<Cell> {
     vec![Cell::default(); cols as usize]
 }
 
-fn make_blank_grid(rows: u16, cols: u16) -> RowStore {
-    RowStore::blank(rows, cols)
+fn make_blank_grid(rows: u16, cols: u16, arena: RowArena) -> RowStore {
+    RowStore::blank(rows, cols, arena)
 }
 
 fn resize_grid(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
-    let mut new = make_blank_grid(rows, cols);
+    let mut new = make_blank_grid(rows, cols, grid.arena.clone());
     for (r, row) in grid.iter().enumerate() {
         if r >= rows as usize {
             break;
@@ -1176,3 +1272,28 @@ mod fuzz_regression_tests;
 
 #[cfg(test)]
 mod scrollback_view_tests;
+
+#[cfg(test)]
+mod row_arena_tests {
+    use super::{DamageGrid, RowArena};
+
+    #[test]
+    fn shared_row_arena_recycles_rows_between_grids() {
+        let arena = RowArena::default();
+        {
+            let mut grid = DamageGrid::with_row_arena(3, 8, 8, arena.clone());
+            grid.process(b"one\ntwo\nthree\nfour\nfive");
+        }
+        let recycled_after_drop = arena.recycled_rows();
+        assert!(
+            recycled_after_drop >= 6,
+            "primary + alternate rows should return to shared arena on drop"
+        );
+
+        let _next_grid = DamageGrid::with_row_arena(3, 8, 8, arena.clone());
+        assert!(
+            arena.recycled_rows() < recycled_after_drop,
+            "new grids should draw rows from the shared arena before allocating"
+        );
+    }
+}

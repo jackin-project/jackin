@@ -419,7 +419,7 @@ impl vte::Perform for DamageGrid {
             }
             // RIS — full reset.
             b'c' => {
-                let blank = make_blank_grid(self.rows, self.cols);
+                let blank = make_blank_grid(self.rows, self.cols, self.primary.arena.clone());
                 self.primary = blank.clone();
                 self.alternate = blank;
                 self.alt_screen = false;

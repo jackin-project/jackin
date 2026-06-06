@@ -431,16 +431,24 @@ pub enum PullRequestLookupOutcome {
     TransientFailure,
 }
 
+#[derive(Clone, Debug)]
+pub struct SessionTerminal {
+    pub rows: u16,
+    pub cols: u16,
+    pub row_arena: jackin_term::RowArena,
+}
+
 impl Session {
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
         provider: Option<SessionProvider>,
         cmd: CommandBuilder,
-        rows: u16,
-        cols: u16,
+        terminal: SessionTerminal,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
+        let rows = terminal.rows;
+        let cols = terminal.cols;
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -637,7 +645,12 @@ impl Session {
                 last_output_at: std::time::Instant::now(),
                 scrollback_offset: 0,
                 received_output: false,
-                shadow_grid: Box::new(jackin_term::DamageGrid::new(rows, cols, SCROLLBACK_LEN)),
+                shadow_grid: Box::new(jackin_term::DamageGrid::with_row_arena(
+                    rows,
+                    cols,
+                    SCROLLBACK_LEN,
+                    terminal.row_arena,
+                )),
                 osc_policy: OscPolicy::from_env(),
                 title: None,
                 icon_name: None,

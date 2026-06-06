@@ -290,6 +290,10 @@ pub struct Multiplexer {
     /// components. The raw ANSI compositor remains as the fallback and partial
     /// update path while the remaining render migration proceeds.
     ratatui_terminal: ratatui::Terminal<crate::tui::socket_backend::SocketBackend>,
+    /// Shared terminal row arena for every pane in this daemon. All
+    /// `DamageGrid`s draw primary, alternate, and scrollback rows from this
+    /// store so closing a session returns row buffers for later panes.
+    terminal_row_arena: jackin_term::RowArena,
     /// Codenames currently assigned to open tabs.
     /// A codename in `codename_live` is NOT in `codename_retired`.
     codename_live: HashSet<String>,
@@ -482,6 +486,7 @@ impl Multiplexer {
             minimax_key,
             kimi_key,
             ratatui_terminal,
+            terminal_row_arena: jackin_term::RowArena::default(),
             codename_live: HashSet::new(),
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),

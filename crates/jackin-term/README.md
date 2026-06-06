@@ -135,7 +135,8 @@ coverage with an inline comment pointing at the original where applicable.
 ```
 vte (dep)           ← parse: bytes → Perform events
    ↓
-DamageGrid (build)  ← ring-backed RowStore, CompactString cell contents, scrollback
+DamageGrid (build)  ← shared RowArena + ring-backed RowStore,
+   │                    CompactString cell contents, scrollback
    │  dirty_spans() ← damage recorded AS Perform mutates (not recomputed by re-read)
    ↓
 PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-clear

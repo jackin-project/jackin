@@ -1,5 +1,6 @@
 //! Session, tab, and pane lifecycle methods for the Multiplexer.
 
+use crate::session::SessionTerminal;
 use crate::tui::view::{spawn_failure_agent_label, spawn_failure_banner, spawn_failure_message};
 
 use super::{
@@ -366,8 +367,11 @@ impl Multiplexer {
                 env_overrides: env_overrides.to_vec(),
             }),
             launch.cmd,
-            self.content_rows.saturating_sub(2),
-            self.term_cols.saturating_sub(2),
+            SessionTerminal {
+                rows: self.content_rows.saturating_sub(2),
+                cols: self.term_cols.saturating_sub(2),
+                row_arena: self.terminal_row_arena.clone(),
+            },
             self.event_tx.clone(),
         )?;
         let tab_label = launch.label.clone();
