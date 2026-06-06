@@ -6,12 +6,10 @@
 //! accumulates them in a `Vec<u8>`. The caller flushes the buffer to
 //! the attach socket via [`SocketBackend::take_output`].
 //!
-//! Only chrome and dialog widgets run through this backend today; pane
-//! body content is still handled by the existing `PaneBodyCache` path
-//! and written alongside the chrome output. That split is explicit and
-//! temporary: once `tui-term` or a thin custom cell widget lands, pane
-//! bodies will also go through this backend and `PaneBodyCache` can be
-//! retired.
+//! Chrome, dialogs, and pane bodies all render through this backend today.
+//! `PaneBodyCache` no longer owns a parallel cell diff; it only tracks
+//! pane-body geometry/dimming validity while the remaining render callers move
+//! toward direct `dirty_spans()` consumption.
 
 use std::io;
 

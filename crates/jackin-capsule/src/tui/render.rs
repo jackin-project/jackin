@@ -12,6 +12,11 @@ pub(crate) struct CellSnapshot {
     pub(crate) width: u16,
 }
 
+/// Render/selection projection derived from `DamageGrid`.
+///
+/// This is not a second terminal model. It preserves cell widths for
+/// scrollback text selection and operator-facing screen dumps until those
+/// callers can consume `GridSnapshot` / dirty spans directly.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct RowSnapshot {
     pub(crate) cells: Vec<CellSnapshot>,
@@ -34,8 +39,11 @@ pub enum PaneBodyDim {
     Inactive,
 }
 
-/// Cached visible pane body used to emit Zellij-style changed rows
-/// instead of repainting every pane body on every PTY burst.
+/// Pane-body validity cache for geometry and dimming state.
+///
+/// Ratatui owns the cell diff. This cache intentionally stores no cell
+/// contents; it only lets layout/resize code invalidate pane-body state until
+/// the remaining callers can render directly from `dirty_spans()`.
 #[derive(Debug, Default)]
 pub struct PaneBodyCache {
     rows: u16,
