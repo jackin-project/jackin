@@ -57,7 +57,7 @@ workspace = true
 
 Do not add per-crate copies of `edition`, `rust-version`, `license`, `repository`, or lint tables unless the crate has a documented reason to diverge.
 
-The root `[workspace.lints.rust]` table is the source of truth. Dead-code and hygiene lints stay at deny: `unused`, `unused_imports`, `unused_variables`, `unused_must_use`, `dead_code`, and `unreachable_pub`. Rust 2024 unsafe-hygiene lints are enabled, and `unsafe_code = "forbid"` remains workspace-wide.
+The root `[workspace.lints.rust]` table is the source of truth. Dead-code and hygiene lints stay at deny: `unused`, `unused_imports`, `unused_variables`, `unused_must_use`, `dead_code`, and `unreachable_pub`. Rust 2024 unsafe-hygiene lints are enabled, and `unsafe_code = "forbid"` remains workspace-wide. The table also denies the current strict allowed-by-default set (`unused_qualifications`, `unused_lifetimes`, `redundant_lifetimes`, `trivial_casts`, `trivial_numeric_casts`, `unnameable_types`, `unit_bindings`, `macro_use_extern_crate`, `meta_variable_misuse`, `single_use_lifetimes`, `let_underscore_drop`) and keeps `missing_debug_implementations` at `warn`, which CI promotes during the clippy gate.
 
 Clippy is enforced by CI with:
 
@@ -65,14 +65,14 @@ Clippy is enforced by CI with:
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-The workspace enables `clippy::all` at deny and `pedantic`/`cargo` as the modern baseline, then carries explicit allow entries for noisy style-only lints that do not match jackin' current API shape. Do not enable `nursery` or `restriction` wholesale. Cherry-pick individual lints only.
+The workspace enables `clippy::all` at deny and `pedantic`/`cargo` as the modern baseline, then carries explicit allow entries for noisy style-only lints that do not match jackin' current API shape. `warnings = "deny"` is deliberately not baked into the manifest; the `-D warnings` gate stays in CI so a future compiler warning does not brick local builds while jackin' rides each new stable toolchain. Do not enable `nursery` or `restriction` wholesale. Cherry-pick individual lints only.
 
 Suppression discipline:
 
 - Prefer fixing the finding.
 - If code must intentionally stay unused, use `#[expect(dead_code, reason = "...")]`, never a blanket `#[allow(dead_code)]`.
 - `unused_crate_dependencies` stays off; dependency scanners cover that class with fewer Cargo target false positives.
-- `unwrap_used`, `expect_used`, `panic`, and print lints are documented policy lints, but the current workspace table leaves them allowed while the pre-release codebase is being reduced. Runtime input paths still must not use `unwrap()`/`expect()` as validation.
+- `print_stdout`, `print_stderr`, `unwrap_used`, `expect_used`, and `panic` are documented policy lints, but the current workspace table leaves them allowed while the pre-release codebase is being reduced. Runtime input paths still must not use `unwrap()`/`expect()` as validation. `exit` stays at `warn`.
 
 Dead-code scanner layers:
 
