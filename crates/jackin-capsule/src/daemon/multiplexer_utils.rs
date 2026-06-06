@@ -36,6 +36,11 @@ impl Multiplexer {
     /// Providers selectable for `agent`. An empty vec means only the
     /// default provider is available and no picker step is needed; a
     /// non-empty vec always has 2+ entries (enforced by the catalog).
+    ///
+    /// The provider match is intentionally contained in this availability
+    /// closure because the Capsule owns the in-memory key slots; the catalog
+    /// owns the iteration/filtering, while this closure answers "is this
+    /// already captured for this running container?"
     pub(super) fn providers_for_agent(
         &self,
         agent: Option<&str>,
@@ -55,6 +60,10 @@ impl Multiplexer {
     /// env captured at construction. The host sends only the provider label;
     /// the token never travels the wire. `None` means the key was unset, in
     /// which case the session falls back to the agent's default auth.
+    ///
+    /// Keep this as the single provider-token dispatch point until the key
+    /// slots themselves are registry-backed; callers should never match on
+    /// `Provider` directly.
     pub(super) fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
         let key = match provider {
             jackin_protocol::Provider::Anthropic => self.anthropic_api_key.as_deref(),

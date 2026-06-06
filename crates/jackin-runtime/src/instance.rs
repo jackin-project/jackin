@@ -431,6 +431,9 @@ impl RoleState {
             let mode = (resolvers.auth_modes)(supported);
             let sync_src = (resolvers.sync_source_dirs)(supported);
             let sync_src_ref = sync_src.as_deref();
+            // Centralized named-slot dispatch: each runtime has different host
+            // credential files and a different ProvisionedAuth slot. Keep the
+            // match here until AgentRuntime owns auth provisioning end to end.
             let outcome = match supported {
                 jackin_core::agent::Agent::Claude => {
                     let (slot, outcome) = Self::provision_claude_slot(

@@ -83,6 +83,10 @@ pub struct WorkspaceRoleOverride {
 
 impl WorkspaceRoleOverride {
     /// Auth-forward mode for `agent` at the workspace×role override layer.
+    ///
+    /// Keep this match parallel with `WorkspaceConfig` and `AppConfig`: these
+    /// are versioned TOML structs with named agent fields, so the dispatch
+    /// stays as one accessor per layer until a schema-bumped map migration.
     pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
         match agent {
             Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
@@ -94,6 +98,9 @@ impl WorkspaceRoleOverride {
     }
 
     /// Sync source dir override for `agent` at the workspace×role layer.
+    ///
+    /// Same named-field exception as `auth_forward_for`: centralizing the match
+    /// here prevents call-site fan-out without changing the persisted schema.
     pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
         match agent {
             Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
@@ -179,6 +186,10 @@ impl WorkspaceConfig {
     }
 
     /// Auth-forward mode for `agent` at the workspace layer.
+    ///
+    /// Keep this match parallel with `WorkspaceRoleOverride` and `AppConfig`:
+    /// the persisted schema exposes named agent fields, so this accessor is the
+    /// single allowed dispatch point for this layer until a schema-bumped map.
     pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
         match agent {
             Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
@@ -190,6 +201,9 @@ impl WorkspaceConfig {
     }
 
     /// Sync source dir override for `agent` at the workspace layer.
+    ///
+    /// Same named-field exception as `auth_forward_for`; callers must use this
+    /// accessor rather than matching over `Agent` themselves.
     pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
         match agent {
             Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),

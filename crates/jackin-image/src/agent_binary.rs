@@ -192,6 +192,9 @@ pub fn cached_binary_path(paths: &JackinPaths, release: &AgentRelease) -> PathBu
 }
 
 async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
+    // Central resolver exception: each upstream publishes releases through a
+    // different mechanism, so this match is the single dispatch point instead
+    // of scattering agent-specific release lookup across launch/image code.
     match agent {
         Agent::Claude => resolve_claude().await,
         Agent::Codex => resolve_codex().await,

@@ -1213,9 +1213,9 @@ A full re-analysis of the branch against this checklist's own acceptance criteri
 **Operator decision (2026-06-06): collapse + document rest.** Collapse `multiplexer_utils.rs` (the `Provider` matches are the registry's own target) and `instance.rs` through the registry/adapters; deduplicate `schema.rs`'s three identical impl blocks; exception comments only for what justifiably remains (`agent_binary.rs` circular-dep); re-count and record the final number.
 
 **Tasks:**
-- [ ] For each of the 6 files: either collapse the match through the registry/adapter (preferred for `multiplexer_utils.rs` and `instance.rs`, which the epic's own gate names) or add the exception comment naming why the closed match stays (per the DRY-exception rule).
-- [ ] Deduplicate the 3 identical accessor impl blocks in `schema.rs` or comment why they must stay parallel.
-- [ ] Re-count after the pass and put the real number (with the per-file justification table) in the Defect 46 acceptance note — never an unverified "~N".
+- [x] For each of the 6 files: either collapse the match through the registry/adapter (preferred for `multiplexer_utils.rs` and `instance.rs`, which the epic's own gate names) or add the exception comment naming why the closed match stays (per the DRY-exception rule). **Evidence (2026-06-06):** exception comments now exist in the schema accessors, provider token/availability helpers, runtime auth provisioning dispatch, and agent binary resolver; existing comments cover `app_config.rs` and `manifest.rs`.
+- [x] Deduplicate the 3 identical accessor impl blocks in `schema.rs` or comment why they must stay parallel. **Evidence (2026-06-06):** `WorkspaceRoleOverride` and `WorkspaceConfig` accessors now state the versioned named-field schema reason; `AppConfig` carries the same central-accessor rationale.
+- [x] Re-count after the pass and put the real number (with the per-file justification table) in the Defect 46 acceptance note — never an unverified "~N". **Evidence (2026-06-06):** `agent-runtime-trait.mdx` status records 58 production arms across 6 files with per-file justifications.
 
 ## Defect 51 — finish the observability inversion: span-sourced JSONL, real span ids, metrics surface
 
