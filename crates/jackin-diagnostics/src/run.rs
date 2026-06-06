@@ -17,8 +17,7 @@ use anyhow::Context;
 use rand::RngExt as _;
 use serde::Serialize;
 
-use jackin_core::JackinPaths;
-use jackin_tui::ansi_text::strip_bytes;
+use jackin_core::{JackinPaths, ansi_text::strip_bytes, prune_output};
 
 const RUN_DIR: &str = "diagnostics/runs";
 pub(crate) const MAX_RUN_ARTIFACTS: usize = 200;
@@ -358,8 +357,8 @@ pub fn prune_old_runs(paths: &JackinPaths) {
 
 pub fn prune_all_runs(paths: &JackinPaths) -> anyhow::Result<()> {
     let dir = run_dir(paths);
-    jackin_tui::prune_output::section("Diagnostics", "removing diagnostic runs");
-    let row = jackin_tui::prune_output::start("Deleting", "diagnostics");
+    prune_output::section("Diagnostics", "removing diagnostic runs");
+    let row = prune_output::start("Deleting", "diagnostics");
 
     let active_path = active_run().map(|run| run.path().to_path_buf());
     let result = active_path

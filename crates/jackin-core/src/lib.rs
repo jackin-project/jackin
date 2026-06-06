@@ -8,6 +8,7 @@
 //! string constants.
 
 pub mod agent;
+pub mod ansi_text;
 pub mod auth;
 pub mod constants;
 pub mod docker;
@@ -16,7 +17,9 @@ pub mod env_value;
 pub mod isolation;
 pub mod manifest;
 pub mod op_types;
+pub mod path_text;
 pub mod paths;
+pub mod prune_output;
 pub mod runner;
 pub mod selector;
 
@@ -31,6 +34,7 @@ pub use docker::{
 };
 pub use env_value::{EnvValue, FieldTarget, OpRef};
 pub use isolation::{MountIsolation, ParseMountIsolationError};
+pub use path_text::shorten_home;
 pub use paths::JackinPaths;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError};

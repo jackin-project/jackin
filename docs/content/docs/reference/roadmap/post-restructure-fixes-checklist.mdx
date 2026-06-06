@@ -1229,7 +1229,7 @@ A full re-analysis of the branch against this checklist's own acceptance criteri
 - [ ] Build `JackinDiagnosticsLayer`: spans/events are the source of truth; the layer emits the JSONL (field shape locked by the golden-file test). `RunDiagnostics` methods become thin span/event emitters.
 - [ ] Populate real `span_id`/parent ids in the JSONL from the active span context; extend `#[instrument]` coverage to every launch stage so "everything under the derived-image build" becomes a query.
 - [ ] Add the PR-5 metrics surface (stage-duration histograms, cache hit/miss counters) or explicitly re-scope it out of the design with an operator decision — not a silent absence.
-- [ ] Move `strip_bytes`/`shorten_home` (and the prune-output helper if needed below the TUI) into `jackin-core` or a tiny util crate and drop the `jackin-tui` dependency from `jackin-diagnostics`.
+- [x] Move `strip_bytes`/`shorten_home` (and the prune-output helper if needed below the TUI) into `jackin-core` or a tiny util crate and drop the `jackin-tui` dependency from `jackin-diagnostics`. **Done:** `jackin_core::ansi_text::strip_bytes`, `jackin_core::shorten_home`, and `jackin_core::prune_output` now own the non-widget helpers; `jackin-tui` re-exports them for existing TUI callers. `jackin-diagnostics` no longer depends on `jackin-tui`; evidence: `cargo tree -p jackin-diagnostics --depth 1 --locked` lists `jackin-core` and no `jackin-tui`.
 
 ## Defect 52 — jackin-term verification debt: benchmarks, corpus, fuzz-in-CI, dirty-spans consumption
 

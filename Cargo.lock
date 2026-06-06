@@ -2330,9 +2330,11 @@ dependencies = [
 name = "jackin-core"
 version = "0.6.0-dev"
 dependencies = [
+ "anstyle-parse",
  "anyhow",
  "directories",
  "jackin-protocol",
+ "owo-colors",
  "serde",
  "serde_json",
  "tempfile",
@@ -2346,7 +2348,6 @@ dependencies = [
  "anyhow",
  "crossterm",
  "jackin-core",
- "jackin-tui",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -2514,6 +2515,7 @@ dependencies = [
  "anstyle-parse",
  "base64 0.22.1",
  "crossterm",
+ "jackin-core",
  "owo-colors",
  "ratatui",
  "tokio",

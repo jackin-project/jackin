@@ -71,4 +71,4 @@ pub fn set_terminal_title(title: &str) {
     drop(io::stderr().flush());
 }
 
-pub use jackin_tui::shorten_home;
+pub use jackin_core::shorten_home;

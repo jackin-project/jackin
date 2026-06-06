@@ -18,6 +18,7 @@ path = "src/lib.rs"
 anstyle-parse = "1.0"
 base64 = "0.22"
 crossterm = "0.29"
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 owo-colors = { version = "4", features = ["supports-colors"] }
 ratatui = "0.30"
 tokio = { version = "1", features = ["rt", "sync", "time"] }

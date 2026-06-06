@@ -332,27 +332,3 @@ pub fn tab_at_column(cells: &[TabCell<'_>], col: u16) -> Option<usize> {
         col >= cell.start_col && col < cell.start_col.saturating_add(cell.cell_cols)
     })
 }
-
-/// Shorten an absolute path by replacing the operator's `$HOME`
-/// prefix with `~`. Shared between the in-container multiplexer's
-/// pane-box title and the console TUI's path display so both
-/// surfaces collapse the home directory the same way.
-#[must_use]
-pub fn shorten_home(path: &str) -> String {
-    let Some(home) = std::env::var_os("HOME") else {
-        return path.to_owned();
-    };
-    let home = home.to_string_lossy().into_owned();
-    if home.is_empty() || !path.starts_with(&home) {
-        return path.to_owned();
-    }
-    let rest = &path[home.len()..];
-    // Only collapse when the next character after `$HOME` is a path
-    // separator (or end of string). Otherwise `/Users/alice.notmine`
-    // would incorrectly compact to `~.notmine`.
-    if rest.is_empty() || rest.starts_with('/') {
-        format!("~{rest}")
-    } else {
-        path.to_owned()
-    }
-}
