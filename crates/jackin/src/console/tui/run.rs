@@ -33,6 +33,11 @@ use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use crate::workspace::LoadWorkspaceInput;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConsoleChromeHover {
+    DebugChip,
+}
+
 /// Bare `Q` exits silently only on the main list — anywhere else
 /// (editor, prelude, confirm, list modal) pops the exit prompt.
 pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
@@ -238,10 +243,9 @@ pub async fn run_console<H: InstanceActionHandler>(
     animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut needs_redraw = true;
 
-    // Track the debug chip rect for click hit-testing. Updated after each draw.
-    let mut last_debug_chip_area: Option<ratatui::layout::Rect> = None;
-    // Track whether the pointer is currently over the debug chip (for hover color).
-    let mut debug_chip_hovered = false;
+    let mut chrome_hover_tracker: jackin_tui::components::HoverTracker<ConsoleChromeHover> =
+        jackin_tui::components::HoverTracker::new();
+    let mut chrome_hover: Option<ConsoleChromeHover> = None;
     // The Debug-info dialog paints OSC 8 hyperlinks as a raw overlay outside the
     // Ratatui buffer; when it closes we must force a full clear so that residue
     // does not linger on the screen behind it.
@@ -331,19 +335,23 @@ pub async fn run_console<H: InstanceActionHandler>(
                     let area = quit_confirm_area(main_area, confirm);
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
                 }
+                chrome_hover_tracker.clear();
                 if let Some(bar_area) = debug_bar_area {
                     let active_run = crate::diagnostics::active_run();
                     let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()));
                     // Use only the bottom row of the 2-row bar for the chip;
                     // the top row is the blank spacer (Defect 39).
                     let chip_row = debug_chip_row(bar_area);
-                    last_debug_chip_area =
-                        jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id);
+                    if let Some(chip) =
+                        jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
+                    {
+                        chrome_hover_tracker.register(chip, ConsoleChromeHover::DebugChip);
+                    }
                     frame.render_widget(
                         jackin_tui::components::StatusFooter::new("")
                             .right_debug(Some(&run_id))
                             .alpha(1.0)
-                            .right_debug_hover(debug_chip_hovered),
+                            .right_debug_hover(chrome_hover == Some(ConsoleChromeHover::DebugChip)),
                         chip_row,
                     );
                 }
@@ -696,9 +704,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                     };
 
                     if consumed_by_modal {
-                        // Modal owned this event — clear chip hover and revert pointer.
-                        if debug_chip_hovered {
-                            debug_chip_hovered = false;
+                        // Modal owned this event — clear chrome hover and revert pointer.
+                        if chrome_hover.is_some() {
+                            chrome_hover = None;
                             needs_redraw = true;
                         }
                         if pointer_is_hand {
@@ -715,27 +723,24 @@ pub async fn run_console<H: InstanceActionHandler>(
                         // Debug chip click: open the shared container/session info popup.
                         if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
                             && no_modal_open
-                            && let Some(chip) = last_debug_chip_area
+                            && chrome_hover_tracker.is_hovered(
+                                mouse.column,
+                                mouse.row,
+                                &ConsoleChromeHover::DebugChip,
+                            )
+                            && let Some(run) = crate::diagnostics::active_run()
                         {
-                            let col = mouse.column;
-                            let row = mouse.row;
-                            if col >= chip.x
-                                && col < chip.x + chip.width
-                                && row == chip.y
-                                && let Some(run) = crate::diagnostics::active_run()
-                            {
-                                let log_path = run.path().display().to_string();
-                                let _unused = crate::console::tui::update_manager(
-                                    ms,
-                                    crate::console::tui::ManagerMessage::OpenListContainerInfo {
-                                        state: jackin_console::tui::components::container_info::debug_run_info_state(
-                                            env!("JACKIN_VERSION"),
-                                            run.run_id(),
-                                            log_path,
-                                        ),
-                                    },
-                                );
-                            }
+                            let log_path = run.path().display().to_string();
+                            let _unused = crate::console::tui::update_manager(
+                                ms,
+                                crate::console::tui::ManagerMessage::OpenListContainerInfo {
+                                    state: jackin_console::tui::components::container_info::debug_run_info_state(
+                                        env!("JACKIN_VERSION"),
+                                        run.run_id(),
+                                        log_path,
+                                    ),
+                                },
+                            );
                         }
 
                         // Layer 4: base surface.
@@ -754,17 +759,18 @@ pub async fn run_console<H: InstanceActionHandler>(
                             );
                         }
                         // Pointer + chip hover tracking.
-                        let over_chip = no_modal_open
-                            && last_debug_chip_area.is_some_and(|chip| {
-                                mouse.column >= chip.x
-                                    && mouse.column < chip.x + chip.width
-                                    && mouse.row == chip.y
-                            });
-                        if over_chip != debug_chip_hovered {
-                            debug_chip_hovered = over_chip;
+                        let next_chrome_hover = no_modal_open
+                            .then(|| {
+                                chrome_hover_tracker
+                                    .hovered(mouse.column, mouse.row)
+                                    .copied()
+                            })
+                            .flatten();
+                        if next_chrome_hover != chrome_hover {
+                            chrome_hover = next_chrome_hover;
                             needs_redraw = true;
                         }
-                        let hand = over_chip
+                        let hand = chrome_hover.is_some()
                             || crate::console::tui::input::clickable_at(
                                 ms,
                                 mouse,
