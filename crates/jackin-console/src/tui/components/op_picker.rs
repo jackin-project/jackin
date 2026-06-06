@@ -3,19 +3,17 @@
 use std::collections::HashSet;
 
 use ratatui::{
-    Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
 };
 
 use crate::tui::components::list_helpers::first_selection;
 pub use crate::tui::components::list_helpers::matches_filter;
-use crate::tui::components::spinner::SPINNER_FRAMES;
 use jackin_tui::components::TextInputState;
-use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
+
+mod render;
+pub use render::{render_fatal, render_picker};
 
 pub fn item_name_input_state<'a>(item_default: impl Into<String>) -> TextInputState<'a> {
     TextInputState::new("Item name", item_default)
@@ -912,133 +910,6 @@ pub fn existing_field_commit_selection<Reference, Account, Vault, Item, FieldTar
             OpPickerSelection::Existing(existing_reference())
         }
     }
-}
-
-pub fn render_picker(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderState) {
-    match state.load_state() {
-        OpLoadState::Error(OpPickerError::Fatal(fatal)) => render_fatal(frame, area, fatal),
-        OpLoadState::Loading { spinner_tick } => render_loading(frame, area, state, *spinner_tick),
-        OpLoadState::Idle
-        | OpLoadState::Ready
-        | OpLoadState::Error(OpPickerError::Recoverable { .. }) => {
-            render_pane(frame, area, state);
-        }
-    }
-}
-
-fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderState) {
-    let multi_account = state.account_count() > 1;
-
-    if let Some(input) = state.naming_stage_input() {
-        jackin_tui::components::text_input::render_text_input(frame, area, input);
-        return;
-    }
-
-    let title = breadcrumb_title(
-        state.stage(),
-        multi_account,
-        state.selected_account_email(),
-        state.selected_vault_name(),
-        state.selected_item_name(),
-    );
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(&title));
-
-    let banner_height: u16 = match state.load_state() {
-        OpLoadState::Error(OpPickerError::Recoverable { .. }) => 2,
-        _ => 0,
-    };
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(banner_height),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(1),
-        ])
-        .split(inner);
-
-    if banner_height > 0
-        && let OpLoadState::Error(OpPickerError::Recoverable { message }) = state.load_state()
-    {
-        let truncated: String = message.chars().take(120).collect();
-        let line = Line::from(vec![
-            Span::styled("Error: ", jackin_tui::theme::BOLD_WHITE),
-            Span::styled(truncated, jackin_tui::theme::DIM),
-        ]);
-        frame.render_widget(Paragraph::new(line), rows[0]);
-    }
-
-    jackin_tui::components::render_filter_input(frame, rows[1], state.filter_buffer());
-
-    let list_lines = match state.stage() {
-        OpPickerStage::Account => state.account_lines(),
-        OpPickerStage::Vault => state.vault_lines(),
-        OpPickerStage::Item => state.item_lines(),
-        OpPickerStage::Section => state.section_lines(),
-        OpPickerStage::Field => state.field_lines(),
-        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
-            Vec::new()
-        }
-    };
-    if list_lines.is_empty() {
-        let para = Paragraph::new(Line::from(Span::styled(
-            "(no matches)",
-            jackin_tui::theme::DIM,
-        )))
-        .alignment(Alignment::Center);
-        frame.render_widget(para, rows[3]);
-    } else {
-        render_selected_lines_in_area(frame, rows[3], list_lines, state.selected_index());
-    }
-}
-
-fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderState, tick: u8) {
-    let multi_account = state.account_count() > 1;
-    let title = breadcrumb_title(
-        loading_title_stage(state.stage()),
-        multi_account,
-        state.selected_account_email(),
-        state.selected_vault_name(),
-        state.selected_item_name(),
-    );
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(&title));
-
-    let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
-    let descriptor = loading_descriptor(
-        state.stage(),
-        multi_account,
-        state.selected_account_email(),
-        state.selected_vault_name(),
-        state.selected_item_name(),
-        state.selected_item_subtitle(),
-    );
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
-        .split(inner);
-
-    let body = Line::from(vec![
-        Span::styled(glyph.to_owned(), jackin_tui::theme::GREEN),
-        Span::raw("  "),
-        Span::styled(descriptor, jackin_tui::theme::DIM),
-    ]);
-    frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
-}
-
-pub fn render_fatal(frame: &mut Frame<'_>, area: Rect, fatal: &OpPickerFatalState) {
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("1Password"));
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
-        .split(inner);
-
-    frame.render_widget(
-        Paragraph::new(fatal_body_lines(fatal)).alignment(Alignment::Center),
-        rows[1],
-    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
