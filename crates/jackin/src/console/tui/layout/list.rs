@@ -30,7 +30,7 @@ pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize
                     list_row_width(
                         state,
                         row,
-                        visual_idx == visual_selected && state.list_names_focused,
+                        visual_idx == visual_selected && state.list_names_focused(),
                     )
                 })
             }),
@@ -49,7 +49,7 @@ pub(crate) fn clamp_list_scroll_for_area(
     let sidebar_areas = selected_sidebar_scroll_areas(columns.preview, state, config, cwd);
     let sidebar_available = sidebar_areas.is_some();
     let focused_block_scrollable = state
-        .list_scroll_focus
+        .list_scroll_focus()
         .is_none_or(|focus| focused_block_still_scrollable(focus, sidebar_areas.as_ref()));
     let role_global_available = sidebar_areas
         .as_ref()
@@ -100,14 +100,14 @@ pub(crate) fn clamp_list_scroll_for_area(
     }
 
     let focus_plan = list_pre_render_focus_plan(
-        state.list_scroll_focus,
-        state.list_names_focused,
+        state.list_scroll_focus(),
+        state.list_names_focused(),
         state.preview_focused,
         sidebar_available,
         focused_block_scrollable,
     );
-    state.list_scroll_focus = focus_plan.list_scroll_focus;
-    state.list_names_focused = focus_plan.list_names_focused;
+    state.set_list_scroll_focus(focus_plan.list_scroll_focus);
+    state.set_list_names_focused(focus_plan.list_names_focused);
 
     let left_viewport_w = jackin_console::tui::layout::scroll_viewport_width(columns.names);
     let name_content_w = list_names_content_width(state, left_viewport_w);

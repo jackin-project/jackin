@@ -225,10 +225,10 @@ pub(crate) fn update_manager(
             scroll_focused_mount_block_vertical(state, delta);
         }
         ManagerMessage::SetListScrollFocus(focus) => {
-            state.list_scroll_focus = list_scroll_focus_plan(focus);
+            state.set_list_scroll_focus(list_scroll_focus_plan(focus));
         }
         ManagerMessage::SetListNamesFocused(focused) => {
-            state.list_names_focused = list_names_focus_plan(focused);
+            state.set_list_names_focused(list_names_focus_plan(focused));
         }
         ManagerMessage::SetDragState(drag) => {
             state.drag_state = drag_state_plan(drag);
@@ -891,7 +891,7 @@ fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize
 }
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
-    if state.list_names_focused {
+    if state.list_names_focused() {
         state.list_names_scroll_x =
             workspace_unclamped_scroll_plan(state.list_names_scroll_x, delta);
     } else {
@@ -900,7 +900,7 @@ const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
 }
 
 const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
-    let Some(focus) = state.list_scroll_focus else {
+    let Some(focus) = state.list_scroll_focus() else {
         return;
     };
     let value = state.list_scroll_x_mut(focus);
@@ -908,7 +908,7 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
-    let Some(focus) = state.list_scroll_focus else {
+    let Some(focus) = state.list_scroll_focus() else {
         return;
     };
     let value = state.list_scroll_y_mut(focus);

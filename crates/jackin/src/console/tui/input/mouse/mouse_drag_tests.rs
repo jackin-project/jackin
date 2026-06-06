@@ -754,7 +754,7 @@ fn click_scrollable_mount_block_focuses_it() {
     // block starts at y=5 after General's 3 rows.
     handle_mouse_with_config(&mut state, mouse_at(31, 6), term(100), Some(&config));
 
-    assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
+    assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Workspace));
 }
 
 #[test]
@@ -769,7 +769,7 @@ fn click_current_directory_mount_block_focuses_and_scrolls_it() {
     assert!(state.is_current_dir_selected());
 
     handle_mouse_with_config(&mut state, mouse_at(31, 6), term(100), Some(&config));
-    assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
+    assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Workspace));
 
     handle_mouse_with_config(
         &mut state,
@@ -785,20 +785,20 @@ fn click_current_directory_mount_block_focuses_and_scrolls_it() {
 fn click_non_scrollable_area_clears_mount_focus() {
     let config = config_with_scrollable_workspace_and_global_mounts();
     let mut state = selected_demo_state(&config);
-    state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+    state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
 
     // y=3 is inside the General block, which is not a horizontal-scroll
     // target.
     handle_mouse_with_config(&mut state, mouse_at(31, 3), term(100), Some(&config));
 
-    assert_eq!(state.list_scroll_focus, None);
+    assert_eq!(state.list_scroll_focus(), None);
 }
 
 #[test]
 fn horizontal_mouse_wheel_scrolls_block_under_pointer() {
     let config = config_with_scrollable_workspace_and_global_mounts();
     let mut state = selected_demo_state(&config);
-    state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+    state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
 
     // Global mounts block starts immediately after General (3 rows) and
     // the one-mount Workspace mounts block (5 rows): y=10.
@@ -814,7 +814,7 @@ fn horizontal_mouse_wheel_scrolls_block_under_pointer() {
         state.list_global_mounts_scroll_x,
         MOUSE_HORIZONTAL_SCROLL_STEP
     );
-    assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Global));
+    assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Global));
 }
 
 #[test]
@@ -862,7 +862,7 @@ fn vertical_mouse_wheel_routes_to_block_under_pointer_not_stale_focus() {
         );
     }
     let mut state = selected_demo_state(&config);
-    state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+    state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
 
     let areas = list_scroll_areas(&state, term(100), Some(&config)).expect("list areas");
     let mouse = mouse_kind_at(
@@ -873,7 +873,7 @@ fn vertical_mouse_wheel_routes_to_block_under_pointer_not_stale_focus() {
 
     handle_mouse_with_config(&mut state, mouse, term(100), Some(&config));
 
-    assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Global));
+    assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Global));
     assert_eq!(state.list_mounts_scroll_y, 0);
     assert_eq!(state.list_global_mounts_scroll_y, 1);
 }
@@ -1321,7 +1321,7 @@ fn editor_mounts_tab_click_host_source_continuation_selects_parent_and_focuses_b
 fn scroll_up_decrements_vertical_scroll_offset() {
     let config = config_with_scrollable_workspace_and_global_mounts();
     let mut state = selected_demo_state(&config);
-    state.list_scroll_focus = Some(MountScrollFocus::Global);
+    state.set_list_scroll_focus(Some(MountScrollFocus::Global));
     state.list_global_mounts_scroll_y = 3;
 
     handle_mouse_with_config(

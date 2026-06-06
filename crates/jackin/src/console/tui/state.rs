@@ -36,7 +36,9 @@ use jackin_console::tui::components::provider_picker::ProviderPickerState as Gen
 use jackin_console::tui::components::scope_picker::ScopePickerState;
 use jackin_console::tui::components::source_picker::SourcePickerState;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
-use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
+use jackin_tui::components::{
+    ConfirmState, ContainerInfoState, ErrorPopupState, FocusOwner, TextInputState,
+};
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
@@ -114,9 +116,8 @@ pub struct ManagerState<'a> {
     pub list_role_global_mounts_scroll_y: u16,
     pub list_roles_scroll_x: u16,
     pub list_roles_scroll_y: u16,
-    pub list_scroll_focus: Option<MountScrollFocus>,
+    pub list_focus_owner: FocusOwner<MountScrollFocus>,
     pub list_names_scroll_x: u16,
-    pub list_names_focused: bool,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     /// Logical list row the pointer is hovering (lifts its background like a
@@ -584,7 +585,7 @@ fn settings_global_mounts_from_config(config: &AppConfig) -> GlobalMountsState<'
 pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'static> {
     SettingsState {
         active_tab: SettingsTab::General,
-        focus_owner: jackin_tui::components::FocusOwner::TabBar,
+        focus_owner: FocusOwner::TabBar,
         hovered_tab: None,
         general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
         mounts: settings_global_mounts_from_config(config),
@@ -805,8 +806,31 @@ impl ManagerState<'_> {
         self.list_role_global_mounts_scroll_y = 0;
         self.list_roles_scroll_x = 0;
         self.list_roles_scroll_y = 0;
-        self.list_scroll_focus = None;
+        self.list_focus_owner = FocusOwner::TabBar;
         self.list_names_scroll_x = 0;
+    }
+
+    pub(crate) const fn list_names_focused(&self) -> bool {
+        self.list_focus_owner.is_tab_bar()
+    }
+
+    pub(crate) fn set_list_names_focused(&mut self, focused: bool) {
+        if focused {
+            self.list_focus_owner = FocusOwner::TabBar;
+        } else if self.list_names_focused() {
+            self.list_focus_owner = FocusOwner::Content(MountScrollFocus::Workspace);
+        }
+    }
+
+    pub(crate) const fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
+        match self.list_focus_owner {
+            FocusOwner::Content(focus) => Some(focus),
+            FocusOwner::TabBar => None,
+        }
+    }
+
+    pub(crate) fn set_list_scroll_focus(&mut self, focus: Option<MountScrollFocus>) {
+        self.list_focus_owner = focus.map_or(FocusOwner::TabBar, FocusOwner::Content);
     }
 
     /// Allocates a fresh empty cache and assumes `op` unavailable —
@@ -866,9 +890,8 @@ impl ManagerState<'_> {
             list_role_global_mounts_scroll_y: 0,
             list_roles_scroll_x: 0,
             list_roles_scroll_y: 0,
-            list_scroll_focus: None,
+            list_focus_owner: FocusOwner::TabBar,
             list_names_scroll_x: 0,
-            list_names_focused: true,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             hovered_list_row: None,

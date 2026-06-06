@@ -24,7 +24,7 @@ fn workspace_list_footer_facts(
     state: &ManagerState<'_>,
     config: &AppConfig,
 ) -> WorkspaceListFooterFacts {
-    let scroll_focused = state.list_scroll_focus.is_some();
+    let scroll_focused = state.list_scroll_focus().is_some();
     let selected = state.selected_row();
     let selected_instance = matches!(
         selected,

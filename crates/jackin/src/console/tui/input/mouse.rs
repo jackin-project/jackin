@@ -649,9 +649,10 @@ fn try_drag_horizontal_scrollbar(
                 areas.workspace.area,
                 areas.workspace.content_width,
             ) {
-                state.list_scroll_focus =
+                state.set_list_scroll_focus(
                     workspace_list_scroll_focus_plan(false, true, true, false, false, false)
-                        .scroll_focus;
+                        .scroll_focus,
+                );
                 return true;
             }
             if drag_scrollbar(
@@ -660,9 +661,10 @@ fn try_drag_horizontal_scrollbar(
                 areas.global.area,
                 areas.global.content_width,
             ) {
-                state.list_scroll_focus =
+                state.set_list_scroll_focus(
                     workspace_list_scroll_focus_plan(false, true, false, true, false, false)
-                        .scroll_focus;
+                        .scroll_focus,
+                );
                 return true;
             }
             if let Some(role) = areas.role_global
@@ -673,9 +675,10 @@ fn try_drag_horizontal_scrollbar(
                     role.content_width,
                 )
             {
-                state.list_scroll_focus =
+                state.set_list_scroll_focus(
                     workspace_list_scroll_focus_plan(false, true, false, false, true, false)
-                        .scroll_focus;
+                        .scroll_focus,
+                );
                 return true;
             }
             false
@@ -920,7 +923,7 @@ fn try_drag_vertical_scrollbar(
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
                 return false;
             };
-            let Some(focus) = state.list_scroll_focus else {
+            let Some(focus) = state.list_scroll_focus() else {
                 return false;
             };
             match focus {
@@ -1022,7 +1025,7 @@ fn scroll_active_panel(
                 return;
             }
             update_scroll_focus(state, mouse, term_size, config);
-            if state.list_names_focused {
+            if state.list_names_focused() {
                 let (left_x, left_w, _, _) =
                     horizontal_split_pane_dims(state.list_split_pct, term_size.width);
                 let area = Rect {
@@ -1039,12 +1042,13 @@ fn scroll_active_panel(
                 return;
             }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
-                state.list_scroll_focus =
+                state.set_list_scroll_focus(
                     workspace_list_scroll_focus_plan(false, false, false, false, false, false)
-                        .scroll_focus;
+                        .scroll_focus,
+                );
                 return;
             };
-            let Some(focus) = state.list_scroll_focus else {
+            let Some(focus) = state.list_scroll_focus() else {
                 return;
             };
             let area_info = match focus {
@@ -1223,7 +1227,7 @@ fn scroll_active_panel_vertical(
             }
             update_scroll_focus(state, mouse, term_size, config);
             // Scroll the focused block vertically.
-            match state.list_scroll_focus {
+            match state.list_scroll_focus() {
                 Some(MountScrollFocus::Workspace) => {
                     if let Some(areas) = list_scroll_areas(state, term_size, config) {
                         apply_vertical_scroll(

@@ -87,7 +87,7 @@ mod list_name_scroll_tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.list_names_scroll_x = u16::MAX;
-        state.list_names_focused = true;
+        state.set_list_names_focused(true);
 
         let backend = TestBackend::new(70, 24);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -109,7 +109,7 @@ mod list_name_scroll_tests {
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 1;
         state.list_names_scroll_x = 8;
-        state.list_names_focused = true;
+        state.set_list_names_focused(true);
 
         let backend = TestBackend::new(70, 24);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -138,7 +138,7 @@ mod list_name_scroll_tests {
         state.selected = 0;
         state.hovered_list_row = Some(ManagerListRow::SavedWorkspace(0));
         state.list_names_scroll_x = 8;
-        state.list_names_focused = true;
+        state.set_list_names_focused(true);
 
         let backend = TestBackend::new(70, 24);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -187,7 +187,7 @@ mod list_name_scroll_tests {
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 2;
         state.list_names_scroll_x = 12;
-        state.list_names_focused = true;
+        state.set_list_names_focused(true);
 
         let backend = TestBackend::new(70, 24);
         let mut terminal = Terminal::new(backend).unwrap();

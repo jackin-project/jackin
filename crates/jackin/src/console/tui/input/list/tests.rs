@@ -705,7 +705,7 @@ fn moving_selection_resets_mount_scroll_state() {
     state.list_mounts_scroll_x = 24;
     state.list_global_mounts_scroll_x = 16;
     state.list_role_global_mounts_scroll_x = 8;
-    state.list_scroll_focus = None;
+    state.set_list_scroll_focus(None);
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down)).unwrap();
 
@@ -713,7 +713,7 @@ fn moving_selection_resets_mount_scroll_state() {
     assert_eq!(state.list_mounts_scroll_x, 0);
     assert_eq!(state.list_global_mounts_scroll_x, 0);
     assert_eq!(state.list_role_global_mounts_scroll_x, 0);
-    assert_eq!(state.list_scroll_focus, None);
+    assert_eq!(state.list_scroll_focus(), None);
 }
 
 #[test]
@@ -735,7 +735,7 @@ fn down_key_with_focused_block_clamps_vertical_scroll_without_selection_move() {
     // When a block is focused, Down scrolls that block vertically, not the list.
     let mut state = ManagerState::from_config(&config, cwd);
     state.selected = 0;
-    state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+    state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down)).unwrap();
 

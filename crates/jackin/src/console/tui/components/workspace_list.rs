@@ -131,7 +131,7 @@ pub(crate) fn list_name_lines(
             })
         })
         .collect();
-    workspace_list_name_lines(&display_rows, viewport, state.list_names_focused)
+    workspace_list_name_lines(&display_rows, viewport, state.list_names_focused())
 }
 
 fn workspace_list_display_row(
@@ -287,7 +287,7 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &Man
             Some(short_id),
             picker.providers(),
             picker.selected(),
-            state.list_names_focused,
+            state.list_names_focused(),
         );
     } else if let Some(picker) = state.launch_provider_picker.as_ref() {
         render_provider_picker_sidebar(
@@ -296,21 +296,21 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &Man
             None,
             picker.providers(),
             picker.selected(),
-            state.list_names_focused,
+            state.list_names_focused(),
         );
     } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container);
-        render_agent_picker_sidebar(frame, area, short_id, picker, state.list_names_focused);
+        render_agent_picker_sidebar(frame, area, short_id, picker, state.list_names_focused());
     } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
-        render_agent_picker_sidebar(frame, area, &role.key(), picker, state.list_names_focused);
+        render_agent_picker_sidebar(frame, area, &role.key(), picker, state.list_names_focused());
     } else if let Some(picker) = state.inline_role_picker.as_ref() {
         let title = state
             .selected_workspace_summary()
             .map_or(current_directory_workspace_title(), |summary| {
                 summary.name.as_str()
             });
-        render_role_picker_sidebar(frame, area, title, picker, state.list_names_focused);
+        render_role_picker_sidebar(frame, area, title, picker, state.list_names_focused());
     } else {
         let (list_lines, content_width) = list_name_lines(
             state,
@@ -321,7 +321,7 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &Man
             area,
             list_lines,
             content_width,
-            state.list_names_focused,
+            state.list_names_focused(),
             state.list_names_scroll_x,
         );
     }
@@ -494,7 +494,7 @@ pub(crate) fn render_sidebar_body(
         layout.general,
         &crate::tui::shorten_home(inputs.workdir),
     );
-    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
+    let ws_focused = state.list_scroll_focus() == Some(MountScrollFocus::Workspace);
     render_mounts_subpanel(
         frame,
         layout.mounts,
@@ -505,7 +505,7 @@ pub(crate) fn render_sidebar_body(
         ws_focused,
     );
     if layout.global.is_some() || layout.role_global.is_some() {
-        let global_focused = state.list_scroll_focus;
+        let global_focused = state.list_scroll_focus();
         let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
         if let Some(area) = layout.global {
             render_global_mount_rows_section(
@@ -537,7 +537,7 @@ pub(crate) fn render_sidebar_body(
         render_environments_subpanel(frame, area, workspace_env_rows(inputs.ws_config));
     }
     if let Some(area) = layout.roles {
-        let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
+        let roles_focused = state.list_scroll_focus() == Some(MountScrollFocus::Roles);
         render_agents_subpanel_scrollable(
             frame,
             area,

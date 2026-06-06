@@ -295,7 +295,7 @@ readonly = false
         let mut cases: Vec<(&str, ManagerState<'_>)> = Vec::new();
 
         let mut list = ManagerState::from_config(&config, &cwd);
-        list.list_names_focused = true;
+        list.set_list_names_focused(true);
         cases.push(("list", list));
 
         for (name, tab) in [
@@ -348,27 +348,27 @@ readonly = false
         let config = detail_config();
         let mut state = ManagerState::from_config(&config, &cwd);
         state.selected = 0;
-        state.list_names_focused = true;
+        state.set_list_names_focused(true);
         cases.push(("current dir list focus", config, state));
 
         let config = detail_config();
         let mut state = ManagerState::from_config(&config, &cwd);
         state.selected = 0;
-        state.list_names_focused = false;
-        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+        state.set_list_names_focused(false);
+        state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
         cases.push(("current dir mounts focus", config, state));
 
         let config = detail_config();
         let mut state = ManagerState::from_config(&config, &cwd);
         state.selected = 0;
-        state.list_names_focused = false;
-        state.list_scroll_focus = Some(MountScrollFocus::Global);
+        state.set_list_names_focused(false);
+        state.set_list_scroll_focus(Some(MountScrollFocus::Global));
         cases.push(("current dir global mounts focus", config, state));
 
         let config = detail_config();
         let mut state = ManagerState::from_config(&config, &cwd);
         state.selected = 1;
-        state.list_names_focused = true;
+        state.set_list_names_focused(true);
         cases.push(("saved workspace list focus", config, state));
 
         for (name, focus) in [
@@ -386,15 +386,15 @@ readonly = false
             let config = detail_config();
             let mut state = ManagerState::from_config(&config, &cwd);
             state.selected = 1;
-            state.list_names_focused = false;
-            state.list_scroll_focus = Some(focus);
+            state.set_list_names_focused(false);
+            state.set_list_scroll_focus(Some(focus));
             cases.push((name, config, state));
         }
 
         let config = detail_config();
         let mut state = ManagerState::from_config(&config, &cwd);
         state.selected = 2;
-        state.list_names_focused = true;
+        state.set_list_names_focused(true);
         cases.push(("new workspace detail focus", config, state));
 
         for (name, config, mut state) in cases {
@@ -890,8 +890,8 @@ readonly = false
         let cwd = test_cwd();
         let mut state = ManagerState::from_config(&config, &cwd);
         state.selected = 0;
-        state.list_names_focused = false;
-        state.list_scroll_focus = Some(MountScrollFocus::Global);
+        state.set_list_names_focused(false);
+        state.set_list_scroll_focus(Some(MountScrollFocus::Global));
         let rendered = render_manager_state(&mut state, &config, &cwd, 110, 30);
         insta::assert_snapshot!("global_mounts_110x30", rendered);
     }

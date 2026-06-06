@@ -91,7 +91,7 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            if state.list_scroll_focus.is_some() {
+            if state.list_scroll_focus().is_some() {
                 dispatch_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(-3));
                 clamp_list_scroll_after_key(state, config, cwd);
             } else {
@@ -100,7 +100,7 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            if state.list_scroll_focus.is_some() {
+            if state.list_scroll_focus().is_some() {
                 dispatch_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(3));
                 clamp_list_scroll_after_key(state, config, cwd);
             } else {

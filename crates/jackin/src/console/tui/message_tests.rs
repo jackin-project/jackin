@@ -11,7 +11,7 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::effect::ConsoleEffect;
-use jackin_tui::components::ErrorPopupState;
+use jackin_tui::components::{ErrorPopupState, FocusOwner};
 use ratatui::layout::Rect;
 
 fn state_with_saved_count(count: usize) -> ManagerState<'static> {
@@ -154,7 +154,7 @@ fn mouse_selection_messages_update_tabs_and_rows() {
 #[test]
 fn scroll_focused_list_block_updates_selected_axis() {
     let mut state = state_with_saved_count(1);
-    state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+    state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
 
     assert!(
         update_manager(
@@ -914,7 +914,7 @@ fn set_list_scroll_focus_stores_focus() {
     let cwd = std::path::Path::new("/");
     let config = crate::config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
-    assert!(state.list_scroll_focus.is_none());
+    assert!(state.list_scroll_focus().is_none());
 
     assert!(
         update_manager(
@@ -923,10 +923,15 @@ fn set_list_scroll_focus_stores_focus() {
         )
         .is_dirty()
     );
-    assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
+    assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Workspace));
+    assert_eq!(
+        state.list_focus_owner,
+        FocusOwner::Content(MountScrollFocus::Workspace)
+    );
 
     assert!(update_manager(&mut state, ManagerMessage::SetListScrollFocus(None)).is_dirty());
-    assert!(state.list_scroll_focus.is_none());
+    assert!(state.list_scroll_focus().is_none());
+    assert_eq!(state.list_focus_owner, FocusOwner::TabBar);
 }
 
 #[test]
@@ -936,9 +941,14 @@ fn set_list_names_focused_stores_flag() {
     let mut state = ManagerState::from_config(&config, cwd);
 
     assert!(update_manager(&mut state, ManagerMessage::SetListNamesFocused(true)).is_dirty());
-    assert!(state.list_names_focused);
+    assert!(state.list_names_focused());
+    assert_eq!(state.list_focus_owner, FocusOwner::TabBar);
     assert!(update_manager(&mut state, ManagerMessage::SetListNamesFocused(false)).is_dirty());
-    assert!(!state.list_names_focused);
+    assert!(!state.list_names_focused());
+    assert_eq!(
+        state.list_focus_owner,
+        FocusOwner::Content(MountScrollFocus::Workspace)
+    );
 }
 
 #[test]
