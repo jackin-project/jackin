@@ -1,8 +1,9 @@
 //! jackin' library crate root.
 //!
-//! Re-exports the public module tree consumed by `main.rs`, `src/bin/role.rs`,
-//! and integration tests. The crate is simultaneously a binary (via `main.rs`)
-//! and a library (via `lib.rs`); `pub mod` here is the library boundary.
+//! Re-exports the module tree consumed by `main.rs`, `src/bin/role.rs`, and
+//! integration tests. The crate is simultaneously a binary (via `main.rs`) and
+//! a library (via `lib.rs`); `pub mod` entries here are the public compatibility
+//! boundary, while `pub(crate)` entries are root-crate-only shims.
 
 #![allow(clippy::redundant_pub_crate)]
 #![expect(
@@ -18,35 +19,31 @@
 
 pub mod agent;
 pub mod agent_binary;
-pub mod ansi_text;
-pub mod app;
+mod app;
 pub mod binary_artifact;
 pub mod capsule_binary;
 pub mod cli;
 pub mod config;
 pub mod console;
 pub mod derived_image;
-pub mod diagnostics;
+pub(crate) mod diagnostics;
 pub mod docker;
 pub mod docker_client;
-pub mod env_model;
+pub(crate) mod env_model;
 pub mod env_resolver;
 pub mod error;
-pub mod host_claude;
 pub mod instance;
 pub mod isolation;
 pub mod manifest;
-pub mod net;
 pub mod operator_env;
 pub mod paths;
-pub mod preflight;
+pub(crate) mod preflight;
 pub mod repo;
-pub mod repo_contract;
+pub(crate) mod repo_contract;
 pub mod role_authoring;
 pub mod runtime;
 pub mod selector;
 pub mod tui;
-pub mod version_check;
 pub mod workspace;
 
 pub use app::run;

@@ -8,7 +8,7 @@
 //! (`runtime/`), or TUI rendering (`console/tui/`). This module is glue.
 
 mod config_cmd;
-pub mod context;
+pub(crate) mod context;
 mod helpers;
 mod load_cmd;
 mod prune_cmd;

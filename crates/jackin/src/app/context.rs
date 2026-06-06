@@ -21,7 +21,7 @@ use crate::tui;
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TargetKind {
+pub(crate) enum TargetKind {
     Path { src: String, dst: String },
     Name(String),
 }
@@ -30,7 +30,7 @@ pub enum TargetKind {
 ///
 /// Contains `/`, or starts with `.` or `~` => always a path.
 /// Otherwise => a plain name (workspace or directory name).
-pub fn classify_target(target: &str) -> TargetKind {
+pub(crate) fn classify_target(target: &str) -> TargetKind {
     if target.contains('/') || target.starts_with('.') || target.starts_with('~') {
         // Parse optional :dst — but be careful with src:dst vs path-only.
         // A target like ~/Projects/my-app:/app has the pattern host:container.

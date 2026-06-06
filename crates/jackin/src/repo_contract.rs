@@ -1,10 +1,14 @@
 //! Dockerfile validation re-exports — behavior now in `jackin-manifest`.
 
-pub use jackin_manifest::repo::RoleRepoValidationError;
-pub use jackin_manifest::repo_contract::{
-    BASE_DOCKERFILE_FROM, CONSTRUCT_IMAGE, CONSTRUCT_PINNED_TAG, CONSTRUCT_REGISTRY_IMAGE,
-    CONSTRUCT_STABLE_TAG, DOCKERFILE_NAME, MANIFEST_FILENAME, ValidatedDockerfile, construct_image,
-    validate_agent_dockerfile,
+pub(crate) use jackin_manifest::repo_contract::{
+    BASE_DOCKERFILE_FROM, DOCKERFILE_NAME, MANIFEST_FILENAME,
+};
+
+#[cfg(test)]
+pub(crate) use jackin_manifest::repo::RoleRepoValidationError;
+#[cfg(test)]
+pub(crate) use jackin_manifest::repo_contract::{
+    CONSTRUCT_IMAGE, CONSTRUCT_REGISTRY_IMAGE, CONSTRUCT_STABLE_TAG, validate_agent_dockerfile,
 };
 
 #[cfg(test)]

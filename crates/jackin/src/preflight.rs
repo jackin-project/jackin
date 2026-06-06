@@ -10,7 +10,7 @@ use std::path::Path;
 
 /// Status of a single doctor check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckStatus {
+pub(crate) enum CheckStatus {
     Ok,
     Warn,
     Fail,
@@ -18,7 +18,7 @@ pub enum CheckStatus {
 }
 
 impl CheckStatus {
-    pub const fn symbol(self) -> &'static str {
+    pub(crate) const fn symbol(self) -> &'static str {
         match self {
             Self::Ok => "ok  ",
             Self::Warn => "warn",
@@ -30,11 +30,11 @@ impl CheckStatus {
 
 /// Result of one doctor check.
 #[derive(Debug, Clone)]
-pub struct CheckResult {
-    pub name: &'static str,
-    pub status: CheckStatus,
-    pub message: String,
-    pub hint: Option<String>,
+pub(crate) struct CheckResult {
+    pub(crate) name: &'static str,
+    pub(crate) status: CheckStatus,
+    pub(crate) message: String,
+    pub(crate) hint: Option<String>,
 }
 
 impl CheckResult {
@@ -77,7 +77,7 @@ impl CheckResult {
 
 /// Named checks that can be run individually or in a preflight slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckName {
+pub(crate) enum CheckName {
     DockerDaemon,
     DockerVersion,
     DiskSpace,
@@ -93,7 +93,7 @@ pub enum CheckName {
 }
 
 impl CheckName {
-    pub const fn all() -> &'static [Self] {
+    pub(crate) const fn all() -> &'static [Self] {
         &[
             Self::DockerDaemon,
             Self::DockerVersion,
@@ -111,7 +111,7 @@ impl CheckName {
     }
 
     /// Minimal set of checks run as a pre-flight gate before `load` / `hardline`.
-    pub const fn preflight_required() -> &'static [Self] {
+    pub(crate) const fn preflight_required() -> &'static [Self] {
         &[
             Self::DockerDaemon,
             Self::DiskSpace,
@@ -122,7 +122,7 @@ impl CheckName {
 }
 
 /// Run a single check and return its result.
-pub async fn run_check(check: CheckName, paths: &crate::paths::JackinPaths) -> CheckResult {
+pub(crate) async fn run_check(check: CheckName, paths: &crate::paths::JackinPaths) -> CheckResult {
     match check {
         CheckName::DockerDaemon => check_docker_daemon().await,
         CheckName::DockerVersion => check_docker_version().await,
@@ -143,7 +143,7 @@ pub async fn run_check(check: CheckName, paths: &crate::paths::JackinPaths) -> C
 ///
 /// Warnings are printed but do not block execution. Failures print the hint
 /// and return `Err`.
-pub async fn preflight(
+pub(crate) async fn preflight(
     checks: &[CheckName],
     paths: &crate::paths::JackinPaths,
 ) -> anyhow::Result<()> {
