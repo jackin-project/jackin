@@ -65,7 +65,9 @@ impl RoleManifest {
     /// Returns `true` when the manifest has a `[<agent>]` table declared.
     ///
     /// Used by `jackin_manifest::validate` to check the agent/config-table
-    /// consistency rule without a per-caller match arm.
+    /// consistency rule without a per-caller match arm. This named-field
+    /// accessor is the schema-preserving exception until role manifests move to
+    /// a schema-bumped agent map.
     pub const fn has_agent_config(&self, agent: Agent) -> bool {
         match agent {
             Agent::Claude => self.claude.is_some(),
@@ -78,8 +80,9 @@ impl RoleManifest {
 
     /// Returns the per-agent model override from the manifest, if any.
     ///
-    /// Collapses the five-arm `match agent { Agent::Claude => manifest.claude…, … }`
-    /// pattern used at capsule-config construction time (Defect 46 Phase 2).
+    /// Same named-field exception as `has_agent_config`: role manifests expose
+    /// `[claude]`/`[codex]` tables today, so call sites route through this one
+    /// accessor rather than matching over `Agent` themselves.
     pub fn agent_model(&self, agent: Agent) -> Option<&str> {
         match agent {
             Agent::Claude => self.claude.as_ref().and_then(|c| c.model.as_deref()),

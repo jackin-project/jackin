@@ -81,8 +81,10 @@ impl AppConfig {
 
     /// Auth-forward mode for `agent` at the global (top-level) config layer.
     ///
-    /// Collapses the five-arm `match agent { Agent::Claude => self.claude…, … }`
-    /// pattern used in `resolve_mode_with_trace` (Defect 46 Phase 2).
+    /// Keep this match parallel with `WorkspaceConfig` and
+    /// `WorkspaceRoleOverride`: these are versioned TOML structs with named
+    /// agent fields, so the dispatch stays as one accessor per layer until a
+    /// schema-bumped map migration.
     pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
         match agent {
             Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
@@ -97,6 +99,8 @@ impl AppConfig {
     ///
     /// Returns `None` when the field is absent at this layer — caller inherits
     /// from the per-agent hardcoded default. Introduced in Defect 46 Phase B.
+    /// Same named-field exception as `auth_forward_for`; callers must use this
+    /// accessor rather than matching over `Agent` themselves.
     pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
         match agent {
             Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
