@@ -1,6 +1,11 @@
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
-use crate::tui::components::branch_context_bar::branch_context_bar_hit;
+use jackin_tui::components::HoverTracker;
+use ratatui::layout::Rect;
+
+use crate::tui::components::branch_context_bar::{
+    BranchContextBarHit, ColRange, branch_context_bar_layout,
+};
 use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::view::encode_osc52_clipboard_write;
 
@@ -69,26 +74,73 @@ impl Multiplexer {
                 Some(&github),
             )
         });
-        let tab = (row_1based == 1)
-            .then(|| self.status_bar.tab_at_col(col_1based))
-            .flatten();
-        let branch_hit = branch_context_bar_hit(
-            row_1based,
-            col_1based,
+        if self.dialog_top().is_some() {
+            return chrome_hover_target_for_state(ChromeHitState {
+                dialog_copy_target,
+                dialog_open: true,
+                tab: None,
+                menu_hit: false,
+                branch_hit: None,
+            });
+        }
+
+        let mut tracker = HoverTracker::new();
+        self.register_chrome_hover_targets(&mut tracker);
+        let target = tracker.hovered(col, row).copied();
+        chrome_hover_target_for_state(ChromeHitState {
+            dialog_copy_target,
+            dialog_open: false,
+            tab: target.and_then(|target| match target {
+                HoverTarget::Tab(idx) => Some(idx),
+                _ => None,
+            }),
+            menu_hit: target == Some(HoverTarget::Menu),
+            branch_hit: target.and_then(|target| match target {
+                HoverTarget::BranchContext => Some(BranchContextBarHit::Context),
+                HoverTarget::Container => Some(BranchContextBarHit::Container),
+                HoverTarget::DebugChip => Some(BranchContextBarHit::DebugChip),
+                _ => None,
+            }),
+        })
+    }
+
+    fn register_chrome_hover_targets(&self, tracker: &mut HoverTracker<HoverTarget>) {
+        for (idx, (start, end)) in self.status_bar.tab_regions.iter().copied().enumerate() {
+            register_row0_range_1based(tracker, start, end, HoverTarget::Tab(idx));
+        }
+        if let Some((start, end)) = self.status_bar.hint_region {
+            register_row0_range_1based(tracker, start, end, HoverTarget::Menu);
+        }
+
+        let Some(layout) = branch_context_bar_layout(
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
             self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),
+        ) else {
+            return;
+        };
+        let row0 = self.term_rows.saturating_sub(1);
+        register_col_range_1based(
+            tracker,
+            row0,
+            layout.left_region,
+            HoverTarget::BranchContext,
         );
-        chrome_hover_target_for_state(ChromeHitState {
-            dialog_copy_target,
-            dialog_open: self.dialog_top().is_some(),
-            tab,
-            menu_hit: self.status_bar.hint_at(row_1based, col_1based),
-            branch_hit,
-        })
+        register_col_range_1based(
+            tracker,
+            row0,
+            layout.container_region,
+            HoverTarget::Container,
+        );
+        register_col_range_1based(
+            tracker,
+            row0,
+            layout.debug_chip_region,
+            HoverTarget::DebugChip,
+        );
     }
 
     pub(super) fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
@@ -235,6 +287,33 @@ impl Multiplexer {
             }
         }
         Some(self.compose_full_redraw(selection_change_redraw_reason()))
+    }
+}
+
+fn register_row0_range_1based(
+    tracker: &mut HoverTracker<HoverTarget>,
+    start: u16,
+    end: u16,
+    key: HoverTarget,
+) {
+    if let Some(range) = ColRange::new(start, end) {
+        register_col_range_1based(tracker, 0, Some(range), key);
+    }
+}
+
+fn register_col_range_1based(
+    tracker: &mut HoverTracker<HoverTarget>,
+    row0: u16,
+    range: Option<ColRange>,
+    key: HoverTarget,
+) {
+    let Some(range) = range else {
+        return;
+    };
+    let x = range.start.saturating_sub(1);
+    let width = range.end.saturating_sub(range.start);
+    if width > 0 {
+        tracker.register(Rect::new(x, row0, width, 1), key);
     }
 }
 

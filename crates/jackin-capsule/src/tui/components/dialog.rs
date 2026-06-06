@@ -818,10 +818,10 @@ impl Dialog {
     }
 
     /// Dispatch a left-click at `(row, col)` against the dialog's
-    /// hit regions. Clicks outside the box dismiss the dialog;
-    /// clicks on a row select that row and immediately confirm;
-    /// clicks on the border or padding rows are consumed so they do
-    /// not leak through to the focused pane underneath.
+    /// hit regions. Shared modal lifecycle classification handles
+    /// outside-dismiss; inside clicks on a row select that row and
+    /// immediately confirm; clicks on the border or padding rows are
+    /// consumed so they do not leak through to the focused pane underneath.
     pub fn handle_click(
         &mut self,
         row: u16,
@@ -831,10 +831,20 @@ impl Dialog {
         github: Option<&GithubContextView<'_>>,
     ) -> DialogAction {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
-        let inside_box =
-            row >= box_row && row < box_row + height && col >= box_col && col < box_col + width;
-        if !inside_box {
-            return DialogAction::Dismiss;
+        let area = ratatui::layout::Rect {
+            x: box_col,
+            y: box_row,
+            width,
+            height,
+        };
+        match jackin_tui::components::classify_click(area, col, row) {
+            jackin_tui::components::ModalClickResult::OutsideDismiss => {
+                return DialogAction::Dismiss;
+            }
+            jackin_tui::components::ModalClickResult::InsideSwallow => {
+                return DialogAction::Consume;
+            }
+            jackin_tui::components::ModalClickResult::InsideHit => {}
         }
         // Text-input dialog has no clickable rows — clicks inside the
         // box are just swallowed so they don't dismiss or reach the
@@ -849,12 +859,6 @@ impl Dialog {
         // log) copies via the shared hit-test. The clicked row's value goes to
         // the clipboard and that row shows the "Copied!" badge.
         if matches!(self, Self::ContainerInfo { .. }) {
-            let area = ratatui::layout::Rect {
-                x: box_col,
-                y: box_row,
-                width,
-                height,
-            };
             let hit = self.container_info_state().and_then(|state| {
                 jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
             });

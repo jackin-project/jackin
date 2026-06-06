@@ -223,8 +223,24 @@ pub(crate) fn branch_context_bar_layout(
         left_region,
         container,
         container_region,
-        debug_chip_region: None, // populated by callers that have the run_id
+        debug_chip_region: debug_chip_range(term_cols),
     })
+}
+
+pub(crate) fn debug_chip_range(term_cols: u16) -> Option<ColRange> {
+    if !crate::logging::debug_enabled() {
+        return None;
+    }
+    let Ok(run_id) = std::env::var("JACKIN_RUN_ID") else {
+        return None;
+    };
+    if run_id.is_empty() {
+        return None;
+    }
+    let chip = format!(" {run_id} ");
+    let chip_cols = u16::try_from(display_cols(&chip)).unwrap_or(u16::MAX);
+    let chip_start = term_cols.saturating_sub(chip_cols).saturating_add(1);
+    ColRange::new(chip_start, term_cols.saturating_add(1))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,20 +273,6 @@ pub(crate) fn branch_context_bar_hit(
         pull_request_loading,
         container_name,
     )?;
-    // Check debug chip: when JACKIN_DEBUG is active, the rightmost N columns
-    // show the red run-id chip. Detected here from the env var so callers
-    // don't need a separate parameter.
-    if crate::logging::debug_enabled()
-        && let Ok(run_id) = std::env::var("JACKIN_RUN_ID")
-        && !run_id.is_empty()
-    {
-        let chip = format!(" {run_id} ");
-        let chip_cols = u16::try_from(display_cols(&chip)).unwrap_or(u16::MAX);
-        let chip_start = term_cols.saturating_sub(chip_cols).saturating_add(1);
-        if col >= chip_start && col <= term_cols {
-            return Some(BranchContextBarHit::DebugChip);
-        }
-    }
     if layout.debug_chip_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::DebugChip);
     }
