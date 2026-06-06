@@ -28,6 +28,9 @@ exclude = [
   # mise's public docs root has returned network-unreachable from lychee while
   # passing in browsers.
   "https://mise\\.jdx\\.dev/",
+  # libvterm's public project page has failed with connection errors from
+  # GitHub Actions while remaining browser-accessible.
+  "https://www\\.leonerd\\.org\\.uk/code/libvterm/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
