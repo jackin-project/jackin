@@ -71,6 +71,8 @@ Tier 5  jackin (binary)    cli/ + app/ + the console host effect-runner / servic
 
 **Ownership rules per tier:** `jackin-core` is types + traits only — no tokio, no subprocess, no docker. `pub(crate)` by default; `pub` only on what the next crate up imports. Heavy dependencies (tokio, bollard) live only in the tiers annotated above.
 
+**Remaining extraction ledger (2026-06-06).** The crate split is Phase 1, not finished. After deleting the orphaned source trees, `crates/jackin/src/` still contains 173 Rust files / 53,723 LOC; `crates/jackin/src/console/` is 38,156 LOC. That remaining root code is live integration work, not shadow duplicate code. Future extraction should move reusable, root-independent console domain/service/effect pieces down into `jackin-console` or smaller lower-tier crates when the dependency direction stays acyclic; root-specific AppConfig/runtime wiring stays in `crates/jackin/src/console/`.
+
 ## Where to start reading
 
 Different contribution shapes have different natural entry points.

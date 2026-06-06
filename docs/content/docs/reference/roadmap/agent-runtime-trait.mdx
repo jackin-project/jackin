@@ -18,7 +18,7 @@ title: "Agent runtime trait — replace the closed Agent enum with per-runtime m
 This roadmap item is the umbrella for a cluster of work that all converges on the same anti-pattern (dispatch on a closed set, duplicated across modules). Capturing the full picture so nothing is lost:
 
 ### What we have right now (the starting state)
-- **A half-finished monolith→crates migration.** The old `src/` monolith is being split into workspace crates (`jackin-core`, `jackin-config`, `jackin-runtime`, `jackin-image`, `jackin-console`, `jackin-protocol`, `jackin-capsule`, …). It is **mid-flight**: e.g. **two console code homes coexist** — `crates/jackin/src/console/` *and* the extracted `crates/jackin-console/` — both carrying a `tui/auth.rs`. The capsule's `daemon.rs` had large method blocks relocated into `daemon/` submodules. Reconciling this duplication is part of the epic, not a separate cleanup.
+- **A mostly-extracted monolith→crates migration.** The old `src/` monolith is being split into workspace crates (`jackin-core`, `jackin-config`, `jackin-runtime`, `jackin-image`, `jackin-console`, `jackin-protocol`, `jackin-capsule`, …). The current console shape is deliberate, not duplicate: `crates/jackin-console/` owns reusable generic TUI components and screen models, while `crates/jackin/src/console/` owns root-specific AppConfig/runtime wiring, services, effects, and adapters. The root crate still carries the integration-heavy console domain/service layer, so the crate split is Phase 1 rather than "done"; remaining extraction targets are tracked in the codebase map and Defect 57.
 - **A partial provider system already on the branch.** `crates/jackin-protocol/src/lib.rs` already defines `enum Provider` with one alternative (`Zai`) and `available_for(agent_slug, zai_key_available: bool)` + `env_overrides`. This is the *same closed-enum-dispatch shape* as `Agent`, one axis over: "which LLM provider backs this agent session."
 - **`enum Agent`** (`crates/jackin-core/src/agent.rs`) with 414 dispatch references across 31 files (table below) — the original target of this item.
 
@@ -31,7 +31,7 @@ A verbatim port would **multiply** the very dispatch fan-out this item exists to
 
 ### What we are changing (the unified goal)
 1. **Absorb `main` as a deliberate port, not a 3-way merge.** The branch relocated/renamed the files `#523` touched, so a raw merge yields ~6,400 lines of relocation false-conflicts. Resolution = take the branch's structure, re-apply `#523`'s *behavior* into the new homes. (See Defect 46 Phase 1.)
-2. **Reconcile the half-migrated duplication** (two console homes, capsule submodule moves) so there is one canonical location per concern before/while porting.
+2. **Reconcile the half-migrated duplication.** The current two-console-tree shape is intentional: generic reusable TUI lives in `jackin-console`, root-specific services/effects/adapters live in `crates/jackin/src/console/`. Remaining extraction is tracked as follow-up structure work, not as duplicate code to delete.
 3. **Extend the trait to cover the `Provider` axis too.** `AgentRuntime` (and a sibling `Provider` registry) absorb `available_for` / `token_for_provider` / `env_overrides` / `opencode_model` so adding a provider or a runtime is one registration, not N matches. `#523`'s feature ships **through** the registry.
 4. **Execute the trait extraction** (the body of this item) as the same epic, retiring the 414-site fan-out.
 
@@ -54,11 +54,11 @@ Items tracked in [Defect 46](/reference/roadmap/post-restructure-fixes/).
 | Provider catalog | `Provider::{Anthropic,Zai,Minimax,Kimi}`, 4-key `available_for`, `opencode_model`, `from_label`, `env_overrides` (`jackin-protocol`) | ✅ ported |
 | Capsule keys + token | `anthropic_api_key`/`minimax_key`/`kimi_key`, `token_for_provider`, spawn routing (`jackin-capsule`) | ✅ ported |
 | Host availability | `providers_for_launch` 4-key (`jackin/src/console/domain.rs`) | ✅ ported |
-| Codex provider config | `write_codex_provider_config`, `codex_minimax_provider_toml` (`runtime_setup.rs`) + #523 tests | ❌ **MISSING** |
-| OpenCode provider config | `build_opencode_config`, `opencode_provider_block`, `write_opencode_config` (`runtime_setup.rs`) + #523 tests | ❌ **MISSING** |
-| Env-var registration | `#523` `src/env_model.rs` +9 → canonical `env_model` crate | ❌ **MISSING** |
-| Auth-tab display rows | new-provider key-status rows in the canonical console auth tab | ❌ **MISSING** |
-| Launch delta | `#523` `src/runtime/launch.rs` +2 → canonical home | ❌ **MISSING** |
+| Codex provider config | `write_codex_provider_config`, `codex_minimax_provider_toml` (`runtime_setup.rs`) + #523 tests | ✅ ported |
+| OpenCode provider config | `build_opencode_config`, `opencode_provider_block`, `write_opencode_config` (`runtime_setup.rs`) + #523 tests | ✅ ported |
+| Env-var registration | `#523` `src/env_model.rs` +9 → canonical `env_model` crate | ✅ ported |
+| Auth-tab display rows | new-provider key-status rows in the canonical console auth tab | ✅ ported |
+| Launch delta | `#523` `src/runtime/launch.rs` +2 → canonical home | ✅ ported |
 
 **Extensible umbrella.** This epic is the home for tightly-coupled dispatch/structure work; the operator may fold additional roadmap items in as new phases (Phase B, C, …) under the same green-at-each-commit rule. Tight coupling (shared files, shared dispatch) is the test for "same PR"; a loosely-coupled item is planned here but may ship as its own PR if this one outgrows comfortable single-reviewer scope.
 
