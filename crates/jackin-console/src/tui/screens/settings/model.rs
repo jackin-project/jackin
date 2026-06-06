@@ -95,6 +95,23 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
             FocusOwner::Content(self.active_tab)
         };
     }
+
+    #[must_use]
+    pub fn content_focused(&self, tab: SettingsTab) -> bool {
+        self.focus_owner == FocusOwner::Content(tab)
+    }
+
+    pub fn set_content_focused(&mut self, tab: SettingsTab, focused: bool) {
+        if focused {
+            self.focus_owner = FocusOwner::Content(tab);
+        } else if self.content_focused(tab) {
+            self.focus_owner = FocusOwner::TabBar;
+        }
+    }
+
+    pub fn set_active_content_focused(&mut self, focused: bool) {
+        self.set_content_focused(self.active_tab, focused);
+    }
 }
 
 /// Cursor position inside the auth-edit form modal.
@@ -230,7 +247,6 @@ pub struct SettingsEnvState<EnvValue, Modal> {
     pub expanded: std::collections::BTreeSet<String>,
     pub error: Option<String>,
     pub scroll_y: u16,
-    pub scroll_focused: bool,
 }
 
 impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
@@ -380,7 +396,6 @@ pub struct GlobalMountsState<Row, Modal> {
     pub error: Option<String>,
     pub scroll_x: u16,
     pub scroll_y: u16,
-    pub scroll_focused: bool,
     /// Dispatcher pops back to the workspace list when set.
     pub exit_requested: bool,
 }
@@ -447,7 +462,6 @@ pub struct SettingsTrustState {
     pub error: Option<String>,
     pub scroll_x: u16,
     pub scroll_y: u16,
-    pub scroll_focused: bool,
     /// Row the pointer is hovering.
     pub hovered: Option<usize>,
 }
@@ -462,7 +476,6 @@ impl SettingsTrustState {
             error: None,
             scroll_x: 0,
             scroll_y: 0,
-            scroll_focused: false,
             hovered: None,
         }
     }
@@ -534,7 +547,6 @@ pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     /// In-flight 1Password read for an op-picker auth-form commit.
     pub pending_op_commit: Option<PendingOpCommit>,
     pub scroll_y: u16,
-    pub scroll_focused: bool,
 }
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {

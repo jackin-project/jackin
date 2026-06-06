@@ -161,7 +161,7 @@ pub struct SettingsSelectionScrollPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsTrustRowSelectPlan {
     pub selected: Option<usize>,
-    pub scroll_focused: bool,
+    pub content_focused: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,7 +215,7 @@ pub const fn settings_trust_row_select_plan(
         } else {
             None
         },
-        scroll_focused: true,
+        content_focused: true,
     }
 }
 

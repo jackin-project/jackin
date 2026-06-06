@@ -840,10 +840,10 @@ fn update_scroll_focus(
                 point_in(mouse, settings_content_area(settings, term_size))
             };
             let plan = settings_scroll_focus_plan(settings.active_tab, modal_open, in_content);
-            settings.mounts.scroll_focused = plan.mounts;
-            settings.env.scroll_focused = plan.env;
-            settings.auth.scroll_focused = plan.auth;
-            settings.trust.scroll_focused = plan.trust;
+            settings.set_content_focused(SettingsTab::Mounts, plan.mounts);
+            settings.set_content_focused(SettingsTab::Environments, plan.env);
+            settings.set_content_focused(SettingsTab::Auth, plan.auth);
+            settings.set_content_focused(SettingsTab::Trust, plan.trust);
             // Clicking the content block transfers interaction focus into it —
             // same as Tab/↓ — so the green border and ▸ appear in the same frame.
             if in_content && settings.tab_bar_focused() {

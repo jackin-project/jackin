@@ -148,7 +148,7 @@ fn mouse_selection_messages_update_tabs_and_rows() {
         panic!("expected settings stage");
     };
     assert_eq!(settings.active_tab, SettingsTab::Trust);
-    assert!(settings.trust.scroll_focused);
+    assert!(settings.content_focused(SettingsTab::Trust));
 }
 
 #[test]

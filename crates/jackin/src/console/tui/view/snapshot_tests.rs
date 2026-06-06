@@ -157,8 +157,7 @@ readonly = false
         let mut state = ManagerState::from_config(config, cwd);
         let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
-        settings.set_tab_bar_focused(false);
-        settings.mounts.scroll_focused = true;
+        settings.set_active_content_focused(true);
         settings.mounts.modal = Some(modal);
         state.stage = ManagerStage::Settings(settings);
         state
@@ -172,8 +171,7 @@ readonly = false
         let mut state = ManagerState::from_config(config, cwd);
         let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
-        settings.set_tab_bar_focused(false);
-        settings.env.scroll_focused = true;
+        settings.set_active_content_focused(true);
         settings.env.modal = Some(modal);
         state.stage = ManagerStage::Settings(settings);
         state
@@ -187,8 +185,7 @@ readonly = false
         let mut state = ManagerState::from_config(config, cwd);
         let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
-        settings.set_tab_bar_focused(false);
-        settings.auth.scroll_focused = true;
+        settings.set_active_content_focused(true);
         settings.auth.modal = Some(modal);
         state.stage = ManagerStage::Settings(settings);
         state
@@ -319,12 +316,7 @@ readonly = false
             let mut state = ManagerState::from_config(&config, &cwd);
             let mut settings = settings_state_from_config(&config);
             settings.active_tab = tab;
-            settings.set_tab_bar_focused(false);
-            settings.mounts.scroll_focused = tab == crate::console::tui::state::SettingsTab::Mounts;
-            settings.env.scroll_focused =
-                tab == crate::console::tui::state::SettingsTab::Environments;
-            settings.auth.scroll_focused = tab == crate::console::tui::state::SettingsTab::Auth;
-            settings.trust.scroll_focused = tab == crate::console::tui::state::SettingsTab::Trust;
+            settings.set_active_content_focused(true);
             state.stage = ManagerStage::Settings(settings);
             cases.push((tab.label(), state));
         }
@@ -648,8 +640,7 @@ readonly = false
         let mut settings_mounts_confirm = ManagerState::from_config(&config, &cwd);
         let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
-        settings.set_tab_bar_focused(false);
-        settings.mounts.scroll_focused = true;
+        settings.set_active_content_focused(true);
         settings.mounts.modal = Some(GlobalMountModal::Confirm {
             action: GlobalMountConfirm::Remove,
             state: jackin_tui::components::ConfirmState::new("Remove mount?"),
@@ -742,8 +733,7 @@ readonly = false
         let mut settings_env_text = ManagerState::from_config(&config, &cwd);
         let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
-        settings.set_tab_bar_focused(false);
-        settings.env.scroll_focused = true;
+        settings.set_active_content_focused(true);
         settings.env.modal = Some(SettingsEnvModal::Text {
             target: SettingsEnvTextTarget::EnvKey {
                 scope: SettingsEnvScope::Global,
@@ -821,8 +811,7 @@ readonly = false
         let mut settings_auth_text = ManagerState::from_config(&config, &cwd);
         let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
-        settings.set_tab_bar_focused(false);
-        settings.auth.scroll_focused = true;
+        settings.set_active_content_focused(true);
         settings.auth.modal = Some(crate::console::tui::state::SettingsAuthModal::TextInput {
             state: Box::new(jackin_tui::components::TextInputState::new(
                 "Credential",

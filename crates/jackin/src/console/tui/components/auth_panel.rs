@@ -5,8 +5,8 @@ use crate::console::domain::{
     auth_kind_agent, explicit_workspace_auth_mode, panel_auth_source_value, resolve_panel_mode,
 };
 use crate::console::tui::state::{
-    AuthRow, EditorState, FieldFocus, SettingsState, auth_flat_rows, synthesize_appconfig_for_auth,
-    workspace_name_for_panel,
+    AuthRow, EditorState, FieldFocus, SettingsState, SettingsTab, auth_flat_rows,
+    synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
@@ -97,8 +97,7 @@ pub(crate) fn editor_auth_lines_for_state(
 pub(crate) fn settings_auth_lines_for_state(
     state: &SettingsState<'_>,
 ) -> Vec<ratatui::text::Line<'static>> {
-    let show_cursor =
-        !state.tab_bar_focused() && state.auth.scroll_focused && state.auth.modal.is_none();
+    let show_cursor = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
     let Some(kind) = state.auth.selected_kind else {
         let rows: Vec<SettingsAuthLineRow> = state
             .auth

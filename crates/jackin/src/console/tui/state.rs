@@ -577,7 +577,6 @@ fn settings_global_mounts_from_config(config: &AppConfig) -> GlobalMountsState<'
         error: None,
         scroll_x: 0,
         scroll_y: 0,
-        scroll_focused: false,
         exit_requested: false,
     }
 }
@@ -684,7 +683,6 @@ fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
         expanded: BTreeSet::default(),
         error: None,
         scroll_y: 0,
-        scroll_focused: false,
     }
 }
 
@@ -713,7 +711,6 @@ fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
         error: None,
         pending_op_commit: None,
         scroll_y: 0,
-        scroll_focused: false,
     }
 }
 

@@ -333,18 +333,6 @@ fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
         return;
     };
     settings.set_tab_bar_focused(settings_tab_bar_focus_plan(focused));
-    // When entering content (focused = false), activate scroll focus for the
-    // active tab so the ▸ cursor and focused border appear together.
-    if !focused {
-        use jackin_console::tui::screens::settings::model::SettingsTab;
-        match settings.active_tab {
-            SettingsTab::Mounts => settings.mounts.scroll_focused = true,
-            SettingsTab::Environments => settings.env.scroll_focused = true,
-            SettingsTab::Auth => settings.auth.scroll_focused = true,
-            SettingsTab::Trust => settings.trust.scroll_focused = true,
-            SettingsTab::General => {} // General uses !tab_bar_focused directly
-        }
-    }
 }
 
 const fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
@@ -546,14 +534,6 @@ fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: 
     let plan = settings_tab_move_plan(settings.active_tab, delta, focus_tab_bar);
     settings.active_tab = plan.active_tab;
     settings.set_tab_bar_focused(plan.tab_bar_focused);
-    // Tab-switch returns focus to the tab bar; clear per-tab scroll focus so
-    // the previously-focused content block does not show a stale green border.
-    if focus_tab_bar {
-        settings.mounts.scroll_focused = false;
-        settings.env.scroll_focused = false;
-        settings.auth.scroll_focused = false;
-        settings.trust.scroll_focused = false;
-    }
 }
 
 fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
@@ -873,7 +853,7 @@ fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
     if let Some(selected) = plan.selected {
         settings.trust.selected = selected;
     }
-    settings.trust.scroll_focused = plan.scroll_focused;
+    settings.set_content_focused(SettingsTab::Trust, plan.content_focused);
 }
 
 fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {

@@ -98,19 +98,19 @@ fn settings_trust_selection_plan_clamps_and_updates_scroll() {
 }
 
 #[test]
-fn settings_trust_row_select_plan_bounds_checks_and_focuses_scroll() {
+fn settings_trust_row_select_plan_bounds_checks_and_focuses_content() {
     assert_eq!(
         settings_trust_row_select_plan(1, 3),
         SettingsTrustRowSelectPlan {
             selected: Some(1),
-            scroll_focused: true,
+            content_focused: true,
         }
     );
     assert_eq!(
         settings_trust_row_select_plan(3, 3),
         SettingsTrustRowSelectPlan {
             selected: None,
-            scroll_focused: true,
+            content_focused: true,
         }
     );
 }

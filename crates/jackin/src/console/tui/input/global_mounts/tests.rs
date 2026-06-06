@@ -359,8 +359,8 @@ fn settings_focus_owner_exclusivity() {
             "tab bar must not be green while content is focused"
         );
         assert!(
-            settings.mounts.scroll_focused,
-            "mounts.scroll_focused must be true (Defect 18)"
+            settings.content_focused(SettingsTab::Mounts),
+            "settings focus owner must name mounts content (Defect 18)"
         );
     }
     handle_settings_key(&mut state, key(KeyCode::Esc));
@@ -369,8 +369,10 @@ fn settings_focus_owner_exclusivity() {
             panic!("settings stage expected");
         };
         assert!(settings.tab_bar_focused(), "tab bar regains focus on Esc");
-        // mounts.scroll_focused may stay true — rendering correctly handles
-        // !tab_bar_focused && scroll_focused = false AND true = false.
+        assert!(
+            !settings.content_focused(SettingsTab::Mounts),
+            "Esc returns focus ownership to the tab bar"
+        );
     }
 }
 
