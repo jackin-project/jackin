@@ -49,7 +49,10 @@ pub enum PaneBodyDim {
 ///
 /// Thumb height is proportional to viewport / total; thumb position
 /// represents the slice of history the operator is looking at
-/// (bottom row → live tail, top row → oldest scrollback line).
+/// (bottom row → live tail, top row → oldest scrollback line). This is the
+/// PTY/DamageGrid tail-relative scrollbar exception: raw ANSI emission cannot
+/// use ratatui's `FixedScrollbar`, but it still uses the shared
+/// `tail_vertical_thumb` geometry.
 /// Thumb colour is phosphor-green for focused panes, gray for the
 /// rest — matches the surrounding border so focus and chrome
 /// agree.

@@ -80,8 +80,10 @@ pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchV
         wrap_build_log_lines(raw, viewport_w)
     };
 
-    // `build_log_scroll` counts lines up from the tail (0 = follow newest).
-    // Convert through the shared tail adapter to the block's top-offset.
+    // Live build output is tail-relative (0 = follow newest), unlike ordinary
+    // top-offset panels that can use `apply_scroll_delta` directly. Keep the
+    // state in the shared `TailScroll` adapter, then convert to the top-offset
+    // consumed by `render_scrollable_block`/`FixedScrollbar`.
     let viewport_h = viewport_height(box_area);
     let lines_len = lines.len();
     let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
