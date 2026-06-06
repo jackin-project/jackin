@@ -981,7 +981,10 @@ echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
 echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
 echo "NO_PROXY=${{NO_PROXY:-}}"
 echo "no_proxy=${{no_proxy:-}}"
+docker rm -f jackin-dind-e2e-docker-ps-smoke >/dev/null 2>&1 || true
+docker run -d --name jackin-dind-e2e-docker-ps-smoke alpine:3.20 sh -c 'sleep 30'
 docker ps
+docker rm -f jackin-dind-e2e-docker-ps-smoke >/dev/null 2>&1 || true
 # Emit REPORT_END before the Maven smoke so the host's `output.stdout`
 # parse can succeed even when mvn's network reach to Maven Central
 # (testcontainers pull, JDK plugin downloads) is slow or fails. The
