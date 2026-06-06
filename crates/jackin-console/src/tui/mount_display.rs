@@ -47,6 +47,7 @@ pub fn mount_display_paths(
     }
 }
 
+#[allow(unfulfilled_lint_expectations)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed mount DTOs on stable Rust"

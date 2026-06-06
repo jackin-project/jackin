@@ -1334,6 +1334,7 @@ pub fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
     Line::from(Span::styled(format!("{prefix}{text}"), style))
 }
 
+#[allow(unfulfilled_lint_expectations)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"
@@ -1364,6 +1365,7 @@ pub fn account_lines<'a>(
         .collect()
 }
 
+#[allow(unfulfilled_lint_expectations)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"
@@ -1390,6 +1392,7 @@ pub fn vault_lines<'a>(
         .collect()
 }
 
+#[allow(unfulfilled_lint_expectations)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"

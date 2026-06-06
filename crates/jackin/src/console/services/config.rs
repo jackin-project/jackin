@@ -422,6 +422,7 @@ fn validate_settings_env(
     Ok(())
 }
 
+#[allow(unfulfilled_lint_expectations)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
