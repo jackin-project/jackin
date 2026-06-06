@@ -67,13 +67,13 @@ fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
 
 #[test]
 fn destructive_confirm_states_name_targets() {
-    let delete = workspace_delete_confirm_plan("alpha".to_string());
+    let delete = workspace_delete_confirm_plan("alpha".to_owned());
     let delete_debug = format!("{:?}", delete.state);
     assert_eq!(delete.name, "alpha");
     assert!(delete_debug.contains("Delete"));
     assert!(delete_debug.contains("alpha"));
 
-    let purge = instance_purge_confirm_plan("abc123".to_string(), "role/dev".to_string());
+    let purge = instance_purge_confirm_plan("abc123".to_owned(), "role/dev".to_owned());
     let purge_debug = format!("{:?}", purge.state);
     assert_eq!(purge.container, "abc123");
     assert_eq!(purge.label, "role/dev");

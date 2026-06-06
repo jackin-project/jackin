@@ -176,7 +176,7 @@ fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output
                 .context("collecting docker exec snapshot output");
         }
         if Instant::now() >= deadline {
-            let _ = child.kill();
+            drop(child.kill());
             // SIGKILL is async — bound the post-kill drain so an
             // unresponsive docker daemon does not leave us blocked
             // in `wait_with_output` while the pipe stays open. The
@@ -192,7 +192,7 @@ fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output
             let output = child.wait_with_output().ok();
             let stderr = output
                 .as_ref()
-                .map(|out| String::from_utf8_lossy(&out.stderr).trim().to_string())
+                .map(|out| String::from_utf8_lossy(&out.stderr).trim().to_owned())
                 .unwrap_or_default();
             bail!("docker exec snapshot timed out after {SOCKET_TIMEOUT:?}: {stderr}");
         }

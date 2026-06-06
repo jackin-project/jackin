@@ -78,7 +78,7 @@ use ratatui::{
 use jackin_tui::components::render_dialog_shell;
 use jackin_tui::theme::PHOSPHOR_DARK;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
     let title = format!("Source for {}", state.key);
     let inner = render_dialog_shell(frame, area, Some(&title));
 

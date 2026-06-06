@@ -34,7 +34,7 @@ pub fn find_sensitive_mounts(mounts: &[MountConfig]) -> Vec<SensitiveMount> {
             if normalized.ends_with(suffix) || normalized == suffix.trim_start_matches('/') {
                 hits.push(SensitiveMount {
                     src: mount.src.clone(),
-                    reason: reason.to_string(),
+                    reason: reason.to_owned(),
                 });
                 break;
             }

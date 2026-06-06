@@ -5,7 +5,6 @@
 //! arrange to re-run the build script when the git HEAD moves. The
 //! only difference between the two call sites is the relative path
 //! to the workspace `.git/` directory.
-
 use std::process::Command;
 
 /// Re-export the version-derivation contract.
@@ -45,7 +44,7 @@ pub fn derive_version(git_dir_relative: &str) -> String {
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string());
+        .map(|s| s.trim().to_owned());
 
     short_sha.map_or_else(
         || cargo_version.clone(),

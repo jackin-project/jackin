@@ -28,6 +28,10 @@ pub fn install_all_test_stubs(paths: &jackin_core::paths::JackinPaths) {
     jackin_image::capsule_binary::install_test_stub(paths).expect("install capsule test stub");
 }
 
+#[expect(
+    missing_debug_implementations,
+    reason = "FakeRunner stores one-shot side-effect closures that cannot be formatted."
+)]
 #[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
@@ -184,6 +188,7 @@ pub mod fake_docker {
         ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
     };
 
+    #[derive(Debug)]
     pub struct FakeDockerClient {
         pub recorded: std::cell::RefCell<Vec<String>>,
         pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
@@ -236,7 +241,7 @@ pub mod fake_docker {
         }
 
         fn record(&self, entry: &str) {
-            self.recorded.borrow_mut().push(entry.to_string());
+            self.recorded.borrow_mut().push(entry.to_owned());
         }
 
         fn ignore_if_missing(result: anyhow::Result<()>) -> anyhow::Result<()> {
@@ -356,7 +361,7 @@ pub mod fake_docker {
             self.check_fail(&op)?;
             self.created_containers
                 .borrow_mut()
-                .push((name.to_string(), spec));
+                .push((name.to_owned(), spec));
             Ok(())
         }
 
@@ -381,7 +386,7 @@ pub mod fake_docker {
             self.record(&op);
             self.created_networks
                 .borrow_mut()
-                .push((name.to_string(), labels));
+                .push((name.to_owned(), labels));
             self.check_fail(&op)
         }
 

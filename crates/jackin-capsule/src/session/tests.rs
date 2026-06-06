@@ -22,10 +22,10 @@ impl ChildKiller for NullChildKiller {
 struct NullMasterPty;
 
 impl MasterPty for NullMasterPty {
-    fn resize(&self, _size: PtySize) -> anyhow::Result<()> {
+    fn resize(&self, _size: PtySize) -> Result<()> {
         Ok(())
     }
-    fn get_size(&self) -> anyhow::Result<PtySize> {
+    fn get_size(&self) -> Result<PtySize> {
         Ok(PtySize {
             rows: 24,
             cols: 80,
@@ -33,10 +33,10 @@ impl MasterPty for NullMasterPty {
             pixel_height: 0,
         })
     }
-    fn try_clone_reader(&self) -> anyhow::Result<Box<dyn std::io::Read + Send>> {
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
         Ok(Box::new(std::io::empty()))
     }
-    fn take_writer(&self) -> anyhow::Result<Box<dyn std::io::Write + Send>> {
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
         Ok(Box::new(std::io::sink()))
     }
     #[cfg(unix)]
@@ -56,8 +56,8 @@ impl MasterPty for NullMasterPty {
 fn test_session_with_policy(policy: OscPolicy) -> Session {
     let (input_tx, _input_rx) = mpsc::unbounded_channel();
     let mut session = Session::new_for_test(
-        "Test".to_string(),
-        Some("codex".to_string()),
+        "Test".to_owned(),
+        Some("codex".to_owned()),
         None,
         (24, 80),
         100,
@@ -346,7 +346,7 @@ fn focus_swap_reset_leaves_client_owned_modes_alone() {
 
 #[test]
 fn build_agent_command_overrides_stale_agent_env() {
-    let env = vec![("JACKIN_AGENT".to_string(), "claude".to_string())];
+    let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
     let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
@@ -357,7 +357,7 @@ fn build_agent_command_overrides_stale_agent_env() {
 
 #[test]
 fn build_agent_command_uses_stable_pane_term() {
-    let env = vec![("TERM".to_string(), "xterm-ghostty".to_string())];
+    let env = vec![("TERM".to_owned(), "xterm-ghostty".to_owned())];
     let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
@@ -368,7 +368,7 @@ fn build_agent_command_uses_stable_pane_term() {
 
 #[test]
 fn build_agent_command_advertises_truecolor() {
-    let env = vec![("COLORTERM".to_string(), "24bit".to_string())];
+    let env = vec![("COLORTERM".to_owned(), "24bit".to_owned())];
     let cmd = build_agent_command("claude", None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
@@ -379,7 +379,7 @@ fn build_agent_command_advertises_truecolor() {
 
 #[test]
 fn build_shell_command_advertises_truecolor() {
-    let env = vec![("COLORTERM".to_string(), "false".to_string())];
+    let env = vec![("COLORTERM".to_owned(), "false".to_owned())];
     let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
 
     assert_eq!(
@@ -412,7 +412,7 @@ fn agent_model_args_match_cli_contracts() {
 
 #[test]
 fn build_shell_command_removes_stale_agent_env() {
-    let env = vec![("JACKIN_AGENT".to_string(), "claude".to_string())];
+    let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
     let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
 
     assert!(cmd.get_env("JACKIN_AGENT").is_none());
@@ -496,7 +496,7 @@ fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
 
 #[test]
 fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
-    let supported = vec!["claude".to_string()];
+    let supported = vec!["claude".to_owned()];
     assert!(validate_agent_slug("claude", &supported).is_ok());
     assert_eq!(
         validate_agent_slug("codex", &supported).unwrap_err(),

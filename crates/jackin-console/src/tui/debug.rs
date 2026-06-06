@@ -88,7 +88,7 @@ pub fn key_debug_name_for_input(
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
     let code = match key.code {
         KeyCode::Char(_) if consumes_letter_input && !has_command_modifier => {
-            "Char(<redacted>)".to_string()
+            "Char(<redacted>)".to_owned()
         }
         KeyCode::Char(ch) => format!("Char({})", ch.escape_default()),
         other => format!("{other:?}"),

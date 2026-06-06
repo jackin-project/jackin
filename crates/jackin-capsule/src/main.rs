@@ -31,11 +31,11 @@ async fn main() -> Result<()> {
         let focus_session = parse_focus_flag(&args);
         match subcommand {
             None => client::run_client(None, focus_session).await,
-            Some("--version") | Some("-V") => {
+            Some("--version" | "-V") => {
                 println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
                 Ok(())
             }
-            Some("--help") | Some("-h") => {
+            Some("--help" | "-h") => {
                 println!(
                     "jackin-capsule {version}
 
@@ -88,7 +88,7 @@ connecting as a client.",
                         Ok(slug) => {
                             let req = if let Some(label) = provider_label {
                                 SpawnRequest::AgentWithProvider {
-                                    slug: slug.to_string(),
+                                    slug: slug.to_owned(),
                                     provider_label: label,
                                 }
                             } else {
@@ -167,18 +167,18 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
     let mut iter = args.iter().skip(scan_start);
     while let Some(arg) = iter.next() {
         if let Some(value) = arg.strip_prefix("--focus=") {
-            return match value.parse::<u64>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    eprintln!("[jackin-capsule] ignoring --focus={value:?}: not a u64");
-                    None
-                }
+            return if let Ok(n) = value.parse::<u64>() {
+                Some(n)
+            } else {
+                eprintln!("[jackin-capsule] ignoring --focus={value:?}: not a u64");
+                None
             };
         }
         if arg == "--focus" {
-            return iter.next().and_then(|raw| match raw.parse::<u64>() {
-                Ok(n) => Some(n),
-                Err(_) => {
+            return iter.next().and_then(|raw| {
+                if let Ok(n) = raw.parse::<u64>() {
+                    Some(n)
+                } else {
                     eprintln!("[jackin-capsule] ignoring --focus {raw:?}: not a u64");
                     None
                 }
@@ -195,7 +195,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
 fn parse_provider_flag(args: &[String]) -> Option<String> {
     args.get(3..)?
         .iter()
-        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_string))
+        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_owned))
 }
 
 /// Resolve the initial agent slug for PID-1 daemon mode. The host launcher
@@ -204,11 +204,11 @@ fn parse_provider_flag(args: &[String]) -> Option<String> {
 /// `JACKIN_AGENT` is reserved for per-agent entrypoint processes.
 fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result<String> {
     let Some(raw) = args.get(1) else {
-        return Ok(DEFAULT_AGENT.to_string());
+        return Ok(DEFAULT_AGENT.to_owned());
     };
     let validated = validate_agent_slug(raw, supported_agents)
         .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
-    Ok(validated.to_string())
+    Ok(validated.to_owned())
 }
 
 #[cfg(test)]
@@ -216,7 +216,7 @@ mod tests {
     use super::*;
 
     fn args(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|s| (*s).to_string()).collect()
+        parts.iter().map(|s| (*s).to_owned()).collect()
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
                 "claude",
                 "--provider=Z.AI"
             ])),
-            Some("Z.AI".to_string())
+            Some("Z.AI".to_owned())
         );
     }
 

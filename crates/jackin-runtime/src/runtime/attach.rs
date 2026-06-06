@@ -8,7 +8,7 @@
 //! transient state during the setup-once window; they must not surface it as
 //! a terminal error.
 
-use crate::instance::InstanceManifest;
+use crate::instance::{InstanceManifest, InstanceStatus};
 use anyhow::Context as _;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
@@ -54,7 +54,7 @@ pub(super) async fn wait_for_capsule_daemon(
 }
 
 #[cfg(test)]
-use crate::instance::{InstanceIndex, InstanceStatus};
+use crate::instance::InstanceIndex;
 use jackin_core::paths::JackinPaths;
 pub use jackin_docker::docker_client::ContainerState;
 
@@ -77,7 +77,7 @@ pub async fn inspect_agent_sessions(
 ) -> AgentSessionInventory {
     if matches!(state, ContainerState::InspectUnavailable(_)) {
         return AgentSessionInventory::Unavailable(
-            "container state unavailable; skipping session query".to_string(),
+            "container state unavailable; skipping session query".to_owned(),
         );
     }
     if !matches!(state, ContainerState::Running) {
@@ -130,8 +130,7 @@ pub(crate) fn parse_session_count(output: &str) -> Option<usize> {
 /// header is always the first non-blank line.
 fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
     let expected = parse_session_count(output).ok_or_else(|| {
-        "jackin-capsule status emitted no parsable `Sessions: N` header — daemon may be unreachable"
-            .to_string()
+        "jackin-capsule status emitted no parsable `Sessions: N` header — daemon may be unreachable".to_owned()
     })?;
 
     let sessions: Vec<AgentSession> = output
@@ -152,7 +151,7 @@ fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
                 .map_or(after_id, |idx| &after_id[..idx]);
             let name = head.rfind(" (").map_or(head, |idx| &head[..idx]);
             Some(AgentSession {
-                name: name.to_string(),
+                name: name.to_owned(),
             })
         })
         .take(expected)
@@ -190,7 +189,7 @@ fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
                 "set_role_terminal_title: manifest read failed for {container_name}: {e:#}; \
                  using container name as title",
             );
-            container_name.to_string()
+            container_name.to_owned()
         }
     };
     jackin_diagnostics::set_terminal_title(&title);
@@ -294,7 +293,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
 async fn require_container_reachable(
     paths: &JackinPaths,
     container_name: &str,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
     stopped_hint: &str,
 ) -> anyhow::Result<()> {
     match docker.inspect_container_state(container_name).await {
@@ -328,7 +327,7 @@ async fn require_container_reachable(
 pub async fn spawn_shell_session(
     paths: &JackinPaths,
     container_name: &str,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     require_container_reachable(
@@ -378,7 +377,7 @@ pub async fn spawn_agent_session(
     env_overrides: &[(String, String)],
     git_coauthor_trailer: bool,
     git_dco: bool,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     require_container_reachable(
@@ -455,7 +454,7 @@ pub async fn spawn_agent_session(
 pub async fn hardline_agent(
     paths: &JackinPaths,
     container_name: &str,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     hardline_agent_with_focus(paths, container_name, None, docker, runner).await
@@ -469,7 +468,7 @@ pub async fn hardline_agent_with_focus(
     paths: &JackinPaths,
     container_name: &str,
     focus_session: Option<u64>,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     // Reconcile keep_awake right before each `reconnect_or_create_session_with_focus`
@@ -514,7 +513,7 @@ pub async fn hardline_agent_with_focus(
             oom_killed,
         } => {
             let reason = if oom_killed {
-                "OOM killed".to_string()
+                "OOM killed".to_owned()
             } else {
                 format!("exit {exit_code}")
             };
@@ -539,7 +538,7 @@ pub async fn hardline_agent_with_focus(
 async fn finalize_reconnected_foreground_session(
     paths: &JackinPaths,
     container_name: &str,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let mut outcome =
@@ -585,7 +584,7 @@ async fn finalize_reconnected_resources(
     container_name: &str,
     outcome: crate::isolation::finalize::AttachOutcome,
     decision: crate::isolation::finalize::FinalizeDecision,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     use crate::isolation::finalize::{AttachOutcome, FinalizeDecision};
 
@@ -603,10 +602,10 @@ async fn finalize_reconnected_resources(
     let status = if matches!(decision, FinalizeDecision::Preserved) {
         super::launch::preserved_instance_status(&state_dir)?
     } else {
-        crate::instance::InstanceStatus::CleanExited
+        InstanceStatus::CleanExited
     };
     if let Some(mut manifest) =
-        crate::instance::InstanceManifest::read_or_log(&state_dir, "finalize_reconnected_resources")
+        InstanceManifest::read_or_log(&state_dir, "finalize_reconnected_resources")
     {
         super::launch::write_instance_status(paths, &state_dir, &mut manifest, status)?;
     }
@@ -616,7 +615,7 @@ async fn finalize_reconnected_resources(
 pub async fn inspect_hardline_instance(
     paths: &JackinPaths,
     container_name: &str,
-    docker: &impl jackin_docker::docker_client::DockerApi,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<String> {
     let state_dir = paths.data_dir.join(container_name);
     // `--inspect` is the operator's recovery tool. Distinguish "no
@@ -676,7 +675,7 @@ pub async fn inspect_hardline_instance(
                 lines.push(format!("Role source: {}", manifest.role_source_git));
             }
         }
-        Ok(None) => lines.push("Manifest: missing".to_string()),
+        Ok(None) => lines.push("Manifest: missing".to_owned()),
         Err(error) => lines.push(format!("Manifest: unreadable ({error})")),
     }
 
@@ -693,18 +692,18 @@ pub async fn inspect_hardline_instance(
 
 pub fn describe_agent_session_count(sessions: &AgentSessionInventory) -> String {
     match sessions {
-        AgentSessionInventory::NotRunning => "sessions:not_running".to_string(),
-        AgentSessionInventory::Unavailable(_) => "sessions:unavailable".to_string(),
+        AgentSessionInventory::NotRunning => "sessions:not_running".to_owned(),
+        AgentSessionInventory::Unavailable(_) => "sessions:unavailable".to_owned(),
         AgentSessionInventory::Sessions(sessions) => format!("sessions:{}", sessions.len()),
     }
 }
 
 fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
     match sessions {
-        AgentSessionInventory::NotRunning => "not running".to_string(),
+        AgentSessionInventory::NotRunning => "not running".to_owned(),
         AgentSessionInventory::Unavailable(reason) => format!("unavailable: {reason}"),
         AgentSessionInventory::Sessions(sessions) if sessions.is_empty() => {
-            "none detected".to_string()
+            "none detected".to_owned()
         }
         AgentSessionInventory::Sessions(sessions) => sessions
             .iter()
@@ -716,8 +715,8 @@ fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
 
 fn describe_network_state(state: DockerNetworkState) -> String {
     match state {
-        DockerNetworkState::Present => "present".to_string(),
-        DockerNetworkState::NotFound => "missing".to_string(),
+        DockerNetworkState::Present => "present".to_owned(),
+        DockerNetworkState::NotFound => "missing".to_owned(),
         DockerNetworkState::InspectUnavailable(reason) => format!("unavailable: {reason}"),
     }
 }
@@ -736,10 +735,7 @@ enum DockerNetworkState {
     InspectUnavailable(String),
 }
 
-async fn inspect_docker_network(
-    docker: &impl jackin_docker::docker_client::DockerApi,
-    network: &str,
-) -> DockerNetworkState {
+async fn inspect_docker_network(docker: &impl DockerApi, network: &str) -> DockerNetworkState {
     match docker.inspect_network(network).await {
         Ok(Some(_)) => DockerNetworkState::Present,
         Ok(None) => DockerNetworkState::NotFound,

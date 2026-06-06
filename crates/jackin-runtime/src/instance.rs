@@ -313,7 +313,7 @@ impl RoleState {
         self.auth.kimi.as_ref().is_some_and(|c| c.forward_auth)
     }
 
-    /// Manifest model override for OpenCode, or `None` if not OpenCode or no override.
+    /// Manifest model override for `OpenCode`, or `None` if not `OpenCode` or no override.
     #[must_use]
     pub fn opencode_model(&self) -> Option<&str> {
         if self.agent_runtime.agent == jackin_core::agent::Agent::Opencode {
@@ -381,9 +381,13 @@ impl std::fmt::Debug for GithubAuthContext {
 }
 
 /// Resolver closures for [`RoleState::prepare`].
+#[expect(
+    missing_debug_implementations,
+    reason = "PrepareResolvers carries borrowed closures; callers log resolved values instead."
+)]
 pub struct PrepareResolvers<'a> {
     pub auth_modes: &'a dyn Fn(jackin_core::agent::Agent) -> AuthForwardMode,
-    pub sync_source_dirs: &'a dyn Fn(jackin_core::agent::Agent) -> Option<std::path::PathBuf>,
+    pub sync_source_dirs: &'a dyn Fn(jackin_core::agent::Agent) -> Option<PathBuf>,
 }
 
 impl RoleState {

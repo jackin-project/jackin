@@ -55,6 +55,10 @@ use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs
 use super::universe::ExitClaim;
 use jackin_docker::docker_client::DockerApi;
 
+#[expect(
+    missing_debug_implementations,
+    reason = "LoadOptions contains an injected OpRunner trait object that cannot expose Debug."
+)]
 #[derive(Default)]
 pub struct LoadOptions {
     pub debug: bool,
@@ -105,7 +109,7 @@ impl LoadOptions {
         // backfills the token from the container's provider key env var.
         self.provider
             .map(|provider| jackin_protocol::InitialProvider {
-                label: provider.label().to_string(),
+                label: provider.label().to_owned(),
             })
     }
 
@@ -160,7 +164,7 @@ impl StepCounter {
     fn new(role_name: &str) -> Self {
         Self {
             current: 0,
-            role_name: role_name.to_string(),
+            role_name: role_name.to_owned(),
             current_stage: None,
             progress: None,
         }
@@ -247,15 +251,15 @@ impl jackin_env::EnvPrompter for LaunchEnvPrompter<'_> {
 
 pub(super) fn sensitive_mount_prompt(sensitive: &[jackin_config::SensitiveMount]) -> String {
     let mut lines = vec![
-        "Sensitive host paths are mounted into this role container.".to_string(),
-        "Continue only if this role should see these credentials.".to_string(),
+        "Sensitive host paths are mounted into this role container.".to_owned(),
+        "Continue only if this role should see these credentials.".to_owned(),
         String::new(),
     ];
     for hit in sensitive {
         lines.push(format!("{} — {}", hit.src, hit.reason));
     }
     lines.push(String::new());
-    lines.push("Continue with these mounts?".to_string());
+    lines.push("Continue with these mounts?".to_owned());
     lines.join("\n")
 }
 
@@ -304,7 +308,7 @@ pub(super) fn launch_target_label(
 ) -> String {
     workspace_name.map_or_else(
         || jackin_diagnostics::shorten_home(&workspace.workdir),
-        str::to_string,
+        str::to_owned,
     )
 }
 
@@ -337,7 +341,7 @@ pub(super) fn launch_mount_lines(workspace: &jackin_config::ResolvedWorkspace) -
 /// state reaches the container regardless of which agent started the
 /// session, which is what lets `hardline --new` switch agents without
 /// re-authentication.
-fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
+fn agent_mounts(state: &RoleState) -> Vec<String> {
     let mut mounts = vec![format!(
         "{}:/jackin/state",
         state.root.join("state").display()
@@ -516,15 +520,15 @@ pub(super) fn capsule_config(
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
     for agent in manifest.supported_agents() {
-        agents.push(agent.slug().to_string());
+        agents.push(agent.slug().to_owned());
         let model = manifest.agent_model(agent);
         if let Some(model) = model {
-            models.insert(agent.slug().to_string(), model.to_string());
+            models.insert(agent.slug().to_owned(), model.to_owned());
         }
     }
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
-        workdir: workdir.to_string(),
+        workdir: workdir.to_owned(),
         agents,
         models,
         initial_provider,
@@ -1000,7 +1004,7 @@ enum ExitPhase {
 /// happy path) so the caller can proceed to the session exec.
 async fn diagnose_premature_exit(
     docker: &impl DockerApi,
-    runner: &mut impl jackin_core::CommandRunner,
+    runner: &mut impl CommandRunner,
     container_name: &str,
     phase: ExitPhase,
 ) -> Option<anyhow::Error> {
@@ -1013,7 +1017,7 @@ async fn diagnose_premature_exit(
 /// container can avoid a second `docker inspect` round-trip (and the
 /// TOCTOU window between the two).
 async fn diagnose_with_state(
-    runner: &mut impl jackin_core::CommandRunner,
+    runner: &mut impl CommandRunner,
     container_name: &str,
     state: &ContainerState,
     phase: ExitPhase,
@@ -1059,7 +1063,7 @@ async fn diagnose_with_state(
                 .await
             {
                 Ok(text) => {
-                    let trimmed = text.trim().to_string();
+                    let trimmed = text.trim().to_owned();
                     if trimmed.is_empty() {
                         None
                     } else {
@@ -1069,7 +1073,7 @@ async fn diagnose_with_state(
                 Err(e) => Some(format!("(docker logs failed: {e:#})")),
             };
             let reason = if *oom_killed {
-                "OOM killed".to_string()
+                "OOM killed".to_owned()
             } else {
                 format!("exit {exit_code}")
             };
@@ -1201,11 +1205,9 @@ pub(super) fn pull_git_sources_with_git(
             }
         }
         if print_starts {
-            tracing::info!(
-                src = jackin_diagnostics::shorten_home(&src).as_str(),
-                "pulling workspace"
-            );
-            eprintln!("  Pulling {} …", jackin_diagnostics::shorten_home(&src));
+            let src_display = jackin_diagnostics::shorten_home(&src);
+            tracing::info!(src = src_display.as_str(), "pulling workspace");
+            eprintln!("  Pulling {src_display} …");
         }
         let git_program = git_program.to_path_buf();
         pulls.push((
@@ -1316,15 +1318,15 @@ pub(super) fn launch_failure_title(
     if stage == super::progress::LaunchStage::DerivedImage
         && run.and_then(docker_build_output_artifact).is_some()
     {
-        return "Docker build failed".to_string();
+        return "Docker build failed".to_owned();
     }
     let text = error.to_string().to_ascii_lowercase();
     if text.contains("docker") {
-        "Docker unavailable".to_string()
+        "Docker unavailable".to_owned()
     } else if text.contains("credential") || text.contains("token") || text.contains("auth") {
-        "Credential check failed".to_string()
+        "Credential check failed".to_owned()
     } else {
-        "Launch failed".to_string()
+        "Launch failed".to_owned()
     }
 }
 
@@ -1336,12 +1338,12 @@ pub(super) fn short_launch_diagnosis(
     if stage == super::progress::LaunchStage::DerivedImage
         && run.and_then(docker_build_output_artifact).is_some()
     {
-        return "Building the Docker container failed.".to_string();
+        return "Building the Docker container failed.".to_owned();
     }
-    error.chain().next().map_or_else(
-        || "launch did not complete".to_string(),
-        ToString::to_string,
-    )
+    error
+        .chain()
+        .next()
+        .map_or_else(|| "launch did not complete".to_owned(), ToString::to_string)
 }
 
 fn docker_build_output_artifact(run: &jackin_diagnostics::RunDiagnostics) -> Option<PathBuf> {
@@ -1391,7 +1393,7 @@ pub(super) fn resolve_launch_role_source(
             .get(&selector.key())
             .cloned()
             .unwrap_or_default();
-        source.git = git.to_string();
+        source.git = git.to_owned();
         source.trusted = true;
         return Ok((source, false, true));
     }
@@ -1551,7 +1553,7 @@ fn present_restore_choice(
     candidates: Vec<InstanceManifest>,
     related: &[RelatedRestoreCandidate],
 ) -> anyhow::Result<RestoreResolution> {
-    let mut labels = vec!["Start fresh instance".to_string()];
+    let mut labels = vec!["Start fresh instance".to_owned()];
     labels.extend(
         candidates
             .iter()
@@ -1802,8 +1804,8 @@ pub(super) fn record_instance_attach_outcome(
 fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> String {
     use crate::isolation::finalize::AttachOutcome;
     match outcome {
-        AttachOutcome::OomKilled => "oom_killed".to_string(),
-        AttachOutcome::StillRunning => "running".to_string(),
+        AttachOutcome::OomKilled => "oom_killed".to_owned(),
+        AttachOutcome::StillRunning => "running".to_owned(),
         AttachOutcome::Stopped(code) => format!("exit:{code}"),
     }
 }
@@ -1868,10 +1870,7 @@ pub(super) fn manifest_host_workdir_fingerprint(
 ///
 /// Layout: `<data_dir>/<container_name>/state/multiplexer.log`, matching
 /// the bind-mount declared in `agent_mounts`.
-pub(super) fn capsule_multiplexer_log_path(
-    paths: &JackinPaths,
-    container_name: &str,
-) -> std::path::PathBuf {
+pub(super) fn capsule_multiplexer_log_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
     paths
         .data_dir
         .join(container_name)
@@ -2015,60 +2014,60 @@ fn render_auth_credential_missing(
     use std::fmt::Write as _;
     let mut out = String::new();
 
-    let _ = writeln!(
+    let _unused = writeln!(
         out,
         "cannot launch {agent} in workspace '{workspace}' role '{role}'"
     );
-    let _ = writeln!(
+    let _unused = writeln!(
         out,
         "       \u{2014} auth_forward is '{mode}', which requires {env_var}"
     );
-    let _ = writeln!(
+    let _unused = writeln!(
         out,
         "         to resolve to a non-empty value, but it is unset."
     );
 
     if !mode_resolution.is_empty() {
-        let _ = writeln!(out);
-        let _ = writeln!(out, "  Effective auth resolution:");
+        let _unused = writeln!(out);
+        let _unused = writeln!(out, "  Effective auth resolution:");
         let label_width = render_label_width(mode_resolution);
         for (idx, (label, value)) in mode_resolution.iter().enumerate() {
             let value_str = value
                 .as_ref()
-                .map_or_else(|| "(none)".to_string(), ToString::to_string);
+                .map_or_else(|| "(none)".to_owned(), ToString::to_string);
             let suffix = if idx == 0 { "  (most-specific)" } else { "" };
-            let _ = writeln!(out, "    {label:<label_width$}-> {value_str}{suffix}");
+            let _unused = writeln!(out, "    {label:<label_width$}-> {value_str}{suffix}");
         }
     }
 
     if !env_layers.is_empty() {
-        let _ = writeln!(out);
-        let _ = writeln!(
+        let _unused = writeln!(out);
+        let _unused = writeln!(
             out,
             "  Env layer resolution for {env_var} (lowest -> highest):"
         );
         let label_width = render_label_width(env_layers);
         for (label, state) in env_layers {
-            let _ = writeln!(out, "    {label:<label_width$}-> {state}");
+            let _unused = writeln!(out, "    {label:<label_width$}-> {state}");
         }
     }
 
     let agent_title = agent.runtime().label();
 
-    let _ = writeln!(out);
-    let _ = writeln!(out, "  Fix one of:");
-    let _ = writeln!(
+    let _unused = writeln!(out);
+    let _unused = writeln!(out, "  Fix one of:");
+    let _unused = writeln!(
         out,
         "    - Open the Auth panel:  jackin tui workspaces  \u{2192} '{workspace}' \u{2192} Auth \u{2192} {role} / {agent_title}"
     );
     // `jackin config env set` does not yet support `--workspace`; show
     // the role-scoped form (the closest existing remediation) so we
     // don't print a flag the operator can't actually use today.
-    let _ = writeln!(
+    let _unused = writeln!(
         out,
         "    - Or by hand:           jackin config env set {env_var} <value> --role {role}"
     );
-    let _ = writeln!(
+    let _unused = writeln!(
         out,
         "    - Or change the mode:   set auth_forward = 'sync' at one of the layers above"
     );
@@ -2132,7 +2131,7 @@ pub(super) fn build_env_layer_states(
         .and_then(|ro| ro.env.get(env_var))
         .map_or(EnvLayerState::Unset, classify);
     vec![
-        ("[env]".to_string(), global),
+        ("[env]".to_owned(), global),
         (format!("[roles.{role}.env]"), role_global),
         (format!("[workspaces.{workspace}.env]"), workspace_global),
         (
@@ -2178,11 +2177,11 @@ fn append_no_proxy_host(value: &str, host: &str) -> String {
         .map(str::trim)
         .any(|entry| entry.eq_ignore_ascii_case(host))
     {
-        return value.to_string();
+        return value.to_owned();
     }
 
     if value.trim().is_empty() {
-        host.to_string()
+        host.to_owned()
     } else {
         format!("{value},{host}")
     }
@@ -2196,7 +2195,7 @@ fn append_no_proxy_host(value: &str, host: &str) -> String {
 /// when `raw` is `None` or empty.
 pub(super) fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     match raw {
-        None | Some("") => env_var.to_string(),
+        None | Some("") => env_var.to_owned(),
         Some(value) => format!("{env_var} \u{2190} {value}"),
     }
 }

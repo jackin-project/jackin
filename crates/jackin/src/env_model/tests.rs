@@ -113,14 +113,14 @@ fn topological_env_order_is_deterministic_for_independent_prompts() {
             skippable: false,
             prompt: None,
             options: Vec::new(),
-            depends_on: depends_on.iter().map(|dep| (*dep).to_string()).collect(),
+            depends_on: depends_on.iter().map(|dep| (*dep).to_owned()).collect(),
         }
     }
 
     let declarations = std::collections::BTreeMap::from([
-        ("BRANCH".to_string(), decl(&["env.SELECT_PROJECT"])),
-        ("FREE_TEXT".to_string(), decl(&[])),
-        ("SELECT_PROJECT".to_string(), decl(&[])),
+        ("BRANCH".to_owned(), decl(&["env.SELECT_PROJECT"])),
+        ("FREE_TEXT".to_owned(), decl(&[])),
+        ("SELECT_PROJECT".to_owned(), decl(&[])),
     ]);
 
     assert_eq!(

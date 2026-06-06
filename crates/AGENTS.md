@@ -45,3 +45,37 @@ Avoid clever abbreviations unless they are established domain terms (e.g. `tui`,
 ## Migration note (root `src/` crate)
 
 The legacy root `src/` crate (`src/config/mod.rs`, `src/runtime/mod.rs`, etc.) uses the old `mod.rs` layout while it is still a monolith. When a module is extracted into a new workspace crate, the extracted crate **must** use the self-named layout from the start. Legacy `src/mod.rs` files are tolerated only until each module is extracted.
+
+## Workspace lint baseline (hard rule)
+
+All crates inherit the root workspace metadata and lints:
+
+```toml
+[lints]
+workspace = true
+```
+
+Do not add per-crate copies of `edition`, `rust-version`, `license`, `repository`, or lint tables unless the crate has a documented reason to diverge.
+
+The root `[workspace.lints.rust]` table is the source of truth. Dead-code and hygiene lints stay at deny: `unused`, `unused_imports`, `unused_variables`, `unused_must_use`, `dead_code`, and `unreachable_pub`. Rust 2024 unsafe-hygiene lints are enabled, and `unsafe_code = "forbid"` remains workspace-wide.
+
+Clippy is enforced by CI with:
+
+```text
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+```
+
+The workspace enables `clippy::all` at deny and `pedantic`/`cargo` as the modern baseline, then carries explicit allow entries for noisy style-only lints that do not match jackin' current API shape. Do not enable `nursery` or `restriction` wholesale. Cherry-pick individual lints only.
+
+Suppression discipline:
+
+- Prefer fixing the finding.
+- If code must intentionally stay unused, use `#[expect(dead_code, reason = "...")]`, never a blanket `#[allow(dead_code)]`.
+- `unused_crate_dependencies` stays off; dependency scanners cover that class with fewer Cargo target false positives.
+- `unwrap_used`, `expect_used`, `panic`, and print lints are documented policy lints, but the current workspace table leaves them allowed while the pre-release codebase is being reduced. Runtime input paths still must not use `unwrap()`/`expect()` as validation.
+
+Dead-code scanner layers:
+
+- `cargo shear` is PR-blocking in CI. It detects unused dependencies, misplaced dependencies, and unlinked Rust source files.
+- `cargo udeps` and `cargo workspace-unused-pub` are pinned in `mise.toml` for scheduled/manual hygiene sweeps.
+- Tools are installed through `mise`, not ad-hoc `cargo install` in workflows.

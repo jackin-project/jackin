@@ -10,7 +10,7 @@ impl Drop for RestoreCwd {
     fn drop(&mut self) {
         let fallback = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         let target = if self.0.exists() { &self.0 } else { &fallback };
-        let _ = std::env::set_current_dir(target);
+        drop(std::env::set_current_dir(target));
     }
 }
 
@@ -172,7 +172,7 @@ fn workspace_create_uses_only_explicit_mounts() {
 
     let all_mounts = vec![workspace::MountConfig {
         src: src_path.clone(),
-        dst: "/workspace".to_string(),
+        dst: "/workspace".to_owned(),
         readonly: false,
         isolation: jackin::isolation::MountIsolation::Shared,
     }];
@@ -182,7 +182,7 @@ fn workspace_create_uses_only_explicit_mounts() {
         .create_workspace(
             "monorepo",
             WorkspaceConfig {
-                workdir: "/workspace".to_string(),
+                workdir: "/workspace".to_owned(),
                 mounts: all_mounts,
                 ..Default::default()
             },
@@ -367,10 +367,10 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
         .create_workspace(
             "monorepo",
             WorkspaceConfig {
-                workdir: "/workspace".to_string(),
+                workdir: "/workspace".to_owned(),
                 mounts: vec![workspace::MountConfig {
                     src: src_abs,
-                    dst: "/workspace".to_string(),
+                    dst: "/workspace".to_owned(),
                     readonly: false,
                     isolation: jackin::isolation::MountIsolation::Shared,
                 }],

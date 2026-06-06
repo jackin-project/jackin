@@ -271,8 +271,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             // component floats on a distinct dark surface without the green
             // tint of PHOSPHOR_DARK.
             frame.render_widget(
-                ratatui::widgets::Block::default()
-                    .style(ratatui::style::Style::default().bg(PREVIEW_CARD)),
+                ratatui::widgets::Block::default().style(Style::default().bg(PREVIEW_CARD)),
                 preview_inner,
             );
 
@@ -483,21 +482,17 @@ impl TerminalGuard {
     fn enter() -> Result<Self, Box<dyn std::error::Error>> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        if let Err(error) = execute!(
-            stdout,
-            EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture
-        ) {
-            let _ = disable_raw_mode();
+        if let Err(error) = execute!(stdout, EnterAlternateScreen, event::EnableMouseCapture) {
+            drop(disable_raw_mode());
             return Err(error.into());
         }
         let terminal = match Terminal::new(CrosstermBackend::new(stdout)) {
             Ok(terminal) => terminal,
             Err(error) => {
-                let _ = disable_raw_mode();
-                let _ = execute!(
+                drop(disable_raw_mode());
+                let _unused = execute!(
                     io::stdout(),
-                    crossterm::event::DisableMouseCapture,
+                    event::DisableMouseCapture,
                     LeaveAlternateScreen
                 );
                 return Err(error.into());
@@ -516,13 +511,13 @@ impl TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = execute!(
+        let _unused = execute!(
             self.terminal.backend_mut(),
-            crossterm::event::DisableMouseCapture,
+            event::DisableMouseCapture,
             LeaveAlternateScreen
         );
-        let _ = disable_raw_mode();
-        let _ = self.terminal.show_cursor();
+        drop(disable_raw_mode());
+        drop(self.terminal.show_cursor());
     }
 }
 

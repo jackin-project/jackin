@@ -32,7 +32,7 @@ fn parses_container_selector() {
     let selector = Selector::parse("jk-k7p9m2xq-chainargos-thearchitect").unwrap();
     assert_eq!(
         selector,
-        Selector::Container("jk-k7p9m2xq-chainargos-thearchitect".to_string())
+        Selector::Container("jk-k7p9m2xq-chainargos-thearchitect".to_owned())
     );
 }
 
@@ -41,7 +41,7 @@ fn parses_container_selector_no_workspace() {
     let selector = Selector::parse("jk-k7p9m2xq-agentsmith").unwrap();
     assert_eq!(
         selector,
-        Selector::Container("jk-k7p9m2xq-agentsmith".to_string())
+        Selector::Container("jk-k7p9m2xq-agentsmith".to_owned())
     );
 }
 

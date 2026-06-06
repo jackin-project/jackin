@@ -41,7 +41,7 @@ pub fn listing_rect(modal_area: Rect, has_rejection: bool) -> Rect {
     chunks[listing_idx]
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     use ratatui::layout::{Alignment, Direction, Layout};
 
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -78,7 +78,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
 /// Render the folder listing inside `area` with a phosphor-framed block
 /// and a bold-white cwd title.
-fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
+fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     let title = format!(
         " {} ",
         jackin_tui::shorten_home(&state.cwd.display().to_string())
@@ -88,10 +88,8 @@ fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
     // a background modal and must use the inactive border so exactly one bright
     // border is visible (Defect 9 — one-bright-border rule).
     let block = if state.pending_git_prompt.is_some() {
-        jackin_tui::components::modal_block_inactive().title(ratatui::text::Span::styled(
-            title.clone(),
-            jackin_tui::theme::BOLD_WHITE,
-        ))
+        jackin_tui::components::modal_block_inactive()
+            .title(Span::styled(title.clone(), jackin_tui::theme::BOLD_WHITE))
     } else {
         Panel::new()
             .title(title.as_str())
@@ -109,14 +107,14 @@ fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
 
-    let lines: Vec<Line> = state
+    let lines: Vec<Line<'_>> = state
         .entries
         .iter()
         .enumerate()
         .map(|(i, e)| {
             let is_sel = Some(i) == selected;
             let name_slash = if e.is_parent {
-                "../".to_string()
+                "../".to_owned()
             } else {
                 format!("{}/", e.name)
             };

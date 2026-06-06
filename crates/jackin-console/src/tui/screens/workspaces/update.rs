@@ -300,7 +300,7 @@ pub const fn exit_preview_focus_plan() -> PreviewFocusPlan {
     PreviewFocusPlan { focused: false }
 }
 
-/// Preview-pane navigation mode: Esc / Left / BackTab exits, Up/Down
+/// Preview-pane navigation mode: Esc / Left / `BackTab` exits, Up/Down
 /// move inside the snapshot, and Enter reconnects to the selected pane.
 #[must_use]
 pub const fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPaneKeyPlan {

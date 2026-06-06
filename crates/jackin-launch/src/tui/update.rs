@@ -18,10 +18,10 @@ pub fn initial_view() -> LaunchView {
             .map(|stage| StageView {
                 stage,
                 status: StageStatus::Queued,
-                detail: "queued".to_string(),
+                detail: "queued".to_owned(),
             })
             .collect(),
-        status: "preparing launch".to_string(),
+        status: "preparing launch".to_owned(),
         failure: None,
         failure_ack: false,
         frame: 0,
@@ -137,7 +137,7 @@ pub fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStat
     let previous_active = active_stage_index(view);
     if let Some(row) = view.stages.iter_mut().find(|row| row.stage == stage) {
         row.status = status;
-        row.detail = detail.to_string();
+        row.detail = detail.to_owned();
     }
     let next_active = active_stage_index(view);
     if previous_active != next_active {

@@ -36,7 +36,7 @@ pub fn filter_input_line(filter: &str) -> Line<'static> {
     } else {
         Line::from(vec![
             Span::styled("Filter: ", crate::theme::DIM),
-            Span::styled(filter.to_string(), Style::default().fg(WHITE)),
+            Span::styled(filter.to_owned(), Style::default().fg(WHITE)),
             Span::styled(
                 "\u{2588}",
                 Style::default()

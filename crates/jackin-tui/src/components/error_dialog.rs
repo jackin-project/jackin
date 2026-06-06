@@ -38,6 +38,7 @@ impl ErrorPopupState {
     }
 }
 
+#[derive(Debug)]
 pub struct ErrorDialog<'a> {
     state: &'a ErrorPopupState,
 }

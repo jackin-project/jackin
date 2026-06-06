@@ -118,7 +118,7 @@ pub fn topological_env_order(
     let mut result = Vec::new();
 
     while let Some(node) = ready.pop_first() {
-        result.push(node.to_string());
+        result.push(node.to_owned());
         if let Some(neighbors) = adjacency.get(node) {
             for &neighbor in neighbors {
                 if let Some(deg) = in_degree.get_mut(neighbor) {

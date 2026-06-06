@@ -42,7 +42,7 @@ fn resize_updates_reported_size() {
 fn take_output_drains_buffer() {
     let backend = SocketBackend::new(10, 1);
     let terminal = Terminal::new(backend).unwrap();
-    let _ = terminal; // do not call draw
+    drop(terminal); // do not call draw
     let mut backend = SocketBackend::new(10, 1);
     // Push directly for simplicity.
     backend.output.extend_from_slice(b"hello");

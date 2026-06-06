@@ -645,7 +645,7 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
     let data_dir = paths.data_dir.clone();
     let mut runner = crate::runtime::FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
     ));
 
@@ -727,7 +727,7 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
         !editor
             .pending
             .allowed_roles
-            .contains(&"chainargos/agent-brown".to_string()),
+            .contains(&"chainargos/agent-brown".to_owned()),
         "role should not be allowed before trust confirmation"
     );
     assert!(
@@ -754,7 +754,7 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
         editor
             .pending
             .allowed_roles
-            .contains(&"chainargos/agent-brown".to_string()),
+            .contains(&"chainargos/agent-brown".to_owned()),
         "custom allow-list should include the newly resolved role"
     );
     let source = config
@@ -850,7 +850,7 @@ async fn role_input_trust_decline_keeps_registered_role_untrusted() {
     let data_dir = paths.data_dir.clone();
     let mut runner = crate::runtime::FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
     ));
 
@@ -871,7 +871,7 @@ async fn role_input_trust_decline_keeps_registered_role_untrusted() {
         !editor
             .pending
             .allowed_roles
-            .contains(&"chainargos/agent-brown".to_string()),
+            .contains(&"chainargos/agent-brown".to_owned()),
         "declined role must not be added to the custom allow-list"
     );
     assert!(
@@ -913,7 +913,7 @@ async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
     let data_dir = paths.data_dir.clone();
     let mut runner = crate::runtime::FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
     ));
 
@@ -946,7 +946,7 @@ async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
         editor
             .pending
             .allowed_roles
-            .contains(&"chainargos/agent-brown".to_string()),
+            .contains(&"chainargos/agent-brown".to_owned()),
         "trusted role should be added to the custom allow-list"
     );
     let persisted = std::fs::read_to_string(paths.config_file).unwrap();
@@ -981,7 +981,7 @@ async fn role_input_trusted_existing_role_skips_trust_prompt() {
     let data_dir = paths.data_dir.clone();
     let mut runner = crate::runtime::FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
     ));
 
@@ -1003,7 +1003,7 @@ async fn role_input_trusted_existing_role_skips_trust_prompt() {
         editor
             .pending
             .allowed_roles
-            .contains(&"chainargos/agent-brown".to_string()),
+            .contains(&"chainargos/agent-brown".to_owned()),
         "trusted role should be added to the custom allow-list directly: {:?}",
         editor.pending.allowed_roles
     );
@@ -1086,7 +1086,7 @@ async fn role_input_invalid_repo_reports_role_contract_error() {
     let data_dir = paths.data_dir.clone();
     let mut runner = crate::runtime::FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         Box::new(move || {
             let repo_dir = first_temp_role_repo(&data_dir);
             std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
@@ -1183,7 +1183,7 @@ async fn role_input_panic_in_registration_is_converted_to_error_popup() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     let mut runner = crate::runtime::FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         Box::new(|| panic!("test panic while cloning role repo")),
     ));
 
@@ -1236,7 +1236,7 @@ fn role_text_input_misroute_uses_error_popup_instead_of_panicking() {
         other => panic!("expected ErrorPopup for role misroute; got {other:?}"),
     }
     assert!(config.roles.is_empty());
-    let _ = paths;
+    let _unused = paths;
 }
 
 #[test]
@@ -1311,7 +1311,7 @@ fn agents_tab_star_on_unallowed_agent_is_noop() {
     );
     assert_eq!(
         e.pending.allowed_roles,
-        vec!["alpha".to_string()],
+        vec!["alpha".to_owned()],
         "`*` must not silently extend the allow list; got {:?}",
         e.pending.allowed_roles,
     );
@@ -1334,7 +1334,7 @@ fn agents_tab_disallow_default_clears_default() {
         panic!("editor stage expected");
     };
     assert!(
-        !e.pending.allowed_roles.contains(&"alpha".to_string()),
+        !e.pending.allowed_roles.contains(&"alpha".to_owned()),
         "alpha must be removed from allowed_roles after Space; got {:?}",
         e.pending.allowed_roles,
     );
@@ -1464,7 +1464,7 @@ fn toggle_in_all_mode_demotes_to_custom_without_this_agent() {
     let list = pending_allowed(&state);
     assert_eq!(
         list,
-        vec!["alpha".to_string(), "gamma".to_string()],
+        vec!["alpha".to_owned(), "gamma".to_owned()],
         "list must be populated with every other role when demoting from 'all'"
     );
 }
@@ -1506,7 +1506,7 @@ fn toggle_adds_back_to_custom() {
     list.sort();
     assert_eq!(
         list,
-        vec!["alpha".to_string(), "beta".to_string()],
+        vec!["alpha".to_owned(), "beta".to_owned()],
         "adding `beta` with `gamma` still missing must produce a 2-of-3 custom list",
     );
 }

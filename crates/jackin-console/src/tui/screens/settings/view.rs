@@ -104,7 +104,7 @@ pub fn global_mount_text_input_state<'a>(
 
 #[must_use]
 pub fn global_mount_scope_text_value(scope: Option<&str>) -> String {
-    scope.unwrap_or_default().to_string()
+    scope.unwrap_or_default().to_owned()
 }
 
 #[must_use]
@@ -143,7 +143,7 @@ pub fn settings_env_value_text_label(key: &str) -> String {
 
 #[must_use]
 pub fn settings_env_value_current_text(value: Option<&str>) -> String {
-    value.unwrap_or_default().to_string()
+    value.unwrap_or_default().to_owned()
 }
 
 #[must_use]
@@ -179,7 +179,7 @@ pub fn env_scope_label(scope: &SettingsEnvScope) -> &str {
 #[must_use]
 pub fn settings_env_new_key_label(scope: &SettingsEnvScope) -> String {
     match scope {
-        SettingsEnvScope::Global => "New global environment key".to_string(),
+        SettingsEnvScope::Global => "New global environment key".to_owned(),
         SettingsEnvScope::Role(role) => format!("New {role} environment key"),
     }
 }
@@ -262,7 +262,7 @@ pub fn settings_auth_op_read_failed_message(error: impl std::fmt::Display) -> St
 #[must_use]
 pub fn env_forbidden_label(scope: &SettingsEnvScope) -> String {
     match scope {
-        SettingsEnvScope::Global => "global env".to_string(),
+        SettingsEnvScope::Global => "global env".to_owned(),
         SettingsEnvScope::Role(role) => format!("role {role}"),
     }
 }
@@ -427,8 +427,8 @@ pub fn env_lines<'a>(
             SettingsEnvRow::RoleHeader { role, expanded } => {
                 let arrow = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
                 lines.push(Line::from(vec![
-                    Span::raw(cursor_col.to_string()),
-                    Span::styled(arrow.to_string(), disclosure_style()),
+                    Span::raw(cursor_col.to_owned()),
+                    Span::styled(arrow.to_owned(), disclosure_style()),
                     Span::styled(
                         format!(" Role: {role}  ({} vars)", role_var_count(role)),
                         disclosure_style(),

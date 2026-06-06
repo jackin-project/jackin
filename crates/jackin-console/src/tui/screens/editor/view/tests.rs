@@ -75,7 +75,7 @@ fn secret_new_key_labels_follow_scope() {
         "New workspace environment key"
     );
     assert_eq!(
-        secret_new_key_label(&SecretsScopeTag::Role("alpha".to_string())),
+        secret_new_key_label(&SecretsScopeTag::Role("alpha".to_owned())),
         "New alpha environment key"
     );
     assert_eq!(
@@ -83,7 +83,7 @@ fn secret_new_key_labels_follow_scope() {
         "New environment key for workspace"
     );
     assert_eq!(
-        secret_new_key_after_picker_label(&SecretsScopeTag::Role("alpha".to_string())),
+        secret_new_key_after_picker_label(&SecretsScopeTag::Role("alpha".to_owned())),
         "New environment key for alpha"
     );
     assert_eq!(secret_empty_key_label(), "Key cannot be empty");
@@ -91,7 +91,7 @@ fn secret_new_key_labels_follow_scope() {
 
 #[test]
 fn role_load_input_state_names_registry_guard() {
-    let state = role_load_input_state(vec!["known/role".to_string()]);
+    let state = role_load_input_state(vec!["known/role".to_owned()]);
 
     assert_eq!(state.label, "Load role");
     assert_eq!(state.forbidden_label, "trusted role registry");
@@ -111,7 +111,7 @@ fn secret_delete_confirm_state_uses_key_prompt() {
 #[test]
 fn role_trust_confirm_state_names_role_and_repository() {
     let state =
-        role_trust_confirm_state("alpha".to_string(), "https://example.test/role".to_string());
+        role_trust_confirm_state("alpha".to_owned(), "https://example.test/role".to_owned());
 
     assert_eq!(state.title(), "Trust role source");
     let jackin_tui::components::ConfirmKind::Details { prompt, rows, .. } = state.kind() else {
@@ -126,7 +126,7 @@ fn role_trust_confirm_state_names_role_and_repository() {
 
 #[test]
 fn isolated_state_save_confirm_state_lists_containers() {
-    let state = isolated_state_save_confirm_state(&["one".to_string(), "two".to_string()]);
+    let state = isolated_state_save_confirm_state(&["one".to_owned(), "two".to_owned()]);
 
     let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind() else {
         panic!("expected default confirm");
@@ -139,7 +139,7 @@ fn isolated_state_save_confirm_state_lists_containers() {
 #[test]
 fn running_isolated_state_save_block_message_lists_containers() {
     let message =
-        running_isolated_state_save_block_message(&["alpha".to_string(), "beta".to_string()]);
+        running_isolated_state_save_block_message(&["alpha".to_owned(), "beta".to_owned()]);
 
     assert_eq!(
         message,
@@ -150,10 +150,10 @@ fn running_isolated_state_save_block_message_lists_containers() {
 #[test]
 fn secret_key_input_state_marks_scope_duplicates() {
     let state = secret_key_input_state(
-        &SecretsScopeTag::Role("alpha".to_string()),
+        &SecretsScopeTag::Role("alpha".to_owned()),
         "New alpha key",
         "TOKEN",
-        vec!["TOKEN".to_string()],
+        vec!["TOKEN".to_owned()],
     );
 
     assert_eq!(state.label, "New alpha key");
@@ -170,17 +170,17 @@ fn secret_key_input_state_from_pending_marks_scope_duplicates() {
 
     let mut roles = std::collections::BTreeMap::new();
     roles.insert(
-        "alpha".to_string(),
+        "alpha".to_owned(),
         Role {
-            env: std::collections::BTreeMap::from([("TOKEN".to_string(), "x".to_string())]),
+            env: std::collections::BTreeMap::from([("TOKEN".to_owned(), "x".to_owned())]),
         },
     );
-    let workspace = std::collections::BTreeMap::from([("WORKSPACE".to_string(), "x".to_string())]);
+    let workspace = std::collections::BTreeMap::from([("WORKSPACE".to_owned(), "x".to_owned())]);
 
     let state = secret_key_input_state_from_pending(
         &workspace,
         &roles,
-        &SecretsScopeTag::Role("alpha".to_string()),
+        &SecretsScopeTag::Role("alpha".to_owned()),
         "New alpha key",
         "TOKEN",
         |role| &role.env,
@@ -193,11 +193,11 @@ fn secret_key_input_state_from_pending_marks_scope_duplicates() {
 #[test]
 fn mount_lines_render_header_rows_and_sentinel() {
     let rows = [MountDisplayRow {
-        destination: "/workspace".to_string(),
-        host_source: Some("host: ~/project".to_string()),
+        destination: "/workspace".to_owned(),
+        host_source: Some("host: ~/project".to_owned()),
         mode: "rw",
         isolation: "shared",
-        kind: "bind".to_string(),
+        kind: "bind".to_owned(),
     }];
 
     let lines = mount_lines(&rows, 1, Some(0), true);
@@ -216,7 +216,7 @@ fn mount_lines_render_header_rows_and_sentinel() {
 fn editor_header_title_is_screen_owned() {
     assert_eq!(
         editor_header_title(&EditorMode::Edit {
-            name: "demo".to_string(),
+            name: "demo".to_owned(),
         }),
         "edit workspace · demo"
     );
@@ -226,7 +226,7 @@ fn editor_header_title_is_screen_owned() {
 #[test]
 fn editor_name_value_uses_pending_or_mode_fallback() {
     let edit = EditorMode::Edit {
-        name: "saved".to_string(),
+        name: "saved".to_owned(),
     };
 
     assert_eq!(editor_name_value(&edit, Some("pending"), ""), "pending");
@@ -260,12 +260,12 @@ fn general_content_width_uses_rendered_row_vocabulary() {
 fn role_lines_render_status_rows_roles_and_sentinel() {
     let rows = vec![
         EditorRoleRow {
-            name: "alpha".to_string(),
+            name: "alpha".to_owned(),
             effectively_allowed: true,
             is_default: false,
         },
         EditorRoleRow {
-            name: "beta".to_string(),
+            name: "beta".to_owned(),
             effectively_allowed: false,
             is_default: true,
         },
@@ -290,17 +290,17 @@ fn role_lines_render_status_rows_roles_and_sentinel() {
 #[test]
 fn secret_lines_render_workspace_and_role_rows() {
     let rows = vec![
-        super::super::model::SecretsRow::WorkspaceKeyRow("TOKEN".to_string()),
+        super::super::model::SecretsRow::WorkspaceKeyRow("TOKEN".to_owned()),
         super::super::model::SecretsRow::WorkspaceAddSentinel,
         super::super::model::SecretsRow::RoleHeader {
-            role: "alpha".to_string(),
+            role: "alpha".to_owned(),
             expanded: true,
         },
         super::super::model::SecretsRow::RoleKeyRow {
-            role: "alpha".to_string(),
-            key: "ROLE_TOKEN".to_string(),
+            role: "alpha".to_owned(),
+            key: "ROLE_TOKEN".to_owned(),
         },
-        super::super::model::SecretsRow::RoleAddSentinel("alpha".to_string()),
+        super::super::model::SecretsRow::RoleAddSentinel("alpha".to_owned()),
     ];
 
     let lines = secret_lines(
@@ -363,20 +363,20 @@ fn secret_lines_render_workspace_and_role_rows() {
 fn auth_lines_render_kind_mode_source_and_sentinel() {
     let rows = vec![
         EditorAuthLineRow::AuthKind {
-            label: "Claude".to_string(),
+            label: "Claude".to_owned(),
         },
         EditorAuthLineRow::WorkspaceMode {
-            mode_label: "api-key".to_string(),
+            mode_label: "api-key".to_owned(),
             inherited: true,
         },
         EditorAuthLineRow::WorkspaceSource {
             display: AuthSourceDisplay::Unset {
-                env_name: "CLAUDE_API_KEY".to_string(),
-                mode_label: "api-key".to_string(),
+                env_name: "CLAUDE_API_KEY".to_owned(),
+                mode_label: "api-key".to_owned(),
             },
         },
         EditorAuthLineRow::RoleHeader {
-            role: "alpha".to_string(),
+            role: "alpha".to_owned(),
             expanded: false,
         },
         EditorAuthLineRow::AddSentinel { eligible: 0 },

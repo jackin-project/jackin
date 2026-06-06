@@ -12,7 +12,10 @@ use crate::tui::view::{
     render_capsule_dialog_bottom_chrome,
 };
 
-use super::*;
+use super::{
+    CursorVisibilityState, FullRedrawReason, Multiplexer, Rect, append_osc_window_title,
+    compose_outer_terminal_title, cursor_visible_for_state, session_display_title,
+};
 
 impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
@@ -22,7 +25,7 @@ impl Multiplexer {
             .map_or((0, 0), |s| (s.width, s.height));
         crate::cdebug!(
             "frame: full_redraw={:?} dirty_panes={} term={}x{} backend={}x{} content_rows={} dialog_open={}",
-            self.pending_full_redraw.map(|r| r.as_str()),
+            self.pending_full_redraw.map(FullRedrawReason::as_str),
             self.dirty_panes.len(),
             self.term_cols,
             self.term_rows,
@@ -56,7 +59,7 @@ impl Multiplexer {
         // terminal. A full repaint cannot desync, so it renders every agent
         // correctly. (The interaction flicker this reintroduces is tracked as a
         // follow-up; correctness wins over flicker.)
-        let _ = self.ratatui_terminal.clear();
+        drop(self.ratatui_terminal.clear());
         // The 2J wiped the bottom rows too; force the chrome to re-emit.
         self.last_bottom_chrome = None;
         let Some(ratatui_output) = self.compose_ratatui_frame() else {
@@ -418,7 +421,7 @@ impl Multiplexer {
                 }) {
                     let (vt_row, vt_col) = snap.cursor;
                     use std::io::Write as _;
-                    let _ = write!(
+                    let _unused = write!(
                         buf,
                         "\x1b[{};{}H",
                         rect.row + vt_row + 1,

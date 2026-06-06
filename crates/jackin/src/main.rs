@@ -33,7 +33,7 @@ async fn main() {
         }
         Action::PrintHelpAndExit => {
             let mut cmd = Cli::command();
-            let _ = cmd.print_help();
+            drop(cmd.print_help());
             println!();
             std::process::exit(0);
         }

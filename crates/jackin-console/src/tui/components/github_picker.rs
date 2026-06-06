@@ -70,7 +70,7 @@ use jackin_tui::components::render_dialog_shell;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
-pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
     let inner = render_dialog_shell(frame, area, Some("Open in GitHub"));
 
     let rows = Layout::default()
@@ -83,9 +83,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
 
     if state.choices.is_empty() {
         frame.render_widget(
-            ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
-                ratatui::text::Span::styled("no GitHub sources", jackin_tui::theme::DIM),
-            ))
+            ratatui::widgets::Paragraph::new(Line::from(Span::styled(
+                "no GitHub sources",
+                jackin_tui::theme::DIM,
+            )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],
         );
@@ -101,7 +102,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
         .unwrap_or(0)
         .max(10);
 
-    let lines: Vec<Line> = state
+    let lines: Vec<Line<'_>> = state
         .choices
         .iter()
         .enumerate()

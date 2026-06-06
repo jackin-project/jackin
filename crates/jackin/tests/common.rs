@@ -30,6 +30,7 @@ pub fn install_agent_binary_stubs(paths: &JackinPaths) {
 
 /// Minimal no-op `DockerApi` stub. All operations return empty/success so
 /// `load_role` proceeds as if no containers exist.
+#[derive(Debug)]
 pub struct NoOpDocker;
 
 impl DockerApi for NoOpDocker {
@@ -77,11 +78,8 @@ impl DockerApi for NoOpDocker {
     async fn remove_image(&self, _name: &str) -> anyhow::Result<RemoveImageOutcome> {
         Ok(RemoveImageOutcome::NotFound)
     }
-    async fn inspect_image_labels(
-        &self,
-        _image: &str,
-    ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-        Ok(std::collections::HashMap::new())
+    async fn inspect_image_labels(&self, _image: &str) -> anyhow::Result<HashMap<String, String>> {
+        Ok(HashMap::new())
     }
     async fn pull_image(&self, _image: &str) -> anyhow::Result<()> {
         Ok(())
@@ -95,7 +93,7 @@ impl DockerApi for NoOpDocker {
 ///
 /// Pre-fills 4 empty slots for the identity-lookup preamble (git config
 /// user.name/email, id -u/-g); GC calls now go through `DockerApi`, not `CommandRunner`.
-#[derive(Default)]
+#[derive(Debug, Default)]
 #[allow(dead_code)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,

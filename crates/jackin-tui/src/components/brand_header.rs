@@ -39,7 +39,7 @@ pub fn brand_header_line(label: &str) -> Line<'static> {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
-        Span::styled(label.to_string(), crate::theme::DIM),
+        Span::styled(label.to_owned(), crate::theme::DIM),
     ])
 }
 

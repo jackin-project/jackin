@@ -31,7 +31,7 @@ pub(crate) fn editor_auth_display_row(
 ) -> EditorAuthLineRow {
     match row {
         AuthRow::AuthKindRow { kind } => EditorAuthLineRow::AuthKind {
-            label: kind.label().to_string(),
+            label: kind.label().to_owned(),
         },
         AuthRow::WorkspaceMode { kind } => {
             let ws = synthesized.workspaces.get(workspace_name);
@@ -39,7 +39,7 @@ pub(crate) fn editor_auth_display_row(
             let mode = explicit
                 .unwrap_or_else(|| resolve_panel_mode(synthesized, *kind, workspace_name, ""));
             EditorAuthLineRow::WorkspaceMode {
-                mode_label: mode_str(mode).to_string(),
+                mode_label: mode_str(mode).to_owned(),
                 inherited: explicit.is_none(),
             }
         }
@@ -53,7 +53,7 @@ pub(crate) fn editor_auth_display_row(
         AuthRow::RoleMode { role, kind } => {
             let mode = resolve_panel_mode(synthesized, *kind, workspace_name, role);
             EditorAuthLineRow::RoleMode {
-                mode_label: mode_str(mode).to_string(),
+                mode_label: mode_str(mode).to_owned(),
             }
         }
         AuthRow::RoleSource { role, kind } => EditorAuthLineRow::RoleSource {
@@ -98,7 +98,7 @@ pub(crate) fn settings_auth_lines_for_state(
             .pending
             .iter()
             .map(|row| SettingsAuthLineRow::Kind {
-                label: row.kind.label().to_string(),
+                label: row.kind.label().to_owned(),
             })
             .collect();
         return settings_auth_lines(&rows, state.auth.selected, show_cursor);
@@ -107,7 +107,7 @@ pub(crate) fn settings_auth_lines_for_state(
         return Vec::new();
     };
     let mut rows = vec![SettingsAuthLineRow::Mode {
-        mode_label: mode_str(row.mode).to_string(),
+        mode_label: mode_str(row.mode).to_owned(),
     }];
     if let Some(env_name) = kind.required_env_var(row.mode) {
         rows.push(SettingsAuthLineRow::Source {

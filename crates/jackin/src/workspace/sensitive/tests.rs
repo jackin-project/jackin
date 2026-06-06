@@ -3,8 +3,8 @@ use super::*;
 
 fn mount(src: &str) -> MountConfig {
     MountConfig {
-        src: src.to_string(),
-        dst: "/container/path".to_string(),
+        src: src.to_owned(),
+        dst: "/container/path".to_owned(),
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }

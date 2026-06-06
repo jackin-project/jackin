@@ -60,7 +60,7 @@ pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
         format!(" list_modal={}", modal_debug_name(modal_debug_kind(modal)))
     });
     let location = match &ms.stage {
-        crate::console::tui::state::ManagerStage::List => "list".to_string(),
+        crate::console::tui::state::ManagerStage::List => "list".to_owned(),
         crate::console::tui::state::ManagerStage::Editor(editor) => {
             let modal = editor
                 .modal
@@ -79,10 +79,10 @@ pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
             format!("create-prelude step={:?} modal={modal}", prelude.step)
         }
         crate::console::tui::state::ManagerStage::ConfirmDelete { .. } => {
-            "confirm-delete".to_string()
+            "confirm-delete".to_owned()
         }
         crate::console::tui::state::ManagerStage::ConfirmInstancePurge { .. } => {
-            "confirm-instance-purge".to_string()
+            "confirm-instance-purge".to_owned()
         }
         crate::console::tui::state::ManagerStage::Settings(settings) => {
             let modal = settings.mounts.modal.as_ref().map_or("none", |modal| {

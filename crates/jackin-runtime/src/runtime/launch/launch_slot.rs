@@ -89,9 +89,9 @@ pub(crate) async fn claim_container_name(
         }
         (Some(lock), None) => format!("lock contention ({lock})"),
         (None, _) if occupied_attempts == CLAIM_MAX_ATTEMPTS => {
-            "all candidates already exist in Docker".to_string()
+            "all candidates already exist in Docker".to_owned()
         }
-        (None, _) => "no lock attempted".to_string(),
+        (None, _) => "no lock attempted".to_owned(),
     };
     anyhow::bail!(
         "exhausted {CLAIM_MAX_ATTEMPTS} attempts to claim a unique container name ({lock_summary})"
@@ -126,7 +126,7 @@ pub(crate) async fn claim_known_container_name(
 
     std::fs::create_dir_all(&paths.data_dir)?;
     match try_acquire_name_lock(&paths.data_dir, container_name) {
-        Ok(lock_file) => Ok((container_name.to_string(), lock_file)),
+        Ok(lock_file) => Ok((container_name.to_owned(), lock_file)),
         Err(NameLockError { lock, .. }) => anyhow::bail!(
             "cannot restore `{container_name}` because another jackin process holds its lock ({lock})"
         ),
@@ -273,8 +273,8 @@ pub(crate) fn verify_credential_env_present(
         agent,
         mode,
         env_var,
-        workspace: workspace.to_string(),
-        role: role.to_string(),
+        workspace: workspace.to_owned(),
+        role: role.to_owned(),
         mode_resolution: mode_resolution.to_vec(),
         env_layers: env_layers.to_vec(),
     })

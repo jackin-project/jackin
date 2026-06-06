@@ -1,7 +1,7 @@
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 //!
 //! Uses a straightforward `Vec<Vec<Cell>>` grid (correctness before memory
-//! model — Phase 4 replaces this with the Ghostty-inspired PageList arena).
+//! model — Phase 4 replaces this with the Ghostty-inspired `PageList` arena).
 //!
 //! The key new capability vs `vt100`: `dirty_spans()` reports which rows were
 //! mutated since the last call, recorded *as* `Perform` mutates the grid —
@@ -126,6 +126,27 @@ pub struct DamageGrid {
     pub passthrough: PassthroughBuffer,
 }
 
+impl std::fmt::Debug for DamageGrid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DamageGrid")
+            .field("rows", &self.rows)
+            .field("cols", &self.cols)
+            .field("alt_screen", &self.alt_screen)
+            .field("scrollback_len", &self.scrollback.len())
+            .field("scrollback_limit", &self.scrollback_limit)
+            .field("scrollback_offset", &self.scrollback_offset)
+            .field("cursor_row", &self.cursor_row)
+            .field("cursor_col", &self.cursor_col)
+            .field("hide_cursor", &self.hide_cursor)
+            .field("bracketed_paste", &self.bracketed_paste)
+            .field("application_cursor", &self.application_cursor)
+            .field("focus_events", &self.focus_events)
+            .field("kitty_kb_stack_depth", &self.kitty_kb_stack.len())
+            .field("dirty", &self.dirty)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Per-pane cap on kitty-keyboard push depth. A buggy or hostile program
 /// looping `\x1b[>1u` would otherwise grow `kitty_kb_stack` without bound;
 /// 64 is well past any real terminal program's nested keymap-mode depth.
@@ -168,7 +189,7 @@ impl DamageGrid {
     /// Feed raw PTY bytes through the persistent vte parser, mutating the grid.
     ///
     /// The parser is persisted across calls so that multi-byte escape sequences
-    /// split across PTY read() boundaries are handled correctly. Creating a new
+    /// split across PTY `read()` boundaries are handled correctly. Creating a new
     /// parser on each call would lose inter-call state and silently drop split
     /// sequences (bug caught by the differential harness).
     pub fn process(&mut self, bytes: &[u8]) {
@@ -359,7 +380,7 @@ impl DamageGrid {
         self.alt_screen
     }
 
-    /// Set the scrollback view offset. 0 = live tail; scrollback_limit = oldest.
+    /// Set the scrollback view offset. 0 = live tail; `scrollback_limit` = oldest.
     pub fn set_scrollback(&mut self, offset: usize) {
         self.scrollback_offset = offset.min(self.scrollback.len());
     }
@@ -699,11 +720,11 @@ impl DamageGrid {
         match (code, value) {
             (Some(0 | 2), Some(title)) => {
                 self.passthrough
-                    .push(PassthroughEvent::TitleChanged(title.to_string()));
+                    .push(PassthroughEvent::TitleChanged(title.to_owned()));
             }
             (Some(1), Some(name)) => {
                 self.passthrough
-                    .push(PassthroughEvent::IconNameChanged(name.to_string()));
+                    .push(PassthroughEvent::IconNameChanged(name.to_owned()));
             }
             (Some(52), Some(_)) => {
                 // OSC 52 format: 52;<sel>;<b64data>
@@ -720,11 +741,11 @@ impl DamageGrid {
             }
             (Some(7), Some(uri)) => {
                 self.passthrough
-                    .push(PassthroughEvent::CwdChanged(uri.to_string()));
+                    .push(PassthroughEvent::CwdChanged(uri.to_owned()));
             }
             (Some(9), Some(msg)) => {
                 self.passthrough
-                    .push(PassthroughEvent::Notification(msg.to_string()));
+                    .push(PassthroughEvent::Notification(msg.to_owned()));
             }
             // OSC 8: hyperlink — emit for capsule to apply URI-scheme safety filter.
             (Some(8), _) => {
@@ -733,12 +754,12 @@ impl DamageGrid {
                     .and_then(|b| std::str::from_utf8(b).ok())
                     .unwrap_or("")
                     .trim_start_matches("id=")
-                    .to_string();
+                    .to_owned();
                 let uri = params
                     .get(2)
                     .and_then(|b| std::str::from_utf8(b).ok())
                     .unwrap_or("")
-                    .to_string();
+                    .to_owned();
                 self.passthrough
                     .push(PassthroughEvent::Hyperlink { id, uri });
             }
@@ -1379,7 +1400,7 @@ fn reconstruct_csi(params: &vte::Params, intermediates: &[u8], final_byte: u8) -
             if jdx > 0 {
                 buf.push(b':');
             }
-            let _ = write!(buf, "{n}");
+            let _unused = write!(buf, "{n}");
         }
     }
     buf.push(final_byte);

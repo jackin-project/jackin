@@ -406,10 +406,7 @@ fn instance_shortcuts_return_selected_workspace_actions() {
         "P should stage the confirm modal and return Continue; got {outcome:?}"
     );
     assert!(
-        matches!(
-            state.stage,
-            crate::console::tui::state::ManagerStage::ConfirmInstancePurge { .. }
-        ),
+        matches!(state.stage, ManagerStage::ConfirmInstancePurge { .. }),
         "P should have set ConfirmInstancePurge stage"
     );
 
@@ -455,7 +452,7 @@ fn confirm_instance_purge_n_dismisses_without_dispatch() {
     .unwrap();
     assert!(matches!(
         state.stage,
-        crate::console::tui::state::ManagerStage::ConfirmInstancePurge { .. }
+        ManagerStage::ConfirmInstancePurge { .. }
     ));
     let outcome = handle_key(
         &mut state,
@@ -470,7 +467,7 @@ fn confirm_instance_purge_n_dismisses_without_dispatch() {
         "N must return Continue (no dispatch); got {outcome:?}"
     );
     assert!(
-        matches!(state.stage, crate::console::tui::state::ManagerStage::List),
+        matches!(state.stage, ManagerStage::List),
         "N must reset stage to List"
     );
 }
@@ -506,10 +503,7 @@ fn confirm_instance_purge_esc_dismisses_without_dispatch() {
     )
     .unwrap();
     assert!(matches!(outcome, InputOutcome::Continue));
-    assert!(matches!(
-        state.stage,
-        crate::console::tui::state::ManagerStage::List
-    ));
+    assert!(matches!(state.stage, ManagerStage::List));
 }
 
 #[test]

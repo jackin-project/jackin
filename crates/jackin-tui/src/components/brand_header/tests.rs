@@ -11,7 +11,7 @@ fn renders_brand_pill_and_label() {
         .unwrap();
     let buffer = terminal.backend().buffer();
     let row: String = (0..32)
-        .map(|x| buffer[(x, 0)].symbol().to_string())
+        .map(|x| buffer[(x, 0)].symbol().to_owned())
         .collect();
     assert!(row.contains(" jackin'  · Console"), "row: {row:?}");
     assert_eq!(buffer[(1, 0)].bg, PHOSPHOR_GREEN);

@@ -119,7 +119,7 @@ fn picker_enter_on_section_label_is_noop() {
     // filter pass that left only sections behind must degrade
     // to Redraw.
     let mut d = Dialog::AgentPicker {
-        agents: vec!["claude".to_string()],
+        agents: vec!["claude".to_owned()],
         selected: 0, // points at Section("agents")
         intent: PickerIntent::NewTab,
         filter: String::new(),
@@ -408,10 +408,10 @@ fn rename_tab_consumes_q_as_input_not_dismiss() {
 
 fn container_info_fixture() -> Dialog {
     Dialog::ContainerInfo {
-        container_name: "jk-abc123-thearchitect".to_string(),
-        role: "the-architect".to_string(),
-        focused_agent: Some("claude".to_string()),
-        workdir: "/workspace/jackin".to_string(),
+        container_name: "jk-abc123-thearchitect".to_owned(),
+        role: "the-architect".to_owned(),
+        focused_agent: Some("claude".to_owned()),
+        workdir: "/workspace/jackin".to_owned(),
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
@@ -422,8 +422,8 @@ fn container_info_fixture() -> Dialog {
 fn pull_request_fixture() -> PullRequestInfo {
     PullRequestInfo {
         number: 123,
-        title: "Surface PR context in Capsule".to_string(),
-        url: "https://github.com/jackin-project/jackin/pull/123".to_string(),
+        title: "Surface PR context in Capsule".to_owned(),
+        url: "https://github.com/jackin-project/jackin/pull/123".to_owned(),
         is_draft: false,
         checks: None,
     }
@@ -432,7 +432,7 @@ fn pull_request_fixture() -> PullRequestInfo {
 #[test]
 fn container_info_enter_flips_copied_flag_for_render_feedback() {
     let mut d = container_info_fixture();
-    let _ = d.handle_key(b"\r", None);
+    drop(d.handle_key(b"\r", None));
     let Dialog::ContainerInfo { copied_row, .. } = d else {
         unreachable!()
     };
@@ -504,10 +504,10 @@ fn container_info_click_on_other_rows_does_not_copy() {
 #[test]
 fn container_info_clear_copy_feedback_hides_badge() {
     let mut d = Dialog::ContainerInfo {
-        container_name: "jk-abc123-thearchitect".to_string(),
-        role: "the-architect".to_string(),
-        focused_agent: Some("claude".to_string()),
-        workdir: "/workspace/jackin".to_string(),
+        container_name: "jk-abc123-thearchitect".to_owned(),
+        role: "the-architect".to_owned(),
+        focused_agent: Some("claude".to_owned()),
+        workdir: "/workspace/jackin".to_owned(),
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,

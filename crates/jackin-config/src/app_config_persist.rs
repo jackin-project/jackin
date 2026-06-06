@@ -85,7 +85,7 @@ pub fn load_workspace_files(
             .with_context(|| format!("reading workspace config {}", path.display()))?;
         let workspace = toml::from_str(&raw)
             .with_context(|| format!("parsing workspace config {}", path.display()))?;
-        workspaces.insert(stem.to_string(), workspace);
+        workspaces.insert(stem.to_owned(), workspace);
     }
     Ok(workspaces)
 }
@@ -112,7 +112,7 @@ fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<Strin
         };
         match item.as_str() {
             Some(acct) => {
-                out.insert(name.to_string(), acct.to_string());
+                out.insert(name.to_owned(), acct.to_owned());
             }
             None => {
                 anyhow::bail!("workspace {name:?}: `op_account` must be a string, found {item:?}")

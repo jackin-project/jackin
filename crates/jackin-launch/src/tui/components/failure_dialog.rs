@@ -30,13 +30,13 @@ pub fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailureP
         },
         FailurePopupRow {
             label: "stage",
-            value: failure.stage.label().to_string(),
+            value: failure.stage.label().to_owned(),
             copy_target: None,
             href: None,
         },
         FailurePopupRow {
             label: "run id",
-            value: run_id.to_string(),
+            value: run_id.to_owned(),
             copy_target: Some(FailureCopyTarget::RunId),
             href: None,
         },

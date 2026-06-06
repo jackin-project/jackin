@@ -67,7 +67,7 @@ fn widget_centers_single_row_hint() {
         .draw(|frame| frame.render_widget(HintBar::new(&items), frame.area()))
         .unwrap();
     let row: String = (0..24)
-        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_string())
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_owned())
         .collect();
     assert!(row.contains("Esc close"), "hint missing: {row:?}");
     assert!(

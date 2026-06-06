@@ -300,7 +300,7 @@ pub(super) fn apply_settings_auth_env_commit(
     let (Some(name), Some(value)) = (env_var_name, env_value) else {
         return;
     };
-    settings_auth_env_map_mut(kind, github_env, agent_env).insert(name.to_string(), value);
+    settings_auth_env_map_mut(kind, github_env, agent_env).insert(name.to_owned(), value);
 }
 
 pub(super) fn clear_settings_auth_env_values(
@@ -346,7 +346,7 @@ fn apply_auth_env_value(
     match kind {
         AuthKind::Github => {
             if let Some(github) = github {
-                github.env.insert(name.to_string(), value);
+                github.env.insert(name.to_owned(), value);
             }
         }
         AuthKind::Claude
@@ -356,7 +356,7 @@ fn apply_auth_env_value(
         | AuthKind::Opencode
         | AuthKind::Zai
         | AuthKind::Minimax => {
-            env.insert(name.to_string(), value);
+            env.insert(name.to_owned(), value);
         }
     }
 }
@@ -742,7 +742,7 @@ pub(super) fn candidate_role_source(
                 selector.name
             ),
             trusted: false,
-            env: std::collections::BTreeMap::new(),
+            env: BTreeMap::new(),
         }),
         Err(err) => Err(err),
     }
@@ -770,7 +770,7 @@ pub(crate) fn resolve_role_input_source(
     let selector = RoleSelector::parse(raw).map_err(|e| {
         crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
         RoleInputResolutionError {
-            raw: raw.to_string(),
+            raw: raw.to_owned(),
             source_url: None,
             error: anyhow::Error::new(e),
         }
@@ -787,7 +787,7 @@ pub(crate) fn resolve_role_input_source(
             .ok()
             .map(|source| source.git);
         RoleInputResolutionError {
-            raw: raw.to_string(),
+            raw: raw.to_owned(),
             source_url,
             error,
         }
@@ -799,7 +799,7 @@ pub(crate) fn resolve_role_input_source(
         trusted = source.trusted
     );
     Ok(ResolvedRoleInput {
-        raw: raw.to_string(),
+        raw: raw.to_owned(),
         key,
         selector,
         source,
@@ -837,7 +837,7 @@ pub fn build_workspace_choice(
         LoadWorkspaceInput::CurrentDir => {
             let current = current_dir_workspace(cwd)?;
             Ok(Some(WorkspaceChoice {
-                name: "Current directory".to_string(),
+                name: "Current directory".to_owned(),
                 workspace: ResolvedWorkspace {
                     label: current.workdir.clone(),
                     workdir: current.workdir,
@@ -1013,7 +1013,7 @@ pub(in crate::console) fn providers_for_launch(
     config: &AppConfig,
     workspace_name: &str,
     role_selector: &str,
-    agent: crate::agent::Agent,
+    agent: Agent,
 ) -> Vec<jackin_protocol::Provider> {
     // Use the adapter's key_env_var() so the env-var name lives with the provider,
     // not scattered across callers. Providers with no key_env_var (Anthropic native
@@ -1194,7 +1194,7 @@ pub(crate) fn plan_editor_save_preview(
             .map_err(|e| EditorSavePreviewError::Message(e.to_string()))?;
             if plan.edit_driven_collapses.is_empty() && !plan.pre_existing_collapses.is_empty() {
                 return Err(EditorSavePreviewError::PreExistingRedundantMounts {
-                    original_name: original_name.to_string(),
+                    original_name: original_name.to_owned(),
                     collapses: plan.pre_existing_collapses,
                 });
             }
@@ -1209,7 +1209,7 @@ pub(crate) fn plan_editor_save_preview(
         } => {
             if pending_name.is_none() {
                 return Err(EditorSavePreviewError::Message(
-                    "missing workspace name".to_string(),
+                    "missing workspace name".to_owned(),
                 ));
             }
             let plan = crate::workspace::planner::plan_create(&pending.mounts)
@@ -1235,7 +1235,7 @@ pub(crate) fn global_mount_scope_value(value: &str) -> Option<String> {
     if value.is_empty() {
         None
     } else {
-        Some(value.to_string())
+        Some(value.to_owned())
     }
 }
 
@@ -1261,9 +1261,9 @@ pub(crate) fn unique_global_mount_name(
         })
         .collect::<String>()
         .trim_matches('-')
-        .to_string();
+        .to_owned();
     let base = if base.is_empty() {
-        "mount".to_string()
+        "mount".to_owned()
     } else {
         base
     };

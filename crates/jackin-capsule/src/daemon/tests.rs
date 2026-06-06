@@ -23,11 +23,11 @@ impl ChildKiller for NullChildKiller {
 struct NullMasterPty;
 
 impl MasterPty for NullMasterPty {
-    fn resize(&self, _size: PtySize) -> anyhow::Result<()> {
+    fn resize(&self, _size: PtySize) -> Result<()> {
         Ok(())
     }
 
-    fn get_size(&self) -> anyhow::Result<PtySize> {
+    fn get_size(&self) -> Result<PtySize> {
         Ok(PtySize {
             rows: 24,
             cols: 80,
@@ -36,11 +36,11 @@ impl MasterPty for NullMasterPty {
         })
     }
 
-    fn try_clone_reader(&self) -> anyhow::Result<Box<dyn std::io::Read + Send>> {
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
         Ok(Box::new(std::io::empty()))
     }
 
-    fn take_writer(&self) -> anyhow::Result<Box<dyn std::io::Write + Send>> {
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
         Ok(Box::new(std::io::sink()))
     }
 
@@ -55,7 +55,7 @@ impl MasterPty for NullMasterPty {
     }
 
     #[cfg(unix)]
-    fn tty_name(&self) -> Option<std::path::PathBuf> {
+    fn tty_name(&self) -> Option<PathBuf> {
         None
     }
 }
@@ -83,8 +83,8 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
         rows,
         cols,
         CapsuleConfig {
-            role: "test-role".to_string(),
-            workdir: "/workspace".to_string(),
+            role: "test-role".to_owned(),
+            workdir: "/workspace".to_owned(),
             agents: Vec::new(),
             models: std::collections::BTreeMap::new(),
             initial_provider: None,
@@ -106,7 +106,7 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
     PullRequestInfo {
         number,
-        title: "Surface PR context in Capsule".to_string(),
+        title: "Surface PR context in Capsule".to_owned(),
         url: format!("https://github.com/jackin-project/jackin/pull/{number}"),
         is_draft: false,
         checks: None,
@@ -187,8 +187,8 @@ fn outer_terminal_title_falls_back_to_branch_without_pr() {
 fn outer_terminal_title_sanitizes_control_bytes() {
     let pull_request = PullRequestInfo {
         number: 436,
-        title: "bad\x1b]2;owned\x07title".to_string(),
-        url: "https://github.com/jackin-project/jackin/pull/436".to_string(),
+        title: "bad\x1b]2;owned\x07title".to_owned(),
+        url: "https://github.com/jackin-project/jackin/pull/436".to_owned(),
         is_draft: false,
         checks: None,
     };
@@ -257,7 +257,7 @@ fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
 fn full_frame_updates_outer_terminal_title_on_branch_switch() {
     let mut mux = single_pane_tab_mux();
     mux.workdir = PathBuf::from("/workspace/jackin");
-    mux.workdir_context.default_branch = Some("main".to_string());
+    mux.workdir_context.default_branch = Some("main".to_owned());
     mux.pull_request_context_branch = Some(branch("feat/a"));
 
     let first = String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
@@ -291,7 +291,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
 }
 
 fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
-    test_session_with_agent(rows, cols, Some("codex".to_string()))
+    test_session_with_agent(rows, cols, Some("codex".to_owned()))
 }
 
 fn test_shell_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
@@ -307,7 +307,7 @@ fn test_pane_session(
     cols: u16,
     agent: Option<&str>,
 ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
-    test_session_with_agent(rows, cols, agent.map(ToString::to_string))
+    test_session_with_agent(rows, cols, agent.map(str::to_owned))
 }
 
 fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
@@ -366,7 +366,7 @@ fn test_session_with_agent(
     let (input_tx, input_rx) = mpsc::unbounded_channel();
     (
         Session::new_for_test(
-            "Test".to_string(),
+            "Test".to_owned(),
             agent,
             None,
             (rows, cols),
@@ -382,9 +382,9 @@ fn test_session_with_agent(
 fn test_provider_session(
     provider: jackin_protocol::Provider,
 ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
-    let (mut session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_string()));
+    let (mut session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
     session.provider = Some(crate::session::SessionProvider {
-        label: provider.label().to_string(),
+        label: provider.label().to_owned(),
         env_overrides: provider.env_overrides(Some("zai-test-token")),
     });
     (session, input_rx)
@@ -496,11 +496,11 @@ fn dialog_dismiss_frame_repaints_covered_pane_body() {
 fn scan_emitted_frame_reports_geometry_fingerprint() {
     // \x1b[2J (erase) + move to (5,10) + move to (40,160).
     let frame = b"\x1b[2J\x1b[5;10Hx\x1b[40;160Hy".to_vec();
-    assert_eq!(super::scan_emitted_frame(&frame), (2, 40, 160, 1));
+    assert_eq!(scan_emitted_frame(&frame), (2, 40, 160, 1));
 
     // A move with no col defaults col to 1; `f` is an alias for `H`.
     let frame = b"\x1b[12Hz".to_vec();
-    assert_eq!(super::scan_emitted_frame(&frame), (1, 12, 1, 0));
+    assert_eq!(scan_emitted_frame(&frame), (1, 12, 1, 0));
 }
 
 #[test]
@@ -555,7 +555,7 @@ fn resize_shrink_then_grow_does_not_panic() {
 fn initial_spawn_request_is_data_only_agent_or_shell() {
     assert_eq!(
         initial_spawn_request("codex", None),
-        SpawnRequest::Agent("codex".to_string())
+        SpawnRequest::Agent("codex".to_owned())
     );
     assert_eq!(initial_spawn_request("", None), SpawnRequest::Shell);
 }
@@ -563,13 +563,13 @@ fn initial_spawn_request_is_data_only_agent_or_shell() {
 #[test]
 fn initial_spawn_request_carries_provider_when_selected() {
     let provider = jackin_protocol::InitialProvider {
-        label: jackin_protocol::Provider::Zai.label().to_string(),
+        label: jackin_protocol::Provider::Zai.label().to_owned(),
     };
     assert_eq!(
         initial_spawn_request("claude", Some(&provider)),
         SpawnRequest::AgentWithProvider {
-            slug: "claude".to_string(),
-            provider_label: "Z.AI".to_string(),
+            slug: "claude".to_owned(),
+            provider_label: "Z.AI".to_owned(),
         }
     );
     // An empty agent still degrades to a shell even with a provider.
@@ -582,10 +582,10 @@ fn initial_spawn_request_carries_provider_when_selected() {
 #[test]
 fn spawn_request_rejects_agent_outside_allowlist_before_pty_spawn() {
     let mut mux = test_mux(24, 80);
-    mux.available_agents = vec!["codex".to_string()];
+    mux.available_agents = vec!["codex".to_owned()];
 
     let err = mux
-        .spawn_request(SpawnRequest::Agent("claude".to_string()), &[])
+        .spawn_request(SpawnRequest::Agent("claude".to_owned()), &[])
         .unwrap_err();
 
     assert!(err.to_string().contains("rejected agent \"claude\""));
@@ -807,7 +807,7 @@ fn apply_pull_request_context_loaded_transient_failure_preserves_prior_cache() {
     mux.pull_request_context_cache.insert(
         branch("feat/x"),
         PullRequestContextCacheEntry {
-            checked_at: now - Duration::from_secs(5),
+            checked_at: now.checked_sub(Duration::from_secs(5)).unwrap(),
             head: None,
             pull_request: Some(Arc::new(pull_request_fixture(123))),
         },
@@ -970,7 +970,7 @@ fn purge_expired_pull_request_cache_entries_drops_old_entries() {
     mux.pull_request_context_cache.insert(
         branch("feat/fresh"),
         PullRequestContextCacheEntry {
-            checked_at: now - Duration::from_secs(10),
+            checked_at: now.checked_sub(Duration::from_secs(10)).unwrap(),
             head: None,
             pull_request: Some(Arc::new(pull_request_fixture(1))),
         },
@@ -978,7 +978,11 @@ fn purge_expired_pull_request_cache_entries_drops_old_entries() {
     mux.pull_request_context_cache.insert(
         branch("feat/old"),
         PullRequestContextCacheEntry {
-            checked_at: now - ttl - Duration::from_secs(1),
+            checked_at: now
+                .checked_sub(ttl)
+                .unwrap()
+                .checked_sub(Duration::from_secs(1))
+                .unwrap(),
             head: None,
             pull_request: Some(Arc::new(pull_request_fixture(2))),
         },
@@ -996,7 +1000,10 @@ fn pull_request_cache_fresh_at_strict_boundary() {
     mux.pull_request_context_cache.insert(
         branch("branch-a"),
         PullRequestContextCacheEntry {
-            checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL + Duration::from_millis(1),
+            checked_at: now
+                .checked_sub(PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL)
+                .unwrap()
+                + Duration::from_millis(1),
             head: None,
             pull_request: None,
         },
@@ -1005,7 +1012,11 @@ fn pull_request_cache_fresh_at_strict_boundary() {
     mux.pull_request_context_cache.insert(
         branch("branch-b"),
         PullRequestContextCacheEntry {
-            checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL - Duration::from_millis(1),
+            checked_at: now
+                .checked_sub(PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL)
+                .unwrap()
+                .checked_sub(Duration::from_millis(1))
+                .unwrap(),
             head: None,
             pull_request: None,
         },
@@ -1069,7 +1080,9 @@ fn git_branch_context_keeps_current_pr_while_refreshing_same_branch() {
     mux.pull_request_context_cache.insert(
         branch("feature/current"),
         PullRequestContextCacheEntry {
-            checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL,
+            checked_at: now
+                .checked_sub(PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL)
+                .unwrap(),
             head: None,
             pull_request: Some(Arc::new(pull_request_fixture(436))),
         },
@@ -1111,7 +1124,7 @@ fn open_github_context_dialog_force_spawns_when_gh_available() {
     let mut mux = test_mux(24, 100);
     mux.workdir_context.gh_available = true;
     mux.workdir_context.is_git_repo = true;
-    mux.workdir_context.default_branch = Some("main".to_string());
+    mux.workdir_context.default_branch = Some("main".to_owned());
     mux.pull_request_context_branch = Some(branch("feat/x"));
     let id_before = mux.pull_request_lookup.request_id;
 
@@ -1133,7 +1146,7 @@ fn open_github_context_dialog_force_spawns_when_startup_missed_gh() {
     let mut mux = test_mux(24, 100);
     mux.workdir_context.gh_available = false;
     mux.workdir_context.is_git_repo = true;
-    mux.workdir_context.default_branch = Some("main".to_string());
+    mux.workdir_context.default_branch = Some("main".to_owned());
     mux.pull_request_context_branch = Some(branch("feat/x"));
     let id_before = mux.pull_request_lookup.request_id;
 
@@ -1185,7 +1198,7 @@ fn open_github_context_dialog_bypasses_fresh_no_pr_cache() {
     let now = Instant::now();
     mux.workdir_context.gh_available = true;
     mux.workdir_context.is_git_repo = true;
-    mux.workdir_context.default_branch = Some("main".to_string());
+    mux.workdir_context.default_branch = Some("main".to_owned());
     mux.pull_request_context_branch = Some(branch("feat/x"));
     mux.pull_request_context_cache.insert(
         branch("feat/x"),
@@ -1217,7 +1230,7 @@ fn apply_git_context_head_change_schedules_fresh_pr_lookup() {
     let now = Instant::now();
     mux.workdir_context.gh_available = true;
     mux.workdir_context.is_git_repo = true;
-    mux.workdir_context.default_branch = Some("main".to_string());
+    mux.workdir_context.default_branch = Some("main".to_owned());
     mux.pull_request_context_branch = Some(branch("feat/a"));
     mux.pull_request_context_head = Some(oid('1'));
 
@@ -1281,7 +1294,7 @@ fn apply_pull_request_context_loaded_refuses_head_drift_none_to_some() {
     mux.pull_request_context_branch = Some(branch("feat/x"));
     mux.pull_request_context_head = Some(oid('c'));
 
-    let _ = mux.apply_pull_request_context_loaded(
+    let _unused = mux.apply_pull_request_context_loaded(
         11,
         Some(branch("feat/x")),
         None,
@@ -1307,7 +1320,7 @@ fn apply_pull_request_context_loaded_refuses_head_drift_some_to_none() {
     mux.pull_request_context_branch = Some(branch("feat/x"));
     mux.pull_request_context_head = None;
 
-    let _ = mux.apply_pull_request_context_loaded(
+    let _unused = mux.apply_pull_request_context_loaded(
         13,
         Some(branch("feat/x")),
         Some(oid('d')),
@@ -1611,7 +1624,7 @@ fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
     buf.truncate(target_size);
     std::fs::write(&packed_refs, &buf).unwrap();
 
-    let _ = read_packed_git_ref_oid(&packed_refs, "refs/heads/feat/x");
+    drop(read_packed_git_ref_oid(&packed_refs, "refs/heads/feat/x"));
 
     // Mutate same-length bytes (overwrite oid in place); mtime advances.
     let buf2 = buf.replacen(
@@ -1644,7 +1657,10 @@ fn packed_refs_cache_eviction_bounds_entries_at_cap() {
             format!("1111111111111111111111111111111111111111 refs/heads/branch-{i}\n"),
         )
         .unwrap();
-        let _ = read_packed_git_ref_oid(&path, &format!("refs/heads/branch-{i}"));
+        drop(read_packed_git_ref_oid(
+            &path,
+            &format!("refs/heads/branch-{i}"),
+        ));
         paths.push(path);
     }
 
@@ -1665,8 +1681,7 @@ fn packed_refs_cache_eviction_bounds_entries_at_cap() {
     // equal CAP, not less (over-evict) or more (no-op evict).
     assert_eq!(
         count, PACKED_REFS_CACHE_MAX_ENTRIES,
-        "eviction must drop exactly one entry; saw {count} surviving of CAP={}",
-        PACKED_REFS_CACHE_MAX_ENTRIES
+        "eviction must drop exactly one entry; saw {count} surviving of CAP={PACKED_REFS_CACHE_MAX_ENTRIES}"
     );
 }
 
@@ -1698,7 +1713,7 @@ fn force_spawn_pull_request_context_lookup_skipped_when_in_flight() {
     let mut mux = test_mux(24, 100);
     mux.workdir_context.gh_available = true;
     mux.workdir_context.is_git_repo = true;
-    mux.workdir_context.default_branch = Some("main".to_string());
+    mux.workdir_context.default_branch = Some("main".to_owned());
     mux.pull_request_context_branch = Some(branch("feat/x"));
     mux.pull_request_lookup.in_flight = true;
     let id_before = mux.pull_request_lookup.request_id;
@@ -2211,7 +2226,7 @@ fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollbac
 fn alt_screen_exit_resets_keyboard_modes_for_shell_prompt() {
     let (mut session, _input_rx) = test_session(8, 20);
     session.feed_pty(b"\x1b[?1049h\x1b[>1u\x1b[>4;2m");
-    let _ = session.drain_passthrough();
+    drop(session.drain_passthrough());
 
     session.feed_pty(b"\x1b[?1049l");
     let drained = session.drain_passthrough();
@@ -2230,8 +2245,8 @@ fn alt_screen_exit_resets_keyboard_modes_for_shell_prompt() {
 fn pointer_shape_updates_only_when_shape_changes() {
     let mut mux = test_mux(24, 80);
     mux.pointer_shapes_supported = true;
-    mux.status_bar.identity_label = "jk-test-container".to_string();
-    mux.status_bar.instance_id_label = "test".to_string();
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
+    mux.status_bar.instance_id_label = "test".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
@@ -2258,7 +2273,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
 fn pointer_shape_updates_for_clickable_top_chrome() {
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
+    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
     let tab_col = mux
@@ -2274,7 +2289,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
 
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
+    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
     let menu_col = mux
@@ -2292,7 +2307,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
 fn pointer_shape_updates_for_clickable_dialog_copy_target() {
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    mux.status_bar.identity_label = "jk-test-container".to_string();
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
     mux.open_container_info_dialog();
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
@@ -2313,9 +2328,9 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
 fn bottom_container_click_opens_container_info_without_copying() {
     let mut mux = test_mux(24, 80);
     mux.pointer_shapes_supported = false;
-    mux.status_bar.identity_label = "jk-test-container".to_string();
-    mux.status_bar.instance_id_label = "test".to_string();
-    mux.status_bar.role = "the-architect".to_string();
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
+    mux.status_bar.instance_id_label = "test".to_owned();
+    mux.status_bar.role = "the-architect".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
@@ -2361,8 +2376,8 @@ fn bottom_container_click_opens_container_info_without_copying() {
 #[test]
 fn bottom_context_click_opens_github_context_dialog() {
     let mut mux = test_mux(24, 100);
-    mux.status_bar.identity_label = "jk-test-container".to_string();
-    mux.status_bar.instance_id_label = "test".to_string();
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
+    mux.status_bar.instance_id_label = "test".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
     mux.workdir_context.gh_available = false;
@@ -2423,10 +2438,10 @@ fn bottom_context_click_opens_github_context_dialog() {
 fn container_info_copy_feedback_expires() {
     let mut mux = test_mux(24, 80);
     mux.dialog_push(Dialog::ContainerInfo {
-        container_name: "jk-test-container".to_string(),
-        role: "the-architect".to_string(),
-        focused_agent: Some("claude".to_string()),
-        workdir: "/workspace".to_string(),
+        container_name: "jk-test-container".to_owned(),
+        role: "the-architect".to_owned(),
+        focused_agent: Some("claude".to_owned()),
+        workdir: "/workspace".to_owned(),
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
@@ -2450,10 +2465,10 @@ fn container_info_id_click_copies_and_renders_feedback() {
     let mut mux = test_mux(40, 120);
     mux.pointer_shapes_supported = false;
     mux.dialog_push(Dialog::ContainerInfo {
-        container_name: "jk-test-container".to_string(),
-        role: "the-architect".to_string(),
-        focused_agent: Some("claude".to_string()),
-        workdir: "/workspace".to_string(),
+        container_name: "jk-test-container".to_owned(),
+        role: "the-architect".to_owned(),
+        focused_agent: Some("claude".to_owned()),
+        workdir: "/workspace".to_owned(),
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
@@ -2507,7 +2522,7 @@ fn command_stdout_trimmed_returns_trimmed_stdout() {
 
     assert_eq!(
         command_stdout_trimmed(&mut command),
-        Some("branch-name".to_string())
+        Some("branch-name".to_owned())
     );
 }
 
@@ -2584,8 +2599,8 @@ fn apply_action_open_palette_closes_existing_dialog() {
 #[test]
 fn apply_action_open_container_info_pushes_dialog() {
     let mut mux = single_pane_tab_mux();
-    mux.status_bar.identity_label = "jk-test-container".to_string();
-    mux.status_bar.role = "test-role".to_string();
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
+    mux.status_bar.role = "test-role".to_owned();
 
     mux.apply_action(Action::OpenContainerInfo);
 
@@ -2616,7 +2631,7 @@ fn apply_action_open_rename_tab_pushes_dialog() {
 fn apply_action_switch_tab_moves_active_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2, "test"));
-    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
+    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
 
     mux.apply_action(Action::SwitchTab(1));
 
@@ -2627,7 +2642,7 @@ fn apply_action_switch_tab_moves_active_tab() {
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2, "test"));
-    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
+    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let col = (1..mux.term_cols)
         .find(|col| mux.status_bar.tab_at_col(*col) == Some(1))
         .expect("second tab should have a clickable column")
@@ -2641,7 +2656,7 @@ fn apply_action_status_bar_click_switches_tab() {
 #[test]
 fn apply_action_status_bar_double_click_opens_rename() {
     let mut mux = single_pane_tab_mux();
-    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
+    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let col = (1..mux.term_cols)
         .find(|col| mux.status_bar.tab_at_col(*col) == Some(0))
         .expect("first tab should have a clickable column")
@@ -2659,9 +2674,9 @@ fn apply_action_status_bar_double_click_opens_rename() {
 #[test]
 fn apply_action_branch_context_bar_click_opens_container_info() {
     let mut mux = test_mux(24, 80);
-    mux.status_bar.identity_label = "jk-test-container".to_string();
-    mux.status_bar.instance_id_label = "test".to_string();
-    mux.status_bar.role = "the-architect".to_string();
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
+    mux.status_bar.instance_id_label = "test".to_owned();
+    mux.status_bar.role = "the-architect".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     let hit = branch_context_bar_layout(
         mux.term_rows,
@@ -2807,7 +2822,7 @@ fn apply_action_focus_report_does_not_open_dialog() {
 fn apply_action_mouse_chrome_update_sets_pointer_shape() {
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    let _ = mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw);
+    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.attached_out = Some(tx);
     let tab_col = mux
@@ -3037,7 +3052,7 @@ fn split_close_frame_contains_screen_erase() {
     // Regression for Defect 29: pane/tab close reflows the layout, so the full
     // frame must wipe (\x1b[2J) and repaint to flush cells from the removed pane.
     let mut mux = single_pane_tab_mux_with_size(24, 80);
-    let _ = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
     let frame = mux.compose_full_redraw(FullRedrawReason::SplitClose);
     assert!(

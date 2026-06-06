@@ -12,7 +12,7 @@ use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 /// Render a closure into a fresh `TestBackend` and return the resulting
 /// buffer. Size is chosen to comfortably fit every modal under test.
-fn draw<F: FnOnce(&mut ratatui::Frame)>(width: u16, height: u16, render: F) -> Buffer {
+fn draw<F: FnOnce(&mut ratatui::Frame<'_>)>(width: u16, height: u16, render: F) -> Buffer {
     let backend = TestBackend::new(width, height);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| render(f)).unwrap();
@@ -198,7 +198,7 @@ fn render_agent_choice() -> (Buffer, Rect) {
 
 fn row_text(buf: &Buffer, y: u16) -> String {
     (buf.area.x..buf.area.x + buf.area.width)
-        .map(|x| buf[(x, y)].symbol().to_string())
+        .map(|x| buf[(x, y)].symbol().to_owned())
         .collect()
 }
 

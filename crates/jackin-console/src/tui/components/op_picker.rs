@@ -249,7 +249,7 @@ pub fn selected_account_id<Account>(
     selected_account: Option<&Account>,
     account_id: impl FnOnce(&Account) -> &str,
 ) -> Option<String> {
-    selected_account.map(|account| account_id(account).to_string())
+    selected_account.map(|account| account_id(account).to_owned())
 }
 
 pub fn selected_account_id_ref<'a, Account>(
@@ -264,7 +264,7 @@ pub fn selected_entity_id_or_default<Entity>(
     entity_id: impl FnOnce(&Entity) -> &str,
 ) -> String {
     selected_entity
-        .map(|entity| entity_id(entity).to_string())
+        .map(|entity| entity_id(entity).to_owned())
         .unwrap_or_default()
 }
 
@@ -547,8 +547,9 @@ pub fn section_stage_commit_plan(
     choices
         .get(selected)
         .cloned()
-        .map(|selected_section| SectionStageCommitPlan::ExistingSection { selected_section })
-        .unwrap_or(SectionStageCommitPlan::NoSelection)
+        .map_or(SectionStageCommitPlan::NoSelection, |selected_section| {
+            SectionStageCommitPlan::ExistingSection { selected_section }
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -627,9 +628,10 @@ pub enum VaultStageCommitPlan<Vault> {
 }
 
 pub fn vault_stage_commit_plan<Vault>(picked: Option<Vault>) -> VaultStageCommitPlan<Vault> {
-    picked
-        .map(VaultStageCommitPlan::ExistingVault)
-        .unwrap_or(VaultStageCommitPlan::NoSelection)
+    picked.map_or(
+        VaultStageCommitPlan::NoSelection,
+        VaultStageCommitPlan::ExistingVault,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -671,9 +673,10 @@ pub enum AccountStageCommitPlan<Account> {
 pub fn account_stage_commit_plan<Account>(
     picked: Option<Account>,
 ) -> AccountStageCommitPlan<Account> {
-    picked
-        .map(AccountStageCommitPlan::ExistingAccount)
-        .unwrap_or(AccountStageCommitPlan::NoSelection)
+    picked.map_or(
+        AccountStageCommitPlan::NoSelection,
+        AccountStageCommitPlan::ExistingAccount,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -724,14 +727,15 @@ pub fn field_stage_commit_plan(
     match row {
         Some(FieldDisplayRow::SectionHeader { .. }) => {
             section_header_collapse_target(row, collapsed_sections, SectionCollapseIntent::Toggle)
-                .map(|(name, collapsed)| FieldStageCommitPlan::ToggleSection { name, collapsed })
-                .unwrap_or(FieldStageCommitPlan::NoSelection)
+                .map_or(FieldStageCommitPlan::NoSelection, |(name, collapsed)| {
+                    FieldStageCommitPlan::ToggleSection { name, collapsed }
+                })
         }
         Some(FieldDisplayRow::Field { field_idx }) => FieldStageCommitPlan::ExistingField {
             field_idx: *field_idx,
         },
         Some(FieldDisplayRow::NewFieldSentinel) => FieldStageCommitPlan::NewField {
-            pending_section: selected_section.map(str::to_string),
+            pending_section: selected_section.map(str::to_owned),
             field_label_origin: FieldLabelOrigin::NewField,
             stage: OpPickerStage::FieldLabel,
         },
@@ -760,7 +764,7 @@ pub fn new_section_name_commit_plan(name: &str) -> NamingStagePlan {
     NamingStagePlan {
         stage: OpPickerStage::FieldLabel,
         field_label_origin: Some(FieldLabelOrigin::NewSection),
-        pending_section: Some(name.trim().to_string()),
+        pending_section: Some(name.trim().to_owned()),
         clear_pending_section: false,
     }
 }
@@ -800,7 +804,7 @@ pub fn field_label_commit_plan<Account, Vault, Item>(
     item_name: String,
     raw_label: &str,
 ) -> FieldLabelCommitPlan<Account, Vault, Item> {
-    let field_label = raw_label.trim().to_string();
+    let field_label = raw_label.trim().to_owned();
     if let Some(item) = item {
         return FieldLabelCommitPlan::EditItemField {
             account,
@@ -872,13 +876,14 @@ pub fn existing_field_commit_plan(
     if mode.is_create() {
         return ExistingFieldCommitPlan::EditItemField {
             section: selected_section,
-            field_id: field_id.to_string(),
-            field_label: field_label.to_string(),
+            field_id: field_id.to_owned(),
+            field_label: field_label.to_owned(),
         };
     }
     ExistingFieldCommitPlan::ExistingReference
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExistingFieldCommitSelectionInput<Account, Vault, Item> {
     pub account: Option<Account>,
     pub vault: Vault,
@@ -909,7 +914,7 @@ pub fn existing_field_commit_selection<Reference, Account, Vault, Item, FieldTar
     }
 }
 
-pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
+pub fn render_picker(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderState) {
     match state.load_state() {
         OpLoadState::Error(OpPickerError::Fatal(fatal)) => render_fatal(frame, area, fatal),
         OpLoadState::Loading { spinner_tick } => render_loading(frame, area, state, *spinner_tick),
@@ -921,7 +926,7 @@ pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderS
     }
 }
 
-fn render_pane(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
+fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderState) {
     let multi_account = state.account_count() > 1;
 
     if let Some(input) = state.naming_stage_input() {
@@ -988,7 +993,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) 
     }
 }
 
-fn render_loading(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState, tick: u8) {
+fn render_loading(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderState, tick: u8) {
     let multi_account = state.account_count() > 1;
     let title = breadcrumb_title(
         loading_title_stage(state.stage()),
@@ -1015,14 +1020,14 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderStat
         .split(inner);
 
     let body = Line::from(vec![
-        Span::styled(glyph.to_string(), jackin_tui::theme::GREEN),
+        Span::styled(glyph.to_owned(), jackin_tui::theme::GREEN),
         Span::raw("  "),
         Span::styled(descriptor, jackin_tui::theme::DIM),
     ]);
     frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
 }
 
-pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
+pub fn render_fatal(frame: &mut Frame<'_>, area: Rect, fatal: &OpPickerFatalState) {
     let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("1Password"));
 
     let rows = Layout::default()
@@ -1054,12 +1059,12 @@ pub fn breadcrumb_title(
     item_name: &str,
 ) -> String {
     match stage {
-        OpPickerStage::Account => "1Password".to_string(),
+        OpPickerStage::Account => "1Password".to_owned(),
         OpPickerStage::Vault => {
             if multi_account {
-                account_email.to_string()
+                account_email.to_owned()
             } else {
-                "1Password".to_string()
+                "1Password".to_owned()
             }
         }
         OpPickerStage::Item
@@ -1069,7 +1074,7 @@ pub fn breadcrumb_title(
             if multi_account {
                 format!("{account_email} \u{2192} {vault_name}")
             } else {
-                vault_name.to_string()
+                vault_name.to_owned()
             }
         }
         OpPickerStage::Section | OpPickerStage::Field => {
@@ -1100,13 +1105,16 @@ pub fn classify_probe_error_message(message: impl Into<String>) -> OpPickerError
 
 /// Distinct sections present in loaded `op://` field references, in
 /// first-appearance order, with a leading `None` (`(root)`) entry.
-pub fn section_choices_from_references<'a>(
-    references: impl IntoIterator<Item = &'a str>,
-) -> Vec<Option<String>> {
+pub fn section_choices_from_references<S>(
+    references: impl IntoIterator<Item = S>,
+) -> Vec<Option<String>>
+where
+    S: AsRef<str>,
+{
     let mut out: Vec<Option<String>> = vec![None];
     for reference in references {
-        if let Some(name) =
-            crate::op_reference::parse_op_reference(reference).and_then(|parts| parts.section)
+        if let Some(name) = crate::op_reference::parse_op_reference(reference.as_ref())
+            .and_then(|parts| parts.section)
             && !out
                 .iter()
                 .any(|section| section.as_deref() == Some(name.as_str()))
@@ -1120,15 +1128,20 @@ pub fn section_choices_from_references<'a>(
 /// Build browse-mode field rows from the currently visible field
 /// references. Returned `field_idx` values index into the visible-field
 /// list supplied by the caller.
-pub fn browse_field_display_rows<'a>(
-    references: impl IntoIterator<Item = &'a str>,
+pub fn browse_field_display_rows<S>(
+    references: impl IntoIterator<Item = S>,
     collapsed_sections: &HashSet<String>,
-) -> Vec<FieldDisplayRow> {
+) -> Vec<FieldDisplayRow>
+where
+    S: AsRef<str>,
+{
     let mut unsectioned: Vec<usize> = Vec::new();
     let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
 
     for (idx, reference) in references.into_iter().enumerate() {
-        match crate::op_reference::parse_op_reference(reference).and_then(|parts| parts.section) {
+        match crate::op_reference::parse_op_reference(reference.as_ref())
+            .and_then(|parts| parts.section)
+        {
             None => unsectioned.push(idx),
             Some(name) => {
                 if let Some(entry) = sections.iter_mut().find(|(section, _)| section == &name) {
@@ -1165,16 +1178,19 @@ pub fn browse_field_display_rows<'a>(
 /// Build create-mode field rows scoped to `selected_section`. Returned
 /// `field_idx` values index into the visible-field list supplied by the
 /// caller. A trailing `+ New field` sentinel is always present.
-pub fn create_field_display_rows<'a>(
-    references: impl IntoIterator<Item = &'a str>,
+pub fn create_field_display_rows<S>(
+    references: impl IntoIterator<Item = S>,
     selected_section: Option<&str>,
-) -> Vec<FieldDisplayRow> {
+) -> Vec<FieldDisplayRow>
+where
+    S: AsRef<str>,
+{
     let mut rows: Vec<FieldDisplayRow> = references
         .into_iter()
         .enumerate()
         .filter(|(_, reference)| {
-            let section =
-                crate::op_reference::parse_op_reference(reference).and_then(|parts| parts.section);
+            let section = crate::op_reference::parse_op_reference(reference.as_ref())
+                .and_then(|parts| parts.section);
             section.as_deref() == selected_section
         })
         .map(|(idx, _)| FieldDisplayRow::Field { field_idx: idx })
@@ -1269,7 +1285,7 @@ pub fn build_op_picker_ref<'a>(
     {
         format!("{}[{}]", selected_item.name, selected_item.subtitle)
     } else {
-        selected_item.name.to_string()
+        selected_item.name.to_owned()
     };
 
     if let Some(section_name) =
@@ -1318,6 +1334,10 @@ pub fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
     Line::from(Span::styled(format!("{prefix}{text}"), style))
 }
 
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"
+)]
 pub fn account_lines<'a>(
     accounts: impl IntoIterator<Item = OpPickerAccountRef<'a>>,
     selected: Option<usize>,
@@ -1344,6 +1364,10 @@ pub fn account_lines<'a>(
         .collect()
 }
 
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"
+)]
 pub fn vault_lines<'a>(
     vaults: impl IntoIterator<Item = OpPickerVaultRef<'a>>,
     selected: Option<usize>,
@@ -1366,6 +1390,10 @@ pub fn vault_lines<'a>(
         .collect()
 }
 
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Trait cannot use anonymous lifetimes for borrowed ref DTOs on stable Rust"
+)]
 pub fn item_choice_lines<'a>(
     item_choices: impl IntoIterator<Item = Option<OpPickerItemRef<'a>>>,
     selected: Option<usize>,
@@ -1388,12 +1416,12 @@ pub fn item_choice_lines<'a>(
                     };
                     let mut spans = vec![
                         Span::styled(prefix, title_style),
-                        Span::styled(item.name.to_string(), title_style),
+                        Span::styled(item.name.to_owned(), title_style),
                     ];
                     if !item.subtitle.is_empty() {
                         let dim = jackin_tui::theme::DIM;
                         spans.push(Span::styled(" (", dim));
-                        spans.push(Span::styled(item.subtitle.to_string(), dim));
+                        spans.push(Span::styled(item.subtitle.to_owned(), dim));
                         spans.push(Span::styled(")", dim));
                     }
                     Line::from(spans)
@@ -1424,7 +1452,7 @@ pub fn section_lines(
             } else {
                 Style::default().fg(WHITE)
             };
-            let label = choice.unwrap_or_else(|| "(root)".to_string());
+            let label = choice.unwrap_or_else(|| "(root)".to_owned());
             Line::from(Span::styled(format!("{prefix}{label}"), style))
         })
         .collect();
@@ -1518,7 +1546,7 @@ fn field_line(
         Style::default().fg(WHITE)
     };
     let annotation = if field.concealed {
-        "(concealed)".to_string()
+        "(concealed)".to_owned()
     } else {
         format!("({})", field.field_type.to_lowercase())
     };
@@ -1531,9 +1559,9 @@ fn field_line(
 
 fn field_display_label(field: OpPickerFieldDisplayRef<'_>) -> String {
     if field.label.is_empty() {
-        field.id.to_string()
+        field.id.to_owned()
     } else {
-        field.label.to_string()
+        field.label.to_owned()
     }
 }
 
@@ -1554,12 +1582,12 @@ pub fn loading_descriptor(
     item_subtitle: &str,
 ) -> String {
     match stage {
-        OpPickerStage::Account => "loading accounts\u{2026}".to_string(),
+        OpPickerStage::Account => "loading accounts\u{2026}".to_owned(),
         OpPickerStage::Vault => {
             if multi_account && !account_email.is_empty() {
                 format!("loading vaults from {account_email}\u{2026}")
             } else {
-                "loading vaults\u{2026}".to_string()
+                "loading vaults\u{2026}".to_owned()
             }
         }
         OpPickerStage::Item => {
@@ -1575,7 +1603,7 @@ pub fn loading_descriptor(
         OpPickerStage::Section
         | OpPickerStage::NewItemName
         | OpPickerStage::FieldLabel
-        | OpPickerStage::NewSectionName => "loading\u{2026}".to_string(),
+        | OpPickerStage::NewSectionName => "loading\u{2026}".to_owned(),
     }
 }
 

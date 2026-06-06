@@ -132,7 +132,7 @@ impl PaneTree {
         match self {
             Self::Leaf(id) => vec![(*id, rect)],
             Self::HSplit { left, right, ratio } => {
-                let left_cols = ((rect.cols as f32 * ratio).round() as u16)
+                let left_cols = ((f32::from(rect.cols) * ratio).round() as u16)
                     .max(1)
                     .min(rect.cols.saturating_sub(1));
                 let right_cols = rect.cols - left_cols;
@@ -143,7 +143,7 @@ impl PaneTree {
                 v
             }
             Self::VSplit { top, bottom, ratio } => {
-                let top_rows = ((rect.rows as f32 * ratio).round() as u16)
+                let top_rows = ((f32::from(rect.rows) * ratio).round() as u16)
                     .max(1)
                     .min(rect.rows.saturating_sub(1));
                 let bot_rows = rect.rows - top_rows;
@@ -156,7 +156,7 @@ impl PaneTree {
         }
     }
 
-    /// Replace the leaf with `old_id` with an HSplit. `position`
+    /// Replace the leaf with `old_id` with an `HSplit`. `position`
     /// controls whether `new_id` lands on the left or right of
     /// `old_id`. Recurses into existing splits so nested layouts
     /// still find the target leaf.
@@ -184,7 +184,7 @@ impl PaneTree {
         }
     }
 
-    /// Replace the leaf with `old_id` with a VSplit. `position`
+    /// Replace the leaf with `old_id` with a `VSplit`. `position`
     /// controls whether `new_id` lands above or below `old_id`.
     pub fn split_v(&mut self, old_id: u64, new_id: u64, position: SplitPosition) -> bool {
         match self {
@@ -317,7 +317,8 @@ impl PaneTree {
             .min_by_key(|(_, r)| {
                 let cr = r.row + r.rows / 2;
                 let cc = r.col + r.cols / 2;
-                (cr as i32 - fr as i32).unsigned_abs() + (cc as i32 - fc as i32).unsigned_abs()
+                (i32::from(cr) - i32::from(fr)).unsigned_abs()
+                    + (i32::from(cc) - i32::from(fc)).unsigned_abs()
             })
             .map(|(id, _)| *id)
     }
@@ -627,7 +628,7 @@ impl PaneTree {
         match self {
             Self::Leaf(_) => None,
             Self::HSplit { left, right, ratio } => {
-                let left_cols = ((rect.cols as f32 * ratio).round() as u16)
+                let left_cols = ((f32::from(rect.cols) * ratio).round() as u16)
                     .max(1)
                     .min(rect.cols.saturating_sub(1));
                 let right_cols = rect.cols - left_cols;
@@ -652,7 +653,7 @@ impl PaneTree {
                 None
             }
             Self::VSplit { top, bottom, ratio } => {
-                let top_rows = ((rect.rows as f32 * ratio).round() as u16)
+                let top_rows = ((f32::from(rect.rows) * ratio).round() as u16)
                     .max(1)
                     .min(rect.rows.saturating_sub(1));
                 let bot_rows = rect.rows - top_rows;
@@ -724,7 +725,7 @@ impl PaneTree {
 /// Lower bound for a split ratio. 0.05 = 5% of the available cells,
 /// the smallest size before the grid / agent UI starts mis-wrapping.
 pub const SPLIT_RATIO_MIN: f32 = 0.05;
-/// Upper bound — symmetric counterpart of SPLIT_RATIO_MIN.
+/// Upper bound — symmetric counterpart of `SPLIT_RATIO_MIN`.
 pub const SPLIT_RATIO_MAX: f32 = 0.95;
 /// Default ratio used by every `split_h` / `split_v` constructor.
 pub const SPLIT_RATIO_DEFAULT: f32 = 0.5;
@@ -775,7 +776,7 @@ impl Tab {
     }
 
     pub fn label_owned(&self) -> String {
-        self.label().to_string()
+        self.label().to_owned()
     }
 
     pub fn custom_label(&self) -> Option<&str> {

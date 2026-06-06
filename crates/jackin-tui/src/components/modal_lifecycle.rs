@@ -15,7 +15,7 @@ use crate::components::ModalBackdrop;
 
 /// Render the full-screen opaque backdrop. Call this before drawing the modal
 /// so everything behind it (other dialogs, main UI) is hidden.
-pub fn render_backdrop(frame: &mut Frame, full_area: Rect) {
+pub fn render_backdrop(frame: &mut Frame<'_>, full_area: Rect) {
     frame.render_widget(ModalBackdrop, full_area);
 }
 

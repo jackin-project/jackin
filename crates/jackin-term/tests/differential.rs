@@ -146,7 +146,7 @@ fn snapshot_damagegrid(grid: &DamageGrid) -> ScreenSnapshot {
                 .cell(r, c)
                 .unwrap_or_else(|| panic!("cell ({r},{c}) out of bounds for {rows}×{cols} grid"));
             row.push(CellSnapshot {
-                contents: cell.contents().to_string(),
+                contents: cell.contents().to_owned(),
                 is_wide: cell.is_wide,
                 is_wide_continuation: cell.is_wide_continuation,
                 foreground: cell.fgcolor().into(),
@@ -187,7 +187,7 @@ fn snapshot_vt100(parser: &vt100::Parser) -> ScreenSnapshot {
                 .cell(r, c)
                 .unwrap_or_else(|| panic!("cell ({r},{c}) out of bounds for {rows}×{cols} screen"));
             row.push(CellSnapshot {
-                contents: cell.contents().to_string(),
+                contents: cell.contents().to_owned(),
                 is_wide: cell.is_wide(),
                 is_wide_continuation: cell.is_wide_continuation(),
                 foreground: cell.fgcolor().into(),

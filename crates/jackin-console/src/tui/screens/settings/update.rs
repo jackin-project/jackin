@@ -416,14 +416,14 @@ pub fn set_settings_env_value<V>(
 ) {
     match scope {
         SettingsEnvScope::Global => {
-            pending.env.insert(key.to_string(), value);
+            pending.env.insert(key.to_owned(), value);
         }
         SettingsEnvScope::Role(role) => {
             pending
                 .roles
                 .entry(role.clone())
                 .or_default()
-                .insert(key.to_string(), value);
+                .insert(key.to_owned(), value);
             expanded_roles.insert(role.clone());
         }
     }

@@ -35,9 +35,9 @@ fn cfg_claude(
             }),
             ..Default::default()
         };
-        ws_cfg.roles.insert("smith".to_string(), over);
+        ws_cfg.roles.insert("smith".to_owned(), over);
     }
-    cfg.workspaces.insert("proj".to_string(), ws_cfg);
+    cfg.workspaces.insert("proj".to_owned(), ws_cfg);
     cfg
 }
 

@@ -44,7 +44,7 @@ fn clamp_mounts_scroll_x_for_frame_uses_settings_body_area() {
     let expected = jackin_tui::components::scrollable_panel::max_offset(
         100,
         jackin_tui::components::scrollable_panel::viewport_width(body),
-    ) as u16;
+    );
     assert_eq!(scroll_x, expected);
 }
 
@@ -84,7 +84,7 @@ fn global_mount_confirm_state_uses_settings_prompt() {
 fn settings_env_text_input_state_allows_empty_values_only() {
     let value_target = SettingsEnvTextTarget::EnvValue {
         scope: SettingsEnvScope::Global,
-        key: "TOKEN".to_string(),
+        key: "TOKEN".to_owned(),
     };
     let key_target = SettingsEnvTextTarget::EnvKey {
         scope: SettingsEnvScope::Global,
@@ -166,16 +166,16 @@ fn settings_env_key_input_state_marks_scope_duplicates() {
         env: std::collections::BTreeMap::new(),
         roles: std::collections::BTreeMap::new(),
     };
-    pending.env.insert("GLOBAL".to_string(), "1".to_string());
+    pending.env.insert("GLOBAL".to_owned(), "1".to_owned());
     pending
         .roles
-        .entry("alpha".to_string())
+        .entry("alpha".to_owned())
         .or_default()
-        .insert("ROLE_TOKEN".to_string(), "2".to_string());
+        .insert("ROLE_TOKEN".to_owned(), "2".to_owned());
 
     let state = settings_env_key_input_state(
         &pending,
-        &SettingsEnvScope::Role("alpha".to_string()),
+        &SettingsEnvScope::Role("alpha".to_owned()),
         "New alpha environment key",
         "",
     );
@@ -186,7 +186,7 @@ fn settings_env_key_input_state_marks_scope_duplicates() {
 
     let duplicate = settings_env_key_input_state(
         &pending,
-        &SettingsEnvScope::Role("alpha".to_string()),
+        &SettingsEnvScope::Role("alpha".to_owned()),
         "New alpha environment key",
         "ROLE_TOKEN",
     );
@@ -200,7 +200,7 @@ fn settings_env_new_key_labels_name_scope() {
         "New global environment key"
     );
     assert_eq!(
-        settings_env_new_key_label(&SettingsEnvScope::Role("alpha".to_string())),
+        settings_env_new_key_label(&SettingsEnvScope::Role("alpha".to_owned())),
         "New alpha environment key"
     );
     assert_eq!(
@@ -208,7 +208,7 @@ fn settings_env_new_key_labels_name_scope() {
         "New environment key for global"
     );
     assert_eq!(
-        settings_env_new_key_after_picker_label(&SettingsEnvScope::Role("alpha".to_string())),
+        settings_env_new_key_after_picker_label(&SettingsEnvScope::Role("alpha".to_owned())),
         "New environment key for alpha"
     );
     assert_eq!(settings_env_empty_key_label(), "Key cannot be empty");
@@ -257,8 +257,8 @@ fn settings_env_new_key_labels_name_scope() {
 #[test]
 fn trust_lines_include_header_empty_row_and_truncate_long_role() {
     let rows = [SettingsTrustRow {
-        role: "very-long-role-name-that-will-truncate".to_string(),
-        git: "https://github.com/example/role".to_string(),
+        role: "very-long-role-name-that-will-truncate".to_owned(),
+        git: "https://github.com/example/role".to_owned(),
         trusted: true,
     }];
 
@@ -280,10 +280,10 @@ fn trust_lines_include_header_empty_row_and_truncate_long_role() {
 fn auth_lines_render_kind_mode_source_and_spacer() {
     let rows = vec![
         SettingsAuthLineRow::Kind {
-            label: "Claude".to_string(),
+            label: "Claude".to_owned(),
         },
         SettingsAuthLineRow::Mode {
-            mode_label: "api-key".to_string(),
+            mode_label: "api-key".to_owned(),
         },
         SettingsAuthLineRow::Source {
             display: AuthSourceDisplay::MaskedPlain { chars: 20 },
@@ -308,14 +308,14 @@ fn env_lines_render_key_header_and_sentinels() {
     let rows = vec![
         SettingsEnvRow::Key {
             scope: SettingsEnvScope::Global,
-            key: "TOKEN".to_string(),
+            key: "TOKEN".to_owned(),
         },
         SettingsEnvRow::GlobalAddSentinel,
         SettingsEnvRow::RoleHeader {
-            role: "architect".to_string(),
+            role: "architect".to_owned(),
             expanded: true,
         },
-        SettingsEnvRow::RoleAddSentinel("architect".to_string()),
+        SettingsEnvRow::RoleAddSentinel("architect".to_owned()),
     ];
 
     let lines = env_lines(
@@ -347,11 +347,11 @@ fn env_lines_render_key_header_and_sentinels() {
 #[test]
 fn global_mount_lines_render_header_rows_and_sentinel() {
     let rows = [MountDisplayRow {
-        destination: "/workspace".to_string(),
-        host_source: Some("host: ~/project".to_string()),
+        destination: "/workspace".to_owned(),
+        host_source: Some("host: ~/project".to_owned()),
         mode: "ro",
         isolation: "shared",
-        kind: "bind".to_string(),
+        kind: "bind".to_owned(),
     }];
 
     let lines = global_mount_lines(&rows, Some(1), true);

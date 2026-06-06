@@ -92,7 +92,7 @@ pub fn line(spans: &[HintSpan<'_>]) -> Line<'static> {
     let mut out: Vec<Span<'static>> = Vec::with_capacity(spans.len());
     for span in spans {
         match span {
-            HintSpan::Key(k) => out.push(Span::styled((*k).to_string(), key)),
+            HintSpan::Key(k) => out.push(Span::styled((*k).to_owned(), key)),
             HintSpan::Text(t) => out.push(Span::styled(format!(" {t}"), text)),
             HintSpan::Dyn(t) => out.push(Span::styled(format!(" {t}"), dim)),
             HintSpan::Sep => out.push(Span::styled(" · ", sep)),
@@ -142,7 +142,7 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
         match span {
             HintSpan::Key(k) => {
                 cur_w += k.chars().count();
-                cur.push(Span::styled((*k).to_string(), key));
+                cur.push(Span::styled((*k).to_owned(), key));
             }
             HintSpan::Text(t) => {
                 cur_w += 1 + t.chars().count();

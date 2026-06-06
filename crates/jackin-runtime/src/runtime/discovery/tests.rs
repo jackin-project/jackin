@@ -10,7 +10,7 @@ async fn list_managed_agent_names_excludes_dind_sidecars() {
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             ContainerRow {
-                name: "jk-agent-smith".to_string(),
+                name: "jk-agent-smith".to_owned(),
                 labels: HashMap::new(),
             },
         ]])),
@@ -25,11 +25,11 @@ async fn list_managed_agent_names_excludes_dind_sidecars() {
 #[tokio::test]
 async fn list_running_agent_display_names_formats_correctly() {
     let mut labels = HashMap::new();
-    labels.insert("jackin.display_name".to_string(), "Agent Smith".to_string());
+    labels.insert("jackin.display_name".to_owned(), "Agent Smith".to_owned());
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             ContainerRow {
-                name: "jk-k7p9m2xq-agentsmith".to_string(),
+                name: "jk-k7p9m2xq-agentsmith".to_owned(),
                 labels,
             },
         ]])),

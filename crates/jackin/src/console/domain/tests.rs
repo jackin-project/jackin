@@ -43,7 +43,7 @@ fn auth_mode_to_github_round_trip() {
 fn github_auth_config_preserves_env_on_mode_change() {
     let mut existing = GithubAuthConfig::default();
     existing.env.insert(
-        "GH_TOKEN".to_string(),
+        "GH_TOKEN".to_owned(),
         crate::operator_env::EnvValue::Plain("token".into()),
     );
 
@@ -83,7 +83,7 @@ fn apply_workspace_auth_commit_updates_mode_and_env_layer() {
 fn apply_role_auth_commit_updates_mode_and_zai_ignore_removes_key() {
     let mut role = WorkspaceRoleOverride::default();
     role.env.insert(
-        crate::env_model::ZAI_API_KEY_ENV_NAME.to_string(),
+        crate::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
         crate::operator_env::EnvValue::Plain("stale".into()),
     );
 
@@ -147,11 +147,11 @@ fn clear_settings_auth_env_values_removes_kind_credentials() {
     let mut github_env = BTreeMap::new();
     let mut agent_env = BTreeMap::new();
     github_env.insert(
-        "GH_TOKEN".to_string(),
+        "GH_TOKEN".to_owned(),
         crate::operator_env::EnvValue::Plain("token".into()),
     );
     agent_env.insert(
-        "ANTHROPIC_API_KEY".to_string(),
+        "ANTHROPIC_API_KEY".to_owned(),
         crate::operator_env::EnvValue::Plain("key".into()),
     );
 
@@ -168,7 +168,7 @@ fn app_github_env_reads_global_github_env() {
 
     let mut github = GithubAuthConfig::default();
     github.env.insert(
-        "GH_TOKEN".to_string(),
+        "GH_TOKEN".to_owned(),
         crate::operator_env::EnvValue::Plain("token".into()),
     );
     cfg.github = Some(github.clone());
@@ -209,12 +209,12 @@ fn eligible_role_keys_for_override_uses_allowed_or_all_roles() {
     let mut workspace = WorkspaceConfig::default();
     let mut eligible = eligible_role_keys_for_override(&cfg, &workspace);
     eligible.sort();
-    assert_eq!(eligible, vec!["alpha".to_string(), "beta".to_string()]);
+    assert_eq!(eligible, vec!["alpha".to_owned(), "beta".to_owned()]);
 
     workspace.allowed_roles = vec!["ghost".into()];
     assert_eq!(
         eligible_role_keys_for_override(&cfg, &workspace),
-        vec!["ghost".to_string()]
+        vec!["ghost".to_owned()]
     );
 }
 
@@ -251,7 +251,7 @@ fn settings_auth_env_value_uses_github_or_agent_env() {
 #[test]
 fn workspace_auth_mode_and_credential_reads_workspace_layers() {
     let mut workspace = WorkspaceConfig {
-        claude: Some(crate::config::AgentAuthConfig {
+        claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
             ..Default::default()
         }),
@@ -420,7 +420,7 @@ fn role_override_present_zai_keys_off_env_var() {
     let mut ro = WorkspaceRoleOverride::default();
     assert!(!role_override_present(AuthKind::Zai, &ro));
     ro.env.insert(
-        crate::env_model::ZAI_API_KEY_ENV_NAME.to_string(),
+        crate::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
         crate::operator_env::EnvValue::Plain("k".into()),
     );
     assert!(role_override_present(AuthKind::Zai, &ro));
@@ -430,7 +430,7 @@ fn role_override_present_zai_keys_off_env_var() {
 
 #[test]
 fn build_workspace_choice_returns_none_for_unknown_saved_name() {
-    let config = crate::config::AppConfig::default();
+    let config = AppConfig::default();
     let cwd = std::env::temp_dir();
     let result =
         build_workspace_choice(&config, &cwd, &LoadWorkspaceInput::Saved("ghost".into())).unwrap();
@@ -445,32 +445,32 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
     let temp = tempfile::tempdir().unwrap();
     let project_dir = temp.path().canonicalize().unwrap();
     let workdir = project_dir.display().to_string();
-    let mut config = crate::config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
-        crate::config::RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+        "agent-smith".to_owned(),
+        RoleSource {
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
-            env: std::collections::BTreeMap::new(),
+            env: BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "ws".to_string(),
-        crate::workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        "ws".to_owned(),
+        WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workdir.clone(),
-            mounts: vec![crate::workspace::MountConfig {
+            mounts: vec![MountConfig {
                 src: workdir.clone(),
                 dst: workdir,
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             }],
-            allowed_roles: vec!["agent-smith".to_string()],
-            default_role: Some("agent-smith".to_string()),
+            allowed_roles: vec!["agent-smith".to_owned()],
+            default_role: Some("agent-smith".to_owned()),
             default_agent: None,
             last_role: None,
-            env: std::collections::BTreeMap::new(),
-            roles: std::collections::BTreeMap::new(),
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
@@ -495,25 +495,25 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
 
 // ── role-eligibility composition ───────────────────────────────
 
-fn agent_source_stub() -> crate::config::RoleSource {
-    crate::config::RoleSource {
-        git: "https://example.invalid/org/repo.git".to_string(),
+fn agent_source_stub() -> RoleSource {
+    RoleSource {
+        git: "https://example.invalid/org/repo.git".to_owned(),
         trusted: true,
-        env: std::collections::BTreeMap::new(),
+        env: BTreeMap::new(),
     }
 }
 
-fn workspace_with_allowed(allowed: &[&str]) -> crate::workspace::WorkspaceConfig {
-    crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/work".to_string(),
+fn workspace_with_allowed(allowed: &[&str]) -> WorkspaceConfig {
+    WorkspaceConfig {
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/work".to_owned(),
         mounts: vec![],
-        allowed_roles: allowed.iter().map(|s| (*s).to_string()).collect(),
+        allowed_roles: allowed.iter().map(|s| (*s).to_owned()).collect(),
         default_role: None,
         default_agent: None,
         last_role: None,
-        env: std::collections::BTreeMap::new(),
-        roles: std::collections::BTreeMap::new(),
+        env: BTreeMap::new(),
+        roles: BTreeMap::new(),
         keep_awake: crate::workspace::KeepAwakeConfig::default(),
         claude: None,
         codex: None,
@@ -525,25 +525,22 @@ fn workspace_with_allowed(allowed: &[&str]) -> crate::workspace::WorkspaceConfig
     }
 }
 
-fn launch_workspace(
-    workdir: &std::path::Path,
-    allowed_roles: Vec<&str>,
-) -> crate::workspace::WorkspaceConfig {
-    crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> WorkspaceConfig {
+    WorkspaceConfig {
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.display().to_string(),
-        mounts: vec![crate::workspace::MountConfig {
+        mounts: vec![MountConfig {
             src: workdir.display().to_string(),
             dst: workdir.display().to_string(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         }],
-        allowed_roles: allowed_roles.into_iter().map(str::to_string).collect(),
+        allowed_roles: allowed_roles.into_iter().map(str::to_owned).collect(),
         default_role: None,
         default_agent: None,
         last_role: None,
-        env: std::collections::BTreeMap::new(),
-        roles: std::collections::BTreeMap::new(),
+        env: BTreeMap::new(),
+        roles: BTreeMap::new(),
         keep_awake: crate::workspace::KeepAwakeConfig::default(),
         claude: None,
         codex: None,
@@ -558,12 +555,12 @@ fn launch_workspace(
 #[test]
 fn resolve_launch_dispatch_returns_none_for_deleted_workspace() {
     let temp = tempfile::tempdir().unwrap();
-    let config = crate::config::AppConfig::default();
+    let config = AppConfig::default();
 
     let resolution = resolve_launch_dispatch(
         &config,
         temp.path(),
-        LoadWorkspaceInput::Saved("missing".to_string()),
+        LoadWorkspaceInput::Saved("missing".to_owned()),
     )
     .unwrap();
 
@@ -573,16 +570,16 @@ fn resolve_launch_dispatch_returns_none_for_deleted_workspace() {
 #[test]
 fn resolve_launch_dispatch_reports_no_eligible_roles() {
     let temp = tempfile::tempdir().unwrap();
-    let mut config = crate::config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.workspaces.insert(
-        "empty".to_string(),
+        "empty".to_owned(),
         launch_workspace(temp.path(), Vec::new()),
     );
 
     let resolution = resolve_launch_dispatch(
         &config,
         temp.path(),
-        LoadWorkspaceInput::Saved("empty".to_string()),
+        LoadWorkspaceInput::Saved("empty".to_owned()),
     )
     .unwrap()
     .expect("workspace exists");
@@ -596,19 +593,17 @@ fn resolve_launch_dispatch_reports_no_eligible_roles() {
 #[test]
 fn resolve_launch_dispatch_resolves_single_role_workspace() {
     let temp = tempfile::tempdir().unwrap();
-    let mut config = crate::config::AppConfig::default();
-    config
-        .roles
-        .insert("smith".to_string(), agent_source_stub());
+    let mut config = AppConfig::default();
+    config.roles.insert("smith".to_owned(), agent_source_stub());
     config.workspaces.insert(
-        "solo".to_string(),
+        "solo".to_owned(),
         launch_workspace(temp.path(), vec!["smith"]),
     );
 
     let resolution = resolve_launch_dispatch(
         &config,
         temp.path(),
-        LoadWorkspaceInput::Saved("solo".to_string()),
+        LoadWorkspaceInput::Saved("solo".to_owned()),
     )
     .unwrap()
     .expect("workspace exists");
@@ -623,19 +618,17 @@ fn resolve_launch_dispatch_resolves_single_role_workspace() {
 #[test]
 fn resolve_launch_dispatch_preselects_role_picker() {
     let temp = tempfile::tempdir().unwrap();
-    let mut config = crate::config::AppConfig::default();
-    config
-        .roles
-        .insert("alpha".to_string(), agent_source_stub());
-    config.roles.insert("beta".to_string(), agent_source_stub());
+    let mut config = AppConfig::default();
+    config.roles.insert("alpha".to_owned(), agent_source_stub());
+    config.roles.insert("beta".to_owned(), agent_source_stub());
     let mut saved = launch_workspace(temp.path(), vec!["alpha", "beta"]);
-    saved.last_role = Some("beta".to_string());
-    config.workspaces.insert("multi".to_string(), saved);
+    saved.last_role = Some("beta".to_owned());
+    config.workspaces.insert("multi".to_owned(), saved);
 
     let resolution = resolve_launch_dispatch(
         &config,
         temp.path(),
-        LoadWorkspaceInput::Saved("multi".to_string()),
+        LoadWorkspaceInput::Saved("multi".to_owned()),
     )
     .unwrap()
     .expect("workspace exists");
@@ -647,10 +640,7 @@ fn resolve_launch_dispatch_preselects_role_picker() {
         panic!("expected role picker dispatch");
     };
     assert_eq!(
-        roles
-            .iter()
-            .map(crate::selector::RoleSelector::key)
-            .collect::<Vec<_>>(),
+        roles.iter().map(RoleSelector::key).collect::<Vec<_>>(),
         vec!["alpha", "beta"]
     );
     assert_eq!(selected, Some(1));
@@ -658,54 +648,40 @@ fn resolve_launch_dispatch_preselects_role_picker() {
 
 #[test]
 fn eligible_agents_returns_all_configured_when_allowed_list_empty() {
-    let mut config = crate::config::AppConfig::default();
-    config
-        .roles
-        .insert("alice".to_string(), agent_source_stub());
-    config.roles.insert("bob".to_string(), agent_source_stub());
+    let mut config = AppConfig::default();
+    config.roles.insert("alice".to_owned(), agent_source_stub());
+    config.roles.insert("bob".to_owned(), agent_source_stub());
 
     let ws = workspace_with_allowed(&[]);
     let eligible = eligible_roles_for_workspace(&config, &ws);
-    let keys: Vec<String> = eligible
-        .iter()
-        .map(crate::selector::RoleSelector::key)
-        .collect();
+    let keys: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
 
     assert_eq!(eligible.len(), 2, "empty allowed_roles must mean 'any'");
-    assert!(keys.contains(&"alice".to_string()));
-    assert!(keys.contains(&"bob".to_string()));
+    assert!(keys.contains(&"alice".to_owned()));
+    assert!(keys.contains(&"bob".to_owned()));
 }
 
 #[test]
 fn eligible_agents_narrows_to_allowed_list_when_non_empty() {
-    let mut config = crate::config::AppConfig::default();
-    config
-        .roles
-        .insert("alice".to_string(), agent_source_stub());
-    config.roles.insert("bob".to_string(), agent_source_stub());
-    config
-        .roles
-        .insert("carol".to_string(), agent_source_stub());
+    let mut config = AppConfig::default();
+    config.roles.insert("alice".to_owned(), agent_source_stub());
+    config.roles.insert("bob".to_owned(), agent_source_stub());
+    config.roles.insert("carol".to_owned(), agent_source_stub());
 
     let ws = workspace_with_allowed(&["alice", "carol"]);
     let eligible = eligible_roles_for_workspace(&config, &ws);
-    let keys: Vec<String> = eligible
-        .iter()
-        .map(crate::selector::RoleSelector::key)
-        .collect();
+    let keys: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
 
     assert_eq!(eligible.len(), 2);
-    assert!(keys.contains(&"alice".to_string()));
-    assert!(keys.contains(&"carol".to_string()));
-    assert!(!keys.contains(&"bob".to_string()));
+    assert!(keys.contains(&"alice".to_owned()));
+    assert!(keys.contains(&"carol".to_owned()));
+    assert!(!keys.contains(&"bob".to_owned()));
 }
 
 #[test]
 fn eligible_agents_drops_ghost_name_not_in_config() {
-    let mut config = crate::config::AppConfig::default();
-    config
-        .roles
-        .insert("alice".to_string(), agent_source_stub());
+    let mut config = AppConfig::default();
+    config.roles.insert("alice".to_owned(), agent_source_stub());
 
     let ws = workspace_with_allowed(&["ghost"]);
     let eligible = eligible_roles_for_workspace(&config, &ws);

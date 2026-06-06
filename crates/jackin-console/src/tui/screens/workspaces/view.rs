@@ -64,7 +64,7 @@ pub fn current_directory_display_row(
     hovered: bool,
 ) -> WorkspaceListDisplayRow {
     WorkspaceListDisplayRow {
-        label: "Current directory".to_string(),
+        label: "Current directory".to_owned(),
         tone: WorkspaceListRowTone::White,
         expanded,
         has_instances,
@@ -76,7 +76,7 @@ pub fn current_directory_display_row(
 #[must_use]
 pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceListDisplayRow {
     WorkspaceListDisplayRow {
-        label: new_workspace_list_label().to_string(),
+        label: new_workspace_list_label().to_owned(),
         tone: WorkspaceListRowTone::White,
         expanded: false,
         has_instances: false,
@@ -93,14 +93,14 @@ pub fn workspace_instance_list_label(instance_id: &str, role_key: &str) -> Strin
 #[must_use]
 pub fn instance_purge_confirm_label(container_base: &str, role_key: Option<&str>) -> String {
     role_key.map_or_else(
-        || container_base.to_string(),
+        || container_base.to_owned(),
         |role_key| format!("{container_base} ({role_key})"),
     )
 }
 
 #[must_use]
 pub fn workspace_instance_pane_agent_label(agent: Option<&str>) -> String {
-    agent.unwrap_or("shell").to_string()
+    agent.unwrap_or("shell").to_owned()
 }
 
 #[must_use]
@@ -152,7 +152,7 @@ pub fn list_name_lines(
         };
         match row.tone {
             WorkspaceListRowTone::Instance => {
-                push_tree_instance_line(&mut lines, row, show_cursor, &mut max_w)
+                push_tree_instance_line(&mut lines, row, show_cursor, &mut max_w);
             }
             WorkspaceListRowTone::White | WorkspaceListRowTone::Workspace => {
                 push_tree_workspace_line(&mut lines, row, show_cursor, &mut max_w);
@@ -201,7 +201,7 @@ pub fn list_name_lines(
 }
 
 pub fn render_list_names_block(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     lines: Vec<Line<'static>>,
     content_width: usize,
@@ -248,7 +248,7 @@ pub fn render_list_names_block(
 }
 
 fn render_list_name_line(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     row: u16,
     line: Line<'static>,
@@ -368,12 +368,12 @@ fn push_tree_instance_line(
                 Style::default().fg(jackin_tui::theme::CYAN_DIM),
             ),
             Span::styled(
-                instance_id.to_string(),
+                instance_id.to_owned(),
                 Style::default().fg(jackin_tui::theme::CYAN_DIM),
             ),
             Span::styled("  ", Style::default()),
             Span::styled(
-                role_key.to_string(),
+                role_key.to_owned(),
                 Style::default().fg(jackin_tui::theme::CYAN),
             ),
         ])
@@ -390,7 +390,7 @@ pub fn create_prelude_mount_destination_input_state<'a>(
 
 #[must_use]
 pub fn create_prelude_mount_destination_default(src_display: Option<&str>) -> String {
-    src_display.unwrap_or_default().to_string()
+    src_display.unwrap_or_default().to_owned()
 }
 
 #[must_use]
@@ -427,7 +427,7 @@ pub fn create_prelude_workdir_pick_state<M: crate::tui::components::workdir_pick
 /// Compact running-instances badge (3 rows: border + count line + border).
 /// Cyan border and text distinguish live state from config panels.
 pub fn render_compact_instances_summary(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     count: usize,
     expanded: bool,
@@ -467,7 +467,7 @@ pub fn render_compact_instances_summary(
 
 /// Right-pane description shown when cursor is on the "+ New workspace"
 /// sentinel. It summarizes what a saved workspace records and why to create it.
-pub fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
+pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(5), Constraint::Min(9)])
@@ -515,13 +515,13 @@ pub fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
 #[must_use]
 pub fn provider_picker_title(container_id: Option<&str>) -> String {
     container_id.map_or_else(
-        || " provider ".to_string(),
+        || " provider ".to_owned(),
         |container_id| format!(" {container_id} — provider "),
     )
 }
 
 pub fn render_picker_sidebar(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     title: &str,
     labels: Vec<String>,
@@ -536,7 +536,7 @@ pub fn render_picker_sidebar(
             jackin_tui::components::PanelFocus::Unfocused
         })
         .block();
-    let items: Vec<ListItem> = labels
+    let items: Vec<ListItem<'_>> = labels
         .into_iter()
         .map(|label| ListItem::new(Line::from(label)))
         .collect();
@@ -554,7 +554,7 @@ pub fn render_picker_sidebar(
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-pub fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir_display: &str) {
+pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_display: &str) {
     let block = jackin_tui::components::Panel::new()
         .title(" General ")
         .focus(jackin_tui::components::PanelFocus::Unfocused)
@@ -565,7 +565,7 @@ pub fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir_display: &
             "Working dir ",
             Style::default().fg(jackin_tui::theme::WHITE),
         ),
-        Span::raw(workdir_display.to_string()),
+        Span::raw(workdir_display.to_owned()),
     ])];
     let panel = Paragraph::new(lines)
         .block(block)
@@ -580,7 +580,11 @@ pub struct WorkspaceEnvRow {
     pub is_op: bool,
 }
 
-pub fn render_environments_subpanel(frame: &mut Frame, area: Rect, mut rows: Vec<WorkspaceEnvRow>) {
+pub fn render_environments_subpanel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    mut rows: Vec<WorkspaceEnvRow>,
+) {
     let block = jackin_tui::components::Panel::new()
         .title(" Environments ")
         .focus(jackin_tui::components::PanelFocus::Unfocused)
@@ -598,7 +602,7 @@ pub fn render_environments_subpanel(frame: &mut Frame, area: Rect, mut rows: Vec
     });
 
     let inner_width = jackin_tui::components::scrollable_panel::viewport_width(area);
-    let lines: Vec<Line> = rows
+    let lines: Vec<Line<'_>> = rows
         .iter()
         .map(|row| env_row_line(row, inner_width))
         .collect();
@@ -610,7 +614,7 @@ pub fn render_environments_subpanel(frame: &mut Frame, area: Rect, mut rows: Vec
 }
 
 pub fn render_mounts_subpanel(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     rows: &[MountDisplayRow],
     scroll_x: u16,
@@ -629,7 +633,7 @@ pub fn render_mounts_subpanel(
 }
 
 pub fn render_global_mounts_subpanel(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     title: &str,
     rows: &[MountDisplayRow],
@@ -657,7 +661,7 @@ pub struct WorkspaceRoleRow {
 }
 
 pub fn render_roles_subpanel(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     default_role: Option<&str>,
     rows: Vec<WorkspaceRoleRow>,
@@ -665,17 +669,17 @@ pub fn render_roles_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    let mut lines: Vec<Line> = Vec::new();
+    let mut lines: Vec<Line<'_>> = Vec::new();
     let (value_text, value_style): (String, Style) = default_role.map_or_else(
         || {
             (
-                "(none)".to_string(),
+                "(none)".to_owned(),
                 Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
             )
         },
         |name| {
             (
-                name.to_string(),
+                name.to_owned(),
                 Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN),
             )
         },
@@ -763,7 +767,11 @@ pub struct WorkspaceInstanceSessionRow {
     pub agent_runtime: String,
 }
 
-pub fn render_instance_details_pane(frame: &mut Frame, area: Rect, pane: &WorkspaceInstancePane) {
+pub fn render_instance_details_pane(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    pane: &WorkspaceInstancePane,
+) {
     let instance_title = format!(" Instance: {} ", pane.instance_id);
     let block = jackin_tui::components::Panel::new()
         .title(&instance_title)

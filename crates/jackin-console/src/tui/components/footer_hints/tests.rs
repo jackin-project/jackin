@@ -5,7 +5,7 @@ fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
         .into_iter()
         .filter_map(|item| match item {
-            HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_string()),
+            HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_owned()),
             HintSpan::Dyn(value) => Some(value),
             HintSpan::Sep | HintSpan::GroupSep => None,
         })

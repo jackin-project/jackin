@@ -1,7 +1,7 @@
 //! jackin-runtime: container bootstrap pipeline.
 //!
 //! Holds the concrete `DockerApi` / `CommandRunner` implementations,
-//! image build, DinD sidecar management, mount materialization, and
+//! image build, `DinD` sidecar management, mount materialization, and
 //! instance lifecycle.
 //!
 //! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env` → `jackin-runtime`

@@ -20,22 +20,22 @@ fn source_picker_default_focus_is_plain() {
 #[test]
 fn source_picker_right_arrow_advances_to_op_when_available() {
     let mut s = SourcePickerState::new("MY_KEY".into(), true);
-    let _ = s.handle_key(key_event(KeyCode::Right));
+    drop(s.handle_key(key_event(KeyCode::Right)));
     assert_eq!(s.focused, SourceChoice::Op);
 }
 
 #[test]
 fn source_picker_right_arrow_skips_op_when_unavailable() {
     let mut s = SourcePickerState::new("MY_KEY".into(), false);
-    let _ = s.handle_key(key_event(KeyCode::Right));
+    drop(s.handle_key(key_event(KeyCode::Right)));
     assert_eq!(
         s.focused,
         SourceChoice::Plain,
         "cycling must skip the disabled Op button when op is unavailable"
     );
-    let _ = s.handle_key(key_event(KeyCode::Right));
-    let _ = s.handle_key(key_event(KeyCode::Tab));
-    let _ = s.handle_key(key_event(KeyCode::Char('l')));
+    drop(s.handle_key(key_event(KeyCode::Right)));
+    drop(s.handle_key(key_event(KeyCode::Tab)));
+    drop(s.handle_key(key_event(KeyCode::Char('l'))));
     assert_eq!(s.focused, SourceChoice::Plain);
 }
 
@@ -51,7 +51,7 @@ fn source_picker_enter_on_plain_commits_plain() {
 #[test]
 fn source_picker_enter_on_op_when_available_commits_op() {
     let mut s = SourcePickerState::new("MY_KEY".into(), true);
-    let _ = s.handle_key(key_event(KeyCode::Right));
+    drop(s.handle_key(key_event(KeyCode::Right)));
     assert_eq!(s.focused, SourceChoice::Op);
     assert!(matches!(
         s.handle_key(key_event(KeyCode::Enter)),

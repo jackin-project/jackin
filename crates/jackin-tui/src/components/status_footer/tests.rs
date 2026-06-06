@@ -11,7 +11,7 @@ fn dump(left: &str, right: &str, width: u16) -> String {
         })
         .unwrap();
     (0..width)
-        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_string())
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_owned())
         .collect()
 }
 
@@ -63,7 +63,7 @@ fn debug_chip_renders_in_amber_to_the_right_of_the_instance_chip() {
         .unwrap();
     let buffer = terminal.backend().buffer();
     let row: String = (0..60)
-        .map(|x| buffer[(x, 0)].symbol().to_string())
+        .map(|x| buffer[(x, 0)].symbol().to_owned())
         .collect();
     assert!(row.contains("s9994y2n"), "instance chip missing: {row:?}");
     assert!(
@@ -75,7 +75,7 @@ fn debug_chip_renders_in_amber_to_the_right_of_the_instance_chip() {
         "run id must be right of the instance id: {row:?}"
     );
     assert!(
-        (0..60).any(|x| buffer[(x, 0)].bg == crate::theme::DANGER_RED),
+        (0..60).any(|x| buffer[(x, 0)].bg == DANGER_RED),
         "run-id chip must use DANGER_RED background"
     );
 }

@@ -53,7 +53,7 @@ impl RoleManifest {
     pub fn display_name(&self, fallback: &str) -> String {
         self.identity
             .as_ref()
-            .map_or_else(|| fallback.to_string(), |id| id.name.clone())
+            .map_or_else(|| fallback.to_owned(), |id| id.name.clone())
     }
 
     /// Returns the agents this manifest supports. Legacy manifests

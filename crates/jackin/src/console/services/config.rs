@@ -336,13 +336,13 @@ fn apply_env_diff(
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,
 ) -> anyhow::Result<()> {
-    let ws_scope = EnvScope::Workspace(workspace_name.to_string());
+    let ws_scope = EnvScope::Workspace(workspace_name.to_owned());
     apply_env_map_diff(editor_doc, &ws_scope, &original.env, &pending.env)?;
 
     let empty = BTreeMap::<String, EnvValue>::new();
     let orig_ws_github_env = original.github.as_ref().map_or(&empty, |g| &g.env);
     let pend_ws_github_env = pending.github.as_ref().map_or(&empty, |g| &g.env);
-    let ws_github_scope = EnvScope::WorkspaceGithub(workspace_name.to_string());
+    let ws_github_scope = EnvScope::WorkspaceGithub(workspace_name.to_owned());
     apply_env_map_diff(
         editor_doc,
         &ws_github_scope,
@@ -355,7 +355,7 @@ fn apply_env_diff(
         let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
         let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
         let scope = EnvScope::WorkspaceRole {
-            workspace: workspace_name.to_string(),
+            workspace: workspace_name.to_owned(),
             role: role.clone(),
         };
         apply_env_map_diff(editor_doc, &scope, orig_env, pend_env)?;
@@ -371,7 +371,7 @@ fn apply_env_diff(
             .and_then(|p| p.github.as_ref())
             .map_or(&empty, |g| &g.env);
         let role_github_scope = EnvScope::WorkspaceRoleGithub {
-            workspace: workspace_name.to_string(),
+            workspace: workspace_name.to_owned(),
             role: role.clone(),
         };
         apply_env_map_diff(
@@ -421,6 +421,10 @@ fn validate_settings_env(
     Ok(())
 }
 
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
+)]
 fn validate_settings_env_keys<'a>(
     scope: &str,
     keys: impl Iterator<Item = &'a String>,

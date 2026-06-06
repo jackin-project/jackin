@@ -11,6 +11,3 @@ pub mod manifest {
 pub mod naming {
     pub use jackin_runtime::instance::naming::*;
 }
-
-#[cfg(test)]
-mod tests;

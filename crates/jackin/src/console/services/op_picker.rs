@@ -62,7 +62,7 @@ pub(in crate::console) fn invalidate_cache_for_ref(
 
 fn ready_load(result: LoadResult) -> BlockingSubscription<LoadResult> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let _ = tx.send(result);
+    drop(tx.send(result));
     rx
 }
 

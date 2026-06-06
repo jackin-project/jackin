@@ -1,14 +1,15 @@
 [package]
 name = "jackin-env"
 version = "0.6.0-dev"
-edition = "2024"
-rust-version = "1.94"
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Operator-env resolution: op:// references, $VAR expansion, and 1Password CLI integration. Future home of operator_env/."
-license = "Apache-2.0"
+license.workspace = true
 readme = "README.md"
 publish = false
 
+repository.workspace = true
 [lib]
 name = "jackin_env"
 path = "src/lib.rs"
@@ -21,7 +22,6 @@ jackin-console = { path = "../jackin-console" }
 jackin-launch = { path = "../jackin-launch" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "2.0"
 anyhow = "1.0"
 secrecy = "0.10"
 portable-pty = "0.9"
@@ -33,18 +33,5 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tempfile = "3"
 toml = "0.8"
 
-[lints.rust]
-unsafe_code = "forbid"
-async_fn_in_trait = "allow"
-
-[lints.clippy]
-mod_module_files = "deny"
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "deny", priority = -1 }
-complexity = { level = "warn", priority = -1 }
-style = { level = "warn", priority = -1 }
-perf = { level = "warn", priority = -1 }
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-must_use_candidate = "allow"
-module_name_repetitions = "allow"
+[lints]
+workspace = true

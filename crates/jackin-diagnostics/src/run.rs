@@ -133,25 +133,25 @@ impl RunDiagnostics {
                 .open(&path)
                 .ok()?;
         let cwd = cwd.map_or_else(
-            || "(current process cwd)".to_string(),
+            || "(current process cwd)".to_owned(),
             |path| path.display().to_string(),
         );
-        let _ = writeln!(file, "run: {}", self.run_id);
-        let _ = writeln!(file, "command: {command}");
-        let _ = writeln!(file, "cwd: {cwd}");
-        let _ = writeln!(file, "status: {status}");
-        let _ = writeln!(file);
-        let _ = writeln!(file, "----- stdout -----");
+        drop(writeln!(file, "run: {}", self.run_id));
+        drop(writeln!(file, "command: {command}"));
+        drop(writeln!(file, "cwd: {cwd}"));
+        drop(writeln!(file, "status: {status}"));
+        drop(writeln!(file));
+        drop(writeln!(file, "----- stdout -----"));
         let stdout = strip_bytes(stdout);
-        let _ = file.write_all(&stdout);
+        drop(file.write_all(&stdout));
         if !stdout.ends_with(b"\n") {
-            let _ = writeln!(file);
+            drop(writeln!(file));
         }
-        let _ = writeln!(file, "----- stderr -----");
+        drop(writeln!(file, "----- stderr -----"));
         let stderr = strip_bytes(stderr);
-        let _ = file.write_all(&stderr);
+        drop(file.write_all(&stderr));
         if !stderr.ends_with(b"\n") {
-            let _ = writeln!(file);
+            drop(writeln!(file));
         }
         Some(path)
     }
@@ -166,7 +166,7 @@ impl RunDiagnostics {
         let enriched_detail = match kind {
             "stage_started" => {
                 if let Ok(mut starts) = self.stage_starts.lock() {
-                    starts.insert(stage.to_string(), Instant::now());
+                    starts.insert(stage.to_owned(), Instant::now());
                 }
                 detail.map(String::from)
             }
@@ -179,7 +179,7 @@ impl RunDiagnostics {
                     || detail.map(String::from),
                     |ms| {
                         if let Ok(mut durs) = self.stage_durations_ms.lock() {
-                            durs.push((stage.to_string(), ms));
+                            durs.push((stage.to_owned(), ms));
                         }
                         let base = detail.unwrap_or("");
                         if base.is_empty() {
@@ -335,8 +335,8 @@ impl RunDiagnostics {
             .writer
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _ = writeln!(guard, "{line}");
-        let _ = guard.flush();
+        drop(writeln!(guard, "{line}"));
+        drop(guard.flush());
     }
 }
 
@@ -352,7 +352,7 @@ pub fn active_run() -> Option<Arc<RunDiagnostics>> {
 }
 
 pub fn prune_old_runs(paths: &JackinPaths) {
-    let active_run_id = active_run().map(|run| run.run_id().to_string());
+    let active_run_id = active_run().map(|run| run.run_id().to_owned());
     prune_old_runs_in_dir(&run_dir(paths), active_run_id.as_deref());
 }
 
@@ -428,7 +428,7 @@ fn remove_run_entry(path: &Path) -> std::io::Result<()> {
 /// this skips the dir/file stat.
 fn remove_jsonl_run(path: &Path) {
     remove_run_sidecars(path);
-    let _ = fs::remove_file(path);
+    drop(fs::remove_file(path));
 }
 
 fn remove_run_sidecars(run_path: &Path) {
@@ -448,7 +448,7 @@ fn remove_run_sidecars(run_path: &Path) {
             continue;
         };
         if name.starts_with(&prefix) && path != run_path {
-            let _ = fs::remove_file(path);
+            drop(fs::remove_file(path));
         }
     }
 }

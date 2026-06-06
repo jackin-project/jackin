@@ -1,11 +1,15 @@
 //! Pane layout, resize, focus, and split methods for the Multiplexer.
 
-use super::*;
+use super::{
+    ArrowDir, Direction, Multiplexer, Rect, Result, STATUS_BAR_ROWS, Session, SplitDirection,
+    SplitDirectionGeometry, SplitPosition, Tab, VisiblePane, available_content_rows, content_rect,
+    normalize_size, split_spawn_inner_size, visible_panes_for_layout,
+};
 
 impl Multiplexer {
     /// Split the focused pane and spawn a session of the operator's
     /// choice inside it. `agent_slug = None` opens a shell. Used by
-    /// the AgentPicker → Split flow so the operator picks the new
+    /// the `AgentPicker` → Split flow so the operator picks the new
     /// pane's identity instead of cloning the source pane's agent.
     pub(super) fn split_focused_into(
         &mut self,
@@ -29,8 +33,7 @@ impl Multiplexer {
             .leaves(content_rect)
             .into_iter()
             .find(|(id, _)| *id == from_id)
-            .map(|(_, r)| r)
-            .unwrap_or(content_rect);
+            .map_or(content_rect, |(_, r)| r);
         let split_geometry = match direction {
             SplitDirection::Left | SplitDirection::Right => SplitDirectionGeometry::LeftRight,
             SplitDirection::Above | SplitDirection::Below => SplitDirectionGeometry::TopBottom,
@@ -48,7 +51,7 @@ impl Multiplexer {
             &launch.label,
             agent_slug,
             provider_label.map(|label| crate::session::SessionProvider {
-                label: label.to_string(),
+                label: label.to_owned(),
                 env_overrides: env_overrides.to_vec(),
             }),
             launch.cmd,
@@ -156,7 +159,7 @@ impl Multiplexer {
         // Reset the ratatui double-buffer so the next compose_full_frame
         // redraws every cell from scratch, preventing stale cells from the
         // removed pane from showing through (Defect 29 — layout-change repaint).
-        let _ = self.ratatui_terminal.clear();
+        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn resize_panes(&mut self) {
@@ -203,7 +206,7 @@ impl Multiplexer {
         // only the double-buffer state; SocketBackend::clear() deliberately
         // avoids emitting a screen erase, so the next frame is a full repaint
         // without a blank flash.
-        let _ = self.ratatui_terminal.clear();
+        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn reconcile_content_rows(&mut self) -> bool {
@@ -387,7 +390,7 @@ impl Multiplexer {
             // to legacy X10 after a focus-changing close/split.
             if self.attached_out.is_some() {
                 let mut frames: Vec<Vec<u8>> = Vec::new();
-                frames.push(crate::session::Session::focus_swap_reset().to_vec());
+                frames.push(Session::focus_swap_reset().to_vec());
                 frames.push(crate::tui::terminal::client_owned_mode_state().to_vec());
                 for bytes in s.current_mode_state() {
                     frames.push(bytes);

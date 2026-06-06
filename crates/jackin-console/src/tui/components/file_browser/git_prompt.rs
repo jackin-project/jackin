@@ -103,8 +103,7 @@ impl FileBrowserState {
             KeyCode::Char('o' | 'O') => self
                 .pending_git_url
                 .clone()
-                .map(FileBrowserOutcome::OpenGitUrl)
-                .unwrap_or(FileBrowserOutcome::Continue),
+                .map_or(FileBrowserOutcome::Continue, FileBrowserOutcome::OpenGitUrl),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => {
                 self.dismiss_git_prompt();
                 FileBrowserOutcome::Continue
@@ -238,7 +237,7 @@ pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan
 }
 
 /// Overlay renderer for the in-browser "Git repository detected" prompt.
-pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBrowserState) {
+pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &FileBrowserState) {
     use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 
     // Add a row when we have an origin URL to show under the title.
@@ -280,7 +279,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
         let url = state.pending_git_url.as_deref().unwrap_or_default();
         frame.render_widget(
             Paragraph::new(Span::styled(
-                url.to_string(),
+                url.to_owned(),
                 Style::default()
                     .fg(PHOSPHOR_DIM)
                     .add_modifier(Modifier::ITALIC),

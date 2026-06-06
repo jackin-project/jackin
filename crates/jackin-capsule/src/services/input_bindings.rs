@@ -24,12 +24,11 @@ fn resolve_prefix_binding() -> Option<u8> {
     if s.eq_ignore_ascii_case("none") {
         return None;
     }
-    match parse_key_binding(&s) {
-        Some(byte) => Some(byte),
-        None => {
-            crate::clog!("invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
-            None
-        }
+    if let Some(byte) = parse_key_binding(&s) {
+        Some(byte)
+    } else {
+        crate::clog!("invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
+        None
     }
 }
 
@@ -39,12 +38,13 @@ fn resolve_palette_binding() -> Option<u8> {
     match std::env::var("JACKIN_PALETTE_KEY") {
         Err(_) => Some(0x1C),
         Ok(s) if s.eq_ignore_ascii_case("none") => None,
-        Ok(s) => match parse_key_binding(&s) {
-            Some(byte) => Some(byte),
-            None => {
+        Ok(s) => {
+            if let Some(byte) = parse_key_binding(&s) {
+                Some(byte)
+            } else {
                 crate::clog!("invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\");
                 Some(0x1C)
             }
-        },
+        }
     }
 }

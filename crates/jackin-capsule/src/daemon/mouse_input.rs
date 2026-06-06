@@ -4,7 +4,15 @@ use crate::tui::components::branch_context_bar::branch_context_bar_hit;
 use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::view::encode_osc52_clipboard_write;
 
-use super::*;
+use super::{
+    ChromeHitState, DragState, HoverFramePlan, HoverState, HoverTarget, Multiplexer, PointerShape,
+    PointerShapeState, SGR_NO_BUTTON_MOTION, STATUS_BAR_ROWS, SelectionState,
+    chrome_hover_target_for_state, content_rect, drag_resize_ratio, drag_resize_redraw_reason,
+    encode_mouse_for_protocol, hover_frame_plan, hover_target_for_state, local_mouse_position,
+    mouse_event_encoding_for_mode, move_selection_end, pointer_shape_for_state,
+    selection_change_redraw_reason, selection_start_for_inner_rect, selection_text,
+    selection_was_dragged, status_change_redraw_reason,
+};
 
 impl Multiplexer {
     pub(super) fn set_pointer_shape(&mut self, shape: PointerShape) {

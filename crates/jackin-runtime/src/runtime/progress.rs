@@ -80,8 +80,8 @@ impl LaunchHostTerminal for HostTerminal {
             jackin_tui::ansi::POINTER_DEFAULT
         };
         let mut out = std::io::stdout();
-        let _ = out.write_all(seq.as_bytes());
-        let _ = out.flush();
+        drop(out.write_all(seq.as_bytes()));
+        drop(out.flush());
     }
 
     fn copy_to_clipboard(&self, payload: &str) -> bool {

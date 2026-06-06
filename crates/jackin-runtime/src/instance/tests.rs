@@ -11,7 +11,7 @@ fn ignoring_resolvers() -> PrepareResolvers<'static> {
     }
 }
 
-fn simple_manifest(temp: &tempfile::TempDir) -> jackin_manifest::RoleManifest {
+fn simple_manifest(temp: &tempfile::TempDir) -> RoleManifest {
     std::fs::write(
         temp.path().join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -27,7 +27,7 @@ plugins = []
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
-    jackin_manifest::load_role_manifest(temp.path()).unwrap()
+    load_role_manifest(temp.path()).unwrap()
 }
 
 #[test]

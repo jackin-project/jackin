@@ -217,10 +217,13 @@ fn execute_create_prelude_file_browser_open(state: &mut ManagerState<'_>) {
                 target: FileBrowserTarget::CreateFirstMountSrc,
                 state: file_browser,
             });
-            let _ = update_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
+            drop(update_manager(
+                state,
+                ManagerMessage::EnterCreatePrelude(prelude),
+            ));
         }
         Err(error) => {
-            let _ = update_manager(
+            let _unused = update_manager(
                 state,
                 ManagerMessage::OpenListErrorPopup {
                     title: error_popup::file_browser_failed_error_title().into(),
@@ -478,7 +481,7 @@ pub(crate) fn execute_remove_workspace(
 ) -> bool {
     match crate::console::services::config::remove_workspace(config, paths, name) {
         Ok(()) => {
-            let _ = update_manager(
+            let _unused = update_manager(
                 state,
                 ManagerMessage::ReloadFromConfig {
                     config: Box::new(config.clone()),
@@ -487,7 +490,7 @@ pub(crate) fn execute_remove_workspace(
             );
         }
         Err(error) => {
-            let _ = update_manager(
+            let _unused = update_manager(
                 state,
                 ManagerMessage::OpenListErrorPopup {
                     title: error_popup::delete_failed_error_title().into(),
@@ -735,7 +738,7 @@ fn report_token_generate_error(state: &mut ManagerState<'_>, error: anyhow::Erro
             });
         }
         ManagerStage::Settings(_) => {
-            let _ = update_manager(
+            let _unused = update_manager(
                 state,
                 ManagerMessage::OpenSettingsErrorPopup {
                     title: error_popup::token_generation_failed_error_title().into(),
@@ -755,7 +758,7 @@ fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
             });
         }
         ManagerStage::Settings(_) => {
-            let _ = update_manager(
+            let _unused = update_manager(
                 state,
                 ManagerMessage::OpenSettingsErrorPopup {
                     title: error_popup::failed_to_open_url_error_title().into(),
@@ -764,7 +767,7 @@ fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
             );
         }
         _ => {
-            let _ = update_manager(
+            let _unused = update_manager(
                 state,
                 ManagerMessage::OpenListErrorPopup {
                     title: error_popup::failed_to_open_url_error_title().into(),
@@ -794,7 +797,7 @@ fn execute_role_registration_start(
         source.git.clone(),
     );
     if let ManagerStage::Editor(editor) = &mut state.stage {
-        editor.pending_role_load = Some(crate::console::tui::state::PendingRoleLoad {
+        editor.pending_role_load = Some(PendingRoleLoad {
             raw,
             key: key.to_owned(),
             source,
@@ -955,7 +958,7 @@ pub(crate) fn execute_workspace_save_write(
                     editor.original = ws.clone();
                     editor.pending = ws.clone();
                 }
-                editor.save_flow = crate::console::tui::state::EditorSaveFlow::Idle;
+                editor.save_flow = EditorSaveFlow::Idle;
             }
             if exit_on_success
                 || matches!(
@@ -966,7 +969,7 @@ pub(crate) fn execute_workspace_save_write(
                     })
                 )
             {
-                let _ = update_manager(
+                let _unused = update_manager(
                     state,
                     ManagerMessage::ReloadFromConfig {
                         config: Box::new(config.clone()),

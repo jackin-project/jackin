@@ -25,7 +25,7 @@ fn choose_connection_env_overrides_context() {
 fn choose_connection_uses_context_when_env_unset() {
     assert_eq!(
         choose_connection(false, Some(context_endpoint("unix:///ctx"))),
-        ConnectionChoice::Host("unix:///ctx".to_string())
+        ConnectionChoice::Host("unix:///ctx".to_owned())
     );
 }
 
@@ -87,7 +87,7 @@ fn choose_connection_rejects_context_with_unknown_uri() {
 fn choose_connection_accepts_http_context() {
     assert_eq!(
         choose_connection(false, Some(context_endpoint("http://docker-host:2375"))),
-        ConnectionChoice::Host("http://docker-host:2375".to_string())
+        ConnectionChoice::Host("http://docker-host:2375".to_owned())
     );
 }
 
@@ -294,7 +294,7 @@ fn tls_material_present_treats_emptiness_as_absent() {
     assert!(!tls_material_present(&serde_json::json!([])));
     assert!(!tls_material_present(&serde_json::json!({})));
     assert!(!tls_material_present(&Value::String(String::new())));
-    assert!(!tls_material_present(&Value::String("   ".to_string())));
+    assert!(!tls_material_present(&Value::String("   ".to_owned())));
     assert!(!tls_material_present(&Value::Bool(false)));
 }
 
@@ -303,7 +303,7 @@ fn tls_material_present_treats_populated_values_as_present() {
     use serde_json::Value;
     assert!(tls_material_present(&serde_json::json!(["ca.pem"])));
     assert!(tls_material_present(&serde_json::json!({"ca": "ca.pem"})));
-    assert!(tls_material_present(&Value::String("ca.pem".to_string())));
+    assert!(tls_material_present(&Value::String("ca.pem".to_owned())));
     assert!(tls_material_present(&Value::Bool(true)));
     assert!(tls_material_present(&serde_json::json!(1)));
 }
@@ -344,7 +344,7 @@ fn container_state_short_label() {
         ),
         (ContainerState::NotFound, "missing"),
         (
-            ContainerState::InspectUnavailable("reason".to_string()),
+            ContainerState::InspectUnavailable("reason".to_owned()),
             "unavailable",
         ),
     ];

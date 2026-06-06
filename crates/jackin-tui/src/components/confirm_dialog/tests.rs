@@ -151,7 +151,7 @@ fn default_dialog_has_symmetric_vertical_padding() {
 
     let row_content = |y: u16| {
         (0..area.width)
-            .map(|x| buf[(x, y)].symbol().to_string())
+            .map(|x| buf[(x, y)].symbol().to_owned())
             .collect::<String>()
     };
 

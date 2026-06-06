@@ -18,7 +18,7 @@ fn pane_widget_renders_text_into_buffer() {
         .unwrap();
 
     let buf = terminal.backend().buffer();
-    let row0: String = (0..20).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+    let row0: String = (0..20).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
     assert!(
         row0.starts_with("hello world"),
         "expected text in buffer: {row0:?}"

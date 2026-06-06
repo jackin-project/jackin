@@ -128,7 +128,7 @@ pub fn validate_role_manifest(manifest: &RoleManifest) -> anyhow::Result<Vec<Man
             .find(|(reserved, _)| name == reserved)
         {
             let detail = value.as_ref().map_or_else(
-                || " and set automatically by jackin at runtime".to_string(),
+                || " and set automatically by jackin at runtime".to_owned(),
                 |value| format!(" and set automatically to {value}"),
             );
             anyhow::bail!("env var {name}: reserved for jackin runtime metadata{detail}");

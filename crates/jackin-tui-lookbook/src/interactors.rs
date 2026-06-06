@@ -18,7 +18,7 @@ use ratatui::{
 
 /// Interactive preview state for a story. The terminal lookbook holds one
 /// of these per-story-selection and forwards events to it.
-pub trait StoryInteraction {
+pub(crate) trait StoryInteraction {
     /// Render the component with current live state into `area`.
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect);
     /// Handle a keyboard event. Returns true if consumed.

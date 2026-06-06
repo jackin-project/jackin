@@ -157,14 +157,14 @@ fn section_choices_deduplicate_in_first_seen_order() {
     ]);
     assert_eq!(
         choices,
-        vec![None, Some("Auth".to_string()), Some("Deploy".to_string())]
+        vec![None, Some("Auth".to_owned()), Some("Deploy".to_owned())]
     );
 }
 
 #[test]
 fn browse_field_rows_group_sections_and_respect_collapse() {
     let mut collapsed = HashSet::new();
-    collapsed.insert("Auth".to_string());
+    collapsed.insert("Auth".to_owned());
     let rows = browse_field_display_rows(
         [
             "op://Vault/Item/root",
@@ -358,7 +358,7 @@ fn section_stage_back_plan_returns_to_item() {
 
 #[test]
 fn section_stage_commit_plan_resolves_sentinel_and_choices() {
-    let choices = vec![None, Some("api".to_string())];
+    let choices = vec![None, Some("api".to_owned())];
 
     assert_eq!(
         section_stage_commit_plan(Some(0), &choices),
@@ -369,7 +369,7 @@ fn section_stage_commit_plan_resolves_sentinel_and_choices() {
     assert_eq!(
         section_stage_commit_plan(Some(1), &choices),
         SectionStageCommitPlan::ExistingSection {
-            selected_section: Some("api".to_string())
+            selected_section: Some("api".to_owned())
         }
     );
     assert_eq!(
@@ -487,28 +487,28 @@ fn account_stage_commit_plan_routes_existing_and_empty() {
 #[test]
 fn section_header_collapse_target_routes_only_headers() {
     let row = FieldDisplayRow::SectionHeader {
-        name: "Auth".to_string(),
+        name: "Auth".to_owned(),
         field_count: 2,
     };
     let mut collapsed = HashSet::new();
 
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Collapse),
-        Some(("Auth".to_string(), true))
+        Some(("Auth".to_owned(), true))
     );
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Expand),
-        Some(("Auth".to_string(), false))
+        Some(("Auth".to_owned(), false))
     );
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Toggle),
-        Some(("Auth".to_string(), true))
+        Some(("Auth".to_owned(), true))
     );
 
-    collapsed.insert("Auth".to_string());
+    collapsed.insert("Auth".to_owned());
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Toggle),
-        Some(("Auth".to_string(), false))
+        Some(("Auth".to_owned(), false))
     );
     assert_eq!(
         section_header_collapse_target(
@@ -523,14 +523,14 @@ fn section_header_collapse_target_routes_only_headers() {
 #[test]
 fn field_stage_commit_plan_routes_row_kinds() {
     let row = FieldDisplayRow::SectionHeader {
-        name: "Auth".to_string(),
+        name: "Auth".to_owned(),
         field_count: 2,
     };
     let collapsed = HashSet::new();
     assert_eq!(
         field_stage_commit_plan(Some(&row), &collapsed, Some("Auth")),
         FieldStageCommitPlan::ToggleSection {
-            name: "Auth".to_string(),
+            name: "Auth".to_owned(),
             collapsed: true,
         }
     );
@@ -573,7 +573,7 @@ fn naming_stage_plans_name_next_stage_and_pending_section() {
         NamingStagePlan {
             stage: OpPickerStage::FieldLabel,
             field_label_origin: Some(FieldLabelOrigin::NewSection),
-            pending_section: Some("Deploy".to_string()),
+            pending_section: Some("Deploy".to_owned()),
             clear_pending_section: false,
         }
     );
@@ -713,7 +713,7 @@ fn build_op_picker_ref_flags_empty_reference_with_sibling_refs() {
 
 #[test]
 fn section_lines_append_new_section_sentinel() {
-    let lines = section_lines([None, Some("Auth".to_string())], Some(2));
+    let lines = section_lines([None, Some("Auth".to_owned())], Some(2));
     assert_eq!(lines.len(), 3);
     assert_eq!(
         lines[0].spans[0].content.as_ref(),
@@ -778,11 +778,11 @@ fn account_vault_and_item_lines_apply_selected_prefixes() {
 #[test]
 fn field_lines_render_headers_fields_and_sentinels() {
     let mut collapsed = HashSet::new();
-    collapsed.insert("Auth".to_string());
+    collapsed.insert("Auth".to_owned());
     let lines = field_lines(
         [
             FieldDisplayRow::SectionHeader {
-                name: "Auth".to_string(),
+                name: "Auth".to_owned(),
                 field_count: 1,
             },
             FieldDisplayRow::Field { field_idx: 0 },
@@ -869,16 +869,16 @@ fn field_label_commit_plan_trims_and_routes_item_presence() {
             Some("account"),
             "vault",
             Some("item"),
-            Some("section".to_string()),
-            "ignored".to_string(),
+            Some("section".to_owned()),
+            "ignored".to_owned(),
             "  token  ",
         ),
         FieldLabelCommitPlan::EditItemField {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("section".to_string()),
-            field_label: "token".to_string(),
+            section: Some("section".to_owned()),
+            field_label: "token".to_owned(),
         }
     );
     assert_eq!(
@@ -887,15 +887,15 @@ fn field_label_commit_plan_trims_and_routes_item_presence() {
             "vault",
             None,
             None,
-            "login".to_string(),
+            "login".to_owned(),
             "  password  ",
         ),
         FieldLabelCommitPlan::NewItem {
             account: None,
             vault: "vault",
-            item_name: "login".to_string(),
+            item_name: "login".to_owned(),
             section: None,
-            field_label: "password".to_string(),
+            field_label: "password".to_owned(),
         }
     );
 }
@@ -907,8 +907,8 @@ fn field_label_commit_selection_builds_component_owned_selection_shape() {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("api".to_string()),
-            field_label: "token".to_string(),
+            section: Some("api".to_owned()),
+            field_label: "token".to_owned(),
         },
         |label| ("new", label),
     );
@@ -918,8 +918,8 @@ fn field_label_commit_selection_builds_component_owned_selection_shape() {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("api".to_string()),
-            field: ("new", "token".to_string()),
+            section: Some("api".to_owned()),
+            field: ("new", "token".to_owned()),
         }
     );
 
@@ -927,9 +927,9 @@ fn field_label_commit_selection_builds_component_owned_selection_shape() {
         FieldLabelCommitPlan::NewItem {
             account: None,
             vault: "vault",
-            item_name: "Login".to_string(),
+            item_name: "Login".to_owned(),
             section: None,
-            field_label: "password".to_string(),
+            field_label: "password".to_owned(),
         },
         |label| ("new", label),
     );
@@ -938,9 +938,9 @@ fn field_label_commit_selection_builds_component_owned_selection_shape() {
         OpPickerSelection::NewItem {
             account: None,
             vault: "vault",
-            item_name: "Login".to_string(),
+            item_name: "Login".to_owned(),
             section: None,
-            field_label: "password".to_string(),
+            field_label: "password".to_owned(),
         }
     );
 }
@@ -955,12 +955,12 @@ fn existing_field_commit_plan_routes_create_mode_to_field_target_data() {
             },
             "field-id",
             "token",
-            Some("api".to_string()),
+            Some("api".to_owned()),
         ),
         ExistingFieldCommitPlan::EditItemField {
-            section: Some("api".to_string()),
-            field_id: "field-id".to_string(),
-            field_label: "token".to_string(),
+            section: Some("api".to_owned()),
+            field_id: "field-id".to_owned(),
+            field_label: "token".to_owned(),
         }
     );
     assert_eq!(
@@ -973,9 +973,9 @@ fn existing_field_commit_plan_routes_create_mode_to_field_target_data() {
 fn existing_field_commit_selection_builds_component_owned_selection_shape() {
     let selection = existing_field_commit_selection(
         ExistingFieldCommitPlan::EditItemField {
-            section: Some("api".to_string()),
-            field_id: "field-id".to_string(),
-            field_label: "token".to_string(),
+            section: Some("api".to_owned()),
+            field_id: "field-id".to_owned(),
+            field_label: "token".to_owned(),
         },
         ExistingFieldCommitSelectionInput {
             account: Some("account"),
@@ -991,8 +991,8 @@ fn existing_field_commit_selection_builds_component_owned_selection_shape() {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("api".to_string()),
-            field: ("field-id".to_string(), "token".to_string()),
+            section: Some("api".to_owned()),
+            field: ("field-id".to_owned(), "token".to_owned()),
         }
     );
 
@@ -1120,7 +1120,7 @@ fn selected_account_helpers_derive_cache_key_from_selected_account() {
 
     assert_eq!(
         selected_account_id(Some(&account), |account| account.id),
-        Some("acct_1".to_string())
+        Some("acct_1".to_owned())
     );
     assert_eq!(
         selected_account_id_ref(Some(&account), |account| account.id),

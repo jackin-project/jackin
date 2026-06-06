@@ -180,10 +180,7 @@ impl OscPolicy {
 }
 
 fn is_env_deny(name: &str) -> bool {
-    matches!(
-        std::env::var(name).as_deref(),
-        Ok("deny") | Ok("off") | Ok("no")
-    )
+    matches!(std::env::var(name).as_deref(), Ok("deny" | "off" | "no"))
 }
 
 pub fn next_id() -> u64 {
@@ -200,6 +197,10 @@ pub struct SessionProvider {
     pub env_overrides: Vec<(String, String)>,
 }
 
+#[expect(
+    missing_debug_implementations,
+    reason = "Session owns PTY and child-killer trait objects; capsule logs expose session identity and state."
+)]
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
@@ -255,6 +256,7 @@ pub struct Session {
     bracketed_paste_active: bool,
 }
 
+#[derive(Debug)]
 pub enum SessionEvent {
     Output {
         session_id: u64,
@@ -335,7 +337,7 @@ pub struct Oid(String);
 impl Oid {
     pub fn parse(value: &str) -> Option<Self> {
         if matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
-            Some(Self(value.to_string()))
+            Some(Self(value.to_owned()))
         } else {
             None
         }
@@ -379,7 +381,7 @@ impl BranchName {
         if stripped.is_empty() || stripped.chars().any(char::is_whitespace) {
             None
         } else {
-            Some(Self(stripped.to_string()))
+            Some(Self(stripped.to_owned()))
         }
     }
 
@@ -941,7 +943,7 @@ impl Session {
                 // grid, not the host. (Root fix for the alt-screen corruption:
                 // the host was answering DA/DSR/DECRQM with its own caps.)
                 PassthroughEvent::Reply(bytes) => {
-                    let _ = self.input_tx.send(bytes);
+                    drop(self.input_tx.send(bytes));
                 }
                 // ScrollbackClear is a grid-internal instruction with no
                 // outer-terminal byte form; the grid already cleared its
@@ -1243,11 +1245,11 @@ pub fn validate_agent_slug<'a>(
     Ok(raw)
 }
 
-/// Build a CommandBuilder for an agent session.
+/// Build a `CommandBuilder` for an agent session.
 ///
 /// Entrypoint is `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<slug>`.
 /// `cwd` is the workspace workdir from the Capsule launch config. It must be
-/// passed explicitly: portable_pty's `CommandBuilder`
+/// passed explicitly: `portable_pty`'s `CommandBuilder`
 /// defaults the child's cwd to `$HOME` when none is set — it does not
 /// inherit the daemon's cwd — so omitting this would land every agent in
 /// `/home/agent` regardless of the workspace.
@@ -1283,7 +1285,7 @@ fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
     }
 }
 
-/// Build a CommandBuilder for an interactive shell session.
+/// Build a `CommandBuilder` for an interactive shell session.
 ///
 /// See `build_agent_command` for the `cwd` rationale.
 pub fn build_shell_command(

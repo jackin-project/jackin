@@ -78,10 +78,10 @@ fn rejects_workspace_with_workdir_outside_mounts() {
     let temp = tempdir().unwrap();
 
     let workspace = WorkspaceConfig {
-        workdir: "/workspace/project".to_string(),
+        workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
             src: temp.path().display().to_string(),
-            dst: "/workspace/src".to_string(),
+            dst: "/workspace/src".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         }],
@@ -106,10 +106,10 @@ fn edit_workspace_does_not_persist_invalid_mutation() {
         .create_workspace(
             "big-monorepo",
             WorkspaceConfig {
-                workdir: "/workspace/project".to_string(),
+                workdir: "/workspace/project".to_owned(),
                 mounts: vec![MountConfig {
                     src,
-                    dst: "/workspace/project".to_string(),
+                    dst: "/workspace/project".to_owned(),
                     readonly: false,
                     isolation: crate::MountIsolation::Shared,
                 }],
@@ -122,7 +122,7 @@ fn edit_workspace_does_not_persist_invalid_mutation() {
         .edit_workspace(
             "big-monorepo",
             WorkspaceEdit {
-                workdir: Some("/workspace/missing".to_string()),
+                workdir: Some("/workspace/missing".to_owned()),
                 ..WorkspaceEdit::default()
             },
         )
@@ -207,7 +207,7 @@ trusted = true
         "absent [claude] block must deserialize to None"
     );
     assert_eq!(
-        resolve_mode(&config, jackin_core::Agent::Claude, "", "agent-smith",),
+        resolve_mode(&config, Agent::Claude, "", "agent-smith",),
         AuthForwardMode::Sync
     );
 }
@@ -886,8 +886,7 @@ fn github_auth_config_rejects_unknown_field() {
 auth_forward = "sync"
 bogus = true
 "#;
-    let err =
-        toml::from_str::<super::GithubAuthConfig>(toml).expect_err("unknown field must reject");
+    let err = toml::from_str::<GithubAuthConfig>(toml).expect_err("unknown field must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("unknown field `bogus`") || msg.contains("unknown field \"bogus\""),
@@ -905,7 +904,7 @@ fn resolve_github_mode_layered_precedence() {
         GithubAuthMode::Sync
     );
     // Global only
-    cfg.github = Some(super::GithubAuthConfig {
+    cfg.github = Some(GithubAuthConfig {
         auth_forward: GithubAuthMode::Ignore,
         env: BTreeMap::new(),
     });
@@ -916,7 +915,7 @@ fn resolve_github_mode_layered_precedence() {
     // Workspace overrides global
     let ws = WorkspaceConfig {
         workdir: "/x".into(),
-        github: Some(super::GithubAuthConfig {
+        github: Some(GithubAuthConfig {
             auth_forward: GithubAuthMode::Token,
             env: BTreeMap::new(),
         }),
@@ -929,7 +928,7 @@ fn resolve_github_mode_layered_precedence() {
     );
     // Role override wins
     let ov = WorkspaceRoleOverride {
-        github: Some(super::GithubAuthConfig {
+        github: Some(GithubAuthConfig {
             auth_forward: GithubAuthMode::Sync,
             env: BTreeMap::new(),
         }),

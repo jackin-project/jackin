@@ -45,9 +45,9 @@ fn hook_marker_points_at_capsule_runtime_binary() {
 fn opencode_config_blocks_are_self_contained_and_match_picker_models() {
     use jackin_protocol::Provider;
     let cfg = build_opencode_config(
-        Some("zai-tok".to_string()),
-        Some("minimax-tok".to_string()),
-        Some("kimi-tok".to_string()),
+        Some("zai-tok".to_owned()),
+        Some("minimax-tok".to_owned()),
+        Some("kimi-tok".to_owned()),
     );
     assert_eq!(cfg["permission"], "allow");
     let providers = cfg["provider"].as_object().expect("provider block present");
@@ -58,7 +58,7 @@ fn opencode_config_blocks_are_self_contained_and_match_picker_models() {
         (
             Provider::Zai,
             "@ai-sdk/openai-compatible",
-            jackin_protocol::ZAI_OPENAI_BASE_URL.to_string(),
+            jackin_protocol::ZAI_OPENAI_BASE_URL.to_owned(),
             "zai-tok",
         ),
         (
@@ -106,7 +106,7 @@ fn opencode_json_is_written_owner_only() {
     use std::os::unix::fs::PermissionsExt as _;
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("opencode.json");
-    let cfg = build_opencode_config(Some("zai-tok".to_string()), None, None);
+    let cfg = build_opencode_config(Some("zai-tok".to_owned()), None, None);
     write_opencode_json(&path, &cfg).expect("write opencode.json");
     let mode = fs::metadata(&path).expect("metadata").permissions().mode();
     assert_eq!(

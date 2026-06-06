@@ -5,7 +5,7 @@ use crate::pull_request::PullRequestInfo;
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
     PullRequestInfo {
         number,
-        title: "Surface PR context in Capsule".to_string(),
+        title: "Surface PR context in Capsule".to_owned(),
         url: format!("https://github.com/jackin-project/jackin/pull/{number}"),
         is_draft: false,
         checks: None,
@@ -80,7 +80,7 @@ fn shows_pr_lookup_in_progress() {
 #[test]
 fn truncates_left_chunk_on_narrow_terminal() {
     let mut pr = pull_request_fixture(999);
-    pr.title = "Implement enormous feature with very long title that exceeds the bar".to_string();
+    pr.title = "Implement enormous feature with very long title that exceeds the bar".to_owned();
     let mut buf = Vec::new();
     render_branch_context_bar(
         &mut buf,

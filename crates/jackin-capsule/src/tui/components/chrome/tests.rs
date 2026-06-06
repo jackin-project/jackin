@@ -14,7 +14,7 @@ fn status_bar_renders_without_tabs() {
                     active_tab: 0,
                     cols: 80,
                     sessions_state: &[],
-                    prefix_mode: crate::tui::components::status_bar::PrefixMode::Idle,
+                    prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
                 },
@@ -24,7 +24,7 @@ fn status_bar_renders_without_tabs() {
         .unwrap();
     let buf = terminal.backend().buffer();
     // Brand pill should appear in row 0
-    let row0: String = (0..9).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+    let row0: String = (0..9).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
     assert!(row0.contains("jackin'"), "brand pill missing: {row0:?}");
 }
 
@@ -44,7 +44,7 @@ fn status_bar_renders_shared_tab_underline() {
                     active_tab: 0,
                     cols: 80,
                     sessions_state: &[],
-                    prefix_mode: crate::tui::components::status_bar::PrefixMode::Idle,
+                    prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
                 },

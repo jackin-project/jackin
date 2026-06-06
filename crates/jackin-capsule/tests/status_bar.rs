@@ -90,7 +90,7 @@ fn tab_click_region_includes_state_glyph_width() {
     let tab = Tab::new_single("Codex", 7, "test");
     let tabs = vec![tab];
     let states = vec![(7u64, VisibleAgentState::Done)];
-    let _ = render(&mut bar, 80, &tabs, 0, &states);
+    drop(render(&mut bar, 80, &tabs, 0, &states));
     let (start, end) = bar.tab_regions[0];
     // Cell layout: 1 pad + name(5) + 1 sep + 1 glyph + 1 pad = 9 cols.
     assert_eq!(end - start, 9);
@@ -125,7 +125,7 @@ fn overflow_indicator_appears_when_tabs_exceed_width() {
 fn click_outside_tab_region_returns_none() {
     let mut bar = StatusBar::new();
     let tab = Tab::new_single("Foo", 1, "test");
-    let _ = render(&mut bar, 80, &[tab], 0, &[]);
+    drop(render(&mut bar, 80, &[tab], 0, &[]));
     let (start, _) = bar.tab_regions[0];
     assert!(start > 0);
     assert!(bar.tab_at_col(0).is_none());

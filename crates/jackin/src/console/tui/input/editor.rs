@@ -67,7 +67,7 @@ pub(super) fn handle_editor_key(
             }
             // `paths` is consumed by the commit path in
             // handle_editor_modal, not here.
-            let _ = paths;
+            let _unused = paths;
             return Ok(InputOutcome::Continue);
         }
         KeyCode::Esc => {
@@ -95,7 +95,7 @@ pub(super) fn handle_editor_key(
                         });
                     }
                 } else {
-                    let _ = update_manager(
+                    let _unused = update_manager(
                         state,
                         ManagerMessage::ReloadFromConfig {
                             config: Box::new(config.clone()),
@@ -447,18 +447,14 @@ pub(super) fn handle_editor_key(
         {
             secrets::open_secrets_add_modal(editor);
         }
-        KeyCode::Char('i' | 'I')
-            if editor.active_tab == crate::console::tui::state::EditorTab::Mounts =>
-        {
+        KeyCode::Char('i' | 'I') if editor.active_tab == EditorTab::Mounts => {
             // Cycle the per-mount isolation strategy on the highlighted row.
             // Mirrors the R (readonly) toggle but threads through the
             // dedicated state helper so the cycling rule lives in one place.
             // Silent no-op on the `+ Add mount` sentinel.
             editor.cycle_isolation_for_selected_mount();
         }
-        KeyCode::Char('o' | 'O')
-            if editor.active_tab == crate::console::tui::state::EditorTab::Mounts =>
-        {
+        KeyCode::Char('o' | 'O') if editor.active_tab == EditorTab::Mounts => {
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
                 if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
@@ -632,7 +628,7 @@ pub(super) fn handle_editor_modal(
                     // re-stashes it as a `PendingCommit` for the outer
                     // dispatcher (which owns `paths` / `cwd` / `runner`)
                     // to drain via `commit_editor_save`.
-                    if let crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave {
+                    if let ConfirmTarget::DeleteIsolatedAndSave {
                         mut plan,
                         exit_on_success,
                         ..
@@ -651,18 +647,12 @@ pub(super) fn handle_editor_modal(
                             Err(e) => open_editor_action_error(editor, &e),
                         }
                     }
-                } else if matches!(
-                    target,
-                    crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
-                ) {
+                } else if matches!(target, ConfirmTarget::DeleteIsolatedAndSave { .. }) {
                     editor.save_flow = EditorSaveFlow::Idle;
                 }
             }
             ModalOutcome::Cancel => {
-                let was_drift = matches!(
-                    target,
-                    crate::console::tui::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
-                );
+                let was_drift = matches!(target, ConfirmTarget::DeleteIsolatedAndSave { .. });
                 editor.clear_modal_chain();
                 if was_drift {
                     editor.save_flow = EditorSaveFlow::Idle;
@@ -1193,7 +1183,7 @@ fn set_pending_env_value(
         editor,
         scope,
         key,
-        crate::operator_env::EnvValue::Plain(value.to_string()),
+        crate::operator_env::EnvValue::Plain(value.to_owned()),
     );
 }
 
@@ -1229,7 +1219,7 @@ fn set_pending_env_value_typed(
         key,
         value,
         |roles, role| {
-            roles.entry(role.to_string()).or_default();
+            roles.entry(role.to_owned()).or_default();
         },
         |role| &mut role.env,
     );
@@ -1243,18 +1233,18 @@ pub(super) fn apply_text_input_to_pending(
 ) {
     match target {
         TextInputTarget::Name => {
-            editor.pending_name = Some(value.to_string());
+            editor.pending_name = Some(value.to_owned());
             editor.clear_modal_chain();
         }
         TextInputTarget::Workdir => {
-            editor.pending.workdir = value.to_string();
+            editor.pending.workdir = value.to_owned();
             editor.clear_modal_chain();
         }
         TextInputTarget::MountDst => {
             // Provisional mount with src==dst was inserted at FileBrowser
             // commit; update its dst now.
             if let Some(last) = editor.pending.mounts.last_mut() {
-                last.dst = value.to_string();
+                last.dst = value.to_owned();
             }
             editor.clear_modal_chain();
         }
@@ -1281,7 +1271,7 @@ pub(super) fn apply_text_input_to_pending(
                 });
                 return;
             }
-            let key = trimmed.to_string();
+            let key = trimmed.to_owned();
             // Sentinel-picker fast path: P committed an OpRef before the
             // key existed; both fields land here.
             if let Some(stashed) = editor.pending_picker_value.take() {
@@ -1446,7 +1436,7 @@ fn dispatch_editor_mount_dst_choice(
                     .mounts
                     .push(crate::console::domain::shared_mount_config(src, src, false));
                 editor.open_sub_modal(Modal::TextInput {
-                    target: crate::console::tui::state::TextInputTarget::MountDst,
+                    target: TextInputTarget::MountDst,
                     state: mount_destination_input_state(src),
                 });
             } else {
@@ -1479,7 +1469,7 @@ pub(in crate::console) fn apply_file_browser_to_editor(
         FileBrowserTarget::CreateFirstMountSrc => {
             // Only meaningful in prelude path — handled by
             // `handle_prelude_modal`.
-            let _ = (editor, path);
+            drop((editor, path));
         }
     }
 }

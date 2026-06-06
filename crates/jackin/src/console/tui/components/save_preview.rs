@@ -26,7 +26,7 @@ fn workspace_mount_preview_row(
         src: crate::tui::shorten_home(&m.src),
         dst: crate::tui::shorten_home(&m.dst),
         readonly: m.readonly,
-        isolation: m.isolation.as_str().to_string(),
+        isolation: m.isolation.as_str().to_owned(),
         kind: cache.label(&m.src),
     }
 }
@@ -204,8 +204,8 @@ fn settings_save_preview(
             .original
             .iter()
             .map(|row| AuthPreviewRow {
-                label: row.kind.label().to_string(),
-                mode: row.mode.as_str().to_string(),
+                label: row.kind.label().to_owned(),
+                mode: row.mode.as_str().to_owned(),
             })
             .collect(),
         auth_pending: settings
@@ -213,8 +213,8 @@ fn settings_save_preview(
             .pending
             .iter()
             .map(|row| AuthPreviewRow {
-                label: row.kind.label().to_string(),
-                mode: row.mode.as_str().to_string(),
+                label: row.kind.label().to_owned(),
+                mode: row.mode.as_str().to_owned(),
             })
             .collect(),
         auth_github_env_original: env_display_map(&settings.auth.original_github_env),
@@ -270,6 +270,6 @@ fn env_display_map(
 ) -> std::collections::BTreeMap<String, String> {
     values
         .iter()
-        .map(|(key, value)| (key.clone(), value.as_display_str().to_string()))
+        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
         .collect()
 }

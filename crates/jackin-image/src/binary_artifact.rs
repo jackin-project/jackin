@@ -75,7 +75,7 @@ pub fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
     let bytes = digest.as_ref();
     let mut hex = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        let _ = write!(hex, "{byte:02x}");
+        let _unused = write!(hex, "{byte:02x}");
     }
     hex
 }

@@ -204,7 +204,7 @@ fn drag_ignored_when_list_modal_open() {
         ..Default::default()
     };
     // Ensure the helper signature compiles (guards against future refactors).
-    let _ = jackin_console::github_mounts::resolve_for_workspace(&ws);
+    drop(jackin_console::github_mounts::resolve_for_workspace(&ws));
     state.list_modal = Some(Modal::GithubPicker {
         state: jackin_console::tui::components::github_picker::GithubPickerState::new(vec![
             jackin_console::github_mounts::GithubChoice {
@@ -360,10 +360,7 @@ fn mouse_down_on_editor_tab_selects_tab() {
         panic!("expected editor stage");
     };
     assert_eq!(editor.active_tab, EditorTab::Secrets);
-    assert!(matches!(
-        editor.active_field,
-        crate::console::tui::state::FieldFocus::Row(0)
-    ));
+    assert!(matches!(editor.active_field, FieldFocus::Row(0)));
 }
 
 #[test]
@@ -413,8 +410,8 @@ fn mouse_down_on_editor_tab_clears_secrets_view_when_leaving() {
     editor.active_tab = EditorTab::Secrets;
     editor
         .unmasked_rows
-        .insert((SecretsScopeTag::Workspace, "TOKEN".to_string()));
-    editor.secrets_expanded.insert("agent-smith".to_string());
+        .insert((SecretsScopeTag::Workspace, "TOKEN".to_owned()));
+    editor.secrets_expanded.insert("agent-smith".to_owned());
     state.stage = ManagerStage::Editor(editor);
 
     handle_mouse(&mut state, mouse_down_at(3, 3), term(100));
@@ -455,7 +452,7 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
         state: crossterm::event::KeyEventState::NONE,
     });
     fb.pending_git_prompt = Some(repo);
-    fb.pending_git_url = Some("file:///tmp/unreachable".to_string());
+    fb.pending_git_url = Some("file:///tmp/unreachable".to_owned());
 
     let prelude = CreatePreludeState {
         modal: Some(Modal::FileBrowser {
@@ -523,7 +520,7 @@ fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
         kind: crossterm::event::KeyEventKind::Press,
         state: crossterm::event::KeyEventState::NONE,
     });
-    fb.pending_git_url = Some("file:///tmp/unreachable".to_string());
+    fb.pending_git_url = Some("file:///tmp/unreachable".to_owned());
 
     let prelude = CreatePreludeState {
         modal: Some(Modal::FileBrowser {
@@ -1026,7 +1023,7 @@ fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
         ..Default::default()
     };
     let mut editor = EditorState::new_edit("x".into(), ws);
-    editor.active_tab = crate::console::tui::state::EditorTab::Mounts;
+    editor.active_tab = EditorTab::Mounts;
     state.stage = ManagerStage::Editor(editor);
 
     handle_mouse_with_config(
@@ -1044,7 +1041,7 @@ fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
         MOUSE_HORIZONTAL_SCROLL_STEP
     );
 
-    editor.active_tab = crate::console::tui::state::EditorTab::General;
+    editor.active_tab = EditorTab::General;
     handle_mouse_with_config(
         &mut state,
         mouse_kind_at(MouseEventKind::ScrollRight, 10, 6),
@@ -1344,7 +1341,7 @@ fn clicking_editor_content_area_clears_tab_bar_focus() {
     let mut state = list_state();
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.tab_bar_focused = true; // tab bar owns focus before the click
-    editor.active_tab = crate::console::tui::state::EditorTab::Roles;
+    editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 10;
     state.stage = ManagerStage::Editor(editor);
 

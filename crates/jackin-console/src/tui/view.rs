@@ -68,7 +68,7 @@ pub fn footer_height(items: &[jackin_tui::HintSpan<'_>], width: u16) -> u16 {
     jackin_tui::components::wrapped_height(items, width).saturating_add(1)
 }
 
-pub fn render_footer(frame: &mut Frame, area: Rect, items: &[jackin_tui::HintSpan<'_>]) {
+pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[jackin_tui::HintSpan<'_>]) {
     if area.height == 0 {
         return;
     }
@@ -83,11 +83,11 @@ pub fn render_footer(frame: &mut Frame, area: Rect, items: &[jackin_tui::HintSpa
     jackin_tui::components::render_wrapped_hint_bar(frame, hint_area, items);
 }
 
-pub fn render_header(frame: &mut Frame, area: Rect, title: &str) {
+pub fn render_header(frame: &mut Frame<'_>, area: Rect, title: &str) {
     jackin_tui::components::render_brand_header(frame, area, title);
 }
 
-pub fn render_modal_backdrop(frame: &mut Frame, area: Rect) {
+pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect) {
     frame.render_widget(jackin_tui::components::ModalBackdrop, area);
 }
 

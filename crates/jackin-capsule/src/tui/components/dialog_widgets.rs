@@ -1,7 +1,7 @@
 //! Ratatui rendering for capsule dialog overlays.
 //!
 //! Every `Dialog` variant is rendered as a Ratatui widget using shared
-//! `jackin-tui` components (Panel, FilterInput, ConfirmDialog, etc.) so
+//! `jackin-tui` components (Panel, `FilterInput`, `ConfirmDialog`, etc.) so
 //! the capsule and the host share one component vocabulary.
 //!
 //! Rendering happens inside `compose_ratatui_frame()` via
@@ -45,9 +45,9 @@ pub(crate) enum DialogRatatuiSnapshot {
         body: String,
         selected_yes: bool,
     },
-    /// List picker (CommandPalette, AgentPicker, SplitPicker, ClosePicker,
-    /// ProviderPicker). `show_filter` draws the type-to-filter input + gap
-    /// above the items; ProviderPicker is a flat list and clears it so its
+    /// List picker (`CommandPalette`, `AgentPicker`, `SplitPicker`, `ClosePicker`,
+    /// `ProviderPicker`). `show_filter` draws the type-to-filter input + gap
+    /// above the items; `ProviderPicker` is a flat list and clears it so its
     /// `box_rect` (border + items + border) is not under-allocated by the
     /// two reserved filter rows, which clipped the list.
     FilterPicker {
@@ -58,14 +58,14 @@ pub(crate) enum DialogRatatuiSnapshot {
         selected: usize,
         show_filter: bool,
     },
-    /// Single-line text input (RenameTab).
+    /// Single-line text input (`RenameTab`).
     TextInputDialog {
         dialog_title: String,
         label: String,
         value: String,
         cursor: usize,
     },
-    /// Read-only label/value info panel (GitHubContext).
+    /// Read-only label/value info panel (`GitHubContext`).
     InfoRows {
         dialog_title: String,
         rows: Vec<(String, String)>,
@@ -93,8 +93,8 @@ impl Dialog {
     ) -> DialogRatatuiSnapshot {
         match self {
             Dialog::ConfirmAction { kind, selected_yes } => DialogRatatuiSnapshot::ConfirmAction {
-                title: kind.title().to_string(),
-                body: kind.message().to_string(),
+                title: kind.title().to_owned(),
+                body: kind.message().to_owned(),
                 selected_yes: *selected_yes,
             },
 
@@ -114,7 +114,7 @@ impl Dialog {
                             label
                         };
                         if needle.is_empty() || label.to_ascii_lowercase().contains(&needle) {
-                            Some(PickerItem::Item(label.to_string()))
+                            Some(PickerItem::Item(label.to_owned()))
                         } else {
                             None
                         }
@@ -137,7 +137,7 @@ impl Dialog {
             } => {
                 use crate::tui::components::dialog::PickerIntent;
                 let title = match intent {
-                    PickerIntent::NewTab => "New tab".to_string(),
+                    PickerIntent::NewTab => "New tab".to_owned(),
                     PickerIntent::Split(dir) => format!("Split: {}", dir.label()),
                 };
                 let needle = filter.to_ascii_lowercase();
@@ -160,7 +160,7 @@ impl Dialog {
                     // Label only — render_picker_list draws the ── dashes full-width.
                     items.push(PickerItem::Section("agents".into()));
                     for (_, label) in &agent_matches {
-                        items.push(PickerItem::Item((*label).to_string()));
+                        items.push(PickerItem::Item((*label).to_owned()));
                     }
                 }
                 if shell_match {
@@ -184,7 +184,7 @@ impl Dialog {
                     .filter(|dir| {
                         needle.is_empty() || dir.label().to_ascii_lowercase().contains(&needle)
                     })
-                    .map(|dir| PickerItem::Item(dir.label().to_string()))
+                    .map(|dir| PickerItem::Item(dir.label().to_owned()))
                     .collect();
                 DialogRatatuiSnapshot::FilterPicker {
                     title: "Split direction".into(),
@@ -203,7 +203,7 @@ impl Dialog {
                     .filter(|(_, label)| {
                         needle.is_empty() || label.to_ascii_lowercase().contains(&needle)
                     })
-                    .map(|(_, label)| PickerItem::Item((*label).to_string()))
+                    .map(|(_, label)| PickerItem::Item((*label).to_owned()))
                     .collect();
                 DialogRatatuiSnapshot::FilterPicker {
                     title: "Close".into(),
@@ -223,8 +223,7 @@ impl Dialog {
                 let title = agent
                     .as_deref()
                     .and_then(jackin_tui::agent_display_name)
-                    .map(|n| format!("Provider: {n}"))
-                    .unwrap_or_else(|| "Provider".into());
+                    .map_or_else(|| "Provider".into(), |n| format!("Provider: {n}"));
                 let items: Vec<PickerItem> = providers
                     .iter()
                     .map(|p| PickerItem::Item(p.label.clone()))
@@ -241,7 +240,7 @@ impl Dialog {
             Dialog::RenameTab { input, .. } => DialogRatatuiSnapshot::TextInputDialog {
                 dialog_title: "Rename tab".into(),
                 label: "Name".into(),
-                value: input.value().to_string(),
+                value: input.value().to_owned(),
                 cursor: input.cursor(),
             },
 
@@ -251,30 +250,27 @@ impl Dialog {
             ),
 
             Dialog::GitHubContext { copied, scroll } => {
-                let branch = pr_branch
-                    .map(String::from)
-                    .unwrap_or_else(|| "(unknown)".into());
+                let branch = pr_branch.map_or_else(|| "(unknown)".into(), String::from);
                 let loading_placeholder = if pr_loading { "resolving…" } else { "(none)" };
-                let pr_number = pr_info
-                    .map(|p| p.number_label())
-                    .unwrap_or_else(|| loading_placeholder.to_string());
-                let pr_title = pr_info
-                    .map(|p| p.title.clone())
-                    .unwrap_or_else(|| loading_placeholder.to_string());
-                let pr_url = pr_info
-                    .map(|p| p.url.clone())
-                    .unwrap_or_else(|| loading_placeholder.to_string());
-                let ci = pr_info
-                    .and_then(|p| p.checks.as_ref())
-                    .map(|c| c.summary())
-                    .unwrap_or_else(|| {
+                let pr_number = pr_info.map_or_else(
+                    || loading_placeholder.to_owned(),
+                    PullRequestInfo::number_label,
+                );
+                let pr_title =
+                    pr_info.map_or_else(|| loading_placeholder.to_owned(), |p| p.title.clone());
+                let pr_url =
+                    pr_info.map_or_else(|| loading_placeholder.to_owned(), |p| p.url.clone());
+                let ci = pr_info.and_then(|p| p.checks.as_ref()).map_or_else(
+                    || {
                         if pr_loading {
                             "resolving…"
                         } else {
                             "(unknown)"
                         }
-                        .to_string()
-                    });
+                        .to_owned()
+                    },
+                    crate::pull_request::PullRequestChecks::summary,
+                );
                 DialogRatatuiSnapshot::InfoRows {
                     dialog_title: "GitHub context".into(),
                     rows: vec![
@@ -522,7 +518,7 @@ fn render_text_input_dialog(
         let byte_len = c.len_utf8();
         (c.to_string(), &tail[byte_len..])
     } else {
-        (" ".to_string(), "")
+        (" ".to_owned(), "")
     };
 
     let spans = vec![
@@ -567,7 +563,7 @@ fn render_info_rows_dialog(
     jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
 }
 
-/// Build the InfoRows dialog body lines (label/value, copy-row emphasis +
+/// Build the `InfoRows` dialog body lines (label/value, copy-row emphasis +
 /// "✓ Copied!" suffix). Shared between the renderer and the scroll-axis
 /// measurement so the hint and the rendered content measure the same width.
 fn info_rows_lines(
@@ -583,7 +579,7 @@ fn info_rows_lines(
     rows.iter()
         .enumerate()
         .map(|(i, (label, value))| {
-            let padded_label = format!("{label:<width$}", width = label_width);
+            let padded_label = format!("{label:<label_width$}");
             if copy_row == Some(i) {
                 let suffix = if copied { " ✓ Copied!" } else { "" };
                 Line::from(vec![

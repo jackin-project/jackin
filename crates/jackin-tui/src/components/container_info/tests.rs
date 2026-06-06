@@ -42,7 +42,7 @@ fn copy_payload_at_hits_copyable_value_column() {
 
     assert_eq!(
         copy_payload_at(area, &state, 18, 2),
-        Some((0, "jk-test".to_string()))
+        Some((0, "jk-test".to_owned()))
     );
     assert_eq!(
         copy_payload_at(area, &state, 18, 3),

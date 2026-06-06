@@ -48,7 +48,7 @@ impl AppConfig {
             Err(e) => return Err(anyhow::anyhow!("{e}")),
         }
 
-        self.workspaces.insert(name.to_string(), workspace);
+        self.workspaces.insert(name.to_owned(), workspace);
         Ok(())
     }
 
@@ -161,7 +161,7 @@ impl AppConfig {
         }
 
         validate_workspace_config(name, &workspace)?;
-        self.workspaces.insert(name.to_string(), workspace);
+        self.workspaces.insert(name.to_owned(), workspace);
         Ok(())
     }
 

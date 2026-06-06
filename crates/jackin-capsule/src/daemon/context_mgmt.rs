@@ -1,6 +1,11 @@
 //! Git branch and pull-request context management for the Multiplexer.
 
-use super::*;
+use super::{
+    Arc, BranchName, GIT_BRANCH_CONTEXT_POLL_INTERVAL, GitContext, Instant, Multiplexer, Oid,
+    PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, PullRequestContextCacheEntry, PullRequestInfo,
+    PullRequestLookupMode, PullRequestLookupOutcome, SessionEvent, gh_pull_request_info,
+    git_current_context, resolve_default_branch,
+};
 
 impl Multiplexer {
     pub(super) fn pull_request_context_loading(&self) -> bool {
@@ -209,7 +214,7 @@ impl Multiplexer {
                 handle.spawn_blocking(move || {
                     // Result discarded: the next git-branch watcher tick will
                     // pick up the default branch via inotify or periodic poll.
-                    let _ = resolve_default_branch(&workdir);
+                    drop(resolve_default_branch(&workdir));
                 });
             } else {
                 self.workdir_context.default_branch = resolve_default_branch(&workdir);

@@ -29,7 +29,7 @@ use crate::pull_request::PullRequestInfo;
 /// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
 /// rendering and dispatch stay live without copying the data into
 /// the dialog variant.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct GithubContextView<'a> {
     pub branch: Option<&'a str>,
     pub status: PullRequestStatus<'a>,
@@ -52,7 +52,7 @@ pub fn github_context_view_from_state<'a>(
 /// daemon's `(in_flight, Option<PullRequestInfo>)` pair but rules
 /// out the impossible `Loaded + Resolving` combination at the type
 /// level — keeps every dialog branch a single exhaustive match.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum PullRequestStatus<'a> {
     Loaded(&'a PullRequestInfo),
     Resolving,
@@ -105,7 +105,7 @@ pub enum SplitDirection {
 }
 
 impl SplitDirection {
-    /// Operator-facing label for the SplitDirectionPicker rows and
+    /// Operator-facing label for the `SplitDirectionPicker` rows and
     /// the menu hint footer. Glyphs match the cardinal arrows the
     /// operator presses to reach equivalent panes after the split.
     pub fn label(self) -> &'static str {
@@ -200,7 +200,7 @@ pub enum Dialog {
     /// explicit refresh step.
     GitHubContext {
         copied: bool,
-        /// Persisted scroll offsets (rebuilt each frame like ContainerInfo).
+        /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
         scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -272,10 +272,10 @@ pub(crate) const CLOSE_TARGET_ITEMS: &[(ConfirmKind, &str)] = &[
 pub enum DialogAction {
     /// User confirmed a command-palette item.
     Command(PaletteCommand),
-    /// User picked a split direction in the SplitDirectionPicker —
-    /// daemon opens an AgentPicker with `PickerIntent::Split(direction)`.
+    /// User picked a split direction in the `SplitDirectionPicker` —
+    /// daemon opens an `AgentPicker` with `PickerIntent::Split(direction)`.
     SplitDirection(SplitDirection),
-    /// User picked a close target in the CloseTargetPicker — daemon
+    /// User picked a close target in the `CloseTargetPicker` — daemon
     /// opens a `ConfirmAction` dialog for the chosen `kind`.
     PickedCloseTarget(ConfirmKind),
     /// User said "Yes" in a `ConfirmAction` dialog — daemon fires
@@ -288,7 +288,7 @@ pub enum DialogAction {
         agent: Option<String>,
         intent: PickerIntent,
     },
-    /// User confirmed a provider in the ProviderPicker — the daemon maps
+    /// User confirmed a provider in the `ProviderPicker` — the daemon maps
     /// the chosen visible label back to provider/env facts.
     SpawnAgentWithProvider {
         agent: Option<String>,
@@ -316,7 +316,7 @@ pub enum DialogAction {
     Consume,
 }
 
-/// Items in the SplitDirectionPicker sub-dialog. Prefer the common
+/// Items in the `SplitDirectionPicker` sub-dialog. Prefer the common
 /// forward/default placement first, then its opposite, then the
 /// vertical pair. The dialog is filter-able like the other list
 /// dialogs — typing `a` narrows to "Above," typing `l` narrows to
@@ -412,7 +412,7 @@ impl Dialog {
             .and_then(jackin_tui::agent_display_name)
             .or(focused_agent.as_deref())
             .unwrap_or("(shell)")
-            .to_string();
+            .to_owned();
         let debug = crate::logging::debug_enabled() && !diagnostics.run_id.is_empty();
         // Pass the absolute path so the `file://` href the model builds is
         // valid; `run_log_href` already carries it (`file://<abs>`).
@@ -421,12 +421,11 @@ impl Dialog {
                 .run_log_href
                 .as_deref()
                 .and_then(|href| href.strip_prefix("file://"))
-                .map(str::to_string)
-                .unwrap_or_else(|| diagnostics.run_log_display.clone())
+                .map_or_else(|| diagnostics.run_log_display.clone(), str::to_owned)
         });
         let mut state = jackin_tui::components::DebugInfo {
             jackin_version: Some(diagnostics.host_version.clone()),
-            capsule_version: Some(env!("JACKIN_CAPSULE_VERSION").to_string()),
+            capsule_version: Some(env!("JACKIN_CAPSULE_VERSION").to_owned()),
             container_id: Some(container_name.clone()),
             role: (!role.is_empty()).then(|| role.clone()),
             agent: Some(agent_label),
@@ -451,7 +450,7 @@ impl Dialog {
     }
 
     /// Mutable body-scroll state for the read-only info dialogs whose content
-    /// can overflow (ContainerInfo, GitHubContext). `None` for dialogs that do
+    /// can overflow (`ContainerInfo`, `GitHubContext`). `None` for dialogs that do
     /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
     pub(crate) fn body_scroll_mut(
         &mut self,
@@ -475,7 +474,7 @@ impl Dialog {
         }
     }
 
-    /// Construct an AgentPicker with `selected` pre-initialised to
+    /// Construct an `AgentPicker` with `selected` pre-initialised to
     /// the first selectable row of the unfiltered layout. Saves every
     /// caller from having to know about the leading "agents" section
     /// row that pushes the first selectable index off zero — and
@@ -1639,8 +1638,8 @@ const RENAME_HINT: &[HintSpan<'static>] = &[
 /// Read-only info-dialog hint: copy key, the *available* scroll axes (per
 /// `axes`, omitted when the body fits), then dismiss — built from the shared
 /// `scroll_hint_spans` primitive so it never advertises a scroll direction the
-/// body cannot move. Used by both ContainerInfo (Debug info) and a loaded
-/// GitHubContext, which differ only in their copy label.
+/// body cannot move. Used by both `ContainerInfo` (Debug info) and a loaded
+/// `GitHubContext`, which differ only in their copy label.
 fn info_dialog_hint(
     copy_label: &'static str,
     axes: jackin_tui::components::ScrollAxes,

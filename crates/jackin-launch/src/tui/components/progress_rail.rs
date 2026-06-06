@@ -80,7 +80,7 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct LabelCell {
     ch: char,
     style: Style,

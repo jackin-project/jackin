@@ -64,7 +64,7 @@ async fn retry_with_zero_attempts_never_calls_closure() {
 #[tokio::test(start_paused = true)]
 async fn retry_backoff_grows_exponentially() {
     let start = tokio::time::Instant::now();
-    let _: Result<()> = retry_with_backoff(3, Duration::from_millis(100), || async {
+    let _unused: Result<()> = retry_with_backoff(3, Duration::from_millis(100), || async {
         anyhow::bail!("nope")
     })
     .await;
@@ -79,9 +79,9 @@ fn release_fixture() -> AgentRelease {
 fn release_fixture_for(agent: Agent, version: &str) -> AgentRelease {
     AgentRelease {
         agent,
-        version: version.to_string(),
+        version: version.to_owned(),
         url: format!("https://example.test/{}", agent.slug()),
-        checksum: Some("abc".to_string()),
+        checksum: Some("abc".to_owned()),
         archive_member: None,
     }
 }
@@ -110,7 +110,7 @@ fn read_cached_release_past_ttl_returns_none() {
     let paths = JackinPaths::for_tests(dir.path());
     write_cached_release(&paths, &release_fixture()).unwrap();
     let path = metadata_cache_path(&paths, Agent::Claude);
-    let stale = std::time::SystemTime::now() - Duration::from_hours(2);
+    let stale = SystemTime::now() - Duration::from_hours(2);
     filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(stale)).unwrap();
     assert!(read_cached_release(&paths, Agent::Claude).is_none());
 }
@@ -121,8 +121,8 @@ fn newest_cached_executable_release_reads_stale_version_sidecars() {
     let paths = JackinPaths::for_tests(dir.path());
     let older = release_fixture();
     let newer = AgentRelease {
-        version: "1.2.4".to_string(),
-        url: "https://example.test/claude-newer".to_string(),
+        version: "1.2.4".to_owned(),
+        url: "https://example.test/claude-newer".to_owned(),
         ..release_fixture()
     };
 
@@ -195,9 +195,9 @@ fn read_cached_release_malformed_returns_none() {
 #[test]
 fn sha256_digest_strips_prefix_only_for_sha256() {
     let asset = |digest: Option<&str>| GithubAsset {
-        name: "asset".to_string(),
-        browser_download_url: "https://example.test/a".to_string(),
-        digest: digest.map(str::to_string),
+        name: "asset".to_owned(),
+        browser_download_url: "https://example.test/a".to_owned(),
+        digest: digest.map(str::to_owned),
     };
     assert_eq!(
         asset(Some("sha256:deadbeef")).sha256_digest().as_deref(),

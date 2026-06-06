@@ -35,6 +35,7 @@ impl Default for TextField {
 }
 
 impl TextField {
+    #[must_use]
     pub fn new(initial: impl Into<String>) -> Self {
         let value: String = initial.into();
         let cursor = value.len();
@@ -47,16 +48,19 @@ impl TextField {
         }
     }
 
+    #[must_use]
     pub fn with_max_chars(mut self, n: usize) -> Self {
         self.max_chars = Some(n);
         self
     }
 
+    #[must_use]
     pub fn with_forbidden(mut self, forbidden: Vec<String>) -> Self {
         self.forbidden = forbidden;
         self
     }
 
+    #[must_use]
     pub fn with_allow_empty(mut self, allow: bool) -> Self {
         self.allow_empty = allow;
         self
@@ -67,7 +71,7 @@ impl TextField {
     }
 
     pub fn trimmed_value(&self) -> String {
-        self.value.trim().to_string()
+        self.value.trim().to_owned()
     }
 
     pub fn cursor(&self) -> usize {
@@ -216,7 +220,7 @@ impl TextInputState<'_> {
 
     #[must_use]
     pub fn value(&self) -> String {
-        self.field.value().to_string()
+        self.field.value().to_owned()
     }
 
     #[must_use]
@@ -288,6 +292,7 @@ impl TextInputState<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct TextInput<'a> {
     state: &'a TextInputState<'a>,
 }
@@ -367,7 +372,7 @@ fn render_input_value(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) 
         .bg(WHITE)
         .fg(Color::Black)
         .add_modifier(Modifier::SLOW_BLINK);
-    let mut spans = vec![Span::styled(before.to_string(), base_style)];
+    let mut spans = vec![Span::styled(before.to_owned(), base_style)];
     if let Some(ch) = after.chars().next() {
         spans.push(Span::styled(ch.to_string(), cursor_style));
         spans.push(Span::styled(after[ch.len_utf8()..].to_string(), base_style));

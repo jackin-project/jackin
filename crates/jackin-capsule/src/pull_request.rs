@@ -82,7 +82,7 @@ impl PullRequestChecks {
 
     pub fn summary(&self) -> String {
         if self.total == 0 {
-            return "(none)".to_string();
+            return "(none)".to_owned();
         }
         if self.failing > 0 {
             return format!(

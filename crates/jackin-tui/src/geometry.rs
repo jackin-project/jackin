@@ -129,10 +129,13 @@ pub fn take_display_cols(s: &str, max_cols: usize) -> String {
 /// scroll padding. Controls are ignored so injected bytes cannot affect
 /// width math.
 #[must_use]
-pub fn leading_space_cols<'a>(parts: impl IntoIterator<Item = &'a str>) -> usize {
+pub fn leading_space_cols<S>(parts: impl IntoIterator<Item = S>) -> usize
+where
+    S: AsRef<str>,
+{
     let mut count = 0;
     for part in parts {
-        for ch in part.chars() {
+        for ch in part.as_ref().chars() {
             if is_terminal_control_char(ch) {
                 continue;
             }
@@ -148,11 +151,17 @@ pub fn leading_space_cols<'a>(parts: impl IntoIterator<Item = &'a str>) -> usize
 /// Display-column width for a row plus the matching trailing padding used by
 /// horizontally scrollable, indented content.
 #[must_use]
-pub fn padded_line_display_cols<'a, I>(parts: I) -> usize
+pub fn padded_line_display_cols<I, S>(parts: I) -> usize
 where
-    I: IntoIterator<Item = &'a str> + Clone,
+    I: IntoIterator<Item = S> + Clone,
+    S: AsRef<str>,
 {
-    parts.clone().into_iter().map(display_cols).sum::<usize>() + leading_space_cols(parts)
+    parts
+        .clone()
+        .into_iter()
+        .map(|part| display_cols(part.as_ref()))
+        .sum::<usize>()
+        + leading_space_cols(parts)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -308,11 +317,11 @@ pub fn tab_at_column(cells: &[TabCell<'_>], col: u16) -> Option<usize> {
 #[must_use]
 pub fn shorten_home(path: &str) -> String {
     let Some(home) = std::env::var_os("HOME") else {
-        return path.to_string();
+        return path.to_owned();
     };
     let home = home.to_string_lossy().into_owned();
     if home.is_empty() || !path.starts_with(&home) {
-        return path.to_string();
+        return path.to_owned();
     }
     let rest = &path[home.len()..];
     // Only collapse when the next character after `$HOME` is a path
@@ -321,6 +330,6 @@ pub fn shorten_home(path: &str) -> String {
     if rest.is_empty() || rest.starts_with('/') {
         format!("~{rest}")
     } else {
-        path.to_string()
+        path.to_owned()
     }
 }

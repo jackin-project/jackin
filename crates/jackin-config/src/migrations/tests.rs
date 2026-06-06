@@ -207,7 +207,7 @@ fn channel_order_is_alpha_beta_stable() {
 }
 
 fn assert_registry_reaches(migrations: &[MigrationStep], current_raw: &str) {
-    super::assert_registry_chain(migrations, current_raw);
+    assert_registry_chain(migrations, current_raw);
 }
 
 #[test]

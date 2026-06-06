@@ -98,7 +98,7 @@ impl Drop for RawModeGuard {
         let mut stdout = std::io::stdout().lock();
         let write_result = stdout
             .write_all(&outer_terminal_reset_sequence())
-            .and_then(|_| stdout.flush());
+            .and_then(|()| stdout.flush());
         drop(stdout);
         let log = |label: &str, e: &dyn std::fmt::Display| {
             eprintln!("[jackin-capsule] failed to {label} on detach: {e}");

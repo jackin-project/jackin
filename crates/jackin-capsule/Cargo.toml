@@ -1,13 +1,13 @@
 [package]
 name = "jackin-capsule"
 version = "0.6.0-dev"
-edition = "2024"
-rust-version = "1.94"
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "In-container PID 1 control plane for Capsule-managed role containers."
 homepage = "https://jackin.tailrocks.com/"
-repository = "https://github.com/jackin-project/jackin"
-license = "Apache-2.0"
+repository.workspace = true
+license.workspace = true
 readme = "README.md"
 publish = false
 
@@ -30,7 +30,6 @@ tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros"
 crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process", "inotify"] }
-vte = "0.15"
 # jackin-term: the owned terminal model. `DamageGrid` is the sole VT parser /
 # screen / scrollback / passthrough model.
 jackin-term = { path = "../jackin-term" }
@@ -54,14 +53,5 @@ criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "=3.27.0"
 insta = { version = "1", features = ["filters"] }
 
-[lints.rust]
-unsafe_code = "forbid"
-
-[lints.clippy]
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "deny", priority = -1 }
-dbg_macro = "deny"
-todo = "warn"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-cast_sign_loss = "allow"
+[lints]
+workspace = true

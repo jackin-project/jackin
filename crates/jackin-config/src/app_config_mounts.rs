@@ -164,17 +164,17 @@ impl AppConfig {
         if scope_key.is_empty() {
             self.docker
                 .mounts
-                .insert(name.to_string(), MountEntry::Mount(global));
+                .insert(name.to_owned(), MountEntry::Mount(global));
         } else {
-            match self.docker.mounts.entry(scope_key.to_string()) {
+            match self.docker.mounts.entry(scope_key.to_owned()) {
                 Entry::Occupied(mut entry) => {
                     if let MountEntry::Scoped(map) = entry.get_mut() {
-                        map.insert(name.to_string(), global);
+                        map.insert(name.to_owned(), global);
                     }
                 }
                 Entry::Vacant(entry) => {
                     let mut map = BTreeMap::new();
-                    map.insert(name.to_string(), global);
+                    map.insert(name.to_owned(), global);
                     entry.insert(MountEntry::Scoped(map));
                 }
             }

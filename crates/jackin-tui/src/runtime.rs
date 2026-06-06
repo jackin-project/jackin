@@ -83,12 +83,12 @@ where
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let run = move || {
-        let _ = tx.send(worker());
+        drop(tx.send(worker()));
     };
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn_blocking(run);
     } else {
-        let _ = std::thread::Builder::new().name(name.into()).spawn(run);
+        drop(std::thread::Builder::new().name(name.into()).spawn(run));
     }
     rx
 }

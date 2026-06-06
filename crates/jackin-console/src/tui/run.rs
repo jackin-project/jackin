@@ -22,7 +22,7 @@ pub fn token_generate_scope_label(scope: TokenGenerateScopeLabel<'_>) -> String 
         TokenGenerateScopeLabel::WorkspaceRole { workspace, role } => {
             format!("workspace {workspace:?} role {role:?}")
         }
-        TokenGenerateScopeLabel::Global => "global config".to_string(),
+        TokenGenerateScopeLabel::Global => "global config".to_owned(),
     }
 }
 
@@ -132,7 +132,7 @@ pub fn debug_chip_row(bar: Rect) -> Rect {
 
 #[must_use]
 pub fn debug_run_id_label(run_id: Option<&str>) -> String {
-    run_id.unwrap_or_default().to_string()
+    run_id.unwrap_or_default().to_owned()
 }
 
 #[must_use]

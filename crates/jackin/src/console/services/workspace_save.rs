@@ -21,7 +21,7 @@ pub(crate) fn start_drift_check(
             .await
         }
         .await;
-        let _ = tx.send(result);
+        drop(tx.send(result));
     });
     rx
 }
@@ -47,7 +47,7 @@ pub(crate) fn start_isolation_cleanup(
             Ok(())
         }
         .await;
-        let _ = tx.send(result);
+        drop(tx.send(result));
     });
     rx
 }

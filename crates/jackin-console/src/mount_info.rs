@@ -113,7 +113,7 @@ fn resolve_gitdirs(workdir: &Path) -> Option<(PathBuf, PathBuf)> {
     let content = std::fs::read_to_string(&dotgit).ok()?;
     let gitdir_line = content.lines().find_map(|line| {
         line.strip_prefix("gitdir:")
-            .map(|rest| rest.trim().to_string())
+            .map(|rest| rest.trim().to_owned())
     })?;
     let abs = if Path::new(&gitdir_line).is_absolute() {
         PathBuf::from(gitdir_line)
@@ -163,7 +163,7 @@ fn parse_head(git_dir: &Path) -> GitBranch {
                 GitBranch::Unknown
             }
         },
-        |rest| GitBranch::Named(rest.to_string()),
+        |rest| GitBranch::Named(rest.to_owned()),
     )
 }
 
@@ -230,7 +230,7 @@ fn parse_remote_origin_url(content: &str) -> Option<String> {
         if in_origin && let Some(rest) = trimmed.strip_prefix("url") {
             // "url = ..." or "url=..."
             let rest = rest.trim_start_matches([' ', '\t', '=']);
-            return Some(rest.trim().to_string());
+            return Some(rest.trim().to_owned());
         }
     }
     None
@@ -259,7 +259,7 @@ fn remote_to_web(remote: &str) -> Option<String> {
     }
     // HTTPS/HTTP as-is
     if remote.starts_with("https://") || remote.starts_with("http://") {
-        return Some(remote.to_string());
+        return Some(remote.to_owned());
     }
     // ssh://git@host/path
     if let Some(rest) = remote.strip_prefix("ssh://") {
@@ -279,8 +279,8 @@ impl MountKind {
     /// `git · …` prefix.
     pub fn label(&self) -> String {
         match self {
-            Self::Missing => "missing".to_string(),
-            Self::Folder => "folder".to_string(),
+            Self::Missing => "missing".to_owned(),
+            Self::Folder => "folder".to_owned(),
             Self::Git { branch, origin } => {
                 let prefix = origin.as_ref().map_or("git", |o| o.display_prefix());
                 match branch {
@@ -288,7 +288,7 @@ impl MountKind {
                     GitBranch::Detached { short_sha } => {
                         format!("{prefix} · detached {short_sha}")
                     }
-                    GitBranch::Unknown => prefix.to_string(),
+                    GitBranch::Unknown => prefix.to_owned(),
                 }
             }
         }

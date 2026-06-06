@@ -16,11 +16,9 @@ pub(super) struct EnvRow {
     value: String,
 }
 
-pub(super) fn resolve_env_value_for_cli(
-    value: &str,
-) -> anyhow::Result<crate::operator_env::EnvValue> {
+pub(super) fn resolve_env_value_for_cli(value: &str) -> Result<crate::operator_env::EnvValue> {
     if !value.starts_with("op://") {
-        return Ok(crate::operator_env::EnvValue::Plain(value.to_string()));
+        return Ok(crate::operator_env::EnvValue::Plain(value.to_owned()));
     }
 
     // Probe op CLI availability before attempting structural queries.
@@ -64,7 +62,7 @@ pub(super) fn handle(
     _debug: bool,
 ) -> Result<()> {
     match cmd {
-        cli::ConfigCommand::Mount(mount_cmd) => match mount_cmd {
+        ConfigCommand::Mount(mount_cmd) => match mount_cmd {
             cli::MountCommand::Add {
                 name,
                 src,
@@ -89,20 +87,20 @@ pub(super) fn handle(
                     anyhow::bail!("aborted — sensitive mount paths were not confirmed");
                 }
                 let (matched, mut candidate_rows): (
-                    Vec<crate::config::GlobalMountRow>,
-                    Vec<crate::config::GlobalMountRow>,
+                    Vec<config::GlobalMountRow>,
+                    Vec<config::GlobalMountRow>,
                 ) = config
                     .list_mount_rows()
                     .into_iter()
                     .partition(|row| row.name == name && row.scope == scope);
                 let existing = matched.into_iter().next();
-                candidate_rows.push(crate::config::GlobalMountRow {
+                candidate_rows.push(config::GlobalMountRow {
                     scope: scope.clone(),
                     name: name.clone(),
                     mount: mount.clone(),
                 });
                 AppConfig::validate_global_mount_rows(&candidate_rows)?;
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = config::ConfigEditor::open(paths)?;
                 editor.add_mount(&name, mount, scope.as_deref());
                 editor.save()?;
                 if let Some(prev) = existing {
@@ -116,7 +114,7 @@ pub(super) fn handle(
                 Ok(())
             }
             cli::MountCommand::Remove { name, scope } => {
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = config::ConfigEditor::open(paths)?;
                 if editor.remove_mount(&name, scope.as_deref()) {
                     editor.save()?;
                     println!("Removed mount {name:?}.");
@@ -192,7 +190,7 @@ pub(super) fn handle(
                 Ok(())
             }
         },
-        cli::ConfigCommand::Trust(trust_cmd) => match trust_cmd {
+        ConfigCommand::Trust(trust_cmd) => match trust_cmd {
             cli::TrustCommand::Grant { selector } => {
                 let class = RoleSelector::parse(&selector)?;
                 config.resolve_role_source(&class)?;
@@ -200,7 +198,7 @@ pub(super) fn handle(
                 if was_trusted {
                     println!("{} is already trusted.", class.key());
                 } else {
-                    let mut editor = crate::config::ConfigEditor::open(paths)?;
+                    let mut editor = config::ConfigEditor::open(paths)?;
                     if let Some(source) = config.roles.get(&class.key()) {
                         editor.upsert_agent_source(&class.key(), source);
                     }
@@ -217,7 +215,7 @@ pub(super) fn handle(
                 }
                 let was_trusted = config.roles.get(&class.key()).is_some_and(|a| a.trusted);
                 if was_trusted {
-                    let mut editor = crate::config::ConfigEditor::open(paths)?;
+                    let mut editor = config::ConfigEditor::open(paths)?;
                     editor.set_agent_trust(&class.key(), false);
                     editor.save()?;
                     println!("Revoked trust for {}.", class.key());
@@ -243,7 +241,7 @@ pub(super) fn handle(
                 Ok(())
             }
         },
-        cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
+        ConfigCommand::Auth(auth_cmd) => match auth_cmd {
             cli::AuthCommand::Set { mode, agent } => {
                 let parsed_agent = super::parse_agent_from_cli(&agent)?;
                 let parsed_mode = super::parse_auth_forward_mode_from_cli(&mode)?;
@@ -254,7 +252,7 @@ pub(super) fn handle(
                         parsed_agent.supported_modes()
                     );
                 }
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = config::ConfigEditor::open(paths)?;
                 editor.set_global_auth_forward(parsed_agent, parsed_mode);
                 editor.save()?;
                 println!("Set global {parsed_agent} auth forwarding to {parsed_mode}.");
@@ -265,7 +263,7 @@ pub(super) fn handle(
                 Ok(())
             }
         },
-        cli::ConfigCommand::Env(env_cmd) => match env_cmd {
+        ConfigCommand::Env(env_cmd) => match env_cmd {
             cli::EnvCommand::Set {
                 key,
                 value,
@@ -291,7 +289,7 @@ pub(super) fn handle(
                 }
                 let env_value = resolve_env_value_for_cli(&value)?;
                 let scope = role.map_or(config::EnvScope::Global, config::EnvScope::Role);
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = config::ConfigEditor::open(paths)?;
                 editor.set_env_var(&scope, &key, env_value)?;
                 if let Some(ref c) = comment {
                     editor.set_env_comment(&scope, &key, Some(c));
@@ -305,7 +303,7 @@ pub(super) fn handle(
                     anyhow::bail!("env var key cannot be empty");
                 }
                 let scope = role.map_or(config::EnvScope::Global, config::EnvScope::Role);
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = config::ConfigEditor::open(paths)?;
                 if editor.remove_env_var(&scope, &key) {
                     editor.save()?;
                     println!("Removed {key}.");
@@ -321,14 +319,14 @@ pub(super) fn handle(
                         config
                             .env
                             .iter()
-                            .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
+                            .map(|(k, v)| (k.clone(), v.as_display_str().to_owned()))
                             .collect()
                     },
                     |a| {
                         config.roles.get(a).map_or_else(Vec::new, |src| {
                             src.env
                                 .iter()
-                                .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
+                                .map(|(k, v)| (k.clone(), v.as_display_str().to_owned()))
                                 .collect()
                         })
                     },
@@ -337,7 +335,7 @@ pub(super) fn handle(
                 Ok(())
             }
         },
-        cli::ConfigCommand::Git(git_cmd) => match git_cmd {
+        ConfigCommand::Git(git_cmd) => match git_cmd {
             cli::GitCommand::CoauthorTrailer(cmd) => {
                 let enable = match cmd {
                     cli::CoauthorTrailerCommand::Enable => true,

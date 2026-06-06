@@ -28,7 +28,7 @@ pub fn run(
     path: bool,
     tail: usize,
     follow: bool,
-    bundle: Option<std::path::PathBuf>,
+    bundle: Option<PathBuf>,
 ) -> Result<()> {
     match selector {
         None => list_all(paths),
@@ -343,7 +343,7 @@ fn detect_rotation(
 
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
-        s.to_string()
+        s.to_owned()
     } else {
         let take = max.saturating_sub(1);
         let mut t: String = s.chars().take(take).collect();

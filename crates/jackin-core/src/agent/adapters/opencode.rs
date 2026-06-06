@@ -4,6 +4,7 @@ use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
 
+#[derive(Debug)]
 pub struct OpencodeRuntime;
 
 impl crate::agent::runtime::private::Sealed for OpencodeRuntime {}

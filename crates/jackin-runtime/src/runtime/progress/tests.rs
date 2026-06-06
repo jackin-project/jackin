@@ -14,8 +14,8 @@ fn test_diagnostics() -> std::sync::Arc<RunDiagnostics> {
 
 fn dummy_failure() -> LaunchFailure {
     LaunchFailure {
-        title: "boom".to_string(),
-        summary: "it failed".to_string(),
+        title: "boom".to_owned(),
+        summary: "it failed".to_owned(),
         detail: None,
         next_step: None,
         stage: LaunchStage::Network,
@@ -30,7 +30,7 @@ async fn stage_failed_does_not_block_on_test_renderer() {
     // renderer returns immediately so failure-state tests do not hang.
     let mut progress = LaunchProgress::for_test(test_diagnostics());
     tokio::time::timeout(
-        std::time::Duration::from_millis(500),
+        Duration::from_millis(500),
         progress.stage_failed(dummy_failure()),
     )
     .await
@@ -48,11 +48,10 @@ async fn stage_failed_writes_full_detail_to_diagnostics() {
 
     progress
             .stage_failed(LaunchFailure {
-                title: "Launch failed".to_string(),
-                summary: "preparing kimi binary".to_string(),
+                title: "Launch failed".to_owned(),
+                summary: "preparing kimi binary".to_owned(),
                 detail: Some(
-                    "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds"
-                        .to_string(),
+                    "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds".to_owned(),
                 ),
                 next_step: None,
                 stage: LaunchStage::DerivedImage,
@@ -121,7 +120,7 @@ fn env_prompts_error_without_rich_renderer() {
     );
     assert!(
         progress
-            .prompt_select("Project", &["web".to_string()], None, false)
+            .prompt_select("Project", &["web".to_owned()], None, false)
             .unwrap_err()
             .to_string()
             .contains("requires the rich launch dialog")
@@ -455,8 +454,7 @@ fn faded_color_scales_rgb_channels() {
 fn build_log_lines_wrap_with_visible_continuation() {
     let lines = wrap_build_log_lines(
             vec![
-                "#5 RUN current_gid=\"$(id -g agent)\" && \x1b[31mcurrent_uid=\"$(id -u agent)\"\x1b[0m"
-                    .to_string(),
+                "#5 RUN current_gid=\"$(id -g agent)\" && \x1b[31mcurrent_uid=\"$(id -u agent)\"\x1b[0m".to_owned(),
             ],
             32,
         );
@@ -587,13 +585,13 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
     let mut view = LaunchView {
         identity: Some(LaunchIdentity {
-            role: "agent-smith".to_string(),
-            agent: "claude".to_string(),
+            role: "agent-smith".to_owned(),
+            agent: "claude".to_owned(),
             target_kind: LaunchTargetKind::Workspace,
-            target_label: "big-monorepo".to_string(),
-            mounts: vec!["~/big-monorepo → /workspace".to_string()],
-            image: Some("jk_agent-smith:latest".to_string()),
-            container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_string()),
+            target_label: "big-monorepo".to_owned(),
+            mounts: vec!["~/big-monorepo → /workspace".to_owned()],
+            image: Some("jk_agent-smith:latest".to_owned()),
+            container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_owned()),
         }),
         stages: LaunchStage::ALL
             .into_iter()
@@ -605,13 +603,13 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
                     StageStatus::Queued
                 },
                 detail: if stage == LaunchStage::Construct {
-                    "pulling construct".to_string()
+                    "pulling construct".to_owned()
                 } else {
-                    "queued".to_string()
+                    "queued".to_owned()
                 },
             })
             .collect(),
-        status: "pulling construct".to_string(),
+        status: "pulling construct".to_owned(),
         failure: None,
         failure_ack: false,
         frame: 0,
@@ -648,10 +646,10 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     assert!(rendered.contains("k7p9m2xq"));
 
     view.failure = Some(LaunchFailure {
-        title: "Docker unavailable".to_string(),
-        summary: "docker daemon is not responding".to_string(),
+        title: "Docker unavailable".to_owned(),
+        summary: "docker daemon is not responding".to_owned(),
         detail: None,
-        next_step: Some("Start Docker and run the command again.".to_string()),
+        next_step: Some("Start Docker and run the command again.".to_owned()),
         stage: LaunchStage::Network,
         diagnostics_path: None,
         command_output_path: None,
@@ -678,8 +676,8 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
 fn failure_with_paths() -> LaunchFailure {
     use std::path::PathBuf;
     LaunchFailure {
-        title: "Docker build failed".to_string(),
-        summary: "Building the Docker container failed.".to_string(),
+        title: "Docker build failed".to_owned(),
+        summary: "Building the Docker container failed.".to_owned(),
         detail: None,
         next_step: None,
         stage: LaunchStage::DerivedImage,
@@ -729,13 +727,13 @@ fn launch_container_info_renders_from_footer_chip_state() {
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
     let mut view = initial_view();
     view.identity = Some(LaunchIdentity {
-        role: "agent-smith".to_string(),
-        agent: "codex".to_string(),
+        role: "agent-smith".to_owned(),
+        agent: "codex".to_owned(),
         target_kind: LaunchTargetKind::Workspace,
-        target_label: "big-monorepo".to_string(),
+        target_label: "big-monorepo".to_owned(),
         mounts: Vec::new(),
         image: None,
-        container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_string()),
+        container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_owned()),
     });
     view.container_info_open = true;
     terminal

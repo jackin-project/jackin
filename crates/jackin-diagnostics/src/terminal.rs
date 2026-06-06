@@ -61,14 +61,14 @@ pub fn reassert_alt_screen() {
     if !host_screen_owned() {
         return;
     }
-    let mut out = std::io::stdout();
-    let _ = out.execute(crossterm::terminal::EnterAlternateScreen);
-    let _ = out.execute(crossterm::cursor::Hide);
+    let mut out = io::stdout();
+    drop(out.execute(crossterm::terminal::EnterAlternateScreen));
+    drop(out.execute(crossterm::cursor::Hide));
 }
 
 pub fn set_terminal_title(title: &str) {
     eprint!("\x1b]0;jackin' \u{00b7} {title}\x07");
-    let _ = io::stderr().flush();
+    drop(io::stderr().flush());
 }
 
 pub use jackin_tui::shorten_home;

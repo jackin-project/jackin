@@ -36,7 +36,7 @@ mod tests {
         (0..height)
             .map(|y| {
                 (0..width)
-                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .map(|x| buf[(x, y)].symbol().to_owned())
                     .collect::<String>()
             })
             .collect::<Vec<_>>()
@@ -419,7 +419,7 @@ readonly = false
 
         let mut confirm_delete = ManagerState::from_config(&config, &cwd);
         confirm_delete.stage = ManagerStage::ConfirmDelete {
-            name: "ws".to_string(),
+            name: "ws".to_owned(),
             state: jackin_tui::components::ConfirmState::new("Delete workspace?"),
         };
         cases.push(("list confirm delete", confirm_delete));

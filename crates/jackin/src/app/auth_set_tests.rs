@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn parse_auth_forward_mode_from_cli_accepts_sync() {
     let mode = parse_auth_forward_mode_from_cli("sync").unwrap();
-    assert_eq!(mode, crate::config::AuthForwardMode::Sync);
+    assert_eq!(mode, config::AuthForwardMode::Sync);
 }
 
 #[test]
@@ -42,10 +42,10 @@ fn resolve_instance_reference_matches_manifest_instance_id() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
-            dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
-            network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-workspace-agentsmith".to_owned(),
+            dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_owned(),
+            network: "jk-k7p9m2xq-workspace-agentsmith-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_owned(),
         },
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -77,10 +77,10 @@ fn resolve_instance_reference_ignores_purged_tombstones() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
-            dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
-            network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-workspace-agentsmith".to_owned(),
+            dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_owned(),
+            network: "jk-k7p9m2xq-workspace-agentsmith-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_owned(),
         },
     });
     manifest.mark_status(instance::InstanceStatus::Purged);
@@ -110,16 +110,16 @@ fn explicit_hardline_prompts_only_for_multiple_agent_sessions() {
     ));
     assert!(!has_multiple_agent_sessions(
         &runtime::AgentSessionInventory::Sessions(vec![runtime::AgentSession {
-            name: "jackin-claude-abc123".to_string(),
+            name: "jackin-claude-abc123".to_owned(),
         }])
     ));
     assert!(has_multiple_agent_sessions(
         &runtime::AgentSessionInventory::Sessions(vec![
             runtime::AgentSession {
-                name: "jackin-claude-abc123".to_string(),
+                name: "jackin-claude-abc123".to_owned(),
             },
             runtime::AgentSession {
-                name: "jackin-codex-abc123".to_string(),
+                name: "jackin-codex-abc123".to_owned(),
             },
         ])
     ));
@@ -293,10 +293,10 @@ fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceM
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: "jk-k7p9m2xq-agentsmith".to_string(),
-            dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
-            network: "jk-k7p9m2xq-agentsmith-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-agentsmith".to_owned(),
+            dind_container: "jk-k7p9m2xq-agentsmith-dind".to_owned(),
+            network: "jk-k7p9m2xq-agentsmith-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_owned(),
         },
     })
 }
@@ -372,7 +372,7 @@ async fn hardline_restore_candidate_marks_missing_manifest_available() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: container.to_string(),
+            role_container: container.to_owned(),
             dind_container: format!("{container}-dind"),
             network: format!("{container}-net"),
             certs_volume: format!("{container}-dind-certs"),
@@ -418,7 +418,7 @@ async fn hardline_restore_candidate_errors_when_docker_unavailable() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: container.to_string(),
+            role_container: container.to_owned(),
             dind_container: format!("{container}-dind"),
             network: format!("{container}-net"),
             certs_volume: format!("{container}-dind-certs"),
@@ -430,7 +430,7 @@ async fn hardline_restore_candidate_errors_when_docker_unavailable() {
     let docker = crate::docker_client::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             runtime::ContainerState::InspectUnavailable(
-                "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+                "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_owned(),
             ),
         ])),
         ..Default::default()
@@ -451,7 +451,7 @@ fn workspace_show_includes_isolation_column() {
     std::fs::create_dir_all(&worktree_src).unwrap();
     std::fs::create_dir_all(&cache_src).unwrap();
     let ws = crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![
             crate::workspace::MountConfig {
@@ -500,7 +500,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("agent-smith".into(), crate::config::RoleSource::default());
+        .insert("agent-smith".into(), config::RoleSource::default());
     config.add_mount(
         "gradle-cache",
         crate::workspace::MountConfig {
@@ -512,7 +512,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
         None,
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![crate::workspace::MountConfig {
             src: work_src.display().to_string(),
@@ -537,7 +537,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
 fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
     let mut config = AppConfig::default();
     let ws = crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         allowed_roles: vec!["alpha".into(), "beta".into()],
         ..Default::default()
@@ -556,7 +556,7 @@ fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
 fn validate_setup_role_allows_any_when_allowed_roles_empty() {
     let mut config = AppConfig::default();
     let ws = crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         allowed_roles: vec![],
         ..Default::default()
@@ -573,10 +573,10 @@ fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("alpha".into(), crate::config::RoleSource::default());
+        .insert("alpha".into(), config::RoleSource::default());
     config
         .roles
-        .insert("beta".into(), crate::config::RoleSource::default());
+        .insert("beta".into(), config::RoleSource::default());
     config.add_mount(
         "team-secrets",
         crate::workspace::MountConfig {
@@ -588,7 +588,7 @@ fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
         Some("alpha"),
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![],
         allowed_roles: vec!["alpha".into(), "beta".into()],
@@ -609,7 +609,7 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "chainargos/agent-brown".into(),
-        crate::config::RoleSource::default(),
+        config::RoleSource::default(),
     );
     config.add_mount(
         "team-secrets",
@@ -622,7 +622,7 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
         Some("chainargos/*"),
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![],
         allowed_roles: vec!["chainargos/agent-brown".into()],
@@ -660,7 +660,7 @@ impl FakeOpWriter {
         Self {
             deletes: std::cell::RefCell::new(Vec::new()),
             fail_delete: false,
-            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_string()],
+            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_owned()],
             fail_tags: false,
         }
     }
@@ -668,7 +668,7 @@ impl FakeOpWriter {
         Self {
             deletes: std::cell::RefCell::new(Vec::new()),
             fail_delete: true,
-            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_string()],
+            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_owned()],
             fail_tags: false,
         }
     }
@@ -693,19 +693,14 @@ impl crate::operator_env::OpWriteRunner for FakeOpWriter {
     fn item_create(
         &self,
         _params: crate::operator_env::OpItemCreateParams<'_>,
-    ) -> anyhow::Result<crate::operator_env::OpRef> {
+    ) -> Result<crate::operator_env::OpRef> {
         anyhow::bail!("rotate-cleanup tests do not exercise item_create")
     }
-    fn item_delete(
-        &self,
-        item_id: &str,
-        vault_id: &str,
-        account: Option<&str>,
-    ) -> anyhow::Result<()> {
+    fn item_delete(&self, item_id: &str, vault_id: &str, account: Option<&str>) -> Result<()> {
         self.deletes.borrow_mut().push((
-            vault_id.to_string(),
-            item_id.to_string(),
-            account.map(str::to_string),
+            vault_id.to_owned(),
+            item_id.to_owned(),
+            account.map(str::to_owned),
         ));
         if self.fail_delete {
             anyhow::bail!("simulated item_delete failure");
@@ -719,7 +714,7 @@ impl crate::operator_env::OpWriteRunner for FakeOpWriter {
         _target: &crate::operator_env::FieldTarget,
         _value: &str,
         _section: Option<&str>,
-    ) -> anyhow::Result<crate::operator_env::OpRef> {
+    ) -> Result<crate::operator_env::OpRef> {
         anyhow::bail!("rotate-cleanup tests do not exercise item_field_set")
     }
     fn item_tags(
@@ -727,7 +722,7 @@ impl crate::operator_env::OpWriteRunner for FakeOpWriter {
         _item_id: &str,
         _vault_id: &str,
         _account: Option<&str>,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> Result<Vec<String>> {
         if self.fail_tags {
             anyhow::bail!("simulated item_tags read failure");
         }
@@ -755,7 +750,7 @@ fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
     delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
     assert_eq!(
         *writer.deletes.borrow(),
-        vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string(), None)],
+        vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned(), None)],
     );
 }
 
@@ -834,9 +829,9 @@ fn delete_prior_op_item_targets_prior_refs_account() {
     assert_eq!(
         *writer.deletes.borrow(),
         vec![(
-            "VAULT_UUID".to_string(),
-            "OLD_ITEM".to_string(),
-            Some("account-A".to_string()),
+            "VAULT_UUID".to_owned(),
+            "OLD_ITEM".to_owned(),
+            Some("account-A".to_owned()),
         )],
         "delete must target the account the prior item actually lives in"
     );

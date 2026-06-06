@@ -1,4 +1,4 @@
-//! FocusOwner — per-screen single focus owner model.
+//! `FocusOwner` — per-screen single focus owner model.
 //!
 //! Every screen that uses tab bars + content blocks instantiates one
 //! `FocusOwner<Tab>` where `Tab` is an enum naming the tabs. The current

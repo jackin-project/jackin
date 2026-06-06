@@ -39,7 +39,7 @@ pub enum WorkspaceSaveMode {
 
 #[must_use]
 pub fn workspace_create_display_name(pending_name: Option<&str>) -> String {
-    pending_name.unwrap_or("(unnamed)").to_string()
+    pending_name.unwrap_or("(unnamed)").to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -557,7 +557,7 @@ fn settings_general_stats(state: SettingsGeneralPreview) -> Option<String> {
         return None;
     }
     Some(if count == 1 {
-        "1 change".to_string()
+        "1 change".to_owned()
     } else {
         format!("{count} changes")
     })

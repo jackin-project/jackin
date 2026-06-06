@@ -38,7 +38,7 @@ pub(crate) fn inject_workspace_mise_env(
     }
 
     if let Some(value) = workspace_mise_trusted_config_paths(workspace) {
-        vars.push((MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(), value));
+        vars.push((MISE_TRUSTED_CONFIG_PATHS_ENV.to_owned(), value));
     }
 }
 

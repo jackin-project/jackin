@@ -1,6 +1,9 @@
 //! Miscellaneous Multiplexer utility methods.
 
-use super::*;
+use super::{
+    Dialog, FullRedrawReason, MAX_SESSIONS, MAX_TABS, Multiplexer, PaletteCloseLabel, Result,
+    SESSION_ENV_PASSTHROUGH, SessionInfo,
+};
 
 impl Multiplexer {
     pub(super) fn env_for_spawn(&self, overrides: &[(String, String)]) -> Vec<(String, String)> {
@@ -135,7 +138,7 @@ impl Multiplexer {
                         },
                         None => PaneSnapshot {
                             session_id: id,
-                            label: "(missing)".to_string(),
+                            label: "(missing)".to_owned(),
                             agent: None,
                             state: crate::protocol::control::AgentState::Idle,
                         },
@@ -166,9 +169,9 @@ impl Multiplexer {
                     .exited_at
                     .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
                 status: if r.exited_at.is_some() {
-                    "exited".to_string()
+                    "exited".to_owned()
                 } else {
-                    "active".to_string()
+                    "active".to_owned()
                 },
                 // is_self is determined client-side from JACKIN_AGENT_CODENAME.
                 is_self: false,

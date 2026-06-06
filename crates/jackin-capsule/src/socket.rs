@@ -46,7 +46,7 @@ const ACCEPT_FAILURE_BAIL: u32 = 10;
 /// Hard cap on concurrent attach connections. The socket is locked
 /// 0600 so only the agent uid can dial in, but a rogue in-container
 /// process that shares the agent uid can otherwise open thousands
-/// of sockets — each a tokio task + UnixStream fd. Reject excess
+/// of sockets — each a tokio task + `UnixStream` fd. Reject excess
 /// connections by closing immediately so the legitimate operator's
 /// attach is never starved.
 const MAX_CONCURRENT_CLIENTS: usize = 16;
@@ -136,30 +136,27 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // peers cannot starve the legitimate operator's
                     // attach. Once a task finishes, its OwnedSemaphorePermit
                     // drops and a fresh accept proceeds.
-                    let permit = match limiter.clone().try_acquire_owned() {
-                        Ok(p) => {
-                            if at_cap_logged {
-                                crate::clog!(
-                                    "socket: capacity recovered below cap {MAX_CONCURRENT_CLIENTS}"
-                                );
-                                at_cap_logged = false;
-                            }
-                            p
+                    let permit = if let Ok(p) = limiter.clone().try_acquire_owned() {
+                        if at_cap_logged {
+                            crate::clog!(
+                                "socket: capacity recovered below cap {MAX_CONCURRENT_CLIENTS}"
+                            );
+                            at_cap_logged = false;
                         }
-                        Err(_) => {
-                            if !at_cap_logged {
-                                crate::clog!(
-                                    "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; over-cap connections will be dropped silently until capacity recovers"
-                                );
-                                at_cap_logged = true;
-                            } else {
-                                crate::cdebug!(
-                                    "socket: dropping over-cap connection (cap={MAX_CONCURRENT_CLIENTS})"
-                                );
-                            }
-                            drop(stream);
-                            continue;
+                        p
+                    } else {
+                        if at_cap_logged {
+                            crate::cdebug!(
+                                "socket: dropping over-cap connection (cap={MAX_CONCURRENT_CLIENTS})"
+                            );
+                        } else {
+                            crate::clog!(
+                                "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; over-cap connections will be dropped silently until capacity recovers"
+                            );
+                            at_cap_logged = true;
                         }
+                        drop(stream);
+                        continue;
                     };
                     if tx.send((stream, permit)).is_err() {
                         // Receiver dropped — daemon is shutting down.

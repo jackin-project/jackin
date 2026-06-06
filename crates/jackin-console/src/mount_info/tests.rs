@@ -401,7 +401,7 @@ fn label_formats_github_host() {
 fn remote_to_web_ssh_github() {
     assert_eq!(
         remote_to_web("git@github.com:owner/repo.git"),
-        Some("https://github.com/owner/repo".to_string())
+        Some("https://github.com/owner/repo".to_owned())
     );
 }
 
@@ -409,7 +409,7 @@ fn remote_to_web_ssh_github() {
 fn remote_to_web_https_github() {
     assert_eq!(
         remote_to_web("https://github.com/owner/repo.git"),
-        Some("https://github.com/owner/repo".to_string())
+        Some("https://github.com/owner/repo".to_owned())
     );
 }
 
@@ -417,7 +417,7 @@ fn remote_to_web_https_github() {
 fn remote_to_web_ssh_protocol() {
     assert_eq!(
         remote_to_web("ssh://git@github.com/owner/repo.git"),
-        Some("https://github.com/owner/repo".to_string())
+        Some("https://github.com/owner/repo".to_owned())
     );
 }
 
@@ -469,6 +469,6 @@ fn parse_origin_url_from_config() {
 "#;
     assert_eq!(
         parse_remote_origin_url(config),
-        Some("git@github.com:owner/repo.git".to_string())
+        Some("git@github.com:owner/repo.git".to_owned())
     );
 }

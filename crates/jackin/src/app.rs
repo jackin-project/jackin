@@ -53,17 +53,17 @@ use crate::tui;
 use self::context::prompt_agent_choice_if_needed;
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
-fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<config::AuthForwardMode> {
+fn parse_auth_forward_mode_from_cli(raw: &str) -> Result<config::AuthForwardMode> {
     raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))
 }
 
 /// Parse an agent slug as it arrived from the CLI.
-fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
+fn parse_agent_from_cli(raw: &str) -> Result<crate::agent::Agent> {
     raw.parse()
         .map_err(|_| anyhow::anyhow!("unknown agent {raw:?}; expected one of: claude, codex, amp"))
 }
 
-fn rich_prelaunch_choice(title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+fn rich_prelaunch_choice(title: &str, items: Vec<String>) -> Result<usize> {
     runtime::progress::prelaunch_select_choice(
         std::env::var_os("JACKIN_NO_MOTION").is_some(),
         title,
@@ -82,7 +82,7 @@ async fn play_construct_intro_if_needed(
     {
         // The intro is two screens: the opening phrase/brand screen, then the
         // accelerating warp into the Construct.
-        crate::tui::warp_intro();
+        tui::warp_intro();
     }
     claim
 }
@@ -94,7 +94,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // Initialize the global tracing subscriber (Defect 47.1 foundation).
     // Ignores "already installed" errors from test harnesses that set their
     // own subscriber.
-    let _ = jackin_diagnostics::init_tracing(debug);
+    drop(jackin_diagnostics::init_tracing(debug));
 
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
@@ -207,18 +207,18 @@ fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
     use owo_colors::OwoColorize as _;
     use std::io::{IsTerminal, Write};
     let mut err = std::io::stderr();
-    let _ = writeln!(err);
-    let _ = writeln!(
+    let _unused = writeln!(err);
+    let _unused = writeln!(
         err,
         "{} debug mode — save this run id to retrieve the run later:",
         "[jackin]".bold()
     );
-    let _ = writeln!(err, "    {}", diagnostics.run_id());
+    let _unused = writeln!(err, "    {}", diagnostics.run_id());
     if std::io::stdin().is_terminal() {
-        let _ = write!(err, "[jackin] press Enter to continue... ");
-        let _ = err.flush();
+        let _unused = write!(err, "[jackin] press Enter to continue... ");
+        drop(err.flush());
         let mut line = String::new();
-        let _ = std::io::stdin().read_line(&mut line);
+        drop(std::io::stdin().read_line(&mut line));
     }
 }
 
@@ -328,17 +328,17 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
 /// runtime in the no-context output until/unless an `--agent` flag is added.
 fn render_auth_show(config: &AppConfig) -> String {
     use std::fmt::Write as _;
-    let claude_mode = crate::config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
-    let codex_mode = crate::config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
-    let amp_mode = crate::config::resolve_mode(config, crate::agent::Agent::Amp, "", "");
-    let kimi_mode = crate::config::resolve_mode(config, crate::agent::Agent::Kimi, "", "");
-    let opencode_mode = crate::config::resolve_mode(config, crate::agent::Agent::Opencode, "", "");
+    let claude_mode = config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
+    let codex_mode = config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
+    let amp_mode = config::resolve_mode(config, crate::agent::Agent::Amp, "", "");
+    let kimi_mode = config::resolve_mode(config, crate::agent::Agent::Kimi, "", "");
+    let opencode_mode = config::resolve_mode(config, crate::agent::Agent::Opencode, "", "");
     let mut out = String::new();
-    let _ = writeln!(out, "claude: {claude_mode}");
-    let _ = writeln!(out, "codex:  {codex_mode}");
-    let _ = writeln!(out, "amp:    {amp_mode}");
-    let _ = writeln!(out, "kimi:   {kimi_mode}");
-    let _ = writeln!(out, "opencode: {opencode_mode}");
+    let _unused = writeln!(out, "claude: {claude_mode}");
+    let _unused = writeln!(out, "codex:  {codex_mode}");
+    let _unused = writeln!(out, "amp:    {amp_mode}");
+    let _unused = writeln!(out, "kimi:   {kimi_mode}");
+    let _unused = writeln!(out, "opencode: {opencode_mode}");
     out
 }
 

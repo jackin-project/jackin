@@ -30,7 +30,7 @@ const PHOSPHOR_DIM: (u8, u8, u8) = (0, 140, 30);
 /// into its prompt. Does NOT prompt itself.
 pub fn require_interactive_stdin(msg: &str) -> anyhow::Result<()> {
     use std::io::IsTerminal;
-    if !std::io::stdin().is_terminal() {
+    if !io::stdin().is_terminal() {
         anyhow::bail!("{msg}");
     }
     Ok(())
@@ -43,12 +43,7 @@ pub fn prompt_choice(message: &str, options: &[&str]) -> anyhow::Result<usize> {
     require_interactive_stdin(
         "ambiguous target requires interactive input, but stdin is not a terminal",
     )?;
-    prompt_choice_from(
-        message,
-        options,
-        &mut std::io::stdin().lock(),
-        &mut io::stderr(),
-    )
+    prompt_choice_from(message, options, &mut io::stdin().lock(), &mut io::stderr())
 }
 
 fn prompt_choice_from<R: io::BufRead, W: Write>(
@@ -105,7 +100,7 @@ pub async fn spin_wait<F, Fut>(
 ) -> anyhow::Result<()>
 where
     F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<()>>,
+    Fut: Future<Output = anyhow::Result<()>>,
 {
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     const SPIN_MS: u64 = 80;
@@ -121,13 +116,13 @@ where
     for _attempt in 0..max_attempts {
         if debug && !suppressed {
             eprint!("\r\x1b[2K");
-            let _ = io::stderr().flush();
+            drop(io::stderr().flush());
         }
         match poll().await {
             Ok(()) => {
                 if !suppressed {
                     eprint!("\r\x1b[2K");
-                    let _ = io::stderr().flush();
+                    drop(io::stderr().flush());
                 }
                 return Ok(());
             }
@@ -142,7 +137,7 @@ where
                     frame.color(mg).bold(),
                     message.color(rgb(PHOSPHOR_DIM)).bold()
                 );
-                let _ = io::stderr().flush();
+                drop(io::stderr().flush());
             }
             tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
             frame_idx += 1;
@@ -150,7 +145,7 @@ where
     }
     if !suppressed {
         eprint!("\r\x1b[2K");
-        let _ = io::stderr().flush();
+        drop(io::stderr().flush());
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
 }

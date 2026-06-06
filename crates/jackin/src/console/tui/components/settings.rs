@@ -18,7 +18,7 @@ use jackin_console::tui::screens::settings::view::{
 };
 
 pub(crate) fn render_settings_tab_strip(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     active: SettingsTab,
     tab_bar_focused: bool,
@@ -33,7 +33,7 @@ pub(crate) fn render_settings_tab_strip(
     );
 }
 
-pub(crate) fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+pub(crate) fn render_general_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let focused = !state.tab_bar_focused && state.error_popup.is_none();
     let lines = settings_general_lines(
         state.general.selected,
@@ -46,7 +46,7 @@ pub(crate) fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, a
     );
 }
 
-pub(crate) fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+pub(crate) fn render_mounts_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let focused =
         !state.tab_bar_focused && state.mounts.scroll_focused && state.mounts.modal.is_none();
     let selected = if focused {
@@ -71,7 +71,7 @@ pub(crate) fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, ar
     );
 }
 
-pub(crate) fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+pub(crate) fn render_env_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let lines = settings_env_lines_for_state(state, area.width);
     let focused = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
@@ -85,7 +85,7 @@ pub(crate) fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area:
     );
 }
 
-pub(crate) fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+pub(crate) fn render_auth_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let title = state
         .auth
         .selected_kind
@@ -103,7 +103,7 @@ pub(crate) fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area
     );
 }
 
-pub(crate) fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: Rect) {
+pub(crate) fn render_trust_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let lines = settings_trust_lines_for_state(state);
     let focused = !state.tab_bar_focused
         && state.trust.scroll_focused
@@ -121,7 +121,7 @@ pub(crate) fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, are
     );
 }
 
-pub(crate) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountModal<'_>) {
+pub(crate) fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &GlobalMountModal<'_>) {
     match modal {
         GlobalMountModal::Text { state, .. } => {
             let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput);
@@ -171,7 +171,7 @@ pub(crate) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
     }
 }
 
-pub(crate) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvModal<'_>) {
+pub(crate) fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsEnvModal<'_>) {
     match modal {
         SettingsEnvModal::Text { state, .. } => {
             let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput);
@@ -211,7 +211,7 @@ pub(crate) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvMo
     }
 }
 
-pub(crate) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuthModal<'_>) {
+pub(crate) fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &SettingsAuthModal<'_>) {
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
             let area = modal_rects::modal_rect(
@@ -260,7 +260,7 @@ pub(crate) fn settings_env_lines_for_state(
             state
                 .env
                 .unmasked_rows
-                .contains(&(scope.clone(), key.to_string()))
+                .contains(&(scope.clone(), key.to_owned()))
         },
         |role| {
             state

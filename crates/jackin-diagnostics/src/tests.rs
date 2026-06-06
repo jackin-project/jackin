@@ -213,13 +213,13 @@ fn debug_lines_buffer_while_tui_is_active() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
-    let _ = drain_debug_buffer();
+    drop(drain_debug_buffer());
 
     begin_debug_buffering();
     emit_debug_line("role", "resolving test role");
     assert_eq!(
         drain_debug_buffer(),
-        vec!["[jackin debug role] resolving test role".to_string()]
+        vec!["[jackin debug role] resolving test role".to_owned()]
     );
     end_debug_buffering();
 }
@@ -231,7 +231,7 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
-    let _ = drain_debug_buffer();
+    drop(drain_debug_buffer());
 
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
@@ -265,7 +265,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     emit_compact_line("warning", "jackin: warning: hidden by cockpit");
     set_rich_surface_active(false);
 
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    let jsonl = fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("\"kind\":\"warning\""), "{jsonl}");
     assert!(jsonl.contains("hidden by cockpit"), "{jsonl}");
     set_rich_surface_active(false);
@@ -288,7 +288,7 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     emit_compact_line("operator_env", "jackin: hidden while host owns raw screen");
     set_host_screen_owned(false);
 
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    let jsonl = fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
     assert!(
         jsonl.contains("hidden while host owns raw screen"),

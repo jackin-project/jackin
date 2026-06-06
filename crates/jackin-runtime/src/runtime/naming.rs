@@ -69,10 +69,10 @@ pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str = "jackin.role_git_sha";
 /// same role render as distinct rows in operator output.
 pub(super) fn format_role_display(container_name: &str, display_name: &str) -> String {
     if display_name.is_empty() {
-        return container_name.to_string();
+        return container_name.to_owned();
     }
     crate::instance::naming::instance_id_from_container_base(container_name).map_or_else(
-        || display_name.to_string(),
+        || display_name.to_owned(),
         |instance_id| format!("{display_name} ({instance_id})"),
     )
 }

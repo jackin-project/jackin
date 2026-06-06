@@ -262,7 +262,7 @@ RUN claude plugin marketplace add anthropics/claude-plugins-official || true
 /// becomes `''` so it survives shell word splitting.
 pub fn shell_quote(value: &str) -> String {
     if value.is_empty() {
-        return "''".to_string();
+        return "''".to_owned();
     }
     let mut quoted = String::with_capacity(value.len() + 2);
     quoted.push('\'');
@@ -313,7 +313,7 @@ fn apply_construct_image_override(contents: &str, override_image: &str) -> Strin
                     .map_or(String::new(), |(_, rest)| format!(" {rest}"));
                 format!("{from_override}{alias}")
             } else {
-                line.to_string()
+                line.to_owned()
             }
         })
         .collect::<Vec<_>>()
@@ -351,7 +351,7 @@ pub fn create_derived_build_context(
         std::fs::copy(host_path, &dst).map_err(|e| {
             anyhow::anyhow!("failed to copy jackin-capsule binary into build context: {e}")
         })?;
-        Some(".jackin-runtime/jackin-capsule".to_string())
+        Some(".jackin-runtime/jackin-capsule".to_owned())
     } else {
         None
     };
@@ -459,12 +459,12 @@ fn ensure_runtime_assets_are_included(
     };
 
     let mut rules = vec![
-        "!.jackin-runtime/".to_string(),
-        "!.jackin-runtime/entrypoint.sh".to_string(),
-        "!.jackin-runtime/jackin-capsule".to_string(),
-        "!.jackin-runtime/agent-binaries/".to_string(),
-        "!.jackin-runtime/agent-binaries/*".to_string(),
-        "!.jackin-runtime/DerivedDockerfile".to_string(),
+        "!.jackin-runtime/".to_owned(),
+        "!.jackin-runtime/entrypoint.sh".to_owned(),
+        "!.jackin-runtime/jackin-capsule".to_owned(),
+        "!.jackin-runtime/agent-binaries/".to_owned(),
+        "!.jackin-runtime/agent-binaries/*".to_owned(),
+        "!.jackin-runtime/DerivedDockerfile".to_owned(),
     ];
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
         rules.push(format!("!{}", entry.path));

@@ -16,6 +16,10 @@ use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_
 
 pub type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
 
+#[expect(
+    missing_debug_implementations,
+    reason = "MigrationStep stores a function pointer; debug output would not add useful migration evidence."
+)]
 #[derive(Clone, Copy)]
 pub struct MigrationStep {
     pub from: &'static str,
@@ -115,7 +119,7 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Re
     let acct = match doc.get("op_account") {
         None => return Ok(()),
         Some(item) => match item.as_str() {
-            Some(s) => s.to_string(),
+            Some(s) => s.to_owned(),
             None => bail!(
                 "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
                  found {item:?}"

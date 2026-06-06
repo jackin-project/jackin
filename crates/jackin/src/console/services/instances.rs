@@ -177,11 +177,11 @@ fn fetch_snapshots_parallel(
                     Err(panic_payload) => {
                         let detail = panic_payload
                             .downcast_ref::<&'static str>()
-                            .map(|s| (*s).to_string())
+                            .map(|s| (*s).to_owned())
                             .or_else(|| panic_payload.downcast_ref::<String>().cloned())
-                            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                            .unwrap_or_else(|| "<non-string panic payload>".to_owned());
                         (
-                            "<unknown-container>".to_string(),
+                            "<unknown-container>".to_owned(),
                             Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
                         )
                     }

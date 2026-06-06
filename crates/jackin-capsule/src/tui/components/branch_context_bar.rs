@@ -50,7 +50,7 @@ pub(crate) fn render_branch_context_bar(
         "branch-bar: bar_row={} term_cols={} left_cols={} container_region={:?}",
         bar_row,
         term_cols,
-        jackin_tui::display_cols(&layout.left),
+        display_cols(&layout.left),
         layout.container_region.map(|r| (r.start, r.end)),
     );
     jackin_tui::ansi::move_to(buf, bar_row, 0);
@@ -188,7 +188,7 @@ pub(crate) fn branch_context_bar_layout(
     let container = if container_name.is_empty() {
         String::new()
     } else {
-        format!(" {} ", container_name)
+        format!(" {container_name} ")
     };
     let term_cols_usize = usize::from(term_cols);
     let container_cols = display_cols(&container);

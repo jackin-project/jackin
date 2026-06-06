@@ -39,9 +39,7 @@ async fn still_running_with_zero_sessions_cleans() {
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
     let docker = crate::runtime::test_support::FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            "Sessions: 0\n".to_string(),
-        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 0\n".to_owned()])),
         ..Default::default()
     };
     let dec = finalize_foreground_session(
@@ -64,9 +62,7 @@ async fn still_running_with_unparseable_status_preserves_records() {
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
     let docker = crate::runtime::test_support::FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            String::new(),
-        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([String::new()])),
         ..Default::default()
     };
     let dec = finalize_foreground_session(
@@ -89,8 +85,8 @@ async fn still_running_with_sessions_preserves() {
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
     let docker = crate::runtime::test_support::FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            "Sessions: 1\n  [3] work (claude) state=working active=true\n".to_string(),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            "Sessions: 1\n  [3] work (claude) state=working active=true\n".to_owned(),
         ])),
         ..Default::default()
     };
@@ -770,9 +766,9 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
         // capture for r1 (says branch IS present — triggers bail),
         // then verify capture for r2 (says branch absent — proceed).
         capture_queue: VecDeque::from([
-            " M f1\n".to_string(),
-            " M f2\n".to_string(),
-            "  jackin/scratch/x-a\n".to_string(),
+            " M f1\n".to_owned(),
+            " M f2\n".to_owned(),
+            "  jackin/scratch/x-a\n".to_owned(),
             String::new(),
         ]),
         // git branch -D for r1's branch fails; r2's branch -D succeeds.
@@ -1445,7 +1441,7 @@ async fn has_jackin_sessions_error_treated_as_sessions_present() {
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
     let docker = crate::runtime::test_support::FakeDockerClient {
-        fail_with: vec![("docker exec".to_string(), "exec failed".to_string())],
+        fail_with: vec![("docker exec".to_owned(), "exec failed".to_owned())],
         ..Default::default()
     };
     let dec = finalize_foreground_session(
@@ -1471,8 +1467,8 @@ async fn detached_head_rev_parse_failure_preserves_unpushed() {
     // Both symbolic-ref and rev-parse fail → fail-closed.
     let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
     let mut runner = FakeRunner {
-        capture_queue: std::collections::VecDeque::from(vec![String::new(), branches]),
-        fail_on: vec!["symbolic-ref".to_string(), "rev-parse".to_string()],
+        capture_queue: VecDeque::from(vec![String::new(), branches]),
+        fail_on: vec!["symbolic-ref".to_owned(), "rev-parse".to_owned()],
         ..FakeRunner::default()
     };
     let mut p = NoPrompt;

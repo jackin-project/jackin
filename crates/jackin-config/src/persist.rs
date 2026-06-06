@@ -63,14 +63,14 @@ pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
 
     let staged = stage_write(&tmp, contents);
     if let Err(err) = staged {
-        let _ = std::fs::remove_file(&tmp);
+        drop(std::fs::remove_file(&tmp));
         return Err(err);
     }
 
     if let Err(rename_err) = std::fs::rename(&tmp, path) {
         // Rename failure leaves the staged file behind; clean up so it does
         // not accumulate.
-        let _ = std::fs::remove_file(&tmp);
+        drop(std::fs::remove_file(&tmp));
         return Err(rename_err)
             .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()));
     }

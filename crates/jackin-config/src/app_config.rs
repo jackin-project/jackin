@@ -114,7 +114,7 @@ impl AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            version: CURRENT_CONFIG_VERSION.to_string(),
+            version: CURRENT_CONFIG_VERSION.to_owned(),
             claude: None,
             codex: None,
             amp: None,

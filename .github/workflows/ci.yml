@@ -83,7 +83,7 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust cargo:cargo-nextest cargo:cargo-shear"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -99,7 +99,9 @@ jobs:
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo check --workspace --all-targets --all-features --locked
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo shear
       # When docker/construct/** changes, the published construct:trixie image
       # on Docker Hub is stale for the lifetime of the PR — it is only
       # republished after merge to main. Build the construct image locally and
@@ -131,7 +133,7 @@ jobs:
       # = []` plus a single `#![cfg(feature = "e2e")]` test file), so
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
-      - run: cargo check --all-targets
+      - run: cargo check --workspace --all-targets --locked
       # `dind_e2e` invokes `jackin load` end-to-end. `jackin load` calls
       # `capsule_binary::ensure_available`, which downloads the
       # `jackin-capsule` artifact from the rolling `preview` GitHub Release.

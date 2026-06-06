@@ -21,7 +21,7 @@ pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha4";
 
 /// Serde-default helper for `RoleManifest.version`.
 pub fn current_manifest_version() -> String {
-    CURRENT_MANIFEST_VERSION.to_string()
+    CURRENT_MANIFEST_VERSION.to_owned()
 }
 
 /// Canonical source of truth from `jackin-protocol` — re-exported here so

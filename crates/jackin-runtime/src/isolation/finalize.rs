@@ -84,6 +84,7 @@ pub trait FinalizerPrompt {
     ) -> anyhow::Result<usize>;
 }
 
+#[derive(Debug)]
 pub struct RichCleanupPrompt;
 impl FinalizerPrompt for RichCleanupPrompt {
     fn ask_unsafe_cleanup(
@@ -109,14 +110,14 @@ fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedRe
     let context = vec![
         PromptContextLine::Emphasis(format!("Container {container} {reason_line}.")),
         PromptContextLine::Blank,
-        PromptContextLine::Path(worktree_path.to_string()),
+        PromptContextLine::Path(worktree_path.to_owned()),
         PromptContextLine::Blank,
-        PromptContextLine::Muted("Choose how jackin' should handle this worktree.".to_string()),
+        PromptContextLine::Muted("Choose how jackin' should handle this worktree.".to_owned()),
     ];
     let options = vec![
-        "Return to role to address it".to_string(),
-        "Preserve worktree and exit".to_string(),
-        "Force delete worktree and discard changes".to_string(),
+        "Return to role to address it".to_owned(),
+        "Preserve worktree and exit".to_owned(),
+        "Force delete worktree and discard changes".to_owned(),
     ];
     match crate::runtime::progress::standalone_select_with_context(
         "Isolated Worktree",
@@ -132,7 +133,7 @@ fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedRe
             let message = format!(
                 "Container {container} {reason_str}.\n\n{worktree_path}\n\nCould not render the cleanup dialog:\n{err:#}\n\nThe worktree will be preserved."
             );
-            let _ = crate::runtime::progress::standalone_error_popup(
+            let _unused = crate::runtime::progress::standalone_error_popup(
                 "Isolated Worktree Error",
                 &message,
             );

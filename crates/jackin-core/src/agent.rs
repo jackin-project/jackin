@@ -204,7 +204,7 @@ impl FromStr for Agent {
             "kimi" => Ok(Self::Kimi),
             "opencode" => Ok(Self::Opencode),
             other => Err(ParseAgentError {
-                got: other.to_string(),
+                got: other.to_owned(),
             }),
         }
     }

@@ -88,7 +88,7 @@ pub(crate) fn wait_child_with_timeout(
                     e.raw_os_error()
                 );
             }
-            let _ = child.wait();
+            drop(child.wait());
             return WaitOutcome::TimedOut;
         }
         std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
@@ -141,7 +141,7 @@ pub(crate) fn command_stdout_trimmed_with_timeout_and_statuses(
             // closed the pipe, so read_to_end returns quickly. Without
             // the join the OS-thread is leaked across every timeout
             // firing.
-            let _ = stdout_reader.join();
+            drop(stdout_reader.join());
             return None;
         }
         WaitOutcome::Failed(e) => {
@@ -150,7 +150,7 @@ pub(crate) fn command_stdout_trimmed_with_timeout_and_statuses(
                 command.get_program(),
                 e.raw_os_error()
             );
-            let _ = stdout_reader.join();
+            drop(stdout_reader.join());
             return None;
         }
     };
@@ -175,7 +175,7 @@ pub(crate) fn command_stdout_trimmed_with_timeout_and_statuses(
             return None;
         }
     };
-    let value = String::from_utf8_lossy(&stdout).trim().to_string();
+    let value = String::from_utf8_lossy(&stdout).trim().to_owned();
     if value.is_empty() { None } else { Some(value) }
 }
 

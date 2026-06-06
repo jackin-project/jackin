@@ -62,10 +62,10 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
     let bytes = encode_client(ClientFrame::Hello {
         rows: 50,
         cols: 200,
-        spawn: Some(SpawnRequest::Agent("codex".to_string())),
+        spawn: Some(SpawnRequest::Agent("codex".to_owned())),
         env: vec![
-            ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
-            ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
+            ("JACKIN_GIT_COAUTHOR_TRAILER".to_owned(), "1".to_owned()),
+            ("JACKIN_GIT_DCO".to_owned(), "1".to_owned()),
         ],
         terminal: ClientTerminal::default(),
         focus_session: None,
@@ -80,10 +80,10 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
         ClientFrame::Hello {
             rows: 50,
             cols: 200,
-            spawn: Some(SpawnRequest::Agent("codex".to_string())),
+            spawn: Some(SpawnRequest::Agent("codex".to_owned())),
             env: vec![
-                ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
-                ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
+                ("JACKIN_GIT_COAUTHOR_TRAILER".to_owned(), "1".to_owned()),
+                ("JACKIN_GIT_DCO".to_owned(), "1".to_owned()),
             ],
             terminal: ClientTerminal::default(),
             focus_session: None,
@@ -98,8 +98,8 @@ fn hello_with_agent_and_provider_roundtrips() {
     // the decoder still reads them would only surface at a real
     // console-initiated provider launch — pin the round-trip here.
     let spawn = Some(SpawnRequest::AgentWithProvider {
-        slug: "claude".to_string(),
-        provider_label: "Z.AI".to_string(),
+        slug: "claude".to_owned(),
+        provider_label: "Z.AI".to_owned(),
     });
     let bytes = encode_client(ClientFrame::Hello {
         rows: 50,
@@ -123,7 +123,7 @@ fn hello_rejects_oversized_provider_label_at_encode() {
         rows: 24,
         cols: 80,
         spawn: Some(SpawnRequest::AgentWithProvider {
-            slug: "claude".to_string(),
+            slug: "claude".to_owned(),
             provider_label: "p".repeat(MAX_HELLO_PROVIDER_LABEL + 1),
         }),
         env: Vec::new(),
@@ -430,9 +430,9 @@ fn hello_with_focus_session_round_trips() {
 #[test]
 fn hello_with_client_terminal_round_trips() {
     let terminal = ClientTerminal {
-        term: Some("xterm-ghostty".to_string()),
-        term_program: Some("ghostty".to_string()),
-        colorterm: Some("truecolor".to_string()),
+        term: Some("xterm-ghostty".to_owned()),
+        term_program: Some("ghostty".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
     };
     let bytes = encode_client(ClientFrame::Hello {
         rows: 24,
@@ -454,32 +454,32 @@ fn hello_with_client_terminal_round_trips() {
 #[test]
 fn client_terminal_detects_known_pointer_shape_support() {
     let ghostty = ClientTerminal {
-        term: Some("xterm-ghostty".to_string()),
+        term: Some("xterm-ghostty".to_owned()),
         ..ClientTerminal::default()
     };
     let kitty = ClientTerminal {
-        term: Some("xterm-kitty".to_string()),
+        term: Some("xterm-kitty".to_owned()),
         ..ClientTerminal::default()
     };
     let iterm = ClientTerminal {
-        term_program: Some("iTerm.app".to_string()),
+        term_program: Some("iTerm.app".to_owned()),
         ..ClientTerminal::default()
     };
     let warp = ClientTerminal {
-        term_program: Some("WarpTerminal".to_string()),
+        term_program: Some("WarpTerminal".to_owned()),
         ..ClientTerminal::default()
     };
     let apple_terminal = ClientTerminal {
-        term: Some("xterm-256color".to_string()),
-        term_program: Some("Apple_Terminal".to_string()),
+        term: Some("xterm-256color".to_owned()),
+        term_program: Some("Apple_Terminal".to_owned()),
         ..ClientTerminal::default()
     };
     let generic_xterm = ClientTerminal {
-        term: Some("xterm-256color".to_string()),
+        term: Some("xterm-256color".to_owned()),
         ..ClientTerminal::default()
     };
     let dumb = ClientTerminal {
-        term: Some("dumb".to_string()),
+        term: Some("dumb".to_owned()),
         ..ClientTerminal::default()
     };
 

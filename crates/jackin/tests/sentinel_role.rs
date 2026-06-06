@@ -35,19 +35,19 @@ impl EnvPrompter for SentinelPrompter {
             "Sentinel free text:" => PromptResult::Value(
                 default
                     .expect("free text prompt should carry its default")
-                    .to_string(),
+                    .to_owned(),
             ),
-            "Required sentinel value:" => PromptResult::Value("required-value".to_string()),
+            "Required sentinel value:" => PromptResult::Value("required-value".to_owned()),
             "Optional sentinel API key:" => PromptResult::Skipped,
             "Branch for frontend:" => PromptResult::Value(
                 default
                     .expect("branch prompt should interpolate its default")
-                    .to_string(),
+                    .to_owned(),
             ),
             "Combined label for frontend:" => PromptResult::Value(
                 default
                     .expect("combined prompt should interpolate its default")
-                    .to_string(),
+                    .to_owned(),
             ),
             other => anyhow::bail!("unexpected text prompt {other:?}"),
         })
@@ -64,11 +64,11 @@ impl EnvPrompter for SentinelPrompter {
             "select:{title}:{options:?}:{default:?}:{skippable}"
         ));
         Ok(match title {
-            "Select sentinel project:" => PromptResult::Value("frontend".to_string()),
+            "Select sentinel project:" => PromptResult::Value("frontend".to_owned()),
             "Select sentinel mode:" => PromptResult::Value(
                 default
                     .expect("select mode prompt should carry its default")
-                    .to_string(),
+                    .to_owned(),
             ),
             other => anyhow::bail!("unexpected select prompt {other:?}"),
         })

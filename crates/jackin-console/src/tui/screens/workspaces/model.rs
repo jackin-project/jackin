@@ -78,13 +78,13 @@ pub trait WorkspaceSummarySource {
 impl WorkspaceSummary {
     pub fn from_source(name: &str, source: &impl WorkspaceSummarySource) -> Self {
         Self {
-            name: name.to_string(),
-            workdir: source.workdir().to_string(),
+            name: name.to_owned(),
+            workdir: source.workdir().to_owned(),
             mount_count: source.mount_count(),
             readonly_mount_count: source.readonly_mount_count(),
             allowed_role_count: source.allowed_role_count(),
-            default_role: source.default_role().map(str::to_string),
-            last_role: source.last_role().map(str::to_string),
+            default_role: source.default_role().map(str::to_owned),
+            last_role: source.last_role().map(str::to_owned),
         }
     }
 }

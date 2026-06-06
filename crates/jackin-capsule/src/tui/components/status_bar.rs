@@ -88,6 +88,7 @@ pub(crate) const fn prefix_mode_for_mux_mode(mode: MuxMode) -> PrefixMode {
     }
 }
 
+#[derive(Debug)]
 pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
     pub hint_region: Option<(u16, u16)>,
@@ -133,8 +134,8 @@ impl StatusBar {
             hint_region: None,
             prefix_mode: PrefixMode::Idle,
             prefix_enabled: false,
-            prefix_label: "Ctrl+B".to_string(),
-            palette_label: "Ctrl+\\".to_string(),
+            prefix_label: "Ctrl+B".to_owned(),
+            palette_label: "Ctrl+\\".to_owned(),
             identity_label,
             instance_id_label,
             role,
@@ -301,8 +302,8 @@ impl StatusBar {
 
     fn button_text(&self) -> String {
         match self.prefix_mode {
-            PrefixMode::Idle => " ☰Menu ".to_string(),
-            PrefixMode::Awaiting => " prefix… ".to_string(),
+            PrefixMode::Idle => " ☰Menu ".to_owned(),
+            PrefixMode::Awaiting => " prefix… ".to_owned(),
         }
     }
 
@@ -434,8 +435,8 @@ pub(crate) struct StatusBarPlan {
 
 pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> String {
     match prefix_mode {
-        PrefixMode::Idle => " ☰Menu ".to_string(),
-        PrefixMode::Awaiting => " prefix… ".to_string(),
+        PrefixMode::Idle => " ☰Menu ".to_owned(),
+        PrefixMode::Awaiting => " prefix… ".to_owned(),
     }
 }
 
@@ -652,7 +653,7 @@ fn take_display_cols(s: &str, max_cols: u16) -> String {
 }
 
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
-    let _ = write!(buf, "\x1b[{};{}H", row, col);
+    let _unused = write!(buf, "\x1b[{row};{col}H");
 }
 
 #[cfg(test)]

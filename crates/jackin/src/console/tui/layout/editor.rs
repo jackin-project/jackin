@@ -136,7 +136,7 @@ fn secrets_tab_geometry(
                 |scope, key| {
                     state
                         .unmasked_rows
-                        .contains(&(scope.clone(), key.to_string()))
+                        .contains(&(scope.clone(), key.to_owned()))
                 },
                 |role| config.roles.contains_key(role),
                 |role| {

@@ -36,7 +36,7 @@ pub async fn force_cleanup_isolated(
         return force_cleanup_clone(record, container_state_dir);
     }
 
-    let host_repo_exists = std::path::Path::new(&record.original_src).exists();
+    let host_repo_exists = Path::new(&record.original_src).exists();
     debug_log!(
         "isolation",
         "force_cleanup_isolated: container={c} mount={d} branch={b} worktree={w} host_repo_exists={exists}",
@@ -147,7 +147,7 @@ pub async fn force_cleanup_isolated(
     // Belt-and-suspenders: nuke the worktree directory if git left
     // anything. Surface fs errors loudly — a failed rm-rf with the
     // worktree still present means cleanup didn't really happen.
-    let wt = std::path::Path::new(&record.worktree_path);
+    let wt = Path::new(&record.worktree_path);
     if wt.exists() {
         debug_log!(
             "isolation",
@@ -189,7 +189,7 @@ fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> 
         d = record.mount_dst,
         w = record.worktree_path,
     );
-    let clone_path = std::path::Path::new(&record.worktree_path);
+    let clone_path = Path::new(&record.worktree_path);
     if clone_path.exists() {
         std::fs::remove_dir_all(clone_path).map_err(|e| {
             anyhow::anyhow!(

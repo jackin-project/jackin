@@ -15,7 +15,7 @@ fn test_paths() -> (TempDir, JackinPaths) {
 #[tokio::test]
 async fn wait_for_capsule_daemon_polls_socket_status_command() {
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_string()])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_owned()])),
         ..Default::default()
     };
 
@@ -40,7 +40,7 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
             exit_code: 0,
             oom_killed: false,
         }])),
-        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_string()])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_owned()])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -85,9 +85,7 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
 async fn hardline_attaches_when_container_is_running() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Running,
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -111,7 +109,7 @@ async fn hardline_attaches_when_container_is_running() {
 async fn hardline_clean_exit_ejects_runtime_resources() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
             ContainerState::Stopped {
                 exit_code: 0,
@@ -157,12 +155,12 @@ async fn hardline_clean_exit_ejects_runtime_resources() {
 async fn hardline_detach_with_live_sessions_preserves_runtime_resources() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
             ContainerState::Running,
         ])),
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            "Sessions: 1\n  [1] Claude (claude) state=working active=true".to_string(),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            "Sessions: 1\n  [1] Claude (claude) state=working active=true".to_owned(),
         ])),
         ..Default::default()
     };
@@ -200,14 +198,14 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         role_source_ref: None,
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
-            role_container: container_name.to_string(),
+            role_container: container_name.to_owned(),
             dind_container: format!("{container_name}-dind"),
             network: format!("{container_name}-net"),
             certs_volume: format!("{container_name}-dind-certs"),
         },
     });
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
             ContainerState::Running,
             ContainerState::Running,
@@ -263,14 +261,14 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
         role_source_ref: None,
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
-            role_container: container_name.to_string(),
+            role_container: container_name.to_owned(),
             dind_container: format!("{container_name}-dind"),
             network: format!("{container_name}-net"),
             certs_volume: format!("{container_name}-dind-certs"),
         },
     });
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
             ContainerState::Running,
             ContainerState::Running,
@@ -336,14 +334,14 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
         role_source_ref: None,
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
-            role_container: container_name.to_string(),
+            role_container: container_name.to_owned(),
             dind_container: format!("{container_name}-dind"),
             network: format!("{container_name}-net"),
             certs_volume: format!("{container_name}-dind-certs"),
         },
     });
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
             ContainerState::Running,
             ContainerState::Running,
@@ -389,12 +387,10 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
 async fn hardline_new_session_requires_running_container() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Stopped {
-                exit_code: 137,
-                oom_killed: false,
-            },
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: false,
+        }])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -427,9 +423,7 @@ async fn hardline_new_session_requires_running_container() {
 async fn spawn_shell_session_execs_jackin_capsule_new_in_running_container() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Running,
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -454,9 +448,7 @@ async fn spawn_shell_session_execs_jackin_capsule_new_in_running_container() {
 async fn spawn_shell_session_does_not_set_tmux_env() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Running,
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -475,12 +467,10 @@ async fn spawn_shell_session_does_not_set_tmux_env() {
 async fn spawn_shell_session_errors_on_stopped_container() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Stopped {
-                exit_code: 137,
-                oom_killed: false,
-            },
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: false,
+        }])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -534,8 +524,8 @@ async fn hardline_errors_when_docker_inspect_is_unavailable() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
         fail_with: vec![(
-            "docker inspect jk-agent-smith".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+            "docker inspect jk-agent-smith".to_owned(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_owned(),
         )],
         ..Default::default()
     };
@@ -571,7 +561,7 @@ async fn hardline_marks_missing_manifest_restore_available() {
         role_source_ref: None,
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
-            role_container: container_name.to_string(),
+            role_container: container_name.to_owned(),
             dind_container: format!("{container_name}-dind"),
             network: format!("{container_name}-net"),
             certs_volume: format!("{container_name}-dind-certs"),
@@ -612,14 +602,14 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
         role_source_ref: Some("feature/role"),
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
-            role_container: container_name.to_string(),
+            role_container: container_name.to_owned(),
             dind_container: format!("{container_name}-dind"),
             network: format!("{container_name}-net"),
             certs_volume: format!("{container_name}-dind-certs"),
         },
     });
     manifest.mark_status(InstanceStatus::PreservedDirty);
-    manifest.last_attach_outcome = Some("exit:137".to_string());
+    manifest.last_attach_outcome = Some("exit:137".to_owned());
     manifest
         .write(&paths.data_dir.join(container_name))
         .unwrap();
@@ -627,17 +617,17 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
     // exec_capture: jackin-capsule status returns two sessions
     // inspect_network: network present
     let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([
                 ContainerState::Running,
                 ContainerState::Stopped {
                     exit_code: 137,
                     oom_killed: false,
                 },
             ])),
-            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "Sessions: 2\n  [1] jackin-claude-abc123 (claude) state=working active=true\n  [2] jackin-codex-abc (codex) state=idle active=false".to_string(),
+            exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+                "Sessions: 2\n  [1] jackin-claude-abc123 (claude) state=working active=true\n  [2] jackin-codex-abc (codex) state=idle active=false".to_owned(),
             ])),
-            inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+            inspect_network_queue: std::cell::RefCell::new(VecDeque::from([
                 Some(jackin_docker::docker_client::NetworkRow {
                     name: format!("{container_name}-net"),
                     labels: HashMap::default(),
@@ -669,8 +659,8 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
 #[tokio::test]
 async fn inspect_agent_sessions_lists_jackin_sessions() {
     let docker = FakeDockerClient {
-            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "Sessions: 2\n  [1] Claude (claude) state=working active=true\n  [2] Codex (codex) state=idle active=false".to_string(),
+            exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+                "Sessions: 2\n  [1] Claude (claude) state=working active=true\n  [2] Codex (codex) state=idle active=false".to_owned(),
             ])),
             ..Default::default()
         };
@@ -689,9 +679,7 @@ async fn inspect_agent_sessions_lists_jackin_sessions() {
 #[tokio::test]
 async fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            "Sessions: 0".to_string(),
-        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 0".to_owned()])),
         ..Default::default()
     };
 
@@ -706,9 +694,7 @@ async fn inspect_agent_sessions_returns_unavailable_on_missing_header() {
     // A daemon that crashed mid-call or a cosmetic change to the
     // status print must surface as Unavailable, not as "zero sessions".
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            String::new(),
-        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([String::new()])),
         ..Default::default()
     };
 
@@ -724,8 +710,8 @@ async fn inspect_agent_sessions_returns_unavailable_on_missing_header() {
 #[tokio::test]
 async fn inspect_agent_sessions_returns_unavailable_on_count_mismatch() {
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            "Sessions: 5\n  [1] Claude (claude) state=working active=true".to_string(),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            "Sessions: 5\n  [1] Claude (claude) state=working active=true".to_owned(),
         ])),
         ..Default::default()
     };
@@ -774,7 +760,7 @@ async fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailabl
         role_source_ref: None,
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
-            role_container: container_name.to_string(),
+            role_container: container_name.to_owned(),
             dind_container: format!("{container_name}-dind"),
             network: format!("{container_name}-net"),
             certs_volume: format!("{container_name}-dind-certs"),
@@ -785,8 +771,8 @@ async fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailabl
         .unwrap();
     let docker = FakeDockerClient {
         fail_with: vec![(
-            "docker inspect jk-k7p9m2xq-workspace-agentsmith".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+            "docker inspect jk-k7p9m2xq-workspace-agentsmith".to_owned(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_owned(),
         )],
         ..Default::default()
     };
@@ -802,12 +788,10 @@ async fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailabl
 async fn hardline_errors_on_clean_exit() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            },
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 0,
+            oom_killed: false,
+        }])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -829,12 +813,10 @@ async fn hardline_errors_on_clean_exit() {
 async fn hardline_refuses_crashed_container() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Stopped {
-                exit_code: 137,
-                oom_killed: false,
-            },
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: false,
+        }])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -860,12 +842,10 @@ async fn hardline_refuses_crashed_container() {
 async fn hardline_refuses_oom_killed_container() {
     let (_tmp, paths) = test_paths();
     let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: true,
-            },
-        ])),
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 0,
+            oom_killed: true,
+        }])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
@@ -884,7 +864,7 @@ async fn hardline_refuses_oom_killed_container() {
 async fn wait_for_dind_times_out_when_all_attempts_fail() {
     tokio::time::pause(); // make all sleeps instant
     let docker = FakeDockerClient {
-        fail_with: vec![("docker exec".to_string(), "connection refused".to_string())],
+        fail_with: vec![("docker exec".to_owned(), "connection refused".to_owned())],
         ..Default::default()
     };
 
@@ -899,13 +879,13 @@ async fn wait_for_dind_times_out_when_all_attempts_fail() {
 async fn wait_for_dind_fails_when_cert_absent() {
     // First exec (docker info) succeeds; second exec (test -f) exits with code 1.
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
             // docker info: success
             String::new(),
         ])),
         fail_with: vec![(
-            "test -f /certs/client/ca.pem".to_string(),
-            "exec in jk-agent-smith-dind exited with code 1: ".to_string(),
+            "test -f /certs/client/ca.pem".to_owned(),
+            "exec in jk-agent-smith-dind exited with code 1: ".to_owned(),
         )],
         ..Default::default()
     };
@@ -926,9 +906,7 @@ async fn spawn_shell_session_succeeds_when_container_paused_or_restarting() {
     for state in [ContainerState::Paused, ContainerState::Restarting] {
         let (_tmp, paths) = test_paths();
         let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                state.clone()
-            ])),
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([state.clone()])),
             ..Default::default()
         };
         let mut runner = FakeRunner::default();
@@ -957,9 +935,7 @@ async fn hardline_agent_errors_on_inactive_states() {
     for (state, expected_phrase) in cases {
         let (_tmp, paths) = test_paths();
         let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                state.clone()
-            ])),
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([state.clone()])),
             ..Default::default()
         };
         let mut runner = FakeRunner::default();
@@ -1001,7 +977,7 @@ async fn inspect_agent_sessions_returns_not_running_for_non_running_states() {
 async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
     // docker info succeeds on first attempt; test -f /certs/client/ca.pem also succeeds.
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
             String::new(), // docker info
             String::new(), // test -f /certs/client/ca.pem
         ])),

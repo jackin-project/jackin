@@ -10,7 +10,7 @@ fn empty_filter_shows_placeholder() {
         .draw(|frame| frame.render_widget(FilterInput::new(""), frame.area()))
         .unwrap();
     let row: String = (0..32)
-        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_string())
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_owned())
         .collect();
     assert!(row.contains("Filter: ░░░░░░░░░░░░░░░░░░░░"));
 }

@@ -27,6 +27,7 @@ pub use jackin_core::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
 
+#[derive(Debug)]
 pub struct BollardDockerClient {
     inner: Docker,
 }
@@ -94,7 +95,7 @@ struct DockerContextEndpoint {
 impl DockerContextEndpoint {
     fn new(host: impl Into<String>, skip_tls_verify: bool, has_tls_material: bool) -> Self {
         Self {
-            host: host.into().trim().to_string(),
+            host: host.into().trim().to_owned(),
             skip_tls_verify,
             has_tls_material,
         }
@@ -221,7 +222,7 @@ fn cached_context_endpoint() -> Option<DockerContextEndpoint> {
         return Some(cached.clone());
     }
     let endpoint = active_docker_context_endpoint()?;
-    let _ = CACHE.set(endpoint.clone());
+    drop(CACHE.set(endpoint.clone()));
     Some(endpoint)
 }
 
@@ -311,7 +312,7 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
     }
     let mut map = HashMap::new();
     map.insert(
-        "label".to_string(),
+        "label".to_owned(),
         label_filters.iter().map(ToString::to_string).collect(),
     );
     Some(map)
@@ -330,7 +331,7 @@ impl DockerApi for BollardDockerClient {
             Err(e) => ContainerState::InspectUnavailable(e.to_string()),
             Ok(info) => {
                 let Some(state) = info.state else {
-                    return ContainerState::InspectUnavailable("no state field".to_string());
+                    return ContainerState::InspectUnavailable("no state field".to_owned());
                 };
                 match state.status {
                     Some(ContainerStateStatusEnum::RUNNING) => ContainerState::Running,
@@ -413,7 +414,7 @@ impl DockerApi for BollardDockerClient {
                     .into_iter()
                     .next()
                     .unwrap_or_default();
-                let name = raw_name.trim_start_matches('/').to_string();
+                let name = raw_name.trim_start_matches('/').to_owned();
                 let labels = s.labels.unwrap_or_default();
                 ContainerRow { name, labels }
             })
@@ -425,7 +426,7 @@ impl DockerApi for BollardDockerClient {
         self.inner
             .create_container(
                 Some(CreateContainerOptions {
-                    name: Some(name.to_string()),
+                    name: Some(name.to_owned()),
                     ..Default::default()
                 }),
                 ContainerCreateBody {
@@ -478,7 +479,7 @@ impl DockerApi for BollardDockerClient {
         jackin_diagnostics::debug_log!("docker", "network create {name}");
         self.inner
             .create_network(NetworkCreateRequest {
-                name: name.to_string(),
+                name: name.to_owned(),
                 labels: Some(labels),
                 ..Default::default()
             })
@@ -518,7 +519,7 @@ impl DockerApi for BollardDockerClient {
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {
         jackin_diagnostics::debug_log!("docker", "images --filter reference={reference_filter}");
         let mut filters = HashMap::new();
-        filters.insert("reference".to_string(), vec![reference_filter.to_string()]);
+        filters.insert("reference".to_owned(), vec![reference_filter.to_owned()]);
         let images = self
             .inner
             .list_images(Some(ListImagesOptions {
@@ -585,7 +586,7 @@ impl DockerApi for BollardDockerClient {
         jackin_diagnostics::debug_log!("docker", "pull {image}");
         let mut stream = self.inner.create_image(
             Some(CreateImageOptions {
-                from_image: Some(image.to_string()),
+                from_image: Some(image.to_owned()),
                 ..Default::default()
             }),
             None,
@@ -650,7 +651,7 @@ impl DockerApi for BollardDockerClient {
             );
         }
 
-        Ok(output_buf.trim().to_string())
+        Ok(output_buf.trim().to_owned())
     }
 
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
@@ -664,7 +665,7 @@ impl DockerApi for BollardDockerClient {
             .await
         {
             Ok(n) => {
-                let net_name = n.name.unwrap_or_else(|| name.to_string());
+                let net_name = n.name.unwrap_or_else(|| name.to_owned());
                 let labels = n.labels.unwrap_or_default();
                 Ok(Some(NetworkRow {
                     name: net_name,

@@ -34,7 +34,7 @@ pub fn dispatch_launch_for_workspace(
         // — a single Enter shouldn't terminate the TUI.
         LaunchDispatchResolution::NoEligibleRoles { name } => {
             if let ConsoleStage::Manager(ms) = &mut state.stage {
-                let _ = crate::console::tui::update_manager(
+                let _unused = crate::console::tui::update_manager(
                     ms,
                     crate::console::tui::ManagerMessage::OpenListErrorPopup {
                         title: no_eligible_roles_error_title().into(),

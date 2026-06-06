@@ -208,7 +208,7 @@ impl WorkspaceConfig {
     /// Mirrors `AppConfig::validate_auth_modes` for the workspace layer.
     /// Checks both the workspace-level config and every per-role override.
     pub fn validate_auth_modes(&self) -> anyhow::Result<()> {
-        let workspace_pairs: &[(Agent, Option<&crate::auth::AgentAuthConfig>)] = &[
+        let workspace_pairs: &[(Agent, Option<&AgentAuthConfig>)] = &[
             (Agent::Codex, self.codex.as_ref()),
             (Agent::Amp, self.amp.as_ref()),
             (Agent::Kimi, self.kimi.as_ref()),
@@ -228,7 +228,7 @@ impl WorkspaceConfig {
             }
         }
         for (role, override_cfg) in &self.roles {
-            let role_pairs: &[(Agent, Option<&crate::auth::AgentAuthConfig>)] = &[
+            let role_pairs: &[(Agent, Option<&AgentAuthConfig>)] = &[
                 (Agent::Codex, override_cfg.codex.as_ref()),
                 (Agent::Amp, override_cfg.amp.as_ref()),
                 (Agent::Kimi, override_cfg.kimi.as_ref()),
@@ -351,7 +351,7 @@ pub struct ResolvedWorkspace {
     /// Whether the keep-awake reconciler is active for this workspace.
     pub keep_awake_enabled: bool,
     /// Workspace-level default agent (`None` for ad-hoc / current-dir workspaces).
-    pub default_agent: Option<jackin_core::Agent>,
+    pub default_agent: Option<Agent>,
     pub git_pull_on_entry: bool,
 }
 

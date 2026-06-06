@@ -55,6 +55,7 @@ pub enum SidebarScrollFocus {
 
 /// Shared facts for the right-pane sidebar body. Root adapters supply concrete
 /// workspace/config rows; crate-owned layout helpers consume the generic shape.
+#[derive(Debug)]
 pub struct SidebarInputs<'a, Mount, WorkspaceConfig, GlobalMountRow, MountInfoCache> {
     pub workdir: &'a str,
     pub mounts: &'a [Mount],
@@ -201,10 +202,13 @@ pub const fn agents_block_agent_count(
 }
 
 #[must_use]
-pub fn agents_block_content_width<'a>(role_keys: impl IntoIterator<Item = &'a str>) -> usize {
+pub fn agents_block_content_width<S>(role_keys: impl IntoIterator<Item = S>) -> usize
+where
+    S: AsRef<str>,
+{
     role_keys
         .into_iter()
-        .map(|key| jackin_tui::display_cols(key) + 4)
+        .map(|key| jackin_tui::display_cols(key.as_ref()) + 4)
         .max()
         .unwrap_or(0)
 }

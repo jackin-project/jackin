@@ -34,7 +34,7 @@ pub fn load_role<'a>(
     docker: &'a impl DockerApi,
     runner: &'a mut impl CommandRunner,
     opts: &'a super::LoadOptions,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + 'a>> {
+) -> std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>> {
     Box::pin(load_role_with(
         paths,
         config,
@@ -97,7 +97,7 @@ pub async fn resolve_supported_agents_for_console(
 }
 
 /// Instrument the full launch pipeline so every stage appears as a
-/// child span in the diagnostics run log (Defect 47 — real span_id correlation).
+/// child span in the diagnostics run log (Defect 47 — real `span_id` correlation).
 #[tracing::instrument(
     skip_all,
     fields(role = %selector.key())
@@ -163,7 +163,7 @@ pub(crate) async fn load_role_with(
             agent: opts
                 .agent
                 .or(workspace.default_agent)
-                .map_or_else(|| "resolving".to_string(), |agent| agent.slug().to_string()),
+                .map_or_else(|| "resolving".to_owned(), |agent| agent.slug().to_owned()),
             target_kind: super::launch_target_kind(workspace_name.as_deref()),
             target_label: super::launch_target_label(workspace_name.as_deref(), workspace),
             mounts: super::launch_mount_lines(workspace),
@@ -305,7 +305,7 @@ pub(crate) async fn load_role_with(
         None if supported_agents.len() >= 2 => {
             let labels: Vec<String> = supported_agents
                 .iter()
-                .map(|a| a.slug().to_string())
+                .map(|a| a.slug().to_owned())
                 .collect();
             if let Some(progress) = steps.progress_mut() {
                 let selection = progress.select_choice("Choose launch agent", labels)?;
@@ -434,7 +434,7 @@ pub(crate) async fn load_role_with(
     if let Some(progress) = steps.progress_mut() {
         progress.update_identity(crate::runtime::progress::LaunchIdentity {
             role: agent_display_name.clone(),
-            agent: agent.slug().to_string(),
+            agent: agent.slug().to_owned(),
             target_kind: super::launch_target_kind(workspace_name.as_deref()),
             target_label: super::launch_target_label(workspace_name.as_deref(), workspace),
             mounts: super::launch_mount_lines(workspace),
@@ -476,7 +476,7 @@ pub(crate) async fn load_role_with(
         // Offload `op` CLI calls to the blocking pool so the tokio render
         // thread stays responsive during 1Password lookups (Defect 43).
         let config_clone = config.clone();
-        let selector_key = selector.key().to_string();
+        let selector_key = selector.key().clone();
         let workspace_key = workspace_name.as_deref().map(String::from);
         tokio::task::spawn_blocking(move || {
             jackin_env::resolve_operator_env(
@@ -760,8 +760,8 @@ pub(crate) async fn load_role_with(
             let container_name_owned = container_name.clone();
             let manifest_owned = validated_repo.manifest.clone();
             let config_owned = config.clone();
-            let workspace_name_owned = workspace_name_str.to_string();
-            let role_key_owned = role_key.to_string();
+            let workspace_name_owned = workspace_name_str.to_owned();
+            let role_key_owned = role_key.clone();
             let github_ctx_owned = github_ctx.clone();
             tokio::task::spawn_blocking(move || {
                 let resolve_mode = |a: jackin_core::agent::Agent| {
@@ -833,7 +833,7 @@ pub(crate) async fn load_role_with(
         {
             let gh_token_key = jackin_core::env_model::GH_TOKEN_ENV_NAME;
             let token_breadcrumb = github_env_decls.get(gh_token_key).map_or_else(
-                || gh_token_key.to_string(),
+                || gh_token_key.to_owned(),
                 |value| super::auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
             );
             if let Some(run) = jackin_diagnostics::active_run() {
@@ -864,7 +864,7 @@ pub(crate) async fn load_role_with(
             );
         }
         let materialize_preflight = crate::isolation::materialize::PreflightContext {
-            workspace_name: workspace_label.to_string(),
+            workspace_name: workspace_label.to_owned(),
             force: opts.force,
             interactive,
         };

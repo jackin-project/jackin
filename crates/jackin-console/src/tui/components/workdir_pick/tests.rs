@@ -65,7 +65,7 @@ fn home_parent_is_filtered_out() {
     // ancestor chain includes the $HOME-parent directory — which must
     // be filtered.
     let home = directories::BaseDirs::new().map_or_else(
-        || "/home/test".to_string(),
+        || "/home/test".to_owned(),
         |b| b.home_dir().display().to_string(),
     );
     let dst = format!("{home}/Projects/app");
@@ -74,7 +74,7 @@ fn home_parent_is_filtered_out() {
 
     let home_parent = std::path::Path::new(&home)
         .parent()
-        .map_or_else(|| "/Users".to_string(), |p| p.display().to_string());
+        .map_or_else(|| "/Users".to_owned(), |p| p.display().to_string());
 
     assert!(
         s.choices.iter().all(|c| c.path != home_parent),
@@ -93,7 +93,7 @@ fn home_parent_is_filtered_out() {
 #[test]
 fn home_itself_is_labelled_home_not_parent() {
     let home = directories::BaseDirs::new().map_or_else(
-        || "/home/test".to_string(),
+        || "/home/test".to_owned(),
         |b| b.home_dir().display().to_string(),
     );
     let dst = format!("{home}/Projects/app");

@@ -774,15 +774,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-channel"
-version = "0.5.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2236,21 +2227,14 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 name = "jackin"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse",
  "anyhow",
  "assert_cmd",
- "bollard",
- "chrono",
  "clap",
  "clap_mangen",
  "criterion",
  "crossterm",
  "dialoguer",
  "directories",
- "dockerfile-parser-rs",
- "fast-down",
- "filetime",
- "flate2",
  "fs2",
  "futures-util",
  "insta",
@@ -2262,33 +2246,21 @@ dependencies = [
  "jackin-docker",
  "jackin-env",
  "jackin-image",
- "jackin-launch",
  "jackin-manifest",
  "jackin-protocol",
  "jackin-runtime",
  "jackin-tui",
- "nix 0.31.3",
  "open",
  "owo-colors",
- "portable-pty",
  "predicates",
- "rand 0.10.1",
  "ratatui",
- "reqwest 0.13.4",
- "secrecy",
  "serde",
  "serde_json",
- "serde_yaml_ng",
- "sha2 0.11.0",
  "tabled",
- "tar",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
- "toml_edit 0.25.12+spec-1.1.0",
- "tracing",
- "tui-widget-list",
 ]
 
 [[package]]
@@ -2319,7 +2291,6 @@ dependencies = [
  "tracing",
  "unicode-width",
  "url",
- "vte",
 ]
 
 [[package]]
@@ -2328,7 +2299,6 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "directories",
- "fs2",
  "jackin-core",
  "jackin-diagnostics",
  "serde",
@@ -2375,7 +2345,6 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
- "directories",
  "jackin-core",
  "jackin-tui",
  "opentelemetry",
@@ -2386,7 +2355,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tracing",
- "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
 ]
@@ -2428,7 +2396,6 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
- "thiserror 2.0.18",
  "toml 0.8.23",
 ]
 
@@ -2498,7 +2465,6 @@ name = "jackin-runtime"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "bollard",
  "chrono",
  "dialoguer",
  "directories",
@@ -2562,7 +2528,6 @@ dependencies = [
  "crossterm",
  "jackin-tui",
  "ratatui",
- "unicode-width",
 ]
 
 [[package]]
@@ -5106,12 +5071,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "symlink"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7973cce6668464ea31f176d85b13c7ab3bba2cb3b77a2ed26abd7801688010a"
-
-[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5647,19 +5606,6 @@ dependencies = [
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
-]
-
-[[package]]
-name = "tracing-appender"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "050686193eb999b4bb3bc2acfa891a13da00f79734704c4b8b4ef1a10b368a3c"
-dependencies = [
- "crossbeam-channel",
- "symlink",
- "thiserror 2.0.18",
- "time",
- "tracing-subscriber",
 ]
 
 [[package]]

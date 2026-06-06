@@ -465,7 +465,7 @@ fn run_in_pty_until_file(
             {
                 return;
             }
-            let _ = stdin.write_all(step.input.as_bytes());
+            drop(stdin.write_all(step.input.as_bytes()));
             std::thread::sleep(Duration::from_millis(500));
         }
         while !done_for_writer.load(Ordering::Relaxed) {
@@ -478,7 +478,7 @@ fn run_in_pty_until_file(
         if std::fs::read_to_string(sentinel.path)
             .is_ok_and(|contents| contents.contains(sentinel.text))
         {
-            let _ = child.kill();
+            drop(child.kill());
             let status = child.wait().expect("script must finish");
             done.store(true, Ordering::Relaxed);
             stdin_writer.join().expect("stdin writer must finish");
@@ -511,7 +511,7 @@ fn run_in_pty_until_file(
         std::thread::sleep(Duration::from_millis(500));
     }
 
-    let _ = child.kill();
+    drop(child.kill());
     let status = child.wait().expect("script must finish");
     done.store(true, Ordering::Relaxed);
     stdin_writer.join().expect("stdin writer must finish");
@@ -1060,19 +1060,19 @@ fn cleanup_role(role_key: &str, image: &str) {
             .lines()
             .filter(|line| !line.is_empty())
         {
-            let _ = Command::new("docker").args(["rm", "-f", name]).output();
-            let _ = Command::new("docker")
+            drop(Command::new("docker").args(["rm", "-f", name]).output());
+            let _unused = Command::new("docker")
                 .args(["rm", "-f", &format!("{name}-dind")])
                 .output();
-            let _ = Command::new("docker")
+            let _unused = Command::new("docker")
                 .args(["network", "rm", &format!("{name}-net")])
                 .output();
-            let _ = Command::new("docker")
+            let _unused = Command::new("docker")
                 .args(["volume", "rm", &format!("{name}-dind-certs")])
                 .output();
         }
     }
-    let _ = Command::new("docker").args(["rmi", image]).output();
+    drop(Command::new("docker").args(["rmi", image]).output());
 }
 
 fn run(program: &str, args: &[&str], cwd: Option<&Path>) {

@@ -10,7 +10,7 @@ pub(crate) const GIT_BRANCH_CONTEXT_POLL_INTERVAL: std::time::Duration =
 /// staying well under `gh`'s default secondary-rate-limit budget.
 /// The bar is operator-facing chrome, not a live feed.
 pub(crate) const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: std::time::Duration =
-    std::time::Duration::from_secs(60);
+    std::time::Duration::from_mins(1);
 
 /// Per-second state tick for low-frequency timers such as feedback expiry
 /// and conservative pull-request context refresh.

@@ -17,7 +17,7 @@ pub fn expand_tilde(path: &str) -> String {
         return path.replacen('~', &home, 1);
     }
 
-    path.to_string()
+    path.to_owned()
 }
 
 /// Normalize an absolute path by resolving `.` and `..` components without
@@ -98,12 +98,12 @@ mod tests {
     #[test]
     fn normalize_path_handles_multiple_parent_refs() {
         let path = Path::new("/a/b/c/../../d");
-        assert_eq!(normalize_path(path), std::path::PathBuf::from("/a/d"));
+        assert_eq!(normalize_path(path), PathBuf::from("/a/d"));
     }
 
     #[test]
     fn normalize_path_preserves_root_on_excessive_parents() {
         let path = Path::new("/a/../../../b");
-        assert_eq!(normalize_path(path), std::path::PathBuf::from("/b"));
+        assert_eq!(normalize_path(path), PathBuf::from("/b"));
     }
 }

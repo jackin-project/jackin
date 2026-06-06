@@ -24,6 +24,3 @@ pub use jackin_env::{
     print_launch_diagnostic, resolve_op_uri_to_ref, resolve_operator_env,
     resolve_operator_env_with, validate_reserved_names,
 };
-
-#[cfg(test)]
-mod tests;

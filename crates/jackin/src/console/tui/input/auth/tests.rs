@@ -393,7 +393,7 @@ fn auth_form_save_persists_role_layer_into_pending() {
     editor.pending.roles.insert(
         "smith".into(),
         WorkspaceRoleOverride {
-            claude: Some(crate::config::AgentAuthConfig {
+            claude: Some(AgentAuthConfig {
                 auth_forward: AuthForwardMode::Sync,
                 ..Default::default()
             }),
@@ -572,7 +572,7 @@ fn auth_form_generate_op_mint_remounts_form_focus_save() {
         path: "Personal/Claude/oauth-token".into(),
         account: None,
     };
-    super::apply_op_picker_to_auth_form_with_runner(editor, minted.clone(), &StubRunner);
+    apply_op_picker_to_auth_form_with_runner(editor, minted.clone(), &StubRunner);
 
     // Form is back, focus Save, credential carries the minted ref.
     let Some(Modal::AuthForm { state, focus, .. }) = &editor.modal else {
@@ -692,7 +692,7 @@ fn auth_form_op_ref_picker_commit_applies_to_form() {
         path: "Work/Anthropic/api-key".into(),
         account: None,
     };
-    super::apply_op_picker_to_auth_form_with_runner(editor, picked.clone(), &StubRunner);
+    apply_op_picker_to_auth_form_with_runner(editor, picked.clone(), &StubRunner);
 
     // Form is back; the credential carries the picked OpRef and
     // can_save must be true (mode + non-empty OpRef both set).
@@ -748,7 +748,7 @@ fn auth_form_op_ref_picker_failed_read_does_not_apply_op_ref() {
         path: "Vault/Missing/field".into(),
         account: None,
     };
-    super::apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
+    apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
 
     // ErrorPopup mounted; form re-stashed for the popup dismissal
     // path to re-open via restore_auth_form_after_op_picker_cancel.
@@ -1001,8 +1001,8 @@ fn d_on_zai_workspace_mode_row_clears_env_key() {
         panic!()
     };
     editor.pending.env.insert(
-        crate::env_model::ZAI_API_KEY_ENV_NAME.to_string(),
-        crate::operator_env::EnvValue::Plain("zai-key".into()),
+        crate::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        EnvValue::Plain("zai-key".into()),
     );
     // Detail rows render for the selected kind; focus the Z.AI section.
     editor.auth_selected_kind = Some(AuthKind::Zai);

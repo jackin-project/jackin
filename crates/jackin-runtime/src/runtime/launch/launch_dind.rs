@@ -38,7 +38,7 @@ pub(super) async fn run_dind_sidecar(
         .iter()
         .map(|kv| {
             let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-            (k.to_string(), v.to_string())
+            (k.to_owned(), v.to_owned())
         })
         .collect();
     docker.create_network(network, network_labels).await?;

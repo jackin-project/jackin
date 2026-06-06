@@ -20,7 +20,7 @@ fn scope_picker_default_focus_is_all_agents() {
 #[test]
 fn scope_picker_right_arrow_advances_to_specific() {
     let mut s = ScopePickerState::new();
-    let _ = s.handle_key(key_event(KeyCode::Right));
+    drop(s.handle_key(key_event(KeyCode::Right)));
     assert_eq!(s.focused, ScopeChoice::SpecificAgent);
 }
 
@@ -36,7 +36,7 @@ fn scope_picker_enter_on_all_commits_all() {
 #[test]
 fn scope_picker_enter_on_specific_commits_specific() {
     let mut s = ScopePickerState::new();
-    let _ = s.handle_key(key_event(KeyCode::Right));
+    drop(s.handle_key(key_event(KeyCode::Right)));
     assert_eq!(s.focused, ScopeChoice::SpecificAgent);
     assert!(matches!(
         s.handle_key(key_event(KeyCode::Enter)),
@@ -56,8 +56,8 @@ fn scope_picker_esc_cancels() {
 #[test]
 fn scope_picker_left_arrow_toggles_back_to_all_agents() {
     let mut s = ScopePickerState::new();
-    let _ = s.handle_key(key_event(KeyCode::Right));
+    drop(s.handle_key(key_event(KeyCode::Right)));
     assert_eq!(s.focused, ScopeChoice::SpecificAgent);
-    let _ = s.handle_key(key_event(KeyCode::Left));
+    drop(s.handle_key(key_event(KeyCode::Left)));
     assert_eq!(s.focused, ScopeChoice::AllAgents);
 }

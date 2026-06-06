@@ -3,8 +3,8 @@ use super::*;
 
 #[test]
 fn image_name_distinguishes_namespaced_and_flat_classes() {
-    let namespaced = jackin_core::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
-    let flat = jackin_core::selector::RoleSelector::new(None, "chainargos-agent-brown");
+    let namespaced = RoleSelector::new(Some("chainargos"), "agent-brown");
+    let flat = RoleSelector::new(None, "chainargos-agent-brown");
     assert_ne!(image_name(&namespaced), image_name(&flat));
     assert_eq!(image_name(&namespaced), "jk_chainargos_agent-brown");
     assert_eq!(image_name(&flat), "jk_chainargos-agent-brown");
@@ -12,14 +12,14 @@ fn image_name_distinguishes_namespaced_and_flat_classes() {
 
 #[test]
 fn image_name_flat_role_uses_jk_underscore_prefix() {
-    let flat = jackin_core::selector::RoleSelector::new(None, "agent-smith");
+    let flat = RoleSelector::new(None, "agent-smith");
     assert_eq!(image_name(&flat), "jk_agent-smith");
 }
 
 #[test]
 fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
-    let namespaced = jackin_core::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
-    let flat = jackin_core::selector::RoleSelector::new(None, "the-architect");
+    let namespaced = RoleSelector::new(Some("chainargos"), "agent-brown");
+    let flat = RoleSelector::new(None, "the-architect");
 
     assert_eq!(
         image_name_for_branch(&namespaced, "feat/my-pr"),
@@ -38,8 +38,8 @@ fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
 
 #[test]
 fn image_name_for_branch_lowercases_uppercase_branch() {
-    let namespaced = jackin_core::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
-    let flat = jackin_core::selector::RoleSelector::new(None, "the-architect");
+    let namespaced = RoleSelector::new(Some("chainargos"), "agent-brown");
+    let flat = RoleSelector::new(None, "the-architect");
     assert_eq!(
         image_name_for_branch(&namespaced, "Feat/MY-PR"),
         "jk_chainargos_agent-brown_feat-my-pr"

@@ -25,21 +25,21 @@ impl ContainerState {
     #[must_use]
     pub fn short_label(&self) -> String {
         match self {
-            Self::Running => "running".to_string(),
-            Self::Paused => "paused".to_string(),
-            Self::Restarting => "restarting".to_string(),
-            Self::Removing => "removing".to_string(),
-            Self::Created => "created".to_string(),
-            Self::Dead => "dead".to_string(),
+            Self::Running => "running".to_owned(),
+            Self::Paused => "paused".to_owned(),
+            Self::Restarting => "restarting".to_owned(),
+            Self::Removing => "removing".to_owned(),
+            Self::Created => "created".to_owned(),
+            Self::Dead => "dead".to_owned(),
             Self::Stopped {
                 exit_code,
                 oom_killed: false,
             } => format!("stopped exit:{exit_code}"),
             Self::Stopped {
                 oom_killed: true, ..
-            } => "stopped oom_killed".to_string(),
-            Self::NotFound => "missing".to_string(),
-            Self::InspectUnavailable(_) => "unavailable".to_string(),
+            } => "stopped oom_killed".to_owned(),
+            Self::NotFound => "missing".to_owned(),
+            Self::InspectUnavailable(_) => "unavailable".to_owned(),
         }
     }
 

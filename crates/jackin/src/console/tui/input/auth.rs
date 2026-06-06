@@ -463,12 +463,12 @@ pub(in crate::console) fn apply_plain_text_to_auth_form(editor: &mut EditorState
         );
         return;
     };
-    state.set_literal(value.to_string());
+    state.set_literal(value.to_owned());
     editor.modal = Some(Modal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,
-        literal_buffer: value.to_string(),
+        literal_buffer: value.to_owned(),
     });
 }
 

@@ -26,7 +26,7 @@ use jackin_console::tui::screens::workspaces::view::{
 };
 
 pub(crate) fn render_list_body(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     state: &ManagerState<'_>,
     config: &AppConfig,
@@ -252,7 +252,7 @@ fn instance_details_content(
                         .map(|pane| WorkspaceInstanceTabPane {
                             label: pane.label.clone(),
                             agent_label: workspace_instance_pane_agent_label(pane.agent.as_deref()),
-                            state_label: pane.state.label().to_string(),
+                            state_label: pane.state.label().to_owned(),
                             focused: pane.session_id == tab.focused_pane,
                             selected: selected_pane == Some(pane.session_id),
                         })
@@ -263,7 +263,7 @@ fn instance_details_content(
     }
     if sessions.is_empty() {
         return WorkspaceInstancePaneContent::Empty {
-            message: instance_sessions_empty_message(session_load_error).to_string(),
+            message: instance_sessions_empty_message(session_load_error).to_owned(),
         };
     }
     WorkspaceInstancePaneContent::Sessions {
@@ -277,7 +277,7 @@ fn instance_details_content(
     }
 }
 
-pub(crate) fn render_list_sidebar(frame: &mut Frame, area: Rect, state: &ManagerState<'_>) {
+pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     if let Some(picker) = state.inline_provider_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(&picker.context)
             .unwrap_or(picker.context.as_str());
@@ -328,7 +328,7 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame, area: Rect, state: &Manager
 }
 
 pub(crate) fn render_details_pane(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     ws: &WorkspaceSummary,
     config: &AppConfig,
@@ -340,7 +340,7 @@ pub(crate) fn render_details_pane(
 }
 
 pub(crate) fn render_current_dir_details_pane(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     cwd: &std::path::Path,
     config: &AppConfig,
@@ -355,7 +355,7 @@ pub(crate) fn render_current_dir_details_pane(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_instance_details_pane(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     entry: &crate::instance::InstanceIndexEntry,
     sessions: &[crate::instance::SessionRecord],
@@ -376,7 +376,7 @@ pub(crate) fn render_instance_details_pane(
 }
 
 pub(crate) fn render_provider_picker_sidebar(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     container_id: Option<&str>,
     providers: &[jackin_protocol::Provider],
@@ -386,13 +386,13 @@ pub(crate) fn render_provider_picker_sidebar(
     let title = provider_picker_title(container_id);
     let labels = providers
         .iter()
-        .map(|provider| provider.label().to_string())
+        .map(|provider| provider.label().to_owned())
         .collect();
     render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
 }
 
 pub(crate) fn render_role_picker_sidebar(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     workspace_name: &str,
     picker: &crate::selector::RolePickerState,
@@ -415,7 +415,7 @@ pub(crate) fn render_role_picker_sidebar(
 }
 
 pub(crate) fn render_agent_picker_sidebar(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     role_name: &str,
     picker: &crate::agent::AgentChoiceState,
@@ -426,7 +426,7 @@ pub(crate) fn render_agent_picker_sidebar(
         .choices
         .iter()
         .map(|agent| {
-            jackin_console::tui::components::agent_choice::agent_picker_label(*agent).to_string()
+            jackin_console::tui::components::agent_choice::agent_picker_label(*agent).to_owned()
         })
         .collect();
     let selected = picker
@@ -437,7 +437,7 @@ pub(crate) fn render_agent_picker_sidebar(
 }
 
 pub(crate) fn render_mounts_subpanel(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     mounts: &[crate::workspace::MountConfig],
     cache: &MountInfoCache,
@@ -451,7 +451,7 @@ pub(crate) fn render_mounts_subpanel(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_global_mount_rows_section(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     title: &str,
     rows: &[&crate::config::GlobalMountRow],
@@ -475,7 +475,7 @@ pub(crate) fn render_global_mount_rows_section(
 }
 
 pub(crate) fn render_sidebar_body(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     layout: &SidebarLayout,
     inputs: &SidebarInputs<'_>,
     config: &AppConfig,
@@ -552,7 +552,7 @@ pub(crate) fn render_sidebar_body(
 
 #[cfg(test)]
 pub(crate) fn render_agents_subpanel(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
@@ -561,7 +561,7 @@ pub(crate) fn render_agents_subpanel(
 }
 
 pub(crate) fn render_agents_subpanel_scrollable(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
@@ -581,7 +581,7 @@ pub(crate) fn render_agents_subpanel_scrollable(
     let rows = agent_names
         .into_iter()
         .map(|role| WorkspaceRoleRow {
-            name: role.to_string(),
+            name: role.to_owned(),
             exists: config.roles.contains_key(role),
             is_default: Some(role) == default,
             scoped_mount_count: role_scoped_mount_count(config, role),

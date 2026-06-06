@@ -27,6 +27,10 @@ pub fn rich_launch_dialog_required_message(what: &str) -> String {
     format!("{what} requires the rich launch dialog")
 }
 
+#[expect(
+    missing_debug_implementations,
+    reason = "RichRenderer owns terminal backend state that has no useful Debug representation."
+)]
 pub struct RichRenderer {
     terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     no_motion: bool,
@@ -44,6 +48,10 @@ pub struct RichRenderer {
 
 /// Owns the background render task that ticks the cockpit independently of
 /// launch work, so rain and animation continue while a launch step waits on I/O.
+#[expect(
+    missing_debug_implementations,
+    reason = "RichDriver owns a render task handle and terminal renderer state that are not diagnostic data."
+)]
 pub struct RichDriver {
     renderer: std::sync::Arc<std::sync::Mutex<RichRenderer>>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -100,7 +108,7 @@ impl RichDriver {
                         }
                         Err(_) => continue,
                     };
-                    let _ = rr.render(&snapshot, &run_id, &run_log_path);
+                    drop(rr.render(&snapshot, &run_id, &run_log_path));
                 }
             })
         };
@@ -114,7 +122,7 @@ impl RichDriver {
     pub fn stop_detached(&mut self) {
         use std::sync::atomic::Ordering;
         self.stop.store(true, Ordering::Relaxed);
-        let _ = self.handle.take();
+        drop(self.handle.take());
     }
 
     pub fn request_stop(&self) {
@@ -357,8 +365,8 @@ impl RichRenderer {
             );
             if !overlays.is_empty() {
                 let mut stdout = std::io::stdout();
-                let _ = stdout.write_all(&overlays);
-                let _ = stdout.flush();
+                drop(stdout.write_all(&overlays));
+                drop(stdout.flush());
             }
         }
         Ok(())
@@ -379,7 +387,7 @@ impl RichRenderer {
         }
         let outcome = f(self);
         if owns_raw {
-            let _ = crossterm::terminal::disable_raw_mode();
+            drop(crossterm::terminal::disable_raw_mode());
         }
         outcome
     }
@@ -488,7 +496,7 @@ impl RichRenderer {
     ) -> anyhow::Result<PromptResult> {
         let mut items = options.to_vec();
         if skippable {
-            items.push("(skip)".to_string());
+            items.push("(skip)".to_owned());
         }
         let mut picker = SelectListState::new(items);
         if let Some(default) = default
@@ -600,13 +608,13 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
 impl Drop for RichRenderer {
     fn drop(&mut self) {
         self.host.set_rich_surface_active(false);
-        let _ = self.terminal.backend_mut().execute(crossterm::cursor::Show);
+        drop(self.terminal.backend_mut().execute(crossterm::cursor::Show));
         // Leave the alternate screen only when we entered it; under the host
         // guard the screen persists into the capsule attach.
         if self.entered_alt_screen {
-            let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
+            drop(self.terminal.backend_mut().execute(LeaveAlternateScreen));
         }
-        let _ = std::io::stdout().flush();
+        drop(std::io::stdout().flush());
     }
 }
 

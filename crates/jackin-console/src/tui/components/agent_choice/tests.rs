@@ -43,15 +43,15 @@ fn key(code: KeyCode) -> KeyEvent {
 #[test]
 fn down_moves_through_agents_then_clamps() {
     let mut s = AgentChoiceState::<TestAgent>::new();
-    let _ = s.handle_key(key(KeyCode::Down));
+    drop(s.handle_key(key(KeyCode::Down)));
     assert_eq!(s.focused, TestAgent::Codex);
-    let _ = s.handle_key(key(KeyCode::Down));
+    drop(s.handle_key(key(KeyCode::Down)));
     assert_eq!(s.focused, TestAgent::Amp);
-    let _ = s.handle_key(key(KeyCode::Down));
+    drop(s.handle_key(key(KeyCode::Down)));
     assert_eq!(s.focused, TestAgent::Kimi);
-    let _ = s.handle_key(key(KeyCode::Down));
+    drop(s.handle_key(key(KeyCode::Down)));
     assert_eq!(s.focused, TestAgent::Opencode);
-    let _ = s.handle_key(key(KeyCode::Down));
+    drop(s.handle_key(key(KeyCode::Down)));
     assert_eq!(s.focused, TestAgent::Opencode);
 }
 
@@ -59,15 +59,15 @@ fn down_moves_through_agents_then_clamps() {
 fn up_moves_through_agents_then_clamps() {
     let mut s = AgentChoiceState::<TestAgent>::new();
     s.focused = TestAgent::Opencode;
-    let _ = s.handle_key(key(KeyCode::Up));
+    drop(s.handle_key(key(KeyCode::Up)));
     assert_eq!(s.focused, TestAgent::Kimi);
-    let _ = s.handle_key(key(KeyCode::Up));
+    drop(s.handle_key(key(KeyCode::Up)));
     assert_eq!(s.focused, TestAgent::Amp);
-    let _ = s.handle_key(key(KeyCode::Up));
+    drop(s.handle_key(key(KeyCode::Up)));
     assert_eq!(s.focused, TestAgent::Codex);
-    let _ = s.handle_key(key(KeyCode::Up));
+    drop(s.handle_key(key(KeyCode::Up)));
     assert_eq!(s.focused, TestAgent::Claude);
-    let _ = s.handle_key(key(KeyCode::Up));
+    drop(s.handle_key(key(KeyCode::Up)));
     assert_eq!(s.focused, TestAgent::Claude);
 }
 
@@ -85,11 +85,11 @@ fn enter_commits_focused_agent() {
 fn with_choices_limits_navigation_and_default_focus() {
     let mut s = AgentChoiceState::with_choices(vec![TestAgent::Codex, TestAgent::Amp]);
     assert_eq!(s.focused, TestAgent::Codex);
-    let _ = s.handle_key(key(KeyCode::Down));
+    drop(s.handle_key(key(KeyCode::Down)));
     assert_eq!(s.focused, TestAgent::Amp);
-    let _ = s.handle_key(key(KeyCode::Down));
+    drop(s.handle_key(key(KeyCode::Down)));
     assert_eq!(s.focused, TestAgent::Amp);
-    let _ = s.handle_key(key(KeyCode::Up));
+    drop(s.handle_key(key(KeyCode::Up)));
     assert_eq!(s.focused, TestAgent::Codex);
 }
 

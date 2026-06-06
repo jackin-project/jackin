@@ -16,6 +16,10 @@ use crate::{
 
 const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
 
+#[expect(
+    missing_debug_implementations,
+    reason = "LaunchProgress owns terminal and diagnostics trait objects that do not expose useful Debug output."
+)]
 pub struct LaunchProgress {
     diagnostics: Arc<dyn LaunchDiagnostics>,
     renderer: Renderer,
@@ -44,7 +48,7 @@ impl LaunchProgress {
         let renderer = Renderer::Rich(RichDriver::spawn(
             rich,
             view.clone(),
-            diagnostics.run_id().to_string(),
+            diagnostics.run_id().to_owned(),
             diagnostics.path().display().to_string(),
             host,
             jackin_version,
@@ -275,7 +279,7 @@ impl LaunchProgress {
     #[allow(clippy::unused_self)]
     pub async fn while_waiting<T, E, F>(&self, future: F) -> Result<T, E>
     where
-        F: std::future::Future<Output = Result<T, E>>,
+        F: Future<Output = Result<T, E>>,
     {
         // The background render task ticks the cockpit independently, so the
         // awaited work no longer needs to interleave a draw — just await it.

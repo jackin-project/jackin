@@ -421,7 +421,7 @@ where
     // op reference for the op paths, literal token for plain-text.
     let env_value = match &wired {
         WiredValue::Op(op_ref) => EnvValue::OpRef(op_ref.clone()),
-        WiredValue::Plain(secret) => EnvValue::Plain(secret.expose_secret().to_string()),
+        WiredValue::Plain(secret) => EnvValue::Plain(secret.expose_secret().to_owned()),
     };
 
     // Stamp the expiry estimate into the local cache so the launch
@@ -530,7 +530,7 @@ where
     let saved = editor.save()?;
     *config = saved;
 
-    let op_account = effective_account(config, scope, args.account.as_deref()).map(str::to_string);
+    let op_account = effective_account(config, scope, args.account.as_deref()).map(str::to_owned);
 
     // The expiry stamp landed inside `mint_token_value_with_runner`;
     // re-derive the report's estimate from the on-disk cache so a
@@ -541,13 +541,13 @@ where
     let expiry_estimate = match (created, scope.workspace()) {
         (true, Some(workspace)) => std::fs::read_to_string(expiry_cache_path(paths, workspace))
             .ok()
-            .map(|s| s.trim().to_string())
+            .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty()),
         _ => None,
     };
 
     Ok(TokenSetupReport {
-        workspace: scope.label().to_string(),
+        workspace: scope.label().to_owned(),
         claude_cli_version: probe.map(|p| p.version.clone()),
         op_ref: match wired {
             WiredValue::Op(op_ref) => Some(op_ref),
@@ -590,7 +590,7 @@ pub fn run_revoke(
 ) -> anyhow::Result<RevokeReport> {
     let op_cli = op_cli_for_scope(
         config,
-        &TokenSetupScope::Workspace(workspace.to_string()),
+        &TokenSetupScope::Workspace(workspace.to_owned()),
         None,
         OpTimeoutBudget::Quick,
     );
@@ -646,7 +646,7 @@ pub fn run_revoke_with_runner(
 
     let mut editor = ConfigEditor::open(paths)?;
     editor.remove_env_var(
-        &EnvScope::Workspace(workspace.to_string()),
+        &EnvScope::Workspace(workspace.to_owned()),
         CLAUDE_OAUTH_TOKEN_ENV,
     );
     editor.set_workspace_auth_forward(workspace, Agent::Claude, Some(AuthForwardMode::Ignore));
@@ -658,7 +658,7 @@ pub fn run_revoke_with_runner(
     clear_expiry_stamp(paths, workspace);
 
     Ok(RevokeReport {
-        workspace: workspace.to_string(),
+        workspace: workspace.to_owned(),
         deleted_op_item: deleted_item,
         cleared_slot: prior.is_some(),
     })
@@ -712,7 +712,7 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorReport> {
     let op_cli = op_cli_for_scope(
         config,
-        &TokenSetupScope::Workspace(workspace.to_string()),
+        &TokenSetupScope::Workspace(workspace.to_owned()),
         None,
         OpTimeoutBudget::Quick,
     );
@@ -739,10 +739,10 @@ pub fn run_doctor_with_runner(
     })?;
     let account = effective_account(
         config,
-        &TokenSetupScope::Workspace(workspace.to_string()),
+        &TokenSetupScope::Workspace(workspace.to_owned()),
         None,
     )
-    .map(str::to_string);
+    .map(str::to_owned);
     let token = match token_decl {
         EnvValue::Plain(t) => t.clone(),
         EnvValue::OpRef(r) => op_reader
@@ -752,7 +752,7 @@ pub fn run_doctor_with_runner(
     let prefix = sha256_prefix(&token);
 
     Ok(DoctorReport {
-        workspace: workspace.to_string(),
+        workspace: workspace.to_owned(),
         mode,
         op_ref: match token_decl {
             EnvValue::OpRef(r) => Some(r.clone()),
@@ -895,7 +895,7 @@ fn op_cli_for_scope(
     explicit: Option<&str>,
     budget: OpTimeoutBudget,
 ) -> OpCli {
-    let account = effective_account(config, scope, explicit).map(str::to_string);
+    let account = effective_account(config, scope, explicit).map(str::to_owned);
     let cli = match budget {
         OpTimeoutBudget::Interactive => OpCli::new_interactive(),
         OpTimeoutBudget::Quick => OpCli::new(),
@@ -987,7 +987,7 @@ fn sha256_prefix(value: &str) -> String {
         .take(6)
         .fold(String::with_capacity(12), |mut acc, byte| {
             use std::fmt::Write;
-            let _ = write!(acc, "{byte:02x}");
+            let _unused = write!(acc, "{byte:02x}");
             acc
         })
 }

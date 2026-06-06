@@ -75,7 +75,7 @@ fn repo_matches_cross_protocol_for_same_owner_repo() {
 fn parse_repo_name_extracts_owner_repo_from_ssh_url() {
     assert_eq!(
         parse_repo_name("git@github.com:jackin-project/jackin.git"),
-        Some("jackin-project/jackin".to_string())
+        Some("jackin-project/jackin".to_owned())
     );
 }
 
@@ -83,7 +83,7 @@ fn parse_repo_name_extracts_owner_repo_from_ssh_url() {
 fn parse_repo_name_extracts_owner_repo_from_https_url() {
     assert_eq!(
         parse_repo_name("https://github.com/jackin-project/jackin.git"),
-        Some("jackin-project/jackin".to_string())
+        Some("jackin-project/jackin".to_owned())
     );
 }
 
@@ -91,11 +91,11 @@ fn parse_repo_name_extracts_owner_repo_from_https_url() {
 fn parse_repo_name_handles_url_without_git_suffix() {
     assert_eq!(
         parse_repo_name("https://github.com/jackin-project/jackin"),
-        Some("jackin-project/jackin".to_string())
+        Some("jackin-project/jackin".to_owned())
     );
     assert_eq!(
         parse_repo_name("git@github.com:jackin-project/jackin"),
-        Some("jackin-project/jackin".to_string())
+        Some("jackin-project/jackin".to_owned())
     );
 }
 
@@ -123,7 +123,7 @@ plugins = []
     .unwrap();
 
     let mut runner =
-        FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_string()]);
+        FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_owned()]);
     let error = resolve_agent_repo(
         &paths,
         &selector,
@@ -169,7 +169,7 @@ plugins = []
     // successful clone response (empty output).  After the user confirms,
     // the function removes the stale dir and re-clones.
     let mut runner = FakeRunner::with_capture_queue([
-        "git@github.com:evil/agent-smith.git".to_string(),
+        "git@github.com:evil/agent-smith.git".to_owned(),
         String::new(), // clone output
     ]);
 
@@ -177,7 +177,7 @@ plugins = []
     // files when the clone command is captured by FakeRunner.
     let repo_dir_clone = repo_dir;
     runner.side_effects.push((
-        "clone".to_string(),
+        "clone".to_owned(),
         Box::new(move || {
             std::fs::create_dir_all(repo_dir_clone.join(".git")).unwrap();
             std::fs::write(
@@ -239,7 +239,7 @@ plugins = []
     .unwrap();
 
     let mut runner =
-        FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_string()]);
+        FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_owned()]);
     let error = resolve_agent_repo_with(
         &paths,
         &selector,
@@ -284,8 +284,8 @@ plugins = []
     .unwrap();
 
     let mut runner = FakeRunner::with_capture_queue([
-        "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
-        "?? scratch.txt".to_string(),
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        "?? scratch.txt".to_owned(),
     ]);
     let error = resolve_agent_repo(
         &paths,
@@ -325,10 +325,10 @@ plugins = []
     .unwrap();
 
     let mut runner =
-        FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_string()]);
+        FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_owned()]);
     let repo_dir_clone = repo_dir;
     runner.side_effects.push((
-        "clone".to_string(),
+        "clone".to_owned(),
         Box::new(move || {
             std::fs::create_dir_all(repo_dir_clone.join(".git")).unwrap();
             std::fs::write(
@@ -389,9 +389,9 @@ plugins = []
     .unwrap();
 
     let mut runner = FakeRunner::with_capture_queue([
-        "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
-        String::new(),      // git status --porcelain (clean)
-        "main".to_string(), // git rev-parse --abbrev-ref HEAD
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),     // git status --porcelain (clean)
+        "main".to_owned(), // git rev-parse --abbrev-ref HEAD
     ]);
 
     let result = resolve_agent_repo(
@@ -441,9 +441,9 @@ async fn resolve_agent_repo_migrates_legacy_root_repo_to_default_sibling_layout(
     .unwrap();
 
     let mut runner = FakeRunner::with_capture_queue([
-        "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
-        String::new(),      // git status --porcelain (clean)
-        "main".to_string(), // git rev-parse --abbrev-ref HEAD
+        "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),     // git status --porcelain (clean)
+        "main".to_owned(), // git rev-parse --abbrev-ref HEAD
     ]);
 
     let (cached_repo, _, _) = resolve_agent_repo(
@@ -483,7 +483,7 @@ async fn register_agent_repo_cleans_up_temp_dir_on_validate_failure() {
     let data_dir = paths.data_dir.clone();
     let mut runner = FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         // Materialise a `.git` dir but skip the manifest files so
         // `validate_role_repo` rejects the clone.
         Box::new(move || {
@@ -527,7 +527,7 @@ async fn register_agent_repo_installs_valid_repo_into_cache() {
     let data_dir = paths.data_dir.clone();
     let mut runner = FakeRunner::default();
     runner.side_effects.push((
-        "git clone".to_string(),
+        "git clone".to_owned(),
         Box::new(move || seed_valid_role_repo(&first_temp_role_repo(&data_dir))),
     ));
 

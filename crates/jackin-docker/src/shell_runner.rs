@@ -76,12 +76,12 @@ pub fn redact_env_args(args: &[&str]) -> Vec<String> {
     let mut i = 0;
     while i < args.len() {
         let arg = args[i];
-        out.push(arg.to_string());
+        out.push(arg.to_owned());
         if (arg == "-e" || arg == "--env") && i + 1 < args.len() {
             let next = args[i + 1];
             match next.find('=') {
                 Some(eq) => out.push(format!("{}=<redacted>", &next[..eq])),
-                None => out.push(next.to_string()),
+                None => out.push(next.to_owned()),
             }
             i += 2;
         } else {
@@ -408,7 +408,7 @@ impl ShellRunner {
                     anyhow::bail!("command failed: {} {}", program, args.join(" "));
                 }
                 CaptureMode::Normal => {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
                     if stderr.is_empty() {
                         anyhow::bail!("command failed: {} {}", program, args.join(" "));
                     }
@@ -416,7 +416,7 @@ impl ShellRunner {
                 }
             }
         }
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if self.debug && !stdout.is_empty() {
             match mode {
                 CaptureMode::Normal => {

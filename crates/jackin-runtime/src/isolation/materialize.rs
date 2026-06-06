@@ -353,7 +353,7 @@ pub async fn ensure_worktree_config_enabled(
 /// Filesystem probe (loose ref then `packed-refs`) rather than `git
 /// show-ref` to keep the test `CommandRunner` capture queue stable.
 fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
-    let git_dir = std::path::Path::new(repo).join(".git");
+    let git_dir = Path::new(repo).join(".git");
     let mut loose = git_dir.join("refs").join("heads");
     for segment in branch.split('/') {
         loose = loose.join(segment);
@@ -382,7 +382,7 @@ fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
                     loose = loose.display(),
                 );
             } else {
-                return Some(sha.to_string());
+                return Some(sha.to_owned());
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -418,7 +418,7 @@ fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
             continue;
         };
         if refname.trim() == want {
-            return Some(sha.trim().to_string());
+            return Some(sha.trim().to_owned());
         }
     }
     None
@@ -461,7 +461,7 @@ pub async fn preflight_isolated(
         );
     }
 
-    let src = std::path::Path::new(&mount.src);
+    let src = Path::new(&mount.src);
 
     // Mid-rebase / merge / cherry-pick guard.
     for marker in &[
@@ -741,13 +741,13 @@ async fn materialize_one(
     );
     preflight_worktree(mount, ctx, runner).await?;
 
-    let _ = ensure_worktree_config_enabled(std::path::Path::new(&mount.src), runner).await?;
+    let _ = ensure_worktree_config_enabled(Path::new(&mount.src), runner).await?;
 
     let host_head = runner
         .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)
         .await?
         .trim()
-        .to_string();
+        .to_owned();
     debug_log!(
         "isolation",
         "mount {dst}: host HEAD {commit}",
@@ -971,7 +971,7 @@ async fn materialize_clone(
         .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)
         .await?
         .trim()
-        .to_string();
+        .to_owned();
 
     if let Some(parent) = clone_path.parent() {
         std::fs::create_dir_all(parent)

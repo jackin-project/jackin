@@ -226,7 +226,7 @@ mod quit_confirm_tests {
             crate::workspace::WorkspaceConfig::default(),
         );
         assert_eq!(
-            super::providers_for_launch(
+            providers_for_launch(
                 &config,
                 "global-demo",
                 "the-architect",
@@ -244,7 +244,7 @@ mod quit_confirm_tests {
         );
         config.workspaces.insert("workspace-demo".into(), workspace);
         assert_eq!(
-            super::providers_for_launch(
+            providers_for_launch(
                 &config,
                 "workspace-demo",
                 "the-architect",
@@ -266,7 +266,7 @@ mod quit_confirm_tests {
             crate::workspace::WorkspaceConfig::default(),
         );
         assert_eq!(
-            super::providers_for_launch(
+            providers_for_launch(
                 &config,
                 "role-demo",
                 "the-architect",
@@ -289,7 +289,7 @@ mod quit_confirm_tests {
         config
             .workspaces
             .insert("workspace-role-demo".into(), workspace_role);
-        let providers = super::providers_for_launch(
+        let providers = providers_for_launch(
             &config,
             "workspace-role-demo",
             "the-architect",
@@ -310,20 +310,16 @@ mod quit_confirm_tests {
             .workspaces
             .insert("demo".into(), crate::workspace::WorkspaceConfig::default());
 
-        let providers = super::providers_for_launch(
-            &config,
-            "demo",
-            "the-architect",
-            crate::agent::Agent::Codex,
-        );
+        let providers =
+            providers_for_launch(&config, "demo", "the-architect", crate::agent::Agent::Codex);
 
         assert!(providers.is_empty());
     }
 
     fn unresolved_workspace() -> ResolvedWorkspace {
         ResolvedWorkspace {
-            label: "scratch".to_string(),
-            workdir: "/workspace".to_string(),
+            label: "scratch".to_owned(),
+            workdir: "/workspace".to_owned(),
             mounts: Vec::new(),
             default_agent: None,
             keep_awake_enabled: false,
@@ -338,7 +334,7 @@ mod quit_confirm_tests {
         let selector = RoleSelector::new(None, "agent-smith");
         let workspace = unresolved_workspace();
         let input = LoadWorkspaceInput::CurrentDir;
-        let outcome = super::prompt_agent_for_launch(
+        let outcome = prompt_agent_for_launch(
             &mut state,
             &selector,
             &workspace,
@@ -361,7 +357,7 @@ mod quit_confirm_tests {
         let mut workspace = unresolved_workspace();
         workspace.default_agent = Some(crate::agent::Agent::Codex);
 
-        let outcome = super::prompt_agent_for_launch(
+        let outcome = prompt_agent_for_launch(
             &mut state,
             &selector,
             &workspace,

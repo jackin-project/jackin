@@ -39,7 +39,7 @@ fn shortcuts_commit_or_cancel() {
 #[test]
 fn enter_commits_focused_button() {
     let mut s = SaveDiscardState::new("?");
-    let _ = s.handle_key(key(KeyCode::Tab));
+    drop(s.handle_key(key(KeyCode::Tab)));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Commit(SaveDiscardChoice::Save)
@@ -67,7 +67,7 @@ fn save_discard_dialog_has_symmetric_vertical_padding() {
 
     let row_text = |y: u16| {
         (0..area.width)
-            .map(|x| buf[(x, y)].symbol().to_string())
+            .map(|x| buf[(x, y)].symbol().to_owned())
             .collect::<String>()
     };
 

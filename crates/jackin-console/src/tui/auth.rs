@@ -11,7 +11,7 @@ pub enum AuthKind {
     Github,
     /// Z.AI / GLM Coding Plan: env-only auth kind.
     Zai,
-    /// MiniMax Token Plan: env-only provider credential. Distinct from agent
+    /// `MiniMax` Token Plan: env-only provider credential. Distinct from agent
     /// runtimes; credential lives as `MINIMAX_API_KEY` in `[env]`.
     Minimax,
 }

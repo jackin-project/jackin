@@ -357,7 +357,7 @@ fn make_repo_root() -> tempfile::TempDir {
     dir
 }
 
-fn fake_with_repo_and_status(repo: &std::path::Path, status: &str) -> FakeRunner {
+fn fake_with_repo_and_status(repo: &Path, status: &str) -> FakeRunner {
     // Capture queue order: rev-parse --show-toplevel, status --porcelain
     fake_with_outputs(&[&repo.to_string_lossy(), status])
 }
@@ -396,7 +396,7 @@ async fn clean_tree_passes() {
 use crate::isolation::state::{CleanupStatus, read_records};
 use jackin_config::ResolvedWorkspace;
 
-fn resolved_with_one_isolated(repo: &std::path::Path, dst: &str) -> ResolvedWorkspace {
+fn resolved_with_one_isolated(repo: &Path, dst: &str) -> ResolvedWorkspace {
     ResolvedWorkspace {
         label: "jackin".into(),
         workdir: dst.into(),
@@ -412,7 +412,7 @@ fn resolved_with_one_isolated(repo: &std::path::Path, dst: &str) -> ResolvedWork
     }
 }
 
-fn resolved_with_one_clone(repo: &std::path::Path, dst: &str) -> ResolvedWorkspace {
+fn resolved_with_one_clone(repo: &Path, dst: &str) -> ResolvedWorkspace {
     ResolvedWorkspace {
         label: "jackin".into(),
         workdir: dst.into(),
@@ -846,7 +846,7 @@ async fn clone_reuse_skips_git_ops_when_git_dir_exists() {
     std::fs::create_dir_all(cp.join(".git")).unwrap();
     crate::isolation::state::write_records(
         &container_dir,
-        std::slice::from_ref(&crate::isolation::state::IsolationRecord {
+        std::slice::from_ref(&IsolationRecord {
             workspace: "jackin".into(),
             mount_dst: dst.into(),
             original_src: repo.path().to_string_lossy().into(),
@@ -895,7 +895,7 @@ async fn second_materialization_with_existing_record_skips_git_ops() {
     std::fs::write(wt_path.join(".git"), "gitdir: /elsewhere").unwrap();
     crate::isolation::state::write_records(
         &container_dir,
-        std::slice::from_ref(&crate::isolation::state::IsolationRecord {
+        std::slice::from_ref(&IsolationRecord {
             workspace: "jackin".into(),
             mount_dst: dst.into(),
             original_src: repo.path().to_string_lossy().into(),
@@ -943,7 +943,7 @@ async fn drift_when_recorded_src_differs_errors_before_git_ops() {
     std::fs::create_dir_all(&wt_path).unwrap();
     crate::isolation::state::write_records(
         &container_dir,
-        std::slice::from_ref(&crate::isolation::state::IsolationRecord {
+        std::slice::from_ref(&IsolationRecord {
             workspace: "jackin".into(),
             mount_dst: dst.into(),
             original_src: "/different/src".into(),
@@ -987,7 +987,7 @@ async fn drift_when_recorded_src_differs_errors_before_git_ops() {
 // logic in materialize is gone; coverage moves to
 // `workspace::tests::isolation_layout_rejects_two_worktree_mounts_on_same_repo`.
 
-fn write_loose_branch(repo: &std::path::Path, branch: &str, content: &str) {
+fn write_loose_branch(repo: &Path, branch: &str, content: &str) {
     let mut p = repo.join(".git").join("refs").join("heads");
     for seg in branch.split('/') {
         p = p.join(seg);
@@ -996,7 +996,7 @@ fn write_loose_branch(repo: &std::path::Path, branch: &str, content: &str) {
     std::fs::write(&p, content).unwrap();
 }
 
-fn write_packed_refs(repo: &std::path::Path, contents: &str) {
+fn write_packed_refs(repo: &Path, contents: &str) {
     std::fs::write(repo.join(".git").join("packed-refs"), contents).unwrap();
 }
 

@@ -10,6 +10,7 @@ use ratatui::{
 /// terminal's DEFAULT background (`theme::DIALOG_BACKDROP` = `Color::Reset`):
 /// the cells still overwrite the chrome behind them (occlusion), but with the
 /// operator's terminal background instead of forced pure black.
+#[derive(Debug)]
 pub struct ModalBackdrop;
 
 impl Widget for ModalBackdrop {

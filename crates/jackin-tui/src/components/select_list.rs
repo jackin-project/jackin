@@ -135,6 +135,7 @@ impl SelectListState {
     }
 }
 
+#[derive(Debug)]
 pub struct SelectList<'a> {
     state: &'a SelectListState,
     title: &'a str,
@@ -212,7 +213,7 @@ impl Widget for SelectList<'_> {
             };
             // Dim centered placeholder so operators can distinguish "empty" from "broken".
             Paragraph::new(Line::from(Span::styled(
-                placeholder.to_string(),
+                placeholder.to_owned(),
                 crate::theme::DIM,
             )))
             .alignment(Alignment::Center)
@@ -256,9 +257,10 @@ pub fn render_select_list(
 }
 
 /// A row in a modal picker list.
+#[derive(Debug)]
 pub enum PickerRow<'a> {
     /// A selectable item. The caller styles its unselected appearance; the
-    /// selected row gets the canonical PHOSPHOR_GREEN highlight applied by
+    /// selected row gets the canonical `PHOSPHOR_GREEN` highlight applied by
     /// `render_picker_list`.
     Item(ListItem<'a>),
     /// Non-selectable section divider rendered as `──── label ────`. Drawn
@@ -269,7 +271,7 @@ pub enum PickerRow<'a> {
 }
 
 /// Paint a `──── label ────` section divider across a full list row,
-/// edge-to-edge, with the label centered. Dashes use PHOSPHOR_DARK; the
+/// edge-to-edge, with the label centered. Dashes use `PHOSPHOR_DARK`; the
 /// label is DIM. Shared so the capsule pickers and any future sectioned
 /// host list draw identical dividers.
 fn write_section_separator(buf: &mut Buffer, area: Rect, y: u16, label: &str) {
@@ -312,7 +314,7 @@ fn write_section_separator(buf: &mut Buffer, area: Rect, y: u16, label: &str) {
 }
 
 /// Render a vertical picker list into `area`: a ratatui `List` with the
-/// canonical selected-row highlight (PHOSPHOR_GREEN background, PHOSPHOR_DARK
+/// canonical selected-row highlight (`PHOSPHOR_GREEN` background, `PHOSPHOR_DARK`
 /// text, bold, `▸ ` cursor) plus a right-edge scroll thumb. Shared so every
 /// modal list — the capsule menu/pickers and the host console — gets the same
 /// look from one place. Callers pass pre-built `PickerRow`s (style the
@@ -407,7 +409,7 @@ mod picker_list_tests {
 
     fn row_symbols(buf: &Buffer, y: u16, width: u16) -> String {
         (0..width)
-            .map(|x| buf[(x, y)].symbol().to_string())
+            .map(|x| buf[(x, y)].symbol().to_owned())
             .collect()
     }
 
@@ -422,7 +424,7 @@ mod picker_list_tests {
         };
         let mut buf = Buffer::empty(area);
         let rows = vec![
-            PickerRow::Separator("agents".to_string()),
+            PickerRow::Separator("agents".to_owned()),
             PickerRow::Item(ListItem::new("Claude")),
             PickerRow::Item(ListItem::new("Codex")),
         ];

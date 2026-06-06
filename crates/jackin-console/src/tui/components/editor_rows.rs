@@ -11,6 +11,7 @@ use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_GREEN, WHITE}
 
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretValueDisplay<'a> {
     Plain(&'a str),
     OpRefPath(&'a str),
@@ -85,7 +86,7 @@ pub fn disclosure_style() -> Style {
 }
 
 pub fn render_tab_strip(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     labels: &[(&str, bool)],
     tab_bar_focused: bool,
@@ -133,8 +134,8 @@ pub fn render_secret_key_line(
         NO_MARKER
     };
     let mut spans = vec![
-        Span::raw(cursor_col.to_string()),
-        Span::styled(marker.to_string(), dim),
+        Span::raw(cursor_col.to_owned()),
+        Span::styled(marker.to_owned(), dim),
         Span::styled(format!("{key:label_width$}"), label_style),
         Span::raw("  "),
     ];
@@ -162,7 +163,7 @@ pub fn render_secret_key_line(
     };
 
     let rendered_value: String = if masked {
-        MASK.to_string()
+        MASK.to_owned()
     } else {
         let budget = (area_width as usize)
             .saturating_sub(label_width)
@@ -173,7 +174,7 @@ pub fn render_secret_key_line(
             s.push('\u{2026}');
             s
         } else {
-            plain_str.to_string()
+            plain_str.to_owned()
         }
     };
     spans.push(Span::styled(rendered_value, value_style));

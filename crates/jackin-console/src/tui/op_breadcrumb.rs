@@ -75,7 +75,7 @@ fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
             Some(s[open + 1..s.len() - 1].to_string()),
         );
     }
-    (s.to_string(), None)
+    (s.to_owned(), None)
 }
 
 fn text_width(text: &str) -> usize {

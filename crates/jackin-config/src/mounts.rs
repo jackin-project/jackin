@@ -31,7 +31,7 @@ fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
     let dst = if src == dst {
         expanded_src.clone()
     } else {
-        dst.to_string()
+        dst.to_owned()
     };
 
     MountConfig {

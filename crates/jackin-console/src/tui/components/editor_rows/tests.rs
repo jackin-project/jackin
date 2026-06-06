@@ -5,7 +5,7 @@ use super::*;
 fn auth_source_display_maps_secret_value_state() {
     assert_eq!(
         auth_source_display(
-            Some(AuthSourceValue::Plain("secret".to_string())),
+            Some(AuthSourceValue::Plain("secret".to_owned())),
             "API_KEY",
             "api-key",
         ),
@@ -13,11 +13,11 @@ fn auth_source_display_maps_secret_value_state() {
     );
     assert_eq!(
         auth_source_display(
-            Some(AuthSourceValue::OpRefPath("Vault/Item/key".to_string())),
+            Some(AuthSourceValue::OpRefPath("Vault/Item/key".to_owned())),
             "API_KEY",
             "api-key",
         ),
-        AuthSourceDisplay::OpRefPath("Vault/Item/key".to_string()),
+        AuthSourceDisplay::OpRefPath("Vault/Item/key".to_owned()),
     );
     assert_eq!(
         auth_source_display(
@@ -26,8 +26,8 @@ fn auth_source_display_maps_secret_value_state() {
             "api-key",
         ),
         AuthSourceDisplay::Unset {
-            env_name: "API_KEY".to_string(),
-            mode_label: "api-key".to_string(),
+            env_name: "API_KEY".to_owned(),
+            mode_label: "api-key".to_owned(),
         },
     );
 }
@@ -37,7 +37,7 @@ fn auth_source_display_returns_not_required_without_env() {
     assert_eq!(
         auth_source_display_for_required_env(
             None,
-            Some(AuthSourceValue::Plain("secret".to_string())),
+            Some(AuthSourceValue::Plain("secret".to_owned())),
             "ignore",
         ),
         AuthSourceDisplay::NotRequired,

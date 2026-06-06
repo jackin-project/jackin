@@ -32,7 +32,7 @@ pub(super) async fn handle_load(
     paths: &JackinPaths,
     debug: bool,
     runner: &mut ShellRunner,
-    connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
+    connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     let LoadArgs {
         selector,
@@ -300,7 +300,7 @@ pub(super) async fn handle_hardline(
     config: AppConfig,
     paths: JackinPaths,
     debug: bool,
-    connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
+    connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     let HardlineArgs {
         selector,
@@ -396,7 +396,7 @@ pub(super) async fn handle_eject(
     args: EjectArgs,
     paths: &JackinPaths,
     debug: bool,
-    connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
+    connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     let EjectArgs {
         selector,
@@ -430,7 +430,7 @@ pub(super) async fn handle_eject(
     // reconcile — otherwise a `--all` eject that errors on
     // container N+1 would leave caffeinate running even though
     // earlier containers were already removed.
-    let result: anyhow::Result<()> = async {
+    let result: Result<()> = async {
         if containers.is_empty() {
             println!("No matching roles found.");
         } else {
@@ -465,9 +465,9 @@ fn print_dry_run_plan(
     format: &str,
 ) -> Result<()> {
     let agent_slug = agent
-        .map(|a| a.slug().to_string())
-        .or_else(|| workspace.default_agent.map(|a| a.slug().to_string()))
-        .unwrap_or_else(|| "claude".to_string());
+        .map(|a| a.slug().to_owned())
+        .or_else(|| workspace.default_agent.map(|a| a.slug().to_owned()))
+        .unwrap_or_else(|| "claude".to_owned());
 
     let mount_lines: Vec<String> = workspace
         .mounts
@@ -528,13 +528,13 @@ fn print_dry_run_plan(
 pub(super) async fn handle_exile(
     paths: &JackinPaths,
     debug: bool,
-    connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
+    connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     let mut runner = ShellRunner { debug };
     crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), paths).await?;
     let docker = connect_docker()?;
     let names = runtime::list_managed_role_names(&docker).await?;
-    let result: anyhow::Result<()> = async {
+    let result: Result<()> = async {
         if names.is_empty() {
             println!("No roles running.");
         } else {

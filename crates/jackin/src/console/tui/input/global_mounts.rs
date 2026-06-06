@@ -779,12 +779,12 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
         );
         return;
     };
-    state.set_literal(value.to_string());
+    state.set_literal(value.to_owned());
     auth.modal = Some(SettingsAuthModal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,
-        literal_buffer: value.to_string(),
+        literal_buffer: value.to_owned(),
     });
 }
 
@@ -886,7 +886,7 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
     auth.modal = Some(SettingsAuthModal::AuthForm {
         target,
         state,
-        focus: crate::console::tui::state::AuthFormFocus::Save,
+        focus: AuthFormFocus::Save,
         literal_buffer,
     });
 }
@@ -1088,7 +1088,7 @@ pub(super) fn handle_settings_confirm_modal(
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
                 if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_string());
+                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_owned());
                 }
             }
             ModalOutcome::Continue => {
@@ -1168,7 +1168,7 @@ pub(super) fn handle_settings_confirm_modal(
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
                 if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_string());
+                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_owned());
                 }
             }
             ModalOutcome::Continue => {
@@ -1188,7 +1188,7 @@ pub(super) fn handle_settings_confirm_modal(
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
                 if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_string());
+                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_owned());
                 }
             }
             ModalOutcome::Continue => {
@@ -1249,7 +1249,7 @@ pub(super) fn handle_settings_env_modal(
                 if env.modal.is_none() {
                     env.pending_env_key = None;
                     env.pending_picker_value = None;
-                    env.error = Some(settings_env_edit_cancelled_message().to_string());
+                    env.error = Some(settings_env_edit_cancelled_message().to_owned());
                 }
             }
             ModalOutcome::Continue => {
@@ -1364,7 +1364,7 @@ pub(super) fn handle_settings_env_modal(
             ModalOutcome::Cancel => {
                 env.pop_modal_chain();
                 if env.modal.is_none() {
-                    env.error = Some(settings_env_add_cancelled_message().to_string());
+                    env.error = Some(settings_env_add_cancelled_message().to_owned());
                 }
             }
             ModalOutcome::Continue => {
@@ -1397,7 +1397,7 @@ pub(super) fn handle_settings_env_modal(
             ModalOutcome::Cancel => {
                 env.pop_modal_chain();
                 if env.modal.is_none() {
-                    env.error = Some(settings_env_add_cancelled_message().to_string());
+                    env.error = Some(settings_env_add_cancelled_message().to_owned());
                 }
             }
             ModalOutcome::Continue => {
@@ -1454,7 +1454,7 @@ fn request_settings_save(
 
 fn open_settings_save_preview(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let lines = super::save::build_settings_save_lines(settings);
-    settings.mounts.modal = Some(crate::console::tui::state::GlobalMountModal::PreviewSave {
+    settings.mounts.modal = Some(GlobalMountModal::PreviewSave {
         state: jackin_console::tui::components::confirm_save::ConfirmSaveState::new(lines),
     });
 }
@@ -1491,7 +1491,7 @@ fn commit_text(
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.mount.dst = trimmed.to_string();
+            row.mount.dst = trimmed.to_owned();
             global.clear_modal_chain();
         }
         GlobalMountTextTarget::Scope => {
@@ -1511,7 +1511,7 @@ fn commit_text(
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.name = trimmed.to_string();
+            row.name = trimmed.to_owned();
             global.clear_modal_chain();
         }
     }
@@ -1542,7 +1542,7 @@ fn commit_env_text(
                 });
                 return;
             }
-            let key = trimmed.to_string();
+            let key = trimmed.to_owned();
             if let Some(stashed) = env.pending_picker_value.take() {
                 set_settings_env_value_typed(env, scope, &key, stashed);
                 env.pending_env_key = None;
@@ -1559,7 +1559,7 @@ fn commit_env_text(
                 env,
                 scope,
                 key,
-                crate::operator_env::EnvValue::Plain(value.to_string()),
+                crate::operator_env::EnvValue::Plain(value.to_owned()),
             );
             env.pending_env_key = None;
             env.clear_modal_chain();
@@ -1611,7 +1611,7 @@ fn commit_add_name_text(
         global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
-    draft.name = value.to_string();
+    draft.name = value.to_owned();
     global.open_sub_modal(text_modal_for_target(GlobalMountTextTarget::AddSource, ""));
 }
 
@@ -1638,7 +1638,7 @@ fn commit_add_destination_text(
         global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
-    draft.dst = value.to_string();
+    draft.dst = value.to_owned();
     finalize_global_mount_add(global);
 }
 

@@ -232,7 +232,7 @@ fn editor_auth_kind_messages_reset_local_view_state() {
         update_manager(
             &mut state,
             ManagerMessage::EnterEditorAuthKind {
-                kind: jackin_console::tui::auth::AuthKind::Claude,
+                kind: AuthKind::Claude,
             },
         )
         .is_dirty()
@@ -241,10 +241,7 @@ fn editor_auth_kind_messages_reset_local_view_state() {
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("expected editor stage");
     };
-    assert_eq!(
-        editor.auth_selected_kind,
-        Some(jackin_console::tui::auth::AuthKind::Claude)
-    );
+    assert_eq!(editor.auth_selected_kind, Some(AuthKind::Claude));
     assert_eq!(editor.active_field, FieldFocus::Row(0));
     assert_eq!(editor.tab_scroll_x, 0);
     assert_eq!(editor.tab_scroll_y, 0);
@@ -1061,7 +1058,7 @@ fn dismiss_list_modal_clears_modal() {
     let cwd = std::path::Path::new("/");
     let config = crate::config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
-    let _ = update_manager(
+    let _unused = update_manager(
         &mut state,
         ManagerMessage::OpenListErrorPopup {
             title: "x".into(),
@@ -1096,7 +1093,7 @@ fn chip_click_does_not_fire_while_list_modal_open() {
 
     // Open a list modal and verify the guard fires.
     let mut manager_with_modal = ManagerState::from_config(&config, cwd);
-    let _ = update_manager(
+    let _unused = update_manager(
         &mut manager_with_modal,
         ManagerMessage::OpenListErrorPopup {
             title: "Error".into(),

@@ -55,7 +55,7 @@ pub(super) fn parse_repo_name(url: &str) -> Option<String> {
         return rest.find('/').map(|i| rest[i + 1..].to_string());
     }
     // SSH: git@github.com:owner/repo
-    stripped.rsplit_once(':').map(|(_, p)| p.to_string())
+    stripped.rsplit_once(':').map(|(_, p)| p.to_owned())
 }
 
 pub(super) fn repo_matches(expected: &str, actual: &str) -> bool {
@@ -315,7 +315,7 @@ pub fn normalize_github_url(url: &str) -> String {
     if let Some(rest) = url.strip_prefix("ssh://git@github.com/") {
         return format!("https://github.com/{rest}");
     }
-    url.to_string()
+    url.to_owned()
 }
 
 /// Build the argument list for `git clone`, optionally scoped to a single branch.
@@ -367,7 +367,7 @@ impl RepoResolveOptions {
     }
 
     pub(super) fn with_branch(mut self, branch: Option<&str>) -> Self {
-        self.branch_override = branch.map(str::to_string);
+        self.branch_override = branch.map(str::to_owned);
         self
     }
 }
@@ -421,7 +421,7 @@ pub(super) async fn resolve_agent_repo_with(
     let lock_path = {
         let rel_str = rel.to_string_lossy();
         let file_name = if rel_str.is_empty() {
-            "default.repo.lock".to_string()
+            "default.repo.lock".to_owned()
         } else {
             format!("{rel_str}.repo.lock")
         };
@@ -441,7 +441,7 @@ pub(super) async fn resolve_agent_repo_with(
     let git_run_opts = RunOptions {
         quiet: !opts.debug,
         extra_env: if non_interactive {
-            vec![("GIT_TERMINAL_PROMPT".to_string(), "0".to_string())]
+            vec![("GIT_TERMINAL_PROMPT".to_owned(), "0".to_owned())]
         } else {
             Vec::new()
         },
@@ -521,7 +521,7 @@ pub(super) async fn resolve_agent_repo_with(
                     )
                 })
             },
-            |b| Ok(b.to_string()),
+            |b| Ok(b.to_owned()),
         )?;
         runner
             .run(

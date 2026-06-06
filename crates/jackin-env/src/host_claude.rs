@@ -66,7 +66,7 @@ pub fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
         let code = out
             .status
             .code()
-            .map_or_else(|| "signal".to_string(), |c| c.to_string());
+            .map_or_else(|| "signal".to_owned(), |c| c.to_string());
         anyhow::bail!(
             "`{binary} --version` exited with {code} (stderr: {})",
             stderr.trim()
@@ -82,7 +82,7 @@ pub fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
     })?;
 
     Ok(ClaudeProbe {
-        binary: binary.to_string(),
+        binary: binary.to_owned(),
         version,
     })
 }
@@ -94,7 +94,7 @@ pub fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
 /// parser tolerant: future upstream output changes shouldn't break
 /// the probe, only the displayed version.
 fn parse_version_line(stdout: &str) -> Option<String> {
-    stdout.split_whitespace().next().map(str::to_string)
+    stdout.split_whitespace().next().map(str::to_owned)
 }
 
 /// Long-lived OAuth token prefix emitted by `claude setup-token`.
@@ -125,7 +125,7 @@ struct RawModeGuard;
 
 impl RawModeGuard {
     fn enter() -> Self {
-        let _ = crossterm::terminal::enable_raw_mode();
+        drop(crossterm::terminal::enable_raw_mode());
         Self
     }
 }
@@ -289,9 +289,9 @@ pub fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             Err(e) => {
-                let _ = stderr.flush();
-                let _ = child.kill();
-                let _ = child.wait();
+                drop(stderr.flush());
+                drop(child.kill());
+                drop(child.wait());
                 anyhow::bail!(
                     "PTY read failed while capturing `{binary} setup-token` output: {e} \
                      (any captured token must be considered compromised; re-run setup)"
@@ -304,7 +304,7 @@ pub fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::
         forward_redacted_line(&buf, &mut captured, &mut stderr);
         buf.clear();
     }
-    let _ = stderr.flush();
+    drop(stderr.flush());
 
     let status = child
         .wait()
@@ -357,7 +357,7 @@ fn forward_redacted_line(
 ) {
     let prefix = TOKEN_PREFIX.as_bytes();
     let Some(start) = line.windows(prefix.len()).position(|w| w == prefix) else {
-        let _ = out.write_all(line);
+        drop(out.write_all(line));
         return;
     };
     // Walk from `start`, skipping ANSI escape sequences, collecting
@@ -390,14 +390,14 @@ fn forward_redacted_line(
     }
     let token_bytes_end = i;
     if token.is_empty() {
-        token = TOKEN_PREFIX.to_string();
+        token = TOKEN_PREFIX.to_owned();
     }
     if captured.is_none() {
         *captured = Some(token);
     }
-    let _ = out.write_all(&line[..start]);
-    let _ = out.write_all(b"<redacted>");
-    let _ = out.write_all(&line[token_bytes_end..]);
+    drop(out.write_all(&line[..start]));
+    drop(out.write_all(b"<redacted>"));
+    drop(out.write_all(&line[token_bytes_end..]));
 }
 
 /// Advance `pos` past one ANSI/VT escape sequence starting at `bytes[pos]`.

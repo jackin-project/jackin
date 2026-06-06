@@ -59,8 +59,7 @@ fn gh_json<T: serde::de::DeserializeOwned>(
     };
     let parsed = serde_json::from_str::<T>(&json).map_err(|e| {
         LookupError::Failed(format!(
-            "{label} JSON parse failed: {e}; payload prefix: {:.200?}",
-            json
+            "{label} JSON parse failed: {e}; payload prefix: {json:.200?}"
         ))
     })?;
     Ok(Some(parsed))
@@ -107,8 +106,8 @@ pub(crate) fn gh_pull_request_info(
     };
     if url::Url::parse(&pr.url)
         .ok()
-        .filter(|u| matches!(u.scheme(), "http" | "https"))
-        .is_none()
+        .as_ref()
+        .is_none_or(|u| !matches!(u.scheme(), "http" | "https"))
     {
         return Err(LookupError::Failed(format!(
             "gh pr list returned non-http(s) url: {:?}",
@@ -230,15 +229,15 @@ fn run_command_capturing_output(
         ),
         WaitOutcome::Reaped => None,
         WaitOutcome::TimedOut => {
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
+            drop(stdout_reader.join());
+            drop(stderr_reader.join());
             return Err(LookupError::Failed(format!(
                 "{program}: timed out after {timeout:?}"
             )));
         }
         WaitOutcome::Failed(e) => {
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
+            drop(stdout_reader.join());
+            drop(stderr_reader.join());
             return Err(LookupError::Failed(format!(
                 "{program}: try_wait failed: {e} (errno={:?})",
                 e.raw_os_error()
@@ -263,8 +262,8 @@ pub(crate) fn command_output_or_lookup_error(
     stderr_bytes: &[u8],
 ) -> Result<Option<String>, LookupError> {
     let stderr_nonempty = stderr_bytes.iter().any(|b| !b.is_ascii_whitespace());
-    let trimmed_stderr = || String::from_utf8_lossy(stderr_bytes).trim().to_string();
-    let value = String::from_utf8_lossy(stdout_bytes).trim().to_string();
+    let trimmed_stderr = || String::from_utf8_lossy(stderr_bytes).trim().to_owned();
+    let value = String::from_utf8_lossy(stdout_bytes).trim().to_owned();
     match status_success {
         Some(false) => Err(LookupError::Failed(format!(
             "{program}: non-accepted status; stderr: {}",

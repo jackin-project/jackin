@@ -16,7 +16,7 @@ use jackin_console::tui::screens::editor::view::{
 };
 
 pub(crate) fn render_editor_tab_strip(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     active: crate::console::tui::state::EditorTab,
     tab_bar_focused: bool,
@@ -31,7 +31,7 @@ pub(crate) fn render_editor_tab_strip(
     );
 }
 
-pub(crate) fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
+pub(crate) fn render_general_tab(frame: &mut Frame<'_>, area: Rect, state: &EditorState<'_>) {
     let rows = editor_general_lines_for_state(state);
     let focused =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
@@ -46,7 +46,7 @@ pub(crate) fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorSt
     );
 }
 
-pub(crate) fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
+pub(crate) fn render_mounts_tab(frame: &mut Frame<'_>, area: Rect, state: &EditorState<'_>) {
     let lines = editor_mount_lines_for_state(state);
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
@@ -60,7 +60,7 @@ pub(crate) fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorSta
 }
 
 pub(crate) fn render_roles_tab(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     state: &EditorState<'_>,
     config: &AppConfig,
@@ -80,7 +80,7 @@ pub(crate) fn render_roles_tab(
 }
 
 pub(crate) fn render_secrets_tab(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     state: &EditorState<'_>,
     config: &AppConfig,
@@ -100,7 +100,7 @@ pub(crate) fn render_secrets_tab(
 }
 
 pub(crate) fn render_auth_tab(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     state: &EditorState<'_>,
     config: &AppConfig,
@@ -204,7 +204,7 @@ pub(crate) fn editor_secret_lines_for_state(
         |scope, key| {
             state
                 .unmasked_rows
-                .contains(&(scope.clone(), key.to_string()))
+                .contains(&(scope.clone(), key.to_owned()))
         },
         |role| config.roles.contains_key(role),
         |role| state.pending.roles.get(role).map_or(0, |o| o.env.len()),

@@ -67,7 +67,7 @@ where
             )
         });
     }
-    Ok(value.to_string())
+    Ok(value.to_owned())
 }
 
 fn parse_host_ref(value: &str) -> Option<&str> {

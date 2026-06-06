@@ -45,16 +45,16 @@ pub fn classify_target(target: &str) -> TargetKind {
             // Same path for both src and dst — expand tilde for dst too.
             let expanded = expand_tilde(target);
             return TargetKind::Path {
-                src: target.to_string(),
+                src: target.to_owned(),
                 dst: expanded,
             };
         };
         TargetKind::Path {
-            src: src.to_string(),
-            dst: dst.to_string(),
+            src: src.to_owned(),
+            dst: dst.to_owned(),
         }
     } else {
-        TargetKind::Name(target.to_string())
+        TargetKind::Name(target.to_owned())
     }
 }
 
@@ -101,7 +101,7 @@ pub(crate) fn resolve_target_name_with_choice(
                 ],
             )?;
             if choice == 0 {
-                Ok(LoadWorkspaceInput::Saved(name.to_string()))
+                Ok(LoadWorkspaceInput::Saved(name.to_owned()))
             } else {
                 let full_path = cwd.join(name);
                 let canonical = full_path.display().to_string();
@@ -111,7 +111,7 @@ pub(crate) fn resolve_target_name_with_choice(
                 })
             }
         }
-        (true, false) => Ok(LoadWorkspaceInput::Saved(name.to_string())),
+        (true, false) => Ok(LoadWorkspaceInput::Saved(name.to_owned())),
         (false, true) => {
             let full_path = cwd.join(name);
             let canonical = full_path.display().to_string();
@@ -126,7 +126,7 @@ pub(crate) fn resolve_target_name_with_choice(
                  Saved workspaces: {}\n\
                  Hint: use a path (e.g. ./{name}) to mount a directory.",
                 if config.workspaces.is_empty() {
-                    "(none)".to_string()
+                    "(none)".to_owned()
                 } else {
                     config
                         .workspaces
@@ -239,7 +239,7 @@ pub(crate) fn resolve_agent_from_context_with_choice(
         ) {
             return Ok((
                 eligible[preferred_idx].clone(),
-                LoadWorkspaceInput::Saved(name.to_string()),
+                LoadWorkspaceInput::Saved(name.to_owned()),
             ));
         }
 
@@ -255,7 +255,7 @@ pub(crate) fn resolve_agent_from_context_with_choice(
                 eligible[choice].clone()
             }
         };
-        return Ok((chosen, LoadWorkspaceInput::Saved(name.to_string())));
+        return Ok((chosen, LoadWorkspaceInput::Saved(name.to_owned())));
     }
 
     anyhow::bail!(
@@ -410,7 +410,7 @@ fn hardline_candidate_prompt_label(paths: &JackinPaths, candidate: &HardlineCand
     // Use state from candidate — session inventory not fetched here
     // to avoid blocking async in a sync context
     let docker_state = format!("docker:{}", candidate.state.short_label());
-    let session_summary = "sessions:unknown".to_string();
+    let session_summary = "sessions:unknown".to_owned();
 
     let state_dir = paths.data_dir.join(container);
     let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
@@ -579,7 +579,7 @@ pub(crate) fn prompt_agent_choice_if_needed(
         return Ok(None);
     }
 
-    let labels: Vec<String> = supported.iter().map(|a| a.slug().to_string()).collect();
+    let labels: Vec<String> = supported.iter().map(|a| a.slug().to_owned()).collect();
     let selection = dialoguer::Select::new()
         .with_prompt(format!(
             "Role \"{}\" supports multiple agents. Choose one",

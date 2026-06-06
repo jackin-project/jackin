@@ -26,9 +26,9 @@ pub struct ContainerDiagnostics {
 impl Default for ContainerDiagnostics {
     fn default() -> Self {
         Self {
-            host_version: "unknown".to_string(),
+            host_version: "unknown".to_owned(),
             run_id: String::new(),
-            run_log_display: "(not set)".to_string(),
+            run_log_display: "(not set)".to_owned(),
             run_log_href: None,
         }
     }
@@ -45,12 +45,12 @@ pub fn resolve_status_identity() -> StatusIdentity {
 
 pub fn resolve_container_diagnostics() -> ContainerDiagnostics {
     let host_version =
-        std::env::var("JACKIN_HOST_VERSION").unwrap_or_else(|_| "unknown".to_string());
+        std::env::var("JACKIN_HOST_VERSION").unwrap_or_else(|_| "unknown".to_owned());
     let run_id = std::env::var("JACKIN_RUN_ID").unwrap_or_default();
     let (run_log_display, run_log_href) = if run_id.is_empty() {
-        ("(not set)".to_string(), None)
+        ("(not set)".to_owned(), None)
     } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_owned());
         let full_path = format!("{home}/.jackin/data/diagnostics/runs/{run_id}.jsonl");
         (
             format!("~/.jackin/data/diagnostics/runs/{run_id}.jsonl"),
@@ -85,7 +85,7 @@ fn resolve_container_name() -> String {
         std::path::Path::new("/etc/hostname"),
         ETC_HOSTNAME_MAX_BYTES,
     )
-    .map(|value| value.trim().to_string())
+    .map(|value| value.trim().to_owned())
     .filter(|value| !value.is_empty())
     {
         crate::clog!("statusbar: container name resolved from /etc/hostname");
@@ -103,6 +103,6 @@ fn resolve_instance_id(container_name: &str) -> String {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| {
             instance_id_from_container_name(container_name)
-                .map_or_else(|| container_name.to_string(), str::to_string)
+                .map_or_else(|| container_name.to_owned(), str::to_owned)
         })
 }

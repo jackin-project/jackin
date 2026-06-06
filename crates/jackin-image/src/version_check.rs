@@ -22,13 +22,13 @@ pub fn stored_version(paths: &JackinPaths, agent: Agent, image: &str) -> Option<
     let path = image_version_cache_path(paths, agent, image);
     std::fs::read_to_string(path)
         .ok()
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_owned())
 }
 
 /// Persist the agent version that was just installed into an image.
 pub fn store_version(paths: &JackinPaths, agent: Agent, image: &str, version: &str) {
     let path = image_version_cache_path(paths, agent, image);
-    let _ = write_cached(&path, version);
+    drop(write_cached(&path, version));
 }
 
 // ── Backward-compat shims — keep old names for callers and tests ──────────────
@@ -99,7 +99,7 @@ pub fn stored_cache_bust(paths: &JackinPaths, image: &str) -> Option<String> {
     let path = cache_bust_path(paths, image);
     std::fs::read_to_string(path)
         .ok()
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_owned())
 }
 
 /// Persist the `JACKIN_CACHE_BUST` value used for a build so that

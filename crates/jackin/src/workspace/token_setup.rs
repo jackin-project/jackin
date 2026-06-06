@@ -10,6 +10,3 @@ pub use jackin_env::{
     run_doctor_with_runner, run_revoke, run_revoke_with_runner, run_setup, run_setup_with_runner,
     tags_indicate_jackin_owned, vault_for_rotate, write_expiry_stamp,
 };
-
-#[cfg(test)]
-mod tests;

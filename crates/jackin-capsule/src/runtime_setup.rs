@@ -117,7 +117,7 @@ fn install_git_trailer_hook_if_requested() -> Result<()> {
     if env_is_one("JACKIN_GIT_DCO") {
         active.push("dco");
     }
-    let agent = std::env::var("JACKIN_AGENT").unwrap_or_else(|_| "unknown".to_string());
+    let agent = std::env::var("JACKIN_AGENT").unwrap_or_else(|_| "unknown".to_owned());
     println!(
         "[entrypoint] git trailer hook installed (agent: {agent}, active: {})",
         active.join(" ")
@@ -198,21 +198,21 @@ fn setup_claude() -> Result<()> {
         remove_file_if_exists("/home/agent/.claude/.credentials.json")?;
     }
 
-    if !env_is_one("JACKIN_DISABLE_TIRITH") {
+    if env_is_one("JACKIN_DISABLE_TIRITH") {
+        println!("[entrypoint] tirith disabled (JACKIN_DISABLE_TIRITH=1)");
+    } else {
         run_optional_command(
             "claude",
             &["mcp", "add", "tirith", "--", "tirith", "mcp-server"],
         );
-    } else {
-        println!("[entrypoint] tirith disabled (JACKIN_DISABLE_TIRITH=1)");
     }
-    if !env_is_one("JACKIN_DISABLE_SHELLFIRM") {
+    if env_is_one("JACKIN_DISABLE_SHELLFIRM") {
+        println!("[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)");
+    } else {
         run_optional_command(
             "claude",
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
-    } else {
-        println!("[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)");
     }
     Ok(())
 }
@@ -233,7 +233,7 @@ fn setup_codex() -> Result<()> {
 }
 
 /// Appends `[model_providers]` + `[profiles]` blocks for available alt
-/// providers to `config.toml` under `codex_dir`. MiniMax is the only
+/// providers to `config.toml` under `codex_dir`. `MiniMax` is the only
 /// deliverable Codex cell (Responses-API compatible); GLM and Kimi are
 /// deferred. Idempotent: skips the write if the block is already present.
 fn write_codex_provider_config(codex_dir: &Path) -> Result<()> {
@@ -287,7 +287,7 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
     Ok(())
 }
 
-/// Serializes the MiniMax `[model_providers.minimax]` + `[profiles.minimax]`
+/// Serializes the `MiniMax` `[model_providers.minimax]` + `[profiles.minimax]`
 /// Codex block via the `toml` crate (a leading newline separates it from any
 /// existing appended-to content).
 fn codex_minimax_provider_toml() -> Result<String> {
@@ -451,11 +451,11 @@ fn write_opencode_json(config: &Path, cfg: &serde_json::Value) -> Result<()> {
 /// self-contained `provider` block for each alt provider whose key is present.
 ///
 /// Each block fully defines the provider (npm SDK, baseURL, apiKey, the one
-/// model id) instead of relying on OpenCode's bundled models.dev registry. Two
+/// model id) instead of relying on `OpenCode`'s bundled models.dev registry. Two
 /// reasons it must be self-contained: the registry keys Z.AI's credential off
 /// `ZHIPU_API_KEY` (a name jackin never sets — so an apiKey-less block would
 /// fail to authenticate), and the registry has no `kimi` provider at all (its
-/// entry is `kimi-for-coding`), so a bare `{baseURL}` block leaves OpenCode
+/// entry is `kimi-for-coding`), so a bare `{baseURL}` block leaves `OpenCode`
 /// with no SDK or model list to resolve `-m kimi/kimi-for-coding`. The model id
 /// is the suffix [`jackin_protocol::Provider::opencode_model`] emits for the
 /// `-m <provider>/<model>` flag; the test binds the two so they cannot drift.
@@ -467,7 +467,7 @@ fn build_opencode_config(
     let mut providers = serde_json::Map::new();
     if let Some(key) = zai_key {
         providers.insert(
-            "zai".to_string(),
+            "zai".to_owned(),
             opencode_provider_block(
                 "Z.AI",
                 "@ai-sdk/openai-compatible",
@@ -479,7 +479,7 @@ fn build_opencode_config(
     }
     if let Some(key) = minimax_key {
         providers.insert(
-            "minimax".to_string(),
+            "minimax".to_owned(),
             opencode_provider_block(
                 "MiniMax",
                 "@ai-sdk/anthropic",
@@ -494,7 +494,7 @@ fn build_opencode_config(
     }
     if let Some(key) = kimi_key {
         providers.insert(
-            "kimi".to_string(),
+            "kimi".to_owned(),
             opencode_provider_block(
                 "Kimi",
                 "@ai-sdk/anthropic",
@@ -512,9 +512,9 @@ fn build_opencode_config(
     cfg
 }
 
-/// One OpenCode custom-provider block. `model_id` is both the sole entry in the
-/// `models` map and the suffix OpenCode matches after the provider id in
-/// `-m <provider>/<model_id>`. MiniMax and Kimi speak the Anthropic wire format
+/// One `OpenCode` custom-provider block. `model_id` is both the sole entry in the
+/// `models` map and the suffix `OpenCode` matches after the provider id in
+/// `-m <provider>/<model_id>`. `MiniMax` and Kimi speak the Anthropic wire format
 /// (npm `@ai-sdk/anthropic`), but with a `/v1`-suffixed baseURL since that SDK
 /// appends only `/messages`; Z.AI's coding-plan endpoint is OpenAI-compatible.
 fn opencode_provider_block(
@@ -525,7 +525,7 @@ fn opencode_provider_block(
     model_id: &str,
 ) -> serde_json::Value {
     let mut models = serde_json::Map::new();
-    models.insert(model_id.to_string(), json!({ "name": model_id }));
+    models.insert(model_id.to_owned(), json!({ "name": model_id }));
     json!({
         "name": name,
         "npm": npm,
@@ -622,9 +622,7 @@ fn git_trailer_hook_ready() -> bool {
 }
 
 fn hook_points_to_capsule() -> bool {
-    fs::read_link(GIT_HOOK_PATH)
-        .map(|target| target == Path::new(CAPSULE_RUNTIME_BIN))
-        .unwrap_or(false)
+    fs::read_link(GIT_HOOK_PATH).is_ok_and(|target| target == Path::new(CAPSULE_RUNTIME_BIN))
 }
 
 fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
@@ -670,8 +668,8 @@ fn cache_dco_identity_if_needed() {
 fn read_cached_dco_identity() -> Option<(String, String)> {
     let content = fs::read_to_string(git_dco_identity_cache_path()).ok()?;
     let mut lines = content.lines();
-    let name = lines.next().filter(|s| !s.is_empty())?.to_string();
-    let email = lines.next().filter(|s| !s.is_empty())?.to_string();
+    let name = lines.next().filter(|s| !s.is_empty())?.to_owned();
+    let email = lines.next().filter(|s| !s.is_empty())?.to_owned();
     Some((name, email))
 }
 
@@ -691,7 +689,7 @@ fn git_config_value(key: &str) -> Option<String> {
     Some(
         String::from_utf8_lossy(&output.stdout)
             .trim_end()
-            .to_string(),
+            .to_owned(),
     )
     .filter(|value| !value.is_empty())
 }
@@ -842,9 +840,7 @@ fn env_is_one(name: &str) -> bool {
 }
 
 fn is_executable(path: impl AsRef<Path>) -> bool {
-    fs::metadata(path)
-        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
+    fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(test)]

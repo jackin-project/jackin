@@ -3,6 +3,3 @@
 
 pub use jackin_docker::shell_runner::{ShellRunner, redact_env_args};
 pub use jackin_docker::{CommandRunner, RunOptions};
-
-#[cfg(test)]
-mod tests;

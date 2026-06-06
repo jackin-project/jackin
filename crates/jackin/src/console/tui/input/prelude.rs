@@ -27,7 +27,7 @@ pub(super) fn handle_prelude_key(
     key: KeyEvent,
 ) -> InputOutcome {
     if key.code == KeyCode::Esc {
-        let _ = update_manager(
+        let _unused = update_manager(
             state,
             ManagerMessage::ReloadFromConfig {
                 config: Box::new(config.clone()),

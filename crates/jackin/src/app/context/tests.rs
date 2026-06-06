@@ -1,7 +1,6 @@
 //! Tests for `context`.
 use super::*;
 use crate::config;
-use crate::paths;
 use crate::workspace;
 
 #[test]
@@ -70,12 +69,12 @@ fn classify_target_relative_with_slash() {
 
 #[test]
 fn resolve_target_name_workspace_only() {
-    let mut config = config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.workspaces.insert(
-        "my-ws".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-            workdir: "/workspace".to_string(),
+        "my-ws".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            workdir: "/workspace".to_owned(),
             ..Default::default()
         },
     );
@@ -90,14 +89,14 @@ fn resolve_target_name_directory_only() {
     let dir = temp.path().join("my-dir");
     std::fs::create_dir_all(&dir).unwrap();
 
-    let config = config::AppConfig::default();
+    let config = AppConfig::default();
     let result = resolve_target_name("my-dir", &config, temp.path()).unwrap();
     assert!(matches!(result, LoadWorkspaceInput::Path { .. }));
 }
 
 #[test]
 fn resolve_target_name_neither_errors() {
-    let config = config::AppConfig::default();
+    let config = AppConfig::default();
     let cwd = std::env::temp_dir();
     let result = resolve_target_name("nonexistent-thing", &config, &cwd);
     assert!(result.is_err());
@@ -112,28 +111,28 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
     let nested_dir = project_dir.join("src/bin");
     std::fs::create_dir_all(&nested_dir).unwrap();
 
-    let mut config = config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
+        "agent-smith".to_owned(),
         config::RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "my-app".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-            workdir: "/workspace".to_string(),
+        "my-app".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
-                dst: "/workspace".to_string(),
+                dst: "/workspace".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_roles: vec!["agent-smith".to_string()],
-            default_role: Some("agent-smith".to_string()),
+            allowed_roles: vec!["agent-smith".to_owned()],
+            default_role: Some("agent-smith".to_owned()),
             default_agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
@@ -152,7 +151,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
     let resolved = resolve_agent_from_context(&config, &nested_dir).unwrap();
 
     assert_eq!(resolved.0.key(), "agent-smith");
-    assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
+    assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_owned()));
 }
 
 #[test]
@@ -163,28 +162,28 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
     std::fs::create_dir_all(&repo_dir).unwrap();
     let workspace_root = workspace_root.canonicalize().unwrap();
 
-    let mut config = config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
+        "agent-smith".to_owned(),
         config::RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "my-app".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        "my-app".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workspace_root.display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: repo_dir.canonicalize().unwrap().display().to_string(),
-                dst: "/workspace/jackin".to_string(),
+                dst: "/workspace/jackin".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_roles: vec!["agent-smith".to_string()],
-            default_role: Some("agent-smith".to_string()),
+            allowed_roles: vec!["agent-smith".to_owned()],
+            default_role: Some("agent-smith".to_owned()),
             default_agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
@@ -203,7 +202,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
     let resolved = resolve_agent_from_context(&config, &workspace_root).unwrap();
 
     assert_eq!(resolved.0.key(), "agent-smith");
-    assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
+    assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_owned()));
 }
 
 #[test]
@@ -213,30 +212,30 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
     let nested_dir = project_dir.join("src/bin");
     std::fs::create_dir_all(&nested_dir).unwrap();
 
-    let mut config = config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
+        "agent-smith".to_owned(),
         config::RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "my-app".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-            workdir: "/workspace".to_string(),
+        "my-app".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
-                dst: "/workspace".to_string(),
+                dst: "/workspace".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_roles: vec!["agent-smith".to_string()],
+            allowed_roles: vec!["agent-smith".to_owned()],
             default_role: None,
             default_agent: None,
-            last_role: Some("ghost-role".to_string()),
+            last_role: Some("ghost-role".to_owned()),
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: workspace::KeepAwakeConfig::default(),
@@ -253,7 +252,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
     let resolved = resolve_agent_from_context(&config, &nested_dir).unwrap();
 
     assert_eq!(resolved.0.key(), "agent-smith");
-    assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
+    assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_owned()));
 }
 
 /// Build an `AppConfig` pre-populated with an `agent-smith` role and a
@@ -262,32 +261,32 @@ fn config_with_workspace(
     project_dir: &Path,
     allowed_roles: Vec<String>,
     last_role: Option<String>,
-) -> config::AppConfig {
-    let mut config = config::AppConfig::default();
+) -> AppConfig {
+    let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
+        "agent-smith".to_owned(),
         config::RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.roles.insert(
-        "the-architect".to_string(),
+        "the-architect".to_owned(),
         config::RoleSource {
-            git: "https://github.com/jackin-project/jackin-the-architect.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-the-architect.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "my-app".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-            workdir: "/workspace".to_string(),
+        "my-app".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
-                dst: "/workspace".to_string(),
+                dst: "/workspace".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
@@ -332,11 +331,11 @@ async fn resolve_running_container_from_context_picks_lone_running_agent() {
     let nested_dir = project_dir.join("src");
     std::fs::create_dir_all(&nested_dir).unwrap();
 
-    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_owned()], None);
     let running = "jk-k7p9m2xq-agentsmith";
     let docker = fake_docker_with_running_agents(&[running]);
 
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let container = resolve_running_container_from_context(&paths, &config, &nested_dir, &docker)
         .await
         .unwrap();
@@ -352,14 +351,14 @@ async fn resolve_running_container_from_context_prefers_last_agent() {
 
     let config = config_with_workspace(
         &project_dir,
-        vec!["agent-smith".to_string(), "the-architect".to_string()],
-        Some("the-architect".to_string()),
+        vec!["agent-smith".to_owned(), "the-architect".to_owned()],
+        Some("the-architect".to_owned()),
     );
     let smith = "jk-k7p9m2xq-agentsmith";
     let architect = "jk-a1b2c3d4-thearchitect";
     let docker = fake_docker_with_running_agents(&[smith, architect]);
 
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let container = resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
         .await
         .unwrap();
@@ -370,11 +369,11 @@ async fn resolve_running_container_from_context_prefers_last_agent() {
 #[tokio::test]
 async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let project_dir = temp.path().join("project");
     std::fs::create_dir_all(&project_dir).unwrap();
 
-    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_owned()], None);
     let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
         container_base: "jk-k7p9m2xq-myapp-agentsmith",
         workspace_name: Some("my-app"),
@@ -388,10 +387,10 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: "jk-k7p9m2xq-myapp-agentsmith".to_string(),
-            dind_container: "jk-k7p9m2xq-myapp-agentsmith-dind".to_string(),
-            network: "jk-k7p9m2xq-myapp-agentsmith-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-myapp-agentsmith".to_owned(),
+            dind_container: "jk-k7p9m2xq-myapp-agentsmith-dind".to_owned(),
+            network: "jk-k7p9m2xq-myapp-agentsmith-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_owned(),
         },
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -415,7 +414,7 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
 #[tokio::test]
 async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let project_dir = temp.path().join("project");
     std::fs::create_dir_all(&project_dir).unwrap();
     let canonical_project = project_dir.canonicalize().unwrap();
@@ -435,10 +434,10 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: "jk-k7p9m2xq-agentsmith".to_string(),
-            dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
-            network: "jk-k7p9m2xq-agentsmith-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-agentsmith".to_owned(),
+            dind_container: "jk-k7p9m2xq-agentsmith-dind".to_owned(),
+            network: "jk-k7p9m2xq-agentsmith-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_owned(),
         },
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -462,7 +461,7 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
 #[test]
 fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-k7p9m2xq-myapp-agentsmith";
     let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
         container_base: container,
@@ -477,7 +476,7 @@ fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: container.to_string(),
+            role_container: container.to_owned(),
             dind_container: format!("{container}-dind"),
             network: format!("{container}-net"),
             certs_volume: format!("{container}-dind-certs"),
@@ -486,7 +485,7 @@ fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
     manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
     manifest.write(&paths.data_dir.join(container)).unwrap();
     let candidate = HardlineCandidate {
-        name: container.to_string(),
+        name: container.to_owned(),
         state: runtime::ContainerState::Stopped {
             exit_code: 137,
             oom_killed: false,
@@ -506,7 +505,7 @@ fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
 #[test]
 fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-k7p9m2xq-myapp-agentsmith";
     let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
         container_base: container,
@@ -521,7 +520,7 @@ fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
-            role_container: container.to_string(),
+            role_container: container.to_owned(),
             dind_container: format!("{container}-dind"),
             network: format!("{container}-net"),
             certs_volume: format!("{container}-dind-certs"),
@@ -529,7 +528,7 @@ fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
     });
     manifest.write(&paths.data_dir.join(container)).unwrap();
     let candidate = HardlineCandidate {
-        name: container.to_string(),
+        name: container.to_owned(),
         state: runtime::ContainerState::Running,
     };
 
@@ -544,10 +543,10 @@ async fn resolve_running_container_from_context_errors_when_nothing_running() {
     let project_dir = temp.path().join("project");
     std::fs::create_dir_all(&project_dir).unwrap();
 
-    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_owned()], None);
     let docker = fake_docker_with_running_agents(&[]);
 
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let err = resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
         .await
         .unwrap_err()
@@ -563,11 +562,11 @@ async fn resolve_running_container_from_context_ignores_disallowed_running_agent
     let project_dir = temp.path().join("project");
     std::fs::create_dir_all(&project_dir).unwrap();
 
-    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_owned()], None);
     // the-architect is running but not allowed in this workspace.
     let docker = fake_docker_with_running_agents(&["jk-the-architect"]);
 
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let err = resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
         .await
         .unwrap_err()
@@ -584,10 +583,10 @@ async fn resolve_running_container_from_context_errors_when_no_workspace_matches
 
     let project_dir = temp.path().join("project");
     std::fs::create_dir_all(&project_dir).unwrap();
-    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+    let config = config_with_workspace(&project_dir, vec!["agent-smith".to_owned()], None);
     let docker = fake_docker_with_running_agents(&["jk-agent-smith"]);
 
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let err = resolve_running_container_from_context(&paths, &config, &unrelated, &docker)
         .await
         .unwrap_err()
@@ -600,20 +599,17 @@ async fn resolve_running_container_from_context_errors_when_no_workspace_matches
 /// persist it to disk at the expected config path, and return the
 /// live in-memory copy. Matches the production invariant that
 /// `remember_last_agent` observes: the config is already on disk.
-fn persisted_config_with_workspace(
-    paths: &paths::JackinPaths,
-    temp_path: &std::path::Path,
-) -> config::AppConfig {
+fn persisted_config_with_workspace(paths: &JackinPaths, temp_path: &Path) -> AppConfig {
     paths.ensure_base_dirs().unwrap();
-    let mut config = config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.workspaces.insert(
-        "my-app".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-            workdir: "/workspace".to_string(),
+        "my-app".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: temp_path.display().to_string(),
-                dst: "/workspace".to_string(),
+                dst: "/workspace".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
@@ -628,7 +624,7 @@ fn persisted_config_with_workspace(
 #[test]
 fn remember_last_agent_persists_successful_loads() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let mut config = persisted_config_with_workspace(&paths, temp.path());
 
     remember_last_agent(
@@ -651,7 +647,7 @@ fn remember_last_agent_persists_successful_loads() {
 #[test]
 fn remember_last_agent_skips_failed_loads() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     let mut config = persisted_config_with_workspace(&paths, temp.path());
 
     remember_last_agent(
@@ -682,15 +678,15 @@ fn broad_workdir_does_not_match_unrelated_subdirectory() {
     std::fs::create_dir_all(&agent_repo).unwrap();
     std::fs::create_dir_all(&unrelated).unwrap();
 
-    let mut config = config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.workspaces.insert(
-        "jackin-roles".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        "jackin-roles".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
-                dst: "/workspace/role-repo".to_string(),
+                dst: "/workspace/role-repo".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
@@ -714,15 +710,15 @@ fn workspace_matches_when_cwd_is_under_mount_src() {
     let inside_repo = agent_repo.join("src");
     std::fs::create_dir_all(&inside_repo).unwrap();
 
-    let mut config = config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.workspaces.insert(
-        "jackin-roles".to_string(),
-        workspace::WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        "jackin-roles".to_owned(),
+        WorkspaceConfig {
+            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
-                dst: "/workspace/role-repo".to_string(),
+                dst: "/workspace/role-repo".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
@@ -740,7 +736,7 @@ fn workspace_matches_when_cwd_is_under_mount_src() {
 
 // ── supported_agents_requiring_prompt gating ─────────────────────
 
-fn write_role_manifest(role_dir: &std::path::Path, body: &str) {
+fn write_role_manifest(role_dir: &Path, body: &str) {
     std::fs::create_dir_all(role_dir).unwrap();
     std::fs::write(role_dir.join("jackin.role.toml"), body).unwrap();
 }
@@ -748,8 +744,8 @@ fn write_role_manifest(role_dir: &std::path::Path, body: &str) {
 #[test]
 fn requires_prompt_when_role_supports_two_agents_and_no_workspace_default() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
-    let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
         &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
@@ -774,8 +770,8 @@ plugins = []
 #[test]
 fn requires_prompt_includes_amp_when_role_supports_three_agents() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
-    let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
         &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
@@ -806,8 +802,8 @@ plugins = []
 #[test]
 fn skips_prompt_when_workspace_default_agent_is_set() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
-    let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
         &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
@@ -832,8 +828,8 @@ plugins = []
 #[test]
 fn skips_prompt_when_role_supports_a_single_agent() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
-    let selector = crate::selector::RoleSelector::parse("solo").unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::parse("solo").unwrap();
     write_role_manifest(
         &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
@@ -853,8 +849,8 @@ agents = ["codex"]
 #[test]
 fn skips_prompt_when_manifest_is_missing_or_unreadable() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = paths::JackinPaths::for_tests(temp.path());
-    let selector = crate::selector::RoleSelector::parse("ghost").unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::parse("ghost").unwrap();
     // No manifest written — load_role will fetch and validate later.
     assert!(supported_agents_requiring_prompt(&paths, &selector, None).is_none());
 }

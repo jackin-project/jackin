@@ -18,7 +18,7 @@ const TEXT_FILE_BUSY_OS_ERROR: i32 = 26;
 /// Tests inject a different runner (e.g. `TestOpRunner`) rather than
 /// using an env-var seam — keeps the crate `unsafe_code = "forbid"`
 /// lint intact and tests free of process-env mutation.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct OpCli {
     pub(super) binary: String,
     pub(super) timeout: std::time::Duration,
@@ -35,7 +35,7 @@ pub struct OpCli {
 impl OpCli {
     pub fn new() -> Self {
         Self {
-            binary: OP_DEFAULT_BIN.to_string(),
+            binary: OP_DEFAULT_BIN.to_owned(),
             timeout: OP_DEFAULT_TIMEOUT,
             account: None,
         }
@@ -48,7 +48,7 @@ impl OpCli {
     /// later fails.
     pub fn new_probe() -> Self {
         Self {
-            binary: OP_DEFAULT_BIN.to_string(),
+            binary: OP_DEFAULT_BIN.to_owned(),
             timeout: std::time::Duration::from_secs(3),
             account: None,
         }
@@ -63,7 +63,7 @@ impl OpCli {
     )]
     pub fn new_interactive() -> Self {
         Self {
-            binary: OP_DEFAULT_BIN.to_string(),
+            binary: OP_DEFAULT_BIN.to_owned(),
             timeout: std::time::Duration::from_secs(300),
             account: None,
         }
@@ -108,7 +108,7 @@ impl Default for OpCli {
 fn format_exit_status(status: std::process::ExitStatus) -> String {
     status
         .code()
-        .map_or_else(|| "signal".to_string(), |c| c.to_string())
+        .map_or_else(|| "signal".to_owned(), |c| c.to_string())
 }
 
 /// Truncate stderr to ~`OP_STDERR_MAX` bytes, rounding down to a UTF-8
@@ -164,7 +164,7 @@ fn spawn_wait_thread(
             };
             let status_opt = match c.try_wait() {
                 Ok(Some(s)) => {
-                    let _ = guard.take();
+                    drop(guard.take());
                     Some(Ok(s))
                 }
                 Ok(None) => None,
@@ -173,7 +173,7 @@ fn spawn_wait_thread(
             drop(guard);
             match status_opt {
                 Some(r) => {
-                    let _ = tx.send(r);
+                    drop(tx.send(r));
                     return;
                 }
                 None => std::thread::sleep(poll),
@@ -220,7 +220,7 @@ impl OpRunner for OpCli {
             Some(_) => Self {
                 binary: self.binary.clone(),
                 timeout: self.timeout,
-                account: account.map(str::to_string),
+                account: account.map(str::to_owned),
             }
             .read(reference),
             None => self.read(reference),
@@ -254,7 +254,7 @@ impl OpRunner for OpCli {
 
         let stdout_handle = std::thread::spawn(move || {
             let mut buf = Vec::new();
-            let _ = stdout.read_to_end(&mut buf);
+            drop(stdout.read_to_end(&mut buf));
             buf
         });
         let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
@@ -274,8 +274,8 @@ impl OpRunner for OpCli {
                 // close and reader threads exit.
                 let killed = child.lock().expect("child mutex poisoned").take();
                 if let Some(mut c) = killed {
-                    let _ = c.kill();
-                    let _ = c.wait();
+                    drop(c.kill());
+                    drop(c.wait());
                 }
                 anyhow::bail!(
                     "1Password CLI timed out after {}s resolving {reference:?}",
@@ -358,7 +358,7 @@ fn run_op_with_timeout(
 
     let stdout_handle = std::thread::spawn(move || {
         let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
+        drop(stdout.read_to_end(&mut buf));
         buf
     });
     let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
@@ -375,8 +375,8 @@ fn run_op_with_timeout(
         Err(_) => {
             let killed = child.lock().expect("child mutex poisoned").take();
             if let Some(mut c) = killed {
-                let _ = c.kill();
-                let _ = c.wait();
+                drop(c.kill());
+                drop(c.wait());
             }
             anyhow::bail!(
                 "1Password CLI timed out after {}s running `{cmd_label}`",
@@ -672,7 +672,7 @@ impl OpWriteRunner for OpCli {
         let mut args: Vec<&str> = Vec::new();
         push_account_arg(&mut args, effective_account);
         args.extend_from_slice(&["item", "delete", item_id, "--vault", vault_id]);
-        let _ = run_op_with_timeout(&self.binary, &args, self.timeout)?;
+        drop(run_op_with_timeout(&self.binary, &args, self.timeout)?);
         Ok(())
     }
 
@@ -696,7 +696,7 @@ impl OpWriteRunner for OpCli {
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|t| t.as_str().map(str::to_string))
+                    .filter_map(|t| t.as_str().map(str::to_owned))
                     .collect()
             })
             .unwrap_or_default();

@@ -47,7 +47,7 @@ pub fn push_line(line: &str) {
         if lines.len() >= MAX_LINES {
             lines.pop_front();
         }
-        lines.push_back(line.to_string());
+        lines.push_back(line.to_owned());
     }
 }
 

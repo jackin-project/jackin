@@ -23,18 +23,18 @@ pub fn launch_container_info_state(
     // the console already showed. Build from the shared accumulating model so
     // row order, labels, and copy affordances match every other surface.
     let info = DebugInfo {
-        jackin_version: Some(jackin_version.to_string()),
+        jackin_version: Some(jackin_version.to_owned()),
         container_id: Some(
             identity
                 .and_then(|identity| identity.container.as_deref())
                 .unwrap_or("loading...")
-                .to_string(),
+                .to_owned(),
         ),
         role: identity.map(|identity| identity.role.clone()),
         agent: identity.map(|identity| identity.agent.clone()),
         target: identity.map(|identity| identity.target_label.clone()),
-        run_id: debug_mode.then(|| run_id.to_string()),
-        diagnostics_log_path: debug_mode.then(|| run_log_path.to_string()),
+        run_id: debug_mode.then(|| run_id.to_owned()),
+        diagnostics_log_path: debug_mode.then(|| run_log_path.to_owned()),
         capsule_version: None,
     };
     let mut state = info.into_state();

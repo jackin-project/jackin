@@ -163,7 +163,7 @@ pub(crate) fn resolve_default_branch(workdir: &Path) -> Option<String> {
         workdir,
         &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
     )?;
-    raw.strip_prefix("origin/").map(|s| s.to_string())
+    raw.strip_prefix("origin/").map(ToOwned::to_owned)
 }
 
 pub(crate) fn workdir_is_inside_git_tree(workdir: &Path) -> bool {
@@ -191,7 +191,7 @@ pub(crate) fn start_git_context_watcher(
         );
         return;
     };
-    let builder = std::thread::Builder::new().name("git-context-watch".to_string());
+    let builder = std::thread::Builder::new().name("git-context-watch".to_owned());
     if let Err(err) = builder.spawn(move || watch_git_head_changes(git_dir, event_tx)) {
         crate::clog!(
             "git-context-watch: failed to spawn watcher thread: {err}; relying on periodic poll"
@@ -340,12 +340,11 @@ pub(crate) fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContex
             None => oid.map_or(GitContext::Absent, |head| GitContext::Detached { head }),
         });
     }
-    Some(match Oid::parse(trimmed) {
-        Some(head) => GitContext::Detached { head },
-        None => {
-            cdebug_malformed_git_file(".git/HEAD", &head_path, trimmed);
-            GitContext::Absent
-        }
+    Some(if let Some(head) = Oid::parse(trimmed) {
+        GitContext::Detached { head }
+    } else {
+        cdebug_malformed_git_file(".git/HEAD", &head_path, trimmed);
+        GitContext::Absent
     })
 }
 
@@ -532,7 +531,7 @@ fn log_mtime_unavailable_once(path: &Path) {
     let new_entry = {
         let mut guard = PACKED_REFS_MTIME_UNAVAILABLE_LOGGED
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.insert(path.to_path_buf())
     };
     if new_entry {
@@ -543,7 +542,7 @@ fn log_mtime_unavailable_once(path: &Path) {
     }
 }
 
-/// Recover from a poisoned PACKED_REFS_CACHE mutex instead of silently
+/// Recover from a poisoned `PACKED_REFS_CACHE` mutex instead of silently
 /// disabling the cache for the daemon lifetime. The cached values are
 /// plain `HashMap<String, Oid>` entries with no torn invariants, so
 /// `PoisonError::into_inner()` is safe to use after a panic.
@@ -579,7 +578,7 @@ pub(crate) fn parse_packed_git_refs(raw: &str, truncated: bool) -> HashMap<Strin
             && ref_name.starts_with("refs/")
             && let Some(oid) = Oid::parse(oid_str)
         {
-            refs.insert(ref_name.to_string(), oid);
+            refs.insert(ref_name.to_owned(), oid);
         }
     }
     refs

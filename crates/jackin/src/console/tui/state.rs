@@ -43,17 +43,13 @@ pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
 pub use jackin_console::tui::screens::workspaces::model::{ManagerListRow, WorkspaceSummary};
 
-fn workspace_summary_from_config(
-    name: &str,
-    ws: &crate::workspace::WorkspaceConfig,
-) -> WorkspaceSummary {
+fn workspace_summary_from_config(name: &str, ws: &WorkspaceConfig) -> WorkspaceSummary {
     WorkspaceSummary::from_source(name, ws)
 }
 
 // WorkspaceSummarySource impl for WorkspaceConfig now lives in jackin-console.
 
-pub(crate) type MountDiff<'a> =
-    jackin_console::mount_diff::MountDiff<'a, crate::workspace::MountConfig>;
+pub(crate) type MountDiff<'a> = jackin_console::mount_diff::MountDiff<'a, MountConfig>;
 
 // MountDiffItem and MountSource impls for MountConfig and GlobalMountRow now live in jackin-console.
 
@@ -230,15 +226,13 @@ pub use jackin_console::tui::screens::settings::update::{
 pub type SettingsEnvConfig =
     jackin_console::tui::screens::settings::model::SettingsEnvConfig<crate::operator_env::EnvValue>;
 pub type PendingSaveCommit =
-    jackin_console::tui::screens::editor::model::PendingSaveCommit<crate::workspace::MountConfig>;
+    jackin_console::tui::screens::editor::model::PendingSaveCommit<MountConfig>;
 pub type EditorSaveFlow =
     jackin_console::tui::screens::editor::model::EditorSaveFlow<PendingSaveCommit>;
-pub type AuthFormTarget = jackin_console::tui::screens::settings::model::AuthFormTarget<
-    jackin_console::tui::auth::AuthKind,
->;
-pub type AuthRow = GenericAuthRow<jackin_console::tui::auth::AuthKind>;
+pub type AuthFormTarget = jackin_console::tui::screens::settings::model::AuthFormTarget<AuthKind>;
+pub type AuthRow = GenericAuthRow<AuthKind>;
 pub type SettingsAuthRow = jackin_console::tui::screens::settings::model::SettingsAuthRow<
-    jackin_console::tui::auth::AuthKind,
+    AuthKind,
     jackin_console::tui::auth::AuthMode,
 >;
 pub type ConfirmTarget = jackin_console::tui::screens::editor::model::ConfirmTarget<
@@ -329,10 +323,10 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
             let file = path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .map_or_else(|| path.display().to_string(), str::to_string);
+                .map_or_else(|| path.display().to_string(), str::to_owned);
             jackin_console::tui::components::error_popup::missing_role_repository_file_message(file)
         }
-        _ => err.to_string().trim_end_matches('.').to_string(),
+        _ => err.to_string().trim_end_matches('.').to_owned(),
     }
 }
 
@@ -359,7 +353,7 @@ pub(crate) fn add_role_to_workspace_editor(
     if !editor.pending.allowed_roles.is_empty()
         && !editor.pending.allowed_roles.iter().any(|role| role == key)
     {
-        editor.pending.allowed_roles.push(key.to_string());
+        editor.pending.allowed_roles.push(key.to_owned());
     }
 
     if let Some(idx) = config.roles.keys().position(|role| role == key) {
@@ -503,7 +497,7 @@ pub type GlobalMountModal<'a> = jackin_console::tui::screens::settings::model::G
     ScopePickerState,
     RolePickerState,
     ConfirmState,
-    ConfirmSaveState<crate::workspace::MountConfig>,
+    ConfirmSaveState<MountConfig>,
 >;
 
 pub type PendingTokenGenerate = jackin_console::tui::subscriptions::PendingTokenGenerate<
@@ -637,11 +631,7 @@ impl SettingsStateExt for SettingsState<'_> {
             // Remove the credential env var for env-only provider kinds when
             // the operator commits Ignore (meaning: no credential at global scope).
             if row.mode == jackin_console::tui::auth::AuthMode::Ignore
-                && matches!(
-                    row.kind,
-                    jackin_console::tui::auth::AuthKind::Zai
-                        | jackin_console::tui::auth::AuthKind::Minimax
-                )
+                && matches!(row.kind, AuthKind::Zai | AuthKind::Minimax)
                 && let Some(env_key) = row
                     .kind
                     .required_env_var(jackin_console::tui::auth::AuthMode::ApiKey)
@@ -738,7 +728,7 @@ pub type Modal<'a> = jackin_console::tui::app::ConsoleModal<
     ConfirmState,
     jackin_tui::components::SaveDiscardState,
     GithubPickerState,
-    ConfirmSaveState<crate::workspace::MountConfig>,
+    ConfirmSaveState<MountConfig>,
     ErrorPopupState,
     ContainerInfoState,
     jackin_tui::components::StatusPopupState,
@@ -1702,7 +1692,7 @@ impl EditorStateExt for EditorState<'_> {
         // Per-role overrides: union the keys; an role present on
         // only one side counts its whole env map / claude / codex /
         // github block as added/removed.
-        let agent_keys: std::collections::BTreeSet<&String> = self
+        let agent_keys: BTreeSet<&String> = self
             .original
             .roles
             .keys()

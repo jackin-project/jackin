@@ -50,8 +50,8 @@ fn display_role_name(repo_dir: &Path) -> String {
         .and_then(|path| path.file_name())
         .and_then(|name| name.to_str());
     match (parent, leaf) {
-        (Some(parent), Some("default" | "branches")) => parent.to_string(),
-        (_, Some(name)) => name.to_string(),
+        (Some(parent), Some("default" | "branches")) => parent.to_owned(),
+        (_, Some(name)) => name.to_owned(),
         _ => repo_dir.display().to_string(),
     }
 }

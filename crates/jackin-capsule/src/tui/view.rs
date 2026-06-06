@@ -191,7 +191,7 @@ fn apply_pane_scrollbar(
 /// Overlay the inverse-video selection highlight onto the cells the pane
 /// bodies already painted. The Ratatui equivalent of
 /// `paint_selection_highlight`: it toggles `REVERSED` on the selected cells so
-/// the SocketBackend diff carries it, instead of a raw post-frame append.
+/// the `SocketBackend` diff carries it, instead of a raw post-frame append.
 fn apply_selection_highlight(
     buf: &mut ratatui::buffer::Buffer,
     sel: &crate::tui::selection::SelectionState,
@@ -271,8 +271,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             .pane_titles
             .iter()
             .find(|(id, _)| *id == pane.id)
-            .map(|(_, t)| t.as_str())
-            .unwrap_or("");
+            .map_or("", |(_, t)| t.as_str());
 
         let focused = Some(pane.id) == view.focused_id;
         let border_area = RatatuiRect {
@@ -283,7 +282,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         };
         frame.render_widget(
             PaneBorderWidget {
-                title: title.to_string(),
+                title: title.to_owned(),
                 focused: focused && !view.zoomed,
             },
             border_area,

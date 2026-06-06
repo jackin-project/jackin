@@ -60,7 +60,7 @@ impl FakeOpWriter {
     }
 }
 
-impl crate::op_struct::OpWriteRunner for FakeOpWriter {
+impl OpWriteRunner for FakeOpWriter {
     fn item_create(
         &self,
         params: crate::op_struct::OpItemCreateParams<'_>,
@@ -69,17 +69,17 @@ impl crate::op_struct::OpWriteRunner for FakeOpWriter {
             anyhow::bail!("simulated item_create failure");
         }
         *self.last_create.borrow_mut() = Some((
-            params.vault_id.to_string(),
-            params.title.to_string(),
-            params.field_label.to_string(),
+            params.vault_id.to_owned(),
+            params.title.to_owned(),
+            params.field_label.to_owned(),
         ));
-        *self.recorded_value.borrow_mut() = Some(params.value.to_string());
+        *self.recorded_value.borrow_mut() = Some(params.value.to_owned());
         Ok(self.produced_ref.clone())
     }
     fn item_delete(&self, item_id: &str, vault_id: &str, _: Option<&str>) -> anyhow::Result<()> {
         self.deletes
             .borrow_mut()
-            .push((vault_id.to_string(), item_id.to_string()));
+            .push((vault_id.to_owned(), item_id.to_owned()));
         if self.fail_delete {
             anyhow::bail!("simulated item_delete failure");
         }
@@ -89,7 +89,7 @@ impl crate::op_struct::OpWriteRunner for FakeOpWriter {
         &self,
         _item_id: &str,
         _vault_id: &str,
-        target: &jackin_core::FieldTarget,
+        target: &FieldTarget,
         value: &str,
         _section: Option<&str>,
     ) -> anyhow::Result<OpRef> {
@@ -97,12 +97,12 @@ impl crate::op_struct::OpWriteRunner for FakeOpWriter {
             anyhow::bail!("simulated item_field_set failure");
         }
         *self.last_create.borrow_mut() = Some((
-            "existing-vault".to_string(),
-            "existing-item".to_string(),
-            target.label().to_string(),
+            "existing-vault".to_owned(),
+            "existing-item".to_owned(),
+            target.label().to_owned(),
         ));
-        *self.recorded_field_id.borrow_mut() = Some(target.id().map(str::to_string));
-        *self.recorded_value.borrow_mut() = Some(value.to_string());
+        *self.recorded_field_id.borrow_mut() = Some(target.id().map(str::to_owned));
+        *self.recorded_value.borrow_mut() = Some(value.to_owned());
         Ok(self.produced_ref.clone())
     }
     fn item_tags(
@@ -138,9 +138,9 @@ impl FakeOpReader {
         }
     }
 }
-impl crate::op_runner::OpRunner for FakeOpReader {
+impl OpRunner for FakeOpReader {
     fn read(&self, reference: &str) -> anyhow::Result<String> {
-        self.last_ref.borrow_mut().push(reference.to_string());
+        self.last_ref.borrow_mut().push(reference.to_owned());
         let mut q = self.values.borrow_mut();
         if q.len() == 1 {
             // Stable: keep returning the same value/err forever.
@@ -200,12 +200,12 @@ fn prior_token_slot_reads_the_scoped_slot() {
     let mut cfg = AppConfig::default();
     let mut ws = workspace("proj");
     ws.env.insert(
-        CLAUDE_OAUTH_TOKEN_ENV.to_string(),
+        CLAUDE_OAUTH_TOKEN_ENV.to_owned(),
         EnvValue::Plain("ws-level".into()),
     );
     let mut role_override = WorkspaceRoleOverride::default();
     role_override.env.insert(
-        CLAUDE_OAUTH_TOKEN_ENV.to_string(),
+        CLAUDE_OAUTH_TOKEN_ENV.to_owned(),
         EnvValue::Plain("role-level".into()),
     );
     ws.roles.insert("org/agent".into(), role_override);
@@ -256,7 +256,7 @@ fn run_setup_with_runner_role_scope_wires_role_override_not_workspace() {
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from(token.to_string())),
+        || Ok(secrecy::SecretString::from(token.to_owned())),
         &reader,
         &writer,
     )
@@ -296,7 +296,7 @@ fn run_setup_with_runner_creates_item_and_wires_workspace_config() {
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from(token.to_string())),
+        || Ok(secrecy::SecretString::from(token.to_owned())),
         &reader,
         &writer,
     )
@@ -371,7 +371,7 @@ fn run_setup_with_runner_global_scope_wires_global_config() {
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from(token.to_string())),
+        || Ok(secrecy::SecretString::from(token.to_owned())),
         &reader,
         &writer,
     )
@@ -418,7 +418,7 @@ fn run_setup_with_runner_aborts_when_workspace_missing() {
         &TokenSetupScope::Workspace("ghost".into()),
         &TokenSetupArgs::default(),
         Some(&probe),
-        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned())),
         &reader,
         &writer,
     )
@@ -442,7 +442,7 @@ fn run_setup_with_runner_aborts_when_vault_missing_and_no_reuse() {
         Some(&probe),
         || {
             capture_called.set(true);
-            Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string()))
+            Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned()))
         },
         &reader,
         &writer,
@@ -474,7 +474,7 @@ fn run_setup_with_runner_propagates_item_create_failure_without_touching_config(
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned())),
         &reader,
         &writer,
     )
@@ -545,7 +545,7 @@ fn run_setup_with_runner_post_write_read_failure_cleans_up_orphan_item() {
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned())),
         &reader,
         &writer,
     )
@@ -561,7 +561,7 @@ fn run_setup_with_runner_post_write_read_failure_cleans_up_orphan_item() {
     // Cleanup deletion must have fired against the canonical UUIDs.
     let deletes = writer.deletes.borrow();
     assert_eq!(deletes.len(), 1, "exactly one cleanup delete expected");
-    assert_eq!(deletes[0], ("VID".to_string(), "IID".to_string()));
+    assert_eq!(deletes[0], ("VID".to_owned(), "IID".to_owned()));
 }
 
 /// Post-write SHA mismatch must abort + clean up the orphan +
@@ -584,7 +584,7 @@ fn run_setup_with_runner_post_write_sha_mismatch_aborts_and_cleans_up() {
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned())),
         &reader,
         &writer,
     )
@@ -709,7 +709,7 @@ fn run_setup_with_runner_plain_text_wires_literal_and_skips_op_writer() {
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from(token.to_string())),
+        || Ok(secrecy::SecretString::from(token.to_owned())),
         &reader,
         &writer,
     )
@@ -732,7 +732,7 @@ fn run_setup_with_runner_plain_text_wires_literal_and_skips_op_writer() {
         .workspaces
         .get("proj")
         .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"));
-    assert_eq!(env_val, Some(&EnvValue::Plain(token.to_string())));
+    assert_eq!(env_val, Some(&EnvValue::Plain(token.to_owned())));
 
     // auth_forward still flips to oauth_token.
     let claude = cfg
@@ -775,7 +775,7 @@ fn run_setup_with_runner_plain_text_with_reuse_bails() {
         Some(&probe),
         || {
             capture_called.set(true);
-            Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string()))
+            Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned()))
         },
         &reader,
         &writer,
@@ -889,7 +889,7 @@ fn vault_for_rotate_falls_back_to_prior_op_ref_vault() {
     });
     assert_eq!(
         vault_for_rotate(None, Some(&prior)),
-        Some("VAULT_UUID".to_string()),
+        Some("VAULT_UUID".to_owned()),
         "no --vault and prior op-ref ⇒ vault id parsed from prior URI"
     );
 }
@@ -906,7 +906,7 @@ fn vault_for_rotate_prefers_explicit_cli_vault() {
     });
     assert_eq!(
         vault_for_rotate(Some("NewVault".into()), Some(&prior)),
-        Some("NewVault".to_string()),
+        Some("NewVault".to_owned()),
     );
 }
 
@@ -1037,7 +1037,7 @@ fn run_revoke_with_runner_delete_op_item_calls_writer_with_parsed_uuids() {
     assert!(report.deleted_op_item);
     assert_eq!(
         *writer.deletes.borrow(),
-        vec![("VAULT_UUID".to_string(), "ITEM_UUID".to_string())],
+        vec![("VAULT_UUID".to_owned(), "ITEM_UUID".to_owned())],
         "delete must be issued against the parsed vault/item UUIDs"
     );
     assert!(
@@ -1147,7 +1147,7 @@ fn run_setup_with_runner_post_write_failure_with_failing_delete_surfaces_manual_
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned())),
         &reader,
         &writer,
     )
@@ -1185,7 +1185,7 @@ fn run_setup_with_runner_post_write_unparseable_op_ref_skips_delete_call() {
             ..Default::default()
         },
         Some(&probe),
-        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+        || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_owned())),
         &reader,
         &writer,
     )
@@ -1223,7 +1223,7 @@ fn run_setup_with_runner_edit_existing_validation_failure_keeps_item() {
             edit_existing: Some(EditExistingTarget {
                 vault_id: "VID".into(),
                 item_id: "IID".into(),
-                field: jackin_core::FieldTarget::Existing {
+                field: FieldTarget::Existing {
                     id: "fld-real-id".into(),
                     label: "token".into(),
                 },
@@ -1234,7 +1234,7 @@ fn run_setup_with_runner_edit_existing_validation_failure_keeps_item() {
         Some(&probe),
         || {
             Ok(secrecy::SecretString::from(
-                "sk-ant-oat01-CAPTURED".to_string(),
+                "sk-ant-oat01-CAPTURED".to_owned(),
             ))
         },
         &reader,
@@ -1255,7 +1255,7 @@ fn run_setup_with_runner_edit_existing_validation_failure_keeps_item() {
     // targets that exact field rather than the first label match.
     assert_eq!(
         *writer.recorded_field_id.borrow(),
-        Some(Some("fld-real-id".to_string())),
+        Some(Some("fld-real-id".to_owned())),
         "edit-existing must thread the field id to item_field_set"
     );
 }

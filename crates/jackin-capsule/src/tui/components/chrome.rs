@@ -31,10 +31,11 @@ const BUTTON_BG_AWAITING_HOVER: Color = Color::Rgb(132, 202, 255);
 const GLYPH_BLOCKED: Color = Color::Rgb(255, 60, 60);
 
 /// Brand pill + tab cells (row 0) and the active-tab underline (row 1),
-/// painted into the Ratatui `Buffer` so the SocketBackend diff tracks every
+/// painted into the Ratatui `Buffer` so the `SocketBackend` diff tracks every
 /// chrome cell. Layout columns come from `status_bar_plan`, the same source
 /// `StatusBar::refresh_click_regions` uses, so the painted cells and the
 /// click regions cannot drift.
+#[derive(Debug)]
 pub struct StatusBarWidget<'a> {
     pub tabs: &'a [Tab],
     pub active_tab: usize,
@@ -160,6 +161,7 @@ impl Widget for StatusBarWidget<'_> {
 // ── Pane border ───────────────────────────────────────────────────────────────
 
 /// Renders the border and title for one pane, consistent with `draw_pane_box`.
+#[derive(Debug)]
 pub struct PaneBorderWidget {
     pub title: String,
     pub focused: bool,

@@ -61,8 +61,8 @@ fn seed_config_with_env(
         .into_iter()
         .map(|(k, v)| {
             (
-                k.to_string(),
-                jackin::operator_env::EnvValue::Plain(v.to_string()),
+                k.to_owned(),
+                jackin::operator_env::EnvValue::Plain(v.to_owned()),
             )
         })
         .collect();
@@ -1356,7 +1356,7 @@ fn seed_config_with_agents(
     let mut config = AppConfig::default();
     for key in agent_keys {
         config.roles.insert(
-            (*key).to_string(),
+            (*key).to_owned(),
             jackin::config::RoleSource {
                 git: format!("https://example.invalid/jackin-{key}.git"),
                 trusted: true,
@@ -1375,7 +1375,7 @@ fn seed_config_with_agents(
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_roles: agent_keys.iter().map(|s| (*s).to_string()).collect(),
+        allowed_roles: agent_keys.iter().map(|s| (*s).to_owned()).collect(),
         default_role: default_role.map(String::from),
         ..Default::default()
     };
@@ -1799,7 +1799,7 @@ fn seed_override_picker_workspace(
     let mut config = AppConfig::default();
     for name in allowed {
         config.roles.insert(
-            (*name).to_string(),
+            (*name).to_owned(),
             jackin::config::RoleSource {
                 git: format!("https://example.invalid/{name}.git"),
                 trusted: true,
@@ -1839,7 +1839,7 @@ fn seed_override_picker_workspace(
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_roles: allowed.iter().map(|s| (*s).to_string()).collect(),
+        allowed_roles: allowed.iter().map(|s| (*s).to_owned()).collect(),
         roles: roles_map,
         ..Default::default()
     };
@@ -1987,7 +1987,7 @@ fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() ->
             keys.sort();
             assert_eq!(
                 keys,
-                vec!["agent-brown".to_string(), "agent-smith".to_string()],
+                vec!["agent-brown".to_owned(), "agent-smith".to_owned()],
                 "agent-smith already has an override section but must still appear so the operator can add another key"
             );
         }
@@ -2495,8 +2495,8 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_roles: vec!["chainargos/agent-smith".to_string()],
-        default_role: Some("chainargos/agent-smith".to_string()),
+        allowed_roles: vec!["chainargos/agent-smith".to_owned()],
+        default_role: Some("chainargos/agent-smith".to_owned()),
         ..Default::default()
     };
     {
@@ -2617,7 +2617,7 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
     {
         let mut ce = ConfigEditor::open(&paths)?;
         let edit = jackin::workspace::WorkspaceEdit {
-            default_role: Some(Some("chainargos/agent-smith".to_string())),
+            default_role: Some(Some("chainargos/agent-smith".to_owned())),
             ..jackin::workspace::WorkspaceEdit::default()
         };
         ce.edit_workspace("multi-role-ws", edit)?;
@@ -2670,8 +2670,8 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_roles: vec!["chainargos/agent-smith".to_string()],
-        default_role: Some("chainargos/agent-smith".to_string()),
+        allowed_roles: vec!["chainargos/agent-smith".to_owned()],
+        default_role: Some("chainargos/agent-smith".to_owned()),
         ..Default::default()
     };
     let mut config = {
@@ -3121,7 +3121,7 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(jackin::console::manager::auth_kind::AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     ed.auth_expanded.insert("the-architect".into());
     let claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(

@@ -21,7 +21,7 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 fn roles(keys: &[&str]) -> Vec<TestRole> {
-    keys.iter().map(|k| TestRole((*k).to_string())).collect()
+    keys.iter().map(|k| TestRole((*k).to_owned())).collect()
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn dump(state: &RolePickerState<TestRole>, w: u16, h: u16) -> String {
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
         let area = Rect::new(0, 0, w, h);
-        super::render(f, area, state);
+        render(f, area, state);
     })
     .unwrap();
     let buf = term.backend().buffer();
@@ -159,7 +159,7 @@ fn agent_picker_renders_filter_row_with_placeholder_dots_when_empty() {
         frame.contains('\u{2591}'),
         "filter row missing placeholder dots `░`; frame:\n{frame}"
     );
-    let top: String = frame.lines().next().unwrap().to_string();
+    let top: String = frame.lines().next().unwrap().to_owned();
     assert!(
         top.contains("Select Role"),
         "title bar must read `Select Role`; top row:\n{top}"
@@ -181,7 +181,7 @@ fn agent_picker_renders_filter_row_with_live_chars_when_typing() {
         frame.contains("Filter: smi"),
         "filter row must show live characters; frame:\n{frame}"
     );
-    let top: String = frame.lines().next().unwrap().to_string();
+    let top: String = frame.lines().next().unwrap().to_owned();
     assert!(
         !top.contains("smi"),
         "live filter must NOT bleed into the title; top row:\n{top}"

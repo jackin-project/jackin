@@ -12,10 +12,6 @@ pub fn collect_session_env(include: bool) -> Vec<(String, String)> {
     }
     SESSION_ENV_PASSTHROUGH
         .iter()
-        .filter_map(|&key| {
-            std::env::var(key)
-                .ok()
-                .map(|value| (key.to_string(), value))
-        })
+        .filter_map(|&key| std::env::var(key).ok().map(|value| (key.to_owned(), value)))
         .collect()
 }

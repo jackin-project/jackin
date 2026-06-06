@@ -140,7 +140,7 @@ pub fn line_width(line: &Line<'_>) -> usize {
 }
 
 pub fn render_line_with_fixed_prefix_scroll(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     row: u16,
     line: Line<'static>,
@@ -232,7 +232,7 @@ pub const fn vertical_scrollbar_area(block_area: Rect) -> Rect {
 /// Horizontal scrollbars have no style variant — the thumb is always
 /// [`SCROLLBAR_HORIZONTAL_THUMB`] (the full block reads poorly horizontally).
 pub fn render_horizontal_scrollbar(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     block_area: Rect,
     content_width: usize,
     scroll_x: u16,
@@ -256,7 +256,7 @@ pub fn render_horizontal_scrollbar(
 }
 
 pub fn render_vertical_scrollbar(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     block_area: Rect,
     content_height: usize,
     scroll_y: u16,
@@ -271,7 +271,7 @@ pub fn render_vertical_scrollbar(
 }
 
 pub fn render_vertical_scrollbar_with_style(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     block_area: Rect,
     content_height: usize,
     scroll_y: u16,
@@ -293,7 +293,7 @@ pub fn render_vertical_scrollbar_with_style(
 }
 
 pub fn render_vertical_scrollbar_in_area(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     content_height: usize,
     viewport: usize,
@@ -310,7 +310,7 @@ pub fn render_vertical_scrollbar_in_area(
 }
 
 pub fn render_vertical_scrollbar_in_area_with_style(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     content_height: usize,
     viewport: usize,
@@ -333,7 +333,7 @@ pub fn render_vertical_scrollbar_in_area_with_style(
 }
 
 pub fn render_selected_lines_in_area(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     lines: Vec<Line<'_>>,
     selected: Option<usize>,
@@ -372,7 +372,7 @@ pub fn render_selected_lines_in_area(
 }
 
 pub fn render_lines_with_offset_in_area(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     lines: Vec<Line<'_>>,
     offset: u16,
@@ -465,7 +465,7 @@ impl Widget for FixedScrollbar {
 }
 
 pub fn render_scrollable_block(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     lines: Vec<Line<'_>>,
     scroll_x: &mut u16,
@@ -485,7 +485,7 @@ pub fn render_scrollable_block(
 }
 
 pub fn render_scrollable_block_at(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     lines: Vec<Line<'_>>,
     scroll_x: u16,

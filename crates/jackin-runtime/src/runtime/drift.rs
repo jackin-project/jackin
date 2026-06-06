@@ -138,7 +138,7 @@ mod drift_detection {
         let docker = FakeDockerClient {
             list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 vec![ContainerRow {
-                    name: "jk-a1b2c3d4-jackin".to_string(),
+                    name: "jk-a1b2c3d4-jackin".to_owned(),
                     labels: std::collections::HashMap::default(),
                 }],
             ])),
@@ -149,7 +149,7 @@ mod drift_detection {
             .unwrap();
         assert_eq!(
             det.running_containers,
-            vec!["jk-a1b2c3d4-jackin".to_string()]
+            vec!["jk-a1b2c3d4-jackin".to_owned()]
         );
         assert!(det.stopped_records.is_empty());
     }

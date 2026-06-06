@@ -5,6 +5,7 @@ use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 
 use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
 
+#[derive(Debug)]
 pub struct ClaudeRuntime;
 
 impl crate::agent::runtime::private::Sealed for ClaudeRuntime {}

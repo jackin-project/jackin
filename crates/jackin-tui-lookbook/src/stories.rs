@@ -27,7 +27,7 @@ use crate::interactors::{
 };
 
 #[derive(Debug, Clone, Copy)]
-pub struct Story {
+pub(crate) struct Story {
     pub id: &'static str,
     pub title: &'static str,
     pub component: &'static str,
@@ -39,7 +39,7 @@ pub struct Story {
 
 impl Story {
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         id: &'static str,
         title: &'static str,
         component: &'static str,
@@ -59,7 +59,7 @@ impl Story {
         }
     }
 
-    pub fn render(self, frame: &mut Frame<'_>, area: Rect) {
+    pub(crate) fn render(self, frame: &mut Frame<'_>, area: Rect) {
         (self.render)(frame, area);
     }
 
@@ -67,7 +67,7 @@ impl Story {
     /// interactive implementations return a live interactor; all others fall
     /// back to a `StaticStory` that simply calls the fn-pointer render.
     #[must_use]
-    pub fn make_interactor(&self) -> Box<dyn StoryInteraction> {
+    pub(crate) fn make_interactor(&self) -> Box<dyn StoryInteraction> {
         match self.id {
             "tab-strip/basic" => Box::new(TabStripInteractor::new()),
             "select-list/agent-picker" => Box::new(SelectListInteractor::new()),
@@ -85,7 +85,7 @@ impl Story {
 }
 
 #[must_use]
-pub fn stories() -> Vec<Story> {
+pub(crate) fn stories() -> Vec<Story> {
     vec![
         Story::new(
             "brand-header/console",
@@ -525,7 +525,7 @@ fn story_panel_unfocused(frame: &mut Frame<'_>, area: Rect) {
     let content_area = panel_body_area(&block, area);
     frame.render_widget(block, area);
     frame.render_widget(
-        ratatui::widgets::Paragraph::new(ratatui::text::Line::from(ratatui::text::Span::styled(
+        Paragraph::new(Line::from(Span::styled(
             "Co-author trailer  enabled",
             jackin_tui::theme::DIM,
         ))),
@@ -538,15 +538,15 @@ fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
     // every fact is known — Container ID, Run ID, and Diagnostics log render as
     // copyable cyan links; versions match the CLI strings.
     let state = DebugInfo {
-        jackin_version: Some("0.6.0-dev".to_string()),
-        capsule_version: Some("0.6.0-dev+444004b".to_string()),
-        container_id: Some("jk-sk76zdat-thearchitect".to_string()),
-        role: Some("the-architect".to_string()),
-        agent: Some("claude".to_string()),
-        target: Some("/Users/jackin/Projects/jackin".to_string()),
-        run_id: Some("jk-run-cc5ff2".to_string()),
+        jackin_version: Some("0.6.0-dev".to_owned()),
+        capsule_version: Some("0.6.0-dev+444004b".to_owned()),
+        container_id: Some("jk-sk76zdat-thearchitect".to_owned()),
+        role: Some("the-architect".to_owned()),
+        agent: Some("claude".to_owned()),
+        target: Some("/Users/jackin/Projects/jackin".to_owned()),
+        run_id: Some("jk-run-cc5ff2".to_owned()),
         diagnostics_log_path: Some(
-            "/Users/jackin/.jackin/data/diagnostics/runs/jk-run-cc5ff2.jsonl".to_string(),
+            "/Users/jackin/.jackin/data/diagnostics/runs/jk-run-cc5ff2.jsonl".to_owned(),
         ),
     }
     .into_state();

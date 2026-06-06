@@ -46,16 +46,11 @@ pub fn container_name_with_id(
                 truncate_component(&role, role_budget),
             )
         };
-        vec![
-            CONTAINER_PREFIX.to_string(),
-            instance_id,
-            ws_part,
-            role_part,
-        ]
+        vec![CONTAINER_PREFIX.to_owned(), instance_id, ws_part, role_part]
     } else {
         let role_budget = ROLE_BASE_DNS_BUDGET - CONTAINER_PREFIX.len() - instance_id.len() - 2;
         vec![
-            CONTAINER_PREFIX.to_string(),
+            CONTAINER_PREFIX.to_owned(),
             instance_id,
             truncate_component(&role, role_budget),
         ]
@@ -94,7 +89,7 @@ pub fn compact_component(input: &str, fallback: &str) -> String {
         .flat_map(char::to_lowercase)
         .collect();
     if compacted.is_empty() {
-        fallback.to_string()
+        fallback.to_owned()
     } else {
         compacted
     }
@@ -118,7 +113,7 @@ pub fn is_dns_label(input: &str) -> bool {
 
 fn truncate_component(component: &str, max_len: usize) -> String {
     if component.len() <= max_len {
-        return component.to_string();
+        return component.to_owned();
     }
     if max_len <= 4 {
         return short_hash(component, max_len);

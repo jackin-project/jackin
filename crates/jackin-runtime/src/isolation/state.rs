@@ -89,7 +89,7 @@ impl MountSummary {
     #[must_use]
     pub fn prompt_label_for_state_dir(state_dir: &Path) -> String {
         Self::for_state_dir(state_dir)
-            .map_or_else(|_| "mounts:unknown".to_string(), Self::prompt_label)
+            .map_or_else(|_| "mounts:unknown".to_owned(), Self::prompt_label)
     }
 
     /// `"mounts:N dirty:N unpushed:N"`. Returns `"mounts:none"` for the
@@ -97,7 +97,7 @@ impl MountSummary {
     #[must_use]
     pub fn prompt_label(self) -> String {
         if self.total == 0 {
-            return "mounts:none".to_string();
+            return "mounts:none".to_owned();
         }
         if self.dirty > 0 || self.unpushed > 0 {
             return format!(
@@ -112,7 +112,7 @@ impl MountSummary {
     #[must_use]
     pub fn inspect_label(self) -> String {
         if self.total == 0 {
-            return "none".to_string();
+            return "none".to_owned();
         }
         if self.dirty > 0 || self.unpushed > 0 {
             return format!(

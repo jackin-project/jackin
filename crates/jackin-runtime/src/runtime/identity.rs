@@ -44,10 +44,10 @@ pub(super) async fn load_host_identity(runner: &mut impl CommandRunner) -> HostI
     HostIdentity {
         uid: try_capture(runner, "id", &["-u"])
             .await
-            .unwrap_or_else(|| "1000".to_string()),
+            .unwrap_or_else(|| "1000".to_owned()),
         gid: try_capture(runner, "id", &["-g"])
             .await
-            .unwrap_or_else(|| "1000".to_string()),
+            .unwrap_or_else(|| "1000".to_owned()),
     }
 }
 

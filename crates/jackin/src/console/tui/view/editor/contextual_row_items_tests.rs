@@ -40,8 +40,8 @@ fn key_glyphs<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
 fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
     let ws = WorkspaceConfig {
         mounts: vec![MountConfig {
-            src: src.to_string(),
-            dst: src.to_string(),
+            src: src.to_owned(),
+            dst: src.to_owned(),
             readonly: false,
             isolation: crate::isolation::MountIsolation::Shared,
         }],

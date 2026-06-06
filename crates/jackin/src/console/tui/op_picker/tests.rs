@@ -49,9 +49,9 @@ impl OpStructRunner for StubRunner {
 
 fn account(id: &str, email: &str, url: &str) -> OpAccount {
     OpAccount {
-        id: id.to_string(),
-        email: email.to_string(),
-        url: url.to_string(),
+        id: id.to_owned(),
+        email: email.to_owned(),
+        url: url.to_owned(),
     }
 }
 
@@ -88,7 +88,7 @@ fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
     let Some(pending) = s.take_pending_load() else {
         return false;
     };
-    let runner = super::TEST_RUNNER.with(|r| {
+    let runner = TEST_RUNNER.with(|r| {
         r.borrow()
             .clone()
             .expect("test runner must be set before executing a load")
@@ -123,14 +123,14 @@ fn picker_ready() -> OpPickerState {
 fn vault(name: &str) -> OpVault {
     OpVault {
         id: format!("v-{name}"),
-        name: name.to_string(),
+        name: name.to_owned(),
     }
 }
 
 fn item(name: &str) -> OpItem {
     OpItem {
         id: format!("i-{name}"),
-        name: name.to_string(),
+        name: name.to_owned(),
         subtitle: String::new(),
     }
 }
@@ -138,16 +138,16 @@ fn item(name: &str) -> OpItem {
 fn item_with_subtitle(name: &str, subtitle: &str) -> OpItem {
     OpItem {
         id: format!("i-{name}-{subtitle}"),
-        name: name.to_string(),
-        subtitle: subtitle.to_string(),
+        name: name.to_owned(),
+        subtitle: subtitle.to_owned(),
     }
 }
 
 fn field(label: &str, ty: &str, concealed: bool) -> OpField {
     OpField {
-        id: label.to_string(),
-        label: label.to_string(),
-        field_type: ty.to_string(),
+        id: label.to_owned(),
+        label: label.to_owned(),
+        field_type: ty.to_owned(),
         concealed,
         reference: String::new(),
     }
@@ -155,11 +155,11 @@ fn field(label: &str, ty: &str, concealed: bool) -> OpField {
 
 fn field_with_reference(label: &str, reference: &str) -> OpField {
     OpField {
-        id: label.to_string(),
-        label: label.to_string(),
-        field_type: "STRING".to_string(),
+        id: label.to_owned(),
+        label: label.to_owned(),
+        field_type: "STRING".to_owned(),
         concealed: false,
-        reference: reference.to_string(),
+        reference: reference.to_owned(),
     }
 }
 
@@ -174,7 +174,7 @@ fn item_filter_matches_subtitle() {
         item_with_subtitle("Google", "azhokhov@example.com"),
     ];
     s.item_list_state.select(Some(0));
-    s.filter_buf = "AzhokhoV".to_string();
+    s.filter_buf = "AzhokhoV".to_owned();
 
     let visible = s.filtered_items();
     assert_eq!(visible.len(), 1);
@@ -186,7 +186,7 @@ fn filter_vaults_narrows_by_name() {
     let mut s = picker_ready();
     s.vaults = vec![vault("Personal"), vault("Private"), vault("Work")];
     s.vault_list_state.select(Some(0));
-    s.filter_buf = "per".to_string();
+    s.filter_buf = "per".to_owned();
 
     let visible = s.filtered_vaults();
     assert_eq!(visible.len(), 1);
@@ -198,7 +198,7 @@ fn filter_clears_on_pane_advance() {
     let mut s = picker_ready();
     s.vaults = vec![vault("Personal"), vault("Private"), vault("Work")];
     s.vault_list_state.select(Some(0));
-    s.filter_buf = "per".to_string();
+    s.filter_buf = "per".to_owned();
     assert_eq!(s.filtered_vaults().len(), 1);
 
     // The pane-advance-clears-filter contract lives inside
@@ -246,7 +246,7 @@ fn esc_from_item_goes_to_vault() {
     s.items = vec![item("API Keys")];
     s.item_list_state.select(Some(0));
     s.stage = OpPickerStage::Item;
-    s.filter_buf = "ap".to_string();
+    s.filter_buf = "ap".to_owned();
 
     let outcome = s.handle_key(key(KeyCode::Esc));
     assert!(matches!(outcome, ModalOutcome::Continue));
@@ -267,7 +267,7 @@ fn esc_from_field_goes_to_item() {
     s.fields = vec![field("password", "concealed", true)];
     s.field_list_state.select(Some(0));
     s.stage = OpPickerStage::Field;
-    s.filter_buf = "pw".to_string();
+    s.filter_buf = "pw".to_owned();
 
     let outcome = s.handle_key(key(KeyCode::Esc));
     assert!(matches!(outcome, ModalOutcome::Continue));
@@ -528,7 +528,7 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
     ]);
     // Operator already drilled into the "auth" section on the Field stage.
     s.stage = OpPickerStage::Field;
-    s.selected_section = Some("auth".to_string());
+    s.selected_section = Some("auth".to_owned());
     // `r` clears `fields`/`field_list_state` and sets the in-place flag.
     s.fields.clear();
     s.field_refresh_in_place = true;
@@ -551,7 +551,7 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
     );
     assert_eq!(
         s.selected_section,
-        Some("auth".to_string()),
+        Some("auth".to_owned()),
         "in-place refresh must preserve the chosen section"
     );
     assert!(
@@ -575,7 +575,7 @@ fn section_choices_returns_root_plus_distinct_sections() {
     let choices = s.section_choices();
     assert_eq!(
         choices,
-        vec![None, Some("auth".to_string()), Some("extra".to_string()),],
+        vec![None, Some("auth".to_owned()), Some("extra".to_owned()),],
         "root first, then distinct sections in first-appearance order"
     );
 }
@@ -629,7 +629,7 @@ fn create_mode_selecting_section_scopes_field_stage() {
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::Field);
-    assert_eq!(s.selected_section, Some("auth".to_string()));
+    assert_eq!(s.selected_section, Some("auth".to_owned()));
     // Field stage shows only the two "auth" fields + NewFieldSentinel.
     let rows = s.build_field_display_rows();
     assert_eq!(rows.len(), 3, "two auth fields + new-field sentinel");
@@ -638,7 +638,7 @@ fn create_mode_selecting_section_scopes_field_stage() {
     s.field_list_state.select(Some(0));
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::EditItemField { section, field, .. }) => {
-            assert_eq!(section, Some("auth".to_string()));
+            assert_eq!(section, Some("auth".to_owned()));
             assert_eq!(field.label(), "api");
         }
         other => panic!("expected Commit(EditItemField), got {other:?}"),
@@ -685,7 +685,7 @@ fn create_mode_new_section_flow_threads_section_into_commit() {
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
     // section_name_input starts empty; type a name (empty won't commit).
     for c in "creds".chars() {
-        let _ = s.handle_key(key(KeyCode::Char(c)));
+        drop(s.handle_key(key(KeyCode::Char(c))));
     }
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
@@ -694,7 +694,7 @@ fn create_mode_new_section_flow_threads_section_into_commit() {
     assert_eq!(s.stage, OpPickerStage::FieldLabel);
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::EditItemField { section, field, .. }) => {
-            assert_eq!(section, Some("creds".to_string()));
+            assert_eq!(section, Some("creds".to_owned()));
             assert_eq!(field.label(), "token");
         }
         other => panic!("expected Commit(EditItemField) with section, got {other:?}"),
@@ -708,16 +708,16 @@ fn field_label_cancel_clears_pending_section() {
     // commit on a different path.
     let mut s = create_at_section(vec![]);
     s.section_list_state.select(Some(1)); // `+ New section` sentinel
-    let _ = s.handle_key(key(KeyCode::Enter));
+    drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
     for c in "foo".chars() {
-        let _ = s.handle_key(key(KeyCode::Char(c)));
+        drop(s.handle_key(key(KeyCode::Char(c))));
     }
-    let _ = s.handle_key(key(KeyCode::Enter));
+    drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::FieldLabel);
     assert_eq!(s.pending_section.as_deref(), Some("foo"));
     // Esc cancels the field-label stage.
-    let _ = s.handle_key(key(KeyCode::Esc));
+    drop(s.handle_key(key(KeyCode::Esc)));
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
     assert!(
         s.pending_section.is_none(),
@@ -729,7 +729,7 @@ fn field_label_cancel_clears_pending_section() {
 fn field_label_commit_trims_whitespace() {
     let mut s = create_at_section(vec![]);
     // Drill `(root)` → Field stage, then `+ New field`.
-    let _ = s.handle_key(key(KeyCode::Enter));
+    drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::Field);
     s.field_label_input = field_label_input_state("  oauth-token  ");
     s.field_label_origin = FieldLabelOrigin::NewField;
@@ -746,9 +746,9 @@ fn field_label_commit_trims_whitespace() {
 fn new_section_name_commit_trims_whitespace() {
     let mut s = create_at_section(vec![]);
     s.section_list_state.select(Some(1));
-    let _ = s.handle_key(key(KeyCode::Enter));
+    drop(s.handle_key(key(KeyCode::Enter)));
     s.section_name_input = section_name_input_state("  creds  ");
-    let _ = s.handle_key(key(KeyCode::Enter));
+    drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.pending_section.as_deref(), Some("creds"));
 }
 
@@ -778,7 +778,7 @@ fn left_collapse_via_header_keeps_selection_in_range() {
         .position(|r| matches!(r, FieldDisplayRow::SectionHeader { .. }))
         .expect("a section header row");
     s.field_list_state.select(Some(header_idx));
-    let _ = s.handle_key(key(KeyCode::Left));
+    drop(s.handle_key(key(KeyCode::Left)));
     assert!(
         s.collapsed_sections.contains("auth"),
         "Left must collapse the section"
@@ -799,15 +799,15 @@ fn create_mode_esc_chain_field_to_section_to_item() {
     )]);
     // Drill into "auth", then Esc back to Section, then Esc back to Item.
     s.section_list_state.select(Some(1));
-    let _ = s.handle_key(key(KeyCode::Enter));
+    drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::Field);
 
-    let _ = s.handle_key(key(KeyCode::Esc));
+    drop(s.handle_key(key(KeyCode::Esc)));
     assert_eq!(s.stage, OpPickerStage::Section, "Field Esc → Section");
     assert_eq!(s.selected_section, None, "section cleared on back-nav");
     assert!(s.selected_item.is_some(), "item kept on Field→Section Esc");
 
-    let _ = s.handle_key(key(KeyCode::Esc));
+    drop(s.handle_key(key(KeyCode::Esc)));
     assert_eq!(s.stage, OpPickerStage::Item, "Section Esc → Item");
     assert!(
         s.selected_item.is_none(),
@@ -904,7 +904,7 @@ fn account_pane_filter_narrows_by_email() {
     s.rx = None;
     s.pending_load = None;
     s.load_state = OpLoadState::Ready;
-    s.filter_buf = "alic".to_string();
+    s.filter_buf = "alic".to_owned();
     let visible = s.filtered_accounts();
     assert_eq!(visible.len(), 1);
     assert_eq!(visible[0].email, "alice@example.com");
@@ -945,11 +945,11 @@ fn enter_on_account_advances_to_vault_with_account_scope() {
     // Direct-call verification of the account threading.
     let runner = Arc::new(StubRunner::default());
     runner.account_list().unwrap();
-    let _ = runner.vault_list(s.selected_account_id().as_deref());
+    drop(runner.vault_list(s.selected_account_id().as_deref()));
     let recorded = runner.last_vault_list_account.lock().unwrap().clone();
     assert_eq!(
         recorded,
-        Some(Some("acct2".to_string())),
+        Some(Some("acct2".to_owned())),
         "vault_list must be called with Some(account_uuid) once an account is selected"
     );
 }
@@ -972,7 +972,7 @@ fn esc_from_vault_with_multi_account_returns_to_account() {
     s.selected_account = Some(account("acct1", "a@example.com", "alpha.1password.com"));
     s.vaults = vec![vault("Personal"), vault("Work")];
     s.vault_list_state.select(Some(1));
-    s.filter_buf = "wo".to_string();
+    s.filter_buf = "wo".to_owned();
 
     let outcome = s.handle_key(key(KeyCode::Esc));
     assert!(matches!(outcome, ModalOutcome::Continue));
@@ -1010,7 +1010,7 @@ fn esc_from_vault_with_single_account_cancels_picker() {
 
 struct CounterRunner {
     accounts: Vec<OpAccount>,
-    counter: std::sync::Arc<Mutex<usize>>,
+    counter: Arc<Mutex<usize>>,
 }
 
 impl OpStructRunner for CounterRunner {
@@ -1034,7 +1034,7 @@ fn op_cache_hit_skips_account_list_subprocess() {
     use crate::operator_env::OpCache;
     use std::sync::Arc;
 
-    let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
+    let cache = Rc::new(RefCell::new(OpCache::default()));
     let counter1: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let counter2: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
@@ -1074,7 +1074,7 @@ fn op_cache_miss_calls_runner_and_stores() {
     use crate::operator_env::OpCache;
     use std::sync::Arc;
 
-    let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
+    let cache = Rc::new(RefCell::new(OpCache::default()));
     let counter: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
     let mut s1 = new_picker_with_runner_and_cache(
@@ -1111,7 +1111,7 @@ fn op_cache_refresh_re_fires_subprocess() {
     use crate::operator_env::OpCache;
     use std::sync::Arc;
 
-    let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
+    let cache = Rc::new(RefCell::new(OpCache::default()));
     let counter: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
     let r = Arc::new(CounterRunner {
@@ -1126,7 +1126,7 @@ fn op_cache_refresh_re_fires_subprocess() {
     assert_eq!(*counter.lock().unwrap(), 1, "constructor must miss once");
     assert_eq!(s.accounts.len(), 2);
 
-    let _ = s.handle_key(key(KeyCode::Char('r')));
+    drop(s.handle_key(key(KeyCode::Char('r'))));
     drain_initial_account_load(&mut s);
     assert_eq!(
         *counter.lock().unwrap(),
@@ -1142,13 +1142,13 @@ fn op_cache_refresh_re_fires_subprocess() {
 /// `account_list` blocks until `release()`; proves the picker
 /// constructor does not synchronously wait on `account_list`.
 struct BlockingRunner {
-    gate: std::sync::Arc<(Mutex<bool>, std::sync::Condvar)>,
+    gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
 }
 
 impl BlockingRunner {
     fn new() -> Self {
         Self {
-            gate: std::sync::Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            gate: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
         }
     }
     fn release(&self) {
@@ -1399,7 +1399,7 @@ impl OpStructRunner for RecorderRunner {
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
         *self.item_list_calls.lock().unwrap() += 1;
         *self.last_item_list_args.lock().unwrap() =
-            Some((vault_id.to_string(), account.map(String::from)));
+            Some((vault_id.to_owned(), account.map(String::from)));
         Ok(Vec::new())
     }
     fn item_get(
@@ -1410,8 +1410,8 @@ impl OpStructRunner for RecorderRunner {
     ) -> anyhow::Result<Vec<OpField>> {
         *self.item_get_calls.lock().unwrap() += 1;
         *self.last_item_get_args.lock().unwrap() = Some((
-            item_id.to_string(),
-            vault_id.to_string(),
+            item_id.to_owned(),
+            vault_id.to_owned(),
             account.map(String::from),
         ));
         Ok(Vec::new())
@@ -1462,7 +1462,7 @@ fn vault_list_uses_injected_runner_in_async_worker() {
     );
     assert_eq!(
         *runner_for_assert.last_vault_list_account.lock().unwrap(),
-        Some(Some("acct1".to_string())),
+        Some(Some("acct1".to_owned())),
         "worker thread must thread the explicit account UUID through"
     );
 }
@@ -1492,7 +1492,7 @@ fn item_list_uses_injected_runner_in_async_worker() {
     );
     assert_eq!(
         *runner_for_assert.last_item_list_args.lock().unwrap(),
-        Some(("v-personal".to_string(), Some("acct1".to_string()))),
+        Some(("v-personal".to_owned(), Some("acct1".to_owned()))),
         "worker thread must forward (vault_id, account_id) verbatim"
     );
 }
@@ -1525,9 +1525,9 @@ fn item_get_uses_injected_runner_in_async_worker() {
     assert_eq!(
         *runner_for_assert.last_item_get_args.lock().unwrap(),
         Some((
-            "i-aws".to_string(),
-            "v-personal".to_string(),
-            Some("acct1".to_string())
+            "i-aws".to_owned(),
+            "v-personal".to_owned(),
+            Some("acct1".to_owned())
         )),
         "worker thread must forward (item_id, vault_id, account_id) verbatim"
     );
@@ -1706,27 +1706,27 @@ fn picker_commit_skips_subtitle_when_subtitle_empty() {
 /// 3-segment `OpRef` (the debug log fires but must not panic).
 #[test]
 fn picker_commit_3seg_fallback_preserved_when_sibling_has_reference() {
-    let sectioned_field = crate::operator_env::OpField {
+    let sectioned_field = OpField {
         id: "f_sectioned".into(),
         label: "password".into(),
         reference: "op://Private/MyItem/Auth/password".into(),
         field_type: "CONCEALED".into(),
         concealed: true,
     };
-    let no_ref_field = crate::operator_env::OpField {
+    let no_ref_field = OpField {
         id: "f_noref".into(),
         label: "notes".into(),
         reference: String::new(),
         field_type: "STRING".into(),
         concealed: false,
     };
-    let the_item = crate::operator_env::OpItem {
+    let the_item = OpItem {
         id: "i_uuid".into(),
         name: "MyItem".into(),
         subtitle: String::new(),
     };
     let mut state = test_state_picked(
-        crate::operator_env::OpVault {
+        OpVault {
             id: "v_uuid".into(),
             name: "Private".into(),
         },
@@ -1747,9 +1747,9 @@ fn picker_commit_3seg_fallback_preserved_when_sibling_has_reference() {
 
 /// Minimal `OpStructRunner` stub for parity tests (no async needed).
 struct ParityStub {
-    vaults: Vec<crate::operator_env::OpVault>,
-    items: std::collections::HashMap<String, Vec<crate::operator_env::OpItem>>,
-    fields: std::collections::HashMap<String, Vec<crate::operator_env::OpField>>,
+    vaults: Vec<OpVault>,
+    items: std::collections::HashMap<String, Vec<OpItem>>,
+    fields: std::collections::HashMap<String, Vec<OpField>>,
 }
 
 impl ParityStub {
@@ -1762,21 +1762,21 @@ impl ParityStub {
     }
 
     fn with_vault(mut self, name: &str, id: &str) -> Self {
-        self.vaults.push(crate::operator_env::OpVault {
-            id: id.to_string(),
-            name: name.to_string(),
+        self.vaults.push(OpVault {
+            id: id.to_owned(),
+            name: name.to_owned(),
         });
         self
     }
 
     fn with_item(mut self, vault_id: &str, name: &str, id: &str, subtitle: &str) -> Self {
         self.items
-            .entry(vault_id.to_string())
+            .entry(vault_id.to_owned())
             .or_default()
-            .push(crate::operator_env::OpItem {
-                id: id.to_string(),
-                name: name.to_string(),
-                subtitle: subtitle.to_string(),
+            .push(OpItem {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                subtitle: subtitle.to_owned(),
             });
         self
     }
@@ -1790,38 +1790,31 @@ impl ParityStub {
         reference: &str,
     ) -> Self {
         self.fields
-            .entry(item_id.to_string())
+            .entry(item_id.to_owned())
             .or_default()
-            .push(crate::operator_env::OpField {
-                id: id.to_string(),
-                label: label.to_string(),
+            .push(OpField {
+                id: id.to_owned(),
+                label: label.to_owned(),
                 field_type: if concealed {
                     "CONCEALED".into()
                 } else {
                     "STRING".into()
                 },
                 concealed,
-                reference: reference.to_string(),
+                reference: reference.to_owned(),
             });
         self
     }
 }
 
-impl crate::operator_env::OpStructRunner for ParityStub {
-    fn account_list(&self) -> anyhow::Result<Vec<crate::operator_env::OpAccount>> {
+impl OpStructRunner for ParityStub {
+    fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
         Ok(vec![])
     }
-    fn vault_list(
-        &self,
-        _account: Option<&str>,
-    ) -> anyhow::Result<Vec<crate::operator_env::OpVault>> {
+    fn vault_list(&self, _account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
         Ok(self.vaults.clone())
     }
-    fn item_list(
-        &self,
-        vault_id: &str,
-        _account: Option<&str>,
-    ) -> anyhow::Result<Vec<crate::operator_env::OpItem>> {
+    fn item_list(&self, vault_id: &str, _account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
         Ok(self.items.get(vault_id).cloned().unwrap_or_default())
     }
     fn item_get(
@@ -1829,7 +1822,7 @@ impl crate::operator_env::OpStructRunner for ParityStub {
         item_id: &str,
         _vault_id: &str,
         _account: Option<&str>,
-    ) -> anyhow::Result<Vec<crate::operator_env::OpField>> {
+    ) -> anyhow::Result<Vec<OpField>> {
         Ok(self.fields.get(item_id).cloned().unwrap_or_default())
     }
 }
@@ -1837,20 +1830,20 @@ impl crate::operator_env::OpStructRunner for ParityStub {
 /// Fix 1D parity: unique item, 3-segment field → identical `OpRef`.
 #[test]
 fn parity_unique_item_3seg_field_cli_matches_picker() {
-    let field = crate::operator_env::OpField {
+    let field = OpField {
         id: "f_uuid".into(),
         label: "api key".into(),
         reference: "op://Private/Stripe/api key".into(),
         field_type: "concealed".into(),
         concealed: true,
     };
-    let the_item = crate::operator_env::OpItem {
+    let the_item = OpItem {
         id: "i_uuid".into(),
         name: "Stripe".into(),
         subtitle: String::new(),
     };
     let state = test_state_picked(
-        crate::operator_env::OpVault {
+        OpVault {
             id: "v_uuid".into(),
             name: "Private".into(),
         },
@@ -1881,25 +1874,25 @@ fn parity_unique_item_3seg_field_cli_matches_picker() {
 /// Fix 1D parity: ambiguous item with subtitle → both embed subtitle bracket.
 #[test]
 fn parity_ambiguous_item_with_subtitle_cli_matches_picker() {
-    let field = crate::operator_env::OpField {
+    let field = OpField {
         id: "f_uuid".into(),
         label: "auth token".into(),
         reference: "op://Private/Claude/auth token".into(),
         field_type: "concealed".into(),
         concealed: true,
     };
-    let item_a = crate::operator_env::OpItem {
+    let item_a = OpItem {
         id: "i_uuid_a".into(),
         name: "Claude".into(),
         subtitle: "alexey@zhokhov.com".into(),
     };
-    let item_b = crate::operator_env::OpItem {
+    let item_b = OpItem {
         id: "i_uuid_b".into(),
         name: "Claude".into(),
         subtitle: "alexey@chainargos.com".into(),
     };
     let state = test_state_picked(
-        crate::operator_env::OpVault {
+        OpVault {
             id: "v_uuid".into(),
             name: "Private".into(),
         },
@@ -1934,20 +1927,20 @@ fn parity_ambiguous_item_with_subtitle_cli_matches_picker() {
 /// Fix 1D parity: sectioned field → both produce 4-segment `OpRef`.
 #[test]
 fn parity_sectioned_field_cli_matches_picker() {
-    let field = crate::operator_env::OpField {
+    let field = OpField {
         id: "f_uuid".into(),
         label: "auth token".into(),
         reference: "op://Private/Claude/Security/auth token".into(),
         field_type: "concealed".into(),
         concealed: true,
     };
-    let the_item = crate::operator_env::OpItem {
+    let the_item = OpItem {
         id: "i_uuid".into(),
         name: "Claude".into(),
         subtitle: String::new(),
     };
     let state = test_state_picked(
-        crate::operator_env::OpVault {
+        OpVault {
             id: "v_uuid".into(),
             name: "Private".into(),
         },
@@ -1983,20 +1976,20 @@ fn parity_sectioned_field_cli_matches_picker() {
 /// matching the picker's output.
 #[test]
 fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
-    let field = crate::operator_env::OpField {
+    let field = OpField {
         id: "f_uuid".into(),
         label: "auth token".into(),
         reference: "op://Private/Claude/Security/auth token".into(),
         field_type: "concealed".into(),
         concealed: true,
     };
-    let the_item = crate::operator_env::OpItem {
+    let the_item = OpItem {
         id: "i_uuid".into(),
         name: "Claude".into(),
         subtitle: String::new(),
     };
     let state = test_state_picked(
-        crate::operator_env::OpVault {
+        OpVault {
             id: "v_uuid".into(),
             name: "Private".into(),
         },

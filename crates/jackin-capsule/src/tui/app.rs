@@ -203,7 +203,7 @@ pub(crate) fn visible_agent_label(
     provider_label: Option<&str>,
 ) -> String {
     let Some(slug) = agent_slug else {
-        return "Shell".to_string();
+        return "Shell".to_owned();
     };
     let mut chars = slug.chars();
     let base = match chars.next() {
@@ -299,10 +299,10 @@ pub(crate) fn tab_auto_label(
         }
     }
     let base = match (agent_labels.len(), has_shell) {
-        (0, _) => "Shell".to_string(),
+        (0, _) => "Shell".to_owned(),
         (1, false) => agent_labels[0].clone(),
-        (_, false) => "Agents".to_string(),
-        (_, true) => "Mix".to_string(),
+        (_, false) => "Agents".to_owned(),
+        (_, true) => "Mix".to_owned(),
     };
     if pane_count > 1 {
         format!("{base} ({pane_count})")

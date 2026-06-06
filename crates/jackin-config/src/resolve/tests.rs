@@ -28,12 +28,12 @@ fn saved_workspace_resolution_preserves_agent() {
 
     let mut config = AppConfig::default();
     config.workspaces.insert(
-        "codex-workspace".to_string(),
+        "codex-workspace".to_owned(),
         WorkspaceConfig {
-            workdir: "/workspace/project".to_string(),
+            workdir: "/workspace/project".to_owned(),
             mounts: vec![MountConfig {
                 src: canonical.display().to_string(),
-                dst: "/workspace/project".to_string(),
+                dst: "/workspace/project".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
@@ -46,7 +46,7 @@ fn saved_workspace_resolution_preserves_agent() {
         &config,
         &RoleSelector::new(None, "agent-smith"),
         &canonical,
-        LoadWorkspaceInput::Saved("codex-workspace".to_string()),
+        LoadWorkspaceInput::Saved("codex-workspace".to_owned()),
         &[],
     )
     .unwrap();
@@ -69,13 +69,13 @@ fn saved_workspace_match_depth_matches_host_workdir_parent_of_mounts() {
         mounts: vec![
             MountConfig {
                 src: repo_a.canonicalize().unwrap().display().to_string(),
-                dst: "/workspace/jackin".to_string(),
+                dst: "/workspace/jackin".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             },
             MountConfig {
                 src: repo_b.canonicalize().unwrap().display().to_string(),
-                dst: "/workspace/jackin-dev".to_string(),
+                dst: "/workspace/jackin-dev".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             },
@@ -97,10 +97,10 @@ fn saved_workspace_match_depth_still_matches_nested_path_under_mount_root() {
     std::fs::create_dir_all(&nested_dir).unwrap();
 
     let workspace = WorkspaceConfig {
-        workdir: "/workspace".to_string(),
+        workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {
             src: project_dir.canonicalize().unwrap().display().to_string(),
-            dst: "/workspace".to_string(),
+            dst: "/workspace".to_owned(),
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
@@ -130,7 +130,7 @@ fn saved_workspace_match_depth_rejects_workdir_prefix_only_match() {
         workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
         mounts: vec![MountConfig {
             src: agent_repo.canonicalize().unwrap().display().to_string(),
-            dst: "/workspace/role-repo".to_string(),
+            dst: "/workspace/role-repo".to_owned(),
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
@@ -155,7 +155,7 @@ fn saved_workspace_match_depth_matches_exact_workdir() {
         workdir: canonical.display().to_string(),
         mounts: vec![MountConfig {
             src: canonical.join("repo").display().to_string(),
-            dst: "/workspace/repo".to_string(),
+            dst: "/workspace/repo".to_owned(),
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
@@ -176,10 +176,10 @@ fn saved_workspace_match_depth_matches_nested_path_under_mount_src() {
     std::fs::create_dir_all(&nested).unwrap();
 
     let workspace = WorkspaceConfig {
-        workdir: "/Users/me/Projects".to_string(),
+        workdir: "/Users/me/Projects".to_owned(),
         mounts: vec![MountConfig {
             src: mount_src.canonicalize().unwrap().display().to_string(),
-            dst: "/workspace/role-repo".to_string(),
+            dst: "/workspace/role-repo".to_owned(),
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
@@ -196,25 +196,25 @@ fn saved_workspace_match_depth_matches_nested_path_under_mount_src() {
 fn resolves_saved_workspace_and_rejects_disallowed_agent() {
     let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
+        "agent-smith".to_owned(),
         RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "big-monorepo".to_string(),
+        "big-monorepo".to_owned(),
         WorkspaceConfig {
-            workdir: "/workspace/project".to_string(),
+            workdir: "/workspace/project".to_owned(),
             mounts: vec![MountConfig {
-                src: "/tmp/project".to_string(),
-                dst: "/workspace/project".to_string(),
+                src: "/tmp/project".to_owned(),
+                dst: "/workspace/project".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
-            allowed_roles: vec!["agent-smith".to_string()],
-            default_role: Some("agent-smith".to_string()),
+            allowed_roles: vec!["agent-smith".to_owned()],
+            default_role: Some("agent-smith".to_owned()),
             ..Default::default()
         },
     );
@@ -224,7 +224,7 @@ fn resolves_saved_workspace_and_rejects_disallowed_agent() {
         &config,
         &RoleSelector::new(None, "neo"),
         &cwd,
-        LoadWorkspaceInput::Saved("big-monorepo".to_string()),
+        LoadWorkspaceInput::Saved("big-monorepo".to_owned()),
         &[],
     )
     .unwrap_err();
@@ -240,20 +240,20 @@ fn saved_workspace_label_uses_workspace_name() {
 
     let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
+        "agent-smith".to_owned(),
         RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "big-monorepo".to_string(),
+        "big-monorepo".to_owned(),
         WorkspaceConfig {
-            workdir: "/workspace/project".to_string(),
+            workdir: "/workspace/project".to_owned(),
             mounts: vec![MountConfig {
                 src: mount_src.display().to_string(),
-                dst: "/workspace/project".to_string(),
+                dst: "/workspace/project".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
@@ -266,7 +266,7 @@ fn saved_workspace_label_uses_workspace_name() {
         &config,
         &RoleSelector::new(None, "agent-smith"),
         &cwd,
-        LoadWorkspaceInput::Saved("big-monorepo".to_string()),
+        LoadWorkspaceInput::Saved("big-monorepo".to_owned()),
         &[],
     )
     .unwrap();
@@ -288,8 +288,8 @@ fn resolves_same_path_relative_target_to_absolute_workdir() {
         &RoleSelector::new(None, "agent-smith"),
         temp.path(),
         LoadWorkspaceInput::Path {
-            src: "./project".to_string(),
-            dst: "./project".to_string(),
+            src: "./project".to_owned(),
+            dst: "./project".to_owned(),
         },
         &[],
     )
@@ -308,8 +308,8 @@ fn resolves_global_mounts_with_tilde_sources() {
     config.add_mount(
         "home",
         MountConfig {
-            src: "~".to_string(),
-            dst: "/home/agent/home".to_string(),
+            src: "~".to_owned(),
+            dst: "/home/agent/home".to_owned(),
             readonly: true,
             isolation: MountIsolation::Shared,
         },
@@ -343,20 +343,20 @@ fn resolve_with_ad_hoc_mounts_merges_correctly() {
 
     let mut config = AppConfig::default();
     config.roles.insert(
-        "agent-smith".to_string(),
+        "agent-smith".to_owned(),
         RoleSource {
-            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+            git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
         },
     );
     config.workspaces.insert(
-        "my-ws".to_string(),
+        "my-ws".to_owned(),
         WorkspaceConfig {
-            workdir: "/workspace/project".to_string(),
+            workdir: "/workspace/project".to_owned(),
             mounts: vec![MountConfig {
                 src: mount_src.display().to_string(),
-                dst: "/workspace/project".to_string(),
+                dst: "/workspace/project".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
@@ -369,10 +369,10 @@ fn resolve_with_ad_hoc_mounts_merges_correctly() {
         &config,
         &RoleSelector::new(None, "agent-smith"),
         &cwd,
-        LoadWorkspaceInput::Saved("my-ws".to_string()),
+        LoadWorkspaceInput::Saved("my-ws".to_owned()),
         &[MountConfig {
             src: extra_src.display().to_string(),
-            dst: "/extra".to_string(),
+            dst: "/extra".to_owned(),
             readonly: true,
             isolation: MountIsolation::Shared,
         }],
@@ -396,12 +396,12 @@ fn resolve_with_ad_hoc_mount_dst_conflict_errors() {
 
     let mut config = AppConfig::default();
     config.workspaces.insert(
-        "my-ws".to_string(),
+        "my-ws".to_owned(),
         WorkspaceConfig {
-            workdir: "/workspace/project".to_string(),
+            workdir: "/workspace/project".to_owned(),
             mounts: vec![MountConfig {
                 src: mount_src.display().to_string(),
-                dst: "/workspace/project".to_string(),
+                dst: "/workspace/project".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
@@ -414,10 +414,10 @@ fn resolve_with_ad_hoc_mount_dst_conflict_errors() {
         &config,
         &RoleSelector::new(None, "agent-smith"),
         &cwd,
-        LoadWorkspaceInput::Saved("my-ws".to_string()),
+        LoadWorkspaceInput::Saved("my-ws".to_owned()),
         &[MountConfig {
             src: mount_src.display().to_string(),
-            dst: "/workspace/project".to_string(),
+            dst: "/workspace/project".to_owned(),
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
@@ -451,12 +451,12 @@ fn resolve_rejects_duplicate_effective_global_workspace_destination() {
         None,
     );
     config.workspaces.insert(
-        "my-ws".to_string(),
+        "my-ws".to_owned(),
         WorkspaceConfig {
-            workdir: "/workspace/project".to_string(),
+            workdir: "/workspace/project".to_owned(),
             mounts: vec![MountConfig {
                 src: workspace_src.display().to_string(),
-                dst: "/workspace/project".to_string(),
+                dst: "/workspace/project".to_owned(),
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
@@ -468,7 +468,7 @@ fn resolve_rejects_duplicate_effective_global_workspace_destination() {
         &config,
         &RoleSelector::new(None, "agent-smith"),
         &std::env::temp_dir(),
-        LoadWorkspaceInput::Saved("my-ws".to_string()),
+        LoadWorkspaceInput::Saved("my-ws".to_owned()),
         &[],
     )
     .unwrap_err();

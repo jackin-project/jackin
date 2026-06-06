@@ -68,10 +68,10 @@ fn github_choice_from_kind(src: &str, kind: MountKind) -> Option<GithubChoice> {
     let branch_label = match branch {
         GitBranch::Named(b) => b,
         GitBranch::Detached { short_sha } => format!("detached {short_sha}"),
-        GitBranch::Unknown => "unknown".to_string(),
+        GitBranch::Unknown => "unknown".to_owned(),
     };
     Some(GithubChoice {
-        src: src.to_string(),
+        src: src.to_owned(),
         branch: branch_label,
         url: web_url,
     })

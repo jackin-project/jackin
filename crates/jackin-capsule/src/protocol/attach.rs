@@ -49,11 +49,11 @@ pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
 /// values in jackin' are short (slugs, booleans, file paths); cap at
 /// 8 KiB so a buggy or hostile client cannot smuggle a megabyte-sized
-/// env entry past MAX_HELLO_ENV (the count cap) into the spawned
+/// env entry past `MAX_HELLO_ENV` (the count cap) into the spawned
 /// session's environment block.
 pub const MAX_HELLO_ENV_VALUE: usize = 8 * 1024;
 /// Per-entry cap on Hello env-key byte length. Same shape as
-/// MAX_HELLO_ENV_VALUE; env-var names should be even shorter than
+/// `MAX_HELLO_ENV_VALUE`; env-var names should be even shorter than
 /// values, but the wire field is still u16-sized so we bound it.
 pub const MAX_HELLO_ENV_KEY: usize = 1024;
 /// Per terminal-identity field cap. These values come from the active
@@ -78,7 +78,7 @@ pub enum SpawnRequest {
     Agent(String),
     /// Agent spawn where the provider was already selected by the console
     /// before `docker exec`-ing. The daemon uses `provider_label` directly
-    /// as the tab suffix instead of showing the in-mux ProviderPicker dialog.
+    /// as the tab suffix instead of showing the in-mux `ProviderPicker` dialog.
     AgentWithProvider {
         slug: String,
         provider_label: String,
@@ -90,7 +90,7 @@ impl SpawnRequest {
     /// decode-side `decode_client` check so in-process callers cannot
     /// construct a degenerate `Agent("")` that would only be caught
     /// after a wire round-trip.
-    pub fn agent(slug: impl Into<String>) -> anyhow::Result<Self> {
+    pub fn agent(slug: impl Into<String>) -> Result<Self> {
         let slug = slug.into();
         if slug.is_empty() {
             anyhow::bail!("SpawnRequest::Agent slug must be non-empty");
@@ -613,7 +613,7 @@ impl<'a> PayloadCursor<'a> {
         let bytes = self.read_bytes(len, field)?;
         let s = std::str::from_utf8(bytes)
             .map_err(|_| anyhow::anyhow!("hello {field} is not valid UTF-8"))?;
-        Ok(s.to_string())
+        Ok(s.to_owned())
     }
 
     fn read_bytes(&mut self, len: usize, field: &str) -> Result<&'a [u8]> {

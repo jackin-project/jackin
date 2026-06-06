@@ -59,6 +59,7 @@ pub enum FileBrowserEffectContext {
     SettingsMounts,
 }
 
+#[derive(Debug)]
 pub enum WorkspaceSaveEffect<MountConfig, PendingSaveCommit, IsolationRecord, WorkspaceConfig> {
     StartDriftCheck {
         original_name: String,
@@ -79,6 +80,7 @@ pub enum WorkspaceSaveEffect<MountConfig, PendingSaveCommit, IsolationRecord, Wo
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceSaveWriteMode {
     Edit {
         original_name: String,
@@ -90,6 +92,7 @@ pub enum WorkspaceSaveWriteMode {
     },
 }
 
+#[derive(Debug)]
 pub struct WorkspaceSaveWriteInput<'a, WorkspaceConfig> {
     pub mode: WorkspaceSaveWriteMode,
     pub original: &'a WorkspaceConfig,

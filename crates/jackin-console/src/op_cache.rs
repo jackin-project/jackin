@@ -22,7 +22,7 @@ pub struct OpCache<Account, Vault, Item, Field> {
 }
 
 fn account_key(account: Option<&str>) -> String {
-    account.unwrap_or(DEFAULT_ACCOUNT_KEY).to_string()
+    account.unwrap_or(DEFAULT_ACCOUNT_KEY).to_owned()
 }
 
 impl<Account, Vault, Item, Field> Default for OpCache<Account, Vault, Item, Field> {
@@ -72,18 +72,18 @@ where
     #[must_use]
     pub fn get_items(&self, account: Option<&str>, vault_id: &str) -> Option<Vec<Item>> {
         self.items
-            .get(&(account_key(account), vault_id.to_string()))
+            .get(&(account_key(account), vault_id.to_owned()))
             .cloned()
     }
 
     pub fn put_items(&mut self, account: Option<&str>, vault_id: &str, items: Vec<Item>) {
         self.items
-            .insert((account_key(account), vault_id.to_string()), items);
+            .insert((account_key(account), vault_id.to_owned()), items);
     }
 
     pub fn invalidate_items(&mut self, account: Option<&str>, vault_id: &str) {
         self.items
-            .remove(&(account_key(account), vault_id.to_string()));
+            .remove(&(account_key(account), vault_id.to_owned()));
     }
 
     #[must_use]
@@ -96,8 +96,8 @@ where
         self.fields
             .get(&(
                 account_key(account),
-                vault_id.to_string(),
-                item_id.to_string(),
+                vault_id.to_owned(),
+                item_id.to_owned(),
             ))
             .cloned()
     }
@@ -112,8 +112,8 @@ where
         self.fields.insert(
             (
                 account_key(account),
-                vault_id.to_string(),
-                item_id.to_string(),
+                vault_id.to_owned(),
+                item_id.to_owned(),
             ),
             fields,
         );
@@ -122,8 +122,8 @@ where
     pub fn invalidate_fields(&mut self, account: Option<&str>, vault_id: &str, item_id: &str) {
         self.fields.remove(&(
             account_key(account),
-            vault_id.to_string(),
-            item_id.to_string(),
+            vault_id.to_owned(),
+            item_id.to_owned(),
         ));
     }
 }

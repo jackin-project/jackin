@@ -27,7 +27,7 @@ pub async fn spin_wait<F, Fut>(
 ) -> anyhow::Result<()>
 where
     F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<()>>,
+    Fut: Future<Output = anyhow::Result<()>>,
 {
     use owo_colors::OwoColorize as _;
 
@@ -45,13 +45,13 @@ where
     for _attempt in 0..max_attempts {
         if debug && !suppressed {
             eprint!("\r\x1b[2K");
-            let _ = io::stderr().flush();
+            drop(io::stderr().flush());
         }
         match poll().await {
             Ok(()) => {
                 if !suppressed {
                     eprint!("\r\x1b[2K");
-                    let _ = io::stderr().flush();
+                    drop(io::stderr().flush());
                 }
                 return Ok(());
             }
@@ -66,7 +66,7 @@ where
                     frame.color(mg).bold(),
                     message.color(owo_rgb(PHOSPHOR_DIM)).bold()
                 );
-                let _ = io::stderr().flush();
+                drop(io::stderr().flush());
             }
             tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
             frame_idx += 1;
@@ -74,7 +74,7 @@ where
     }
     if !suppressed {
         eprint!("\r\x1b[2K");
-        let _ = io::stderr().flush();
+        drop(io::stderr().flush());
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
 }

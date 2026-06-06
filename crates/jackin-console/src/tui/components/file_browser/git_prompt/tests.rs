@@ -301,7 +301,7 @@ fn o_shortcut_with_url_returns_open_request_and_keeps_prompt_open() {
     handle_with_services(&mut state, key(KeyCode::Enter));
     // Force a URL into state for the test; the real handler would have
     // populated this via `resolve_git_url` when origin is a GitHub URL.
-    state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
+    state.pending_git_url = Some("file:///tmp/definitely-not-real".to_owned());
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('O')));
     assert!(matches!(

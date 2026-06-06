@@ -23,6 +23,7 @@ use ratatui::{
 };
 
 /// Ratatui backend that buffers output for delivery to the attach socket.
+#[derive(Debug)]
 pub struct SocketBackend {
     /// Terminal size reported to Ratatui. Updated via `resize`.
     size: (u16, u16),
@@ -132,14 +133,14 @@ fn write_color_sgr(buf: &mut Vec<u8>, color: Color, is_bg: bool) {
         Color::LightCyan => push_sgr(buf, base + 66),
         Color::Gray => push_sgr(buf, base + 7),
         Color::Indexed(idx) => {
-            let prefix = if is_bg { b"48;5;" as &[u8] } else { b"38;5;" };
+            let prefix: &[u8] = if is_bg { b"48;5;" } else { b"38;5;" };
             buf.extend_from_slice(b"\x1b[");
             buf.extend_from_slice(prefix);
             push_number(buf, u32::from(idx));
             buf.push(b'm');
         }
         Color::Rgb(r, g, b) => {
-            let prefix = if is_bg { b"48;2;" as &[u8] } else { b"38;2;" };
+            let prefix: &[u8] = if is_bg { b"48;2;" } else { b"38;2;" };
             buf.extend_from_slice(b"\x1b[");
             buf.extend_from_slice(prefix);
             push_number(buf, u32::from(r));
@@ -258,8 +259,8 @@ impl Backend for SocketBackend {
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Self::Error> {
-        let seq = match clear_type {
-            ClearType::All => b"\x1b[2J\x1b[H" as &[u8],
+        let seq: &[u8] = match clear_type {
+            ClearType::All => b"\x1b[2J\x1b[H",
             ClearType::AfterCursor => b"\x1b[0J",
             ClearType::BeforeCursor => b"\x1b[1J",
             ClearType::CurrentLine => b"\x1b[2K",

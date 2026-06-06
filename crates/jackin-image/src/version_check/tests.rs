@@ -6,8 +6,8 @@ use tempfile::tempdir;
 fn seed_latest(paths: &JackinPaths, agent: Agent, version: &str) {
     let release = crate::agent_binary::AgentRelease {
         agent,
-        version: version.to_string(),
-        url: "https://example.invalid/agent".to_string(),
+        version: version.to_owned(),
+        url: "https://example.invalid/agent".to_owned(),
         checksum: None,
         archive_member: None,
     };
@@ -30,7 +30,7 @@ fn stores_and_reads_image_version() {
 
     assert_eq!(
         stored_image_version(&paths, "jk_agent-smith"),
-        Some("2.1.91".to_string())
+        Some("2.1.91".to_owned())
     );
 }
 
@@ -103,7 +103,7 @@ fn stores_and_reads_opencode_image_version() {
 
     assert_eq!(
         stored_opencode_version(&paths, "jk_the-architect"),
-        Some("1.14.48".to_string())
+        Some("1.14.48".to_owned())
     );
 }
 
@@ -141,7 +141,7 @@ fn stores_and_reads_kimi_image_version() {
 
     assert_eq!(
         stored_kimi_version(&paths, "jk_the-architect"),
-        Some("1.2.3".to_string())
+        Some("1.2.3".to_owned())
     );
 }
 
@@ -156,11 +156,11 @@ fn kimi_version_stored_separately_from_claude_version() {
 
     assert_eq!(
         stored_image_version(&paths, "jk_test"),
-        Some("2.0.0".to_string())
+        Some("2.0.0".to_owned())
     );
     assert_eq!(
         stored_kimi_version(&paths, "jk_test"),
-        Some("1.0.0".to_string())
+        Some("1.0.0".to_owned())
     );
 }
 

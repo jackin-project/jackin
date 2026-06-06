@@ -231,7 +231,7 @@ async fn check_docker_version() -> CheckResult {
         .await;
     match output {
         Ok(out) if out.status.success() => {
-            let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             CheckResult::ok("docker_version", format!("Docker server {version}"))
         }
         Ok(out) => {
@@ -287,7 +287,7 @@ fn check_config_dir(config_dir: &Path) -> CheckResult {
     let probe = config_dir.join(".jackin_probe");
     match std::fs::write(&probe, b"") {
         Ok(()) => {
-            let _ = std::fs::remove_file(&probe);
+            drop(std::fs::remove_file(&probe));
             CheckResult::ok(
                 "config_dir",
                 format!("{} exists and is writable", config_dir.display()),
@@ -372,14 +372,13 @@ fn check_op_cli() -> CheckResult {
 
 fn check_mise() -> CheckResult {
     // mise is only required in source checkouts, not for installed binaries.
-    let in_checkout = std::path::Path::new(".mise.toml").exists()
-        || std::path::Path::new(".tool-versions").exists();
+    let in_checkout = Path::new(".mise.toml").exists() || Path::new(".tool-versions").exists();
     if !in_checkout {
         return CheckResult::skip("mise", "Not in a source checkout — mise not required");
     }
     match std::process::Command::new("mise").arg("--version").output() {
         Ok(out) if out.status.success() => {
-            let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             CheckResult::ok("mise", format!("mise {version}"))
         }
         Ok(_) => CheckResult::warn(
@@ -475,7 +474,7 @@ fn check_stale_isolation(paths: &crate::paths::JackinPaths) -> CheckResult {
                 && let Ok(content) = std::fs::read_to_string(&iso)
                 && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
                 && let Some(path) = val.get("worktree_path").and_then(|v| v.as_str())
-                && !std::path::Path::new(path).exists()
+                && !Path::new(path).exists()
             {
                 stale += 1;
             }

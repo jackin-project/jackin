@@ -74,7 +74,7 @@ pub fn render_global_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec
     for row in rows {
         lines.push(Line::from(vec![
             Span::raw(format!("  {:<path_w$}  ", row.destination)),
-            Span::styled(row.mode.to_string(), jackin_tui::theme::DIM),
+            Span::styled(row.mode.to_owned(), jackin_tui::theme::DIM),
         ]));
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(

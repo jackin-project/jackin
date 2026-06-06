@@ -143,7 +143,7 @@ impl Widget for StatusFooter<'_> {
         let activity = Line::from(vec![
             Span::raw(" "),
             Span::styled(
-                self.left.to_string(),
+                self.left.to_owned(),
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
                     .fg(activity_fg)
@@ -193,8 +193,9 @@ pub fn status_footer_right_chip_rect(
     let right_width = u16::try_from(format!(" {right} ").chars().count()).unwrap_or(u16::MAX);
     let debug_width = right_debug
         .filter(|debug| !debug.is_empty())
-        .map(|debug| u16::try_from(format!(" {debug} ").chars().count()).unwrap_or(u16::MAX))
-        .unwrap_or(0);
+        .map_or(0, |debug| {
+            u16::try_from(format!(" {debug} ").chars().count()).unwrap_or(u16::MAX)
+        });
     let total_width = right_width.saturating_add(debug_width);
     let x = area
         .x

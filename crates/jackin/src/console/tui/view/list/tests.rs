@@ -546,7 +546,7 @@ mod subpanel_padding_tests {
 
     fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceConfig {
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/tmp/demo".into(),
             mounts: vec![],
             allowed_roles: names.iter().map(|s| (*s).into()).collect(),
@@ -829,7 +829,7 @@ mod subpanel_padding_tests {
     /// and return one row of the buffer at `y` as a plain string. Used
     /// throughout this section to scrape per-row text after layout shifts.
     fn render_agents_row(
-        ws: Option<&crate::workspace::WorkspaceConfig>,
+        ws: Option<&WorkspaceConfig>,
         cfg: &AppConfig,
         width: u16,
         height: u16,
@@ -1022,11 +1022,7 @@ mod subpanel_padding_tests {
 
     /// Render the Environments sub-panel into a fresh `TestBackend` of
     /// the given size and return the joined-with-newlines screen text.
-    fn render_env_to_string(
-        ws: &crate::workspace::WorkspaceConfig,
-        width: u16,
-        height: u16,
-    ) -> String {
+    fn render_env_to_string(ws: &WorkspaceConfig, width: u16, height: u16) -> String {
         let backend = TestBackend::new(width, height);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {

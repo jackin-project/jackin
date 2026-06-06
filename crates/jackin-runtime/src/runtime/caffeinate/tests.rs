@@ -19,11 +19,11 @@ async fn count_keep_awake_agents_counts_nonempty_lines() {
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             ContainerRow {
-                name: "jk-agent-smith".to_string(),
+                name: "jk-agent-smith".to_owned(),
                 labels: HashMap::default(),
             },
             ContainerRow {
-                name: "jk-the-architect".to_string(),
+                name: "jk-the-architect".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),

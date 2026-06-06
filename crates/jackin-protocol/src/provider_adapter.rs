@@ -1,6 +1,6 @@
 //! `ProviderAdapter` trait: per-provider behavioral dispatch.
 //!
-//! Each of the four built-in providers (Anthropic, Zai, MiniMax, Kimi)
+//! Each of the four built-in providers (Anthropic, Zai, `MiniMax`, Kimi)
 //! implements this trait in a zero-sized adapter struct. `Provider::adapter()`
 //! returns the matching adapter as `&'static dyn ProviderAdapter`.
 //!
@@ -15,13 +15,17 @@
 
 /// Sealing module — prevents external crates from implementing `ProviderAdapter`.
 pub(crate) mod private {
-    pub trait Sealed {}
+    pub(crate) trait Sealed {}
 }
 
 /// Behavioral contract each provider adapter satisfies.
 ///
 /// Reach via `provider.adapter().<method>()`. Sealed: only the four built-in
 /// adapters in this module implement it.
+#[expect(
+    private_bounds,
+    reason = "sealed trait uses a private supertrait to block external implementations"
+)]
 pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// Display label (also the wire identifier in `InitialProvider`).
     fn label(&self) -> &'static str;
@@ -43,8 +47,8 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// `token` is the provider's API key; `None` or empty → omit auth header.
     fn env_overrides(&self, token: Option<&str>) -> Vec<(String, String)>;
 
-    /// Model string in `provider/model` format for OpenCode's `-m` flag.
-    /// `None` for Anthropic (use OpenCode's own default selection).
+    /// Model string in `provider/model` format for `OpenCode`'s `-m` flag.
+    /// `None` for Anthropic (use `OpenCode`'s own default selection).
     fn opencode_model(&self) -> Option<&'static str>;
 
     /// The environment variable name that carries the API key for this provider.
@@ -68,22 +72,19 @@ fn anthropic_surface(
 ) -> Vec<(String, String)> {
     let mut env = Vec::with_capacity(7);
     if let Some(t) = token.filter(|v| !v.is_empty()) {
-        env.push(("ANTHROPIC_AUTH_TOKEN".to_string(), t.to_string()));
+        env.push(("ANTHROPIC_AUTH_TOKEN".to_owned(), t.to_owned()));
     }
-    env.push(("ANTHROPIC_BASE_URL".to_string(), base_url.to_string()));
-    env.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), opus.to_string()));
+    env.push(("ANTHROPIC_BASE_URL".to_owned(), base_url.to_owned()));
+    env.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_owned(), opus.to_owned()));
     env.push((
-        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-        sonnet.to_string(),
+        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
+        sonnet.to_owned(),
     ));
+    env.push(("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(), haiku.to_owned()));
+    env.push(("API_TIMEOUT_MS".to_owned(), timeout.to_owned()));
     env.push((
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-        haiku.to_string(),
-    ));
-    env.push(("API_TIMEOUT_MS".to_string(), timeout.to_string()));
-    env.push((
-        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
-        "1".to_string(),
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_owned(),
+        "1".to_owned(),
     ));
     env
 }
@@ -91,6 +92,7 @@ fn anthropic_surface(
 // ── Adapter structs ───────────────────────────────────────────────────────────
 
 /// Anthropic — the agent's native auth surface; no env redirection.
+#[derive(Debug)]
 pub struct AnthropicAdapter;
 impl private::Sealed for AnthropicAdapter {}
 impl ProviderAdapter for AnthropicAdapter {
@@ -124,6 +126,7 @@ impl ProviderAdapter for AnthropicAdapter {
 }
 
 /// Z.AI — GLM Coding Plan via Anthropic-compatible endpoint.
+#[derive(Debug)]
 pub struct ZaiAdapter;
 impl private::Sealed for ZaiAdapter {}
 impl ProviderAdapter for ZaiAdapter {
@@ -164,7 +167,8 @@ impl ProviderAdapter for ZaiAdapter {
     }
 }
 
-/// MiniMax Token Plan via Anthropic-compatible endpoint.
+/// `MiniMax` Token Plan via Anthropic-compatible endpoint.
+#[derive(Debug)]
 pub struct MinimaxAdapter;
 impl private::Sealed for MinimaxAdapter {}
 impl ProviderAdapter for MinimaxAdapter {
@@ -203,6 +207,7 @@ impl ProviderAdapter for MinimaxAdapter {
 }
 
 /// Kimi Code via Anthropic-compatible endpoint.
+#[derive(Debug)]
 pub struct KimiAdapter;
 impl private::Sealed for KimiAdapter {}
 impl ProviderAdapter for KimiAdapter {

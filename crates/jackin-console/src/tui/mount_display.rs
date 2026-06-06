@@ -24,6 +24,7 @@ pub struct MountDisplayRow {
     pub kind: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MountDisplayInput<'a> {
     pub src: &'a str,
     pub dst: &'a str,
@@ -46,6 +47,10 @@ pub fn mount_display_paths(
     }
 }
 
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Trait cannot use anonymous lifetimes for borrowed mount DTOs on stable Rust"
+)]
 pub fn format_mount_rows<'a>(
     mounts: impl IntoIterator<Item = MountDisplayInput<'a>>,
     shorten: impl Fn(&str) -> String + Copy,

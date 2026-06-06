@@ -24,7 +24,7 @@ fn scaffold_path_nests_namespaced_roles() {
 fn create_writes_a_valid_role_repo() {
     let temp = tempdir().unwrap();
     create(&RoleCreateArgs {
-        role: "docs-writer".to_string(),
+        role: "docs-writer".to_owned(),
         projects_dir: Some(temp.path().to_path_buf()),
     })
     .unwrap();

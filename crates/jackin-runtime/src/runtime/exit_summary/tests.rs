@@ -12,15 +12,15 @@ fn entry(
     role: &str,
 ) -> InstanceIndexEntry {
     InstanceIndexEntry {
-        instance_id: id.to_string(),
-        container_base: base.to_string(),
-        workspace_name: workspace_name.map(str::to_string),
-        workspace_label: workspace_label.to_string(),
-        workdir: workdir.to_string(),
-        role_key: role.to_string(),
-        agent_runtime: "claude".to_string(),
+        instance_id: id.to_owned(),
+        container_base: base.to_owned(),
+        workspace_name: workspace_name.map(str::to_owned),
+        workspace_label: workspace_label.to_owned(),
+        workdir: workdir.to_owned(),
+        role_key: role.to_owned(),
+        agent_runtime: "claude".to_owned(),
         status: InstanceStatus::Running,
-        updated_at: "2026-05-25T00:00:00Z".to_string(),
+        updated_at: "2026-05-25T00:00:00Z".to_owned(),
     }
 }
 
@@ -39,9 +39,9 @@ fn saved_workspaces_listed_by_role_with_counts() {
         entry("ccc", "jk-ccc", Some("app"), "app", "/app", "agent-smith"),
     ]);
     let running = vec![
-        "jk-aaa".to_string(),
-        "jk-bbb".to_string(),
-        "jk-ccc".to_string(),
+        "jk-aaa".to_owned(),
+        "jk-bbb".to_owned(),
+        "jk-ccc".to_owned(),
     ];
     let (headline, rows) = summary(&running, &idx);
     assert!(headline.contains("3 agents"), "headline: {headline}");
@@ -77,9 +77,9 @@ fn private_folders_collapse_to_a_count() {
         entry("ccc", "jk-ccc", Some("app"), "app", "/app", "the-architect"),
     ]);
     let running = vec![
-        "jk-aaa".to_string(),
-        "jk-bbb".to_string(),
-        "jk-ccc".to_string(),
+        "jk-aaa".to_owned(),
+        "jk-bbb".to_owned(),
+        "jk-ccc".to_owned(),
     ];
     let (headline, rows) = summary(&running, &idx);
     assert!(headline.contains("3 agents"));
@@ -97,7 +97,7 @@ fn excludes_instances_not_in_the_running_set() {
         entry("aaa", "jk-aaa", Some("app"), "app", "/app", "the-architect"),
         entry("zzz", "jk-zzz", Some("app"), "app", "/app", "the-architect"),
     ]);
-    let running = vec!["jk-aaa".to_string()];
+    let running = vec!["jk-aaa".to_owned()];
     let (headline, _) = summary(&running, &idx);
     assert!(headline.contains("1 agent "), "singular: {headline}");
 }
@@ -112,7 +112,7 @@ fn headline_counts_running_bases_when_index_is_partial() {
         "/app",
         "the-architect",
     )]);
-    let running = vec!["jk-aaa".to_string(), "jk-missing".to_string()];
+    let running = vec!["jk-aaa".to_owned(), "jk-missing".to_owned()];
     let (headline, rows) = summary(&running, &idx);
     assert!(headline.contains("2 agents"), "headline: {headline}");
     assert!(

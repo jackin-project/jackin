@@ -58,13 +58,13 @@ fn build_output_is_suppressed_for_debug_or_rich_surface() {
 fn docker_build_env_forces_plain_buildkit_progress() {
     assert_eq!(
         docker_build_env(false),
-        vec![("BUILDKIT_PROGRESS".to_string(), "plain".to_string())]
+        vec![("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned())]
     );
     assert_eq!(
         docker_build_env(true),
         vec![
-            ("BUILDKIT_PROGRESS".to_string(), "plain".to_string()),
-            ("DOCKER_BUILDKIT".to_string(), "1".to_string()),
+            ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
+            ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
         ]
     );
 }
@@ -78,14 +78,14 @@ fn compact_image_warning_line_is_not_debug_prefixed() {
 
 #[tokio::test]
 async fn published_image_fresh_when_sha_matches() {
-    let docker = make_docker([(LABEL_IMAGE_ROLE_GIT_SHA.to_string(), "abc123".to_string())].into());
+    let docker = make_docker([(LABEL_IMAGE_ROLE_GIT_SHA.to_owned(), "abc123".to_owned())].into());
     let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
     assert!(!stale, "matching SHA should report image as fresh");
 }
 
 #[tokio::test]
 async fn published_image_stale_when_sha_differs() {
-    let docker = make_docker([(LABEL_IMAGE_ROLE_GIT_SHA.to_string(), "oldsha".to_string())].into());
+    let docker = make_docker([(LABEL_IMAGE_ROLE_GIT_SHA.to_owned(), "oldsha".to_owned())].into());
     let stale = published_image_is_stale("img:latest", "0.1", Some("newsha"), &docker).await;
     assert!(stale, "mismatched SHA should report image as stale");
 }
@@ -93,8 +93,7 @@ async fn published_image_stale_when_sha_differs() {
 #[tokio::test]
 async fn published_image_falls_back_to_construct_version_when_no_sha_label() {
     // No SHA label; construct_version matches → fresh.
-    let docker =
-        make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_string(), "0.1".to_string())].into());
+    let docker = make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(), "0.1".to_owned())].into());
     let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
     assert!(
         !stale,
@@ -104,8 +103,7 @@ async fn published_image_falls_back_to_construct_version_when_no_sha_label() {
 
 #[tokio::test]
 async fn published_image_stale_when_construct_version_differs() {
-    let docker =
-        make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_string(), "0.0".to_string())].into());
+    let docker = make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(), "0.0".to_owned())].into());
     let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
     assert!(
         stale,
@@ -127,7 +125,7 @@ async fn published_image_fresh_when_no_labels_at_all() {
 #[tokio::test]
 async fn published_image_stale_when_pull_fails() {
     let docker = FakeDockerClient {
-        fail_with: vec![("docker pull".to_string(), "network error".to_string())],
+        fail_with: vec![("docker pull".to_owned(), "network error".to_owned())],
         ..FakeDockerClient::default()
     };
     let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
@@ -138,8 +136,8 @@ async fn published_image_stale_when_pull_fails() {
 async fn published_image_stale_when_inspect_image_labels_fails() {
     let docker = FakeDockerClient {
         fail_with: vec![(
-            "docker inspect image:".to_string(),
-            "daemon error".to_string(),
+            "docker inspect image:".to_owned(),
+            "daemon error".to_owned(),
         )],
         ..FakeDockerClient::default()
     };

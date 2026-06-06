@@ -205,7 +205,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     runner: &mut impl crate::docker::CommandRunner,
     // Outer session guard — draws into the inherited screen when `Some`,
     // or owns its own `TerminalSession` when `None` (standalone console).
-    parent_session: Option<&crate::console::TerminalSession>,
+    parent_session: Option<&TerminalSession>,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -268,7 +268,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                 )
             );
             let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
-            let _ = resume_console_terminal(&mut out);
+            drop(resume_console_terminal(&mut out));
             // Force a full repaint next frame so leftover child output is
             // overwritten. terminal.resize() resets Ratatui's internal diff
             // buffer (marks every cell dirty) without emitting \x1b[2J — this
@@ -276,7 +276,7 @@ pub async fn run_console<H: InstanceActionHandler>(
             // still guaranteeing that every cell is redrawn next tick.
             if let Ok(size) = terminal.size() {
                 let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                let _ = terminal.resize(rect);
+                drop(terminal.resize(rect));
             }
             needs_redraw = true;
             if let ConsoleStage::Manager(ms) = &mut state.stage {
@@ -357,8 +357,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                 let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
                 if !overlay.is_empty() {
                     let mut out = std::io::stdout();
-                    let _ = std::io::Write::write_all(&mut out, &overlay);
-                    let _ = std::io::Write::flush(&mut out);
+                    drop(std::io::Write::write_all(&mut out, &overlay));
+                    drop(std::io::Write::flush(&mut out));
                 }
                 container_info_overlay_active = true;
             }
@@ -568,7 +568,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                     let busy_title = instance_action_busy_title(action_fact);
                                     let busy_body =
                                         instance_action_busy_message(action_fact, &container);
-                                    let _ = crate::console::tui::update_manager(
+                                    let _unused = crate::console::tui::update_manager(
                                         ms,
                                         crate::console::tui::ManagerMessage::OpenStatusPopup {
                                             title: busy_title.into(),
@@ -588,7 +588,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 }
                                 let result = action_handler.run_in_place(&container, action).await;
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let _ = crate::console::tui::update_manager(
+                                    let _unused = crate::console::tui::update_manager(
                                         ms,
                                         crate::console::tui::ManagerMessage::DismissStatusPopup,
                                     );
@@ -596,7 +596,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                         let err_title = instance_action_failed_error_title(
                                             workspace_instance_action_fact(action),
                                         );
-                                        let _ = crate::console::tui::update_manager(
+                                        let _unused = crate::console::tui::update_manager(
                                             ms,
                                             crate::console::tui::ManagerMessage::OpenListErrorPopup {
                                                 title: err_title.into(),
@@ -684,7 +684,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 mouse.row,
                             ) == jackin_tui::components::ModalClickResult::OutsideDismiss
                             {
-                                let _ = crate::console::tui::update_manager(
+                                let _unused = crate::console::tui::update_manager(
                                     ms,
                                     crate::console::tui::ManagerMessage::DismissListModal,
                                 );
@@ -704,11 +704,11 @@ pub async fn run_console<H: InstanceActionHandler>(
                         if pointer_is_hand {
                             pointer_is_hand = false;
                             let mut out = std::io::stdout();
-                            let _ = std::io::Write::write_all(
+                            let _unused = std::io::Write::write_all(
                                 &mut out,
                                 jackin_tui::ansi::POINTER_DEFAULT.as_bytes(),
                             );
-                            let _ = std::io::Write::flush(&mut out);
+                            drop(std::io::Write::flush(&mut out));
                         }
                     } else if let ConsoleStage::Manager(ms) = &mut state.stage {
                         // Layer 3: chrome (debug chip) — only fires when no modal.
@@ -725,7 +725,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 && let Some(run) = crate::diagnostics::active_run()
                             {
                                 let log_path = run.path().display().to_string();
-                                let _ = crate::console::tui::update_manager(
+                                let _unused = crate::console::tui::update_manager(
                                     ms,
                                     crate::console::tui::ManagerMessage::OpenListContainerInfo {
                                         state: jackin_console::tui::components::container_info::debug_run_info_state(
@@ -779,8 +779,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 jackin_tui::ansi::POINTER_DEFAULT
                             };
                             let mut out = std::io::stdout();
-                            let _ = std::io::Write::write_all(&mut out, seq.as_bytes());
-                            let _ = std::io::Write::flush(&mut out);
+                            drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
+                            drop(std::io::Write::flush(&mut out));
                         }
                     }
                 }

@@ -219,7 +219,7 @@ pub const fn pick_list_confirm_footer_label() -> &'static str {
 #[must_use]
 pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     vec![
-        HintSpan::Dyn("Create workspace — follow the prompts".to_string()),
+        HintSpan::Dyn("Create workspace — follow the prompts".to_owned()),
         HintSpan::GroupSep,
         HintSpan::Key("Esc"),
         HintSpan::Text("cancel"),

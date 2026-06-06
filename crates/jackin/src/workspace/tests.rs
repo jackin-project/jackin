@@ -44,11 +44,11 @@ fn role_access_accepts_empty_shorthand_or_explicit_membership() {
 
 fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
     WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: workdir.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: workdir.to_owned(),
         mounts: vec![MountConfig {
-            src: "/tmp/src".to_string(),
-            dst: dst.to_string(),
+            src: "/tmp/src".to_owned(),
+            dst: dst.to_owned(),
             readonly: false,
             isolation: crate::isolation::MountIsolation::Shared,
         }],
@@ -59,8 +59,8 @@ fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
 #[test]
 fn workspace_serializes_default_agent_when_set() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/tmp/x".to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/tmp/x".to_owned(),
         default_agent: Some(crate::agent::Agent::Codex),
         ..Default::default()
     };
@@ -72,8 +72,8 @@ fn workspace_serializes_default_agent_when_set() {
 #[test]
 fn workspace_omits_default_agent_field_when_unset() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/tmp/x".to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/tmp/x".to_owned(),
         ..Default::default()
     };
 
@@ -84,8 +84,8 @@ fn workspace_omits_default_agent_field_when_unset() {
 #[test]
 fn workspace_resolves_to_claude_when_unset() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/tmp/x".to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/tmp/x".to_owned(),
         ..Default::default()
     };
     assert_eq!(ws.resolved_agent(), crate::agent::Agent::Claude);
@@ -94,8 +94,8 @@ fn workspace_resolves_to_claude_when_unset() {
 #[test]
 fn workspace_resolves_to_codex_when_set() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/tmp/x".to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/tmp/x".to_owned(),
         default_agent: Some(crate::agent::Agent::Codex),
         ..Default::default()
     };
@@ -244,18 +244,18 @@ fn validate_rejects_completely_unrelated_workdir() {
 #[test]
 fn validate_workdir_parent_of_any_mount_dst() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/workspace".to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/workspace".to_owned(),
         mounts: vec![
             MountConfig {
-                src: "/tmp/a".to_string(),
-                dst: "/other/path".to_string(),
+                src: "/tmp/a".to_owned(),
+                dst: "/other/path".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             },
             MountConfig {
-                src: "/tmp/b".to_string(),
-                dst: "/workspace/project".to_string(),
+                src: "/tmp/b".to_owned(),
+                dst: "/workspace/project".to_owned(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             },
@@ -476,7 +476,7 @@ fn isolation_layout_ignores_trailing_slashes() {
 fn validate_workspace_config_surfaces_isolation_layout_errors() {
     use std::collections::BTreeMap;
     let workspace = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/proj".into(),
         mounts: vec![
             worktree_mount("/tmp/a", "/workspace/proj"),
@@ -722,7 +722,7 @@ fn workspace_op_ref_round_trips_account() {
     use crate::operator_env::{EnvValue, OpRef};
     let mut env = std::collections::BTreeMap::new();
     env.insert(
-        "TOKEN".to_string(),
+        "TOKEN".to_owned(),
         EnvValue::OpRef(OpRef {
             op: "op://v/i/f".into(),
             path: "Vault/Item/Field".into(),
@@ -730,7 +730,7 @@ fn workspace_op_ref_round_trips_account() {
         }),
     );
     let original = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/x".into(),
         env,
         ..Default::default()
@@ -753,7 +753,7 @@ fn workspace_op_ref_omits_account_when_none() {
     use crate::operator_env::{EnvValue, OpRef};
     let mut env = std::collections::BTreeMap::new();
     env.insert(
-        "TOKEN".to_string(),
+        "TOKEN".to_owned(),
         EnvValue::OpRef(OpRef {
             op: "op://v/i/f".into(),
             path: "Vault/Item/Field".into(),
@@ -761,7 +761,7 @@ fn workspace_op_ref_omits_account_when_none() {
         }),
     );
     let cfg = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/x".into(),
         env,
         ..Default::default()

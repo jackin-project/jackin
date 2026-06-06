@@ -132,7 +132,7 @@ pub(crate) fn op_section_id(label: &str) -> String {
         }
     }
     if id.is_empty() {
-        "section".to_string()
+        "section".to_owned()
     } else {
         id
     }
@@ -173,8 +173,8 @@ pub(crate) fn apply_field_edit(
     let mut appended_in_section = false;
     match (found, target) {
         (Some(field), _) => {
-            field["value"] = serde_json::Value::String(value.to_string());
-            field["type"] = serde_json::Value::String("CONCEALED".to_string());
+            field["value"] = serde_json::Value::String(value.to_owned());
+            field["type"] = serde_json::Value::String("CONCEALED".to_owned());
         }
         // A specific field id was requested but is gone (renamed/deleted in
         // 1Password since it was picked, or read from a stale cache). Fail

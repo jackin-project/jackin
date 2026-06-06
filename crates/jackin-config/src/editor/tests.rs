@@ -49,8 +49,8 @@ workdir = "/workspace/prod"
     editor
         .set_env_var(
             &EnvScope::WorkspaceRole {
-                workspace: "prod".to_string(),
-                role: "agent-smith".to_string(),
+                workspace: "prod".to_owned(),
+                role: "agent-smith".to_owned(),
             },
             "OPENAI_API_KEY",
             "op://Work/OpenAI/default".into(),
@@ -144,7 +144,7 @@ git = "https://example.com/a.git"
     )
     .unwrap();
 
-    let scope = EnvScope::Role("agent-smith".to_string());
+    let scope = EnvScope::Role("agent-smith".to_owned());
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .set_env_var(&scope, "LOG_LEVEL", "debug".into())
@@ -176,7 +176,7 @@ workdir = "/workspace/prod"
     )
     .unwrap();
 
-    let scope = EnvScope::Workspace("prod".to_string());
+    let scope = EnvScope::Workspace("prod".to_owned());
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .set_env_var(&scope, "DB_URL", "op://Work/Prod/db-url".into())
@@ -209,8 +209,8 @@ workdir = "/workspace/prod"
     .unwrap();
 
     let scope = EnvScope::WorkspaceRole {
-        workspace: "prod".to_string(),
-        role: "agent-smith".to_string(),
+        workspace: "prod".to_owned(),
+        role: "agent-smith".to_owned(),
     };
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
@@ -375,7 +375,7 @@ workdir = "/b"
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
-        .set_env_var(&EnvScope::Workspace("a".to_string()), "K", "v".into())
+        .set_env_var(&EnvScope::Workspace("a".to_owned()), "K", "v".into())
         .unwrap();
     editor.save().unwrap();
 
@@ -501,7 +501,7 @@ fn save_rejects_invalid_candidate_and_preserves_on_disk_config() {
     // `[roles.ghost].git` — fails serde parsing.
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.insert_at_path(
-        &["roles".to_string(), "ghost".to_string(), "env".to_string()],
+        &["roles".to_owned(), "ghost".to_owned(), "env".to_owned()],
         "LOG_LEVEL",
         "debug",
     );
@@ -571,8 +571,8 @@ fn add_mount_unscoped_creates_single_mount_entry() {
     editor.add_mount(
         "shared-home",
         MountConfig {
-            src: "/home/user".to_string(),
-            dst: "/workspace/home".to_string(),
+            src: "/home/user".to_owned(),
+            dst: "/workspace/home".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         },
@@ -599,8 +599,8 @@ fn add_mount_scoped_creates_nested_entry() {
     editor.add_mount(
         "creds",
         MountConfig {
-            src: "/run/secrets/x".to_string(),
-            dst: "/secrets/x".to_string(),
+            src: "/run/secrets/x".to_owned(),
+            dst: "/secrets/x".to_owned(),
             readonly: true,
             isolation: crate::MountIsolation::Shared,
         },
@@ -754,9 +754,9 @@ trusted = true
 #[test]
 fn set_global_auth_forward_writes_per_agent_table() {
     for (agent, header) in [
-        (jackin_core::Agent::Claude, "[claude]"),
-        (jackin_core::Agent::Codex, "[codex]"),
-        (jackin_core::Agent::Amp, "[amp]"),
+        (Agent::Claude, "[claude]"),
+        (Agent::Codex, "[codex]"),
+        (Agent::Amp, "[amp]"),
     ] {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -788,11 +788,7 @@ workdir = "/tmp/proj"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_auth_forward(
-        "proj",
-        jackin_core::Agent::Claude,
-        Some(AuthForwardMode::ApiKey),
-    );
+    editor.set_workspace_auth_forward("proj", Agent::Claude, Some(AuthForwardMode::ApiKey));
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -818,7 +814,7 @@ auth_forward = "api_key"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_auth_forward("proj", jackin_core::Agent::Claude, None);
+    editor.set_workspace_auth_forward("proj", Agent::Claude, None);
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -850,7 +846,7 @@ workdir = "/tmp/proj"
     editor.set_workspace_role_auth_forward(
         "proj",
         "smith",
-        jackin_core::Agent::Codex,
+        Agent::Codex,
         Some(AuthForwardMode::ApiKey),
     );
     editor.save().unwrap();
@@ -878,7 +874,7 @@ auth_forward = "oauth_token"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_auth_forward("proj", "smith", jackin_core::Agent::Claude, None);
+    editor.set_workspace_role_auth_forward("proj", "smith", Agent::Claude, None);
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -914,10 +910,10 @@ fn create_workspace_adds_table() {
     std::fs::write(&paths.config_file, "").unwrap();
 
     let ws = WorkspaceConfig {
-        workdir: "/workspace/new".to_string(),
+        workdir: "/workspace/new".to_owned(),
         mounts: vec![MountConfig {
             src: mount_src.display().to_string(),
-            dst: "/workspace/new".to_string(),
+            dst: "/workspace/new".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         }],
@@ -950,10 +946,10 @@ fn create_workspace_rejects_invalid_workdir_mount_combo() {
     std::fs::write(&paths.config_file, "").unwrap();
 
     let ws = WorkspaceConfig {
-        workdir: "/elsewhere".to_string(),
+        workdir: "/elsewhere".to_owned(),
         mounts: vec![MountConfig {
             src: mount_src.display().to_string(),
-            dst: "/workspace/unrelated".to_string(),
+            dst: "/workspace/unrelated".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         }],
@@ -1006,9 +1002,9 @@ MY_VAR = "preserved"
     .unwrap();
 
     let source = RoleSource {
-        git: "NEW".to_string(),
+        git: "NEW".to_owned(),
         trusted: true,
-        env: std::collections::BTreeMap::new(),
+        env: BTreeMap::new(),
     };
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.upsert_agent_source("foo", &source);
@@ -1252,7 +1248,7 @@ workdir = "/workspace/prod"
     // GH_TOKEN env entry.
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.set_workspace_github_auth_forward("prod", Some(GithubAuthMode::Token));
-    let env_scope = EnvScope::WorkspaceGithub("prod".to_string());
+    let env_scope = EnvScope::WorkspaceGithub("prod".to_owned());
     editor
         .set_env_var(&env_scope, "GH_TOKEN", "op://Work/gh/pat".into())
         .unwrap();
@@ -1305,8 +1301,8 @@ workdir = "/workspace/prod"
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.set_workspace_role_github_auth_forward("prod", "scratch", Some(GithubAuthMode::Token));
     let env_scope = EnvScope::WorkspaceRoleGithub {
-        workspace: "prod".to_string(),
-        role: "scratch".to_string(),
+        workspace: "prod".to_owned(),
+        role: "scratch".to_owned(),
     };
     editor
         .set_env_var(&env_scope, "GH_TOKEN", "op://Work/gh/pat".into())
@@ -1391,7 +1387,7 @@ GH_TOKEN = "ghp_real"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let env_scope = EnvScope::WorkspaceGithub("prod".to_string());
+    let env_scope = EnvScope::WorkspaceGithub("prod".to_owned());
     assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
     editor.save().unwrap();
 
@@ -1435,7 +1431,7 @@ GH_TOKEN = "ghp_real"
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.set_workspace_github_auth_forward("prod", None);
-    let env_scope = EnvScope::WorkspaceGithub("prod".to_string());
+    let env_scope = EnvScope::WorkspaceGithub("prod".to_owned());
     assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
     editor.save().unwrap();
 

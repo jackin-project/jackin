@@ -30,14 +30,17 @@ pub fn selected_choice<T>(choices: &[T], selected: Option<usize>) -> Option<&T> 
 }
 
 #[must_use]
-pub fn matches_filter<'a>(filter: &str, values: impl IntoIterator<Item = &'a str>) -> bool {
+pub fn matches_filter<S>(filter: &str, values: impl IntoIterator<Item = S>) -> bool
+where
+    S: AsRef<str>,
+{
     if filter.is_empty() {
         return true;
     }
     let needle = filter.to_lowercase();
     values
         .into_iter()
-        .any(|value| value.to_lowercase().contains(&needle))
+        .any(|value| value.as_ref().to_lowercase().contains(&needle))
 }
 
 #[must_use]

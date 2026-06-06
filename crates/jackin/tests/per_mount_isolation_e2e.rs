@@ -32,7 +32,7 @@ struct ScriptedRunner {
 impl ScriptedRunner {
     fn new(outputs: &[&str]) -> Self {
         Self {
-            capture_queue: outputs.iter().map(|s| (*s).to_string()).collect(),
+            capture_queue: outputs.iter().map(|s| (*s).to_owned()).collect(),
             run_recorded: Vec::new(),
         }
     }

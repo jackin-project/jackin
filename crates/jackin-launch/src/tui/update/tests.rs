@@ -18,8 +18,11 @@ fn identity() -> crate::LaunchIdentity {
 #[test]
 fn failure_acknowledged_clears_hover_and_sets_ack() {
     let mut view = initial_view();
-    let _ = update_launch_view(&mut view, LaunchMessage::Started(identity()));
-    let _ = update_launch_view(
+    drop(update_launch_view(
+        &mut view,
+        LaunchMessage::Started(identity()),
+    ));
+    let _unused = update_launch_view(
         &mut view,
         LaunchMessage::StageFailed(LaunchFailure {
             title: "Build failed".into(),
@@ -33,7 +36,10 @@ fn failure_acknowledged_clears_hover_and_sets_ack() {
     );
     view.failure_copy_hover = Some(crate::FailureCopyTarget::DiagnosticsPath);
 
-    let _ = update_launch_view(&mut view, LaunchMessage::FailureAcknowledged);
+    drop(update_launch_view(
+        &mut view,
+        LaunchMessage::FailureAcknowledged,
+    ));
 
     assert!(view.failure_ack);
     assert_eq!(view.failure_copy_hover, None);
@@ -43,7 +49,7 @@ fn failure_acknowledged_clears_hover_and_sets_ack() {
 fn failure_copy_messages_track_hover_and_copied_target() {
     let mut view = initial_view();
 
-    let _ = update_launch_view(
+    let _unused = update_launch_view(
         &mut view,
         LaunchMessage::FailureCopyHovered(Some(crate::FailureCopyTarget::RunId)),
     );
@@ -53,7 +59,7 @@ fn failure_copy_messages_track_hover_and_copied_target() {
         Some(crate::FailureCopyTarget::RunId)
     );
 
-    let _ = update_launch_view(
+    let _unused = update_launch_view(
         &mut view,
         LaunchMessage::FailureCopied(crate::FailureCopyTarget::DiagnosticsPath),
     );
@@ -68,7 +74,7 @@ fn failure_copy_messages_track_hover_and_copied_target() {
 fn footer_hover_message_replaces_hover_state() {
     let mut view = initial_view();
 
-    let _ = update_launch_view(
+    let _unused = update_launch_view(
         &mut view,
         LaunchMessage::FooterHoverChanged(StatusFooterHover {
             left: true,
@@ -87,13 +93,13 @@ fn build_log_messages_open_reset_and_close_overlay() {
     view.footer_hover.left = true;
     view.build_log_scroll = jackin_tui::scroll::TailScroll::new(4);
 
-    let _ = update_launch_view(&mut view, LaunchMessage::BuildLogOpened);
+    drop(update_launch_view(&mut view, LaunchMessage::BuildLogOpened));
 
     assert!(view.build_log_open);
     assert_eq!(view.build_log_scroll.offset(), 0);
     assert!(!view.footer_hover.left);
 
-    let _ = update_launch_view(&mut view, LaunchMessage::BuildLogClosed);
+    drop(update_launch_view(&mut view, LaunchMessage::BuildLogClosed));
 
     assert!(!view.build_log_open);
 }
@@ -102,7 +108,7 @@ fn build_log_messages_open_reset_and_close_overlay() {
 fn build_log_scroll_message_updates_tail_offset() {
     let mut view = initial_view();
 
-    let _ = update_launch_view(
+    let _unused = update_launch_view(
         &mut view,
         LaunchMessage::BuildLogScrolled {
             filled: 12,
@@ -118,12 +124,12 @@ fn render_tick_advances_frame_and_clamps_build_log_scroll() {
     let mut view = initial_view();
     view.build_log_scroll = jackin_tui::scroll::TailScroll::new(8);
 
-    let _ = update_launch_view(
+    let _unused = update_launch_view(
         &mut view,
         LaunchMessage::RenderTick {
             advance_frame: true,
             build_log_filled: Some(3),
-            build_log_lines: vec!["hello".to_string()],
+            build_log_lines: vec!["hello".to_owned()],
             build_log_active: true,
         },
     );
@@ -140,17 +146,26 @@ fn container_info_messages_open_copy_and_close_overlay() {
     view.footer_hover.right = true;
     view.container_info_copied = Some(4);
 
-    let _ = update_launch_view(&mut view, LaunchMessage::ContainerInfoOpened);
+    drop(update_launch_view(
+        &mut view,
+        LaunchMessage::ContainerInfoOpened,
+    ));
 
     assert!(view.container_info_open);
     assert_eq!(view.container_info_copied, None);
     assert!(!view.footer_hover.right);
 
-    let _ = update_launch_view(&mut view, LaunchMessage::ContainerInfoCopied(2));
+    drop(update_launch_view(
+        &mut view,
+        LaunchMessage::ContainerInfoCopied(2),
+    ));
 
     assert_eq!(view.container_info_copied, Some(2));
 
-    let _ = update_launch_view(&mut view, LaunchMessage::ContainerInfoClosed);
+    drop(update_launch_view(
+        &mut view,
+        LaunchMessage::ContainerInfoClosed,
+    ));
 
     assert!(!view.container_info_open);
     assert_eq!(view.container_info_copied, None);

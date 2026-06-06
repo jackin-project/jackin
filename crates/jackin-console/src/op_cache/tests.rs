@@ -38,7 +38,7 @@ type TestCache = OpCache<Account, Vault, Item, Field>;
 
 fn account(id: &str) -> Account {
     Account {
-        id: id.to_string(),
+        id: id.to_owned(),
         email: format!("{id}@example.com"),
         url: format!("{id}.1password.com"),
     }
@@ -47,23 +47,23 @@ fn account(id: &str) -> Account {
 fn vault(name: &str) -> Vault {
     Vault {
         id: format!("v-{name}"),
-        name: name.to_string(),
+        name: name.to_owned(),
     }
 }
 
 fn item(name: &str) -> Item {
     Item {
         id: format!("i-{name}"),
-        name: name.to_string(),
+        name: name.to_owned(),
         subtitle: String::new(),
     }
 }
 
 fn field(label: &str) -> Field {
     Field {
-        id: label.to_string(),
-        label: label.to_string(),
-        field_type: "STRING".to_string(),
+        id: label.to_owned(),
+        label: label.to_owned(),
+        field_type: "STRING".to_owned(),
         concealed: false,
         reference: String::new(),
     }
@@ -92,11 +92,11 @@ fn put_then_get_round_trips() {
     cache.put_vaults(None, vec![vault("Default")]);
     assert_eq!(
         cache.get_vaults(Some("a1")).unwrap()[0].name,
-        "Personal".to_string()
+        "Personal".to_owned()
     );
     assert_eq!(
         cache.get_vaults(None).unwrap()[0].name,
-        "Default".to_string(),
+        "Default".to_owned(),
         "default-account uses the empty-string key but reads back via None"
     );
     cache.put_items(Some("a1"), "v-Personal", vec![item("API Keys")]);

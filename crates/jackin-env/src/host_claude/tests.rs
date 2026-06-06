@@ -5,7 +5,7 @@ use super::*;
 fn parse_version_line_takes_first_whitespace_token() {
     assert_eq!(
         parse_version_line("2.1.4 (Claude Code)\n"),
-        Some("2.1.4".to_string())
+        Some("2.1.4".to_owned())
     );
 }
 
@@ -13,7 +13,7 @@ fn parse_version_line_takes_first_whitespace_token() {
 fn parse_version_line_trims_leading_whitespace() {
     assert_eq!(
         parse_version_line("  3.0.0-beta.1\n"),
-        Some("3.0.0-beta.1".to_string())
+        Some("3.0.0-beta.1".to_owned())
     );
 }
 
@@ -70,7 +70,7 @@ fn forward_redacted_line_handles_invalid_utf8_before_token() {
 
 #[test]
 fn forward_redacted_line_only_captures_first_token() {
-    let mut captured = Some("sk-ant-oat01-FIRST".to_string());
+    let mut captured = Some("sk-ant-oat01-FIRST".to_owned());
     let mut out = Vec::new();
     forward_redacted_line(b"sk-ant-oat01-SECOND\n", &mut captured, &mut out);
     // Already captured: do not overwrite.

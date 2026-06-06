@@ -25,7 +25,7 @@ fn tab_strip_exposes_two_rows() {
         .draw(|frame| {
             TabStrip::new(&labels)
                 .focused(true)
-                .render(frame, frame.area())
+                .render(frame, frame.area());
         })
         .unwrap();
 

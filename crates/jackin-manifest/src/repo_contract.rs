@@ -108,9 +108,9 @@ pub fn validate_agent_dockerfile(
     Ok(ValidatedDockerfile {
         dockerfile_path: dockerfile_path.to_path_buf(),
         dockerfile_contents,
-        final_stage_image: image_str.to_string(),
+        final_stage_image: image_str.to_owned(),
         final_stage_alias: alias.clone(),
-        construct_version: tag.to_string(),
+        construct_version: tag.to_owned(),
     })
 }
 

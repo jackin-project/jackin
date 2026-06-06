@@ -17,7 +17,7 @@ pub(super) async fn handle_purge(
     args: PurgeArgs,
     paths: &JackinPaths,
     runner: &mut ShellRunner,
-    connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
+    connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     let PurgeArgs { selector, all } = args;
     crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), paths).await?;
@@ -55,7 +55,7 @@ pub(super) async fn handle_prune(
     cmd: PruneCommand,
     paths: &JackinPaths,
     runner: &mut ShellRunner,
-    connect_docker: impl FnOnce() -> anyhow::Result<BollardDockerClient>,
+    connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     match cmd {
         PruneCommand::Roles => runtime::prune_roles(paths),

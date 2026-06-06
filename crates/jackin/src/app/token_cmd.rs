@@ -354,7 +354,7 @@ fn prompt_interactive_role(config: &AppConfig, workspace: &str) -> Result<Option
         return Ok(None);
     }
 
-    let mut labels: Vec<String> = vec!["All roles (workspace level)".to_string()];
+    let mut labels: Vec<String> = vec!["All roles (workspace level)".to_owned()];
     labels.extend(roles.iter().cloned());
     let idx = dialoguer::Select::new()
         .with_prompt("Scope")
@@ -457,7 +457,7 @@ fn prompt_interactive_token_store(
         .interact()?];
 
     let items = op.item_list(&vault.id, account_id.as_deref())?;
-    let mut item_labels: Vec<String> = vec!["[ + New item ]".to_string()];
+    let mut item_labels: Vec<String> = vec!["[ + New item ]".to_owned()];
     item_labels.extend(items.iter().map(|i| {
         if i.subtitle.is_empty() {
             i.name.clone()
@@ -479,16 +479,16 @@ fn prompt_interactive_token_store(
             .interact_text()?;
         let field_label: String = dialoguer::Input::new()
             .with_prompt("Field label")
-            .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
+            .default(token_setup::DEFAULT_FIELD_LABEL.to_owned())
             .interact_text()?;
         // Trim so padding can't reach the op item title / field id+label,
         // matching the TUI picker's commit trimming.
         return Ok(token_setup::TokenSetupArgs {
             vault: Some(vault.id.clone()),
-            item_name: Some(item_name.trim().to_string()),
+            item_name: Some(item_name.trim().to_owned()),
             account: account_id,
             reuse: None,
-            field_label: Some(field_label.trim().to_string()),
+            field_label: Some(field_label.trim().to_owned()),
             edit_existing: None,
             section: None,
             plain_text: false,
@@ -547,9 +547,9 @@ fn prompt_existing_item_section_and_field(
 
     let mut section_labels: Vec<String> = sections
         .iter()
-        .map(|s| s.clone().unwrap_or_else(|| "(root)".to_string()))
+        .map(|s| s.clone().unwrap_or_else(|| "(root)".to_owned()))
         .collect();
-    section_labels.push("[ + New section ]".to_string());
+    section_labels.push("[ + New section ]".to_owned());
 
     let section_choice = dialoguer::Select::new()
         .with_prompt("Section")
@@ -562,7 +562,7 @@ fn prompt_existing_item_section_and_field(
             .with_prompt("New section name")
             .interact_text()?;
         // Trim to match the TUI picker so padding can't reach the section label.
-        Some(name.trim().to_string())
+        Some(name.trim().to_owned())
     } else {
         sections[section_choice].clone()
     };
@@ -578,11 +578,11 @@ fn prompt_existing_item_section_and_field(
         })
         .collect();
 
-    let mut field_labels: Vec<String> = vec!["[ + New field ]".to_string()];
+    let mut field_labels: Vec<String> = vec!["[ + New field ]".to_owned()];
     field_labels.extend(scoped.iter().map(|f| {
         let label = if f.label.is_empty() { &f.id } else { &f.label };
         let kind = if f.concealed {
-            "concealed".to_string()
+            "concealed".to_owned()
         } else {
             f.field_type.to_lowercase()
         };
@@ -597,12 +597,12 @@ fn prompt_existing_item_section_and_field(
     if field_choice == 0 {
         let field_label: String = dialoguer::Input::new()
             .with_prompt("New field label")
-            .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
+            .default(token_setup::DEFAULT_FIELD_LABEL.to_owned())
             .interact_text()?;
         return Ok((
             section,
             FieldTarget::New {
-                label: field_label.trim().to_string(),
+                label: field_label.trim().to_owned(),
             },
         ));
     }

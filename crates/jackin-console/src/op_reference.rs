@@ -47,16 +47,16 @@ pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     }
     match parts.as_slice() {
         [vault, item, field] => Some(OpReferenceParts {
-            vault: (*vault).to_string(),
-            item: (*item).to_string(),
+            vault: (*vault).to_owned(),
+            item: (*item).to_owned(),
             section: None,
-            field: (*field).to_string(),
+            field: (*field).to_owned(),
         }),
         [vault, item, section, field] => Some(OpReferenceParts {
-            vault: (*vault).to_string(),
-            item: (*item).to_string(),
-            section: Some((*section).to_string()),
-            field: (*field).to_string(),
+            vault: (*vault).to_owned(),
+            item: (*item).to_owned(),
+            section: Some((*section).to_owned()),
+            field: (*field).to_owned(),
         }),
         _ => None,
     }

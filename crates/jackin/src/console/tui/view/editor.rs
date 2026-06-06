@@ -24,7 +24,7 @@ use ratatui::{Frame, layout::Rect};
 // ── Editor stage ────────────────────────────────────────────────────
 
 pub(super) fn render_editor(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     state: &EditorState<'_>,
     config: &AppConfig,

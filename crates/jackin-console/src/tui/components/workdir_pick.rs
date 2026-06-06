@@ -1,5 +1,7 @@
 //! Workdir path picker — choice list of mount dsts plus each ancestor.
 
+use std::path::PathBuf;
+
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
@@ -35,20 +37,20 @@ impl WorkdirPickState {
         let home_parent_str = home
             .as_ref()
             .and_then(|p| p.parent())
-            .map_or_else(|| "/Users".to_string(), |p| p.display().to_string());
+            .map_or_else(|| "/Users".to_owned(), |p| p.display().to_string());
 
         let mut choices: Vec<WorkdirChoice> = Vec::new();
         let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::default();
 
         for mount in mounts {
             let dst = mount.dst();
-            if seen.insert(dst.to_string()) {
+            if seen.insert(dst.to_owned()) {
                 choices.push(WorkdirChoice {
-                    path: dst.to_string(),
+                    path: dst.to_owned(),
                     label: "(mount dst)".into(),
                 });
             }
-            let mut cursor = std::path::PathBuf::from(dst);
+            let mut cursor = PathBuf::from(dst);
             while let Some(parent) = cursor.parent() {
                 let p = parent.display().to_string();
                 if p.is_empty() {
@@ -126,7 +128,7 @@ use jackin_tui::components::render_dialog_shell;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
-pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
     let inner = render_dialog_shell(frame, area, Some("Working directory"));
 
     let rows = Layout::default()
@@ -139,9 +141,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
 
     if state.choices.is_empty() {
         frame.render_widget(
-            ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
-                ratatui::text::Span::styled("no directories", jackin_tui::theme::DIM),
-            ))
+            ratatui::widgets::Paragraph::new(Line::from(Span::styled(
+                "no directories",
+                jackin_tui::theme::DIM,
+            )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[1],
         );
@@ -160,7 +163,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
         .unwrap_or(0)
         .max(10);
 
-    let lines: Vec<Line> = state
+    let lines: Vec<Line<'_>> = state
         .choices
         .iter()
         .enumerate()

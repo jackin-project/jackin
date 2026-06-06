@@ -107,7 +107,7 @@ impl DockerResources {
     /// names produces results consistent with the naming registry.
     pub fn from_container_name(container_name: &str) -> Self {
         Self {
-            role_container: container_name.to_string(),
+            role_container: container_name.to_owned(),
             dind_container: crate::runtime::naming::dind_container_name(container_name),
             network: crate::runtime::naming::role_network_name(container_name),
             certs_volume: crate::runtime::naming::dind_certs_volume(container_name),
@@ -158,6 +158,7 @@ pub struct InstanceIndex {
     pub instances: Vec<InstanceIndexEntry>,
 }
 
+#[derive(Debug)]
 pub struct NewInstanceManifest<'a> {
     pub container_base: &'a str,
     pub workspace_name: Option<&'a str>,
@@ -191,20 +192,20 @@ impl InstanceManifest {
                 input.container_base,
             )
             .unwrap_or(input.container_base)
-            .to_string(),
-            container_base: input.container_base.to_string(),
+            .to_owned(),
+            container_base: input.container_base.to_owned(),
             created_at: now.clone(),
             updated_at: now,
             workspace_name: input.workspace_name.map(ToOwned::to_owned),
-            workspace_label: input.workspace_label.to_string(),
-            workdir: input.workdir.to_string(),
-            host_workdir_fingerprint: input.host_workdir_fingerprint.to_string(),
-            role_key: input.role_key.to_string(),
-            role_display_name: input.role_display_name.to_string(),
-            agent_runtime: input.agent_runtime.slug().to_string(),
-            role_source_git: input.role_source_git.to_string(),
+            workspace_label: input.workspace_label.to_owned(),
+            workdir: input.workdir.to_owned(),
+            host_workdir_fingerprint: input.host_workdir_fingerprint.to_owned(),
+            role_key: input.role_key.to_owned(),
+            role_display_name: input.role_display_name.to_owned(),
+            agent_runtime: input.agent_runtime.slug().to_owned(),
+            role_source_git: input.role_source_git.to_owned(),
             role_source_ref: input.role_source_ref.map(ToOwned::to_owned),
-            image_tag: input.image_tag.to_string(),
+            image_tag: input.image_tag.to_owned(),
             status: InstanceStatus::Active,
             last_attach_outcome: None,
             docker: input.docker,
@@ -331,7 +332,7 @@ pub fn host_path_fingerprint(path: &str) -> String {
                 "instance",
                 "host_path_fingerprint: canonicalize({path}) failed ({error}); falling back to raw input",
             );
-            path.to_string()
+            path.to_owned()
         }
     };
     let digest = Sha256::digest(canonical.as_bytes());
@@ -529,8 +530,8 @@ impl InstanceIndex {
                     "mark_purged: manifest for `{container_base}` unreadable: {error}; synthesizing tombstone",
                 );
                 index.instances.push(InstanceIndexEntry {
-                    instance_id: container_base.to_string(),
-                    container_base: container_base.to_string(),
+                    instance_id: container_base.to_owned(),
+                    container_base: container_base.to_owned(),
                     workspace_name: None,
                     workspace_label: String::new(),
                     workdir: String::new(),

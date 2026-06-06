@@ -53,7 +53,7 @@ impl From<String> for EnvValue {
 
 impl From<&str> for EnvValue {
     fn from(s: &str) -> Self {
-        Self::Plain(s.to_string())
+        Self::Plain(s.to_owned())
     }
 }
 

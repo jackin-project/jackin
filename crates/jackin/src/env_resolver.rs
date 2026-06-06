@@ -5,6 +5,3 @@
 pub use jackin_env::{
     EnvPrompter, PromptResult, ResolvedEnv, resolve_env, resolve_env_with_overrides,
 };
-
-#[cfg(test)]
-mod tests;

@@ -49,7 +49,7 @@ pub struct InitialProvider {
 
 /// Z.AI's Anthropic-compatible API base URL.
 pub const ZAI_BASE_URL: &str = "https://api.z.ai/api/anthropic";
-/// Z.AI's OpenAI-compatible API base URL (Codex / OpenCode).
+/// Z.AI's OpenAI-compatible API base URL (Codex / `OpenCode`).
 pub const ZAI_OPENAI_BASE_URL: &str = "https://api.z.ai/api/coding/paas/v4";
 /// Z.AI default model mapping: Opus tier → GLM-5.1.
 pub const ZAI_DEFAULT_OPUS_MODEL: &str = "glm-5.1";
@@ -60,16 +60,16 @@ pub const ZAI_DEFAULT_HAIKU_MODEL: &str = "glm-4.5-air";
 /// Z.AI recommended API timeout (50 minutes) for long-running agent operations through the proxy.
 pub const ZAI_API_TIMEOUT_MS: &str = "3000000";
 
-/// MiniMax Anthropic-compatible API base URL (Claude Code and OpenCode).
+/// `MiniMax` Anthropic-compatible API base URL (Claude Code and `OpenCode`).
 pub const MINIMAX_BASE_URL: &str = "https://api.minimax.io/anthropic";
-/// MiniMax OpenAI-compatible API base URL (Codex Responses API).
+/// `MiniMax` OpenAI-compatible API base URL (Codex Responses API).
 pub const MINIMAX_OPENAI_BASE_URL: &str = "https://api.minimax.io/v1";
-/// MiniMax Token Plan model — all three Claude tiers map to this single model.
+/// `MiniMax` Token Plan model — all three Claude tiers map to this single model.
 pub const MINIMAX_DEFAULT_MODEL: &str = "MiniMax-M3";
-/// MiniMax recommended API timeout, matching the Z.AI value.
+/// `MiniMax` recommended API timeout, matching the Z.AI value.
 pub const MINIMAX_API_TIMEOUT_MS: &str = "3000000";
 
-/// Kimi Code Anthropic-compatible API base URL (Claude Code and OpenCode).
+/// Kimi Code Anthropic-compatible API base URL (Claude Code and `OpenCode`).
 pub const KIMI_BASE_URL: &str = "https://api.kimi.com/coding";
 /// Kimi Code model — all three Claude tiers map to this single model.
 pub const KIMI_DEFAULT_MODEL: &str = "kimi-for-coding";
@@ -87,7 +87,7 @@ pub enum Provider {
     Anthropic,
     /// Z.AI (GLM Coding Plan) via its Anthropic-compatible endpoint.
     Zai,
-    /// MiniMax Token Plan via its Anthropic-compatible endpoint.
+    /// `MiniMax` Token Plan via its Anthropic-compatible endpoint.
     Minimax,
     /// Kimi Code via its Anthropic-compatible endpoint.
     /// Distinct from the `kimi` agent runtime — this is the provider backend.
@@ -139,7 +139,7 @@ impl Provider {
     /// Anthropic-compatible surface. Anthropic needs none. Each alt provider
     /// sets the base URL, auth token (when present), model-tier mapping vars,
     /// a generous API timeout, and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`.
-    /// Codex and OpenCode route via config files generated at runtime-setup,
+    /// Codex and `OpenCode` route via config files generated at runtime-setup,
     /// not via this method.
     #[must_use]
     pub fn env_overrides(self, token: Option<&str>) -> Vec<(String, String)> {
@@ -176,8 +176,8 @@ impl Provider {
         }
     }
 
-    /// Model string in `provider/model` format for OpenCode's `-m` flag.
-    /// `None` for Anthropic (use OpenCode's own default selection).
+    /// Model string in `provider/model` format for `OpenCode`'s `-m` flag.
+    /// `None` for Anthropic (use `OpenCode`'s own default selection).
     #[must_use]
     pub fn opencode_model(self) -> Option<&'static str> {
         self.adapter().opencode_model()
@@ -250,24 +250,24 @@ mod provider_tests {
         assert_eq!(
             Provider::Zai.env_overrides(Some("tok")),
             vec![
-                ("ANTHROPIC_AUTH_TOKEN".to_string(), "tok".to_string()),
-                ("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()),
+                ("ANTHROPIC_AUTH_TOKEN".to_owned(), "tok".to_owned()),
+                ("ANTHROPIC_BASE_URL".to_owned(), ZAI_BASE_URL.to_owned()),
                 (
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                    ZAI_DEFAULT_OPUS_MODEL.to_string()
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_owned(),
+                    ZAI_DEFAULT_OPUS_MODEL.to_owned()
                 ),
                 (
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                    ZAI_DEFAULT_SONNET_MODEL.to_string()
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
+                    ZAI_DEFAULT_SONNET_MODEL.to_owned()
                 ),
                 (
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                    ZAI_DEFAULT_HAIKU_MODEL.to_string()
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
+                    ZAI_DEFAULT_HAIKU_MODEL.to_owned()
                 ),
-                ("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()),
+                ("API_TIMEOUT_MS".to_owned(), ZAI_API_TIMEOUT_MS.to_owned()),
                 (
-                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
-                    "1".to_string()
+                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_owned(),
+                    "1".to_owned()
                 ),
             ]
         );
@@ -277,23 +277,23 @@ mod provider_tests {
             assert_eq!(
                 Provider::Zai.env_overrides(absent),
                 vec![
-                    ("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()),
+                    ("ANTHROPIC_BASE_URL".to_owned(), ZAI_BASE_URL.to_owned()),
                     (
-                        "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                        ZAI_DEFAULT_OPUS_MODEL.to_string()
+                        "ANTHROPIC_DEFAULT_OPUS_MODEL".to_owned(),
+                        ZAI_DEFAULT_OPUS_MODEL.to_owned()
                     ),
                     (
-                        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                        ZAI_DEFAULT_SONNET_MODEL.to_string()
+                        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
+                        ZAI_DEFAULT_SONNET_MODEL.to_owned()
                     ),
                     (
-                        "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                        ZAI_DEFAULT_HAIKU_MODEL.to_string()
+                        "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
+                        ZAI_DEFAULT_HAIKU_MODEL.to_owned()
                     ),
-                    ("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()),
+                    ("API_TIMEOUT_MS".to_owned(), ZAI_API_TIMEOUT_MS.to_owned()),
                     (
-                        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
-                        "1".to_string()
+                        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_owned(),
+                        "1".to_owned()
                     ),
                 ]
             );

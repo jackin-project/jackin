@@ -149,7 +149,7 @@ fn settings_env_selection_plan_skips_spacers_and_updates_scroll() {
     let rows = [
         SettingsEnvRow::Key {
             scope: SettingsEnvScope::Global,
-            key: "ALPHA".to_string(),
+            key: "ALPHA".to_owned(),
         },
         SettingsEnvRow::SectionSpacer,
         SettingsEnvRow::GlobalAddSentinel,
@@ -168,20 +168,20 @@ fn settings_global_mounts_selection_plan_clamps_to_add_row() {
 
 fn env_config() -> SettingsEnvConfig<&'static str> {
     SettingsEnvConfig {
-        env: BTreeMap::from([("GLOBAL".to_string(), "x")]),
+        env: BTreeMap::from([("GLOBAL".to_owned(), "x")]),
         roles: BTreeMap::from([
             (
-                "alpha".to_string(),
-                BTreeMap::from([("ROLE_A".to_string(), "x"), ("ROLE_B".to_string(), "x")]),
+                "alpha".to_owned(),
+                BTreeMap::from([("ROLE_A".to_owned(), "x"), ("ROLE_B".to_owned(), "x")]),
             ),
-            ("empty".to_string(), BTreeMap::new()),
+            ("empty".to_owned(), BTreeMap::new()),
         ]),
     }
 }
 
 #[test]
 fn settings_env_flat_rows_include_expanded_role_entries() {
-    let expanded = BTreeSet::from(["alpha".to_string()]);
+    let expanded = BTreeSet::from(["alpha".to_owned()]);
     let rows = settings_env_flat_rows(&env_config(), &expanded);
     assert!(matches!(rows[0], SettingsEnvRow::Key { .. }));
     assert!(matches!(rows[1], SettingsEnvRow::SectionSpacer));
@@ -227,7 +227,7 @@ fn settings_env_value_and_forbidden_keys_follow_scope() {
     );
     assert_eq!(
         forbidden_settings_env_keys(&pending, &SettingsEnvScope::Role("alpha".into())),
-        vec!["ROLE_A".to_string(), "ROLE_B".to_string()]
+        vec!["ROLE_A".to_owned(), "ROLE_B".to_owned()]
     );
 }
 
@@ -260,7 +260,7 @@ fn toggle_settings_env_mask_for_row_skips_unmaskable_values() {
     let mut unmasked = BTreeSet::new();
     let row = SettingsEnvRow::Key {
         scope: SettingsEnvScope::Global,
-        key: "GLOBAL".to_string(),
+        key: "GLOBAL".to_owned(),
     };
 
     assert!(!toggle_settings_env_mask_for_row(
@@ -277,17 +277,17 @@ fn toggle_settings_env_mask_for_row_skips_unmaskable_values() {
         Some(&row),
         |_| true
     ));
-    assert!(unmasked.contains(&(SettingsEnvScope::Global, "GLOBAL".to_string())));
+    assert!(unmasked.contains(&(SettingsEnvScope::Global, "GLOBAL".to_owned())));
 }
 
 #[test]
 fn remove_settings_env_row_deletes_key_and_clamps_selection() {
     let mut pending = env_config();
-    let expanded = BTreeSet::from(["alpha".to_string()]);
+    let expanded = BTreeSet::from(["alpha".to_owned()]);
     let mut selected = 99;
     let row = SettingsEnvRow::Key {
-        scope: SettingsEnvScope::Role("alpha".to_string()),
-        key: "ROLE_B".to_string(),
+        scope: SettingsEnvScope::Role("alpha".to_owned()),
+        key: "ROLE_B".to_owned(),
     };
 
     assert!(remove_settings_env_row(
@@ -308,8 +308,8 @@ fn remove_settings_env_row_deletes_key_and_clamps_selection() {
 fn settings_env_add_target_follows_row_scope() {
     let global = SettingsEnvRow::GlobalAddSentinel;
     let role = SettingsEnvRow::Key {
-        scope: SettingsEnvScope::Role("alpha".to_string()),
-        key: "TOKEN".to_string(),
+        scope: SettingsEnvScope::Role("alpha".to_owned()),
+        key: "TOKEN".to_owned(),
     };
 
     assert_eq!(
@@ -318,26 +318,26 @@ fn settings_env_add_target_follows_row_scope() {
     );
     assert_eq!(
         settings_env_add_target_for_row(Some(&role)),
-        Some(SettingsEnvScope::Role("alpha".to_string()))
+        Some(SettingsEnvScope::Role("alpha".to_owned()))
     );
 }
 
 #[test]
 fn settings_env_picker_target_skips_headers_and_spacers() {
     let key = SettingsEnvRow::Key {
-        scope: SettingsEnvScope::Role("alpha".to_string()),
-        key: "TOKEN".to_string(),
+        scope: SettingsEnvScope::Role("alpha".to_owned()),
+        key: "TOKEN".to_owned(),
     };
     let header = SettingsEnvRow::RoleHeader {
-        role: "alpha".to_string(),
+        role: "alpha".to_owned(),
         expanded: true,
     };
 
     assert_eq!(
         settings_env_picker_target_for_row(Some(&key)),
         Some((
-            SettingsEnvScope::Role("alpha".to_string()),
-            Some("TOKEN".to_string())
+            SettingsEnvScope::Role("alpha".to_owned()),
+            Some("TOKEN".to_owned())
         ))
     );
     assert_eq!(settings_env_picker_target_for_row(Some(&header)), None);
@@ -352,14 +352,14 @@ fn settings_env_enter_plan_handles_value_scope_and_headers() {
     let pending = env_config();
     let key = SettingsEnvRow::Key {
         scope: SettingsEnvScope::Global,
-        key: "GLOBAL".to_string(),
+        key: "GLOBAL".to_owned(),
     };
     let collapsed = SettingsEnvRow::RoleHeader {
-        role: "alpha".to_string(),
+        role: "alpha".to_owned(),
         expanded: false,
     };
     let expanded = SettingsEnvRow::RoleHeader {
-        role: "alpha".to_string(),
+        role: "alpha".to_owned(),
         expanded: true,
     };
 
@@ -367,7 +367,7 @@ fn settings_env_enter_plan_handles_value_scope_and_headers() {
         settings_env_enter_plan_for_row(&pending, Some(&key), |value| value.is_some()),
         SettingsEnvEnterPlan::EditValue {
             scope: SettingsEnvScope::Global,
-            key: "GLOBAL".to_string()
+            key: "GLOBAL".to_owned()
         }
     );
     assert_eq!(
@@ -376,7 +376,7 @@ fn settings_env_enter_plan_handles_value_scope_and_headers() {
     );
     assert_eq!(
         settings_env_enter_plan_for_row(&pending, Some(&collapsed), |_| true),
-        SettingsEnvEnterPlan::ExpandRole("alpha".to_string())
+        SettingsEnvEnterPlan::ExpandRole("alpha".to_owned())
     );
     assert_eq!(
         settings_env_enter_plan_for_row(&pending, Some(&expanded), |_| true),
@@ -397,11 +397,11 @@ fn settings_env_enter_plan_handles_add_rows() {
     assert_eq!(
         settings_env_enter_plan_for_row(
             &pending,
-            Some(&SettingsEnvRow::RoleAddSentinel("alpha".to_string())),
+            Some(&SettingsEnvRow::RoleAddSentinel("alpha".to_owned())),
             |_| true
         ),
         SettingsEnvEnterPlan::AddRoleKey {
-            scope: SettingsEnvScope::Role("alpha".to_string()),
+            scope: SettingsEnvScope::Role("alpha".to_owned()),
         }
     );
 }

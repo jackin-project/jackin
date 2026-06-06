@@ -3,11 +3,11 @@ use super::*;
 
 fn row(destination: &str, host_source: Option<&str>) -> MountDisplayRow {
     MountDisplayRow {
-        destination: destination.to_string(),
-        host_source: host_source.map(str::to_string),
+        destination: destination.to_owned(),
+        host_source: host_source.map(str::to_owned),
         mode: "rw",
         isolation: "shared",
-        kind: "bind".to_string(),
+        kind: "bind".to_owned(),
     }
 }
 

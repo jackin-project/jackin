@@ -139,7 +139,7 @@ impl DialogBodyScroll {
     /// Render vertical and/or horizontal scrollbars on the block border when needed.
     pub fn render_scrollbars(
         &self,
-        frame: &mut Frame,
+        frame: &mut Frame<'_>,
         block_area: Rect,
         content_height: usize,
         content_width: usize,
@@ -178,7 +178,7 @@ impl DialogBodyScroll {
 /// `(content_width, content_height)` is returned so the caller can dispatch
 /// scroll keys against the same extents the renderer measured.
 pub fn render_scrollable_dialog_body(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     block_area: Rect,
     content_area: Rect,
     lines: &[Line<'_>],
@@ -301,17 +301,13 @@ pub const fn dialog_inner_height(content_rows: u16) -> u16 {
 ///
 /// This is the structural skeleton that all dialogs share:
 /// 1. Clear the dialog area (hide the background content)  
-/// 2. Render the modal block (focused PHOSPHOR_GREEN border + title)
+/// 2. Render the modal block (focused `PHOSPHOR_GREEN` border + title)
 /// 3. Return the inner area for the caller to render content
 ///
 /// Callers use `dialog_inner_chunks(inner, content_rows)` to lay out the
 /// canonical five slots within the returned inner area.
 #[must_use]
-pub fn render_dialog_shell(
-    frame: &mut ratatui::Frame,
-    area: ratatui::layout::Rect,
-    title: Option<&str>,
-) -> ratatui::layout::Rect {
+pub fn render_dialog_shell(frame: &mut Frame<'_>, area: Rect, title: Option<&str>) -> Rect {
     use crate::components::panel::{Panel, PanelFocus, modal_block};
     use ratatui::widgets::Widget;
 

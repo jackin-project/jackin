@@ -134,11 +134,11 @@ pub(crate) fn drag_resize_ratio(orient: SplitOrient, rect: Rect, row: u16, col: 
     match orient {
         SplitOrient::Horizontal => {
             let off = col.saturating_sub(rect.col);
-            (off as f32 / rect.cols as f32).clamp(0.05, 0.95)
+            (f32::from(off) / f32::from(rect.cols)).clamp(0.05, 0.95)
         }
         SplitOrient::Vertical => {
             let off = row.saturating_sub(rect.row);
-            (off as f32 / rect.rows as f32).clamp(0.05, 0.95)
+            (f32::from(off) / f32::from(rect.rows)).clamp(0.05, 0.95)
         }
     }
 }

@@ -4,5 +4,5 @@
 #[test]
 fn fake_docker_client_accessible() {
     // Just verify FakeDockerClient is importable from this shim.
-    let _ = std::mem::size_of::<super::FakeDockerClient>();
+    let _ = size_of::<super::FakeDockerClient>();
 }

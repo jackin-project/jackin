@@ -21,17 +21,17 @@ pub use jackin_tui::output::{clear_screen, fatal, hint, print_deploying, step_fa
 
 /// Entry ritual — re-exported from jackin-tui, with `host_screen_owned` resolved here.
 pub fn warp_intro() {
-    jackin_tui::animation::warp_intro(jackin_diagnostics::host_screen_owned());
+    jackin_tui::animation::warp_intro(host_screen_owned());
 }
 
 /// Exit ritual — re-exported from jackin-tui, with `host_screen_owned` resolved here.
 pub fn warp_out() {
-    jackin_tui::animation::warp_out(jackin_diagnostics::host_screen_owned());
+    jackin_tui::animation::warp_out(host_screen_owned());
 }
 
 /// Closing screen — re-exported from jackin-tui, with `host_screen_owned` resolved here.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
-    jackin_tui::animation::warp_end_caption(elapsed, jackin_diagnostics::host_screen_owned());
+    jackin_tui::animation::warp_end_caption(elapsed, host_screen_owned());
 }
 
 pub mod prompt;

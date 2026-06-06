@@ -232,15 +232,16 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     },
 }
 
+#[derive(Debug)]
 pub enum ConsolePreludeModalOutcome {
     Continue,
     OpenUrl(String),
     ReopenFileBrowserAtLastCwd,
     ApplyFileBrowserOutcome {
-        outcome: crate::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
-        browser_cwd: Option<std::path::PathBuf>,
+        outcome: crate::tui::components::file_browser::FileBrowserOutcome<PathBuf>,
+        browser_cwd: Option<PathBuf>,
     },
-    ResolveFileBrowserGitUrl(std::path::PathBuf),
+    ResolveFileBrowserGitUrl(PathBuf),
 }
 
 #[derive(Debug)]
@@ -256,10 +257,8 @@ pub enum ConsoleEditorModalOutcome<RoleSelector, RoleSource, OpRef> {
         key: String,
         source: RoleSource,
     },
-    ApplyFileBrowserOutcome(
-        crate::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
-    ),
-    ResolveFileBrowserGitUrl(std::path::PathBuf),
+    ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<PathBuf>),
+    ResolveFileBrowserGitUrl(PathBuf),
     OpenUrl(String),
     ValidateOpRef(OpRef),
 }
@@ -270,10 +269,8 @@ pub enum ConsoleSettingsModalOutcome {
     SaveSettings,
     OpenGlobalMountFileBrowser,
     OpenUrl(String),
-    ApplyFileBrowserOutcome(
-        crate::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
-    ),
-    ResolveFileBrowserGitUrl(std::path::PathBuf),
+    ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<PathBuf>),
+    ResolveFileBrowserGitUrl(PathBuf),
 }
 
 #[derive(Debug)]
@@ -282,35 +279,40 @@ pub enum ConsoleSettingsAuthOutcome<OpRef> {
     ValidateOpRef(OpRef),
 }
 
+#[derive(Debug)]
 pub enum AgentPickerResolution {
     Opened,
     NotNeeded,
     Failed(anyhow::Error),
 }
 
+#[derive(Debug)]
 pub enum AgentPickerChoices<Agent> {
     Choices(Vec<Agent>),
     NotNeeded,
     Failed(anyhow::Error),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptOutcome {
     Launch,
     Defer,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnPromptFailure {
     ClearPending,
     RestorePending,
 }
 
+#[derive(Debug)]
 pub enum LaunchPromptDispatch<Outcome, Request> {
     Launch(Outcome),
     Prompt(Request),
     None,
 }
 
+#[derive(Debug)]
 pub struct LaunchPromptRequest<Role, Workspace, Input> {
     pub role: Role,
     pub workspace: Workspace,

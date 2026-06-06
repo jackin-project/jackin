@@ -2,7 +2,10 @@
 
 use crate::tui::view::{spawn_failure_agent_label, spawn_failure_banner, spawn_failure_message};
 
-use super::*;
+use super::{
+    AgentRecord, Multiplexer, PickerIntent, Result, Session, SessionLaunch, SpawnRequest, Tab, Utc,
+    build_agent_command, build_shell_command,
+};
 
 impl Multiplexer {
     pub(super) fn active_tab_pane_count(&self) -> usize {
@@ -80,7 +83,7 @@ impl Multiplexer {
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
         // Reset the ratatui double-buffer after tab close to prevent stale cells
         // from the removed tab from persisting (Defect 29 — layout-change repaint).
-        let _ = self.ratatui_terminal.clear();
+        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn exit_all_sessions(&mut self) {
@@ -201,26 +204,25 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
-                let resolved_env = match jackin_protocol::Provider::from_label(&provider_label) {
-                    Some(provider) => {
-                        // Token is resolved here (not on the wire) from the
-                        // container's per-provider API key env; the host only
-                        // sends the label.
-                        let token = self.token_for_provider(provider);
-                        if token.is_none() && provider != jackin_protocol::Provider::Anthropic {
-                            crate::clog!(
-                                "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
-                                provider.label()
-                            );
-                        }
-                        provider.env_overrides(token)
-                    }
-                    None => {
+                let resolved_env = if let Some(provider) =
+                    jackin_protocol::Provider::from_label(&provider_label)
+                {
+                    // Token is resolved here (not on the wire) from the
+                    // container's per-provider API key env; the host only
+                    // sends the label.
+                    let token = self.token_for_provider(provider);
+                    if token.is_none() && provider != jackin_protocol::Provider::Anthropic {
                         crate::clog!(
-                            "spawn: unknown provider label {provider_label:?}; no env redirect applied"
+                            "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
+                            provider.label()
                         );
-                        env_overrides.to_vec()
                     }
+                    provider.env_overrides(token)
+                } else {
+                    crate::clog!(
+                        "spawn: unknown provider label {provider_label:?}; no env redirect applied"
+                    );
+                    env_overrides.to_vec()
                 };
                 self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))
             }
@@ -273,14 +275,14 @@ impl Multiplexer {
     /// reused this container lifetime) and stamp the matching history record.
     pub(super) fn retire_codename(&mut self, codename: &str) {
         self.codename_live.remove(codename);
-        self.codename_retired.insert(codename.to_string());
+        self.codename_retired.insert(codename.to_owned());
         if let Some(record) = self
             .agent_history
             .iter_mut()
             .rev()
             .find(|r| r.codename == codename)
         {
-            record.exited_at = Some(chrono::Utc::now());
+            record.exited_at = Some(Utc::now());
         }
     }
 
@@ -290,7 +292,7 @@ impl Multiplexer {
     /// --debug` shows the cause; the dialog dismisses regardless so
     /// the operator can retry.
     pub(super) fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
-        let result: anyhow::Result<()> = match intent {
+        let result: Result<()> = match intent {
             PickerIntent::NewTab => self.spawn_session(agent.clone(), &[], None).map(|_| ()),
             PickerIntent::Split(direction) => {
                 self.split_focused_into(direction, agent.clone(), &[], None)
@@ -314,7 +316,7 @@ impl Multiplexer {
         env_overrides: &[(String, String)],
         provider_label: Option<&str>,
     ) {
-        let result: anyhow::Result<()> = match intent {
+        let result: Result<()> = match intent {
             PickerIntent::NewTab => self
                 .spawn_session(agent.clone(), env_overrides, provider_label)
                 .map(|_| ()),
@@ -363,7 +365,7 @@ impl Multiplexer {
             &launch.label,
             agent.clone(),
             provider_label.map(|label| crate::session::SessionProvider {
-                label: label.to_string(),
+                label: label.to_owned(),
                 env_overrides: env_overrides.to_vec(),
             }),
             launch.cmd,
@@ -386,17 +388,17 @@ impl Multiplexer {
         // Use the explicit provider label when given; otherwise infer the default
         // provider from the agent slug so the registry always shows a meaningful value.
         let provider = provider_label
-            .map(str::to_string)
+            .map(str::to_owned)
             .or_else(|| match agent.as_deref() {
-                Some("claude") => Some("anthropic".to_string()),
-                Some("codex") => Some("openai".to_string()),
+                Some("claude") => Some("anthropic".to_owned()),
+                Some("codex") => Some("openai".to_owned()),
                 _ => None,
             });
         self.agent_history.push(AgentRecord {
             codename,
             agent: agent.clone(),
             provider,
-            started_at: chrono::Utc::now(),
+            started_at: Utc::now(),
             exited_at: None,
         });
         // Reflow so the new pane's PTY gets the correct interior

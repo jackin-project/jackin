@@ -42,7 +42,7 @@ pub(in crate::console) fn show_role_resolution_error(
     error: &anyhow::Error,
 ) {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    let _ = crate::console::tui::update_manager(
+    let _unused = crate::console::tui::update_manager(
         ms,
         crate::console::tui::ManagerMessage::OpenListErrorPopup {
             title: role_resolution_error_title().into(),

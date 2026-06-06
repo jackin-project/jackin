@@ -14,19 +14,19 @@ fn cached_resolver_uses_stored_mount_info_without_inspecting_filesystem() {
     let cache = MountInfoCache::default();
     cache.store_entries([
         (
-            "/repo".to_string(),
+            "/repo".to_owned(),
             MountKind::Git {
-                branch: GitBranch::Named("main".to_string()),
+                branch: GitBranch::Named("main".to_owned()),
                 origin: Some(GitOrigin::Github {
-                    remote_url: "git@github.com:owner/repo.git".to_string(),
-                    web_url: "https://github.com/owner/repo/tree/main".to_string(),
+                    remote_url: "git@github.com:owner/repo.git".to_owned(),
+                    web_url: "https://github.com/owner/repo/tree/main".to_owned(),
                 }),
             },
         ),
-        ("/plain".to_string(), MountKind::Folder),
+        ("/plain".to_owned(), MountKind::Folder),
     ]);
     let choices = resolve_for_workspace_from_cache(
-        &Sources(vec!["/repo".to_string(), "/plain".to_string()]),
+        &Sources(vec!["/repo".to_owned(), "/plain".to_owned()]),
         &cache,
     );
 

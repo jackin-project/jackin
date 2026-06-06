@@ -23,7 +23,7 @@ fn jackin_home_dir_relocates_state_writes() {
     // `jackin workspace list` triggers `JackinPaths::detect()` +
     // `AppConfig::load_or_init`, which together materialize the
     // config + data trees under whatever the env vars resolve to.
-    let _ = Command::cargo_bin("jackin")
+    let _unused = Command::cargo_bin("jackin")
         .unwrap()
         .env("HOME", &home)
         .env("JACKIN_HOME_DIR", &jackin_root)

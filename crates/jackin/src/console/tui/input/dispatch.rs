@@ -125,7 +125,7 @@ pub fn handle_key(
                     save::begin_editor_save(state, config, true)?;
                 }
                 ExitIntent::Discard => {
-                    let _ = update_manager(
+                    let _unused = update_manager(
                         state,
                         ManagerMessage::ReloadFromConfig {
                             config: Box::new(config.clone()),
@@ -146,7 +146,10 @@ pub fn handle_key(
             .as_ref()
             .is_some_and(|p| matches!(p.handle_key(key), jackin_tui::ModalOutcome::Cancel));
         if dismiss {
-            let _ = update_manager(state, ManagerMessage::DismissSettingsErrorPopup);
+            drop(update_manager(
+                state,
+                ManagerMessage::DismissSettingsErrorPopup,
+            ));
         }
         return Ok(InputOutcome::Continue);
     }
@@ -276,7 +279,7 @@ pub fn handle_key(
             match status {
                 PreludeStatus::Complete(payload) => {
                     let (name, ws) = *payload;
-                    let _ = update_manager(
+                    let _unused = update_manager(
                         state,
                         ManagerMessage::EnterCreateEditor {
                             name,
@@ -285,7 +288,7 @@ pub fn handle_key(
                     );
                 }
                 PreludeStatus::Cancelled => {
-                    let _ = update_manager(
+                    let _unused = update_manager(
                         state,
                         ManagerMessage::ReloadFromConfig {
                             config: Box::new(config.clone()),
@@ -349,14 +352,14 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
     let container_name = container.clone();
     match plan {
         DestructiveConfirmPlan::Commit => {
-            let _ = update_manager(state, ManagerMessage::ReturnToList);
+            drop(update_manager(state, ManagerMessage::ReturnToList));
             InputOutcome::InstanceAction {
                 container: container_name,
                 action: crate::console::ConsoleInstanceAction::Purge,
             }
         }
         DestructiveConfirmPlan::ReturnToList => {
-            let _ = update_manager(state, ManagerMessage::ReturnToList);
+            drop(update_manager(state, ManagerMessage::ReturnToList));
             InputOutcome::Continue
         }
         DestructiveConfirmPlan::Continue => InputOutcome::Continue,
@@ -379,7 +382,7 @@ fn handle_confirm_delete_key(
     let ws_name = name.clone();
     match plan {
         DestructiveConfirmPlan::Commit => {
-            let _ = update_manager(state, ManagerMessage::ReturnToList);
+            drop(update_manager(state, ManagerMessage::ReturnToList));
             state.request_effect(ManagerEffect::RemoveWorkspace {
                 name: ws_name,
                 cwd: cwd.to_path_buf(),
@@ -387,7 +390,7 @@ fn handle_confirm_delete_key(
             InputOutcome::Continue
         }
         DestructiveConfirmPlan::ReturnToList => {
-            let _ = update_manager(state, ManagerMessage::ReturnToList);
+            drop(update_manager(state, ManagerMessage::ReturnToList));
             InputOutcome::Continue
         }
         DestructiveConfirmPlan::Continue => InputOutcome::Continue,

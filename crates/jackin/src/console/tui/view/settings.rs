@@ -15,7 +15,7 @@ use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{Frame, layout::Rect};
 
 pub(super) fn render_settings(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     state: &SettingsState<'_>,
     op_available: bool,

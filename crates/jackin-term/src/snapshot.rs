@@ -66,7 +66,7 @@ impl SnapCell {
 impl From<&Cell> for SnapCell {
     fn from(cell: &Cell) -> Self {
         Self {
-            text: cell.contents().to_string(),
+            text: cell.contents().to_owned(),
             is_wide: cell.is_wide,
             is_wide_continuation: cell.is_wide_continuation,
             fg: cell.fgcolor(),
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn snap_cell_non_blank() {
         let c = SnapCell {
-            text: "A".to_string(),
+            text: "A".to_owned(),
             is_wide: false,
             is_wide_continuation: false,
             fg: Color::Default,

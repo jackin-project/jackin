@@ -31,7 +31,7 @@ fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> std::path::Pat
 fn ctx(mode: GithubAuthMode, token: Option<&str>) -> GithubAuthContext {
     GithubAuthContext {
         mode,
-        token: token.map(str::to_string),
+        token: token.map(str::to_owned),
     }
 }
 
@@ -190,7 +190,7 @@ fn token_mode_wipes_role_hosts_yml() {
     assert_eq!(
         outcome,
         GithubProvisionOutcome::TokenMode {
-            token: "ghp_token".to_string()
+            token: "ghp_token".to_owned()
         }
     );
     assert_eq!(outcome.token(), Some("ghp_token"));
@@ -417,14 +417,14 @@ fn github_auth_context_debug_redacts_token() {
 #[test]
 fn github_provision_outcome_debug_redacts_token() {
     let synced = GithubProvisionOutcome::Synced {
-        token: "ghp_synced_secret".to_string(),
+        token: "ghp_synced_secret".to_owned(),
         source: GithubTokenSource::GhCli,
     };
     let s = format!("{synced:?}");
     assert!(!s.contains("ghp_synced_secret"), "Synced token leaked: {s}");
 
     let tok = GithubProvisionOutcome::TokenMode {
-        token: "ghp_token_secret".to_string(),
+        token: "ghp_token_secret".to_owned(),
     };
     let s = format!("{tok:?}");
     assert!(

@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 fn confirm_modal(
     settings: &mut SettingsState<'_>,
-    config: &mut crate::config::AppConfig,
-    paths: &crate::paths::JackinPaths,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
     key: KeyEvent,
 ) {
     let outcome = handle_settings_confirm_modal(settings, key);
@@ -757,7 +757,7 @@ fn env_tab_add_flow_asks_scope_before_key() {
         settings.env.modal,
         Some(SettingsEnvModal::Text {
             target: SettingsEnvTextTarget::EnvKey {
-                scope: crate::console::tui::state::SettingsEnvScope::Global
+                scope: SettingsEnvScope::Global
             },
             ..
         })
@@ -823,7 +823,7 @@ fn env_tab_source_picker_esc_returns_key_input() {
         state.op_cache.clone(),
     );
     let target = SettingsEnvTextTarget::EnvKey {
-        scope: crate::console::tui::state::SettingsEnvScope::Global,
+        scope: SettingsEnvScope::Global,
     };
     commit_env_text(&mut settings.env, &target, "API_KEY");
     assert!(matches!(
@@ -891,7 +891,7 @@ fn env_tab_specific_scope_uses_workspace_role_picker() {
         &settings.env.modal,
         Some(SettingsEnvModal::Text {
             target: SettingsEnvTextTarget::EnvKey {
-                scope: crate::console::tui::state::SettingsEnvScope::Role(role)
+                scope: SettingsEnvScope::Role(role)
             },
             ..
         }) if role == "chainargos/agent-brown"
@@ -952,12 +952,15 @@ fn after_settings_event_promotes_subtab_errors_to_error_popup() {
         settings.trust.error = Some("trust detail".into());
     }
 
-    for (name, set_error) in [
-        ("mounts", set_mounts_error as fn(&mut SettingsState<'_>)),
+    type SettingsErrorSetter<'a> = fn(&mut SettingsState<'a>);
+    let cases: [(&str, SettingsErrorSetter<'_>); 4] = [
+        ("mounts", set_mounts_error),
         ("env", set_env_error),
         ("auth", set_auth_error),
         ("trust", set_trust_error),
-    ] {
+    ];
+
+    for (name, set_error) in cases {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();

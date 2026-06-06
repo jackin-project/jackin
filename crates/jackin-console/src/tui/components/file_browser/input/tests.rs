@@ -312,7 +312,7 @@ fn click_outside_url_row_returns_false_even_with_url() {
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
     handle_with_services(&mut state, key(KeyCode::Down));
     handle_with_services(&mut state, key(KeyCode::Enter));
-    state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
+    state.pending_git_url = Some("file:///tmp/definitely-not-real".to_owned());
 
     let modal = manufactured_modal_area();
     let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
@@ -337,7 +337,7 @@ fn click_on_url_row_with_url_returns_true() {
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
     handle_with_services(&mut state, key(KeyCode::Down));
     handle_with_services(&mut state, key(KeyCode::Enter));
-    state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
+    state.pending_git_url = Some("file:///tmp/definitely-not-real".to_owned());
 
     let modal = manufactured_modal_area();
     let url_rect = git_prompt_url_row_rect(modal, false).unwrap();

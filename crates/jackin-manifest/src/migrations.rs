@@ -51,7 +51,7 @@ pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, Stri
         CURRENT_MANIFEST_VERSION,
         MANIFEST_MIGRATIONS,
     )?;
-    Ok(outcome.map(|old| (old.to_string(), CURRENT_MANIFEST_VERSION.to_string())))
+    Ok(outcome.map(|old| (old.to_string(), CURRENT_MANIFEST_VERSION.to_owned())))
 }
 
 pub fn validate_manifest_version(

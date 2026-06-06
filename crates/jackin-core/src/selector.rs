@@ -46,8 +46,8 @@ pub enum SelectorError {
 impl RoleSelector {
     pub fn new(namespace: Option<&str>, name: &str) -> Self {
         Self {
-            namespace: namespace.map(ToString::to_string),
-            name: name.to_string(),
+            namespace: namespace.map(str::to_owned),
+            name: name.to_owned(),
         }
     }
 
@@ -68,7 +68,7 @@ impl RoleSelector {
         if !input.contains('/') {
             return (is_valid_role_segment(input) && !is_reserved_builtin_role_name(input))
                 .then(|| Self::new(None, input))
-                .ok_or_else(|| SelectorError::Invalid(input.to_string()));
+                .ok_or_else(|| SelectorError::Invalid(input.to_owned()));
         }
 
         let mut parts = input.split('/');
@@ -79,7 +79,7 @@ impl RoleSelector {
             return Ok(Self::new(Some(namespace), name));
         }
 
-        Err(SelectorError::Invalid(input.to_string()))
+        Err(SelectorError::Invalid(input.to_owned()))
     }
 
     pub fn key(&self) -> String {
@@ -106,7 +106,7 @@ impl Selector {
         }
 
         if is_valid_container_name(input) {
-            return Ok(Self::Container(input.to_string()));
+            return Ok(Self::Container(input.to_owned()));
         }
 
         Ok(Self::Role(RoleSelector::parse(input)?))

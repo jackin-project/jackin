@@ -291,8 +291,8 @@ sparse = ["plugins", ".claude-plugin"]
     assert_eq!(
         manifest.claude.as_ref().unwrap().marketplaces[0],
         ClaudeMarketplaceConfig {
-            source: "obra/superpowers-marketplace".to_string(),
-            sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
+            source: "obra/superpowers-marketplace".to_owned(),
+            sparse: vec!["plugins".to_owned(), ".claude-plugin".to_owned()],
         }
     );
 }
@@ -320,7 +320,7 @@ source = "jackin-project/jackin-marketplace"
     assert_eq!(
         manifest.claude.as_ref().unwrap().marketplaces[0],
         ClaudeMarketplaceConfig {
-            source: "jackin-project/jackin-marketplace".to_string(),
+            source: "jackin-project/jackin-marketplace".to_owned(),
             sparse: vec![],
         }
     );
@@ -520,9 +520,9 @@ plugins = []
 #[test]
 fn hook_entries_yield_runtime_contract_order() {
     let hooks = HooksConfig {
-        setup_once: Some("a.sh".to_string()),
-        source: Some("b.sh".to_string()),
-        preflight: Some("c.sh".to_string()),
+        setup_once: Some("a.sh".to_owned()),
+        source: Some("b.sh".to_owned()),
+        preflight: Some("c.sh".to_owned()),
     };
     let triples: Vec<_> = hooks
         .entries()
@@ -544,8 +544,8 @@ fn hook_entries_skip_absent_and_preserve_order() {
     // the canonical sequence, not the order fields are populated.
     let hooks = HooksConfig {
         setup_once: None,
-        source: Some("b.sh".to_string()),
-        preflight: Some("c.sh".to_string()),
+        source: Some("b.sh".to_owned()),
+        preflight: Some("c.sh".to_owned()),
     };
     let labels: Vec<_> = hooks.entries().map(|e| e.label).collect();
     assert_eq!(labels, ["source hook", "preflight hook"]);

@@ -5,7 +5,6 @@
 //! `events`. The host opens a Unix socket connection, writes one
 //! framed JSON request, reads one framed JSON response, and
 //! disconnects.
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

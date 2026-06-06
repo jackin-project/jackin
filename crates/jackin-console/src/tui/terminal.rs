@@ -32,7 +32,7 @@ pub fn drain_pending_terminal_events_until_quiet(limit: usize, quiet_for: std::t
         };
         match crossterm::event::poll(poll_for) {
             Ok(true) => {
-                let _ = crossterm::event::read();
+                drop(crossterm::event::read());
             }
             Ok(false) | Err(_) => break,
         }
@@ -78,6 +78,10 @@ pub fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io:
 /// Holds the alternate screen, raw mode, and mouse capture across console →
 /// loading cockpit → capsule → exit outro so the terminal never drops back
 /// to the cooked primary screen between surfaces.
+#[expect(
+    missing_debug_implementations,
+    reason = "TerminalSession is a raw terminal guard around host callbacks, not diagnostic state."
+)]
 pub struct TerminalSession {
     host: &'static dyn ConsoleHostTerminal,
 }
@@ -106,7 +110,7 @@ impl TerminalSession {
     /// the full-screen session.
     pub fn suspend<T>(&self, f: impl FnOnce() -> T) -> std::io::Result<T> {
         let mut stdout = std::io::stdout();
-        let _ = disable_console_mouse_capture(&mut stdout);
+        drop(disable_console_mouse_capture(&mut stdout));
         crossterm::terminal::disable_raw_mode()?;
         stdout.execute(crossterm::terminal::LeaveAlternateScreen)?;
         stdout.execute(crossterm::cursor::Show)?;
@@ -127,12 +131,12 @@ impl Drop for TerminalSession {
             MAX_TEARDOWN_DRAIN_EVENTS,
             std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
         );
-        let _ = disable_console_mouse_capture(&mut stdout);
+        drop(disable_console_mouse_capture(&mut stdout));
         drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
         flush_terminal_input_queue();
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
-        let _ = stdout.execute(crossterm::cursor::Show);
+        drop(crossterm::terminal::disable_raw_mode());
+        drop(stdout.execute(crossterm::terminal::LeaveAlternateScreen));
+        drop(stdout.execute(crossterm::cursor::Show));
         self.host.set_host_screen_owned(false);
         self.host.end_debug_buffering();
     }
@@ -143,10 +147,10 @@ pub fn suspend_console_terminal(
     stdout: &mut std::io::Stdout,
     host: &'static dyn ConsoleHostTerminal,
 ) {
-    let _ = disable_console_mouse_capture(stdout);
-    let _ = crossterm::terminal::disable_raw_mode();
-    let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
-    let _ = stdout.execute(crossterm::cursor::Show);
+    drop(disable_console_mouse_capture(stdout));
+    drop(crossterm::terminal::disable_raw_mode());
+    drop(stdout.execute(crossterm::terminal::LeaveAlternateScreen));
+    drop(stdout.execute(crossterm::cursor::Show));
     host.end_debug_buffering();
 }
 

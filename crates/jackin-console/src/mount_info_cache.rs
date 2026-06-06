@@ -22,7 +22,7 @@ pub struct MountInfoCache {
 impl MountInfoCache {
     pub fn refresh_src(&self, src: &str) {
         let kind = inspect(src);
-        self.entries.borrow_mut().insert(src.to_string(), kind);
+        self.entries.borrow_mut().insert(src.to_owned(), kind);
     }
 
     pub fn store_entries(&self, entries: impl IntoIterator<Item = (String, MountKind)>) {
@@ -45,7 +45,7 @@ impl MountInfoCache {
 
     pub fn label(&self, src: &str) -> String {
         self.inspect_cached(src)
-            .map_or_else(|| "unknown".to_string(), |kind| kind.label())
+            .map_or_else(|| "unknown".to_owned(), |kind| kind.label())
     }
 
     pub fn github_web_url(&self, src: &str) -> Option<String> {

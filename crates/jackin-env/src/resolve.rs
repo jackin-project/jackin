@@ -218,7 +218,7 @@ pub fn resolve_op_uri_to_ref(
         (_, Some(s)) => Some(s),
         // User typed a section but the field's reference has none — should not
         // happen for sectioned fields; trust the user input as a fallback.
-        (Some(user_s), None) => Some(user_s.to_string()),
+        (Some(user_s), None) => Some(user_s.to_owned()),
         // No section anywhere: 3-segment URI.
         (None, None) => None,
     };
@@ -252,7 +252,7 @@ pub fn resolve_op_uri_to_ref(
     Ok(OpRef {
         op: op_uri,
         path: display_path,
-        account: account.map(str::to_string),
+        account: account.map(str::to_owned),
     })
 }
 
@@ -285,7 +285,7 @@ fn build_attributed_layers(
     {
         record_layer(
             &mut attributed,
-            &EnvLayer::Role(role_name.to_string()),
+            &EnvLayer::Role(role_name.to_owned()),
             &a.env,
         );
     }
@@ -294,15 +294,15 @@ fn build_attributed_layers(
     {
         record_layer(
             &mut attributed,
-            &EnvLayer::Workspace(ws_name.to_string()),
+            &EnvLayer::Workspace(ws_name.to_owned()),
             &ws.env,
         );
         if let Some(role_name) = role_selector
             && let Some(ov) = ws.roles.get(role_name)
         {
             let ws_role_layer = EnvLayer::WorkspaceRole {
-                workspace: ws_name.to_string(),
-                role: role_name.to_string(),
+                workspace: ws_name.to_owned(),
+                role: role_name.to_owned(),
             };
             record_layer(&mut attributed, &ws_role_layer, &ov.env);
         }
@@ -322,7 +322,7 @@ pub fn lookup_operator_env_raw(
 ) -> Option<String> {
     build_attributed_layers(config, role_selector, workspace_name)
         .remove(key)
-        .map(|(_, value)| value.as_display_str().to_string())
+        .map(|(_, value)| value.as_display_str().to_owned())
 }
 
 /// Env var Claude Code reads for the long-lived OAuth token.
@@ -436,7 +436,7 @@ pub(crate) fn emit_launch_diagnostic<W: std::io::Write>(
     if debug || jackin_diagnostics::rich_terminal_owned() {
         return;
     }
-    let _ = stderr.write_all(rendered.as_bytes());
+    drop(stderr.write_all(rendered.as_bytes()));
 }
 
 #[cfg(test)]
@@ -545,7 +545,7 @@ fn classify_env_value(value: &EnvValue) -> String {
             if parse_host_ref(s).is_some() {
                 s.clone()
             } else {
-                "literal".to_string()
+                "literal".to_owned()
             }
         }
     }

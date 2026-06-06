@@ -49,7 +49,7 @@ impl std::str::FromStr for MountIsolation {
             "shared" => Ok(Self::Shared),
             "worktree" => Ok(Self::Worktree),
             "clone" => Ok(Self::Clone),
-            other => Err(ParseMountIsolationError(other.to_string())),
+            other => Err(ParseMountIsolationError(other.to_owned())),
         }
     }
 }

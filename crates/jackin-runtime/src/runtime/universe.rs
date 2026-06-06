@@ -109,13 +109,13 @@ impl EntryClaim {
         let Some(token) = self.token.as_deref() else {
             return;
         };
-        let _ = std::fs::remove_file(pending_path(paths, token));
+        drop(std::fs::remove_file(pending_path(paths, token)));
 
         let Ok(running) = super::discovery::list_running_agent_names(docker).await else {
             return;
         };
         if running.is_empty() && !has_pending_claims(paths) {
-            let _ = std::fs::remove_file(marker_path(paths));
+            drop(std::fs::remove_file(marker_path(paths)));
             remove_empty_pending_dir(paths);
         }
     }
@@ -157,7 +157,7 @@ pub(super) fn mark_start(paths: &JackinPaths, kind: StartKind) {
     if kind == StartKind::ResumeExisting && file.exists() {
         return;
     }
-    let _ = std::fs::write(&file, now_millis().to_string());
+    drop(std::fs::write(&file, now_millis().to_string()));
 }
 
 pub async fn release_entry_if_idle(
@@ -190,7 +190,7 @@ fn has_pending_claims(paths: &JackinPaths) -> bool {
 
 fn remove_empty_pending_dir(paths: &JackinPaths) {
     if !has_pending_claims(paths) {
-        let _ = std::fs::remove_dir(pending_dir(paths));
+        drop(std::fs::remove_dir(pending_dir(paths)));
     }
 }
 
@@ -218,8 +218,8 @@ pub(super) fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
         return ExitClaim::Missing;
     }
     let content = std::fs::read_to_string(&claimed).unwrap_or_default();
-    let _ = std::fs::remove_file(&claimed);
-    let _ = std::fs::remove_dir_all(pending_dir(paths));
+    drop(std::fs::remove_file(&claimed));
+    drop(std::fs::remove_dir_all(pending_dir(paths)));
     let elapsed = content
         .trim()
         .parse::<u128>()

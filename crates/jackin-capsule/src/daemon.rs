@@ -144,6 +144,10 @@ struct SessionLaunch {
     cmd: CommandBuilder,
 }
 
+#[expect(
+    missing_debug_implementations,
+    reason = "Multiplexer owns PTY sessions and render/input state; targeted debug logs expose the useful fields."
+)]
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
     tabs: Vec<Tab>,
@@ -154,9 +158,9 @@ pub struct Multiplexer {
     /// LIFO stack of open dialogs. The top of stack is the live one
     /// the renderer paints and the input dispatcher routes keys to;
     /// older dialogs sit underneath waiting for an Esc-pop to surface
-    /// them again. Sub-dialogs (Menu → New tab → AgentPicker,
-    /// Menu → Split pane → SplitDirectionPicker → AgentPicker,
-    /// Menu → Close → CloseTargetPicker / ConfirmClose, …) push onto
+    /// them again. Sub-dialogs (Menu → New tab → `AgentPicker`,
+    /// Menu → Split pane → `SplitDirectionPicker` → `AgentPicker`,
+    /// Menu → Close → `CloseTargetPicker` / `ConfirmClose`, …) push onto
     /// this stack so Esc walks the operator back one step at a time
     /// instead of nuking the whole flow. The empty stack means "no
     /// dialog open" — every consumer treats `dialog_top()` as the
@@ -179,7 +183,7 @@ pub struct Multiplexer {
     /// would write one `clog!` line each, swamping `multiplexer.log`.
     /// Cleared whenever `attached_out` is reassigned (next attach).
     pub(crate) attached_out_dead_logged: bool,
-    /// JoinHandle of the spawned `handle_attach_client` task for the
+    /// `JoinHandle` of the spawned `handle_attach_client` task for the
     /// currently-attached client. Tracked so a takeover (second `Hello`)
     /// can abort the old task's reader loop — without the abort, the
     /// old client's stale Input / Resize / Detach frames keep flowing
@@ -188,7 +192,7 @@ pub struct Multiplexer {
     /// Records the previous tab-cell click so a second click on the
     /// same tab within `TAB_DOUBLE_CLICK_WINDOW` is treated as a
     /// double-click (open the rename modal).
-    last_tab_click: Option<(usize, std::time::Instant)>,
+    last_tab_click: Option<(usize, Instant)>,
     /// Active mouse-drag resize, if any. Populated when the operator
     /// presses the left button on a shared pane border; updated on
     /// every motion event; cleared on release.
@@ -261,16 +265,16 @@ pub struct Multiplexer {
     /// Workspace workdir read from `/jackin/run/agent.toml` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
     /// so the operator's panes open in the workspace they configured
-    /// instead of `$HOME` (portable_pty's CommandBuilder default).
+    /// instead of `$HOME` (`portable_pty`'s `CommandBuilder` default).
     workdir: PathBuf,
     /// Resolved Anthropic API key (`ANTHROPIC_API_KEY`) from the operator env.
     /// Drives Anthropic as a selectable provider for non-Claude agents (e.g.
-    /// OpenCode, where the Claude subscription does not extend).
+    /// `OpenCode`, where the Claude subscription does not extend).
     anthropic_api_key: Option<String>,
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
-    /// Resolved MiniMax API key (`MINIMAX_API_KEY`) from the operator env.
+    /// Resolved `MiniMax` API key (`MINIMAX_API_KEY`) from the operator env.
     minimax_key: Option<String>,
     /// Resolved Kimi Code API key (`KIMI_CODE_API_KEY`) from the operator env.
     kimi_key: Option<String>,
@@ -409,7 +413,7 @@ impl Multiplexer {
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
-            .filter_map(|&k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
+            .filter_map(|&k| std::env::var(k).ok().map(|v| (k.to_owned(), v)))
             .collect();
 
         let input_bindings = crate::services::input_bindings::resolve_input_bindings();
@@ -487,8 +491,7 @@ impl Multiplexer {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .map(|d| d.subsec_nanos() as usize)
-                    .unwrap_or(42)
+                    .map_or(42, |d| d.subsec_nanos() as usize)
             },
         }
     }
@@ -658,16 +661,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // emits a debug line so the operator sees their config rejected
     // rather than silently falling back to the default.
     let escape_time = match std::env::var(ENV_ESCAPE_TIME) {
-        Ok(raw) => match raw.parse::<u64>() {
-            Ok(ms) => Duration::from_millis(ms),
-            Err(_) => {
+        Ok(raw) => {
+            if let Ok(ms) = raw.parse::<u64>() {
+                Duration::from_millis(ms)
+            } else {
                 crate::clog!(
                     "{ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
                     DEFAULT_ESCAPE_TIME.as_millis()
                 );
                 DEFAULT_ESCAPE_TIME
             }
-        },
+        }
         Err(_) => DEFAULT_ESCAPE_TIME,
     };
 
@@ -1005,7 +1009,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // Escape-time fired: the operator's `\x1b` did not get a
             // follow-up byte in time, so emit it as a bare Data event.
             // Dialogs treat it as dismiss; agents see the lone Esc.
-            _ = async {
+            () = async {
                 match esc_deadline {
                     Some(d) => tokio::time::sleep_until(d).await,
                     None => std::future::pending().await,

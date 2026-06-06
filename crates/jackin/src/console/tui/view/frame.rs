@@ -30,7 +30,7 @@ use jackin_tui::HintSpan;
 use super::{editor, settings};
 
 pub fn render(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     state: &ManagerState<'_>,
     config: &AppConfig,

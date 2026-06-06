@@ -36,14 +36,14 @@ pub enum PaletteCommand {
     NewTab,
     NextTab,
     PrevTab,
-    /// Open the SplitDirectionPicker. The operator picks Right /
+    /// Open the `SplitDirectionPicker`. The operator picks Right /
     /// Left / Below / Above in the sub-dialog, then the agent
     /// picker for the new pane. Top-level entry is one item; the
     /// directional detail lives in the sub-dialog so the palette
     /// stays scannable.
     Split,
     ZoomPane,
-    /// Close the active tab or open the CloseTargetPicker when the
+    /// Close the active tab or open the `CloseTargetPicker` when the
     /// active tab has multiple panes. The chosen target then routes
     /// through `ConfirmAction` before the destructive call fires.
     Close,

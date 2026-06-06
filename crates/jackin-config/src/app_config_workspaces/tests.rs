@@ -9,16 +9,16 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
     let temp = tempdir().unwrap();
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
-        version: CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/workspace/project".to_string(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
             src: temp.path().display().to_string(),
-            dst: "/workspace/project".to_string(),
+            dst: "/workspace/project".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         }],
-        allowed_roles: vec!["agent-smith".to_string()],
-        default_role: Some("agent-smith".to_string()),
+        allowed_roles: vec!["agent-smith".to_owned()],
+        default_role: Some("agent-smith".to_owned()),
         default_agent: None,
         last_role: None,
         env: std::collections::BTreeMap::new(),
@@ -40,7 +40,7 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
         .edit_workspace(
             "big-monorepo",
             WorkspaceEdit {
-                workdir: Some("/workspace/elsewhere".to_string()),
+                workdir: Some("/workspace/elsewhere".to_owned()),
                 ..WorkspaceEdit::default()
             },
         )
@@ -63,11 +63,11 @@ fn edit_workspace_toggles_keep_awake_when_set() {
         .create_workspace(
             "my-app",
             WorkspaceConfig {
-                version: CURRENT_WORKSPACE_VERSION.to_string(),
-                workdir: "/workspace/proj".to_string(),
+                version: CURRENT_WORKSPACE_VERSION.to_owned(),
+                workdir: "/workspace/proj".to_owned(),
                 mounts: vec![MountConfig {
                     src: temp.path().display().to_string(),
-                    dst: "/workspace/proj".to_string(),
+                    dst: "/workspace/proj".to_owned(),
                     readonly: false,
                     isolation: crate::MountIsolation::Shared,
                 }],
@@ -95,7 +95,7 @@ fn edit_workspace_toggles_keep_awake_when_set() {
         .edit_workspace(
             "my-app",
             WorkspaceEdit {
-                workdir: Some("/workspace/proj".to_string()),
+                workdir: Some("/workspace/proj".to_owned()),
                 ..WorkspaceEdit::default()
             },
         )
@@ -125,11 +125,11 @@ fn edit_workspace_sets_and_clears_agent() {
         .create_workspace(
             "my-app",
             WorkspaceConfig {
-                version: CURRENT_WORKSPACE_VERSION.to_string(),
-                workdir: "/workspace/proj".to_string(),
+                version: CURRENT_WORKSPACE_VERSION.to_owned(),
+                workdir: "/workspace/proj".to_owned(),
                 mounts: vec![MountConfig {
                     src: temp.path().display().to_string(),
-                    dst: "/workspace/proj".to_string(),
+                    dst: "/workspace/proj".to_owned(),
                     readonly: false,
                     isolation: crate::MountIsolation::Shared,
                 }],
@@ -156,7 +156,7 @@ fn edit_workspace_sets_and_clears_agent() {
         .edit_workspace(
             "my-app",
             WorkspaceEdit {
-                workdir: Some("/workspace/proj".to_string()),
+                workdir: Some("/workspace/proj".to_owned()),
                 ..WorkspaceEdit::default()
             },
         )
@@ -184,11 +184,11 @@ fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
     let temp = tempdir().unwrap();
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
-        version: CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/workspace/project".to_string(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
             src: temp.path().display().to_string(),
-            dst: "/workspace/project".to_string(),
+            dst: "/workspace/project".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         }],
@@ -202,16 +202,16 @@ fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
         .create_workspace(
             "big-monorepo",
             WorkspaceConfig {
-                version: CURRENT_WORKSPACE_VERSION.to_string(),
-                workdir: "/workspace/other".to_string(),
+                version: CURRENT_WORKSPACE_VERSION.to_owned(),
+                workdir: "/workspace/other".to_owned(),
                 mounts: vec![MountConfig {
                     src: temp.path().display().to_string(),
-                    dst: "/workspace/other".to_string(),
+                    dst: "/workspace/other".to_owned(),
                     readonly: true,
                     isolation: crate::MountIsolation::Shared,
                 }],
-                allowed_roles: vec!["agent-smith".to_string()],
-                default_role: Some("agent-smith".to_string()),
+                allowed_roles: vec!["agent-smith".to_owned()],
+                default_role: Some("agent-smith".to_owned()),
                 ..Default::default()
             },
         )
@@ -233,11 +233,11 @@ fn edit_workspace_rejects_duplicate_upsert_destinations() {
 
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
-        version: CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/workspace/project".to_string(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
             src: original_src.display().to_string(),
-            dst: "/workspace/project".to_string(),
+            dst: "/workspace/project".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         }],
@@ -254,13 +254,13 @@ fn edit_workspace_rejects_duplicate_upsert_destinations() {
                 upsert_mounts: vec![
                     MountConfig {
                         src: first_upsert.display().to_string(),
-                        dst: "/workspace/cache".to_string(),
+                        dst: "/workspace/cache".to_owned(),
                         readonly: false,
                         isolation: crate::MountIsolation::Shared,
                     },
                     MountConfig {
                         src: second_upsert.display().to_string(),
-                        dst: "/workspace/cache".to_string(),
+                        dst: "/workspace/cache".to_owned(),
                         readonly: true,
                         isolation: crate::MountIsolation::Shared,
                     },
@@ -285,11 +285,11 @@ fn edit_workspace_rejects_missing_remove_destination() {
 
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
-        version: CURRENT_WORKSPACE_VERSION.to_string(),
-        workdir: "/workspace/project".to_string(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
+        workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
             src: original_src.display().to_string(),
-            dst: "/workspace/project".to_string(),
+            dst: "/workspace/project".to_owned(),
             readonly: false,
             isolation: crate::MountIsolation::Shared,
         }],
@@ -303,7 +303,7 @@ fn edit_workspace_rejects_missing_remove_destination() {
         .edit_workspace(
             "big-monorepo",
             WorkspaceEdit {
-                remove_destinations: vec!["/workspace/missing".to_string()],
+                remove_destinations: vec!["/workspace/missing".to_owned()],
                 ..WorkspaceEdit::default()
             },
         )

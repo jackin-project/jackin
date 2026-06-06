@@ -23,13 +23,17 @@ use crate::auth::AuthForwardMode;
 /// `pub(crate)` so the adapter modules in `agent::adapters::*` can implement
 /// `Sealed` without exposing it to crate consumers.
 pub(crate) mod private {
-    pub trait Sealed {}
+    pub(crate) trait Sealed {}
 }
 
 /// Behavioral contract that each agent runtime satisfies.
 ///
 /// Call sites reach this via `agent.runtime().<method>()`. The trait is sealed:
 /// only the five built-in adapters under `crate::agent::adapters` may implement it.
+#[expect(
+    private_bounds,
+    reason = "sealed trait uses a private supertrait to block external implementations"
+)]
 pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// Stable lowercase identifier used in TOML keys, container labels, and
     /// entrypoint dispatch (`$JACKIN_AGENT`).

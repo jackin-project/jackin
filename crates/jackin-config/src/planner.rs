@@ -29,12 +29,14 @@ fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
 }
 
 /// Plan for `jackin workspace create`.
+#[derive(Debug)]
 pub struct WorkspaceCreatePlan {
     pub final_mounts: Vec<MountConfig>,
     pub collapsed: Vec<Removal>,
 }
 
 /// Plan for `jackin workspace edit`.
+#[derive(Debug)]
 pub struct WorkspaceEditPlan {
     pub effective_removals: Vec<String>,
     pub edit_driven_collapses: Vec<Removal>,

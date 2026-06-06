@@ -343,7 +343,7 @@ pub(crate) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str)
         state: jackin_console::tui::components::error_popup::save_failed_error_popup_state(message),
     });
     editor.save_flow = EditorSaveFlow::Error {
-        message: message.to_string(),
+        message: message.to_owned(),
     };
 }
 

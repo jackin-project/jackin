@@ -49,7 +49,7 @@ impl RoleState {
     /// `RoleState::prepare` does not need to re-stat the file or reason
     /// about which outcome implies which mount state.
     pub(super) fn provision_codex_auth(
-        auth_json: &std::path::Path,
+        auth_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
@@ -218,7 +218,7 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
             .output()
         {
             Ok(output) if output.status.success() => {
-                let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let token = String::from_utf8_lossy(&output.stdout).trim().to_owned();
                 if !token.is_empty() {
                     let user = hosts_yml
                         .as_deref()
@@ -244,7 +244,7 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
                     output.status,
                 );
                 cli_failure = Some(HostMissingReason::GhCliFailed {
-                    stderr: stderr.trim().to_string(),
+                    stderr: stderr.trim().to_owned(),
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -637,7 +637,7 @@ impl RoleState {
     ///
     /// Follows the same semantics as `provision_amp_auth`.
     pub(super) fn provision_opencode_auth(
-        auth_json: &std::path::Path,
+        auth_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
@@ -792,7 +792,7 @@ fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
 /// Copy the host's `.claude.json` into the container state, or write `{}`
 /// if the host file doesn't exist.
 fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<()> {
-    let content = std::fs::read_to_string(host_path).unwrap_or_else(|_| "{}".to_string());
+    let content = std::fs::read_to_string(host_path).unwrap_or_else(|_| "{}".to_owned());
     write_private_file(dest_path, &content)
 }
 
@@ -984,7 +984,7 @@ fn repair_permissions(path: &Path) {
     }
     #[cfg(not(unix))]
     {
-        let _ = path;
+        drop(path);
     }
 }
 

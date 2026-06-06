@@ -68,9 +68,9 @@ fn tab_display_label_has_no_name_centering_padding() {
 #[test]
 fn status_bar_keeps_supplied_container_name_and_instance_id() {
     let bar = StatusBar::new_with_role_labels(
-        "the-architect".to_string(),
-        "jk-spamcw91-jackin-thearchitect".to_string(),
-        "spamcw91".to_string(),
+        "the-architect".to_owned(),
+        "jk-spamcw91-jackin-thearchitect".to_owned(),
+        "spamcw91".to_owned(),
     );
 
     assert_eq!(bar.container_name(), "jk-spamcw91-jackin-thearchitect");

@@ -119,7 +119,7 @@ fn take_exit_claim_leaves_no_claim_temp_file() {
     paths.ensure_base_dirs().unwrap();
 
     mark_start(&paths, StartKind::FreshConstruct);
-    let _ = take_exit_claim(&paths);
+    drop(take_exit_claim(&paths));
 
     let leftover = std::fs::read_dir(&paths.data_dir)
         .unwrap()
@@ -190,7 +190,7 @@ async fn claim_entry_resumes_when_container_running() {
     paths.ensure_base_dirs().unwrap();
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
-            name: "jk-running".to_string(),
+            name: "jk-running".to_owned(),
             labels: HashMap::new(),
         }]])),
         ..Default::default()
@@ -226,7 +226,7 @@ async fn claim_entry_does_not_write_marker_when_container_list_fails() {
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
     let docker = FakeDockerClient {
-        fail_with: vec![("docker ps".to_string(), "daemon down".to_string())],
+        fail_with: vec![("docker ps".to_owned(), "daemon down".to_owned())],
         ..Default::default()
     };
 

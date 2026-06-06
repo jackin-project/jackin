@@ -363,7 +363,10 @@ fn surfaces_unreadable_credential_file_as_error() {
 
     let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
 
-    let _ = std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600));
+    drop(std::fs::set_permissions(
+        &cred,
+        std::fs::Permissions::from_mode(0o600),
+    ));
 
     let err = result.expect_err("unreadable credential file must surface as error");
     let msg = format!("{err:#}");
@@ -386,7 +389,10 @@ fn surfaces_unreadable_config_toml_as_error() {
 
     let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
 
-    let _ = std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o600));
+    drop(std::fs::set_permissions(
+        &cfg,
+        std::fs::Permissions::from_mode(0o600),
+    ));
 
     let err = result.expect_err("unreadable config.toml must surface as error");
     let msg = format!("{err:#}");

@@ -29,7 +29,7 @@ fn setup_with_workspace(
     paths.ensure_base_dirs()?;
 
     let mut config = AppConfig::default();
-    config.workspaces.insert(name.to_string(), ws);
+    config.workspaces.insert(name.to_owned(), ws);
     let toml = toml::to_string(&config)?;
     std::fs::write(&paths.config_file, toml)?;
 
@@ -63,7 +63,7 @@ fn apply_auth_forward_diff_persists_amp_workspace_and_role_modes() {
     paths.ensure_base_dirs().unwrap();
 
     let original = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".into(),
         mounts: vec![mount(tmp.path().to_str().unwrap(), "/workspace/project")],
         ..WorkspaceConfig::default()
@@ -71,7 +71,7 @@ fn apply_auth_forward_diff_persists_amp_workspace_and_role_modes() {
     let mut config = AppConfig::default();
     config
         .workspaces
-        .insert("proj".to_string(), original.clone());
+        .insert("proj".to_owned(), original.clone());
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
     let mut pending = original.clone();
@@ -116,7 +116,7 @@ fn build_workspace_edit_emits_keep_awake_change_only_when_diffed() {
     // `edit_workspace_toggles_keep_awake_when_set` enforces.
     use crate::workspace::KeepAwakeConfig;
     let original = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/proj".into(),
         mounts: vec![mount("/work", "/workspace/proj")],
         keep_awake: KeepAwakeConfig { enabled: false },
@@ -152,7 +152,7 @@ fn build_workspace_edit_emits_keep_awake_change_only_when_diffed() {
 #[test]
 fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -195,7 +195,7 @@ fn confirming_collapse_writes_collapsed_set() {
     // PendingCommit, drive commit_editor_save, and write the
     // collapsed mount set.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -232,7 +232,7 @@ fn confirming_collapse_writes_collapsed_set() {
 #[test]
 fn cancelling_confirm_save_keeps_pending_intact() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -284,7 +284,7 @@ fn readonly_mismatch_produces_error_popup_no_write() {
     // plan_edit must reject with ReadonlyMismatch. Per spec, hard
     // planner errors surface through ErrorPopup, not ConfirmSave.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![ro_mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -327,7 +327,7 @@ fn editor_save_create_with_no_name_routes_to_error_flow() {
     // "missing workspace name" - gating prevents the operator from
     // committing a nameless workspace.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/seed".into(),
         mounts: vec![mount("/seed", "/seed")],
         ..Default::default()
@@ -367,7 +367,7 @@ fn editor_save_create_with_invalid_mount_routes_to_error_flow() {
     // edit-mode behavior covered by
     // `readonly_mismatch_produces_error_popup_no_write`.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/seed".into(),
         mounts: vec![mount("/seed", "/seed")],
         ..Default::default()
@@ -407,7 +407,7 @@ fn editor_save_create_with_invalid_mount_routes_to_error_flow() {
 #[test]
 fn pre_existing_collapse_produces_prune_error_popup() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work".into(),
         mounts: vec![
             mount("/work", "/work"),
@@ -453,7 +453,7 @@ fn pre_existing_collapse_produces_prune_error_popup() {
 #[test]
 fn s_with_zero_changes_is_noop() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -480,7 +480,7 @@ fn s_with_zero_changes_is_noop() {
 #[test]
 fn s_with_changes_opens_confirm_save_modal() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -512,7 +512,7 @@ fn confirm_save_save_exits_editor_on_success_from_save_discard_path() {
     // `ExitIntent::Save` dispatcher). After Enter on the resulting
     // ConfirmSave modal, we should land back on ManagerStage::List.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -544,16 +544,16 @@ fn exit_on_success_selects_just_saved_workspace_on_return_to_list() {
     // on "z-second" (screen index 2 = 1 + 1), not on "a-first" or the
     // CWD row.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
     };
     let (tmp, paths, mut config) = setup_with_workspace("z-second", ws.clone()).unwrap();
     config.workspaces.insert(
-        "a-first".to_string(),
+        "a-first".to_owned(),
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
             ..Default::default()
@@ -589,7 +589,7 @@ fn exit_on_success_selects_just_saved_workspace_on_return_to_list() {
 #[test]
 fn exit_on_success_save_returns_to_list() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -631,7 +631,7 @@ fn failed_post_rename_edit_leaves_editor_mode_on_original_name() {
     // against the live mount list and bails out with
     // "unknown workspace mount destination".
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -648,7 +648,7 @@ fn failed_post_rename_edit_leaves_editor_mode_on_original_name() {
     // `ce.edit_workspace` fail AFTER `ce.rename_workspace` has already
     // moved the workspace inside ConfigEditor's in-memory buffer.
     let bad_plan = crate::console::tui::state::PendingSaveCommit {
-        effective_removals: vec!["/does/not/exist".to_string()],
+        effective_removals: vec!["/does/not/exist".to_owned()],
         final_mounts: None,
         delete_isolated_acknowledged: false,
         isolated_cleanup_complete: false,
@@ -735,7 +735,7 @@ fn confirm_save_s_exits_to_list_on_success() {
     // `s` + Enter on ConfirmSave returns the operator to the list,
     // consistent with the Esc→Save path.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -767,13 +767,13 @@ fn confirm_save_save_opens_error_popup_on_duplicate_name() {
     // write hits ConfigEditor::rename_workspace's duplicate-name
     // guard and we expect an ErrorPopup.
     let ws_a = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/a".into(),
         mounts: vec![mount("/a", "/a")],
         ..Default::default()
     };
     let ws_b = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/b".into(),
         mounts: vec![mount("/b", "/b")],
         ..Default::default()
@@ -811,13 +811,13 @@ fn confirm_save_save_opens_error_popup_on_duplicate_name() {
 #[test]
 fn error_popup_dismiss_returns_to_editor_with_changes_intact() {
     let ws_a = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/a".into(),
         mounts: vec![mount("/a", "/a")],
         ..Default::default()
     };
     let ws_b = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/b".into(),
         mounts: vec![mount("/b", "/b")],
         ..Default::default()
@@ -886,7 +886,7 @@ fn create_mode_confirm_save_includes_mounts_in_lines() {
     let joined: String = modal
         .lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect::<Vec<_>>()
         .join("|");
     assert!(
@@ -944,7 +944,7 @@ fn create_mode_confirm_save_reflects_renamed_workspace_name() {
     let joined: String = modal
         .lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect::<Vec<_>>()
         .join("|");
     assert!(
@@ -960,7 +960,7 @@ fn create_mode_confirm_save_reflects_renamed_workspace_name() {
 #[test]
 fn edit_mode_confirm_save_shows_diff() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/old".into(),
         mounts: vec![mount("/old", "/old")],
         ..Default::default()
@@ -983,7 +983,7 @@ fn edit_mode_confirm_save_shows_diff() {
     let joined: String = modal
         .lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect::<Vec<_>>()
         .join("|");
     assert!(joined.contains("/old"), "old value shown: {joined}");
@@ -997,7 +997,7 @@ fn edit_mode_confirm_save_shows_keep_awake_toggle() {
     // on-disk write was already correct; this pins the modal preview
     // so a future refactor cannot silently re-omit the diff line.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         keep_awake: KeepAwakeConfig { enabled: false },
@@ -1021,7 +1021,7 @@ fn edit_mode_confirm_save_shows_keep_awake_toggle() {
     let joined: String = modal
         .lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect::<Vec<_>>()
         .join("|");
     assert!(
@@ -1053,7 +1053,7 @@ fn setup_with_isolated_record(
     // validation, so anchor it on `dst`. The drift safeguard cares
     // about `src`, not `workdir`, so this doesn't perturb the test.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: dst.into(),
         mounts: vec![MountConfig {
             src: original_src.into(),
@@ -1138,7 +1138,7 @@ async fn save_blocks_with_error_popup_when_running_container_has_drifted_state()
     let fake_docker = crate::docker_client::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             crate::docker_client::ContainerRow {
-                name: "jk-a1b2c3d4-driftws".to_string(),
+                name: "jk-a1b2c3d4-driftws".to_owned(),
                 labels: std::collections::HashMap::default(),
             },
         ]])),
@@ -1254,7 +1254,7 @@ async fn save_opens_confirm_modal_when_stopped_container_has_drifted_state() {
         }) => {
             assert_eq!(
                 affected_containers,
-                &vec!["jk-b2c3d4e5-driftws2".to_string()],
+                &vec!["jk-b2c3d4e5-driftws2".to_owned()],
                 "modal must carry the affected container names",
             );
         }
@@ -1269,7 +1269,7 @@ async fn save_opens_confirm_modal_when_stopped_container_has_drifted_state() {
 #[test]
 fn confirm_save_integrates_mount_collapse_section_when_plan_has_collapses() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -1293,7 +1293,7 @@ fn confirm_save_integrates_mount_collapse_section_when_plan_has_collapses() {
     let joined: String = modal
         .lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect::<Vec<_>>()
         .join("|");
     assert!(
@@ -1314,10 +1314,10 @@ fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
     let original = std::collections::BTreeMap::new();
     let mut pending = std::collections::BTreeMap::new();
     pending.insert(
-        "TOKEN".to_string(),
+        "TOKEN".to_owned(),
         EnvValue::OpRef(OpRef {
-            op: "op://abc/def/fld".to_string(),
-            path: "Private/Claude/auth".to_string(),
+            op: "op://abc/def/fld".to_owned(),
+            path: "Private/Claude/auth".to_owned(),
             account: None,
         }),
     );
@@ -1336,7 +1336,7 @@ fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
 
     let joined: String = lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect::<String>();
 
     assert!(
@@ -1363,7 +1363,7 @@ fn settings_save_general_dirty_shows_summary_and_diff() {
     let lines = super::build_settings_save_lines(&settings);
     let joined: String = lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect();
 
     assert!(
@@ -1398,7 +1398,7 @@ fn settings_save_general_dco_dirty_shows_diff() {
     let lines = super::build_settings_save_lines(&settings);
     let joined: String = lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect();
 
     assert!(
@@ -1423,7 +1423,7 @@ fn settings_save_general_clean_shows_no_general_section() {
     let lines = super::build_settings_save_lines(&settings);
     let joined: String = lines
         .iter()
-        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_owned()))
         .collect();
 
     // When nothing changed, neither the summary row nor the detail row appears.

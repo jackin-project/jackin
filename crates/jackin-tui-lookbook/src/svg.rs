@@ -22,11 +22,11 @@ use crate::stories::{Story, stories};
 
 /// Uniform charcoal padding ring around every exported story, in cells. Mirrors
 /// the interactive preview's 1-cell `Margin` so a component floats inside the
-/// PREVIEW_CARD surround instead of bleeding to the image edge.
+/// `PREVIEW_CARD` surround instead of bleeding to the image edge.
 const STORY_PAD: u16 = 1;
 
 /// Render the story into a ratatui test buffer and return it.
-pub fn render_story_to_buffer(story: Story) -> Buffer {
+pub(crate) fn render_story_to_buffer(story: Story) -> Buffer {
     let width = story.width.saturating_add(STORY_PAD * 2);
     let height = story.height.saturating_add(STORY_PAD * 2);
     let backend = TestBackend::new(width, height);
@@ -63,19 +63,19 @@ pub fn render_story_to_buffer(story: Story) -> Buffer {
 
 /// Render the story to an SVG string.
 #[must_use]
-pub fn render_story_to_svg(story: Story) -> String {
+pub(crate) fn render_story_to_svg(story: Story) -> String {
     let buffer = render_story_to_buffer(story);
     buffer_to_svg(&buffer, story.title)
 }
 
 /// Canonical filename for a story's SVG preview.
 #[must_use]
-pub fn story_svg_filename(story: Story) -> String {
+pub(crate) fn story_svg_filename(story: Story) -> String {
     format!("{}.svg", story.id.replace('/', "-"))
 }
 
 /// Write all story SVGs to `out_dir`, creating it if needed.
-pub fn write_story_svgs(out_dir: impl AsRef<Path>) -> io::Result<Vec<PathBuf>> {
+pub(crate) fn write_story_svgs(out_dir: impl AsRef<Path>) -> io::Result<Vec<PathBuf>> {
     let out_dir = out_dir.as_ref();
     fs::create_dir_all(out_dir)?;
     let mut paths = Vec::new();
@@ -89,7 +89,7 @@ pub fn write_story_svgs(out_dir: impl AsRef<Path>) -> io::Result<Vec<PathBuf>> {
 
 /// Check that all SVGs in `dir` are current. Prints a success message and
 /// returns `Ok(())` when they match; returns `Err` with failure details otherwise.
-pub fn check_svgs(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn check_svgs(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let expected = expected_svg_names();
     let actual = actual_svg_names(&dir)?;
     let mut failures = Vec::new();
@@ -129,11 +129,11 @@ pub fn check_svgs(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-pub fn expected_svg_names() -> BTreeSet<String> {
+pub(crate) fn expected_svg_names() -> BTreeSet<String> {
     stories().into_iter().map(story_svg_filename).collect()
 }
 
-pub fn actual_svg_names(dir: &Path) -> Result<BTreeSet<String>, Box<dyn std::error::Error>> {
+pub(crate) fn actual_svg_names(dir: &Path) -> Result<BTreeSet<String>, Box<dyn std::error::Error>> {
     let mut names = BTreeSet::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -159,7 +159,7 @@ fn buffer_to_svg(buffer: &Buffer, title: &str) -> String {
     let height = area.height.saturating_mul(CELL_H);
     let mut out = String::new();
     out.push_str(&format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{}" style="background:#000000">"##,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{}" style="background:#000000">"#,
         escape_xml(title)
     ));
     out.push_str(r##"<rect width="100%" height="100%" fill="#000000"/>"##);
@@ -234,7 +234,7 @@ fn escape_xml(value: &str) -> String {
 /// Render a story's buffer to plain text (for debugging / snapshot tests).
 #[must_use]
 #[allow(dead_code)]
-pub fn render_story_to_text(story: Story) -> String {
+pub(crate) fn render_story_to_text(story: Story) -> String {
     let buffer = render_story_to_buffer(story);
     let mut out = String::new();
     for y in 0..story.height {

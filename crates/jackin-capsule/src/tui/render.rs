@@ -110,7 +110,7 @@ pub fn draw_scrollbar(
     // border row by adding 1 to `pane_row`.
     let track_start_row = pane_row + 1;
     for r in 0..thumb.len {
-        let _ = write!(
+        let _unused = write!(
             buf,
             "\x1b[{};{}H",
             track_start_row + thumb.start + r + 1,
@@ -143,7 +143,7 @@ pub(crate) fn snapshot_damagegrid_row(
             .map_or(1, |_| 2)
             .min(cols_to_draw - col);
         let contents = match cell {
-            Some(c) if c.has_contents() => c.contents().to_string(),
+            Some(c) if c.has_contents() => c.contents().to_owned(),
             _ => " ".repeat(width as usize),
         };
         cells.push(CellSnapshot { contents, width });
@@ -209,7 +209,7 @@ fn snapshot_damagegrid_cells(cells: &[jackin_term::Cell], cols_to_draw: u16) -> 
         }
         let width = if cell.is_wide { 2 } else { 1 }.min(cols_to_draw - col);
         let contents = if cell.has_contents() {
-            cell.contents().to_string()
+            cell.contents().to_owned()
         } else {
             " ".repeat(width as usize)
         };

@@ -7,7 +7,17 @@ use crate::tui::update::action_frame_plan;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
 
-use super::*;
+use super::{
+    Action, ActionFramePlan, ConfirmedActionRoute, Dialog, DialogAction, DialogActionFramePlan,
+    FullRedrawReason, InputDispatchContext, InputEvent, Instant, Multiplexer, PaletteCommand,
+    PaletteCommandRoute, PaletteToggleRoute, PickerIntent, PrefixCommand, StatusBarClickState,
+    branch_context_bar_click_action, confirmed_action_route, dialog_action_frame_plan,
+    drag_resize_redraw_reason, encode_wheel_cursor_fallback, focus_change_redraw_reason,
+    input_event_action, mouse_chrome_update_action, mouse_release_action, palette_command_route,
+    palette_route_redraw_reason, palette_toggle_route, pane_button_motion_action,
+    pane_data_redraw_reason, pane_wheel_cursor_fallback_reason, prefix_command_action,
+    selection_start_redraw_reason, status_bar_click_action, wheel_scrollback_redraw_reason,
+};
 
 impl Multiplexer {
     fn compose_action_frame_plan(&mut self, plan: ActionFramePlan) -> Vec<u8> {
@@ -452,7 +462,7 @@ impl Multiplexer {
             }
             Action::StatusBarClick { col } => {
                 let tab = self.status_bar.tab_at_col(col + 1);
-                let now = std::time::Instant::now();
+                let now = Instant::now();
                 let double_click = tab
                     .and_then(|idx| {
                         self.last_tab_click.filter(|(prev_idx, prev_t)| {

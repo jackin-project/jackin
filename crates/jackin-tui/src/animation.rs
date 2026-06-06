@@ -6,7 +6,6 @@
 //! terminal's raw mode — avoiding a circular dependency on `jackin-diagnostics`.
 //!
 //! Not responsible for: full-screen ratatui renders or debug-output lines.
-
 use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
@@ -29,9 +28,9 @@ fn skippable_sleep(duration: std::time::Duration, host_screen_owned: bool) -> bo
     // it here would hand control back to the cooked terminal mid-animation.
     let owns_raw = !host_screen_owned;
     if owns_raw {
-        let _ = crossterm::terminal::enable_raw_mode();
+        drop(crossterm::terminal::enable_raw_mode());
     }
-    let skipped = if crossterm::event::poll(duration).unwrap_or(false) {
+    let skipped = if event::poll(duration).unwrap_or(false) {
         matches!(
             event::read(),
             Ok(Event::Key(key)) if key.kind == KeyEventKind::Press
@@ -41,7 +40,7 @@ fn skippable_sleep(duration: std::time::Duration, host_screen_owned: bool) -> bo
         false
     };
     if owns_raw {
-        let _ = crossterm::terminal::disable_raw_mode();
+        drop(crossterm::terminal::disable_raw_mode());
     }
     skipped
 }
@@ -62,7 +61,7 @@ fn wait_or_event(duration: std::time::Duration, host_screen_owned: bool) -> Wait
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     let owns_raw = !host_screen_owned;
     if owns_raw {
-        let _ = crossterm::terminal::enable_raw_mode();
+        drop(crossterm::terminal::enable_raw_mode());
     }
     let deadline = std::time::Instant::now() + duration;
     let outcome = loop {
@@ -87,7 +86,7 @@ fn wait_or_event(duration: std::time::Duration, host_screen_owned: bool) -> Wait
         }
     };
     if owns_raw {
-        let _ = crossterm::terminal::disable_raw_mode();
+        drop(crossterm::terminal::disable_raw_mode());
     }
     outcome
 }
@@ -101,7 +100,7 @@ fn hold_resizable(
     mut draw: impl FnMut(),
 ) -> bool {
     draw();
-    let _ = io::stderr().flush();
+    drop(io::stderr().flush());
     let deadline = std::time::Instant::now() + total;
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
@@ -113,7 +112,7 @@ fn hold_resizable(
             WaitOutcome::Resized => {
                 clear_screen();
                 draw();
-                let _ = io::stderr().flush();
+                drop(io::stderr().flush());
             }
             WaitOutcome::Elapsed => return false,
         }
@@ -187,7 +186,7 @@ fn type_centered(
     eprint!("\x1b[{row};{col}H");
     for ch in text.chars() {
         eprint!("{}", ch.color(owo_rgb(color)));
-        let _ = io::stderr().flush();
+        drop(io::stderr().flush());
         if skippable_sleep(std::time::Duration::from_millis(char_ms), host_screen_owned) {
             return true;
         }
@@ -219,13 +218,13 @@ fn glitch_centered(text: &str, color: Rgb, hold_ms: u64, host_screen_owned: bool
             };
             eprint!("{}", display.color(owo_rgb(color)));
         }
-        let _ = io::stderr().flush();
+        drop(io::stderr().flush());
         if skippable_sleep(std::time::Duration::from_millis(70), host_screen_owned) {
             break;
         }
     }
     eprint!("\x1b[{row};{col}H{}", text.color(owo_rgb(color)));
-    let _ = io::stderr().flush();
+    drop(io::stderr().flush());
     hold_resizable(
         std::time::Duration::from_millis(hold_ms),
         host_screen_owned,
@@ -258,7 +257,7 @@ fn intro_phrases(host_screen_owned: bool) {
 fn drain_pending_input(host_screen_owned: bool) {
     let owns_raw = !host_screen_owned;
     if owns_raw {
-        let _ = crossterm::terminal::enable_raw_mode();
+        drop(crossterm::terminal::enable_raw_mode());
     }
     while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {
         if crossterm::event::read().is_err() {
@@ -266,7 +265,7 @@ fn drain_pending_input(host_screen_owned: bool) {
         }
     }
     if owns_raw {
-        let _ = crossterm::terminal::disable_raw_mode();
+        drop(crossterm::terminal::disable_raw_mode());
     }
 }
 
@@ -330,7 +329,7 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
 
     clear_screen();
     eprint!("\x1b[?25l\x1b[?7l");
-    let _ = io::stderr().flush();
+    drop(io::stderr().flush());
 
     let (cols0, rows0) = {
         let (c, r) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -424,18 +423,18 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
 
         out.clear();
         for (r, row) in grid.iter().enumerate() {
-            let _ = write!(out, "\x1b[{};1H", r + 1);
+            let _unused = write!(out, "\x1b[{};1H", r + 1);
             for cell in row {
                 match cell {
                     None => out.push(' '),
                     Some((ch, (cr, cg, cb))) => {
-                        let _ = write!(out, "{}", ch.color(owo_colors::Rgb(*cr, *cg, *cb)));
+                        let _unused = write!(out, "{}", ch.color(owo_colors::Rgb(*cr, *cg, *cb)));
                     }
                 }
             }
         }
         eprint!("{out}");
-        let _ = io::stderr().flush();
+        drop(io::stderr().flush());
         if skippable_sleep(
             std::time::Duration::from_millis(frame_ms),
             host_screen_owned,
@@ -446,7 +445,7 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
 
     clear_screen();
     eprint!("\x1b[H\x1b[?25h\x1b[?7h");
-    let _ = io::stderr().flush();
+    drop(io::stderr().flush());
 }
 
 fn warp_edge_radius(angle: f32, cx: f32, cy: f32) -> f32 {

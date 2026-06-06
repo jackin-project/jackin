@@ -38,7 +38,7 @@ pub(crate) const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
 /// surviving slow ssh / paste chunks.
 pub(crate) const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// XTerm SGR any-event mouse tracking reports passive motion as
+/// `XTerm` SGR any-event mouse tracking reports passive motion as
 /// button code 35 (`32` motion bit + `3` no-button code).
 pub(crate) const SGR_NO_BUTTON_MOTION: u8 = 35;
 
@@ -563,7 +563,10 @@ pub fn parse_key_binding(s: &str) -> Option<u8> {
 }
 
 fn prefix_binding(b: u8) -> Option<PrefixCommand> {
-    use PrefixCommand::*;
+    use PrefixCommand::{
+        ClearPane, Detach, JumpTab, KillPane, KillTab, MoveFocus, NewTab, NextTab, Palette,
+        PrevTab, Redraw, SplitSideBySide, SplitTopBottom, ZoomToggle,
+    };
     Some(match b {
         b'c' => NewTab,
         b'n' => NextTab,

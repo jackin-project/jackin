@@ -86,7 +86,7 @@ impl MountDstChoiceState {
     }
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
     let inner = render_dialog_shell(frame, area, Some("Mount destination"));
 
     // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.

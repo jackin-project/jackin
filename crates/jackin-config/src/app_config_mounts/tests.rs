@@ -97,12 +97,12 @@ fn resolve_mounts_returns_empty_when_no_mounts_configured() {
 #[test]
 fn validate_mounts_rejects_missing_src() {
     let mounts = vec![(
-        "test-mount".to_string(),
+        "test-mount".to_owned(),
         MountConfig {
-            src: "/nonexistent/path/that/does/not/exist".to_string(),
-            dst: "/data".to_string(),
+            src: "/nonexistent/path/that/does/not/exist".to_owned(),
+            dst: "/data".to_owned(),
             readonly: false,
-            isolation: crate::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         },
     )];
     let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
@@ -115,12 +115,12 @@ fn validate_mounts_rejects_missing_src() {
 #[test]
 fn validate_mounts_rejects_relative_src() {
     let mounts = vec![(
-        "test-mount".to_string(),
+        "test-mount".to_owned(),
         MountConfig {
-            src: ".".to_string(),
-            dst: "/data".to_string(),
+            src: ".".to_owned(),
+            dst: "/data".to_owned(),
             readonly: false,
-            isolation: crate::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         },
     )];
 
@@ -133,12 +133,12 @@ fn validate_mounts_rejects_relative_src() {
 fn validate_mounts_rejects_relative_dst() {
     let temp = tempfile::tempdir().unwrap();
     let mounts = vec![(
-        "test-mount".to_string(),
+        "test-mount".to_owned(),
         MountConfig {
             src: temp.path().display().to_string(),
-            dst: "relative/path".to_string(),
+            dst: "relative/path".to_owned(),
             readonly: false,
-            isolation: crate::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         },
     )];
     let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
@@ -151,21 +151,21 @@ fn validate_mounts_rejects_duplicate_dst() {
     let src = temp.path().display().to_string();
     let mounts = vec![
         (
-            "mount-a".to_string(),
+            "mount-a".to_owned(),
             MountConfig {
                 src: src.clone(),
-                dst: "/data".to_string(),
+                dst: "/data".to_owned(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         ),
         (
-            "mount-b".to_string(),
+            "mount-b".to_owned(),
             MountConfig {
                 src,
-                dst: "/data".to_string(),
+                dst: "/data".to_owned(),
                 readonly: true,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         ),
     ];
@@ -185,7 +185,7 @@ fn validate_global_mount_rows_rejects_duplicate_scope_name() {
                 src: src.clone(),
                 dst: "/a".into(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
         GlobalMountRow {
@@ -195,7 +195,7 @@ fn validate_global_mount_rows_rejects_duplicate_scope_name() {
                 src,
                 dst: "/b".into(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
     ];
@@ -218,7 +218,7 @@ fn validate_global_mount_rows_rejects_empty_name() {
             src: temp.path().display().to_string(),
             dst: "/x".into(),
             readonly: false,
-            isolation: crate::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         },
     }];
 
@@ -239,7 +239,7 @@ fn validate_global_mount_rows_rejects_overlapping_scope_duplicate_dst() {
                 src: src.clone(),
                 dst: "/cache".into(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
         GlobalMountRow {
@@ -249,7 +249,7 @@ fn validate_global_mount_rows_rejects_overlapping_scope_duplicate_dst() {
                 src,
                 dst: "/cache".into(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
     ];
@@ -271,7 +271,7 @@ fn validate_global_mount_rows_allows_disjoint_scope_duplicate_dst() {
                 src: src.clone(),
                 dst: "/cache".into(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
         GlobalMountRow {
@@ -281,7 +281,7 @@ fn validate_global_mount_rows_allows_disjoint_scope_duplicate_dst() {
                 src,
                 dst: "/cache".into(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
     ];
@@ -301,7 +301,7 @@ fn validate_global_mount_rows_allows_same_name_override_duplicate_dst() {
                 src: src.clone(),
                 dst: "/cache".into(),
                 readonly: false,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
         GlobalMountRow {
@@ -311,7 +311,7 @@ fn validate_global_mount_rows_allows_same_name_override_duplicate_dst() {
                 src,
                 dst: "/cache".into(),
                 readonly: true,
-                isolation: crate::MountIsolation::Shared,
+                isolation: MountIsolation::Shared,
             },
         },
     ];
@@ -323,12 +323,12 @@ fn validate_global_mount_rows_allows_same_name_override_duplicate_dst() {
 fn validate_mounts_expands_tilde_in_src() {
     let home = std::env::var("HOME").unwrap();
     let mounts = vec![(
-        "home-mount".to_string(),
+        "home-mount".to_owned(),
         MountConfig {
-            src: "~".to_string(),
-            dst: "/home-mount".to_string(),
+            src: "~".to_owned(),
+            dst: "/home-mount".to_owned(),
             readonly: true,
-            isolation: crate::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         },
     )];
     let validated = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap();
@@ -419,7 +419,7 @@ fn validate_global_mount_rows_rejects_non_shared_isolation() {
             src: "/tmp/repo".into(),
             dst: "/workspace/repo".into(),
             readonly: false,
-            isolation: crate::MountIsolation::Worktree,
+            isolation: MountIsolation::Worktree,
         },
     }];
 

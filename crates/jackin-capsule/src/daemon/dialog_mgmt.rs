@@ -1,6 +1,9 @@
 //! Dialog stack management for the Multiplexer.
 
-use super::*;
+use super::{
+    Dialog, GithubContextView, Instant, Multiplexer, MuxMode, MuxModeState,
+    github_context_view_from_state, mux_mode_for_state,
+};
 
 impl Multiplexer {
     /// Top of the dialog stack — `Some` when a dialog is visible.
@@ -35,7 +38,7 @@ impl Multiplexer {
     /// Push a new dialog on top of the current one. The previous
     /// dialog stays underneath waiting for an Esc-pop to surface it
     /// again — the standard sub-dialog opening path (Menu → New tab
-    /// pushes AgentPicker on top of Menu, not a replacement).
+    /// pushes `AgentPicker` on top of Menu, not a replacement).
     pub(super) fn dialog_push(&mut self, d: Dialog) {
         self.dialog_copy_feedback_deadline = None;
         self.dialog_stack.push(d);
@@ -46,11 +49,11 @@ impl Multiplexer {
             .active_focused_id()
             .and_then(|id| self.sessions.get(&id))
             .and_then(|s| s.agent.clone());
-        let container_name = self.status_bar.container_name().to_string();
+        let container_name = self.status_bar.container_name().to_owned();
         let diagnostics = crate::container_context::resolve_container_diagnostics();
         self.dialog_push(Dialog::new_container_info(
             container_name,
-            self.status_bar.role().to_string(),
+            self.status_bar.role().to_owned(),
             focused_agent,
             self.workdir.to_string_lossy().into_owned(),
             crate::tui::components::dialog::ContainerInfoDiagnostics {

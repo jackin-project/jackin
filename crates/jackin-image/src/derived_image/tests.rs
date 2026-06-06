@@ -104,9 +104,9 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
         Some(&HooksConfig {
-            setup_once: Some("hooks/setup-once.sh".to_string()),
-            source: Some("hooks/source.sh".to_string()),
-            preflight: Some("hooks/preflight.sh".to_string()),
+            setup_once: Some("hooks/setup-once.sh".to_owned()),
+            source: Some("hooks/source.sh".to_owned()),
+            preflight: Some("hooks/preflight.sh".to_owned()),
         }),
         &[Agent::Claude],
         None,
@@ -455,12 +455,12 @@ fn renders_claude_plugin_installs_after_claude_cli() {
     let config = jackin_core::manifest::ClaudeConfig {
         model: None,
         marketplaces: vec![jackin_core::manifest::ClaudeMarketplaceConfig {
-            source: "obra/superpowers-marketplace".to_string(),
-            sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
+            source: "obra/superpowers-marketplace".to_owned(),
+            sparse: vec!["plugins".to_owned(), ".claude-plugin".to_owned()],
         }],
         plugins: vec![
-            "superpowers@superpowers-marketplace".to_string(),
-            "quote'plugin@market".to_string(),
+            "superpowers@superpowers-marketplace".to_owned(),
+            "quote'plugin@market".to_owned(),
         ],
     };
     let dockerfile = render_derived_dockerfile(
@@ -601,7 +601,7 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         "FROM projectjackin/construct:0.1-trixie\n",
         Some(&HooksConfig {
             setup_once: None,
-            source: Some("hooks/source.sh".to_string()),
+            source: Some("hooks/source.sh".to_owned()),
             preflight: None,
         }),
         &[Agent::Claude],
@@ -632,9 +632,9 @@ fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
         Some(&HooksConfig {
-            setup_once: Some("hooks/setup-once.sh".to_string()),
+            setup_once: Some("hooks/setup-once.sh".to_owned()),
             source: None,
-            preflight: Some("hooks/preflight.sh".to_string()),
+            preflight: Some("hooks/preflight.sh".to_owned()),
         }),
         &[Agent::Claude],
         None,

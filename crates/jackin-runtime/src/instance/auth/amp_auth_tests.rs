@@ -187,7 +187,10 @@ fn surfaces_unreadable_host_secrets_json_as_error() {
 
     // Restore perms so tempdir cleanup succeeds regardless of test
     // outcome.
-    let _ = std::fs::set_permissions(&host_secrets, std::fs::Permissions::from_mode(0o600));
+    drop(std::fs::set_permissions(
+        &host_secrets,
+        std::fs::Permissions::from_mode(0o600),
+    ));
 
     let err = result.expect_err("EACCES on host secrets.json must surface as an error");
     let rendered = format!("{err:#}");

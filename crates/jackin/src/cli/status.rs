@@ -8,7 +8,7 @@ use std::collections::HashMap;
 /// if fleet size grows large enough to make serial inspects a bottleneck.
 async fn poll_sequential<F, T>(futs: impl IntoIterator<Item = F>) -> Vec<T>
 where
-    F: std::future::Future<Output = T>,
+    F: Future<Output = T>,
 {
     let mut results = Vec::new();
     for fut in futs {
@@ -383,7 +383,7 @@ async fn run_level2(
             .exec_capture(container_name, &["sh", "-c", GIT_BRANCH_CMD])
             .await
             .ok()
-            .map(|s| s.trim().to_string())
+            .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty() && s != "unknown")
     } else {
         None
@@ -471,7 +471,7 @@ async fn run_level2(
                 compact_ts(&a.started_at),
                 a.exited_at
                     .as_deref()
-                    .map_or_else(|| "—".to_string(), compact_ts),
+                    .map_or_else(|| "—".to_owned(), compact_ts),
                 a.status,
             );
         }
@@ -499,13 +499,13 @@ struct PrInfo {
 impl PrInfo {
     fn ci_display(&self) -> String {
         match self.ci_status.as_str() {
-            "passing" | "success" => "✓ passing".to_string(),
-            "pending" => "⏳ pending".to_string(),
+            "passing" | "success" => "✓ passing".to_owned(),
+            "pending" => "⏳ pending".to_owned(),
             "failing" | "failure" | "error" => self.ci_failing_check.as_ref().map_or_else(
-                || "✗ failing".to_string(),
+                || "✗ failing".to_owned(),
                 |check| format!("✗ failing — {check}"),
             ),
-            _ => "—".to_string(),
+            _ => "—".to_owned(),
         }
     }
 }
@@ -519,8 +519,8 @@ async fn fetch_pr_info(docker: &impl DockerApi, container_name: &str) -> Option<
         .ok()?;
     let value: serde_json::Value = serde_json::from_str(output.trim()).ok()?;
     let number = value["number"].as_u64()?;
-    let title = value["title"].as_str()?.to_string();
-    let url = value["url"].as_str()?.to_string();
+    let title = value["title"].as_str()?.to_owned();
+    let url = value["url"].as_str()?.to_owned();
 
     // Aggregate statusCheckRollup into a single ci_status.
     let (ci_status, ci_failing_check) = aggregate_ci_status(&value["statusCheckRollup"]);
@@ -536,10 +536,10 @@ async fn fetch_pr_info(docker: &impl DockerApi, container_name: &str) -> Option<
 
 fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
     let Some(checks) = rollup.as_array() else {
-        return ("—".to_string(), None);
+        return ("—".to_owned(), None);
     };
     if checks.is_empty() {
-        return ("—".to_string(), None);
+        return ("—".to_owned(), None);
     }
     let mut failing_check = None;
     let mut any_pending = false;
@@ -557,7 +557,7 @@ fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
                     failing_check = check
                         .get("name")
                         .and_then(|v| v.as_str())
-                        .map(str::to_string);
+                        .map(str::to_owned);
                 }
             }
             "SUCCESS" | "NEUTRAL" | "SKIPPED" => {}
@@ -569,13 +569,13 @@ fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
         }
     }
     if failing_check.is_some() {
-        ("failing".to_string(), failing_check)
+        ("failing".to_owned(), failing_check)
     } else if any_pending {
-        ("pending".to_string(), None)
+        ("pending".to_owned(), None)
     } else if all_pass {
-        ("passing".to_string(), None)
+        ("passing".to_owned(), None)
     } else {
-        ("—".to_string(), None)
+        ("—".to_owned(), None)
     }
 }
 

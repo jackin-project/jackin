@@ -198,7 +198,7 @@ impl AppConfig {
                 selector.name
             ),
             trusted: false,
-            env: std::collections::BTreeMap::new(),
+            env: BTreeMap::new(),
         };
         self.roles.insert(selector.key(), source.clone());
         Ok((source, true))
@@ -244,14 +244,14 @@ impl AppConfig {
         let mut changed = false;
         for &(name, git) in BUILTIN_ROLES {
             let expected = RoleSource {
-                git: git.to_string(),
+                git: git.to_owned(),
                 trusted: true,
-                env: std::collections::BTreeMap::new(),
+                env: BTreeMap::new(),
             };
             match self.roles.get(name) {
                 Some(existing) if existing.git == expected.git && existing.trusted => {}
                 _ => {
-                    self.roles.insert(name.to_string(), expected);
+                    self.roles.insert(name.to_owned(), expected);
                     changed = true;
                 }
             }

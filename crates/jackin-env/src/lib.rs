@@ -1,6 +1,6 @@
 //! jackin-env: operator-env resolution and 1Password CLI integration.
 //!
-//! **Phase 3 (current):** Full operator_env stack extracted here.
+//! **Phase 3 (current):** Full `operator_env` stack extracted here.
 //!
 //! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env`
 

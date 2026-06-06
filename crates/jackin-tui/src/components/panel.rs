@@ -46,7 +46,7 @@ pub struct FocusPalette {
 }
 
 impl FocusPalette {
-    /// Default console palette: PHOSPHOR_GREEN focused, PHOSPHOR_DARK unfocused.
+    /// Default console palette: `PHOSPHOR_GREEN` focused, `PHOSPHOR_DARK` unfocused.
     pub const CONSOLE: Self = Self {
         focused: PHOSPHOR_GREEN,
         unfocused: PHOSPHOR_DARK,
@@ -68,6 +68,7 @@ impl Default for FocusPalette {
     }
 }
 
+#[derive(Debug)]
 pub struct Panel<'a> {
     title: Option<&'a str>,
     focus: PanelFocus,
@@ -143,7 +144,7 @@ pub fn panel_body_area(block: &Block<'_>, area: ratatui::layout::Rect) -> ratatu
 /// A bordered `Block` for **modal overlays** — pickers, dialogs, and any
 /// container that is the active interaction target when visible.
 ///
-/// Always uses the focused (PHOSPHOR_GREEN) border style because modals are
+/// Always uses the focused (`PHOSPHOR_GREEN`) border style because modals are
 /// by definition the active container while they are open. Callers must not
 /// construct `Block::default().borders(ALL).border_style(PHOSPHOR_DARK)` for
 /// modals; use this helper instead so the correct color is the path of least
@@ -161,7 +162,7 @@ pub fn modal_block<'a>() -> Block<'a> {
 
 /// A bordered `Block` for **unfocused** background containers.
 ///
-/// Uses PHOSPHOR_DARK. For most cases, prefer `Panel::new().focus(PanelFocus::Unfocused).block()`
+/// Uses `PHOSPHOR_DARK`. For most cases, prefer `Panel::new().focus(PanelFocus::Unfocused).block()`
 /// which also handles titles. This helper is for untitled containers only.
 #[must_use]
 pub fn unfocused_block<'a>() -> Block<'a> {
@@ -173,8 +174,8 @@ pub fn unfocused_block<'a>() -> Block<'a> {
 /// A bordered `Block` for a **background** modal in a dialog stack.
 ///
 /// When multiple dialogs are stacked, only the topmost dialog uses `modal_block()`
-/// (PHOSPHOR_GREEN border); every dialog beneath uses this helper (PHOSPHOR_DARK
-/// border). Exactly one PHOSPHOR_GREEN border is visible at a time, which satisfies
+/// (`PHOSPHOR_GREEN` border); every dialog beneath uses this helper (`PHOSPHOR_DARK`
+/// border). Exactly one `PHOSPHOR_GREEN` border is visible at a time, which satisfies
 /// the focus-visible one-bright-border rule.
 #[must_use]
 pub fn modal_block_inactive<'a>() -> Block<'a> {

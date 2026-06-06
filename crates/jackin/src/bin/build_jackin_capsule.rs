@@ -48,7 +48,7 @@ fn main() -> Result<()> {
         export,
         profile,
     } = parse_args()?;
-    let arch = arch.unwrap_or_else(|| container_arch().to_string());
+    let arch = arch.unwrap_or_else(|| container_arch().to_owned());
 
     let paths = JackinPaths::detect()?;
     let cached = binary_cache_path(&paths.cache_dir, REQUIRED_VERSION, &arch, profile);
@@ -130,7 +130,7 @@ struct Args {
 /// Release:  `<cache>/jackin-capsule/<version>/linux-<arch>/jackin-capsule`
 /// Debug:    `<cache>/jackin-capsule/<version>/linux-<arch>/jackin-capsule-debug`
 fn binary_cache_path(
-    cache_dir: &std::path::Path,
+    cache_dir: &Path,
     version: &str,
     arch: &str,
     profile: BuildProfile,
@@ -175,7 +175,7 @@ fn parse_args() -> Result<Args> {
             "--export" => export = true,
             "--arch" => arch = args.next(),
             s if s.starts_with("--arch=") => {
-                arch = Some(s.trim_start_matches("--arch=").to_string());
+                arch = Some(s.trim_start_matches("--arch=").to_owned());
             }
             // --debug is a convenience alias for --profile debug.
             "--debug" => profile = BuildProfile::Debug,

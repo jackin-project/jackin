@@ -4,6 +4,7 @@ use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
 
+#[derive(Debug)]
 pub struct AmpRuntime;
 
 impl crate::agent::runtime::private::Sealed for AmpRuntime {}

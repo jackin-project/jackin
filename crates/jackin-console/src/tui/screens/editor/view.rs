@@ -73,7 +73,7 @@ pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
 pub fn editor_header_title(mode: &EditorMode) -> String {
     match mode {
         EditorMode::Edit { name } => format!("edit workspace · {name}"),
-        EditorMode::Create => "create workspace".to_string(),
+        EditorMode::Create => "create workspace".to_owned(),
     }
 }
 
@@ -84,8 +84,8 @@ pub fn editor_name_value(
     create_fallback: &str,
 ) -> String {
     match mode {
-        EditorMode::Edit { name } => pending_name.unwrap_or(name).to_string(),
-        EditorMode::Create => pending_name.unwrap_or(create_fallback).to_string(),
+        EditorMode::Edit { name } => pending_name.unwrap_or(name).to_owned(),
+        EditorMode::Create => pending_name.unwrap_or(create_fallback).to_owned(),
     }
 }
 
@@ -123,7 +123,7 @@ pub fn secret_value_input_state<'a>(
 
 #[must_use]
 pub fn secret_value_current_text(value: Option<&str>) -> String {
-    value.unwrap_or_default().to_string()
+    value.unwrap_or_default().to_owned()
 }
 
 #[must_use]
@@ -150,7 +150,7 @@ pub fn secret_scope_picker_state() -> crate::tui::components::scope_picker::Scop
 #[must_use]
 pub fn secret_new_key_label(scope: &SecretsScopeTag) -> String {
     match scope {
-        SecretsScopeTag::Workspace => "New workspace environment key".to_string(),
+        SecretsScopeTag::Workspace => "New workspace environment key".to_owned(),
         SecretsScopeTag::Role(role) => format!("New {role} environment key"),
     }
 }
@@ -366,7 +366,7 @@ pub fn mount_lines(
     show_cursor: bool,
 ) -> Vec<Line<'static>> {
     let path_w = mount_path_width(rows);
-    let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
+    let mut lines: Vec<Line<'_>> = vec![render_mount_header(path_w)];
 
     for (i, row) in rows.iter().enumerate() {
         let selected = show_cursor && (i == cursor);
@@ -745,7 +745,7 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
                 Span::raw(cursor_col),
                 Span::styled(format!("{:<12}", "Mode"), bold_white),
                 Span::styled(mode_label.clone(), phosphor),
-                Span::styled(suffix.to_string(), dim_green),
+                Span::styled(suffix.to_owned(), dim_green),
             ])
         }
         EditorAuthLineRow::WorkspaceSource { display } => {
@@ -754,7 +754,7 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
         EditorAuthLineRow::RoleHeader { role, expanded } => {
             let glyph = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
             Line::from(vec![
-                Span::styled(glyph.to_string(), disclosure_style()),
+                Span::styled(glyph.to_owned(), disclosure_style()),
                 Span::styled(format!(" Role: {role}"), disclosure_style()),
             ])
         }
@@ -782,9 +782,10 @@ fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usiz
         AuthSourceDisplay::NotRequired => text_width("not required"),
         AuthSourceDisplay::OpRefPath(path) => {
             text_width("[op] ")
-                + crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
-                    .map(|parts| crate::tui::op_breadcrumb::breadcrumb_display_width(&parts))
-                    .unwrap_or_else(|| text_width("<unparseable path - re-pick>"))
+                + crate::tui::op_breadcrumb::parse_path_breadcrumb(path).map_or_else(
+                    || text_width("<unparseable path - re-pick>"),
+                    |parts| crate::tui::op_breadcrumb::breadcrumb_display_width(&parts),
+                )
         }
         AuthSourceDisplay::MaskedPlain { chars } => {
             text_width(&"\u{25cf}".repeat((*chars).clamp(1, 12)))
@@ -872,7 +873,7 @@ fn render_editor_row(
     };
     Line::from(vec![
         Span::styled(format!("{prefix}{label:15}"), label_style),
-        Span::styled(value.to_string(), value_style),
+        Span::styled(value.to_owned(), value_style),
     ])
 }
 
@@ -910,7 +911,7 @@ pub fn secrets_scope_label(scope: &SecretsScopeTag) -> &str {
 #[must_use]
 pub fn secrets_forbidden_label(scope: &SecretsScopeTag) -> String {
     match scope {
-        SecretsScopeTag::Workspace => "workspace env".to_string(),
+        SecretsScopeTag::Workspace => "workspace env".to_owned(),
         SecretsScopeTag::Role(role) => format!("role {role}"),
     }
 }

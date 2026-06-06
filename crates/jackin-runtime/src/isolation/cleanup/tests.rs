@@ -79,7 +79,7 @@ async fn force_cleanup_tolerates_missing_host_repo() {
     let container_dir = TempDir::new().unwrap();
     let rec = IsolationRecord {
         original_src: "/nonexistent/path".into(),
-        ..rec_for(std::path::Path::new("/tmp"), container_dir.path())
+        ..rec_for(Path::new("/tmp"), container_dir.path())
     };
     write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
 
@@ -198,7 +198,7 @@ async fn force_cleanup_retains_record_when_branch_delete_fails_and_branch_still_
     // `git branch -D` fails; verify capture says branch IS present.
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
-        capture_queue: std::collections::VecDeque::from(vec!["  jackin/scratch/x\n".to_string()]),
+        capture_queue: std::collections::VecDeque::from(vec!["  jackin/scratch/x\n".to_owned()]),
         ..Default::default()
     };
     let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
@@ -251,7 +251,7 @@ async fn purge_isolated_for_container_bails_when_any_record_fails() {
     let mut runner = FakeRunner {
         // r1's verify returns "still present"; r2's verify returns empty.
         capture_queue: std::collections::VecDeque::from(vec![
-            "  jackin/scratch/x\n".to_string(),
+            "  jackin/scratch/x\n".to_owned(),
             String::new(),
         ]),
         // Only r1's specific branch fails. Substring match avoids
@@ -322,7 +322,7 @@ async fn force_cleanup_error_message_mentions_record_retention() {
     write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
-        capture_queue: std::collections::VecDeque::from(vec!["jackin/scratch/x".to_string()]),
+        capture_queue: std::collections::VecDeque::from(vec!["jackin/scratch/x".to_owned()]),
         ..Default::default()
     };
     let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)

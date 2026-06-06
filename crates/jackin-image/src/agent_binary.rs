@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-const CACHE_TTL: std::time::Duration = std::time::Duration::from_hours(1);
+const CACHE_TTL: Duration = Duration::from_hours(1);
 const KIMI_BASE_URL: &str = "https://cdn.kimi.com/kimi-code";
 
 #[derive(Debug, Clone)]
@@ -204,7 +204,7 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
 async fn resolve_claude() -> Result<AgentRelease> {
     let base = "https://downloads.claude.ai/claude-code-releases";
     let version = fetch_text(&format!("{base}/latest")).await?;
-    let version = version.trim().to_string();
+    let version = version.trim().to_owned();
     let platform = platform_x64_arm64();
     let manifest: ClaudeManifest =
         serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
@@ -226,7 +226,7 @@ async fn resolve_amp() -> Result<AgentRelease> {
     let version = fetch_text(&format!("{base}/cli/cli-version.txt"))
         .await?
         .trim()
-        .to_string();
+        .to_owned();
     let platform = match container_arch() {
         "arm64" => "linux-arm64",
         _ => "linux-x64",
@@ -248,7 +248,7 @@ async fn resolve_kimi() -> Result<AgentRelease> {
     let version = fetch_text(&format!("{base}/latest"))
         .await?
         .trim()
-        .to_string();
+        .to_owned();
     let platform = platform_x64_arm64();
     let manifest: KimiManifest =
         serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
@@ -279,7 +279,7 @@ async fn resolve_codex() -> Result<AgentRelease> {
             .tag_name
             .trim_start_matches("rust-v")
             .trim_start_matches('v')
-            .to_string(),
+            .to_owned(),
         url: release.asset.browser_download_url,
         checksum,
         archive_member: Some(format!("codex-{arch}")),
@@ -296,10 +296,10 @@ async fn resolve_opencode() -> Result<AgentRelease> {
     let checksum = release.asset.sha256_digest();
     Ok(AgentRelease {
         agent: Agent::Opencode,
-        version: release.tag_name.trim_start_matches('v').to_string(),
+        version: release.tag_name.trim_start_matches('v').to_owned(),
         url: release.asset.browser_download_url,
         checksum,
-        archive_member: Some("opencode".to_string()),
+        archive_member: Some("opencode".to_owned()),
     })
 }
 
@@ -318,7 +318,7 @@ async fn github_auth_token() -> Option<String> {
         .await
     {
         Ok(output) if output.status.success() => {
-            let token = String::from_utf8(output.stdout).ok()?.trim().to_string();
+            let token = String::from_utf8(output.stdout).ok()?.trim().to_owned();
             (!token.is_empty()).then_some(token)
         }
         Ok(output) => {
@@ -381,7 +381,7 @@ async fn retry_with_backoff<T, F, Fut>(
 ) -> Result<T>
 where
     F: Fn() -> Fut,
-    Fut: std::future::Future<Output = Result<T>>,
+    Fut: Future<Output = Result<T>>,
 {
     let mut last_err = anyhow::anyhow!("no attempts made");
     for attempt in 0..max_attempts {
@@ -420,12 +420,12 @@ async fn download_and_cache(release: &AgentRelease, dest: &Path) -> Result<()> {
     }
     let tmp_download = dest.with_extension("download.tmp");
     let tmp_binary = dest.with_extension("tmp");
-    let _ = std::fs::remove_file(&tmp_download);
-    let _ = std::fs::remove_file(&tmp_binary);
+    drop(std::fs::remove_file(&tmp_download));
+    drop(std::fs::remove_file(&tmp_binary));
     let result = download_and_cache_inner(release, dest, &tmp_download, &tmp_binary).await;
     if result.is_err() {
-        let _ = std::fs::remove_file(&tmp_download);
-        let _ = std::fs::remove_file(&tmp_binary);
+        drop(std::fs::remove_file(&tmp_download));
+        drop(std::fs::remove_file(&tmp_binary));
     }
     result
 }
@@ -464,7 +464,7 @@ async fn download_and_cache_inner(
     );
     if let Some(member) = &release.archive_member {
         extract_tar_gz_member(tmp_download, member, tmp_binary)?;
-        let _ = std::fs::remove_file(tmp_download);
+        drop(std::fs::remove_file(tmp_download));
     } else {
         std::fs::rename(tmp_download, tmp_binary)?;
     }
@@ -518,7 +518,7 @@ fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease
     let path = metadata_cache_path(paths, agent);
     let metadata = std::fs::metadata(&path).ok()?;
     let modified = metadata.modified().ok()?;
-    if std::time::SystemTime::now().duration_since(modified).ok()? >= CACHE_TTL {
+    if SystemTime::now().duration_since(modified).ok()? >= CACHE_TTL {
         return None;
     }
     read_release_file(&path)
@@ -629,7 +629,7 @@ impl GithubAsset {
         self.digest
             .as_ref()?
             .strip_prefix("sha256:")
-            .map(str::to_string)
+            .map(str::to_owned)
     }
 }
 

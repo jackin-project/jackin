@@ -381,7 +381,7 @@ fn download_url(version: &str, arch: &str) -> String {
 
 fn base_download_url(version: &str) -> String {
     if is_preview_version(version) {
-        "https://github.com/jackin-project/jackin/releases/download/preview".to_string()
+        "https://github.com/jackin-project/jackin/releases/download/preview".to_owned()
     } else {
         format!("https://github.com/jackin-project/jackin/releases/download/v{version}")
     }
@@ -417,7 +417,7 @@ fn rekor_verification_keys()
             "SIGSTORE_REKOR_PUB_KEY_B64 decoded to invalid SPKI DER; \
              verify the key matches logId wNI9atQG... in trusted_root.json",
         );
-        std::collections::BTreeMap::from([(SIGSTORE_REKOR_KEY_ID.to_string(), key)])
+        std::collections::BTreeMap::from([(SIGSTORE_REKOR_KEY_ID.to_owned(), key)])
     })
 }
 
@@ -744,7 +744,7 @@ fn format_exit_detail(stdout: &str, stderr: &str) -> String {
         .map(|(k, v)| format!("{k}: {v}"))
         .collect();
     if streams.is_empty() {
-        "(no output — possible signal/crash)".to_string()
+        "(no output — possible signal/crash)".to_owned()
     } else {
         streams.join("\n")
     }
@@ -828,7 +828,7 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
                 binary.display()
             );
         }
-        let _ = expected;
+        drop(expected);
         Ok(())
     }
 }

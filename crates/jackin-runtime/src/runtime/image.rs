@@ -73,7 +73,7 @@ pub(super) async fn prepare_runtime_binaries(
 
     Ok(PreparedRuntimeBinaries {
         agent_binaries,
-        jackin_capsule_src: jackin_capsule_src.to_string(),
+        jackin_capsule_src: jackin_capsule_src.to_owned(),
     })
 }
 
@@ -259,7 +259,7 @@ pub(super) async fn build_agent_image(
         version_check::store_cache_bust(paths, &image, &ts);
         ts
     } else {
-        version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_string())
+        version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned())
     };
     let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
     let dockerfile_path = build.dockerfile_path.display().to_string();
@@ -363,7 +363,7 @@ async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) ->
         .capture("git", &["-C", &dir_str, "rev-parse", "HEAD"], None)
         .await
         .ok()
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
 }
 
@@ -372,9 +372,9 @@ fn should_stream_build_output(debug: bool) -> bool {
 }
 
 fn docker_build_env(has_github_token: bool) -> Vec<(String, String)> {
-    let mut env = vec![("BUILDKIT_PROGRESS".to_string(), "plain".to_string())];
+    let mut env = vec![("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned())];
     if has_github_token {
-        env.push(("DOCKER_BUILDKIT".to_string(), "1".to_string()));
+        env.push(("DOCKER_BUILDKIT".to_owned(), "1".to_owned()));
     }
     env
 }
@@ -498,12 +498,12 @@ async fn extract_agent_version(
 async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
     for var in ["GITHUB_TOKEN", "GH_TOKEN"] {
         if let Some(t) = std::env::var(var).ok().filter(|t| !t.trim().is_empty()) {
-            return Some(t.trim().to_string());
+            return Some(t.trim().to_owned());
         }
     }
     match runner.capture_secret("gh", &["auth", "token"], None).await {
         Ok(s) => {
-            let s = s.trim().to_string();
+            let s = s.trim().to_owned();
             (!s.is_empty()).then_some(s)
         }
         Err(e) => {

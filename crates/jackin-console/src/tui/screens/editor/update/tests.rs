@@ -150,17 +150,17 @@ struct RoleEnv {
 
 #[test]
 fn secrets_flat_rows_include_expanded_role_keys() {
-    let workspace_env = BTreeMap::from([("GLOBAL".to_string(), "x")]);
+    let workspace_env = BTreeMap::from([("GLOBAL".to_owned(), "x")]);
     let roles = BTreeMap::from([(
-        "alpha".to_string(),
+        "alpha".to_owned(),
         RoleEnv {
-            env: BTreeMap::from([("ROLE_KEY".to_string(), "x")]),
+            env: BTreeMap::from([("ROLE_KEY".to_owned(), "x")]),
         },
     )]);
     let rows = secrets_flat_rows(
         &workspace_env,
         &roles,
-        &BTreeSet::from(["alpha".to_string()]),
+        &BTreeSet::from(["alpha".to_owned()]),
         |role| &role.env,
     );
 
@@ -182,9 +182,9 @@ fn secrets_flat_rows_include_expanded_role_keys() {
 fn secrets_flat_rows_collapse_role_keys() {
     let workspace_env = BTreeMap::new();
     let roles = BTreeMap::from([(
-        "alpha".to_string(),
+        "alpha".to_owned(),
         RoleEnv {
-            env: BTreeMap::from([("ROLE_KEY".to_string(), "x")]),
+            env: BTreeMap::from([("ROLE_KEY".to_owned(), "x")]),
         },
     )]);
     let rows = secrets_flat_rows(&workspace_env, &roles, &BTreeSet::new(), |role| &role.env);
@@ -200,11 +200,11 @@ fn secrets_flat_rows_collapse_role_keys() {
 
 #[test]
 fn forbidden_secret_keys_follow_scope() {
-    let workspace_env = BTreeMap::from([("GLOBAL".to_string(), "x")]);
+    let workspace_env = BTreeMap::from([("GLOBAL".to_owned(), "x")]);
     let roles = BTreeMap::from([(
-        "alpha".to_string(),
+        "alpha".to_owned(),
         RoleEnv {
-            env: BTreeMap::from([("ROLE_KEY".to_string(), "x")]),
+            env: BTreeMap::from([("ROLE_KEY".to_owned(), "x")]),
         },
     )]);
 
@@ -215,7 +215,7 @@ fn forbidden_secret_keys_follow_scope() {
             &SecretsScopeTag::Workspace,
             |role| { &role.env }
         ),
-        vec!["GLOBAL".to_string()]
+        vec!["GLOBAL".to_owned()]
     );
     assert_eq!(
         forbidden_secret_keys(
@@ -224,7 +224,7 @@ fn forbidden_secret_keys_follow_scope() {
             &SecretsScopeTag::Role("alpha".into()),
             |role| &role.env
         ),
-        vec!["ROLE_KEY".to_string()]
+        vec!["ROLE_KEY".to_owned()]
     );
 }
 
@@ -242,7 +242,7 @@ fn set_secret_value_creates_and_expands_role_scope() {
         "TOKEN",
         "secret",
         |roles, role| {
-            roles.entry(role.to_string()).or_default();
+            roles.entry(role.to_owned()).or_default();
         },
         |role| &mut role.env,
     );
@@ -253,24 +253,24 @@ fn set_secret_value_creates_and_expands_role_scope() {
 
 #[test]
 fn secret_row_targets_follow_scope() {
-    let workspace = SecretsRow::WorkspaceKeyRow("TOKEN".to_string());
-    let role = SecretsRow::RoleAddSentinel("alpha".to_string());
+    let workspace = SecretsRow::WorkspaceKeyRow("TOKEN".to_owned());
+    let role = SecretsRow::RoleAddSentinel("alpha".to_owned());
 
     assert_eq!(
         secret_delete_target_for_row(Some(&workspace)),
-        Some((SecretsScopeTag::Workspace, "TOKEN".to_string()))
+        Some((SecretsScopeTag::Workspace, "TOKEN".to_owned()))
     );
     assert_eq!(
         secret_add_target_for_row(Some(&role)),
-        Some(SecretsScopeTag::Role("alpha".to_string()))
+        Some(SecretsScopeTag::Role("alpha".to_owned()))
     );
     assert_eq!(
         secret_picker_target_for_row(Some(&role)),
-        Some((SecretsScopeTag::Role("alpha".to_string()), None))
+        Some((SecretsScopeTag::Role("alpha".to_owned()), None))
     );
     assert_eq!(
         secret_unmask_target_for_row(Some(&workspace), |_, _| true),
-        Some((SecretsScopeTag::Workspace, "TOKEN".to_string()))
+        Some((SecretsScopeTag::Workspace, "TOKEN".to_owned()))
     );
     assert_eq!(
         secret_unmask_target_for_row(Some(&workspace), |_, _| false),
@@ -281,23 +281,23 @@ fn secret_row_targets_follow_scope() {
 #[test]
 fn secret_enter_plan_handles_values_and_headers() {
     let key = SecretsRow::RoleKeyRow {
-        role: "alpha".to_string(),
-        key: "TOKEN".to_string(),
+        role: "alpha".to_owned(),
+        key: "TOKEN".to_owned(),
     };
     let collapsed = SecretsRow::RoleHeader {
-        role: "alpha".to_string(),
+        role: "alpha".to_owned(),
         expanded: false,
     };
     let expanded = SecretsRow::RoleHeader {
-        role: "alpha".to_string(),
+        role: "alpha".to_owned(),
         expanded: true,
     };
 
     assert_eq!(
         secret_enter_plan_for_row(Some(&key), |_, _| true),
         SecretsEnterPlan::EditValue {
-            scope: SecretsScopeTag::Role("alpha".to_string()),
-            key: "TOKEN".to_string()
+            scope: SecretsScopeTag::Role("alpha".to_owned()),
+            key: "TOKEN".to_owned()
         }
     );
     assert_eq!(
@@ -306,7 +306,7 @@ fn secret_enter_plan_handles_values_and_headers() {
     );
     assert_eq!(
         secret_enter_plan_for_row(Some(&collapsed), |_, _| true),
-        SecretsEnterPlan::ExpandRole("alpha".to_string())
+        SecretsEnterPlan::ExpandRole("alpha".to_owned())
     );
     assert_eq!(
         secret_enter_plan_for_row(Some(&expanded), |_, _| true),
@@ -316,20 +316,20 @@ fn secret_enter_plan_handles_values_and_headers() {
 
 #[test]
 fn toggle_allowed_role_demotes_all_and_clears_default() {
-    let role_names = vec!["alpha".to_string(), "beta".to_string()];
+    let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
     let mut allowed_roles = Vec::new();
-    let mut default_role = Some("alpha".to_string());
+    let mut default_role = Some("alpha".to_owned());
 
     toggle_allowed_role_at(&mut allowed_roles, &mut default_role, &role_names, 0);
 
-    assert_eq!(allowed_roles, vec!["beta".to_string()]);
+    assert_eq!(allowed_roles, vec!["beta".to_owned()]);
     assert_eq!(default_role, None);
 }
 
 #[test]
 fn toggle_allowed_role_collapses_full_roster_to_all() {
-    let role_names = vec!["alpha".to_string(), "beta".to_string()];
-    let mut allowed_roles = vec!["alpha".to_string()];
+    let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
+    let mut allowed_roles = vec!["alpha".to_owned()];
     let mut default_role = None;
 
     toggle_allowed_role_at(&mut allowed_roles, &mut default_role, &role_names, 1);
@@ -339,16 +339,16 @@ fn toggle_allowed_role_collapses_full_roster_to_all() {
 
 #[test]
 fn toggle_default_role_requires_effective_allowance() {
-    let role_names = vec!["alpha".to_string(), "beta".to_string()];
+    let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
     let mut default_role = None;
 
-    toggle_default_role_at(&["alpha".to_string()], &mut default_role, &role_names, 1);
+    toggle_default_role_at(&["alpha".to_owned()], &mut default_role, &role_names, 1);
     assert_eq!(default_role, None);
 
-    toggle_default_role_at(&["alpha".to_string()], &mut default_role, &role_names, 0);
+    toggle_default_role_at(&["alpha".to_owned()], &mut default_role, &role_names, 0);
     assert_eq!(default_role.as_deref(), Some("alpha"));
 
-    toggle_default_role_at(&["alpha".to_string()], &mut default_role, &role_names, 0);
+    toggle_default_role_at(&["alpha".to_owned()], &mut default_role, &role_names, 0);
     assert_eq!(default_role, None);
 }
 
@@ -390,7 +390,7 @@ fn auth_flat_rows_root_view_lists_kinds() {
 #[test]
 fn auth_flat_rows_detail_view_expands_role_source_rows() {
     let roles = BTreeMap::from([(
-        "alpha".to_string(),
+        "alpha".to_owned(),
         RoleAuth {
             override_present: true,
             needs_source: true,
@@ -401,7 +401,7 @@ fn auth_flat_rows_detail_view_expands_role_source_rows() {
         [TestAuthKind::Claude, TestAuthKind::Github],
         &roles,
         3,
-        &BTreeSet::from(["alpha".to_string()]),
+        &BTreeSet::from(["alpha".to_owned()]),
         |_, role| role.override_present,
         |_, role| role.is_empty() || roles[role].needs_source,
     );
@@ -416,15 +416,15 @@ fn auth_flat_rows_detail_view_expands_role_source_rows() {
             },
             AuthRow::Spacer,
             AuthRow::RoleHeader {
-                role: "alpha".to_string(),
+                role: "alpha".to_owned(),
                 expanded: true,
             },
             AuthRow::RoleMode {
-                role: "alpha".to_string(),
+                role: "alpha".to_owned(),
                 kind: TestAuthKind::Claude
             },
             AuthRow::RoleSource {
-                role: "alpha".to_string(),
+                role: "alpha".to_owned(),
                 kind: TestAuthKind::Claude
             },
             AuthRow::Spacer,

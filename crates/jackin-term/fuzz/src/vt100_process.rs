@@ -25,7 +25,7 @@ fuzz_target!(|data: &[u8]| {
     let (rows, cols) = screen.size();
     for r in 0..rows {
         for c in 0..cols {
-            let _ = screen.cell(r, c);
+            drop(screen.cell(r, c));
         }
     }
 });

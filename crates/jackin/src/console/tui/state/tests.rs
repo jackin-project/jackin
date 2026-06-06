@@ -22,7 +22,7 @@ fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinP
 
 fn empty_ws(workdir: &str) -> WorkspaceConfig {
     WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.into(),
         ..Default::default()
     }
@@ -31,7 +31,7 @@ fn empty_ws(workdir: &str) -> WorkspaceConfig {
 #[test]
 fn summary_counts_mounts_and_readonly() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/a".into(),
         mounts: vec![
             MountConfig {
@@ -144,7 +144,7 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
     overlay_running_instances(
         &paths,
         &mut instances,
-        &["jk-k7p9m2xq-demo-alpha".to_string()],
+        &["jk-k7p9m2xq-demo-alpha".to_owned()],
     );
 
     assert_eq!(instances.len(), 1);
@@ -187,7 +187,7 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
     overlay_running_instances(
         &paths,
         &mut instances,
-        &["jk-k7p9m2xq-demo-alpha".to_string()],
+        &["jk-k7p9m2xq-demo-alpha".to_owned()],
     );
 
     assert_eq!(instances.len(), 1);
@@ -293,7 +293,7 @@ fn manager_preselects_saved_workspace_matching_cwd() {
     config.workspaces.insert(
         "big-monorepo".into(),
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workdir.clone(),
             mounts: vec![MountConfig {
                 src: workdir.clone(),
@@ -775,7 +775,7 @@ ZAI_API_KEY = "secret"
         .auth
         .pending
         .iter_mut()
-        .find(|row| row.kind == jackin_console::tui::auth::AuthKind::Zai)
+        .find(|row| row.kind == AuthKind::Zai)
         .expect("settings auth rows include Z.AI");
     row.mode = jackin_console::tui::auth::AuthMode::Ignore;
 
@@ -811,7 +811,7 @@ ZAI_API_KEY = "secret"
 fn editor_with_one_shared_mount() -> EditorState<'static> {
     use std::collections::BTreeMap;
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: String::new(),
         mounts: vec![MountConfig {
             src: "/host/a".into(),

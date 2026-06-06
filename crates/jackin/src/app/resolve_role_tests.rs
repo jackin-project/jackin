@@ -24,11 +24,11 @@ async fn resolve_role_multiple_matches_errors_with_names() {
     let docker = crate::docker_client::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             crate::docker_client::ContainerRow {
-                name: "jk-k7p9m2xq-agentsmith".to_string(),
+                name: "jk-k7p9m2xq-agentsmith".to_owned(),
                 labels: HashMap::default(),
             },
             crate::docker_client::ContainerRow {
-                name: "jk-a1b2c3d4-agentsmith".to_string(),
+                name: "jk-a1b2c3d4-agentsmith".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),
@@ -50,7 +50,7 @@ async fn resolve_role_single_match_returns_name() {
     let docker = crate::docker_client::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             crate::docker_client::ContainerRow {
-                name: "jk-k7p9m2xq-agentsmith".to_string(),
+                name: "jk-k7p9m2xq-agentsmith".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),

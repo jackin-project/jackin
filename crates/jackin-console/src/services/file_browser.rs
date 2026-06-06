@@ -63,7 +63,7 @@ pub fn load_entries(cwd: &Path, root: &Path, show_hidden: bool) -> Vec<FolderEnt
         && parent.starts_with(root)
     {
         out.push(FolderEntry {
-            name: "..".to_string(),
+            name: "..".to_owned(),
             path: parent.to_path_buf(),
             is_parent: true,
             is_git: false,
@@ -232,5 +232,5 @@ pub fn start_git_url_resolution(path: PathBuf) -> BlockingSubscription<Option<St
 
 /// Open a resolved git web URL in the host browser.
 pub fn open_git_url(url: &str) {
-    let _ = open::that_detached(url);
+    drop(open::that_detached(url));
 }

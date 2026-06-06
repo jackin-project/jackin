@@ -116,7 +116,7 @@ async fn start_listener_caps_concurrent_clients_at_max() {
         "over-cap connect must not consume a permit"
     );
     match rx.try_recv() {
-        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+        Err(mpsc::error::TryRecvError::Empty) => {}
         other => panic!("rx must not deliver beyond MAX_CONCURRENT_CLIENTS; got: {other:?}"),
     }
 

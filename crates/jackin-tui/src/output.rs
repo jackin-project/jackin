@@ -3,7 +3,6 @@
 //! These helpers write status and decorative lines to stderr so the operator
 //! sees load progress and failure messages alongside the launch cockpit output.
 //! They are intentionally simple — no ratatui widgets, no raw-mode management.
-
 use owo_colors::OwoColorize as _;
 
 use crate::{PHOSPHOR_GREEN, Rgb};
@@ -22,7 +21,7 @@ pub fn step_fail(msg: &str) {
 /// Clear the terminal screen via ANSI escape codes.
 pub fn clear_screen() {
     eprint!("\x1b[2J\x1b[H");
-    let _ = std::io::Write::flush(&mut std::io::stderr());
+    drop(std::io::Write::flush(&mut std::io::stderr()));
 }
 
 /// Print a hint line with a highlighted command to stdout.

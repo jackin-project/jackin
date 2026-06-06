@@ -53,7 +53,7 @@ fn eligible_agents_returns_allowed_when_list_non_empty() {
     let cfg = config_with_agents(&["agent-smith", "agent-brown", "agent-architect"]);
     let editor = editor_for(ws_with_overrides(&["agent-smith"], &[]));
     let eligible = eligible_agents_for_override(&editor, &cfg);
-    assert_eq!(eligible, vec!["agent-smith".to_string()]);
+    assert_eq!(eligible, vec!["agent-smith".to_owned()]);
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn eligible_agents_returns_all_registered_when_allowed_empty() {
     eligible.sort();
     assert_eq!(
         eligible,
-        vec!["agent-brown".to_string(), "agent-smith".to_string()]
+        vec!["agent-brown".to_owned(), "agent-smith".to_owned()]
     );
 }
 
@@ -85,7 +85,7 @@ fn eligible_agents_does_not_filter_by_existing_overrides() {
     eligible.sort();
     assert_eq!(
         eligible,
-        vec!["agent-brown".to_string(), "agent-smith".to_string()],
+        vec!["agent-brown".to_owned(), "agent-smith".to_owned()],
         "agent-smith already has overrides but must still appear so the operator can add another key to it"
     );
 }

@@ -37,7 +37,7 @@ pub(super) async fn handle(
             keep_awake,
             git_pull,
         } => {
-            let expanded_workdir = workspace::resolve_path(&workdir);
+            let expanded_workdir = resolve_path(&workdir);
             let parsed_mounts = mounts
                 .iter()
                 .map(|value| parse_mount_spec_resolved(value))
@@ -64,7 +64,7 @@ pub(super) async fn handle(
             }
             let mount_count = plan.final_mounts.len();
             let ws = WorkspaceConfig {
-                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: expanded_workdir,
                 mounts: plan.final_mounts,
                 allowed_roles,
@@ -73,7 +73,7 @@ pub(super) async fn handle(
                 last_role: None,
                 env: std::collections::BTreeMap::new(),
                 roles: std::collections::BTreeMap::new(),
-                keep_awake: crate::workspace::KeepAwakeConfig {
+                keep_awake: workspace::KeepAwakeConfig {
                     enabled: keep_awake,
                 },
                 claude: None,
@@ -144,16 +144,16 @@ pub(super) async fn handle(
                 let rows: Vec<Row> = workspaces
                     .iter()
                     .map(|(name, ws)| Row {
-                        name: (*name).to_string(),
+                        name: (*name).to_owned(),
                         workdir: tui::shorten_home(&ws.workdir),
                         mounts: ws.mounts.len(),
                         allowed: if ws.allowed_roles.is_empty() {
-                            "any role".to_string()
+                            "any role".to_owned()
                         } else {
                             ws.allowed_roles.join(", ")
                         },
-                        default_role: ws.default_role.as_deref().unwrap_or("none").to_string(),
-                        agent: ws.resolved_agent().slug().to_string(),
+                        default_role: ws.default_role.as_deref().unwrap_or("none").to_owned(),
+                        agent: ws.resolved_agent().slug().to_owned(),
                     })
                     .collect();
                 let mut table = Table::new(rows);
@@ -167,8 +167,8 @@ pub(super) async fn handle(
         WorkspaceCommand::Show(show_args) => {
             let name = &show_args.name;
             let workspace = config.require_workspace(name)?;
-            if crate::cli::format::OutputFormat::parse(&show_args.fmt.format)
-                == crate::cli::format::OutputFormat::Json
+            if cli::format::OutputFormat::parse(&show_args.fmt.format)
+                == cli::format::OutputFormat::Json
             {
                 let mounts: Vec<serde_json::Value> = workspace
                     .mounts
@@ -344,7 +344,7 @@ pub(super) async fn handle(
                 ));
             }
             if no_workdir_mount {
-                changes.push("removed workdir auto-mount".to_string());
+                changes.push("removed workdir auto-mount".to_owned());
             }
             for role in &allowed_roles {
                 changes.push(format!("allowed role {role}"));
@@ -353,12 +353,12 @@ pub(super) async fn handle(
                 changes.push(format!("removed role {role}"));
             }
             if clear_default_role {
-                changes.push("cleared default role".to_string());
+                changes.push("cleared default role".to_owned());
             } else if let Some(ref role) = default_role {
                 changes.push(format!("default role → {role}"));
             }
             if clear_default_agent {
-                changes.push("cleared default agent".to_string());
+                changes.push("cleared default agent".to_owned());
             } else if let Some(agent) = default_agent {
                 changes.push(format!("default agent → {}", agent.slug()));
             }
@@ -615,14 +615,14 @@ pub(super) async fn handle(
                     || {
                         ws.env
                             .iter()
-                            .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
+                            .map(|(k, v)| (k.clone(), v.as_display_str().to_owned()))
                             .collect()
                     },
                     |a| {
                         ws.roles.get(a).map_or_else(Vec::new, |ov| {
                             ov.env
                                 .iter()
-                                .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
+                                .map(|(k, v)| (k.clone(), v.as_display_str().to_owned()))
                                 .collect()
                         })
                     },

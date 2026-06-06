@@ -21,7 +21,7 @@ pub(crate) fn start_role_registration(
             crate::tui::is_debug_mode(),
         )
         .await;
-        let _ = tx.send(result);
+        drop(tx.send(result));
     });
     rx
 }
@@ -47,10 +47,10 @@ pub(crate) async fn register_with_runner(
 
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
-        return (*message).to_string();
+        return (*message).to_owned();
     }
     if let Some(message) = payload.downcast_ref::<String>() {
         return message.clone();
     }
-    "role loader panicked with a non-string payload".to_string()
+    "role loader panicked with a non-string payload".to_owned()
 }

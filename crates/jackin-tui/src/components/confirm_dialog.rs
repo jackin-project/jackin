@@ -186,7 +186,7 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
 
     let prompt_lines_vec: Vec<Line<'_>> = prompt
         .lines()
-        .map(|l| Line::from(Span::styled(l.to_string(), crate::theme::BOLD_WHITE)))
+        .map(|l| Line::from(Span::styled(l.to_owned(), crate::theme::BOLD_WHITE)))
         .collect();
     frame.render_widget(
         Paragraph::new(prompt_lines_vec).alignment(Alignment::Center),

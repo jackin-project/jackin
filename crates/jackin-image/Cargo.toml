@@ -1,14 +1,15 @@
 [package]
 name = "jackin-image"
 version = "0.6.0-dev"
-edition = "2024"
-rust-version = "1.94"
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Image generation and binary artifact management for jackin'."
-license = "Apache-2.0"
+license.workspace = true
 readme = "README.md"
 publish = false
 
+repository.workspace = true
 [lib]
 name = "jackin_image"
 path = "src/lib.rs"
@@ -43,25 +44,5 @@ jackin-build-meta = { path = "../jackin-build-meta" }
 filetime = "=0.2.29"
 tokio = { version = "=1.52.3", features = ["test-util"] }
 
-[lints.rust]
-unsafe_code = "forbid"
-async_fn_in_trait = "allow"
-
-[lints.clippy]
-mod_module_files = "deny"
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "deny", priority = -1 }
-complexity = { level = "warn", priority = -1 }
-style = { level = "warn", priority = -1 }
-perf = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
-dbg_macro = "deny"
-todo = "warn"
-unimplemented = "deny"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-must_use_candidate = "allow"
-module_name_repetitions = "allow"
-future_not_send = "allow"
-cast_possible_truncation = "allow"
+[lints]
+workspace = true

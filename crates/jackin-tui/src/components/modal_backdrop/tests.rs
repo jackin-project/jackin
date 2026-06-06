@@ -13,7 +13,7 @@ fn modal_backdrop_fills_area_with_dialog_backdrop() {
     // Backdrop fills with the terminal default background (Color::Reset), not a
     // fixed colour, so overlays match the operator's terminal theme.
     let expected = crate::theme::DIALOG_BACKDROP;
-    assert_eq!(expected, ratatui::style::Color::Reset);
+    assert_eq!(expected, Color::Reset);
     assert_eq!(buf[(0, 0)].symbol(), " ");
     assert_eq!(buf[(0, 0)].bg, expected);
     assert_eq!(buf[(9, 4)].bg, expected);

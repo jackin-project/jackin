@@ -16,10 +16,10 @@ fn sample_manifest() -> InstanceManifest {
         role_source_ref: Some("main"),
         image_tag: "jk_org_agent",
         docker: DockerResources {
-            role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
-            network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-workspace-agent".to_owned(),
+            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_owned(),
+            network: "jk-k7p9m2xq-workspace-agent-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_owned(),
         },
     })
 }
@@ -40,10 +40,10 @@ fn writes_manifest_under_jackin_state_dir() {
         role_source_ref: Some("main"),
         image_tag: "jk_org_agent",
         docker: DockerResources {
-            role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
-            network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-workspace-agent".to_owned(),
+            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_owned(),
+            network: "jk-k7p9m2xq-workspace-agent-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_owned(),
         },
     });
     manifest.mark_status(InstanceStatus::Running);
@@ -73,10 +73,10 @@ fn index_rebuilds_from_manifests_and_filters_by_query() {
         role_source_ref: Some("main"),
         image_tag: "jk_org_agent",
         docker: DockerResources {
-            role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
-            network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-workspace-agent".to_owned(),
+            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_owned(),
+            network: "jk-k7p9m2xq-workspace-agent-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_owned(),
         },
     });
     manifest
@@ -117,10 +117,10 @@ fn index_update_replaces_existing_entry() {
         role_source_ref: Some("main"),
         image_tag: "jk_org_agent",
         docker: DockerResources {
-            role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
-            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
-            network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
-            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
+            role_container: "jk-k7p9m2xq-workspace-agent".to_owned(),
+            dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_owned(),
+            network: "jk-k7p9m2xq-workspace-agent-net".to_owned(),
+            certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_owned(),
         },
     });
 
@@ -154,7 +154,7 @@ fn mark_many_purged_tombstones_absent_and_present_in_one_pass() {
     // simulates a manifest written before an index update.
     let manifest_b_base = "jk-orphan01-workspace-agent";
     let manifest_b = InstanceManifest {
-        container_base: manifest_b_base.to_string(),
+        container_base: manifest_b_base.to_owned(),
         ..manifest_a.clone()
     };
     let state_b = data_dir.path().join(manifest_b_base);
@@ -208,7 +208,7 @@ fn remove_many_deletes_only_named_entries() {
     let manifest = sample_manifest();
     let other_base = "jk-a1b2c3d4-other-agent";
     let mut other = manifest.clone();
-    other.container_base = other_base.to_string();
+    other.container_base = other_base.to_owned();
     InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
     InstanceIndex::update_manifest(data_dir.path(), &other).unwrap();
 
@@ -285,8 +285,8 @@ fn index_write_leaves_no_temp_file_on_success() {
     assert_eq!(
         names,
         vec![
-            INSTANCE_INDEX_FILE.to_string(),
-            INSTANCE_INDEX_LOCK_FILE.to_string(),
+            INSTANCE_INDEX_FILE.to_owned(),
+            INSTANCE_INDEX_LOCK_FILE.to_owned(),
         ]
     );
 }
@@ -300,8 +300,8 @@ fn update_manifest_concurrent_writes_serialize_via_lock() {
     let data_dir = temp.path().to_path_buf();
     let a = sample_manifest();
     let mut b = sample_manifest();
-    b.container_base = "jackin-other-7p9m2xqk".to_string();
-    b.instance_id = "7p9m2xqk".to_string();
+    b.container_base = "jackin-other-7p9m2xqk".to_owned();
+    b.instance_id = "7p9m2xqk".to_owned();
 
     let d1 = data_dir.clone();
     let h1 = std::thread::spawn(move || InstanceIndex::update_manifest(&d1, &a).unwrap());

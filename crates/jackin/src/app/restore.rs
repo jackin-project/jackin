@@ -29,7 +29,7 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
         &mut self,
         container: &str,
         action: console::ConsoleInstanceAction,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         let docker = BollardDockerClient::connect()?;
         let mut runner = ShellRunner { debug: self.debug };
         // Wrap the eject + post-condition work in an async block so a
@@ -38,7 +38,7 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
         // after removing the last keep-awake container would leave
         // caffeinate asserted on the host and the on-disk manifest
         // stuck at Active/Running while the container is half-gone.
-        let result: anyhow::Result<()> = async {
+        let result: Result<()> = async {
             match action {
                 console::ConsoleInstanceAction::Stop => {
                     runtime::eject_role(&self.paths, container, &docker).await
@@ -337,9 +337,9 @@ fn prompt_moved_ad_hoc_project_path(
     }
     let choices = [
         format!("Use current directory ({})", cwd.display()),
-        "Browse for moved project path".to_string(),
-        "Enter another moved project path".to_string(),
-        "Cancel restore".to_string(),
+        "Browse for moved project path".to_owned(),
+        "Enter another moved project path".to_owned(),
+        "Cancel restore".to_owned(),
     ];
     let selected = dialoguer::Select::new()
         .with_prompt(format!(
@@ -406,8 +406,8 @@ impl MovedPathBrowserChoice {
                 "{}/",
                 path.file_name().unwrap_or_default().to_string_lossy()
             ),
-            Self::Manual => "Enter a path manually".to_string(),
-            Self::Cancel => "Cancel restore".to_string(),
+            Self::Manual => "Enter a path manually".to_owned(),
+            Self::Cancel => "Cancel restore".to_owned(),
         }
     }
 }

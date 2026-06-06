@@ -84,14 +84,14 @@ impl<A: AgentChoice> Default for AgentChoiceState<A> {
     }
 }
 
-pub fn render<A: AgentChoice>(frame: &mut Frame, area: Rect, state: &AgentChoiceState<A>) {
+pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentChoiceState<A>) {
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let phosphor = jackin_tui::theme::GREEN;
     let make_row = |agent: A, label: &str| {
         let prefix = if state.focused == agent { "▸ " } else { "  " };
         Line::from(vec![
             Span::styled(prefix, phosphor),
-            Span::styled(label.to_string(), bold),
+            Span::styled(label.to_owned(), bold),
         ])
     };
 
@@ -105,7 +105,7 @@ pub fn render<A: AgentChoice>(frame: &mut Frame, area: Rect, state: &AgentChoice
         ])
         .split(inner);
 
-    let lines: Vec<Line> = state
+    let lines: Vec<Line<'_>> = state
         .choices
         .iter()
         .map(|a| make_row(*a, agent_picker_label(*a)))

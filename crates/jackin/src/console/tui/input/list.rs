@@ -605,7 +605,7 @@ pub(super) fn handle_new_session_picker(
                 InlineProviderFollowupPlan::StartSession { context, agent } => {
                     InputOutcome::InstanceAction {
                         container: context,
-                        action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+                        action: ConsoleInstanceAction::NewSessionWithAgent(agent),
                     }
                 }
                 InlineProviderFollowupPlan::OpenProviderPicker(picker) => {

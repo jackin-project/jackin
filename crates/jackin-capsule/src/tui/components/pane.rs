@@ -1,7 +1,7 @@
 //! Custom pane-body widget for rendering terminal screen content into a Ratatui Buffer.
 //!
 //! Blits `DamageGrid` cells directly into the Ratatui Buffer so the existing
-//! SocketBackend diff mechanism handles terminal output.
+//! `SocketBackend` diff mechanism handles terminal output.
 
 use jackin_term::{Color as TermColor, GridSnapshot};
 use ratatui::{
@@ -13,6 +13,7 @@ use ratatui::{
 
 /// A Ratatui widget that renders a [`GridSnapshot`] (from `DamageGrid::dump()`)
 /// into the given area.
+#[derive(Debug)]
 pub struct PaneBodyWidget<'a> {
     snapshot: &'a GridSnapshot,
 }
@@ -43,10 +44,10 @@ impl Widget for PaneBodyWidget<'_> {
                         continue;
                     }
 
-                    if !cell.text.is_empty() {
-                        buf_cell.set_symbol(&cell.text);
-                    } else {
+                    if cell.text.is_empty() {
                         buf_cell.set_char(' ');
+                    } else {
+                        buf_cell.set_symbol(&cell.text);
                     }
 
                     buf_cell.set_fg(term_color(cell.fg));

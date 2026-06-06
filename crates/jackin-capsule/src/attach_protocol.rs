@@ -185,11 +185,11 @@ pub(crate) fn initial_spawn_request(
         SpawnRequest::Shell
     } else if let Some(provider) = initial_provider {
         SpawnRequest::AgentWithProvider {
-            slug: initial_agent.to_string(),
+            slug: initial_agent.to_owned(),
             provider_label: provider.label.clone(),
         }
     } else {
-        SpawnRequest::Agent(initial_agent.to_string())
+        SpawnRequest::Agent(initial_agent.to_owned())
     }
 }
 
@@ -202,7 +202,7 @@ pub(crate) fn spawn_request_label(request: &SpawnRequest) -> String {
         } => {
             format!("agent {slug:?} (provider: {provider_label})")
         }
-        SpawnRequest::Shell => "shell".to_string(),
+        SpawnRequest::Shell => "shell".to_owned(),
     }
 }
 

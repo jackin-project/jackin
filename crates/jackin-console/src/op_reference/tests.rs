@@ -15,7 +15,7 @@ fn parse_op_reference_handles_section_in_four_segments() {
     let parts = parse_op_reference("op://Personal/Item/Auth/password").unwrap();
     assert_eq!(parts.vault, "Personal");
     assert_eq!(parts.item, "Item");
-    assert_eq!(parts.section, Some("Auth".to_string()));
+    assert_eq!(parts.section, Some("Auth".to_owned()));
     assert_eq!(parts.field, "password");
 }
 
@@ -26,7 +26,7 @@ fn parse_op_reference_strips_query_suffix() {
     assert_eq!(parts.section, None);
 
     let parts = parse_op_reference("op://Vault/Item/Auth/key?ssh-format=openssh").unwrap();
-    assert_eq!(parts.section, Some("Auth".to_string()));
+    assert_eq!(parts.section, Some("Auth".to_owned()));
     assert_eq!(parts.field, "key");
 }
 

@@ -43,6 +43,7 @@ pub enum EnvScope {
     },
 }
 
+#[derive(Debug)]
 pub struct ConfigEditor {
     doc: DocumentMut,
     path: PathBuf,
@@ -62,7 +63,7 @@ impl ConfigEditor {
             migrations::migrate_config_file_if_needed(&paths.config_file)?;
             let raw = std::fs::read_to_string(&paths.config_file)
                 .with_context(|| format!("reading {}", paths.config_file.display()))?;
-            let _ = load_split_config(paths, Some(raw))?;
+            drop(load_split_config(paths, Some(raw))?);
         } else {
             AppConfig::load_or_init(paths)?;
         }
@@ -192,7 +193,7 @@ impl ConfigEditor {
                 // Unscoped: [docker.mounts.<name>]
                 let mount_table = table_path_mut(
                     &mut self.doc,
-                    &["docker".to_string(), "mounts".to_string(), name.to_string()],
+                    &["docker".to_owned(), "mounts".to_owned(), name.to_owned()],
                 );
                 mount_table.clear();
                 mount_table.insert("src", toml_edit::value(mount.src));
@@ -208,9 +209,9 @@ impl ConfigEditor {
                 let scoped_table = table_path_mut(
                     &mut self.doc,
                     &[
-                        "docker".to_string(),
-                        "mounts".to_string(),
-                        scope_key.to_string(),
+                        "docker".to_owned(),
+                        "mounts".to_owned(),
+                        scope_key.to_owned(),
                     ],
                 );
                 // Build a sub-table for this named mount.
@@ -257,7 +258,7 @@ impl ConfigEditor {
     }
 
     pub fn set_agent_trust(&mut self, agent_key: &str, trusted: bool) {
-        let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
+        let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         if trusted {
             table.insert("trusted", toml_edit::value(true));
         } else {
@@ -269,13 +270,13 @@ impl ConfigEditor {
 
     /// Write `[<agent.slug>].auth_forward = <mode>` at the global layer.
     pub fn set_global_auth_forward(&mut self, agent: Agent, mode: AuthForwardMode) {
-        let table = table_path_mut(&mut self.doc, &[agent.slug().to_string()]);
+        let table = table_path_mut(&mut self.doc, &[agent.slug().to_owned()]);
         table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
     }
 
     /// Write `[github].auth_forward = <mode>` at the global layer.
     pub fn set_global_github_auth_forward(&mut self, mode: GithubAuthMode) {
-        let table = table_path_mut(&mut self.doc, &["github".to_string()]);
+        let table = table_path_mut(&mut self.doc, &["github".to_owned()]);
         table.insert("auth_forward", toml_edit::value(github_mode_str(mode)));
     }
 
@@ -296,7 +297,7 @@ impl ConfigEditor {
     }
 
     fn set_git_bool_field(&mut self, field: &str, enabled: bool) {
-        let git_path = ["git".to_string()];
+        let git_path = ["git".to_owned()];
         if enabled {
             let table = table_path_mut(&mut self.doc, &git_path);
             table.insert(field, toml_edit::value(true));
@@ -328,7 +329,7 @@ impl ConfigEditor {
         agent: Agent,
         mode: Option<AuthForwardMode>,
     ) {
-        let agent_path = vec![agent.slug().to_string()];
+        let agent_path = vec![agent.slug().to_owned()];
         let doc = self.workspace_doc_mut(workspace);
         if let Some(m) = mode {
             let table = table_path_mut(doc, &agent_path);
@@ -350,11 +351,7 @@ impl ConfigEditor {
         agent: Agent,
         mode: Option<AuthForwardMode>,
     ) {
-        let agent_path = vec![
-            "roles".to_string(),
-            role.to_string(),
-            agent.slug().to_string(),
-        ];
+        let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
         let doc = self.workspace_doc_mut(workspace);
         if let Some(m) = mode {
             let table = table_path_mut(doc, &agent_path);
@@ -376,7 +373,7 @@ impl ConfigEditor {
         workspace: &str,
         mode: Option<GithubAuthMode>,
     ) {
-        let github_path = vec!["github".to_string()];
+        let github_path = vec!["github".to_owned()];
         let doc = self.workspace_doc_mut(workspace);
         if let Some(m) = mode {
             let table = table_path_mut(doc, &github_path);
@@ -397,7 +394,7 @@ impl ConfigEditor {
         role: &str,
         mode: Option<GithubAuthMode>,
     ) {
-        let github_path = vec!["roles".to_string(), role.to_string(), "github".to_string()];
+        let github_path = vec!["roles".to_owned(), role.to_owned(), "github".to_owned()];
         let doc = self.workspace_doc_mut(workspace);
         if let Some(m) = mode {
             let table = table_path_mut(doc, &github_path);
@@ -410,7 +407,7 @@ impl ConfigEditor {
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
         // Touch only git + trusted. Leave [roles.X.env] alone —
         // operator-owned.
-        let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
+        let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         table.insert("git", toml_edit::value(git_url));
         table.insert("trusted", toml_edit::value(true));
     }
@@ -424,7 +421,7 @@ impl ConfigEditor {
     /// to persist that insert alongside whatever trust change they're about
     /// to make.
     pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::schema::RoleSource) {
-        let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
+        let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         table.insert("git", toml_edit::value(source.git.clone()));
         if source.trusted {
             table.insert("trusted", toml_edit::value(true));
@@ -487,8 +484,8 @@ impl ConfigEditor {
 
         validate_workspace_file_stem(new)?;
         let value = self.workspace_docs.remove(old).expect("checked above");
-        self.workspace_docs.insert(new.to_string(), value);
-        self.removed_workspaces.insert(old.to_string());
+        self.workspace_docs.insert(new.to_owned(), value);
+        self.removed_workspaces.insert(old.to_owned());
         Ok(())
     }
 
@@ -496,7 +493,7 @@ impl ConfigEditor {
         if self.workspace_docs.remove(name).is_none() {
             anyhow::bail!("workspace {name:?} not found");
         }
-        self.removed_workspaces.insert(name.to_string());
+        self.removed_workspaces.insert(name.to_owned());
         Ok(())
     }
 
@@ -519,7 +516,7 @@ impl ConfigEditor {
             .parse()
             .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
 
-        self.workspace_docs.insert(name.to_string(), parsed);
+        self.workspace_docs.insert(name.to_owned(), parsed);
         self.removed_workspaces.remove(name);
 
         Ok(())
@@ -547,7 +544,7 @@ impl ConfigEditor {
         // the edit IS the change the user is making to that workspace.
         let rendered = toml::to_string(updated)?;
         let parsed: DocumentMut = rendered.parse()?;
-        self.workspace_docs.insert(name.to_string(), parsed);
+        self.workspace_docs.insert(name.to_owned(), parsed);
 
         Ok(())
     }
@@ -570,9 +567,7 @@ impl ConfigEditor {
         validate_workspace_file_stem(workspace)
             .expect("workspace name must be valid for split config filename");
         self.removed_workspaces.remove(workspace);
-        self.workspace_docs
-            .entry(workspace.to_string())
-            .or_default()
+        self.workspace_docs.entry(workspace.to_owned()).or_default()
     }
 
     fn doc_and_path_for_env_scope(&mut self, scope: &EnvScope) -> (&mut DocumentMut, Vec<String>) {
@@ -582,28 +577,28 @@ impl ConfigEditor {
             }
             EnvScope::Workspace(w) => {
                 let doc = self.workspace_doc_mut(w);
-                (doc, vec!["env".to_string()])
+                (doc, vec!["env".to_owned()])
             }
             EnvScope::WorkspaceRole { workspace, role } => {
                 let doc = self.workspace_doc_mut(workspace);
                 (
                     doc,
-                    vec!["roles".to_string(), role.clone(), "env".to_string()],
+                    vec!["roles".to_owned(), role.clone(), "env".to_owned()],
                 )
             }
             EnvScope::WorkspaceGithub(w) => {
                 let doc = self.workspace_doc_mut(w);
-                (doc, vec!["github".to_string(), "env".to_string()])
+                (doc, vec!["github".to_owned(), "env".to_owned()])
             }
             EnvScope::WorkspaceRoleGithub { workspace, role } => {
                 let doc = self.workspace_doc_mut(workspace);
                 (
                     doc,
                     vec![
-                        "roles".to_string(),
+                        "roles".to_owned(),
                         role.clone(),
-                        "github".to_string(),
-                        "env".to_string(),
+                        "github".to_owned(),
+                        "env".to_owned(),
                     ],
                 )
             }
@@ -632,30 +627,30 @@ const fn github_mode_str(mode: GithubAuthMode) -> &'static str {
 
 fn env_scope_path(scope: &EnvScope) -> Vec<String> {
     match scope {
-        EnvScope::Global => vec!["env".to_string()],
-        EnvScope::GlobalGithub => vec!["github".to_string(), "env".to_string()],
-        EnvScope::Role(a) => vec!["roles".to_string(), a.clone(), "env".to_string()],
-        EnvScope::Workspace(w) => vec!["workspaces".to_string(), w.clone(), "env".to_string()],
+        EnvScope::Global => vec!["env".to_owned()],
+        EnvScope::GlobalGithub => vec!["github".to_owned(), "env".to_owned()],
+        EnvScope::Role(a) => vec!["roles".to_owned(), a.clone(), "env".to_owned()],
+        EnvScope::Workspace(w) => vec!["workspaces".to_owned(), w.clone(), "env".to_owned()],
         EnvScope::WorkspaceRole { workspace, role } => vec![
-            "workspaces".to_string(),
+            "workspaces".to_owned(),
             workspace.clone(),
-            "roles".to_string(),
+            "roles".to_owned(),
             role.clone(),
-            "env".to_string(),
+            "env".to_owned(),
         ],
         EnvScope::WorkspaceGithub(w) => vec![
-            "workspaces".to_string(),
+            "workspaces".to_owned(),
             w.clone(),
-            "github".to_string(),
-            "env".to_string(),
+            "github".to_owned(),
+            "env".to_owned(),
         ],
         EnvScope::WorkspaceRoleGithub { workspace, role } => vec![
-            "workspaces".to_string(),
+            "workspaces".to_owned(),
             workspace.clone(),
-            "roles".to_string(),
+            "roles".to_owned(),
             role.clone(),
-            "github".to_string(),
-            "env".to_string(),
+            "github".to_owned(),
+            "env".to_owned(),
         ],
     }
 }
@@ -708,7 +703,7 @@ fn load_workspace_docs(paths: &JackinPaths) -> anyhow::Result<BTreeMap<String, D
         let doc = raw
             .parse()
             .with_context(|| format!("parsing workspace config {}", path.display()))?;
-        docs.insert(stem.to_string(), doc);
+        docs.insert(stem.to_owned(), doc);
     }
     Ok(docs)
 }
@@ -778,7 +773,7 @@ fn prune_empty_trailing_tables(doc: &mut DocumentMut, path: &[String], max_prune
         let still_empty = parent_table
             .get(segment.as_str())
             .and_then(Item::as_table)
-            .is_some_and(toml_edit::Table::is_empty);
+            .is_some_and(Table::is_empty);
         if !still_empty {
             return;
         }

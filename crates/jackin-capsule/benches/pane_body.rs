@@ -54,10 +54,10 @@ impl Widget for CustomPaneBlit<'_> {
                 };
                 let buf_cell = &mut buf[(area.x + col, area.y + row)];
                 let contents = cell.contents();
-                if !contents.is_empty() {
-                    buf_cell.set_symbol(contents);
-                } else {
+                if contents.is_empty() {
                     buf_cell.set_char(' ');
+                } else {
+                    buf_cell.set_symbol(contents);
                 }
                 buf_cell.set_fg(term_color_to_ratatui(cell.fgcolor()));
                 buf_cell.set_bg(term_color_to_ratatui(cell.bgcolor()));
@@ -93,7 +93,7 @@ fn render_raw_ansi_baseline(grid: &DamageGrid, output: &mut Vec<u8>) {
     for row in 0..rows {
         let r1 = row + 1;
         use std::io::Write as _;
-        let _ = write!(output, "\x1b[{r1};1H");
+        let _unused = write!(output, "\x1b[{r1};1H");
         let mut last_fg = TermColor::Default;
         let mut last_bg = TermColor::Default;
         for col in 0..cols {
@@ -133,7 +133,7 @@ fn bench_pane_body(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new(
             "custom_widget_ratatui",
-            format!("{}x{}", BENCH_COLS, BENCH_ROWS),
+            format!("{BENCH_COLS}x{BENCH_ROWS}"),
         ),
         &grid,
         |b, grid| {
@@ -148,10 +148,7 @@ fn bench_pane_body(c: &mut Criterion) {
     );
 
     group.bench_with_input(
-        BenchmarkId::new(
-            "raw_ansi_baseline",
-            format!("{}x{}", BENCH_COLS, BENCH_ROWS),
-        ),
+        BenchmarkId::new("raw_ansi_baseline", format!("{BENCH_COLS}x{BENCH_ROWS}")),
         &grid,
         |b, grid| {
             b.iter(|| {

@@ -108,7 +108,7 @@ pub const WHITE: Rgb = Rgb::new(255, 255, 255);
 
 /// Almost-invisible dim background for the input band inside a
 /// text-input dialog. Picked so the input region is visible even when
-/// empty without competing with the dialog's PHOSPHOR_DARK border.
+/// empty without competing with the dialog's `PHOSPHOR_DARK` border.
 /// Used by the host TUI's `text_input` widget and the
 /// `jackin-capsule` rename dialog so both surfaces share the same
 /// "this is where you type" cue.
@@ -182,12 +182,12 @@ pub const WARNING_YELLOW: Rgb = Rgb::new(255, 216, 94);
 
 /// Dark charcoal canvas fill for the lookbook preview card. Sits between
 /// pure black and the phosphor-dark panel borders so components have a
-/// distinct bounded backdrop without the green tint of PHOSPHOR_DARK.
+/// distinct bounded backdrop without the green tint of `PHOSPHOR_DARK`.
 pub const PREVIEW_CARD: Rgb = Rgb::new(28, 28, 28);
 
 /// Focused pane border for the capsule multiplexer. Near-white so it
 /// reads clearly against agent terminal output without the green brand
-/// tint that PHOSPHOR_GREEN would add.
+/// tint that `PHOSPHOR_GREEN` would add.
 pub const CAPSULE_PANE_FOCUSED: Rgb = Rgb::new(180, 180, 180);
 
 /// Shared ANSI helpers + a centred text-input dialog renderer. The
@@ -282,7 +282,7 @@ pub mod ansi {
 
     /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)
     /// and uses BEL termination, which is accepted by Ghostty, Kitty, iTerm2,
-    /// Alacritty, and WezTerm. (GNOME Terminal / VTE has historically required
+    /// Alacritty, and `WezTerm`. (GNOME Terminal / VTE has historically required
     /// ST `\x1b\\` for OSC 52 — keep it off the BEL-supported list until a
     /// specific VTE version can be cited.)
     #[must_use]
@@ -310,17 +310,17 @@ pub mod ansi {
 
     /// Emit a `1;1`-origin cursor positioning sequence.
     pub fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
-        let _ = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
+        let _unused = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
     }
 
     /// Emit an SGR for a foreground RGB triple.
     pub fn fg(buf: &mut Vec<u8>, rgb: Rgb) {
-        let _ = write!(buf, "\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+        let _unused = write!(buf, "\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
     }
 
     /// Emit an SGR for a background RGB triple.
     pub fn bg(buf: &mut Vec<u8>, rgb: Rgb) {
-        let _ = write!(buf, "\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+        let _unused = write!(buf, "\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
     }
 }
 
@@ -376,7 +376,7 @@ mod tests {
         // crate's lints forbid `unsafe`).
         let home = std::env::var("HOME").unwrap_or_default();
         let alien = if home == "/" {
-            "etc/hosts".to_string()
+            "etc/hosts".to_owned()
         } else {
             format!("{home}.notmine")
         };
@@ -441,7 +441,7 @@ mod tests {
         // nothing on the operator's terminal.
         use base64::Engine as _;
         let payload = "jk-run-42f9aa";
-        let bytes = super::ansi::encode_osc52_clipboard_write(payload);
+        let bytes = ansi::encode_osc52_clipboard_write(payload);
         let encoded = base64::engine::general_purpose::STANDARD.encode(payload.as_bytes());
         let mut expected = Vec::new();
         expected.extend_from_slice(b"\x1b]52;c;");
@@ -454,43 +454,40 @@ mod tests {
     fn encode_osc52_clipboard_write_handles_empty_payload() {
         // Empty payloads still produce a well-formed OSC 52 sequence with an
         // empty base64 body; the terminal interprets that as "clear".
-        let bytes = super::ansi::encode_osc52_clipboard_write("");
+        let bytes = ansi::encode_osc52_clipboard_write("");
         assert_eq!(bytes, b"\x1b]52;c;\x07");
     }
 
     #[test]
     fn take_display_cols_truncates_to_display_width() {
         // ASCII: char count == display width, plain prefix truncation.
-        assert_eq!(super::take_display_cols("abcdef", 3), "abc");
+        assert_eq!(take_display_cols("abcdef", 3), "abc");
         // Wide chars (CJK, width 2) must not be split mid-character: with a
         // 3-col budget after `a` (1) we have 2 cols left, which fits one wide
         // char (2) but not two.
-        assert_eq!(super::take_display_cols("a日本", 3), "a日");
+        assert_eq!(take_display_cols("a日本", 3), "a日");
         // Control bytes are skipped, not counted.
-        assert_eq!(super::take_display_cols("a\x07bc", 3), "abc");
+        assert_eq!(take_display_cols("a\x07bc", 3), "abc");
     }
 
     #[test]
     fn take_display_cols_returns_empty_when_budget_is_zero() {
-        assert_eq!(super::take_display_cols("abc", 0), "");
+        assert_eq!(take_display_cols("abc", 0), "");
     }
 
     #[test]
     fn padded_line_display_cols_mirrors_leading_padding() {
-        assert_eq!(
-            super::padded_line_display_cols(["  abc", "日本"]),
-            2 + 3 + 4 + 2
-        );
+        assert_eq!(padded_line_display_cols(["  abc", "日本"]), 2 + 3 + 4 + 2);
     }
 
     #[test]
     fn leading_space_cols_skips_controls_and_stops_at_text() {
-        assert_eq!(super::leading_space_cols([" \x07 ", "abc", "  "]), 2);
+        assert_eq!(leading_space_cols([" \x07 ", "abc", "  "]), 2);
     }
 
     #[test]
     fn fixed_prefix_scroll_segments_keep_prefix_and_scroll_suffix_by_columns() {
-        let segments = super::fixed_prefix_scroll_segments("▸  a日本z", 0, 3, 1, 8);
+        let segments = fixed_prefix_scroll_segments("▸  a日本z", 0, 3, 1, 8);
         let rendered: Vec<(&str, usize, usize)> = segments
             .iter()
             .map(|seg| {
@@ -518,7 +515,7 @@ mod tests {
     #[test]
     fn fixed_prefix_scroll_segments_keep_combining_mark_with_base() {
         let text = "▸  e\u{301}ab";
-        let segments = super::fixed_prefix_scroll_segments(text, 0, 3, 0, 8);
+        let segments = fixed_prefix_scroll_segments(text, 0, 3, 0, 8);
         let rendered: Vec<&str> = segments
             .iter()
             .map(|seg| &text[seg.start_byte..seg.end_byte])

@@ -290,7 +290,7 @@ const AUTH_FORM_CREDENTIAL_LABEL_WIDTH: usize = 23;
 
 /// Render the auth-edit modal for `form` into `area`.
 pub fn render_form<V: AuthCredential>(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     form: &AuthForm<V>,
     focus: AuthFormFocus,
@@ -358,7 +358,7 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
             label_style(),
         ),
         Span::raw(" "),
-        Span::styled(mode_text.to_string(), jackin_tui::theme::GREEN),
+        Span::styled(mode_text.to_owned(), jackin_tui::theme::GREEN),
     ])));
 
     if form.shows_credential_block()
@@ -401,13 +401,13 @@ fn credential_env_line<R: AuthCredentialRef>(
     match credential {
         CredentialInput::None => {
             spans.push(Span::styled(
-                "required".to_string(),
+                "required".to_owned(),
                 jackin_tui::theme::DANGER,
             ));
         }
         CredentialInput::Literal(value) => {
             let masked = if value.is_empty() {
-                "required".to_string()
+                "required".to_owned()
             } else {
                 "●".repeat(value.chars().count().clamp(1, 12))
             };
@@ -437,12 +437,12 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
     };
     Line::from(vec![
         Span::styled(
-            "  Save  ".to_string(),
+            "  Save  ".to_owned(),
             selected_button_style(focus == AuthFormFocus::Save, save_style),
         ),
         Span::raw("    "),
         Span::styled(
-            "  Cancel  ".to_string(),
+            "  Cancel  ".to_owned(),
             selected_button_style(
                 focus == AuthFormFocus::Cancel,
                 jackin_tui::theme::BOLD_WHITE,
@@ -450,7 +450,7 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
         ),
         Span::raw("    "),
         Span::styled(
-            "  Reset  ".to_string(),
+            "  Reset  ".to_owned(),
             selected_button_style(focus == AuthFormFocus::Reset, jackin_tui::theme::BOLD_WHITE),
         ),
     ])

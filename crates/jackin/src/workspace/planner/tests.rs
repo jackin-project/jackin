@@ -4,8 +4,8 @@ use crate::workspace::{MountConfig, WorkspaceConfig, covers};
 
 fn mount(src: &str, dst: &str) -> MountConfig {
     MountConfig {
-        src: src.to_string(),
-        dst: dst.to_string(),
+        src: src.to_owned(),
+        dst: dst.to_owned(),
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }
@@ -13,7 +13,7 @@ fn mount(src: &str, dst: &str) -> MountConfig {
 
 fn workspace(workdir: &str, mounts: Vec<MountConfig>) -> WorkspaceConfig {
     WorkspaceConfig {
-        workdir: workdir.to_string(),
+        workdir: workdir.to_owned(),
         mounts,
         ..Default::default()
     }
@@ -59,7 +59,7 @@ fn plan_edit_classifies_new_parent_as_edit_driven() {
     assert_eq!(plan.edit_driven_collapses.len(), 1);
     assert_eq!(plan.pre_existing_collapses.len(), 0);
     assert_eq!(plan.edit_driven_collapses[0].child.dst, "/work/sub");
-    assert!(plan.effective_removals.contains(&"/work/sub".to_string()));
+    assert!(plan.effective_removals.contains(&"/work/sub".to_owned()));
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn plan_edit_applies_remove_destinations_before_upsert() {
     let plan = plan_edit(
         &current,
         &[mount("/work", "/work")],
-        &["/work/sub".to_string()],
+        &["/work/sub".to_owned()],
         false,
     )
     .unwrap();
@@ -96,7 +96,7 @@ fn plan_edit_applies_remove_destinations_before_upsert() {
         "no collapse expected: /work/sub was removed before /work was added"
     );
     assert!(plan.pre_existing_collapses.is_empty());
-    assert_eq!(plan.effective_removals, vec!["/work/sub".to_string()]);
+    assert_eq!(plan.effective_removals, vec!["/work/sub".to_owned()]);
 }
 
 #[test]
@@ -129,13 +129,13 @@ fn plan_edit_effective_removals_stack_on_user_removals() {
     let plan = plan_edit(
         &current,
         &[mount("/work", "/work")],
-        &["/extra".to_string()],
+        &["/extra".to_owned()],
         false,
     )
     .unwrap();
 
-    assert!(plan.effective_removals.contains(&"/extra".to_string()));
-    assert!(plan.effective_removals.contains(&"/work/sub".to_string()));
+    assert!(plan.effective_removals.contains(&"/extra".to_owned()));
+    assert!(plan.effective_removals.contains(&"/work/sub".to_owned()));
 }
 
 #[test]
@@ -461,13 +461,13 @@ fn plan_collapse_is_idempotent() {
 #[test]
 fn apply_isolation_overrides_updates_matching_dst() {
     let mut mounts = vec![
-        crate::workspace::MountConfig {
+        MountConfig {
             src: "/tmp/a".into(),
             dst: "/workspace/x".into(),
             readonly: false,
             isolation: crate::isolation::MountIsolation::Shared,
         },
-        crate::workspace::MountConfig {
+        MountConfig {
             src: "/tmp/b".into(),
             dst: "/workspace/y".into(),
             readonly: false,
@@ -494,7 +494,7 @@ fn apply_isolation_overrides_updates_matching_dst() {
 
 #[test]
 fn apply_isolation_overrides_unknown_dst_errors() {
-    let mut mounts = vec![crate::workspace::MountConfig {
+    let mut mounts = vec![MountConfig {
         src: "/tmp/a".into(),
         dst: "/workspace/x".into(),
         readonly: false,

@@ -10,10 +10,10 @@ pub const LEGACY_VERSION: &str = "legacy";
 
 /// Serde default for `AppConfig::version`.
 pub fn current_config_version() -> String {
-    CURRENT_CONFIG_VERSION.to_string()
+    CURRENT_CONFIG_VERSION.to_owned()
 }
 
 /// Serde default for `WorkspaceConfig::version`.
 pub fn current_workspace_version() -> String {
-    CURRENT_WORKSPACE_VERSION.to_string()
+    CURRENT_WORKSPACE_VERSION.to_owned()
 }

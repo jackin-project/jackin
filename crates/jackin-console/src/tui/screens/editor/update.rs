@@ -538,12 +538,12 @@ pub fn set_secret_value<R, V>(
 ) {
     match scope {
         SecretsScopeTag::Workspace => {
-            workspace_env.insert(key.to_string(), value);
+            workspace_env.insert(key.to_owned(), value);
         }
         SecretsScopeTag::Role(role) => {
             ensure_role(roles, role);
             if let Some(role_override) = roles.get_mut(role) {
-                role_env_mut(role_override).insert(key.to_string(), value);
+                role_env_mut(role_override).insert(key.to_owned(), value);
                 expanded_roles.insert(role.clone());
             }
         }

@@ -70,7 +70,7 @@ use ratatui::{
 
 use jackin_tui::components::render_dialog_shell;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
     let inner = render_dialog_shell(frame, area, Some(state.title));
 
     // inner area is 3 rows (5 outer − 2 border): blank, button, blank.

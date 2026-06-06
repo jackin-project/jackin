@@ -136,13 +136,13 @@ pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>)
     );
 }
 
-pub fn render<M: Clone>(frame: &mut Frame, area: Rect, state: &ConfirmSaveState<M>) {
+pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveState<M>) {
     let inner = render_dialog_shell(frame, area, Some("Confirm changes"));
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
     // left gutter so lines don't butt up against the border.
-    let indented: Vec<Line> = state
+    let indented: Vec<Line<'_>> = state
         .lines
         .iter()
         .cloned()
