@@ -140,7 +140,7 @@ DamageGrid (build)  ← Vec<Vec<Cell>>, CompactString cell contents, scrollback
    ↓
 PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-clear
    ↓
-[existing WireDiff] ← render_snapshot_rows, fed dirty_spans() instead of full re-read
+SocketBackend       ← focused live GridPatch rows encode directly; complex frames use Ratatui
                       full clear on geometry change (Defect 44 invariant)
 ```
 
@@ -151,8 +151,8 @@ PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-
 - Damage recorded at mutation, not recomputed by re-read.
 - Zero per-frame heap allocation in the `process()` + borrowed `dump_dirty_patch()` path after
   warmup; the complete capsule focused-render handoff is tracked by the live acceptance ledger.
-- Minimal wire bytes come from Ratatui's `SocketBackend` buffer diff over full snapshots or
-  dirty patches, not from a second terminal model.
+- Minimal wire bytes for focused live pane output come from jackin-term dirty patches encoded
+  directly by `SocketBackend`; complex full/chrome/dialog frames use Ratatui over the same backend.
 - Pure Rust, no foreign bindings, no C/Zig libraries.
 
 ---

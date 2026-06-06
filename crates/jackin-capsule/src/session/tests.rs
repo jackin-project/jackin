@@ -174,6 +174,20 @@ fn focus_events_flag_tracks_dec_1004() {
 }
 
 #[test]
+fn title_and_cwd_changes_mark_pane_chrome_dirty() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    assert!(!session.pane_chrome_dirty());
+
+    session.feed_pty(b"\x1b]2;prompt title\x07");
+    assert!(session.pane_chrome_dirty());
+
+    session.clear_pane_chrome_dirty();
+    assert!(!session.pane_chrome_dirty());
+    session.feed_pty(b"\x1b]7;file:///workspace/project\x07");
+    assert!(session.pane_chrome_dirty());
+}
+
+#[test]
 fn unhandled_csi_kitty_keyboard_push_is_forwarded() {
     // The grid emits the canonical push bytes; the session forwards them
     // verbatim while tracking the stack for focus-swap restore.

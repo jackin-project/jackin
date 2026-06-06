@@ -296,6 +296,11 @@ impl Multiplexer {
         match result {
             Ok(_) => {
                 let mut output = self.ratatui_terminal.backend_mut().take_output();
+                for (pane_id, _) in &pane_titles {
+                    if let Some(session) = self.sessions.get_mut(pane_id) {
+                        session.clear_pane_chrome_dirty();
+                    }
+                }
                 // OSC 8 hyperlinks can't ride the Ratatui cell buffer, so the
                 // shared Debug info dialog's clickable rows (the diagnostics
                 // log path) are re-emitted as a raw overlay over the cells the
@@ -421,6 +426,9 @@ impl Multiplexer {
         }
         let started = Instant::now();
         let dirty_pane_count = dirty_panes.len();
+        if let Some(output) = self.compose_direct_dirty_pane_frame(&dirty_panes, started) {
+            return output;
+        }
         let damage = if self.selection.is_some() {
             FrameDamage::Full
         } else {
@@ -440,6 +448,46 @@ impl Multiplexer {
             started.elapsed().as_micros()
         );
         buf
+    }
+
+    fn compose_direct_dirty_pane_frame(
+        &mut self,
+        dirty_panes: &HashSet<u64>,
+        started: Instant,
+    ) -> Option<Vec<u8>> {
+        if dirty_panes.len() != 1 || self.dialog_open() || self.selection.is_some() {
+            return None;
+        }
+        let focused_id = self.active_focused_id()?;
+        if !dirty_panes.contains(&focused_id) {
+            return None;
+        }
+        let rect = self.active_focused_inner_rect()?;
+        let area = ratatui::layout::Rect {
+            x: rect.col,
+            y: rect.row,
+            width: rect.cols,
+            height: rect.rows,
+        };
+        {
+            let session = self.sessions.get_mut(&focused_id)?;
+            if session.scrollback_offset != 0 || session.pane_chrome_dirty() {
+                return None;
+            }
+            let dirty = session.shadow_grid.dirty_spans();
+            let patch = session.shadow_grid.dirty_patch_from(dirty);
+            self.ratatui_terminal
+                .backend_mut()
+                .draw_grid_patch(area, &patch);
+        }
+        let mut output = self.ratatui_terminal.backend_mut().take_output();
+        self.append_cursor_state(&mut output, Some(focused_id), Some(rect));
+        crate::cdebug!(
+            "render: kind=partial reason=pty-output dirty_panes=1 via=direct-grid-patch bytes={} duration_us={}",
+            output.len(),
+            started.elapsed().as_micros()
+        );
+        Some(output)
     }
 
     pub(super) fn append_cursor_state(

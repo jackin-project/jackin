@@ -237,6 +237,8 @@ pub struct Session {
     /// NEVER forwarded — see `apply_passthrough_policy` for the
     /// host-pollution rationale.
     cwd: Option<String>,
+    /// True when title/cwd state changed since the pane chrome last rendered.
+    pane_chrome_dirty: bool,
     /// Bytes queued for the attached client after `OscPolicy` filtering.
     /// The daemon drains these via `drain_passthrough` and forwards them
     /// only when this session owns the focused pane.
@@ -640,6 +642,7 @@ impl Session {
                 title: None,
                 icon_name: None,
                 cwd: None,
+                pane_chrome_dirty: false,
                 pending_passthrough: Vec::new(),
                 modify_other_keys: None,
                 bracketed_paste_active: false,
@@ -884,6 +887,9 @@ impl Session {
         for event in events {
             match event {
                 PassthroughEvent::TitleChanged(ref title) => {
+                    if self.title.as_deref() != Some(title.as_str()) {
+                        self.pane_chrome_dirty = true;
+                    }
                     self.title = Some(title.clone());
                     if self.osc_policy.allow_title()
                         && let Some(bytes) = event.encode()
@@ -901,6 +907,9 @@ impl Session {
                 }
                 PassthroughEvent::CwdChanged(uri) => {
                     if let Some(path) = parse_osc7(&uri) {
+                        if self.cwd.as_deref() != Some(path.as_str()) {
+                            self.pane_chrome_dirty = true;
+                        }
                         self.cwd = Some(path);
                     }
                 }
@@ -1107,6 +1116,14 @@ impl Session {
         self.cwd.as_deref()
     }
 
+    pub fn pane_chrome_dirty(&self) -> bool {
+        self.pane_chrome_dirty
+    }
+
+    pub fn clear_pane_chrome_dirty(&mut self) {
+        self.pane_chrome_dirty = false;
+    }
+
     pub fn resize(&mut self, rows: u16, cols: u16) {
         // TIOCSWINSZ failure leaves the agent drawing at the old size
         // while the screen renders at the new geometry — the operator
@@ -1174,6 +1191,7 @@ impl Session {
             title: None,
             icon_name: None,
             cwd: None,
+            pane_chrome_dirty: false,
             pending_passthrough: Vec::new(),
             modify_other_keys: None,
             bracketed_paste_active: false,

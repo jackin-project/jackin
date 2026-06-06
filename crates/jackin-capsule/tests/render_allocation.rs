@@ -4,12 +4,18 @@ use jackin_capsule::tui::components::pane::PaneBodyWidget;
 use jackin_capsule::tui::socket_backend::SocketBackend;
 use jackin_term::DamageGrid;
 use ratatui::{Terminal, layout::Rect};
+use std::sync::Mutex;
 
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+static PROFILER_LOCK: Mutex<()> = Mutex::new(());
+
 #[test]
 fn focused_dirty_patch_render_core_allocation_stays_bounded_after_warmup() {
+    let _guard = PROFILER_LOCK
+        .lock()
+        .expect("profiler lock should not poison");
     let mut grid = DamageGrid::new(3, 20, 100);
     let backend = SocketBackend::new(20, 3);
     let mut terminal = Terminal::new(backend).expect("SocketBackend construction should not fail");
@@ -50,4 +56,38 @@ fn focused_dirty_patch_render_core_allocation_stays_bounded_after_warmup() {
         bytes <= 512,
         "expected only Ratatui Buffer::diff allocations"
     );
+}
+
+#[test]
+fn focused_dirty_patch_direct_encoder_allocates_zero_after_warmup() {
+    let _guard = PROFILER_LOCK
+        .lock()
+        .expect("profiler lock should not poison");
+    let mut grid = DamageGrid::new(3, 20, 100);
+    let mut backend = SocketBackend::new(20, 3);
+    let area = Rect::new(0, 0, 20, 3);
+    let mut output = Vec::with_capacity(4096);
+
+    grid.process(b"\x1b[1;1Hfirst row\x1b[2;1Hsecond row");
+    {
+        let patch = grid.dump_dirty_patch();
+        backend.draw_grid_patch(area, &patch);
+    }
+    backend.drain_output_into(&mut output);
+    output.clear();
+
+    let _profiler = dhat::Profiler::builder().testing().build();
+    let before = dhat::HeapStats::get();
+
+    grid.process(b"\x1b[2;1Hchanged");
+    {
+        let patch = grid.dump_dirty_patch();
+        backend.draw_grid_patch(area, &patch);
+    }
+    backend.drain_output_into(&mut output);
+    std::hint::black_box(output.len());
+
+    let after = dhat::HeapStats::get();
+    dhat::assert_eq!(after.total_blocks - before.total_blocks, 0);
+    dhat::assert_eq!(after.total_bytes - before.total_bytes, 0);
 }

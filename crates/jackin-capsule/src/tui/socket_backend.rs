@@ -11,6 +11,7 @@
 
 use std::io;
 
+use jackin_term::{Cell as TermCell, Color as TermColor, GridPatch};
 use ratatui::{
     backend::{Backend, ClearType},
     buffer::Cell,
@@ -77,6 +78,54 @@ impl SocketBackend {
         self.output.clear();
     }
 
+    /// Draw a terminal-grid dirty patch directly into the backend output.
+    ///
+    /// This bypasses Ratatui's `Terminal::draw` diff allocation for live
+    /// pane-body-only updates. Full frames, chrome, dialogs, and selection
+    /// still go through the Ratatui buffer path.
+    pub fn draw_grid_patch(&mut self, area: ratatui::layout::Rect, patch: &GridPatch<'_>) {
+        let mut cursor_row: Option<u16> = None;
+        let mut cursor_col: Option<u16> = None;
+        let width = area.width.min(patch.cols);
+        for (row, cells) in patch.changed_rows() {
+            if row >= area.height {
+                continue;
+            }
+            for col in 0..width {
+                let Some(cell) = cells.get(col as usize) else {
+                    self.draw_symbol_at(
+                        area.x + col,
+                        area.y + row,
+                        " ",
+                        CellStyle::default(),
+                        &mut cursor_row,
+                        &mut cursor_col,
+                    );
+                    continue;
+                };
+                if cell.is_wide_continuation {
+                    continue;
+                }
+                let (symbol, style) = {
+                    let symbol = if cell.contents().is_empty() {
+                        " "
+                    } else {
+                        cell.contents()
+                    };
+                    (symbol, CellStyle::from_term_cell(cell))
+                };
+                self.draw_symbol_at(
+                    area.x + col,
+                    area.y + row,
+                    symbol,
+                    style,
+                    &mut cursor_row,
+                    &mut cursor_col,
+                );
+            }
+        }
+    }
+
     /// Write the SGR sequence for `style` if it differs from the last one emitted.
     fn apply_style(&mut self, style: CellStyle) {
         if style == self.current_style {
@@ -110,6 +159,69 @@ impl SocketBackend {
         write_color_sgr(&mut self.output, style.bg, true);
 
         self.current_style = style;
+    }
+
+    fn draw_symbol_at(
+        &mut self,
+        x: u16,
+        y: u16,
+        symbol: &str,
+        style: CellStyle,
+        cursor_row: &mut Option<u16>,
+        cursor_col: &mut Option<u16>,
+    ) {
+        let row = y + 1;
+        let col = x + 1;
+        if *cursor_row != Some(row) || *cursor_col != Some(col) {
+            self.output.extend_from_slice(b"\x1b[");
+            push_number(&mut self.output, u32::from(row));
+            self.output.push(b';');
+            push_number(&mut self.output, u32::from(col));
+            self.output.push(b'H');
+            *cursor_row = Some(row);
+        }
+        self.apply_style(style);
+        self.output.extend_from_slice(symbol.as_bytes());
+
+        use unicode_width::UnicodeWidthStr;
+        let width = symbol.width() as u16;
+        if width != 0 {
+            *cursor_col = Some(col + width);
+        }
+    }
+}
+
+impl CellStyle {
+    fn from_term_cell(cell: &TermCell) -> Self {
+        let mut modifiers = Modifier::empty();
+        if cell.bold() {
+            modifiers |= Modifier::BOLD;
+        }
+        if cell.dim() {
+            modifiers |= Modifier::DIM;
+        }
+        if cell.italic() {
+            modifiers |= Modifier::ITALIC;
+        }
+        if cell.underline() {
+            modifiers |= Modifier::UNDERLINED;
+        }
+        if cell.inverse() {
+            modifiers |= Modifier::REVERSED;
+        }
+        Self {
+            fg: term_color(cell.fgcolor()),
+            bg: term_color(cell.bgcolor()),
+            modifiers,
+        }
+    }
+}
+
+const fn term_color(color: TermColor) -> Color {
+    match color {
+        TermColor::Default => Color::Reset,
+        TermColor::Idx(idx) => Color::Indexed(idx),
+        TermColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
     }
 }
 
