@@ -21,8 +21,8 @@ use crate::console::tui::layout::settings::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
-    SettingsTab, clamp_split,
+    DragState, EditorHoverTarget, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal,
+    MountScrollFocus, SettingsHoverTarget, SettingsTab, clamp_split,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
@@ -36,6 +36,7 @@ use jackin_console::tui::layout::{
 use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
 use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
 use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
+use jackin_tui::components::HoverTracker;
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
 
@@ -421,7 +422,11 @@ fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_s
 fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
-            editor.hovered_mount_row = editor_mount_index_at(editor, mouse, term_size);
+            if let Some(index) = editor_mount_index_at(editor, mouse, term_size) {
+                editor.hover_target = Some(EditorHoverTarget::MountRow(index));
+            } else if matches!(editor.hover_target, Some(EditorHoverTarget::MountRow(_))) {
+                editor.hover_target = None;
+            }
         }
         ManagerStage::Settings(settings) => {
             settings.trust.hovered = settings_trust_row_at(settings, mouse, term_size);
@@ -484,6 +489,24 @@ fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
     tab_cell_at_position(mouse.row, mouse.column, labels)
 }
 
+fn tab_hover_index(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
+    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
+    let laid = jackin_tui::lay_out_tabs(&cells, 0);
+    let mut tracker: HoverTracker<usize> = HoverTracker::new();
+    for (idx, cell) in laid.iter().enumerate() {
+        tracker.register(
+            Rect {
+                x: cell.start_col,
+                y: SCREEN_HEADER_HEIGHT,
+                width: cell.cell_cols,
+                height: TAB_STRIP_HEIGHT,
+            },
+            idx,
+        );
+    }
+    tracker.hovered(mouse.column, mouse.row).copied()
+}
+
 /// Repaint the hovered tab index on mouse motion so the strip lifts under the
 /// pointer like the in-container multiplexer tabs. A motion off the strip
 /// clears the highlight (`tab_cell_at` returns `None`).
@@ -491,13 +514,13 @@ fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
     match &mut state.stage {
         ManagerStage::Editor(editor) if editor.modal.is_none() => {
             let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
-            editor.hovered_tab = tab_cell_at(mouse, &labels);
+            editor.hover_target = tab_hover_index(mouse, &labels).map(EditorHoverTarget::Tab);
         }
         ManagerStage::Settings(settings)
             if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
         {
             let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
-            settings.hovered_tab = tab_cell_at(mouse, &labels);
+            settings.hover_target = tab_hover_index(mouse, &labels).map(SettingsHoverTarget::Tab);
         }
         _ => {}
     }

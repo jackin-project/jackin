@@ -56,8 +56,7 @@ pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
     pub active_tab: SettingsTab,
     /// W3C ARIA Tabs: focus is either on the tab list or the active tab panel.
     pub focus_owner: FocusOwner<SettingsTab>,
-    /// Index of the tab cell under the pointer.
-    pub hovered_tab: Option<usize>,
+    pub hover_target: Option<SettingsHoverTarget>,
     pub general: SettingsGeneralState,
     pub mounts: Mounts,
     pub env: Env,
@@ -69,6 +68,11 @@ pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
     pub pending_token_generate: Option<PendingToken>,
     /// Cached footer height for mouse hit-testing.
     pub cached_footer_h: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsHoverTarget {
+    Tab(usize),
 }
 
 impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
@@ -111,6 +115,14 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 
     pub fn set_active_content_focused(&mut self, focused: bool) {
         self.set_content_focused(self.active_tab, focused);
+    }
+
+    #[must_use]
+    pub const fn hovered_tab(&self) -> Option<usize> {
+        match self.hover_target {
+            Some(SettingsHoverTarget::Tab(index)) => Some(index),
+            _ => None,
+        }
     }
 }
 

@@ -149,7 +149,7 @@ pub(crate) fn editor_mount_lines_for_state(state: &EditorState<'_>) -> Vec<Line<
         && state.workspace_mounts_scroll_focused()
         && state.modal.is_none();
     let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
-    editor_mount_lines(&rows, cursor, state.hovered_mount_row, show_cursor)
+    editor_mount_lines(&rows, cursor, state.hovered_mount_row(), show_cursor)
 }
 
 pub(crate) fn editor_role_lines_for_state(

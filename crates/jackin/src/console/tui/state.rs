@@ -212,13 +212,13 @@ pub type SettingsState<'a> = jackin_console::tui::screens::settings::model::Sett
 >;
 
 pub use jackin_console::tui::screens::editor::model::{
-    AuthRow as GenericAuthRow, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, SecretsEnterPlan, SecretsRow, SecretsScopeTag, TextInputTarget,
+    AuthRow as GenericAuthRow, CreateStep, EditorHoverTarget, EditorMode, EditorTab, ExitIntent,
+    FieldFocus, FileBrowserTarget, SecretsEnterPlan, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
 pub use jackin_console::tui::screens::settings::model::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
     SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
-    SettingsGeneralState, SettingsTab, SettingsTrustRow, SettingsTrustState,
+    SettingsGeneralState, SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
 pub use jackin_console::tui::screens::settings::update::{
     settings_map_change_count, settings_vec_change_count,
@@ -585,7 +585,7 @@ pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'s
     SettingsState {
         active_tab: SettingsTab::General,
         focus_owner: FocusOwner::TabBar,
-        hovered_tab: None,
+        hover_target: None,
         general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
         mounts: settings_global_mounts_from_config(config),
         env: settings_env_from_config(config),

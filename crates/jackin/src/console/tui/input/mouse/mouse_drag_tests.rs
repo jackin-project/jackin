@@ -9,9 +9,9 @@ use super::{
 };
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::state::{
-    DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, GlobalMountConfirm, GlobalMountModal,
-    MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal, MountScrollFocus,
-    SecretsScopeTag, SettingsTab, settings_state_from_config,
+    DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
+    GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
+    MountScrollFocus, SecretsScopeTag, SettingsTab, settings_state_from_config,
 };
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -383,7 +383,8 @@ fn mouse_motion_sets_and_clears_editor_tab_hover() {
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("expected editor stage");
     };
-    assert_eq!(editor.hovered_tab, Some(2));
+    assert_eq!(editor.hovered_tab(), Some(2));
+    assert_eq!(editor.hover_target, Some(EditorHoverTarget::Tab(2)));
     assert_eq!(editor.active_tab, EditorTab::General);
 
     // Motion off the strip (header row) clears the highlight.
@@ -395,7 +396,8 @@ fn mouse_motion_sets_and_clears_editor_tab_hover() {
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("expected editor stage");
     };
-    assert_eq!(editor.hovered_tab, None);
+    assert_eq!(editor.hovered_tab(), None);
+    assert_eq!(editor.hover_target, None);
 }
 
 #[test]

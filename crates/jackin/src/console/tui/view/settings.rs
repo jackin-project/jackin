@@ -32,7 +32,7 @@ pub(super) fn render_settings(
         areas.tabs,
         state.active_tab,
         state.tab_bar_focused(),
-        state.hovered_tab,
+        state.hovered_tab(),
     );
 
     match state.active_tab {

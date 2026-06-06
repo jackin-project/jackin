@@ -42,6 +42,12 @@ pub enum EditorFocusTarget {
     TabContent,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorHoverTarget {
+    Tab(usize),
+    MountRow(usize),
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -66,8 +72,7 @@ pub struct EditorState<
     pub active_tab: EditorTab,
     /// W3C ARIA Tabs: focus is either on the tab list or exactly one content block.
     pub focus_owner: FocusOwner<EditorFocusTarget>,
-    /// Index of the tab cell under the pointer.
-    pub hovered_tab: Option<usize>,
+    pub hover_target: Option<EditorHoverTarget>,
     pub active_field: FieldFocus,
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
@@ -87,7 +92,6 @@ pub struct EditorState<
     pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
     pub pending_picker_value: Option<EnvValue>,
     pub workspace_mounts_scroll_x: u16,
-    pub hovered_mount_row: Option<usize>,
     pub tab_scroll_x: u16,
     pub tab_scroll_y: u16,
     pub tab_content_width: usize,
@@ -138,7 +142,7 @@ impl<
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
             focus_owner: FocusOwner::TabBar,
-            hovered_tab: None,
+            hover_target: None,
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
             pending: ws,
@@ -155,7 +159,6 @@ impl<
             pending_picker_target: None,
             pending_picker_value: None,
             workspace_mounts_scroll_x: 0,
-            hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_width: 0,
@@ -221,6 +224,22 @@ impl<
             self.focus_owner = FocusOwner::Content(EditorFocusTarget::TabContent);
         } else if self.tab_content_scroll_focused() {
             self.focus_owner = FocusOwner::TabBar;
+        }
+    }
+
+    #[must_use]
+    pub const fn hovered_tab(&self) -> Option<usize> {
+        match self.hover_target {
+            Some(EditorHoverTarget::Tab(index)) => Some(index),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn hovered_mount_row(&self) -> Option<usize> {
+        match self.hover_target {
+            Some(EditorHoverTarget::MountRow(index)) => Some(index),
+            _ => None,
         }
     }
 
