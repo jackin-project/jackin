@@ -32,4 +32,4 @@ pub use cell::{Attrs, Cell, Color};
 pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
-pub use snapshot::{GridSnapshot, SnapCell};
+pub use snapshot::{GridPatch, GridSnapshot, SnapCell};

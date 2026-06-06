@@ -26,6 +26,30 @@ fn pane_widget_renders_text_into_buffer() {
 }
 
 #[test]
+fn pane_widget_patch_updates_only_dirty_rows() {
+    let mut grid = DamageGrid::new(3, 20, 100);
+    grid.process(b"\x1b[1;1Hfirst row\x1b[2;1Hsecond row");
+    drop(grid.dump_dirty_patch());
+    grid.process(b"\x1b[2;1Hchanged");
+    let patch = grid.dump_dirty_patch();
+
+    let backend = TestBackend::new(20, 3);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            frame.buffer_mut()[(0, 0)].set_symbol("X");
+            frame.buffer_mut()[(0, 1)].set_symbol("Y");
+            frame.render_widget(PaneBodyWidget::from_patch(&patch), area);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    assert_eq!(buf[(0, 0)].symbol(), "X");
+    assert_eq!(buf[(0, 1)].symbol(), "c");
+}
+
+#[test]
 fn pane_widget_maps_color_reset() {
     let color = term_color(jackin_term::Color::Default);
     assert_eq!(color, Color::Reset);

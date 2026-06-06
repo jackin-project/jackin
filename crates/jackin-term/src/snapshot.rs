@@ -98,6 +98,38 @@ pub struct GridSnapshot {
     pub cells: Vec<Vec<SnapCell>>,
 }
 
+/// Snapshot of rows changed since the last dirty-span drain.
+#[derive(Debug, Clone)]
+pub struct GridPatch {
+    /// Number of rows in the full grid.
+    pub rows: u16,
+    /// Number of columns in the full grid.
+    pub cols: u16,
+    /// Cursor position `(row, col)` at snapshot time.
+    pub cursor: (u16, u16),
+    /// Whether the alternate screen was active at snapshot time.
+    pub alternate_screen: bool,
+    /// Changed rows in display order as `(row_index, cells)`.
+    pub rows_changed: Vec<(u16, Vec<SnapCell>)>,
+}
+
+impl GridPatch {
+    /// True when no rows changed.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.rows_changed.is_empty()
+    }
+
+    /// Return the changed row at `row`, or `None` when that row is unchanged.
+    #[must_use]
+    pub fn row(&self, row: u16) -> Option<&[SnapCell]> {
+        self.rows_changed
+            .iter()
+            .find(|(idx, _)| *idx == row)
+            .map(|(_, cells)| cells.as_slice())
+    }
+}
+
 impl GridSnapshot {
     /// Return a human-readable text representation of the grid contents.
     ///

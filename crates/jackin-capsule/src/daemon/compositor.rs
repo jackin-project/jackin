@@ -17,6 +17,11 @@ use super::{
     compose_outer_terminal_title, cursor_visible_for_state, session_display_title,
 };
 
+enum FrameDamage {
+    Full,
+    Dirty(HashSet<u64>),
+}
+
 impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
         let backend_size = self
@@ -62,7 +67,7 @@ impl Multiplexer {
         drop(self.ratatui_terminal.clear());
         // The 2J wiped the bottom rows too; force the chrome to re-emit.
         self.last_bottom_chrome = None;
-        let Some(ratatui_output) = self.compose_ratatui_frame() else {
+        let Some(ratatui_output) = self.compose_ratatui_frame(FrameDamage::Full) else {
             // compose_ratatui_frame only returns None if the Ratatui draw
             // itself errored — effectively impossible with SocketBackend. Skip
             // the frame; the next tick repaints. (There is no raw fallback: the
@@ -104,9 +109,9 @@ impl Multiplexer {
     ///
     /// Returns the ANSI output to send to the attach client, or `None` if the
     /// Ratatui terminal fails to draw (the caller then skips the frame).
-    pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
+    fn compose_ratatui_frame(&mut self, damage: FrameDamage) -> Option<Vec<u8>> {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
-        use crate::tui::view::{CapsuleRatatuiFrame, render_capsule_ratatui_frame};
+        use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};
 
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
@@ -153,22 +158,42 @@ impl Multiplexer {
                 })
             })
             .collect();
-        // Pane bodies as GridSnapshots. A pane the operator has scrolled up in
-        // (scrollback_offset != 0) is dumped as a scrollback VIEW so the
-        // Ratatui body shows history instead of the live tail — the parallel of
-        // the raw path's render_snapshot scrollback branch.
-        let pane_screens: Vec<(u64, jackin_term::GridSnapshot)> = panes
-            .iter()
-            .filter_map(|pane| {
-                self.sessions.get(&pane.id).map(|s| {
-                    (
-                        pane.id,
-                        s.shadow_grid
-                            .dump_scrollback_view(s.scrollback_offset, pane.inner.rows),
-                    )
+        // Pane bodies. Full redraws and scrollback views render complete
+        // snapshots; live partial frames consume `dirty_spans()` and render
+        // only changed rows so unchanged pane bodies do not get re-snapshotted.
+        let pane_screens: Vec<(u64, PaneScreen)> = match &damage {
+            FrameDamage::Full => panes
+                .iter()
+                .filter_map(|pane| {
+                    self.sessions.get_mut(&pane.id).map(|s| {
+                        let snap = s
+                            .shadow_grid
+                            .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
+                        drop(s.shadow_grid.dirty_spans());
+                        (pane.id, PaneScreen::Full(snap))
+                    })
                 })
-            })
-            .collect();
+                .collect(),
+            FrameDamage::Dirty(dirty_panes) => panes
+                .iter()
+                .filter_map(|pane| {
+                    if !dirty_panes.contains(&pane.id) {
+                        return None;
+                    }
+                    self.sessions.get_mut(&pane.id).map(|s| {
+                        if s.scrollback_offset == 0 {
+                            (pane.id, PaneScreen::Patch(s.shadow_grid.dump_dirty_patch()))
+                        } else {
+                            let snap = s
+                                .shadow_grid
+                                .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
+                            drop(s.shadow_grid.dirty_spans());
+                            (pane.id, PaneScreen::Full(snap))
+                        }
+                    })
+                })
+                .collect(),
+        };
 
         // Snapshot dialog state (fully owned) before the draw closure.
         let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> = if dialog_open
@@ -333,7 +358,7 @@ impl Multiplexer {
         // dialog whose state hasn't changed produces an empty or near-empty
         // diff instead of a full fill_screen + repaint. This eliminates the
         // flicker visible when the state_ticker fires while a dialog is open.
-        if let Some(ratatui_output) = self.compose_ratatui_frame() {
+        if let Some(ratatui_output) = self.compose_ratatui_frame(FrameDamage::Full) {
             crate::cdebug!(
                 "render: kind=dialog-overlay reason={} via=ratatui bytes={}",
                 reason.as_str(),
@@ -371,7 +396,13 @@ impl Multiplexer {
             return Vec::new();
         }
         let started = Instant::now();
-        let Some(ratatui_output) = self.compose_ratatui_frame() else {
+        let dirty_pane_count = dirty_panes.len();
+        let damage = if self.selection.is_some() {
+            FrameDamage::Full
+        } else {
+            FrameDamage::Dirty(dirty_panes)
+        };
+        let Some(ratatui_output) = self.compose_ratatui_frame(damage) else {
             crate::clog!("compose_partial_frame: ratatui draw failed; skipping frame");
             return Vec::new();
         };
@@ -380,7 +411,7 @@ impl Multiplexer {
         buf.extend_from_slice(&ratatui_output);
         crate::cdebug!(
             "render: kind=partial reason=pty-output dirty_panes={} bytes={} duration_us={}",
-            dirty_panes.len(),
+            dirty_pane_count,
             buf.len(),
             started.elapsed().as_micros()
         );

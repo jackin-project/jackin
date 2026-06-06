@@ -129,6 +129,12 @@ pub(crate) fn render_capsule_dialog_bottom_chrome(
 /// Dialog snapshot with its bounding rect — factored out to keep `CapsuleRatatuiFrame` readable.
 pub(crate) type DialogFrameSnapshot = (DialogRatatuiSnapshot, (u16, u16, u16, u16));
 
+#[derive(Debug)]
+pub(crate) enum PaneScreen {
+    Full(jackin_term::GridSnapshot),
+    Patch(jackin_term::GridPatch),
+}
+
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
     pub(crate) active_tab: usize,
@@ -140,7 +146,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) zoomed: bool,
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
-    pub(crate) pane_screens: &'a [(u64, jackin_term::GridSnapshot)],
+    pub(crate) pane_screens: &'a [(u64, PaneScreen)],
     pub(crate) sessions_state: &'a [(u64, VisibleAgentState)],
     pub(crate) prefix_mode: crate::tui::components::status_bar::PrefixMode,
     pub(crate) hovered_tab: Option<usize>,
@@ -288,7 +294,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             border_area,
         );
 
-        if let Some((_, snap)) = view
+        if let Some((_, screen)) = view
             .pane_screens
             .iter()
             .find(|(session_id, _)| *session_id == pane.id)
@@ -299,7 +305,14 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
                 width: pane.inner.cols,
                 height: pane.inner.rows,
             };
-            frame.render_widget(PaneBodyWidget::new(snap), body_area);
+            match screen {
+                PaneScreen::Full(snap) => {
+                    frame.render_widget(PaneBodyWidget::new(snap), body_area);
+                }
+                PaneScreen::Patch(patch) => {
+                    frame.render_widget(PaneBodyWidget::from_patch(patch), body_area);
+                }
+            }
         }
     }
 

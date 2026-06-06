@@ -216,6 +216,46 @@ impl DamageGrid {
         self.passthrough.drain()
     }
 
+    /// Drain dirty spans and snapshot only the rows that changed.
+    pub fn dump_dirty_patch(&mut self) -> crate::snapshot::GridPatch {
+        let dirty = self.dirty_spans();
+        let screen = if self.alt_screen {
+            &self.alternate
+        } else {
+            &self.primary
+        };
+        let mut rows_changed = Vec::new();
+        match dirty {
+            DirtySpans::All => {
+                rows_changed.reserve(screen.len());
+                for (row_idx, row) in screen.iter().enumerate() {
+                    rows_changed.push((
+                        row_idx as u16,
+                        row.iter().map(crate::snapshot::SnapCell::from).collect(),
+                    ));
+                }
+            }
+            DirtySpans::Rows(rows) => {
+                rows_changed.reserve(rows.len());
+                for row_idx in rows {
+                    if let Some(row) = screen.get(row_idx as usize) {
+                        rows_changed.push((
+                            row_idx,
+                            row.iter().map(crate::snapshot::SnapCell::from).collect(),
+                        ));
+                    }
+                }
+            }
+        }
+        crate::snapshot::GridPatch {
+            rows: self.rows,
+            cols: self.cols,
+            cursor: (self.cursor_row, self.cursor_col),
+            alternate_screen: self.alt_screen,
+            rows_changed,
+        }
+    }
+
     /// Dump the current screen state as a `GridSnapshot`.
     ///
     /// The snapshot is a complete, owned copy of the active grid — primary or
@@ -1483,6 +1523,32 @@ mod scrollback_view_tests {
             g.process(format!("line{i}\r\n").as_bytes());
         }
         assert_eq!(g.scrollback_len(), 0);
+    }
+
+    #[test]
+    fn dump_dirty_patch_drains_changed_rows_only() {
+        let mut g = DamageGrid::new(3, 12, 100);
+        g.process(b"\x1b[1;1Halpha\x1b[2;1Hbeta");
+        drop(g.dump_dirty_patch());
+
+        g.process(b"\x1b[2;1Hgamma");
+        let patch = g.dump_dirty_patch();
+
+        assert_eq!(patch.rows_changed.len(), 1);
+        assert_eq!(patch.rows_changed[0].0, 1);
+        let text: String = patch.rows_changed[0]
+            .1
+            .iter()
+            .map(|cell| {
+                if cell.text.is_empty() {
+                    " ".to_owned()
+                } else {
+                    cell.text.clone()
+                }
+            })
+            .collect();
+        assert!(text.starts_with("gamma"));
+        assert!(g.dump_dirty_patch().is_empty());
     }
 }
 
