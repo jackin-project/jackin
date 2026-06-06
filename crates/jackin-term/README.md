@@ -67,7 +67,7 @@ truth is worse:
 
 | Candidate | Parser | Damage | Packed cells | Passthrough | Diff-to-escape | Verdict |
 |---|---|---|---|---|---|---|
-| `vt100` (fork) | own SM | **none** | `String`/cell | `Callbacks` (forked) | ✓ (unused) | Current; wrong shape |
+| `vt100` (fork) | own SM | **none** | `String`/cell | `Callbacks` (forked) | ✓ (unused) | Retired; wrong shape |
 | `vte` alone | ✓ | n/a | n/a | n/a | n/a | Parser only; always depend |
 | `alacritty_terminal` | `vte` | ✓ line-level | ✓ packed | GPU-shaped | **none** | Grid+damage fit; passthrough gap |
 | `termwiz` / `wezterm-term` | own | ✓ (`Change`) | partial | ✓ | ✓ (unused for us) | Too broad; unstable pub API |
@@ -90,12 +90,12 @@ is the weakest option.
 Found we use the grid (cell read), geometry, modes, scrollback, and `Callbacks` — never the emit.
 Confirmed the per-cell `String` alloc and the O(grid) snapshot rebuild by reading `render.rs`.
 
-**`alacritty_terminal` spike (planned, Phase 1 gate):** adopt `alacritty_terminal` purely as
-the grid+damage source, keeping our existing emit. This is the cheapest "buy" path and may
-eliminate the need to build from scratch. The spike is the first Phase 1 experiment.
+**`alacritty_terminal` buy path:** evaluated as a grid+damage source while keeping jackin's
+emit. The grid ideas remain useful references, but the public API is not shaped for a stable
+multiplexer-facing dependency.
 
-**`termwiz` spike:** confirmed `wezterm-term` is not a separately published crate and `termwiz`
-has no stability guarantees on its grid API.
+**`termwiz` buy path:** confirmed `wezterm-term` is not a separately published crate and
+`termwiz` is broader than the narrow terminal-model surface jackin-capsule needs.
 
 ---
 

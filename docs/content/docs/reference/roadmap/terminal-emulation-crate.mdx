@@ -163,9 +163,9 @@ The concept has three nested claims, each of which must be checked:
 
 2. **The performance-optimal design for our hot path is a hybrid that no single crate ships:** the canonical fast **parser** (`vte`, which Alacritty and Rio's `copa` both build on) + a **ring-buffer, damage-tracked grid** (Alacritty's `Storage` idea) + a **wire-minimal diff-to-escape emit** (vt100's idea, but driven by source-recorded damage instead of full-screen compare) + a **typed passthrough event stream** that makes the capsule's OSC/kitty/focus/cwd/scrollback needs first-class instead of bolted on through callbacks.
 
-3. **Because we already maintain a fork and owning crates is not a problem here, the marginal cost of turning that fork into a purpose-built crate (`jackin-term`) is small relative to the architectural and maintenance benefit — *if* the benefit is real.** A refactor of the fork into a multiplexer-shaped library would: stop tracking someone else's stalled SHA, make every capsule-specific need a first-class API rather than a patch, and potentially become a reusable building block for the broader jackin' ecosystem.
+3. **Because the old fork was permanent and owning crates is not a problem here, the marginal cost of a purpose-built crate (`jackin-term`) is small relative to the architectural and maintenance benefit.** A multiplexer-shaped terminal model stops tracking someone else's stalled SHA, makes every capsule-specific need a first-class API rather than a patch, and can become a reusable building block for the broader jackin' ecosystem.
 
-The concept is therefore: **fork-and-refactor `vt100` into a hybrid, multiplexer-native terminal crate that takes the best of `vt100` (re-emit model) and Alacritty (parser + ring-buffer grid + damage), owned by jackin'.** The verification plan decides whether that is worth doing.
+The concept is therefore: **use the internal `jackin-term` terminal model as the only capsule terminal substrate**: `vte` for parsing, an owned damage grid for terminal state, typed passthrough events for OSC/CSI side channels, and capsule-owned focused-patch emission. The verification plan now proves this implementation under real load; it no longer decides whether to keep a `vt100` path.
 
 ## Our potential guess, and verifying it against Alacritty
 
@@ -335,11 +335,11 @@ GridSnapshot present                 ← DamageGrid::dump() → PaneBodyWidget (
 + multi-session arena                ← Ghostty offset addressing → cheap N panes
 ```
 
-Each layer names its source. Nothing here is invented for novelty; every piece is the best existing answer to a sub-problem, re-assembled in Rust around the one sub-problem nobody else packages: **minimal-byte re-emission to a host terminal.** Whether that assembly is worth building rather than borrowing `termwiz` or staying on `vt100` is what the experiments below decide.
+Each layer names its source. Nothing here is invented for novelty; every piece is the best existing answer to a sub-problem, re-assembled in Rust around the one sub-problem nobody else packages: **minimal-byte re-emission to a host terminal.** The remaining experiments measure the implementation; they do not reopen the terminal-model choice.
 
-## How we verify the concept — the experiments
+## How we verify the implementation
 
-This is the core of the item. **We do not build `jackin-term` on belief. We build instrumentation, capture real numbers under real load, and apply numeric decision gates.** All measurements run inside a role container against the real `jackin-capsule` daemon, with `--debug` so the numbers land in the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`).
+This is the core of the remaining item. **`jackin-term` is the implementation; verification proves it is good enough under real load.** All live measurements run inside a role container against the real `jackin-capsule` daemon, with `--debug` so the numbers land in the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`). There is no fallback terminal model and no `vt100` baseline left in the build.
 
 ### Step 0 — retire the fork the cheap way first (do regardless)
 
@@ -347,15 +347,15 @@ Superseded cleanup: the old fork-retirement baseline is complete because `vt100`
 
 ### Experiment 1 — profile the present path (the load-bearing measurement)
 
-**Goal:** find out whether the capsule has *any* per-frame wall, and if so, in which stage.
+**Goal:** find out whether the `jackin-term` capsule path has *any* per-frame wall, and if so, in which stage.
 
 **Instrumentation:** add `cdebug!`-gated timers around the three stages, in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />:
 
 - `t_parse` — `Parser::process(bytes)` per PTY read.
-- `t_diff` — `Screen` diff / `contents_formatted` per rendered frame.
+- `t_diff` — `GridPatch`/Ratatui buffer diff and encode per rendered frame.
 - `t_write` — host-PTY write per frame.
 
-Per frame, also record: bytes-in, bytes-out, grid size (rows × cols), and number of changed cells (compute it even though vt100 doesn't expose damage — diff the prev/next contents once for the measurement).
+Per frame, also record: bytes-in, bytes-out, grid size (rows × cols), and number of changed cells from `dirty_spans()`.
 
 **Workload datasets** (each run captured to its own diagnostics run id):
 
@@ -375,9 +375,9 @@ Per frame, also record: bytes-in, bytes-out, grid size (rows × cols), and numbe
 
 **Goal:** test win 3 (wire-minimal emit) directly.
 
-For a sample of representative frames from Experiment 1, compute the **theoretical minimal escape byte count** for the actual cell delta (cursor-move + styled run-length) and compare to what `vt100` actually emitted.
+For a sample of representative frames from Experiment 1, compute the **theoretical minimal escape byte count** for the actual cell delta (cursor-move + styled run-length) and compare to what `SocketBackend` emits from `GridPatch`.
 
-**Decision gate:** if vt100's emitted bytes are within **~15%** of theoretical minimum, the emit stage is already near-optimal → win 3 is dead. If overhead is large (e.g. it re-emits whole lines for single-cell changes), win 3 is live and quantified.
+**Decision gate:** if emitted bytes are within **~15%** of theoretical minimum, the emit stage is near-optimal. If overhead is large (e.g. it re-emits whole lines for single-cell changes), the direct patch encoder needs more work.
 
 ### Experiment 3 — allocation profiling
 
@@ -395,34 +395,21 @@ Spawn 1, 4, 8, 16, 32 sessions all producing steady output. Measure daemon **RSS
 
 **Decision gate:** if memory and CPU scale **linearly and cheaply** to 32 panes, the arena win is marginal → win 5 is low priority. If per-session heap grids cause superlinear RSS or cache-thrash CPU, the arena is justified and quantified.
 
-### Experiment 5 — the prototype spike (only if 1–4 show a wall)
+### Experiment 5 — focused-path acceptance
 
-If and only if Experiments 1–4 surface at least one quantified wall, build a **throwaway feature-flagged branch** implementing the relevant slice (most likely: source-damage tracking + damage-driven emit, reusing vt100's grid as the model) and **A/B it against stock vt100 on the identical datasets.** Measure the delta in the exact metric the wall appeared in.
+The old prototype-spike gate is retired because `jackin-term` is already the production path. The remaining acceptance work is to run the complete focused render path under DHAT and live diagnostics, then record the run ids in the post-restructure checklist.
 
-**Decision gate:** the spike must show a **≥ 2× improvement in the walled metric** (or an unambiguous qualitative fix, e.g. eliminating visible jitter on dataset 3) to justify a full `jackin-term`. A 10% improvement does not justify owning a terminal crate; a 5× drop in p99 present-frame time or wire bytes does.
+**Decision gate:** the focused dirty-patch path must show zero heap blocks after warmup for the direct encoder and acceptable p99 present time in a real capsule run. Complex full/chrome/dialog frames remain Ratatui-backed and are measured separately.
 
-### Experiment 6 — the "buy" gate (`termwiz`, the only adoptable Rust option)
+### Experiment 6 — external-crate watch
 
-Per the pure-Rust constraint, the **only** adopt-instead-of-build candidate with both a cell model and a diff-emit is **`termwiz`** (the rest are non-Rust and ruled out, or Rust but missing the emit stage). Before committing to build, prototype driving `termwiz`'s `Surface`/`Change` diff as the capsule's present stage on dataset 2/3. If `termwiz` matches the prototype's numbers **and** its published API is stable enough to depend on, **buy beats build** and we adopt `termwiz`.
+The build-vs-buy gate is closed for this PR. `termwiz`, Alacritty, Ghostty, Zellij, tmux, and libvterm remain reference points for future targeted improvements, but replacing the active terminal model means changing `jackin-term` itself rather than restoring an external terminal dependency.
 
-If `termwiz` does not clear the gate, the choice is build vs. drop, decided by the matrix below — and "build" means a pure-Rust `jackin-term` that re-implements the best borrowed ideas (Ghostty's memory model, libvterm's damage discipline, vt100's emit) natively, with no foreign binding.
+## The decision
 
-## The decision matrix
+The decision is fixed: **`jackin-term` is the only terminal model in `jackin-capsule`.** The old build-vs-buy matrix is retired. External projects remain references, not runtime alternatives, and no PR should reintroduce a `vt100` dependency, feature flag, fuzz target, benchmark baseline, source-policy exception, or fallback path.
 
-> **Superseded by the operator's build directive (June 2026).** The matrix below was written for a **cost-gated** decision (build only if a perf wall is proven). The operator has changed the gate: quality is the goal, cost is not a constraint, and owning the layer best serves quality + stability — so the chosen action is **Build `jackin-term`** regardless of which perf-wall row the experiments land on. The matrix is kept as the record of *why each alternative loses on its own terms*: `termwiz` stays a reference (heavy tree, `wezterm-term` unpublished), staying on `vt100` loses on the dead-fork + hidden-damage + per-cell-alloc grounds, and "drop" is off the table because the resize-ghost bug class (Defect 44) is itself a structural argument for one owned damage grid. Read the rows as "here is what we are *not* doing, and why," not as an open question.
-
-After the experiments, the action is determined — not argued:
-
-Every action is pure-Rust: adopt a Rust crate, keep the Rust fork, or build a Rust crate. No row links a foreign library.
-
-| Perf wall proven (Exp 1–5)? | `termwiz` (Rust) covers it (Exp 6)? | Maintenance: forced-fork acceptable? | Action |
-| --- | --- | --- | --- |
-| No | — | Yes (patched fork is fine) | **Drop the idea.** Stay on `vt100`, retire the SHA-pin (Step 0). Keep win 4 as a possible *small* refactor, not a crate. |
-| No | — | No (forced-fork unacceptable long-term) | **Fork-and-own minimally.** Refactor the Rust fork into `jackin-term` for *maintenance + passthrough (win 4)* only, no perf rewrite. |
-| Yes | Yes | — | **Buy `termwiz`.** Adopt the Rust crate as the present stage; do not build. |
-| Yes | No | — | **Build `jackin-term`.** Pure-Rust hybrid: `vte` + damage grid (Ghostty patterns re-implemented in Rust) + wire-minimal emit + typed passthrough. The architecture above is the blueprint. |
-
-The verification is complete when every cell of the row that applies to us is backed by a diagnostics run id or a prototype branch, not a guess.
+The verification is complete when the checklist's remaining live acceptance rows are backed by diagnostics run ids and allocation/RSS/CPU evidence, not guesses.
 
 ## Host-side effects
 
@@ -445,9 +432,8 @@ None. This item is entirely in-container / in-binary terminal modeling and emits
 ## Open questions the verification must answer
 
 1. Does a profiled capsule under worst real load show **any** parser/grid wall, or is the present/host-write stage always cheap? (Experiment 1)
-2. How far is `vt100`'s emit from wire-minimal on realistic frames? (Experiment 2)
-3. How many allocations per frame does the current render path make? (Experiment 3)
+2. How far is `SocketBackend`'s direct `GridPatch` emit from wire-minimal on realistic frames? (Experiment 2)
+3. How many allocations per frame does the current focused render path make? (Experiment 3)
 4. Does per-session heap-grid memory/CPU scale acceptably to 16–32 panes? (Experiment 4)
-5. Can `termwiz` — the only adoptable Rust crate with a diff-emit — be the present stage and beat building `jackin-term`? (Experiment 6)
-6. Is win 4 (typed passthrough, fork retirement) valuable enough to justify a crate **independent** of any performance result?
-7. If built, does `jackin-term` stay capsule-private, or ship as a publishable crate — the only Rust terminal model purpose-built for re-emitting multiplexers — feeding the broader jackin' ecosystem?
+5. Do any external-crate improvements become worth porting into `jackin-term` after live measurement?
+6. Does `jackin-term` stay capsule-private, or ship as a publishable crate — the only Rust terminal model purpose-built for re-emitting multiplexers — feeding the broader jackin' ecosystem?
