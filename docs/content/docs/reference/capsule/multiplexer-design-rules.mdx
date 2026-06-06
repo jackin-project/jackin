@@ -37,7 +37,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - Enable **SGR mouse** (`\e[?1006h`) and **any-event tracking** (`\e[?1003h`) on the host terminal when a client connects.
 - Forward mouse events to the active pane when that pane's program has enabled mouse reporting. Events that land on multiplexer UI (top chrome rows, pane borders, dialogs) are handled by the multiplexer first.
-- Preserve the mouse protocol the agent expects on the PTY side: if the agent sets SGR mouse, forward SGR; if it uses default xterm/X10 or UTF-8 mouse encoding, re-encode into that form. The client always keeps the outer terminal in SGR any-event mode so the multiplexer can parse every event, then `vt100::Screen::mouse_protocol_mode()` and `mouse_protocol_encoding()` decide the per-pane PTY encoding.
+- Preserve the mouse protocol the agent expects on the PTY side: if the agent sets SGR mouse, forward SGR; if it uses default xterm/X10 or UTF-8 mouse encoding, re-encode into that form. The client always keeps the outer terminal in SGR any-event mode so the multiplexer can parse every event, then `DamageGrid::mouse_protocol_mode()` and `mouse_protocol_encoding()` decide the per-pane PTY encoding.
 - **Mouse button 1 (left click) on pane content reaches the agent only after the pane opted into mouse reporting.** When a pane has not opted in (plain shell, prompt, post-exit output), a left drag starts jackin' text-selection path instead of leaking raw mouse escape bytes into the prompt.
 
 ### Clipboard and OSC 52
@@ -77,8 +77,8 @@ Every capability the base image supports must reach the agent inside the pane.
 
 ### Scrollback
 
-- Each pane keeps bounded primary-screen scrollback through `vt100`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
-- Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `vt100` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
+- Each pane keeps bounded primary-screen scrollback through `DamageGrid`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
+- Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `DamageGrid` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
 
 ### Dirty output
 

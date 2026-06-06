@@ -142,7 +142,4 @@ skip = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = [
-    # jackin-term differential oracle while the owned grid catches up to vt100.
-    "https://github.com/donbeave/vt100-rust",
-]
+allow-git = []

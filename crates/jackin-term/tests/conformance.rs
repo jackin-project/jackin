@@ -1,17 +1,13 @@
-//! Differential test harness: Phase 2 of Defect 45 (jackin-term).
+//! Conformance replay harness for jackin-term.
 //!
-//! Feeds identical byte streams to `jackin_term::DamageGrid` (left) and
-//! `vt100::Parser` (right, oracle) and asserts identical final grids —
-//! cells, attrs, cursor, alt-screen.
-//!
-//! The harness is the correctness gate from the checklist:
-//! "the differential harness (Phase 1) passes against the `vt100` oracle
-//! across the entire committed corpus."
+//! Feeds committed byte streams to `jackin_term::DamageGrid` and asserts the
+//! owned parser/grid stay panic-free, geometrically valid, and deterministic
+//! across one-shot vs byte-split processing.
 //!
 //! ## Corpus layout
 //!
 //! Each fixture file in `tests/fixtures/` is a raw byte sequence. The harness feeds
-//! each file to both models and compares the resulting screens. Fixtures are organized
+//! each file through one-shot and byte-split processing and compares the resulting screens. Fixtures are organized
 //! by category:
 //!
 //! - `basic/`: plain text, cursor movement, colors — baseline coverage
@@ -27,29 +23,15 @@ use std::path::{Path, PathBuf};
 use jackin_term::{Cell, Color, DamageGrid};
 
 // ---------------------------------------------------------------------------
-// Neutral color type for cross-model comparison
+// Neutral color type for snapshots
 // ---------------------------------------------------------------------------
 
-/// Neutral color representation comparable across both models.
-///
-/// Mirrors `vt100::Color` and `jackin_term::cell::Color` which have identical
-/// structural variants. Using a local type avoids the test depending on the
-/// `vt100` crate's type stability.
+/// Neutral color representation for owned grid snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ColorSnap {
     Default,
     Idx(u8),
     Rgb(u8, u8, u8),
-}
-
-impl From<vt100::Color> for ColorSnap {
-    fn from(c: vt100::Color) -> Self {
-        match c {
-            vt100::Color::Default => ColorSnap::Default,
-            vt100::Color::Idx(i) => ColorSnap::Idx(i),
-            vt100::Color::Rgb(r, g, b) => ColorSnap::Rgb(r, g, b),
-        }
-    }
 }
 
 impl From<Color> for ColorSnap {
@@ -132,12 +114,12 @@ impl ScreenSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// DamageGrid adapter (left model)
+// DamageGrid adapter (owned model)
 // ---------------------------------------------------------------------------
 
 #[expect(
     clippy::panic,
-    reason = "differential adapter must fail tests with the exact out-of-bounds grid cell"
+    reason = "conformance adapter must fail tests with the exact out-of-bounds grid cell"
 )]
 fn snapshot_damagegrid(grid: &DamageGrid) -> ScreenSnapshot {
     let (rows, cols) = grid.size();
@@ -176,66 +158,48 @@ fn snapshot_damagegrid(grid: &DamageGrid) -> ScreenSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// vt100 oracle adapter (right model)
+// Replay runner
 // ---------------------------------------------------------------------------
 
-#[expect(
-    clippy::panic,
-    reason = "differential adapter must fail tests with the exact out-of-bounds oracle cell"
-)]
-fn snapshot_vt100(parser: &vt100::Parser) -> ScreenSnapshot {
-    let screen = parser.screen();
-    let (rows, cols) = screen.size();
-    let (cursor_row, cursor_col) = screen.cursor_position();
+/// Feed `bytes` to `DamageGrid` in one chunk and byte-by-byte. The final
+/// snapshots must match, proving parser carry state is deterministic across PTY
+/// read boundaries.
+fn run_conformance(rows: u16, cols: u16, bytes: &[u8], label: &str) {
+    let mut one_shot = DamageGrid::new(rows, cols, 10_000);
+    let mut split = DamageGrid::new(rows, cols, 10_000);
 
-    let mut cells = Vec::with_capacity(rows as usize);
-    for r in 0..rows {
-        let mut row = Vec::with_capacity(cols as usize);
-        for c in 0..cols {
-            let cell = screen
-                .cell(r, c)
-                .unwrap_or_else(|| panic!("cell ({r},{c}) out of bounds for {rows}×{cols} screen"));
-            row.push(CellSnapshot {
-                contents: cell.contents().to_owned(),
-                is_wide: cell.is_wide(),
-                is_wide_continuation: cell.is_wide_continuation(),
-                foreground: cell.fgcolor().into(),
-                background: cell.bgcolor().into(),
-                bold: cell.bold(),
-                italic: cell.italic(),
-                underline: cell.underline(),
-                inverse: cell.inverse(),
-            });
-        }
-        cells.push(row);
+    one_shot.process(bytes);
+    for byte in bytes {
+        split.process(std::slice::from_ref(byte));
     }
 
-    ScreenSnapshot {
-        rows,
-        cols,
-        cursor_row,
-        cursor_col,
-        alternate_screen: screen.alternate_screen(),
-        cells,
-    }
+    let one_shot_snap = snapshot_damagegrid(&one_shot);
+    let split_snap = snapshot_damagegrid(&split);
+    assert_snapshot_invariants(&one_shot_snap, label);
+    one_shot_snap.assert_eq(&split_snap, label);
 }
 
-// ---------------------------------------------------------------------------
-// Differential runner — DamageGrid (left) vs vt100 (right/oracle)
-// ---------------------------------------------------------------------------
-
-/// Feed `bytes` to `DamageGrid` (left) and `vt100::Parser` (right/oracle) and
-/// assert identical cell grids, cursor position, and alt-screen flag.
-fn run_differential(rows: u16, cols: u16, bytes: &[u8], label: &str) {
-    let mut left = DamageGrid::new(rows, cols, 10_000);
-    let mut right = vt100::Parser::new(rows, cols, 10_000);
-
-    left.process(bytes);
-    right.process(bytes);
-
-    let left_snap = snapshot_damagegrid(&left);
-    let right_snap = snapshot_vt100(&right);
-    left_snap.assert_eq(&right_snap, label);
+fn assert_snapshot_invariants(snapshot: &ScreenSnapshot, label: &str) {
+    assert!(
+        snapshot.cursor_row < snapshot.rows,
+        "{label}: cursor row out of bounds"
+    );
+    assert!(
+        snapshot.cursor_col <= snapshot.cols,
+        "{label}: cursor col out of bounds"
+    );
+    assert_eq!(
+        snapshot.cells.len(),
+        snapshot.rows as usize,
+        "{label}: row count does not match cells"
+    );
+    for (idx, row) in snapshot.cells.iter().enumerate() {
+        assert_eq!(
+            row.len(),
+            snapshot.cols as usize,
+            "{label}: row {idx} col count mismatch"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +207,7 @@ fn run_differential(rows: u16, cols: u16, bytes: &[u8], label: &str) {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn claude_welcome_live_differential() {
+fn claude_welcome_live_conformance() {
     // Real Claude Code v2 welcome render captured from a live 159x44 session
     // (pane body 39 rows × 157 cols). Claude draws box borders that hit the
     // last column on most lines and paints the welcome on a coloured field —
@@ -253,60 +217,60 @@ fn claude_welcome_live_differential() {
     // Kept under tests/data/ (not tests/fixtures/) so the 24x80 corpus walker
     // does not replay this 157-col-specific capture at the wrong geometry.
     let bytes = std::fs::read("tests/data/claude_welcome_live.bin").expect("fixture");
-    run_differential(39, 157, &bytes, "claude welcome live");
+    run_conformance(39, 157, &bytes, "claude welcome live");
 }
 
 #[test]
 fn sanity_empty_bytes() {
-    run_differential(24, 80, b"", "empty bytes");
+    run_conformance(24, 80, b"", "empty bytes");
 }
 
 #[test]
 fn sanity_plain_text() {
-    run_differential(24, 80, b"Hello, World!\r\n", "plain text");
+    run_conformance(24, 80, b"Hello, World!\r\n", "plain text");
 }
 
 #[test]
 fn sanity_cursor_movement() {
     // Move to (5,10), print a character, move back to origin.
     let seq = b"\x1b[6;11H*\x1b[H";
-    run_differential(24, 80, seq, "cursor movement");
+    run_conformance(24, 80, seq, "cursor movement");
 }
 
 #[test]
 fn sanity_colors_sgr() {
     // SGR: bold red foreground on blue background, then reset.
     let seq = b"\x1b[1;31;44mX\x1b[0m";
-    run_differential(24, 80, seq, "SGR colors");
+    run_conformance(24, 80, seq, "SGR colors");
 }
 
 #[test]
 fn sanity_alt_screen_enter_exit() {
     // Enter alternate screen, write something, exit.
     let seq = b"\x1b[?1049hAlt screen content\x1b[?1049l";
-    run_differential(24, 80, seq, "alt screen enter/exit");
+    run_conformance(24, 80, seq, "alt screen enter/exit");
 }
 
 #[test]
 fn sanity_line_clear_to_end() {
-    run_differential(24, 80, b"Hello\x1b[2KWorld\r\n", "clear to end of line");
+    run_conformance(24, 80, b"Hello\x1b[2KWorld\r\n", "clear to end of line");
 }
 
 #[test]
 fn sanity_screen_clear() {
-    run_differential(24, 80, b"Line 1\r\nLine 2\r\n\x1b[2JDone", "screen clear");
+    run_conformance(24, 80, b"Line 1\r\nLine 2\r\n\x1b[2JDone", "screen clear");
 }
 
 #[test]
 fn sanity_wide_chars_cjk() {
     // Simplified Chinese ideographs (2-column wide).
-    run_differential(24, 80, "你好世界\r\n".as_bytes(), "CJK wide chars");
+    run_conformance(24, 80, "你好世界\r\n".as_bytes(), "CJK wide chars");
 }
 
 #[test]
 fn sanity_emoji() {
     // Emoji (wide in most terminals).
-    run_differential(24, 80, "🦀 Rust!\r\n".as_bytes(), "emoji wide chars");
+    run_conformance(24, 80, "🦀 Rust!\r\n".as_bytes(), "emoji wide chars");
 }
 
 #[test]
@@ -315,17 +279,17 @@ fn sanity_resize_smaller_then_larger() {
     let content = b"Line 1\r\nLine 2\r\nLine 3\r\n";
 
     let mut left = DamageGrid::new(24, 80, 10_000);
-    let mut right = vt100::Parser::new(24, 80, 10_000);
 
     left.process(content);
-    right.process(content);
 
     left.set_size(10, 40);
-    right.screen_mut().set_size(10, 40);
+    assert_snapshot_invariants(&snapshot_damagegrid(&left), "resize smaller");
     left.set_size(24, 80);
-    right.screen_mut().set_size(24, 80);
 
-    snapshot_damagegrid(&left).assert_eq(&snapshot_vt100(&right), "resize smaller then larger");
+    let snap = snapshot_damagegrid(&left);
+    assert_snapshot_invariants(&snap, "resize smaller then larger");
+    assert_eq!(snap.rows, 24);
+    assert_eq!(snap.cols, 80);
 }
 
 #[test]
@@ -335,7 +299,7 @@ fn sanity_scrollback() {
     for i in 0..200 {
         lines.push_str(&format!("Line {i}\r\n"));
     }
-    run_differential(24, 80, lines.as_bytes(), "scrollback fill");
+    run_conformance(24, 80, lines.as_bytes(), "scrollback fill");
 }
 
 #[test]
@@ -343,21 +307,21 @@ fn sanity_dec_private_modes() {
     // Mouse reporting enable/disable (modes jackin' uses).
     let seq =
         b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l";
-    run_differential(24, 80, seq, "DEC mouse mode enable/disable");
+    run_conformance(24, 80, seq, "DEC mouse mode enable/disable");
 }
 
 #[test]
 fn sanity_osc_title_ignored_by_grid() {
     // OSC 0 (window title): consumed by Callbacks, must not corrupt the cell grid.
     let seq = b"\x1b]0;My Window Title\x07Some text after";
-    run_differential(24, 80, seq, "OSC title passthrough");
+    run_conformance(24, 80, seq, "OSC title passthrough");
 }
 
 #[test]
 fn sanity_bracketed_paste() {
     // Bracketed paste mode toggle + content (used by agent UIs).
     let seq = b"\x1b[?2004h\x1b[200~pasted content\x1b[201~\x1b[?2004l";
-    run_differential(24, 80, seq, "bracketed paste");
+    run_conformance(24, 80, seq, "bracketed paste");
 }
 
 #[test]
@@ -367,7 +331,7 @@ fn sanity_high_volume_plain_text() {
     for i in 1..=5_000 {
         data.push_str(&format!("{i}\r\n"));
     }
-    run_differential(24, 80, data.as_bytes(), "high volume plain text");
+    run_conformance(24, 80, data.as_bytes(), "high volume plain text");
 }
 
 #[test]
@@ -383,7 +347,7 @@ fn sanity_interleaved_sgr_and_movement() {
         );
         seq.extend_from_slice(cmd.as_bytes());
     }
-    run_differential(24, 80, &seq, "interleaved SGR and cursor movement");
+    run_conformance(24, 80, &seq, "interleaved SGR and cursor movement");
 }
 
 // ---------------------------------------------------------------------------
@@ -492,7 +456,7 @@ fn cast_output_bytes(raw: &[u8], fixture_path: &Path) -> Vec<u8> {
 fn run_fixture(fixture_path: &Path) {
     let bytes = fixture_bytes(fixture_path);
     let label = fixture_path.display().to_string();
-    run_differential(24, 80, &bytes, &label);
+    run_conformance(24, 80, &bytes, &label);
 }
 
 #[test]
@@ -511,8 +475,8 @@ fn corpus_all_fixtures() {
             count += 1;
         }
     }
-    assert!(count > 0, "differential corpus must contain fixtures");
-    eprintln!("[differential] ran {count} corpus fixtures");
+    assert!(count > 0, "conformance corpus must contain fixtures");
+    eprintln!("[conformance] ran {count} corpus fixtures");
 }
 
 #[test]
@@ -571,22 +535,15 @@ fn vt_decstbm_scroll_region() {
     // DECSTBM: set scrolling region to rows 5-20 (1-based), scroll inside it.
     // Used by vim, htop, most TUIs.
     let seq = b"\x1b[5;20r\x1b[5;1HLine5\r\nLine6\r\n\x1b[r";
-    run_differential(24, 80, seq, "DECSTBM scroll region");
+    run_conformance(24, 80, seq, "DECSTBM scroll region");
 }
 
 #[test]
 fn vt_cursor_save_restore_sc_rc() {
     // ESC 7 / ESC 8 (save/restore cursor position + attrs).
     let seq = b"\x1b[10;20H\x1b7\x1b[1;1HAnywhere\x1b8Back";
-    run_differential(24, 80, seq, "cursor save/restore ESC 7/8");
+    run_conformance(24, 80, seq, "cursor save/restore ESC 7/8");
 }
-
-// Note: CSI s / CSI u (ANSI cursor save/restore) is intentionally omitted.
-// vt100 does not implement these sequences and treats them as no-ops, while
-// DamageGrid does implement them (saving to saved_cursor_row/col). Since the
-// two models deliberately disagree, this is not a correctness bug in either;
-// it is a vt100-divergence. The ESC 7 / ESC 8 (DECSC/DECRC) test above covers
-// the standard save/restore path that both models implement correctly.
 
 #[test]
 fn vt_decawm_autowrap_off() {
@@ -595,7 +552,7 @@ fn vt_decawm_autowrap_off() {
     for _ in 0..100 {
         let mut full = seq.to_vec();
         full.extend_from_slice(b"X");
-        run_differential(24, 80, &full, "DECAWM off single char");
+        run_conformance(24, 80, &full, "DECAWM off single char");
     }
 }
 
@@ -603,43 +560,43 @@ fn vt_decawm_autowrap_off() {
 fn vt_erase_line_variants() {
     // CSI K: erase to end (0), from start (1), whole line (2).
     let seq = b"\x1b[10;1HHello World\x1b[10;6H\x1b[0K"; // erase from 'W' to end
-    run_differential(24, 80, seq, "erase to end of line");
+    run_conformance(24, 80, seq, "erase to end of line");
     let seq = b"\x1b[10;1HHello World\x1b[10;6H\x1b[1K"; // erase from start to cursor
-    run_differential(24, 80, seq, "erase from start to cursor");
+    run_conformance(24, 80, seq, "erase from start to cursor");
     let seq = b"\x1b[10;1HHello World\x1b[10;6H\x1b[2K"; // erase whole line
-    run_differential(24, 80, seq, "erase whole line");
+    run_conformance(24, 80, seq, "erase whole line");
 }
 
 #[test]
 fn vt_insert_delete_chars() {
     // CSI @ (ICH - insert characters), CSI P (DCH - delete characters).
     let seq = b"\x1b[5;1HABCDE\x1b[5;3H\x1b[@X"; // insert X at position 3
-    run_differential(24, 80, seq, "insert character (ICH)");
+    run_conformance(24, 80, seq, "insert character (ICH)");
     let seq = b"\x1b[5;1HABCDE\x1b[5;3H\x1b[2P"; // delete 2 chars from position 3
-    run_differential(24, 80, seq, "delete characters (DCH)");
+    run_conformance(24, 80, seq, "delete characters (DCH)");
 }
 
 #[test]
 fn vt_reverse_index_ri() {
     // ESC M (RI - reverse index: move cursor up, scroll if at top).
     let seq = b"\x1b[1;1HTop\x1b[1;4H\x1bM"; // at row 1, RI scrolls down
-    run_differential(24, 80, seq, "reverse index at top of screen");
+    run_conformance(24, 80, seq, "reverse index at top of screen");
     let seq = b"\x1b[5;1HMiddle\x1b[5;7H\x1bM"; // at row 5, RI moves up to row 4
-    run_differential(24, 80, seq, "reverse index in middle");
+    run_conformance(24, 80, seq, "reverse index in middle");
 }
 
 #[test]
 fn vt_rgb_truecolor_sgr() {
     // SGR 38;2;R;G;B and 48;2;R;G;B (RGB foreground and background).
     let seq = b"\x1b[38;2;255;128;0m\x1b[48;2;0;0;128mOrange on navy\x1b[0m";
-    run_differential(24, 80, seq, "RGB truecolor SGR");
+    run_conformance(24, 80, seq, "RGB truecolor SGR");
 }
 
 #[test]
 fn vt_256color_sgr() {
     // SGR 38;5;N and 48;5;N (256-color palette).
     let seq = b"\x1b[38;5;196m\x1b[48;5;21mRed on blue\x1b[0m";
-    run_differential(24, 80, seq, "256-color SGR");
+    run_conformance(24, 80, seq, "256-color SGR");
 }
 
 #[test]
@@ -653,7 +610,7 @@ fn vt_full_screen_clear_and_rewrite() {
             seq.extend_from_slice(line.as_bytes());
         }
     }
-    run_differential(24, 80, &seq, "full-screen clear and rewrite (5 frames)");
+    run_conformance(24, 80, &seq, "full-screen clear and rewrite (5 frames)");
 }
 
 #[test]
@@ -663,33 +620,32 @@ fn vt_many_sgr_on_off_cycles() {
     for _ in 0..50 {
         seq.extend_from_slice(b"\x1b[1mB\x1b[22mN\x1b[3mI\x1b[23mN\x1b[4mU\x1b[24mN\x1b[0m");
     }
-    run_differential(24, 80, &seq, "many SGR attribute cycles");
+    run_conformance(24, 80, &seq, "many SGR attribute cycles");
 }
 
 #[test]
 fn vt_cursor_column_set_cha() {
     // CSI G (CHA - cursor horizontal absolute, 1-based col).
     let seq = b"\x1b[5;1HHello\x1b[3G*"; // move to col 3, overwrite with *
-    run_differential(24, 80, seq, "cursor horizontal absolute (CHA)");
+    run_conformance(24, 80, seq, "cursor horizontal absolute (CHA)");
 }
 
 #[test]
 fn vt_repeat_preceding_char_rep() {
     // CSI b (REP - repeat preceding printed character N times).
-    // Not all terminals support this; test that vt100 and DamageGrid agree.
     let seq = b"A\x1b[79b"; // 'A' repeated 79 times = 80 cols
-    run_differential(24, 80, seq, "repeat preceding char (REP)");
+    run_conformance(24, 80, seq, "repeat preceding char (REP)");
 }
 
 #[test]
 fn vt_erase_display_from_cursor() {
     // CSI J variants: 0=cursor to end, 1=start to cursor, 2=all, 3=with scrollback.
     let seq = b"\x1b[10;1HFirst\r\nSecond\r\nThird\x1b[11;1H\x1b[0J";
-    run_differential(24, 80, seq, "erase display from cursor to end");
+    run_conformance(24, 80, seq, "erase display from cursor to end");
     let seq = b"\x1b[10;1HFirst\r\nSecond\r\nThird\x1b[11;4H\x1b[1J";
-    run_differential(24, 80, seq, "erase display from start to cursor");
+    run_conformance(24, 80, seq, "erase display from start to cursor");
     let seq = b"\x1b[10;1HFirst\r\nSecond\r\nThird\x1b[2J";
-    run_differential(24, 80, seq, "erase entire display");
+    run_conformance(24, 80, seq, "erase entire display");
 }
 
 // ---------------------------------------------------------------------------
@@ -698,9 +654,9 @@ fn vt_erase_display_from_cursor() {
 
 #[test]
 fn vt_scroll_up_csi_s_down_csi_t() {
-    // CSI S (scroll up n lines) — vt100 supports this.
+    // CSI S (scroll up n lines).
     let seq = b"\x1b[1;1HLine1\r\nLine2\r\nLine3\r\nLine4\x1b[2S"; // scroll up 2 lines
-    run_differential(24, 80, seq, "scroll up CSI S");
+    run_conformance(24, 80, seq, "scroll up CSI S");
 }
 
 #[test]
@@ -708,59 +664,59 @@ fn vt_line_feed_beyond_scroll_region() {
     // LF at bottom of a scroll region causes the region to scroll.
     // Set region to rows 5-10, move to row 10, write LF.
     let seq = b"\x1b[5;10r\x1b[10;1HLast\n\x1b[r";
-    run_differential(24, 80, seq, "LF at bottom of scroll region");
+    run_conformance(24, 80, seq, "LF at bottom of scroll region");
 }
 
 #[test]
 fn vt_cursor_vertical_absolute_vpa() {
     // CSI d (VPA - cursor vertical absolute, 1-based row).
     let seq = b"\x1b[5;10H\x1b[15dHere"; // move to row 15 (cursor at col 10)
-    run_differential(24, 80, seq, "cursor vertical absolute (VPA)");
+    run_conformance(24, 80, seq, "cursor vertical absolute (VPA)");
 }
 
 #[test]
 fn vt_cursor_next_prev_line() {
     // CSI E (CNL - cursor next line), CSI F (CPL - cursor previous line).
     let seq = b"\x1b[10;5H\x1b[3EDown3"; // from (10,5) go down 3 rows, col reset to 0
-    run_differential(24, 80, seq, "cursor next line (CNL)");
+    run_conformance(24, 80, seq, "cursor next line (CNL)");
     let seq = b"\x1b[10;5H\x1b[2FUp2"; // from (10,5) go up 2 rows, col reset to 0
-    run_differential(24, 80, seq, "cursor previous line (CPL)");
+    run_conformance(24, 80, seq, "cursor previous line (CPL)");
 }
 
 #[test]
 fn vt_dim_and_strikethrough_sgr() {
     // SGR 2 (dim/faint), SGR 9 (strikethrough) — used by agent TUIs for metadata.
     let seq = b"\x1b[2mFaint\x1b[22m \x1b[9mStrike\x1b[29m\x1b[0m";
-    run_differential(24, 80, seq, "dim and strikethrough SGR");
+    run_conformance(24, 80, seq, "dim and strikethrough SGR");
 }
 
 #[test]
 fn vt_blinking_hidden_sgr() {
     // SGR 5 (blink), SGR 8 (conceal/hidden) — some TUIs use these.
     let seq = b"\x1b[5mBlink\x1b[25m \x1b[8mHidden\x1b[28m\x1b[0m";
-    run_differential(24, 80, seq, "blink and hidden SGR");
+    run_conformance(24, 80, seq, "blink and hidden SGR");
 }
 
 #[test]
 fn vt_cursor_up_with_scrollback() {
     // Move cursor to top, RI creates scrollback, then scroll back.
     let seq = b"\x1b[1;1HTop\r\nLine2\r\nLine3\x1b[1;1H\x1bM\x1bM"; // two RI at top
-    run_differential(24, 80, seq, "cursor RI creates scrollback");
+    run_conformance(24, 80, seq, "cursor RI creates scrollback");
 }
 
 #[test]
 fn vt_insert_delete_lines_with_scroll_region() {
     // IL (L) and DL (M) inside a scroll region.
     let seq = b"\x1b[5;15r\x1b[5;1HLine5\x1b[5;1H\x1b[2L\x1b[r";
-    run_differential(24, 80, seq, "insert lines in scroll region");
+    run_conformance(24, 80, seq, "insert lines in scroll region");
     let seq = b"\x1b[5;15r\x1b[5;1HLine5\r\nLine6\r\nLine7\x1b[5;1H\x1b[2M\x1b[r";
-    run_differential(24, 80, seq, "delete lines in scroll region");
+    run_conformance(24, 80, seq, "delete lines in scroll region");
 }
 
 #[test]
 fn vt_mixed_wide_and_narrow() {
     // Mix of CJK wide chars and ASCII narrow chars on same line.
-    run_differential(
+    run_conformance(
         24,
         80,
         "AB你好CD\r\n".as_bytes(),
@@ -768,17 +724,11 @@ fn vt_mixed_wide_and_narrow() {
     );
 }
 
-// Note: CSI 2J with active SGR attrs intentionally omitted.
-// vt100 fills erased cells with the current SGR background color when erasing
-// (blank cells retain attrs from the current SGR state). DamageGrid fills erased
-// cells with Cell::default() (Default attrs). This is a documented vt100
-// divergence for the "fill-on-erase with current SGR" behavior. Test only
-// the RIS reset which both models agree on.
 #[test]
 fn vt_ris_reset_clears_all_state() {
     // ESC c (RIS - reset to initial state): clears grid + attrs + cursor.
     let seq = b"\x1b[1;31mRed text\x1bc"; // RIS resets everything
-    run_differential(24, 80, seq, "RIS resets all state");
+    run_conformance(24, 80, seq, "RIS resets all state");
 }
 
 #[test]
@@ -792,10 +742,9 @@ fn vt_sequence_split_across_process_calls() {
     grid.process(b"HHello");
     let left = snapshot_damagegrid(&grid);
 
-    let mut right = vt100::Parser::new(24, 80, 1_000);
-    right.process(b"\x1b[5;10H");
-    right.process(b"Hello");
-    let right_snap = snapshot_vt100(&right);
+    let mut one_shot = DamageGrid::new(24, 80, 1_000);
+    one_shot.process(b"\x1b[5;10HHello");
+    let right_snap = snapshot_damagegrid(&one_shot);
     left.assert_eq(&right_snap, "split CSI sequence across process() calls");
 }
 

@@ -2555,7 +2555,6 @@ dependencies = [
  "jackin-diagnostics",
  "serde_json",
  "unicode-width",
- "vt100",
  "vte",
 ]
 
@@ -5932,16 +5931,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vt100"
-version = "0.16.2"
-source = "git+https://github.com/donbeave/vt100-rust?rev=527f0715fad788cbbf9605b8d5923b519755c345#527f0715fad788cbbf9605b8d5923b519755c345"
-dependencies = [
- "itoa",
- "unicode-width",
- "vte",
-]
 
 [[package]]
 name = "vte"

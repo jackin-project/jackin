@@ -1,9 +1,9 @@
 //! Headless Defect 52 terminal performance experiment runner.
 //!
 //! This does not replace the Defect 54 live capsule smoke ledger. It captures
-//! machine-doable measurements against the `vt100` oracle and writes them to a
-//! normal diagnostics run JSONL so the checklist has a run id for the headless
-//! part of Experiments 1-4.
+//! machine-doable measurements from the owned jackin-term grid and writes them
+//! to a normal diagnostics run JSONL so the checklist has a run id for the
+//! headless part of Experiments 1-4.
 
 use std::time::{Duration, Instant};
 
@@ -28,10 +28,10 @@ struct Measurement {
     frames: usize,
     jackin_dirty_p99_us: u128,
     jackin_full_dump_p99_us: u128,
-    vt100_contents_p99_us: u128,
+    jackin_text_dump_p99_us: u128,
     jackin_changed_cells_total: usize,
     jackin_patch_bytes_estimate: usize,
-    vt100_contents_bytes_total: usize,
+    jackin_text_bytes_total: usize,
 }
 
 fn seq_dataset() -> Dataset {
@@ -116,14 +116,13 @@ fn percentile_us(samples: &[Duration], percentile: usize) -> u128 {
 
 fn measure_dataset(dataset: &Dataset) -> Measurement {
     let mut grid = DamageGrid::new(ROWS, COLS, SCROLLBACK);
-    let mut parser = vt100::Parser::new(ROWS, COLS, SCROLLBACK);
 
     let mut jackin_dirty = Vec::with_capacity(dataset.frames.len());
     let mut jackin_full = Vec::with_capacity(dataset.frames.len());
-    let mut vt100_contents = Vec::with_capacity(dataset.frames.len());
+    let mut jackin_text_dump = Vec::with_capacity(dataset.frames.len());
     let mut jackin_changed_cells_total = 0usize;
     let mut jackin_patch_bytes_estimate = 0usize;
-    let mut vt100_contents_bytes_total = 0usize;
+    let mut jackin_text_bytes_total = 0usize;
 
     for frame in &dataset.frames {
         let start = Instant::now();
@@ -139,11 +138,10 @@ fn measure_dataset(dataset: &Dataset) -> Measurement {
         jackin_full.push(start.elapsed());
 
         let start = Instant::now();
-        parser.process(frame);
-        let contents = parser.screen().contents();
-        vt100_contents_bytes_total += contents.len();
+        let contents = grid.dump().to_text();
+        jackin_text_bytes_total += contents.len();
         std::hint::black_box(contents);
-        vt100_contents.push(start.elapsed());
+        jackin_text_dump.push(start.elapsed());
     }
 
     Measurement {
@@ -151,10 +149,10 @@ fn measure_dataset(dataset: &Dataset) -> Measurement {
         frames: dataset.frames.len(),
         jackin_dirty_p99_us: percentile_us(&jackin_dirty, 99),
         jackin_full_dump_p99_us: percentile_us(&jackin_full, 99),
-        vt100_contents_p99_us: percentile_us(&vt100_contents, 99),
+        jackin_text_dump_p99_us: percentile_us(&jackin_text_dump, 99),
         jackin_changed_cells_total,
         jackin_patch_bytes_estimate,
-        vt100_contents_bytes_total,
+        jackin_text_bytes_total,
     }
 }
 
@@ -190,10 +188,10 @@ fn measurement_json(measurement: &Measurement) -> serde_json::Value {
         "frames": measurement.frames,
         "jackin_dirty_p99_us": measurement.jackin_dirty_p99_us,
         "jackin_full_dump_p99_us": measurement.jackin_full_dump_p99_us,
-        "vt100_contents_p99_us": measurement.vt100_contents_p99_us,
+        "jackin_text_dump_p99_us": measurement.jackin_text_dump_p99_us,
         "jackin_changed_cells_total": measurement.jackin_changed_cells_total,
         "jackin_patch_bytes_estimate": measurement.jackin_patch_bytes_estimate,
-        "vt100_contents_bytes_total": measurement.vt100_contents_bytes_total,
+        "jackin_text_bytes_total": measurement.jackin_text_bytes_total,
     })
 }
 

@@ -19,7 +19,7 @@ Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md" />, there i
 
 ### Supply-chain: `cargo-deny` + `cargo-machete`
 
-jackin's whole pitch is *"keep the agent from doing dangerous things to your host."* A tool that markets a security posture but has **no demonstrable supply-chain story for its own dependencies** carries a credibility gap. The one git-sourced dependency already in the tree — `vt100` pinned to [`donbeave/vt100-rust`](https://github.com/donbeave/vt100-rust) (tracked under [Terminal emulation crate (`jackin-term`)](/reference/roadmap/terminal-emulation-crate/)) — is exactly the kind of non-crates.io source a `sources` policy should make explicit rather than invisible.
+jackin's whole pitch is *"keep the agent from doing dangerous things to your host."* A tool that markets a security posture but has **no demonstrable supply-chain story for its own dependencies** carries a credibility gap. The source policy is now strict: crates.io is allowed, unknown registries are denied, and git dependencies are denied unless a future PR documents and justifies a scoped exception.
 
 #### License obligation — verified
 
@@ -84,9 +84,7 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-[[sources.allow-git]]
-# vt100 fork until jackin-term retires it (see terminal-emulation-crate).
-# url = "https://github.com/donbeave/vt100-rust"
+allow-git = []
 ```
 
 The `licenses.allow` list is a closed allow-list: any license **not** named — every `GPL`/`AGPL`/`LGPL` variant, `SSPL`, `EUPL`, `CC-BY-SA`, etc. — fails the build by omission. That is the requested copyleft ban, expressed as the safer "allow-list, deny-by-default" shape rather than an open-ended deny list that misses new SPDX identifiers. This is now the *only* mechanism: cargo-deny removed the dedicated `copyleft` and `allow-osi-fsf-free` toggles, so the allow-list is the license policy.
@@ -96,7 +94,7 @@ Two upstream behaviours make the allow-list robust:
 - **OR-expressions pass if any operand is allowed.** A crate licensed `MIT OR Apache-2.0 OR LGPL-2.1-or-later` (jackin's `r-efi`, via `getrandom`) passes because `MIT`/`Apache-2.0` satisfy the expression — the `LGPL` arm never triggers. The check fails only when *no* allowed license can satisfy the expression.
 - **GNU licenses match pedantically (since cargo-deny 0.18.4).** Allowing `GPL-3.0-or-later` would *not* permit `GPL-3.0-only` — each variant is exact-match. Irrelevant while banning all GNU licenses, but it means the ban cannot be accidentally widened by a loose identifier.
 
-The `sources.allow-git` entry is what makes the `vt100` fork an explicit, reviewable decision instead of a silent exception; it is removed when `jackin-term` retires the fork.
+The empty `allow-git` list makes any new git dependency an explicit, reviewable decision instead of a silent exception.
 
 #### `cargo-machete` — unused direct dependencies
 
@@ -195,7 +193,7 @@ The `RUSTSEC` database updates independently of the repo, so a green PR can turn
 
 Phase 1 — dependency hygiene:
 
-1. Add `deny.toml` at the repo root with the allow-list, bans, and sources config above; pin the `vt100` git source explicitly.
+1. Add `deny.toml` at the repo root with the allow-list, bans, and strict crates.io-only sources config above.
 2. Resolve the `WTFPL` crate: add a scoped `licenses.exceptions` entry, or replace the dependency.
 3. Add `cargo:cargo-deny` and `cargo:cargo-machete` to <RepoFile path="mise.toml" /> with pinned versions; add `[package.metadata.cargo-machete] ignored = [...]` for any macro-only false positives.
 4. Add the `deny` job to <RepoFile path=".github/workflows/ci.yml" /> behind the `rust` paths-filter and the `ci-required` `needs` list; add the scheduled advisory run.

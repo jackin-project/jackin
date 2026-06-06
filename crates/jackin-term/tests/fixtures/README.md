@@ -1,8 +1,8 @@
-# Corpus Fixtures — jackin-term Differential Harness
+# Corpus Fixtures — jackin-term Conformance Harness
 
-Each file in the subdirectories below is a raw byte sequence fed to the differential harness
-(`tests/differential.rs`). The harness feeds identical bytes to two terminal model
-implementations and asserts identical final grids (cells, attrs, cursor, alt-screen flag).
+Each file in the subdirectories below is a raw byte sequence fed to the conformance harness
+(`tests/conformance.rs`). The harness feeds identical bytes to `DamageGrid` in one chunk and
+byte-by-byte, then asserts identical final grids (cells, attrs, cursor, alt-screen flag).
 
 ## Format
 

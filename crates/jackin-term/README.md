@@ -122,12 +122,11 @@ are not constraints.** Owning the layer is the only path where:
 | Alacritty ring-`Storage` | Packed cell ring-buffer grid layout | **Re-implement** in Rust | Apache-2.0/MIT | Alacritty project |
 | Zellij `OutputBuffer` / `changed_lines` | Damage discipline: track dirty rows, emit only changed | **Re-implement** / reference | MIT | Zellij project |
 | libvterm VT coverage checklist | Conformance test reference | **Reference** | MIT/X11 | libvterm, Leonard Richardson |
-| `vt100` | Differential test oracle | **Oracle only** (dev dep) | MIT | doy |
-| `termwiz` | Secondary differential oracle | **Oracle only** (optional dev dep) | Apache-2.0/MIT | wezterm project |
+| libvterm / vttest / esctest | Conformance coverage references | **Reference** | MIT/X11 / public test suites | upstream projects |
 
 Every STORE/BORROW site carries an attribution comment in the source naming the project + license.
-The `vte` and oracle dependencies are crate deps; everything else is re-implemented code with
-an inline comment pointing at the original.
+`vte` is the only parser dependency; everything else is re-implemented code or committed corpus
+coverage with an inline comment pointing at the original where applicable.
 
 ---
 
@@ -157,21 +156,22 @@ PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-
 
 ## How correctness is guaranteed
 
-1. **Differential harness** (`tests/differential.rs`): feeds identical byte streams to two
-   implementations and asserts identical final grids. Phase 1 runs `vt100` vs itself as a sanity
-   check; Phase 2+ compares `jackin-term` against the `vt100` oracle.
+1. **Conformance replay harness** (`tests/conformance.rs`): feeds identical byte streams to
+   `DamageGrid` in one chunk and byte-by-byte, then asserts identical final grids plus cursor,
+   geometry, wide-cell, style, and alt-screen invariants. This proves parser carry state is
+   deterministic across PTY read boundaries without carrying a second terminal model.
 2. **Conformance corpus** (`tests/fixtures/`): vttest/esctest sequences, real `claude`/`codex`/
    `vim`/`htop` PTY captures, asciinema casts, pathological sets (`yes`, `seq 1 100000`,
    full-screen redraw storms).
-3. **Fuzz target** (`fuzz/src/vt100_process.rs`): feeds arbitrary bytes to the parser and
-   asserts zero panics. Phase 2+ fuzzes `jackin-term`'s `Perform` path directly.
+3. **Fuzz target** (`fuzz/src/damage_grid_process.rs`): feeds arbitrary bytes to the parser and
+   asserts zero panics plus one-shot vs byte-split determinism.
 4. **Golden wire-emit snapshots** (Phase 2+): byte-exact emit snapshots for representative frames
    including resize/shrink, locking the Defect 44 erase-to-EOL contract.
 5. **Round-trip property test** (Phase 2+): "any mutation sequence → full re-emit → reproduces
    the ground-truth grid."
 
-A from-scratch emulator tested this way is **more trustworthy** than the abandoned fork, not
-less: the fork has no differential harness and no fuzz target; this crate has both.
+`vt100` is fully retired from this crate: no production dependency, dev-dependency, fuzz
+dependency, benchmark baseline, or source-policy exception remains.
 
 ---
 

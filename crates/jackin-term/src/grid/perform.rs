@@ -96,13 +96,15 @@ impl vte::Perform for DamageGrid {
             // Cursor Down.
             'B' => {
                 let n = p0.max(1);
-                self.cursor_row = (self.cursor_row + n).min(self.rows.saturating_sub(1));
+                self.cursor_row =
+                    Self::add_cursor_offset(self.cursor_row, n, self.rows.saturating_sub(1));
                 self.clamp_cursor();
             }
             // Cursor Forward.
             'C' => {
                 let n = p0.max(1);
-                self.cursor_col = (self.cursor_col + n).min(self.cols.saturating_sub(1));
+                self.cursor_col =
+                    Self::add_cursor_offset(self.cursor_col, n, self.cols.saturating_sub(1));
                 self.clamp_cursor();
             }
             // Cursor Back.
@@ -114,7 +116,8 @@ impl vte::Perform for DamageGrid {
             // Cursor Next Line.
             'E' => {
                 let n = p0.max(1);
-                self.cursor_row = (self.cursor_row + n).min(self.rows.saturating_sub(1));
+                self.cursor_row =
+                    Self::add_cursor_offset(self.cursor_row, n, self.rows.saturating_sub(1));
                 self.cursor_col = 0;
             }
             // Cursor Previous Line.
@@ -262,7 +265,7 @@ impl vte::Perform for DamageGrid {
                     self.scroll_top = 0;
                     self.scroll_bottom = self.rows.saturating_sub(1);
                 }
-                // VT100 spec: cursor is positioned at the upper-left after DECSTBM.
+                // DECSTBM positions the cursor at the upper-left after setting margins.
                 self.cursor_row = 0;
                 self.cursor_col = 0;
             }
@@ -330,8 +333,8 @@ impl vte::Perform for DamageGrid {
                 let reply = match p0 {
                     5 => b"\x1b[0n".to_vec(),
                     6 => {
-                        let row = self.cursor_row + 1;
-                        let col = self.cursor_col + 1;
+                        let row = self.cursor_row.saturating_add(1);
+                        let col = self.cursor_col.saturating_add(1);
                         if intermediates == b"?" {
                             format!("\x1b[?{row};{col};1R").into_bytes()
                         } else {

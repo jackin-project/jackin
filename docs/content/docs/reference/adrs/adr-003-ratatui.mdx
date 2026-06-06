@@ -29,7 +29,7 @@ ratatui = "0.30"
 
 **Why ratatui over tui-rs:** `tui-rs` is archived. `ratatui` is the fork that the `tui-rs` maintainer and the broader community adopted as the continuation. All active development, bug fixes, and new widget work happens in `ratatui`. Using `tui-rs` would mean no upstream fixes.
 
-**Why ratatui over raw ANSI everywhere:** Raw ANSI gives byte-level control but requires hand-rolling layout, clipping, UTF-8 display-width, scrollbar geometry, and double-buffered diffing. `ratatui` handles all of that through its `Buffer`/`Rect`/`Widget` model, which is composable and testable via `TestBackend`. The capsule still uses raw ANSI for pane body content (see ADR-004) because pane bodies need to pass vt100 output through directly — but chrome, dialogs, and overlays all use `ratatui`.
+**Why ratatui over raw ANSI everywhere:** Raw ANSI gives byte-level control but requires hand-rolling layout, clipping, UTF-8 display-width, scrollbar geometry, and double-buffered diffing. `ratatui` handles all of that through its `Buffer`/`Rect`/`Widget` model, which is composable and testable via `TestBackend`. The capsule now renders pane body content from jackin-term snapshots through `PaneBodyWidget` (see ADR-004), while chrome, dialogs, and overlays also use `ratatui`.
 
 **Why ratatui over cursive:** `cursive` is retained-mode (a widget tree you mutate) versus `ratatui`'s immediate-mode (render from state every frame). Immediate-mode pairs directly with the Elm Architecture adopted across all jackin' TUI surfaces: state → render, no widget identity to track. `ratatui` also has a much larger and more active ecosystem of third-party widgets and examples.
 

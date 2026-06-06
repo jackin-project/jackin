@@ -29,12 +29,6 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 
 ### External dependencies
 
-#### `vt100-rust-fork` — the fork's only real delta is `clear_scrollback`; upstream is stalled; superseded by jackin-term (Defect 45)
-
-- **What:** in [`crates/jackin-capsule/Cargo.toml`](crates/jackin-capsule/Cargo.toml), the `vt100` dependency points at a personal git fork at `donbeave/vt100-rust@527f0715`. **Correction to the original note:** the four OSC/CSI callbacks named in the old entry (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`) **already shipped** in canonical vt100 0.16.2 (January 2025). The fork's **only real delta** is `Screen::clear_scrollback()`, used by `clear_scrollback_and_request_screen_clear` in `session.rs` and the focused-pane handler in `daemon.rs`. That patch is submitted upstream as `doy/vt100-rust` PR #31 ("Support clearing scrollback", May 22 2026) — unmerged. Upstream is effectively stalled: last substantive merge was April 2023, 10+ open PRs, no response to recent contributions.
-- **Why this is permanent until jackin-term:** we are not choosing between "waiting for PR #31" and "maintaining a fork." PR #31 has been open since May 2026 with no response; the upstream pattern (zero merges in ~3 years) makes it clear the fork is not temporary. The real path is `jackin-term` (Defect 45), which replaces vt100 entirely and makes the fork disappear as a dependency.
-- **Done when:** `jackin-term` Phase 5 (Defect 45) lands and `vt100` is removed from `Cargo.toml` entirely. Until then, the fork is the consciously-owned dependency, not a temporary bridge.
-
 #### `shellfirm-aarch64-linux-binary` — switch to prebuilt download once upstream ships aarch64-linux artifact
 
 - **What:** in [`docker/construct/Dockerfile`](docker/construct/Dockerfile), drop the `cargo install shellfirm` step (and the multi-stage `rust:1.95.0-trixie` `security-tools` builder it lives in) in favor of downloading a prebuilt `shellfirm-vX.Y.Z-aarch64-linux.tar.xz` artifact, mirroring the tirith install pattern already in place.

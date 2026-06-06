@@ -1,6 +1,6 @@
 //! Cell type for the `DamageGrid` implementation.
 //!
-//! Phase 2: representation matches the vt100 oracle coupling surface.
+//! Phase 2: representation matches the capsule terminal-model surface.
 //! Phase 4: `Cell::contents` uses `CompactString` (≤24 bytes inline, no heap
 //! alloc for ASCII + most Unicode grapheme clusters). This eliminates the
 //! per-cell `String::to_string()` alloc storm in the focused-pane render path.
@@ -8,7 +8,7 @@
 
 use compact_str::CompactString;
 
-/// Color representation matching the vt100 oracle coupling surface.
+/// Color representation used by the owned terminal model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Color {
     #[default]

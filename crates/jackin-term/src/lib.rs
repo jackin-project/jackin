@@ -14,11 +14,11 @@
 //!
 //! ## Status
 //!
-//! - Phase 0 (baseline): complete — vt100 coupling surface documented.
-//! - Phase 1 (harness): complete — differential tester + corpus + fuzz target.
+//! - Phase 0 (baseline): complete — terminal-model coupling surface documented.
+//! - Phase 1 (harness): complete — conformance replay + corpus + fuzz target.
 //! - Phase 2 (v0 grid): complete — `DamageGrid` with `vte::Perform`, `dirty_spans()`,
 //!   typed `PassthroughEvents`. Full coupling surface implemented.
-//! - Phase 3 (capsule feature flag): complete — `jackin-term` feature routes live render through `DamageGrid`; scrollback fallback to vt100 (Phase 4).
+//! - Phase 3 (capsule cutover): complete — `jackin-term` routes live render through `DamageGrid`.
 //! - Phase 4 (optimize): in progress — `Cell::contents` uses `CompactString` (no heap alloc for ≤24 byte graphemes, covers ASCII + most Unicode). Ghostty `PageList` arena pending.
 //! - Phase 5: not started.
 

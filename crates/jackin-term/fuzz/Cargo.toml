@@ -12,10 +12,9 @@ cargo-fuzz = true
 [dependencies]
 jackin-term = { path = ".." }
 libfuzzer-sys = "0.4"
-vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 
 [[bin]]
-name = "vt100_process"
-path = "src/vt100_process.rs"
+name = "damage_grid_process"
+path = "src/damage_grid_process.rs"
 test = false
 bench = false

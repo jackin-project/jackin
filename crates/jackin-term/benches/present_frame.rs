@@ -46,12 +46,6 @@ fn seeded_damage_grid() -> DamageGrid {
     grid
 }
 
-fn seeded_vt100() -> vt100::Parser {
-    let mut parser = vt100::Parser::new(ROWS, COLS, SCROLLBACK);
-    parser.process(&seed_stream());
-    parser
-}
-
 fn dirty_count(spans: DirtySpans) -> usize {
     match spans {
         DirtySpans::All => ROWS as usize,
@@ -86,12 +80,12 @@ fn bench_present_frame(c: &mut Criterion) {
         );
     });
 
-    group.bench_function("vt100_process_update_and_contents", |b| {
+    group.bench_function("jackin_term_process_update_and_text_dump", |b| {
         b.iter_batched(
-            seeded_vt100,
-            |mut parser| {
-                parser.process(black_box(&update_stream(13)));
-                black_box(parser.screen().contents());
+            seeded_damage_grid,
+            |mut grid| {
+                grid.process(black_box(&update_stream(13)));
+                black_box(grid.dump().to_text());
             },
             BatchSize::SmallInput,
         );

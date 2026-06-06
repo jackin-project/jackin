@@ -31,4 +31,4 @@ jobs:
       - name: Long jackin-term fuzz run
         run: |
           cd crates/jackin-term
-          cargo +nightly fuzz run vt100_process -- -max_total_time=300
+          cargo +nightly fuzz run damage_grid_process -- -max_total_time=300

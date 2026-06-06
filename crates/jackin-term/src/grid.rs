@@ -3,12 +3,12 @@
 //! Uses a straightforward `Vec<Vec<Cell>>` grid (correctness before memory
 //! model — Phase 4 replaces this with the Ghostty-inspired `PageList` arena).
 //!
-//! The key new capability vs `vt100`: `dirty_spans()` reports which rows were
+//! Key capability: `dirty_spans()` reports which rows were
 //! mutated since the last call, recorded *as* `Perform` mutates the grid —
 //! not recomputed by a full-grid diff.
 //!
 //! Implements `vte::Perform` directly so the capsule can swap in `DamageGrid`
-//! wherever it currently calls `vt100::Parser::process()`.
+//! wherever it needs to feed PTY output into a terminal model.
 //!
 //! # Attribution
 //! Grid structure inspired by Alacritty `alacritty_terminal::grid::Grid`
@@ -21,14 +21,14 @@ use crate::cell::{Attrs, Cell, Color};
 use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
 
-/// Mouse protocol modes (matching the vt100 coupling surface, DEC modes 1000/1002/1003).
+/// Mouse protocol modes (DEC modes 1000/1002/1003).
 ///
-/// Variants match vt100's naming for drop-in compatibility:
+/// Variants preserve the public names used by the capsule input layer:
 /// - `Press` = mode 1000 (report button press only)
-/// - `PressRelease` = mode 1002 (report press, release, and button motion — vt100 `ButtonMotion`)
-/// - `ButtonMotion` = mode 1002 alias (added for vt100 compat — identical to `PressRelease`)
-/// - `AnyEvent` = mode 1003 (report all motion — vt100 `AnyMotion`)
-/// - `AnyMotion` = mode 1003 alias (added for vt100 compat — identical to `AnyEvent`)
+/// - `PressRelease` = mode 1002 (report press, release, and button motion)
+/// - `ButtonMotion` = mode 1002 alias, identical to `PressRelease`
+/// - `AnyEvent` = mode 1003 (report all motion)
+/// - `AnyMotion` = mode 1003 alias, identical to `AnyEvent`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseProtocolMode {
     #[default]
@@ -36,18 +36,18 @@ pub enum MouseProtocolMode {
     /// Mode 1000: report button press only.
     Press,
     /// Mode 1002: report press + release + motion while button held.
-    /// Alias: `ButtonMotion` (vt100 name).
+    /// Alias: `ButtonMotion`.
     PressRelease,
-    /// Mode 1002 (vt100 name): identical to `PressRelease`.
+    /// Mode 1002: identical to `PressRelease`.
     ButtonMotion,
     /// Mode 1003: report all pointer motion.
-    /// Alias: `AnyMotion` (vt100 name).
+    /// Alias: `AnyMotion`.
     AnyEvent,
-    /// Mode 1003 (vt100 name): identical to `AnyEvent`.
+    /// Mode 1003: identical to `AnyEvent`.
     AnyMotion,
 }
 
-/// Mouse protocol encodings (matching the vt100 coupling surface).
+/// Mouse protocol encodings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseProtocolEncoding {
     #[default]
@@ -191,7 +191,7 @@ impl DamageGrid {
     /// The parser is persisted across calls so that multi-byte escape sequences
     /// split across PTY `read()` boundaries are handled correctly. Creating a new
     /// parser on each call would lose inter-call state and silently drop split
-    /// sequences (bug caught by the differential harness).
+    /// sequences (bug caught by the conformance harness).
     pub fn process(&mut self, bytes: &[u8]) {
         // SAFETY: we need a mutable reference to both self.parser and self (which
         // implements vte::Perform). The parser only reads `bytes`; it calls self
@@ -285,7 +285,7 @@ impl DamageGrid {
         }
     }
 
-    // ── Coupling-surface accessors (matching vt100 API) ───────────────────────
+    // ── Coupling-surface accessors ────────────────────────────────────────────
 
     /// Grid dimensions `(rows, cols)`.
     pub fn size(&self) -> (u16, u16) {
@@ -544,7 +544,7 @@ impl DamageGrid {
         self.cursor_col += width;
         if self.cursor_col >= self.cols {
             // Last-column write: defer the wrap (DECAWM). Park the cursor at
-            // the phantom column (== cols, matching vt100's reported cursor)
+            // the phantom column (== cols, matching DEC autowrap semantics)
             // and arm pending_wrap; the next printable performs the wrap, and
             // any explicit cursor move cancels it. Eager wrapping here is what
             // drifted the cursor one row down per border line.
@@ -567,7 +567,7 @@ impl DamageGrid {
                 self.scrollback.push(row);
             }
             // Scroll-introduced blank lines use the DEFAULT background, not the
-            // current one — vt100/xterm only apply back-colour-erase to the
+            // current one — xterm applies back-colour-erase to the
             // explicit erase ops (EL/ED/ECH), never to scroll/insert-line.
             let cols = self.cols;
             let grid = self.active_grid();
@@ -623,7 +623,8 @@ impl DamageGrid {
         if self.cursor_row == self.scroll_bottom {
             self.scroll_up(1);
         } else {
-            self.cursor_row = (self.cursor_row + 1).min(self.rows.saturating_sub(1));
+            self.cursor_row =
+                Self::add_cursor_offset(self.cursor_row, 1, self.rows.saturating_sub(1));
         }
     }
 
@@ -643,11 +644,15 @@ impl DamageGrid {
         self.cursor_col = self.cursor_col.min(self.cols.saturating_sub(1));
     }
 
+    fn add_cursor_offset(position: u16, offset: u16, max: u16) -> u16 {
+        position.saturating_add(offset).min(max)
+    }
+
     /// A blank cell carrying the current background colour (back-colour-erase).
     /// Erase (EL/ED/ECH), scroll, and insert/delete-line introduce blanks that
-    /// must inherit the active SGR background — vt100 and xterm-with-`bce` both
-    /// do this. Without it, a region an agent clears while a background colour
-    /// is selected loses that colour, and its differential redraws (CHA-
+    /// must inherit the active SGR background — xterm-with-`bce` does this.
+    /// Without it, a region an agent clears while a background colour is
+    /// selected loses that colour, and its cell-at-a-time redraws (CHA-
     /// positioned, cell-at-a-time) desync from the grid, corrupting the screen.
     fn blank_cell(&self) -> Cell {
         let mut cell = Cell::default();
@@ -925,7 +930,7 @@ impl DamageGrid {
                 };
             }
             // Mode 1002: button-press + release + motion while button held.
-            // Use ButtonMotion (vt100 name) so tui/input.rs can match without conversion.
+            // Use ButtonMotion so tui/input.rs can match without conversion.
             1002 => {
                 self.mouse_mode = if enabled {
                     MouseProtocolMode::ButtonMotion
@@ -933,7 +938,7 @@ impl DamageGrid {
                     MouseProtocolMode::None
                 };
             }
-            // Mode 1003: any motion (vt100 AnyMotion).
+            // Mode 1003: any motion.
             1003 => {
                 self.mouse_mode = if enabled {
                     MouseProtocolMode::AnyMotion
@@ -1053,6 +1058,9 @@ fn resize_grid(grid: &[Vec<Cell>], rows: u16, cols: u16) -> Vec<Vec<Cell>> {
 
 #[cfg(test)]
 mod device_query_tests;
+
+#[cfg(test)]
+mod fuzz_regression_tests;
 
 #[cfg(test)]
 mod scrollback_view_tests;

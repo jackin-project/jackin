@@ -104,11 +104,11 @@ cargo workspace-unused-pub (via .github/scripts/check-workspace-unused-pub.sh)
 cargo hack check --workspace --feature-powerset --all-targets --locked
 ```
 
-`deny.toml` is strict by default: crates.io is the only allowed registry, the
-`donbeave/vt100-rust` oracle is the only allowed Git source, wildcard
-dependencies are denied, yanked crates are denied, and the license allowlist is
-Apache-2.0 plus MIT. Any non-Apache/MIT license must be a version-pinned
-exception with a short comment explaining that it awaits an operator ruling.
+`deny.toml` is strict by default: crates.io is the only allowed registry, Git
+sources are denied, wildcard dependencies are denied, yanked crates are denied,
+and the license allowlist is Apache-2.0 plus MIT. Any non-Apache/MIT license
+must be a version-pinned exception with a short comment explaining that it
+awaits an operator ruling.
 
 Current transitive duplicate-version debt is recorded as version-pinned
 `bans.skip` entries. Keep `multiple-versions = "warn"` so a new duplicate

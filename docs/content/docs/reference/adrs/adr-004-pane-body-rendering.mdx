@@ -3,29 +3,27 @@ title: "ADR-004: Capsule pane-body rendering mechanism"
 ---
 
 **Status**: Accepted  
-**Current state**: `SocketBackend` serialises `Buffer::diff` over the attach socket; raw-ANSI vt100 passthrough for pane body content. Ratatui handles all chrome, dialogs, and overlays.  
+**Current state**: `SocketBackend` serialises `Buffer::diff` over the attach socket; pane body content is rendered from jackin-term `GridSnapshot`/`GridPatch` through `PaneBodyWidget`. Ratatui handles all chrome, dialogs, pane bodies, and overlays.
 **Date**: 2026-05-30  
 **Deciders**: Operator + agent
 
 ## Context
 
-The capsule multiplexer renders in-container terminal sessions (pane bodies) using a hand-rolled ANSI diff path (`PaneBodyCache`). As part of the TUI architecture roadmap, the capsule is moving to render chrome through Ratatui via a custom `SocketBackend`. The pane-body rendering requires a separate decision: how should `vt100::Screen` content be rendered into a Ratatui `Buffer`?
+The capsule multiplexer originally rendered in-container terminal sessions (pane bodies) using a hand-rolled ANSI diff path (`PaneBodyCache`). As part of the TUI architecture roadmap, the capsule moved chrome and pane bodies through Ratatui via a custom `SocketBackend`. The pane-body rendering decision was: how should terminal cell content be rendered into a Ratatui `Buffer`?
 
 Two approaches were evaluated:
 
 ### Option A: tui-term
 
-The [`tui-term`](https://docs.rs/tui-term/) crate provides a `PseudoTerminal` widget that renders a `vt100::Screen` into a Ratatui `Buffer` by implementing the `Screen` trait.
+The [`tui-term`](https://docs.rs/tui-term/) crate provides a `PseudoTerminal` widget that renders a terminal screen into a Ratatui `Buffer`.
 
-**Incompatibility discovered during evaluation**: tui-term 0.3.4 implements `Screen` for the crates.io `vt100::Screen` type. jackin-capsule uses a git fork (`donbeave/vt100-rust`) that adds `set_window_title`, `copy_to_clipboard`, `unhandled_csi`, and `set_window_icon_name` — hooks the multiplexer needs and that upstream has not yet merged. The different crate identities mean the tui-term `Screen` impl does not apply to the fork's `Screen` type at the Rust type level. Using tui-term would require either:
-1. Upstreaming the fork's patches to `doy/vt100-rust` and waiting for them to merge, or
-2. Maintaining a second `vt100` dependency (upstream + fork) with complicated re-exports.
+**Incompatibility discovered during evaluation**: tui-term 0.3.4 implements its screen trait for third-party terminal models, but jackin' now owns its terminal model and needs typed passthrough events, dirty patches, and capsule-specific geometry. Using tui-term would add a widget adapter without removing the need for jackin-term.
 
 Both paths add friction and maintenance burden with no current timeline.
 
 ### Option B: Custom cell widget
 
-A thin `Widget` impl that blits `vt100::Screen` cells directly into the Ratatui `Buffer`. No third-party dependency beyond Ratatui itself. Fully compatible with the vt100 fork today. A single file, ~30 lines of production code, using the same `vt100::Color` → `ratatui::style::Color` conversion the existing socket backend already handles.
+A thin `Widget` impl that blits jackin-term cells directly into the Ratatui `Buffer`. No third-party dependency beyond Ratatui itself. Fully compatible with `GridSnapshot` and `GridPatch`, using the same internal color/style conversion the socket backend already handles.
 
 ## Decision
 
@@ -54,7 +52,7 @@ The custom widget is ~3× slower than the raw-ANSI baseline. This overhead is ac
 
 - The custom cell widget approach (`CustomPaneBlit`) will be implemented as a standalone `Widget` in `crates/jackin-capsule/src/` (likely `pane_widget.rs`).
 - The existing `PaneBodyCache` row-diff path will be retired once the Ratatui frame lands for the full compositor.
-- tui-term will not be added as a dependency. If upstream vt100 gains the required hooks and tui-term compatibility is restored, this decision should be revisited.
+- tui-term will not be added as a dependency. Revisit only if it supports jackin-term's owned model without losing dirty-patch rendering or typed passthrough semantics.
 - The `tui-term = "0.3.4"` dependency added during evaluation will be removed from <RepoFile path="crates/jackin-capsule/Cargo.toml" />.
 
 ## Run the benchmark

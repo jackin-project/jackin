@@ -14,7 +14,7 @@ The research trigger was [kitlangton/cellshot](https://github.com/kitlangton/cel
 
 Borrow the product and protocol ideas from `cellshot` and adjacent terminal-recorder/test tools, but implement them natively inside `jackin-capsule`. Do **not** run `cellshot` as a nested daemon inside role containers and do **not** make it a core runtime dependency.
 
-The reason is simple: `cellshot` builds a PTY daemon because it needs one; jackin' already has one. Capsule already owns PTYs, sessions, pane layout, attach takeover, OSC passthrough, `vt100` screen state, and the control socket. A nested runtime would create this bad layering:
+The reason is simple: `cellshot` builds a PTY daemon because it needs one; jackin' already has one. Capsule already owns PTYs, sessions, pane layout, attach takeover, OSC passthrough, jackin-term `DamageGrid` screen state, and the control socket. A nested runtime would create this bad layering:
 
 ```text
 jackin host
@@ -29,7 +29,7 @@ That would complicate resize, focus, OSC policy, auth/runtime setup, state infer
 ```text
 jackin host / future daemon / external adapter
   └─ Capsule control protocol
-      └─ existing session PTY + vt100 screen + raw output trace
+      └─ existing session PTY + DamageGrid screen + raw output trace
 ```
 
 `cellshot` remains useful as a development/docs/test tool for capturing the outer `jackin console` experience, and selected MIT-licensed implementation ideas can be reused with attribution if they are simpler to port than rewrite. The core orchestration surface should live in `jackin-protocol` and `jackin-capsule`.
@@ -57,7 +57,7 @@ The landscape splits into recorders, scripted demo/test tools, VT emulators, wid
 | Project | Useful idea | What jackin' should borrow | What jackin' should avoid |
 |---|---|---|---|
 | [cellshot](https://github.com/kitlangton/cellshot) | PTY capture/session daemon with `wait`, `send`, `snapshot`, structured frames, SVG/PNG/text/JSON/ANSI artifacts, and JSONL recording. | Native Capsule control calls for read/wait/send/snapshot/record; sparse terminal frame schema; artifact bundle shape; block-element SVG rendering. | Nested daemon, binary-crate dependency, duplicated PTY ownership. |
-| [asciinema](https://github.com/asciinema/asciinema), [asciinema-player](https://github.com/asciinema/asciinema-player), [agg](https://github.com/asciinema/agg), and [avt](https://github.com/asciinema/avt) | Standard terminal recording ecosystem: asciicast v2/v3 events, browser player, GIF renderer, Rust VT emulator. | Consider `.cast` export for session recordings; emit marker events for status transitions; evaluate `avt` for offline replay/diff/dump. | Replacing Capsule's live `vt100` + OSC policy with `avt` without solving OSC/unhandled-CSI callbacks. |
+| [asciinema](https://github.com/asciinema/asciinema), [asciinema-player](https://github.com/asciinema/asciinema-player), [agg](https://github.com/asciinema/agg), and [avt](https://github.com/asciinema/avt) | Standard terminal recording ecosystem: asciicast v2/v3 events, browser player, GIF renderer, Rust VT emulator. | Consider `.cast` export for session recordings; emit marker events for status transitions; evaluate `avt` for offline replay/diff/dump. | Replacing Capsule's live `DamageGrid` + OSC policy with `avt` without solving passthrough and control-protocol needs. |
 | [Charmbracelet VHS](https://github.com/charmbracelet/vhs) | Scripted `.tape` demos with `Type`, `Enter`, `Sleep`, `Wait /regex/`, `Screenshot`, and golden ASCII output. | A future `jackin automate` script shape; regex waits against visible screen text; golden text snapshots for CI. | Chromium/ttyd/xterm.js rendering pipeline inside containers. It is too heavy and host-oriented for Capsule. |
 | [Microsoft tui-test](https://github.com/microsoft/tui-test) | Playwright-like terminal tests: isolated PTY, `getByText`, auto-wait, snapshot assertions, and trace replay. | Query API naming and behavior: `getByText` / `toBeVisible` style waits map directly to Capsule screen rows. Store trace artifacts on failure. | Node/xterm.js runtime dependency for jackin' core. |
 | [Netflix go-expect](https://github.com/Netflix/go-expect) and classic `expect` | Minimal PTY automation: `Send`, `Expect`, `ExpectEOF`. | Keep the first jackin' automation API small and blocking: send bytes, wait for condition, return match/evidence. | Raw-byte regexes as the primary API. jackin' can match the interpreted screen instead of ANSI-noisy output. |
@@ -68,7 +68,7 @@ The landscape splits into recorders, scripted demo/test tools, VT emulators, wid
 
 ## Current jackin' leverage
 
-Capsule already has the right substrate. It runs as the in-container control plane, owns PTYs and sessions, keeps `vt100` parser state per session, forwards raw output over the binary attach channel, and exposes a JSON control channel for one-shot queries. The relevant local surfaces are <RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/client.rs" />, <RepoFile path="crates/jackin-protocol/src/control.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />.
+Capsule already has the right substrate. It runs as the in-container control plane, owns PTYs and sessions, keeps `DamageGrid` state per session, forwards raw output over the binary attach channel, and exposes a JSON control channel for one-shot queries. The relevant local surfaces are <RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/client.rs" />, <RepoFile path="crates/jackin-protocol/src/control.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />.
 
 The missing pieces are not another PTY runner. They are typed control messages, stable artifact schemas, recording policy, and host/CLI adapters that can use the live screen state safely.
 
@@ -227,7 +227,7 @@ The workflow runner should prefer status/marker waits when it needs semantic lif
 
 ### Phase 0 — Prototype against existing Capsule state
 
-Add internal helper methods that extract visible text rows from the current `vt100` screen for a session and unit-test them with controlled ANSI streams. No public CLI yet.
+Add internal helper methods that extract visible text rows from the current `GridSnapshot` for a session and unit-test them with controlled ANSI streams. No public CLI yet.
 
 ### Phase 1 — Text snapshot and visible wait
 
@@ -261,7 +261,7 @@ Add a tiny tape/expect-style runner for smoke tests and demos. Then expose the s
 | Should visible-text waits support regex immediately? | Yes, but keep the engine simple, bounded, and tested. Regex should run over visible rows or a caller-selected recent window, not unbounded scrollback. |
 | Should snapshots include scrollback? | Not in the first frame API. Start with visible viewport; add explicit recent/scrollback export later with size limits. |
 | Should SVG/PNG rendering be in Capsule or host CLI? | Prefer host CLI for file rendering so Capsule stays focused on runtime state and protocol. Capsule should return text/frame/ANSI; host code renders artifacts. |
-| Should `asciinema/avt` replace `vt100`? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but the jackin' live path depends on OSC/unhandled-CSI callback behavior. Revisit as part of the VT parser dependency strategy. |
+| Should `asciinema/avt` replace jackin-term? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but the jackin' live path depends on typed passthrough events, dirty patches, and capsule control semantics. |
 | Should waits be event-driven or polling? | Event-driven when waiting on status markers or session revisions; bounded polling is acceptable for visible-text regex in the first version if it wakes on PTY output rather than fixed tight loops. |
 | How does this interact with operator hijack? | Any automation should record when the operator attaches, types, pauses, or resumes. The terminal remains visible and hijackable; automation is a client of the session, not its owner. |
 | Is a shell an agent? | For API consistency, yes: represent shell sessions as `kind = shell` or a reserved shell agent with no provider. The operator-visible UI can still label it `Shell`; automation should not need a separate resource type. |

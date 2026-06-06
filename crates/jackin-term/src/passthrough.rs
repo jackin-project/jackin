@@ -1,13 +1,13 @@
-//! Typed passthrough event stream — supersedes `vt100::Callbacks` + `OscCapture`.
+//! Typed passthrough event stream for OSC/CSI events the grid should not render.
 //!
 //! Phase 2 v0: collect events in a `Vec<PassthroughEvent>` for the caller to
 //! drain.  Phase 5 promotes this to a typed async stream and wires it into
-//! `session.rs` to replace the `vt100::Callbacks + OscCapture` pattern.
+//! `session.rs` consumes these events after feeding PTY bytes to `DamageGrid`.
 
 /// A typed passthrough event produced by escape sequences the capsule must
 /// handle outside the grid (OSC, mode changes, scrollback control, focus).
 ///
-/// These events supersede the `vt100::Callbacks` trait methods in Phase 5.
+/// These events are the typed output side of the PTY byte parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PassthroughEvent {
     /// OSC 0 / OSC 2: window title change.

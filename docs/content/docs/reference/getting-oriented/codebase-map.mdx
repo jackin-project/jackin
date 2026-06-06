@@ -229,13 +229,13 @@ Pure pull-request render snapshots live in <RepoFile path="crates/jackin-capsule
 
 `crates/jackin-term/` is the **owned terminal model** used by `jackin-capsule`. It implements the `vte → DamageGrid → GridSnapshot` pipeline; the capsule renders each `GridSnapshot` through `PaneBodyWidget` (a Ratatui widget) and emits the buffer diff via `SocketBackend`:
 
-- <RepoFile path="crates/jackin-term/src/grid.rs" /> — `DamageGrid`: `vte::Perform` implementation that maintains a `Vec<Vec<Cell>>` screen and records dirty rows. Phase 4: cells use `CompactString` for inline storage (no heap alloc for ≤24 byte graphemes). The grid exposes the `vt100` coupling surface: `process(bytes)`, `cell(row, col)`, `size()`/`set_size()`, `alternate_screen()`, `set_scrollback()`, `dirty_spans()`, `clear_scrollback()`, mouse-mode enums.
+- <RepoFile path="crates/jackin-term/src/grid.rs" /> — `DamageGrid`: `vte::Perform` implementation that maintains a `Vec<Vec<Cell>>` screen and records dirty rows. Phase 4: cells use `CompactString` for inline storage (no heap alloc for ≤24 byte graphemes). The grid exposes jackin' terminal-model API: `process(bytes)`, `cell(row, col)`, `size()`/`set_size()`, `alternate_screen()`, `set_scrollback()`, `dirty_spans()`, `clear_scrollback()`, mouse-mode enums.
 - <RepoFile path="crates/jackin-term/src/damage.rs" /> — `DirtyTracker` + `DirtySpans`: records which rows changed during `process()` calls. Concept from Zellij's `OutputBuffer` (MIT).
 - <RepoFile path="crates/jackin-term/src/cell.rs" /> — `Cell`, `Attrs`, `Color`: the coupling-surface cell type.
 - <RepoFile path="crates/jackin-term/src/passthrough.rs" /> — `PassthroughBuffer` + `PassthroughEvent`: captures OSC/title/clipboard/CWD events so the capsule can forward them.
 - <RepoFile path="crates/jackin-term/src/snapshot.rs" /> — `GridSnapshot` + `SnapCell`: owned screen dump rendered by the capsule's `PaneBodyWidget` and used for acceptance tests and terminal observation. `DamageGrid::dump()` produces it.
-- <RepoFile path="crates/jackin-term/tests/differential.rs" /> — differential harness comparing `DamageGrid` against `vt100::Parser` (oracle).
-- <RepoFile path="crates/jackin-term/fuzz/src/vt100_process.rs" /> — `cargo-fuzz` target for zero-panic guarantee on arbitrary byte input.
+- <RepoFile path="crates/jackin-term/tests/conformance.rs" /> — conformance replay harness comparing one-shot and byte-split `DamageGrid` processing over the committed corpus.
+- <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" /> — `cargo-fuzz` target for zero-panic and one-shot/byte-split determinism on arbitrary byte input.
 - <RepoFile path="crates/jackin-term/README.md" /> — the required self-contained engineering record (problem → analysis → build rationale → borrow ledger → correctness strategy).
 
 `jackin-term` has no workspace dependencies — it is a pure-Rust library with `vte`, `compact_str`, and `unicode-width` as its only production dependencies.
