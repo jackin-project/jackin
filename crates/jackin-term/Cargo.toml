@@ -14,6 +14,14 @@ publish = false
 # Implements: Defect 45 (post-restructure-fixes-checklist.mdx).
 
 repository.workspace = true
+
+[features]
+default = []
+# Enables the DHAT allocator in `benches/present_frame.rs` so the focused-pane
+# present-frame allocation axis can be profiled with:
+#   cargo bench -p jackin-term --bench present_frame --features dhat-heap
+dhat-heap = []
+
 [lib]
 name = "jackin_term"
 path = "src/lib.rs"
@@ -34,6 +42,12 @@ compact_str = "0.9"
 # vt100 fork: differential oracle for the Phase 1 harness.
 # Do NOT use vt100 in production jackin-term code — it is a test dependency only.
 vt100 = { version = "0.16.2", git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
+criterion = { version = "0.5", features = ["html_reports"] }
+dhat = "0.3.3"
+
+[[bench]]
+name = "present_frame"
+harness = false
 
 [lints]
 workspace = true
