@@ -13,12 +13,15 @@ use crate::components::panel::{Panel, PanelFocus};
 use crate::scroll::{cursor_follow_offset, full_cell_thumb, is_scrollable};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
 
+const SELECT_LIST_HORIZONTAL_SCROLL_STEP: u16 = 4;
+
 #[derive(Debug)]
 pub struct SelectListState {
     items: Vec<String>,
     selected: Option<usize>,
     filter: String,
     filtered: Vec<usize>,
+    scroll_x: u16,
 }
 
 impl SelectListState {
@@ -30,6 +33,7 @@ impl SelectListState {
             items,
             filter: String::new(),
             filtered,
+            scroll_x: 0,
         }
     }
 
@@ -51,6 +55,7 @@ impl SelectListState {
             .map(|(index, _)| index)
             .collect();
         self.selected = (!self.filtered.is_empty()).then_some(0);
+        self.scroll_x = 0;
     }
 
     #[must_use]
@@ -90,6 +95,11 @@ impl SelectListState {
         }
     }
 
+    #[must_use]
+    pub const fn scroll_x(&self) -> u16 {
+        self.scroll_x
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<usize> {
         match key.code {
             KeyCode::Up => {
@@ -98,6 +108,22 @@ impl SelectListState {
             }
             KeyCode::Down => {
                 self.cycle_select(1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Left => {
+                self.scroll_x = self
+                    .scroll_x
+                    .saturating_sub(SELECT_LIST_HORIZONTAL_SCROLL_STEP);
+                ModalOutcome::Continue
+            }
+            KeyCode::Right => {
+                self.scroll_x = self
+                    .scroll_x
+                    .saturating_add(SELECT_LIST_HORIZONTAL_SCROLL_STEP);
+                ModalOutcome::Continue
+            }
+            KeyCode::Home => {
+                self.scroll_x = 0;
                 ModalOutcome::Continue
             }
             KeyCode::Backspace => {
@@ -221,20 +247,40 @@ impl Widget for SelectList<'_> {
             return;
         }
         let viewport_cols = usize::from(list_area.width);
+        let content_width = usize::from(self.state.max_label_width());
+        let scroll_x = crate::components::scrollable_panel::effective_offset(
+            content_width,
+            viewport_cols,
+            self.state.scroll_x,
+        );
+        let has_horizontal_scroll = is_scrollable(content_width, viewport_cols);
+        let list_body_area = if has_horizontal_scroll {
+            Rect {
+                height: list_area.height.saturating_sub(1),
+                ..list_area
+            }
+        } else {
+            list_area
+        };
+        if list_body_area.height == 0 {
+            return;
+        }
         let rows: Vec<PickerRow<'_>> = self
             .state
             .filtered
             .iter()
             .map(|&item| {
                 let label = &self.state.items[item];
-                // Truncate labels wider than the viewport with an ellipsis so wide
-                // rows are legible rather than silently clipping at the border.
-                let label_str = if crate::display_cols(label) > viewport_cols {
-                    let mut s = crate::take_display_cols(label, viewport_cols.saturating_sub(1));
+                let skip = usize::from(scroll_x);
+                // With no horizontal scroll, keep the ellipsis affordance for
+                // over-wide labels. Once scrolled, render the exact window.
+                let label_str = if skip == 0 && crate::display_cols(label) > viewport_cols {
+                    let mut s =
+                        crate::display_cols_slice(label, skip, viewport_cols.saturating_sub(1));
                     s.push('…');
                     s
                 } else {
-                    label.clone()
+                    crate::display_cols_slice(label, skip, viewport_cols)
                 };
                 PickerRow::Item(ListItem::new(Line::from(Span::styled(
                     label_str,
@@ -242,7 +288,16 @@ impl Widget for SelectList<'_> {
                 ))))
             })
             .collect();
-        render_picker_list(list_area, buf, rows, self.state.selected);
+        render_picker_list(list_body_area, buf, rows, self.state.selected);
+        if has_horizontal_scroll {
+            render_picker_horizontal_scrollbar(
+                list_area,
+                buf,
+                content_width,
+                viewport_cols,
+                scroll_x,
+            );
+        }
     }
 }
 
@@ -399,13 +454,46 @@ pub fn render_picker_list(
     }
 }
 
+fn render_picker_horizontal_scrollbar(
+    list_area: Rect,
+    buf: &mut Buffer,
+    content_width: usize,
+    viewport_cols: usize,
+    scroll_x: u16,
+) {
+    let track_len = usize::from(list_area.width);
+    if track_len == 0 {
+        return;
+    }
+    let Some(thumb) = full_cell_thumb(
+        content_width,
+        viewport_cols,
+        list_area.width,
+        usize::from(scroll_x),
+    ) else {
+        return;
+    };
+    use crate::components::scrollable_panel::{SCROLLBAR_HORIZONTAL_THUMB, SCROLLBAR_TRACK};
+    let y = list_area.y + list_area.height.saturating_sub(1);
+    for col in 0..list_area.width {
+        let in_thumb = col >= thumb.start && col < thumb.start.saturating_add(thumb.len);
+        let (sym, style) = if in_thumb {
+            (SCROLLBAR_HORIZONTAL_THUMB, crate::theme::GREEN)
+        } else {
+            (SCROLLBAR_TRACK, Style::default().fg(PHOSPHOR_DARK))
+        };
+        buf[(list_area.x + col, y)].set_symbol(sym).set_style(style);
+    }
+}
+
 #[cfg(test)]
 mod picker_list_tests {
-    use super::{PickerRow, render_picker_list};
+    use super::{PickerRow, SelectList, SelectListState, render_picker_list};
     use crate::theme::PHOSPHOR_DARK;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use ratatui::widgets::ListItem;
+    use ratatui::widgets::{ListItem, Widget};
 
     fn row_symbols(buf: &Buffer, y: u16, width: u16) -> String {
         (0..width)
@@ -468,5 +556,42 @@ mod picker_list_tests {
         render_picker_list(area, &mut buf, rows, Some(0));
         // Selected row 0 shows the ▸ cursor in the reserved gutter.
         assert_eq!(buf[(0u16, 0u16)].symbol(), "\u{25b8}");
+    }
+
+    #[test]
+    fn select_list_right_left_keys_scroll_horizontally() {
+        let mut state = SelectListState::new(vec!["0123456789abcdef".to_owned()]);
+
+        let _ = state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(state.scroll_x(), 4);
+
+        let _ = state.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(state.scroll_x(), 0);
+    }
+
+    #[test]
+    fn select_list_renders_horizontal_scroll_window() {
+        let mut state = SelectListState::new(vec!["0123456789abcdef".to_owned()]);
+        let _ = state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 12,
+            height: 6,
+        };
+        let mut buf = Buffer::empty(area);
+        SelectList::new(&state, "pick").render(area, &mut buf);
+
+        let rendered = row_symbols(&buf, 3, 12);
+        assert!(
+            rendered.contains("456789"),
+            "scrolled row should expose shifted label window: {rendered:?}"
+        );
+        let scrollbar = row_symbols(&buf, 4, 12);
+        assert!(
+            scrollbar.contains('━'),
+            "wide labels should render horizontal scrollbar: {scrollbar:?}"
+        );
     }
 }

@@ -395,7 +395,8 @@ pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
         // Render only the horizontally-visible slice of the value, matching what
         // the scrolled Paragraph already painted, so the OSC 8 link lands on the
         // exact visible cells.
-        let visible = display_cols_slice(row.value(), p.skip_cols, usize::from(p.visible_cols));
+        let visible =
+            crate::display_cols_slice(row.value(), p.skip_cols, usize::from(p.visible_cols));
         ansi::move_to(&mut out, p.screen_y, p.screen_x);
         ansi::emit_osc8_open(&mut out, href);
         ansi::fg(&mut out, link);
@@ -470,24 +471,6 @@ fn value_placements(area: Rect, state: &ContainerInfoState) -> Vec<ValuePlacemen
             })
         })
         .collect()
-}
-
-/// Substring of `s` covering display columns `[skip, skip + width)`.
-fn display_cols_slice(s: &str, skip: usize, width: usize) -> String {
-    use unicode_width::UnicodeWidthChar;
-    let mut col = 0usize;
-    let mut out = String::new();
-    for ch in s.chars() {
-        let w = ch.width().unwrap_or(0);
-        if col >= skip && col + w <= skip + width {
-            out.push(ch);
-        }
-        col += w;
-        if col >= skip + width {
-            break;
-        }
-    }
-    out
 }
 
 fn container_info_line(

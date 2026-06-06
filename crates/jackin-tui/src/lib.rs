@@ -21,9 +21,9 @@ pub mod theme;
 pub use components::text_input::TextField;
 pub use geometry::{
     FixedPrefixSegment, HintSpan, TAB_GAP, TabCell, agent_display_name, centered_rect,
-    display_cols, fixed_prefix_scroll_segments, hint_row_cols, is_terminal_control_char,
-    lay_out_tabs, leading_space_cols, padded_line_display_cols, sanitize_terminal_title,
-    shorten_home, tab_at_column, take_display_cols,
+    display_cols, display_cols_slice, fixed_prefix_scroll_segments, hint_row_cols,
+    is_terminal_control_char, lay_out_tabs, leading_space_cols, padded_line_display_cols,
+    sanitize_terminal_title, shorten_home, tab_at_column, take_display_cols,
 };
 
 /// Outcome of a modal or component event-handling cycle.

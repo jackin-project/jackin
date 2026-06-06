@@ -125,6 +125,29 @@ pub fn take_display_cols(s: &str, max_cols: usize) -> String {
     out
 }
 
+/// Substring of `s` covering display columns `[skip, skip + width)`,
+/// skipping terminal control bytes and preserving only complete characters.
+#[must_use]
+pub fn display_cols_slice(s: &str, skip: usize, width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    let mut col = 0usize;
+    let mut out = String::new();
+    for ch in s.chars() {
+        if is_terminal_control_char(ch) {
+            continue;
+        }
+        let w = ch.width().unwrap_or(0);
+        if col >= skip && col + w <= skip + width {
+            out.push(ch);
+        }
+        col += w;
+        if col >= skip + width {
+            break;
+        }
+    }
+    out
+}
+
 /// Leading ASCII-space count for text rows that need symmetric trailing
 /// scroll padding. Controls are ignored so injected bytes cannot affect
 /// width math.
