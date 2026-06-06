@@ -259,3 +259,9 @@ impl AppConfig {
         changed
     }
 }
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod resolve_mode_tests;

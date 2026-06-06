@@ -129,3 +129,6 @@ impl Default for AppConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

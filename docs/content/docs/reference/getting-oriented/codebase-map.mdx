@@ -101,7 +101,7 @@ etc.). When you add a flag, also update the matching docs page under
 
 The container lifecycle lives in `src/runtime/`:
 
-- <RepoFile path="crates/jackin/src/runtime/launch.rs" /> — the load path: clone/update
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — the load path: clone/update
   role repo, validate the contract, generate a derived Dockerfile, build
   the image on the host Docker engine, start the DinD sidecar and the
   agent container, attach. It emits structured launch progress stages
@@ -114,22 +114,22 @@ The container lifecycle lives in `src/runtime/`:
   <RepoFile path="crates/jackin-launch/src/tui/run.rs" />, and <RepoFile path="crates/jackin-launch/src/tui/view.rs" />, with launch-local
   visual components under <RepoFile path="crates/jackin-launch/src/tui/components.rs" />. The view derives
   hyperlink-overlay bytes from model state; `tui/run.rs` emits those bytes at the terminal edge after drawing.
-- <RepoFile path="crates/jackin/src/runtime/attach.rs" /> — the attach + reconnect path
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — the attach + reconnect path
   (`hardline`).
-- <RepoFile path="crates/jackin/src/runtime/cleanup.rs" /> — `eject`, `exile`, `purge`,
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — `eject`, `exile`, `purge`,
   `prune` (roles/cache/images/instances), and orphan GC.
-- <RepoFile path="crates/jackin/src/runtime/image.rs" /> — `docker build` invocation.
-- <RepoFile path="crates/jackin/src/runtime/repo_cache.rs" /> — the role-repo cache lock
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> — `docker build` invocation.
+- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs" /> — the role-repo cache lock
   + fetch logic.
-- <RepoFile path="crates/jackin/src/runtime/caffeinate.rs" /> — the macOS keep-awake
+- <RepoFile path="crates/jackin-runtime/src/runtime/caffeinate.rs" /> — the macOS keep-awake
   reconciler.
 
 Instance-local state helpers live in `src/instance/`:
 
 - <RepoFile path="crates/jackin/src/instance.rs" /> — role state preparation and auth materialization re-exports.
 - <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> — Claude, Codex, Amp, Kimi, OpenCode, and GitHub auth file provisioning.
-- <RepoFile path="crates/jackin/src/instance/naming.rs" /> — DNS-safe container name generation (`jk-{id}-{workspace?}-{role}`), instance-ID extraction, and role-family matching. Image tag derivation (`jk_…`) lives in <RepoFile path="crates/jackin/src/runtime/naming.rs" />.
-- <RepoFile path="crates/jackin/src/instance/manifest.rs" /> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
+- <RepoFile path="crates/jackin-runtime/src/instance/naming.rs" /> — DNS-safe container name generation (`jk-{id}-{workspace?}-{role}`), instance-ID extraction, and role-family matching. Image tag derivation (`jk_…`) lives in <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" />.
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
 
 The end-to-end shape of "what happens when you run `jackin load`" is
 described in [Architecture → Container lifecycle](/reference/getting-oriented/architecture/#container-lifecycle). The detailed contract for instance names, manifests, lookup indexes, restore decisions, cleanup guards, and parallel sessions lives in [Runtime Instance Model](/reference/runtime/runtime-instance-model/).
@@ -150,10 +150,10 @@ The workspace model is in `src/workspace/`:
 Per-mount isolation (worktree / clone) lives in a separate module
 because it has its own materialization lifecycle:
 
-- <RepoFile path="crates/jackin/src/isolation/materialize.rs" /> — worktree and clone
+- <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs" /> — worktree and clone
   materialization + `MaterializedWorkspace`.
-- <RepoFile path="crates/jackin/src/isolation/state.rs" /> — `isolation.json` IO.
-- <RepoFile path="crates/jackin/src/isolation/finalize.rs" /> — the post-attach
+- <RepoFile path="crates/jackin-runtime/src/isolation/state.rs" /> — `isolation.json` IO.
+- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — the post-attach
   finalizer that decides between *preserve* / *clean* / *return-to-agent*.
 
 ### "I want to change a config-file shape"
@@ -162,14 +162,14 @@ The TOML config model lives in `src/config/`:
 
 - <RepoFile path="crates/jackin/src/config.rs" /> — top-level `AppConfig` struct
   and submodule re-exports.
-- <RepoFile path="crates/jackin/src/config/persist.rs" /> — `AppConfig::load_or_init`
+- <RepoFile path="crates/jackin-config/src/app_config_persist.rs" /> — `AppConfig::load_or_init`
   (config-load + builtin sync).
-- <RepoFile path="crates/jackin/src/config/editor.rs" /> — `ConfigEditor` (the save
+- <RepoFile path="crates/jackin-config/src/editor.rs" /> — `ConfigEditor` (the save
   path used by every CLI mutator).
-- <RepoFile path="crates/jackin/src/config/workspaces.rs" /> — workspace CRUD plus
+- <RepoFile path="crates/jackin-config/src/app_config_workspaces.rs" /> — workspace CRUD plus
   the `require_workspace` helper.
-- <RepoFile path="crates/jackin/src/config/mounts.rs" />,
-  <RepoFile path="crates/jackin/src/config/roles.rs" /> — CRUD and resolution per
+- <RepoFile path="crates/jackin-config/src/app_config_mounts.rs" />,
+  <RepoFile path="crates/jackin-config/src/app_config_roles.rs" /> — CRUD and resolution per
   area (global mounts; builtin sync, trust, and auth-forward).
 
 Whenever a config field changes, also update

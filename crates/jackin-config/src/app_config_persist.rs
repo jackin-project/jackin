@@ -300,3 +300,6 @@ impl AppConfig {
         Ok(config)
     }
 }
+
+#[cfg(test)]
+mod tests;

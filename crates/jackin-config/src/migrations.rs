@@ -472,3 +472,6 @@ pub fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
         migrations.len() - steps_taken
     );
 }
+
+#[cfg(test)]
+mod tests;

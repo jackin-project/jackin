@@ -1,15 +1,6 @@
 //! Configuration re-exports — `AppConfig`, `ConfigEditor`, and all config
 //! types are now in `jackin-config`. This module is a thin shim.
 
-pub mod editor;
-pub(crate) mod migrations;
-pub mod mounts;
-pub(crate) mod persist;
-pub(crate) mod roles;
-#[cfg(test)]
-mod tests;
-pub(crate) mod workspaces;
-
 // Note: DriftDetection and detect_workspace_edit_drift are NOT re-exported
 // here. They live in runtime::drift and must be imported from there directly.
 pub use crate::workspace::validate_workspace_config;
@@ -22,6 +13,3 @@ pub use jackin_config::{
     resolve_mode_with_trace, resolve_sync_source_dir,
 };
 pub use jackin_config::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};
-
-#[cfg(test)]
-pub(crate) use std::collections::BTreeMap;
