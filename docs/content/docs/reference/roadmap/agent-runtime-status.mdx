@@ -137,7 +137,7 @@ This belongs in jackin' as a fallback/probe, not as the primary blocker detector
 
 The built-in runtimes are exactly `claude`, `codex`, `amp`, `kimi`, and `opencode` in <RepoFile path="crates/jackin-core/src/agent.rs" />. Runtime setup already centralizes agent home seeding and credential copying in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />. Launch currently passes high-autonomy flags in <RepoFile path="docker/runtime/entrypoint.sh" />: Claude Code uses dangerous-skip-permissions, Codex uses dangerous bypass approvals/sandbox, Amp uses dangerous allow-all, Kimi uses yolo mode, and OpenCode gets permission allow config. These flags lower the number of tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures.
 
-Capsule already owns the right implementation point: the PTY reader, `vt100` parser state, session lifecycle, 1Hz ticker, control socket at `/jackin/run/jackin.sock`, and in-container setup hooks. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
+Capsule already owns the right implementation point: the PTY reader, jackin-term `DamageGrid` state, session lifecycle, 1Hz ticker, control socket at `/jackin/run/jackin.sock`, and in-container setup hooks. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
 
 ## jackin' Design
 

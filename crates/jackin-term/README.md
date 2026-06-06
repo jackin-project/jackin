@@ -161,7 +161,7 @@ PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-
    geometry, wide-cell, style, and alt-screen invariants. This proves parser carry state is
    deterministic across PTY read boundaries without carrying a second terminal model.
 2. **Conformance corpus** (`tests/fixtures/`): vttest/esctest sequences, real `claude`/`codex`/
-   `vim`/`htop` PTY captures, asciinema casts, pathological sets (`yes`, `seq 1 100000`,
+   `vim`/`htop`/`tmux` PTY captures, asciinema casts, pathological sets (`yes`, `seq 1 100000`,
    full-screen redraw storms).
 3. **Fuzz target** (`fuzz/src/damage_grid_process.rs`): feeds arbitrary bytes to the parser and
    asserts zero panics plus one-shot vs byte-split determinism.

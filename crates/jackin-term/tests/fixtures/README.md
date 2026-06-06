@@ -22,14 +22,14 @@ byte-by-byte, then asserts identical final grids (cells, attrs, cursor, alt-scre
 | `alt_screen/` | Alternate screen enter/exit, content in both screens |
 | `vttest/` | Representative VT conformance sequences derived from vttest classes |
 | `esctest/` | Representative CSI/DEC/SGR sequences derived from esctest classes |
-| `real/` | Real CLI PTY-output captures that are geometry-safe at 24x80 |
+| `real/` | Real CLI/TUI PTY-output captures that are geometry-safe at 24x80 (`claude`, `codex`, `vim`, `htop`, `tmux`) |
 | `asciinema/` | Asciinema v2 `.cast` files; output events are replayed through the harness |
 | `tool_archetypes/` | Tool-shaped fixtures for binaries unavailable in this environment |
 | `pathological/` | High-volume: `seq 1 100000` tail windows, `yes` flood, full-screen redraw storms |
 
 ## Adding fixtures
 
-Capture a real PTY stream during a `claude` / `codex` / `vim` / `htop` session:
+Capture a real PTY stream during a `claude` / `codex` / `vim` / `htop` / `tmux` session:
 
 ```sh
 # Record a PTY session to a binary file.

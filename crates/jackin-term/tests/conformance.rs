@@ -518,10 +518,16 @@ fn corpus_contains_required_fixture_classes() {
         );
     }
 
-    for required_name in ["claude", "codex", "vim", "htop", "tmux"] {
+    for required_name in [
+        "real/claude",
+        "real/codex",
+        "real/vim",
+        "real/htop",
+        "real/tmux",
+    ] {
         assert!(
             filenames.iter().any(|name| name.contains(required_name)),
-            "missing required real/tool fixture containing `{required_name}`"
+            "missing required fixture containing `{required_name}`"
         );
     }
 }
