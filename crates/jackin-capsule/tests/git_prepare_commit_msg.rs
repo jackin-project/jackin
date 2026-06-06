@@ -37,6 +37,10 @@ fn run_hook(input: &str, source: Option<&str>) -> String {
     if let Some(source) = source {
         command.arg(source);
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "integration test invokes the hook subprocess directly"
+    )]
     let output = command.output().unwrap();
     assert!(
         output.status.success(),

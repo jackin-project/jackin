@@ -101,6 +101,10 @@ pub fn install_sigchld_reaper() {
                     Err(nix::errno::Errno::EINTR) => {}
                     Err(e) => {
                         crate::clog!("zombie-reaper sigwait error: {e}; backing off 100ms");
+                        #[expect(
+                            clippy::disallowed_methods,
+                            reason = "zombie reaper owns its OS thread and is not the multiplexer render thread"
+                        )]
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     }
                 }

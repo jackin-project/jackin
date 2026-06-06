@@ -142,6 +142,10 @@ fn write_scaffold(repo_dir: &Path, selector: &RoleSelector) -> anyhow::Result<()
 fn write_new_file(path: &Path, contents: &str) -> anyhow::Result<()> {
     use std::io::Write;
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "role-authoring CLI file creation does not run on render/runtime threads"
+    )]
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

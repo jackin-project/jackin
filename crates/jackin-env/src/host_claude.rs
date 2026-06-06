@@ -50,16 +50,19 @@ pub fn probe_claude_cli() -> anyhow::Result<ClaudeProbe> {
 
 /// Test-injectable variant. Production callers use [`probe_claude_cli`].
 pub fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
-    let out = Command::new(binary)
-        .arg("--version")
-        .output()
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "failed to spawn Claude CLI {binary:?}: {e} \
+    let mut command = Command::new(binary);
+    command.arg("--version");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Claude CLI probe is wrapped by spawn_blocking on launch paths"
+    )]
+    let out = command.output().map_err(|e| {
+        anyhow::anyhow!(
+            "failed to spawn Claude CLI {binary:?}: {e} \
                  (install with `npm i -g @anthropic-ai/claude-code` or see \
                  https://docs.anthropic.com/en/docs/claude-code)"
-            )
-        })?;
+        )
+    })?;
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();

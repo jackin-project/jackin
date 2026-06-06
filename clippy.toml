@@ -2,3 +2,9 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
+disallowed-methods = [
+    { path = "std::process::Command::output", reason = "blocking subprocess output must not run on render/runtime threads; use async process helpers or spawn_blocking" },
+    { path = "std::thread::sleep", reason = "blocking sleep must not run on render/runtime threads; use async sleep, polling hooks, or an owned OS thread" },
+    { path = "std::fs::File::open", reason = "blocking filesystem opens must not run on render/runtime threads; use async file work or spawn_blocking" },
+    { path = "std::fs::OpenOptions::open", reason = "blocking filesystem opens must not run on render/runtime threads; use async file work or spawn_blocking" },
+]

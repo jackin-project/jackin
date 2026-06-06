@@ -187,6 +187,10 @@ fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output
                 if child.try_wait().ok().flatten().is_some() {
                     break;
                 }
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "snapshot timeout drain runs on the caller's snapshot worker path"
+                )]
                 std::thread::sleep(Duration::from_millis(20));
             }
             let output = child.wait_with_output().ok();
@@ -196,6 +200,10 @@ fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output
                 .unwrap_or_default();
             bail!("docker exec snapshot timed out after {SOCKET_TIMEOUT:?}: {stderr}");
         }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "snapshot retry loop is bounded and not part of the render task"
+        )]
         std::thread::sleep(Duration::from_millis(10));
     }
 }

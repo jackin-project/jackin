@@ -455,6 +455,10 @@ impl InstanceIndex {
         std::fs::create_dir_all(data_dir)
             .with_context(|| format!("create data dir {}", data_dir.display()))?;
         let lock_path = data_dir.join(INSTANCE_INDEX_LOCK_FILE);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "instance index mutation is caller-governed and not part of frame rendering"
+        )]
         let lock = std::fs::OpenOptions::new()
             .create(true)
             .read(true)

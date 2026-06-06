@@ -66,6 +66,10 @@ pub fn init() {
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
 
     let path = resolve_log_path();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule log opens once during logging initialization, before render loop work"
+    )]
     let file = match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(f) => Some(f),
         Err(e) => {

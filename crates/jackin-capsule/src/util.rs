@@ -13,6 +13,10 @@ use std::time::{Duration, Instant};
 /// `label` is a static tag so `cdebug!` traces name which call site
 /// hit the cap or failed.
 pub fn read_text_bounded(label: &'static str, path: &Path, max_bytes: u64) -> Option<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "bounded metadata reads are small, synchronous capsule-side helpers outside render emission"
+    )]
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
         Err(e) => {
@@ -91,6 +95,10 @@ pub(crate) fn wait_child_with_timeout(
             drop(child.wait());
             return WaitOutcome::TimedOut;
         }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "command probe waits on an owned child process outside the multiplexer render loop"
+        )]
         std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
     }
 }

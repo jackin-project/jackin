@@ -213,6 +213,10 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
     let mut cli_failure: Option<HostMissingReason> = None;
 
     if host_home_is_real(host_home) {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "GitHub auth provisioning is called from spawn_blocking during launch"
+        )]
         match std::process::Command::new("gh")
             .args(["auth", "token", "--hostname", "github.com"])
             .output()
@@ -936,6 +940,10 @@ pub(super) fn create_private_file_if_absent(path: &Path, content: &[u8]) -> anyh
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "auth file provisioning is called from spawn_blocking during launch"
+    )]
     match opts.open(path) {
         Ok(mut file) => {
             use std::io::Write;

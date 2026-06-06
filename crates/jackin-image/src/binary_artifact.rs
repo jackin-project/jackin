@@ -81,6 +81,10 @@ pub fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
 }
 
 pub fn hash_file_sha256(path: &Path) -> Result<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "binary artifact hashing is called from image prep/offloaded launch work"
+    )]
     let mut file = std::fs::File::open(path)
         .with_context(|| format!("opening {} for hashing", path.display()))?;
     let mut hasher = Sha256::new();
@@ -119,6 +123,10 @@ pub fn parse_sha256_hex(text: &str) -> Result<String> {
 /// Mode bits from the archive are applied by `unpack`; callers that need a
 /// fixed mode call [`chmod_executable`] afterward.
 pub fn extract_tar_gz_member(archive: &Path, member: &str, dest: &Path) -> Result<()> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "binary archive extraction is called from image prep/offloaded launch work"
+    )]
     let file =
         std::fs::File::open(archive).with_context(|| format!("opening {}", archive.display()))?;
     let decoder = GzDecoder::new(file);

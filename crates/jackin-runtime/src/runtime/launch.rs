@@ -1218,6 +1218,10 @@ pub(super) fn pull_git_sources_with_git(
                     .args(["-C", &src, "pull"])
                     .env("GIT_TERMINAL_PROMPT", "0")
                     .stdin(std::process::Stdio::null());
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "git pull runs on a dedicated OS thread, not the launch render runtime thread"
+                )]
                 match command.output() {
                     Ok(out) if out.status.success() => GitPullResult::Success {
                         src,

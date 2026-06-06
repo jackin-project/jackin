@@ -117,6 +117,10 @@ fn prune_removes_over_age_run_with_its_sidecar() {
     // The margin is a whole extra retention window so coarse filesystem
     // mtime granularity cannot push it back under the threshold.
     let ancient = SystemTime::now() - MAX_RUN_ARTIFACT_AGE - MAX_RUN_ARTIFACT_AGE;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test opens fixture artifact to set mtime"
+    )]
     fs::OpenOptions::new()
         .write(true)
         .open(&old_jsonl)
@@ -150,6 +154,10 @@ fn prune_overflow_removes_pruned_runs_sidecar() {
     let victim_log = dir.join("jk-run-victim.docker-build.log");
     fs::write(&victim_jsonl, "{}").unwrap();
     fs::write(&victim_log, "build output").unwrap();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test opens fixture artifact to set mtime"
+    )]
     fs::OpenOptions::new()
         .write(true)
         .open(&victim_jsonl)

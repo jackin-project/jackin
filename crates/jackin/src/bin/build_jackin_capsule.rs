@@ -242,10 +242,13 @@ fn check_zigbuild_installed() -> Result<()> {
     // contract.
     const INSTALL_HINT: &str = "Install the pinned toolchain from mise.toml with:\n  \
                                 mise install zig cargo:cargo-zigbuild";
-    match process::Command::new("cargo-zigbuild")
-        .arg("--version")
-        .output()
-    {
+    let mut command = process::Command::new("cargo-zigbuild");
+    command.arg("--version");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule build helper is a standalone build utility, not a render/runtime thread"
+    )]
+    match command.output() {
         Ok(out) if out.status.success() => Ok(()),
         Ok(out) => anyhow::bail!(
             "cargo-zigbuild rejected `--version` (exit {}): {}\n{INSTALL_HINT}",
@@ -259,8 +262,13 @@ fn check_zigbuild_installed() -> Result<()> {
 }
 
 fn ensure_rustup_target(triple: &str) -> Result<()> {
-    let out = process::Command::new("rustup")
-        .args(["target", "list", "--installed"])
+    let mut command = process::Command::new("rustup");
+    command.args(["target", "list", "--installed"]);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule build helper is a standalone build utility, not a render/runtime thread"
+    )]
+    let out = command
         .output()
         .with_context(|| "failed to run `rustup target list --installed`")?;
     let installed = String::from_utf8_lossy(&out.stdout);

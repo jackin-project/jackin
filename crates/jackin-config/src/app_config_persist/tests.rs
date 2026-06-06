@@ -4,6 +4,14 @@ use crate::CURRENT_CONFIG_VERSION;
 use jackin_core::JackinPaths;
 use tempfile::tempdir;
 
+fn wait_for_mtime_tick() {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "mtime idempotency test needs a wall-clock boundary before checking no rewrite"
+    )]
+    std::thread::sleep(std::time::Duration::from_millis(50));
+}
+
 #[test]
 fn sync_does_not_rewrite_config_when_already_current() {
     let temp = tempdir().unwrap();
@@ -17,7 +25,7 @@ fn sync_does_not_rewrite_config_when_already_current() {
         .unwrap();
 
     // Small delay so mtime would differ if rewritten
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    wait_for_mtime_tick();
 
     // Second load should not rewrite
     AppConfig::load_or_init(&paths).unwrap();
@@ -124,7 +132,7 @@ fn load_is_idempotent_when_builtins_already_synced() {
         .modified()
         .unwrap();
 
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    wait_for_mtime_tick();
 
     // Second load on a stable file must not rewrite.
     AppConfig::load_or_init(&paths).unwrap();

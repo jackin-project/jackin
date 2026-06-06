@@ -82,6 +82,10 @@ fn stage_write(tmp: &Path, contents: &str) -> anyhow::Result<()> {
     {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "config persistence is caller-governed and not run from render loops"
+        )]
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)

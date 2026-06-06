@@ -78,6 +78,10 @@ impl RunDiagnostics {
             .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;
         prune_old_runs_in_dir(&dir, None);
         let path = dir.join(format!("{run_id}.jsonl"));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "diagnostics artifact creation is not part of a render loop"
+        )]
         let file = restrict_to_owner(OpenOptions::new().create_new(true).write(true))
             .open(&path)
             .with_context(|| format!("creating diagnostics run artifact {}", path.display()))?;
@@ -127,6 +131,10 @@ impl RunDiagnostics {
         stderr: &[u8],
     ) -> Option<PathBuf> {
         let path = self.command_output_path(name);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "diagnostics sidecar creation is not part of a render loop"
+        )]
         let mut file =
             restrict_to_owner(OpenOptions::new().create(true).truncate(true).write(true))
                 .open(&path)

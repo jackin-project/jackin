@@ -14,6 +14,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+fn wait_for_worker_poll() {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "op-picker tests poll owned worker threads"
+    )]
+    std::thread::sleep(std::time::Duration::from_millis(2));
+}
+
 /// `account_list` succeeds (so the probe doesn't classify as
 /// `NotInstalled`), every other call returns an empty `Vec`.
 /// `last_vault_list_account` is `Option<Option<String>>` to
@@ -73,7 +81,7 @@ fn drain_initial_account_load(s: &mut OpPickerState) {
         if s.rx.is_none() && s.pending_load.is_none() {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        wait_for_worker_poll();
     }
 }
 
@@ -506,7 +514,7 @@ fn create_mode_existing_item_lands_on_section_stage() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
         poll_load_for_test(&mut s);
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        wait_for_worker_poll();
     }
     assert_eq!(
         s.stage,
@@ -1425,7 +1433,7 @@ fn drain_worker_load(s: &mut OpPickerState) {
         if s.rx.is_none() && s.pending_load.is_none() {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        wait_for_worker_poll();
     }
     assert!(
         s.rx.is_none() && s.pending_load.is_none(),

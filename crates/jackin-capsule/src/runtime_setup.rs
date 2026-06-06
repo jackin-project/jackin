@@ -3,11 +3,12 @@
 //! sourcing role hooks and `exec`-ing the selected agent.
 
 use std::fs;
+use std::io;
 use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
@@ -264,6 +265,10 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
     }
     let provider_block = codex_minimax_provider_toml()?;
     // Append so any operator-authored config.toml content is preserved.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule runtime setup runs before entering the multiplexer render loop"
+    )]
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -435,6 +440,10 @@ fn write_opencode_json(config: &Path, cfg: &serde_json::Value) -> Result<()> {
     use std::os::unix::fs::OpenOptionsExt as _;
     let mut content = serde_json::to_vec(cfg).context("failed to serialize opencode.json")?;
     content.push(b'\n');
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule runtime setup runs before entering the multiplexer render loop"
+    )]
     let mut f = fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -592,7 +601,7 @@ fn remove_file_if_exists(path: impl AsRef<Path>) -> Result<()> {
     let path = path.as_ref();
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err).with_context(|| format!("failed to remove {}", path.display())),
     }
 }
@@ -612,10 +621,9 @@ fn git_trailer_hook_ready() -> bool {
     {
         return false;
     }
-    let Ok(output) = Command::new("git")
-        .args(["config", "--global", "core.hooksPath"])
-        .output()
-    else {
+    let mut command = Command::new("git");
+    command.args(["config", "--global", "core.hooksPath"]);
+    let Ok(output) = runtime_setup_output(&mut command) else {
         return false;
     };
     output.status.success() && String::from_utf8_lossy(&output.stdout).trim_end() == GIT_HOOKS_DIR
@@ -682,7 +690,9 @@ fn git_dco_identity_cache_path() -> PathBuf {
 }
 
 fn git_config_value(key: &str) -> Option<String> {
-    let output = Command::new("git").args(["config", key]).output().ok()?;
+    let mut command = Command::new("git");
+    command.args(["config", key]);
+    let output = runtime_setup_output(&mut command).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -710,10 +720,8 @@ fn ensure_message_trailer(
     if let Some(where_arg) = where_arg {
         command.arg(format!("--where={where_arg}"));
     }
-    let output = command
-        .args(["--trailer", trailer])
-        .arg(message_path)
-        .output()
+    command.args(["--trailer", trailer]).arg(message_path);
+    let output = runtime_setup_output(&mut command)
         .with_context(|| format!("failed to run git interpret-trailers for {label}"))?;
     if output.status.success() {
         return Ok(());
@@ -751,9 +759,9 @@ fn remove_exact_trailer_lines(message_path: &Path, trailer: &str, label: &str) -
 }
 
 fn ensure_git_config_multivalue(key: &str, value: &str) -> Result<()> {
-    let output = Command::new("git")
-        .args(["config", "--global", "--get-all", key])
-        .output()
+    let mut command = Command::new("git");
+    command.args(["config", "--global", "--get-all", key]);
+    let output = runtime_setup_output(&mut command)
         .with_context(|| format!("failed to read git config {key}"))?;
     if output.status.success()
         && String::from_utf8_lossy(&output.stdout)
@@ -781,9 +789,9 @@ fn gh_auth_status_ok() -> bool {
 }
 
 fn run_command(program: &str, args: &[&str]) -> Result<()> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
+    let mut command = Command::new(program);
+    command.args(args);
+    let output = runtime_setup_output(&mut command)
         .with_context(|| format!("failed to run {}", format_command(program, args)))?;
     if output.status.success() {
         return Ok(());
@@ -794,6 +802,14 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
         output.status,
         String::from_utf8_lossy(&output.stderr).trim()
     )
+}
+
+fn runtime_setup_output(command: &mut Command) -> io::Result<Output> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule runtime setup runs before entering the multiplexer render loop"
+    )]
+    command.output()
 }
 
 fn run_optional_command(program: &str, args: &[&str]) {

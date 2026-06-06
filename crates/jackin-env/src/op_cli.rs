@@ -179,7 +179,13 @@ fn spawn_wait_thread(
                     drop(tx.send(r));
                     return;
                 }
-                None => std::thread::sleep(poll),
+                None => {
+                    #[expect(
+                        clippy::disallowed_methods,
+                        reason = "1Password poll loop runs on its own OS thread"
+                    )]
+                    std::thread::sleep(poll);
+                }
             }
         }
     });
@@ -198,6 +204,10 @@ where
         match command.spawn() {
             Ok(child) => return Ok(child),
             Err(error) if is_text_file_busy(&error) && attempt + 1 < OP_SPAWN_RETRIES => {
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "launch callers run 1Password spawn retries inside spawn_blocking"
+                )]
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             Err(error) => return Err(error),

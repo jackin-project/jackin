@@ -41,6 +41,10 @@ pub fn drain_pending_terminal_events_until_quiet(limit: usize, quiet_for: std::t
 
 #[cfg(unix)]
 pub fn flush_terminal_input_queue() {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "terminal setup flush opens /dev/tty briefly outside frame rendering"
+    )]
     if let Ok(tty) = std::fs::File::options()
         .read(true)
         .write(true)

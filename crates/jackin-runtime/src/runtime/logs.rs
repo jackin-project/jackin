@@ -192,6 +192,10 @@ fn read_tail(path: &Path, n: usize) -> Result<Vec<String>> {
     if n == 0 {
         return Ok(Vec::new());
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "log reads run in command handlers or spawn_blocking tail paths, not frame rendering"
+    )]
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let reader = BufReader::new(file);
     let mut ring: VecDeque<String> = VecDeque::with_capacity(n.min(8192));
@@ -268,6 +272,10 @@ fn follow_file(path: &Path) -> Result<()> {
                     watched_inode = new_inode;
                     continue;
                 }
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "log tail follow loop runs inside spawn_blocking"
+                )]
                 std::thread::sleep(Duration::from_millis(250));
             }
             Ok(_) => {
@@ -284,6 +292,10 @@ fn follow_file(path: &Path) -> Result<()> {
 /// reader and the file's inode at open time so the follow loop can
 /// notice an inode swap underneath the same path.
 fn open_for_follow(path: &Path, from_end: bool) -> Result<(BufReader<File>, u64)> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "log follow opens run inside spawn_blocking"
+    )]
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     if from_end {
         file.seek(SeekFrom::End(0))?;

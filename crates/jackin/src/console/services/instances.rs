@@ -65,14 +65,19 @@ pub(crate) fn load_instance_refresh_snapshot(
 
 /// Return running role container names from the local Docker CLI.
 pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {
-    let output = std::process::Command::new("docker")
-        .args([
-            "ps",
-            "--filter",
-            "label=jackin.kind=role",
-            "--format",
-            "{{.Names}}",
-        ])
+    let mut command = std::process::Command::new("docker");
+    command.args([
+        "ps",
+        "--filter",
+        "label=jackin.kind=role",
+        "--format",
+        "{{.Names}}",
+    ]);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "instance refresh is launched through spawn_blocking_subscription"
+    )]
+    let output = command
         .output()
         .map_err(anyhow::Error::new)
         .context("starting docker ps for live instance reconciliation")?;

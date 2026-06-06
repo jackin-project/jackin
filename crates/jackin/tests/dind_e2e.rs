@@ -5,6 +5,7 @@
 //! bug fixed in `src/runtime/launch.rs`.
 
 #![cfg(feature = "e2e")]
+#![allow(clippy::disallowed_methods)]
 
 use std::io::{Read, Write as _};
 use std::path::Path;

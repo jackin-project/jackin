@@ -237,6 +237,10 @@ fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
     {
         cmd.arg(ctx);
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Docker context inspection runs before launch render/runtime work begins"
+    )]
     let output = match cmd.output() {
         Ok(output) => output,
         Err(err) => {

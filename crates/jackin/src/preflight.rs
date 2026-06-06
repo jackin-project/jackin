@@ -338,10 +338,13 @@ fn check_capsule_cache(paths: &crate::paths::JackinPaths) -> CheckResult {
 }
 
 fn check_gh_auth() -> CheckResult {
-    match std::process::Command::new("gh")
-        .args(["auth", "status"])
-        .output()
-    {
+    let mut command = std::process::Command::new("gh");
+    command.args(["auth", "status"]);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "preflight probes run before TUI render/runtime work begins"
+    )]
+    match command.output() {
         Ok(out) if out.status.success() => CheckResult::ok("gh_auth", "gh CLI authenticated"),
         Ok(_) => CheckResult::warn(
             "gh_auth",
@@ -353,10 +356,13 @@ fn check_gh_auth() -> CheckResult {
 }
 
 fn check_op_cli() -> CheckResult {
-    match std::process::Command::new("op")
-        .args(["account", "list", "--format=json"])
-        .output()
-    {
+    let mut command = std::process::Command::new("op");
+    command.args(["account", "list", "--format=json"]);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "preflight probes run before TUI render/runtime work begins"
+    )]
+    match command.output() {
         Ok(out) if out.status.success() => CheckResult::ok("op_cli", "1Password CLI signed in"),
         Ok(_) => CheckResult::skip(
             "op_cli",
@@ -375,7 +381,13 @@ fn check_mise() -> CheckResult {
     if !in_checkout {
         return CheckResult::skip("mise", "Not in a source checkout — mise not required");
     }
-    match std::process::Command::new("mise").arg("--version").output() {
+    let mut command = std::process::Command::new("mise");
+    command.arg("--version");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "preflight probes run before TUI render/runtime work begins"
+    )]
+    match command.output() {
         Ok(out) if out.status.success() => {
             let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             CheckResult::ok("mise", format!("mise {version}"))
@@ -494,11 +506,13 @@ fn check_stale_isolation(paths: &crate::paths::JackinPaths) -> CheckResult {
 /// Return available bytes for the filesystem containing `path` using `df -k`.
 fn available_bytes(path: &Path) -> Option<u64> {
     // `df -k <path>` outputs available KiB in column 4 (1-indexed).
-    let output = std::process::Command::new("df")
-        .arg("-k")
-        .arg(path)
-        .output()
-        .ok()?;
+    let mut command = std::process::Command::new("df");
+    command.arg("-k").arg(path);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "preflight probes run before TUI render/runtime work begins"
+    )]
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }

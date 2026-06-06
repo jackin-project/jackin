@@ -71,6 +71,12 @@ Suppression discipline:
 
 - Prefer fixing the finding.
 - If code must intentionally stay unused, use `#[expect(dead_code, reason = "...")]`, never a blanket `#[allow(dead_code)]`.
+- `clippy::disallowed_methods` is enabled for blocking `Command::output`,
+  `std::thread::sleep`, `std::fs::File::open`, and
+  `std::fs::OpenOptions::open`. New render/runtime-thread call sites must move
+  behind async helpers or `spawn_blocking`. Non-render exceptions need a local
+  `#[expect(clippy::disallowed_methods, reason = "...")]` naming the boundary
+  (startup, build helper, test harness, owned OS thread, etc.).
 - `unused_crate_dependencies` stays off; dependency scanners cover that class with fewer Cargo target false positives.
 - `print_stdout`, `print_stderr`, `unwrap_used`, `expect_used`, and `panic` are documented policy lints, but the current workspace table leaves them allowed while the pre-release codebase is being reduced. Runtime input paths still must not use `unwrap()`/`expect()` as validation. `exit` stays at `warn`.
 

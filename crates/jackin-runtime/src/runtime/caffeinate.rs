@@ -87,6 +87,10 @@ async fn reconcile_inner(
     })?;
 
     let lock_path = paths.data_dir.join(LOCK_FILENAME);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "caffeinate lock acquisition is runtime state setup, not frame rendering"
+    )]
     let lock_file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -281,11 +285,15 @@ fn is_caffeinate_alive_at(pid: u32) -> Liveness {
     // fall through to `Unknown` so the reconciler can leave state
     // alone rather than guessing.
     for _ in 0..2 {
-        if let Ok(output) = Command::new("ps")
+        let mut command = Command::new("ps");
+        command
             .args(["-p", &pid.to_string(), "-o", "comm="])
-            .stderr(Stdio::null())
-            .output()
-        {
+            .stderr(Stdio::null());
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "caffeinate process liveness probe runs inside spawn_blocking"
+        )]
+        if let Ok(output) = command.output() {
             return classify_ps_comm_output(
                 output.status.success(),
                 &String::from_utf8_lossy(&output.stdout),

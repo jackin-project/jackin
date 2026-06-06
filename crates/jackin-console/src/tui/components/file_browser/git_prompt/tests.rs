@@ -69,6 +69,10 @@ fn wait_for_git_url_resolution(state: &mut FileBrowserState) {
         if state.poll_git_url_resolution() {
             return;
         }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "test polls an owned git-url worker thread"
+        )]
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
     panic!("git URL worker did not finish");

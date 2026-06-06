@@ -38,6 +38,10 @@ pub fn derive_version(git_dir_relative: &str) -> String {
 
     let cargo_version = std::env::var("CARGO_PKG_VERSION")
         .expect("CARGO_PKG_VERSION set by cargo for build script");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "build metadata runs in Cargo build-script context, not on a render/runtime thread"
+    )]
     let short_sha = Command::new("git")
         .args(["rev-parse", "--short=7", "HEAD"])
         .output()

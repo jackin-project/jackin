@@ -3,6 +3,14 @@ use super::{
     Subscription, SubscriptionPoll, spawn_blocking_subscription, spawn_named_blocking_subscription,
 };
 
+fn wait_for_worker_poll() {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test polls an owned OS worker thread without a tokio runtime"
+    )]
+    std::thread::sleep(std::time::Duration::from_millis(1));
+}
+
 #[test]
 fn oneshot_subscription_reports_ready_value() {
     let (tx, mut rx) = tokio::sync::oneshot::channel();
@@ -88,7 +96,7 @@ fn named_blocking_subscription_reports_worker_result_without_runtime() {
                 assert_eq!(value, 7);
                 return;
             }
-            SubscriptionPoll::Pending => std::thread::sleep(std::time::Duration::from_millis(1)),
+            SubscriptionPoll::Pending => wait_for_worker_poll(),
             SubscriptionPoll::Closed => panic!("worker closed before sending result"),
         }
     }

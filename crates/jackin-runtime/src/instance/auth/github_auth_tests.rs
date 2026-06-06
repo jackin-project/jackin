@@ -319,6 +319,10 @@ fn sync_skips_write_when_content_unchanged() {
         .unwrap();
     let mtime_first = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "mtime idempotency test needs a wall-clock boundary before checking no rewrite"
+    )]
     std::thread::sleep(std::time::Duration::from_millis(1100));
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
