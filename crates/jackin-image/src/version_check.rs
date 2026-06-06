@@ -63,22 +63,6 @@ pub fn store_kimi_version(paths: &JackinPaths, image: &str, version: &str) {
     store_version(paths, Agent::Kimi, image, version);
 }
 
-pub fn stored_amp_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    stored_version(paths, Agent::Amp, image)
-}
-
-pub fn store_amp_version(paths: &JackinPaths, image: &str, version: &str) {
-    store_version(paths, Agent::Amp, image, version);
-}
-
-pub fn stored_codex_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    stored_version(paths, Agent::Codex, image)
-}
-
-pub fn store_codex_version(paths: &JackinPaths, image: &str, version: &str) {
-    store_version(paths, Agent::Codex, image, version);
-}
-
 pub async fn needs_agent_update(paths: &JackinPaths, image: &str, agent: Agent) -> bool {
     let Some(installed) = stored_version(paths, agent, image) else {
         return false;

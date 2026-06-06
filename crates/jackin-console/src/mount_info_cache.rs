@@ -35,10 +35,6 @@ impl MountInfoCache {
         }
     }
 
-    pub fn refresh_global_rows(&self, rows: &[impl MountSource]) {
-        self.refresh_mounts(rows);
-    }
-
     pub fn inspect_cached(&self, src: &str) -> Option<MountKind> {
         self.entries.borrow().get(src).cloned()
     }

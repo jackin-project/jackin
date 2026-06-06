@@ -307,12 +307,6 @@ impl RoleState {
         }
     }
 
-    /// Whether Kimi's auth directory flows into the container.
-    #[must_use]
-    pub fn kimi_forward_auth(&self) -> bool {
-        self.auth.kimi.as_ref().is_some_and(|c| c.forward_auth)
-    }
-
     /// Manifest model override for `OpenCode`, or `None` if not `OpenCode` or no override.
     #[must_use]
     pub fn opencode_model(&self) -> Option<&str> {
@@ -321,36 +315,6 @@ impl RoleState {
         } else {
             None
         }
-    }
-
-    /// Host path to Codex's `auth.json`. `None` when Codex is not in
-    /// `supported_agents()` or no auth file is available.
-    #[must_use]
-    pub fn codex_auth_json(&self) -> Option<&Path> {
-        self.auth
-            .codex
-            .as_ref()
-            .and_then(|c| c.auth_json.as_deref())
-    }
-
-    /// Host path to Amp's `secrets.json`. `None` when Amp is not in
-    /// `supported_agents()` or no file is available.
-    #[must_use]
-    pub fn amp_secrets_json(&self) -> Option<&Path> {
-        self.auth
-            .amp
-            .as_ref()
-            .and_then(|c| c.secrets_json.as_deref())
-    }
-
-    /// Host path to `OpenCode`'s `auth.json`. `None` when `OpenCode` is not
-    /// in `supported_agents()` or no file is available.
-    #[must_use]
-    pub fn opencode_auth_json(&self) -> Option<&Path> {
-        self.auth
-            .opencode
-            .as_ref()
-            .and_then(|c| c.auth_json.as_deref())
     }
 }
 
