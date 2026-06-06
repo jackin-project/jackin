@@ -59,7 +59,9 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "rust@${RUST_VERSION}" && \
-    mise use -g --pin "rust@${RUST_VERSION}"
+    mise use -g --pin "rust@${RUST_VERSION}" && \
+    . ~/.profile && \
+    rustup component add clippy rustfmt rust-analyzer
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \

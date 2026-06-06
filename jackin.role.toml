@@ -1,7 +1,7 @@
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 published_image = "docker.io/chainargos/jackin-agent-brown:latest"
-agents = ["claude", "codex", "amp"]
+agents = ["claude", "codex", "amp", "opencode", "kimi"]
 
 [identity]
 name = "Agent Brown"
@@ -34,6 +34,11 @@ source = "JuliusBrussee/caveman"
 
 [amp]
 
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+[kimi]
+
 [hooks]
 source = "hooks/source.sh"
 preflight = "hooks/preflight.sh"
@@ -45,3 +50,6 @@ default = "1"
 interactive = true
 skippable = true
 prompt = "Context7 API key (leave empty to skip MCP setup)"
+
+[env.CLAUDE_CODE_MAX_OUTPUT_TOKENS]
+default = "64000"

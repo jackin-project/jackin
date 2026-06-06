@@ -21,10 +21,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    with:
-      runner-amd64: hetzner-sentry
-      runner-arm64: hetzner-sentry
-      runner-merge: hetzner-sentry
     secrets:
       registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
