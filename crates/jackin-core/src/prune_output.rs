@@ -1,6 +1,7 @@
 //! Formatted prune/cleanup terminal output shared by runtime and diagnostics.
 
 use owo_colors::OwoColorize;
+use std::fmt::Arguments;
 use std::io::Write;
 
 const STATUS_COLUMN: usize = 78;
@@ -9,9 +10,24 @@ fn flush_stdout() {
     drop(std::io::stdout().flush());
 }
 
+fn stdout_line(args: Arguments<'_>) {
+    let mut stdout = std::io::stdout().lock();
+    drop(writeln!(stdout, "{args}"));
+}
+
+fn stdout_fragment(args: Arguments<'_>) {
+    let mut stdout = std::io::stdout().lock();
+    drop(write!(stdout, "{args}"));
+}
+
+fn stderr_line(args: Arguments<'_>) {
+    let mut stderr = std::io::stderr().lock();
+    drop(writeln!(stderr, "{args}"));
+}
+
 pub fn section(label: &str, detail: impl std::fmt::Display) {
-    println!();
-    println!("  {} {}", label.bold(), detail.dimmed());
+    stdout_line(format_args!(""));
+    stdout_line(format_args!("  {} {}", label.bold(), detail.dimmed()));
     flush_stdout();
 }
 
@@ -29,7 +45,7 @@ pub struct PendingRow {
 
 pub fn start(action: &str, target: impl std::fmt::Display) -> PendingRow {
     let (prefix, dots) = pending_parts(action, target);
-    print!("    {} {}", prefix.bold(), dots.dimmed());
+    stdout_fragment(format_args!("    {} {}", prefix.bold(), dots.dimmed()));
     flush_stdout();
     PendingRow { finalized: false }
 }
@@ -62,35 +78,35 @@ fn fit_prefix(prefix: String) -> (String, usize) {
 }
 
 pub fn ok(detail: impl std::fmt::Display) {
-    println!("    {} {detail}", "OK".green().bold());
+    stdout_line(format_args!("    {} {detail}", "OK".green().bold()));
 }
 
 pub fn skip(detail: impl std::fmt::Display) {
-    println!("    {}", "SKIP".yellow().bold());
-    println!("      {detail}");
+    stdout_line(format_args!("    {}", "SKIP".yellow().bold()));
+    stdout_line(format_args!("      {detail}"));
 }
 
 pub fn failed(detail: impl std::fmt::Display) {
-    eprintln!("    {}", "FAILED".red().bold());
-    eprintln!("      {detail}");
+    stderr_line(format_args!("    {}", "FAILED".red().bold()));
+    stderr_line(format_args!("      {detail}"));
 }
 
 impl PendingRow {
     pub fn ok(mut self) {
         self.finalized = true;
-        println!(" {}", "OK".green().bold());
+        stdout_line(format_args!(" {}", "OK".green().bold()));
     }
 
     pub fn skip(mut self, reason: impl std::fmt::Display) {
         self.finalized = true;
-        println!(" {}", "SKIP".yellow().bold());
-        println!("      {reason}");
+        stdout_line(format_args!(" {}", "SKIP".yellow().bold()));
+        stdout_line(format_args!("      {reason}"));
     }
 
     pub fn failed(mut self, reason: impl std::fmt::Display) {
         self.finalized = true;
-        println!(" {}", "FAILED".red().bold());
-        println!("      {reason}");
+        stdout_line(format_args!(" {}", "FAILED".red().bold()));
+        stdout_line(format_args!("      {reason}"));
     }
 
     /// Finalize the row from a `Result`: print `OK` on success, `FAILED` on error.
@@ -115,8 +131,8 @@ impl PendingRow {
 impl Drop for PendingRow {
     fn drop(&mut self) {
         if !self.finalized {
-            println!(" {}", "FAILED".red().bold());
-            println!("      row not finalized");
+            stdout_line(format_args!(" {}", "FAILED".red().bold()));
+            stdout_line(format_args!("      row not finalized"));
         }
     }
 }

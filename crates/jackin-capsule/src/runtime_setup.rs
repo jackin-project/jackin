@@ -45,7 +45,7 @@ fn run_container_init_once() -> Result<()> {
         })?;
     }
 
-    println!("[entrypoint] running container init...");
+    crate::output::stdout_line(format_args!("[entrypoint] running container init..."));
 
     if let Some(name) = nonempty_env("GIT_AUTHOR_NAME") {
         run_command("git", &["config", "--global", "user.name", &name])?;
@@ -68,15 +68,19 @@ fn run_container_init_once() -> Result<()> {
             ],
         )?;
         if nonempty_env("GH_TOKEN").is_some() || gh_auth_status_ok() {
-            println!("[entrypoint] GitHub CLI authenticated (host: github.com)");
+            crate::output::stdout_line(format_args!(
+                "[entrypoint] GitHub CLI authenticated (host: github.com)"
+            ));
             run_command("gh", &["auth", "setup-git"])?;
         } else {
-            println!(
+            crate::output::stdout_line(format_args!(
                 "[entrypoint] GitHub CLI not authenticated - run 'gh auth login' inside the runtime if needed"
-            );
+            ));
         }
     } else {
-        println!("[entrypoint] GitHub CLI not installed - skipping gh setup");
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] GitHub CLI not installed - skipping gh setup"
+        ));
     }
 
     fs::write(marker, b"ok\n").with_context(|| {
@@ -119,10 +123,10 @@ fn install_git_trailer_hook_if_requested() -> Result<()> {
         active.push("dco");
     }
     let agent = std::env::var("JACKIN_AGENT").unwrap_or_else(|_| "unknown".to_owned());
-    println!(
+    crate::output::stdout_line(format_args!(
         "[entrypoint] git trailer hook installed (agent: {agent}, active: {})",
         active.join(" ")
-    );
+    ));
     Ok(())
 }
 
@@ -141,9 +145,9 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
             (name, email)
         });
         if dco_name.is_empty() || dco_email.is_empty() {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_DCO=1 but git identity is not configured (user.name='{dco_name}' user.email='{dco_email}'); no Signed-off-by trailer written"
-            );
+            ));
         } else {
             ensure_message_trailer(
                 message_path,
@@ -159,9 +163,9 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
         if let Some(trailer) = coauthor_trailer_for_agent(&agent) {
             ensure_message_trailer(message_path, trailer, "Co-authored-by", None)?;
         } else {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_COAUTHOR_TRAILER=1 but JACKIN_AGENT='{agent}' is not a recognized agent slug; no Co-authored-by trailer written"
-            );
+            ));
         }
     }
 
@@ -200,7 +204,9 @@ fn setup_claude() -> Result<()> {
     }
 
     if env_is_one("JACKIN_DISABLE_TIRITH") {
-        println!("[entrypoint] tirith disabled (JACKIN_DISABLE_TIRITH=1)");
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] tirith disabled (JACKIN_DISABLE_TIRITH=1)"
+        ));
     } else {
         run_optional_command(
             "claude",
@@ -208,7 +214,9 @@ fn setup_claude() -> Result<()> {
         );
     }
     if env_is_one("JACKIN_DISABLE_SHELLFIRM") {
-        println!("[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)");
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)"
+        ));
     } else {
         run_optional_command(
             "claude",
@@ -285,10 +293,10 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
             config_path.display()
         )
     })?;
-    println!(
+    crate::output::stdout_line(format_args!(
         "[entrypoint] codex: wrote MiniMax provider block to {}",
         config_path.display()
-    );
+    ));
     Ok(())
 }
 
@@ -346,19 +354,23 @@ fn setup_amp() -> Result<()> {
         "/home/agent/.local/share/amp",
     )?;
     if Path::new("/jackin/amp/secrets.json").is_file() {
-        eprintln!("[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/");
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/"
+        ));
         copy_file_with_mode(
             "/jackin/amp/secrets.json",
             "/home/agent/.local/share/amp/secrets.json",
             0o600,
         )?;
     } else if nonempty_env("AMP_API_KEY").is_some() {
-        eprintln!("[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth");
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth"
+        ));
     } else {
         remove_file_if_exists("/home/agent/.local/share/amp/secrets.json")?;
-        eprintln!(
+        crate::output::stderr_line(format_args!(
             "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset - agent will require interactive login"
-        );
+        ));
     }
     Ok(())
 }
@@ -367,24 +379,26 @@ fn setup_kimi() -> Result<()> {
     seed_home_dir("/jackin/default-home/.kimi-code", "/home/agent/.kimi-code")?;
     let kimi_src = Path::new("/jackin/kimi-code");
     if kimi_src.is_dir() && dir_nonempty(kimi_src)? {
-        eprintln!("[entrypoint] kimi: copying provisioned credentials into ~/.kimi-code/");
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] kimi: copying provisioned credentials into ~/.kimi-code/"
+        ));
         copy_dir_contents(
             kimi_src,
             Path::new("/home/agent/.kimi-code"),
             CopyMode::Overwrite,
         )?;
     } else if kimi_src.is_dir() {
-        eprintln!(
+        crate::output::stderr_line(format_args!(
             "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
-        );
+        ));
     } else if nonempty_env("KIMI_CODE_API_KEY").is_some() {
-        eprintln!(
+        crate::output::stderr_line(format_args!(
             "[entrypoint] kimi: KIMI_CODE_API_KEY present in env; agent will use api-key auth"
-        );
+        ));
     } else {
-        eprintln!(
+        crate::output::stderr_line(format_args!(
             "[entrypoint] kimi: KIMI_CODE_API_KEY unset - agent will require interactive login or config"
-        );
+        ));
     }
     Ok(())
 }
@@ -395,21 +409,23 @@ fn setup_opencode() -> Result<()> {
         "/home/agent/.local/share/opencode",
     )?;
     if Path::new("/jackin/opencode/auth.json").is_file() {
-        eprintln!("[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/");
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/"
+        ));
         copy_file_with_mode(
             "/jackin/opencode/auth.json",
             "/home/agent/.local/share/opencode/auth.json",
             0o600,
         )?;
     } else if nonempty_env("OPENCODE_API_KEY").is_some() {
-        eprintln!(
+        crate::output::stderr_line(format_args!(
             "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth"
-        );
+        ));
     } else {
         remove_file_if_exists("/home/agent/.local/share/opencode/auth.json")?;
-        eprintln!(
+        crate::output::stderr_line(format_args!(
             "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
-        );
+        ));
     }
     use std::os::unix::fs::DirBuilderExt as _;
     fs::DirBuilder::new()

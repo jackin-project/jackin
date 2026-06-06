@@ -523,7 +523,11 @@ impl Drop for TerminalGuard {
 
 fn write_svgs(out_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     for path in write_story_svgs(&out_dir)? {
-        println!("{}", path.display());
+        let mut stdout = io::stdout().lock();
+        drop(io::Write::write_fmt(
+            &mut stdout,
+            format_args!("{}\n", path.display()),
+        ));
     }
     Ok(())
 }

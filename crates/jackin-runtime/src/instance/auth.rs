@@ -10,6 +10,11 @@
 //! on mode — a compromised role cannot redirect a provisioning write through
 //! a symlink placed between launches.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "credential provisioning warnings are operator-visible launch diagnostics"
+)]
+
 use super::{
     AuthProvisionOutcome, GithubAuthContext, GithubProvisionOutcome, GithubTokenSource,
     HostMissingReason, RoleState,

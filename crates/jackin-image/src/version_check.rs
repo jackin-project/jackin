@@ -5,7 +5,14 @@
 //! read/write of the cached version string.
 
 use jackin_core::{Agent, JackinPaths};
+use std::fmt::Arguments;
+use std::io::Write as _;
 use std::path::PathBuf;
+
+fn stderr_line(args: Arguments<'_>) {
+    let mut stderr = std::io::stderr().lock();
+    drop(writeln!(stderr, "{args}"));
+}
 
 /// Canonical cache path for a given agent + image combination.
 ///
@@ -92,10 +99,10 @@ pub fn stored_cache_bust(paths: &JackinPaths, image: &str) -> Option<String> {
 pub fn store_cache_bust(paths: &JackinPaths, image: &str, value: &str) {
     let path = cache_bust_path(paths, image);
     if let Err(e) = write_cached(&path, value) {
-        eprintln!(
+        stderr_line(format_args!(
             "warning: failed to persist JACKIN_CACHE_BUST for {image}: {e}; \
              subsequent non-rebuild launches may replay the wrong cache layer"
-        );
+        ));
     }
 }
 

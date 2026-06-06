@@ -565,11 +565,9 @@ impl Multiplexer {
                 // so `handle_click` compares apples to apples.
                 let term_rows = self.term_rows;
                 let term_cols = self.term_cols;
-                let action = self
-                    .dispatch_to_dialog_top(|dialog, github| {
-                        dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
-                    })
-                    .expect("dialog presence checked");
+                let action = self.dispatch_to_dialog_top(|dialog, github| {
+                    dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
+                })?;
                 self.apply_action(Action::Dialog(action))
             }
             Action::Dialog(action) => Some(self.apply_dialog_action(action)),

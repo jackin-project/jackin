@@ -161,34 +161,42 @@ fn bench_pane_body(c: &mut Criterion) {
 }
 
 fn bench_socket_backend_output(c: &mut Criterion) {
-    use jackin_capsule::tui::socket_backend::SocketBackend;
-    use ratatui::Terminal;
-    use ratatui::layout::Rect;
+    #[expect(
+        clippy::unwrap_used,
+        reason = "benchmark setup/render failures should abort the benchmark immediately"
+    )]
+    fn run_bench(c: &mut Criterion) {
+        use jackin_capsule::tui::socket_backend::SocketBackend;
+        use ratatui::Terminal;
+        use ratatui::layout::Rect;
 
-    let grid = make_test_grid();
-    let area = Rect::new(0, 0, BENCH_COLS, BENCH_ROWS);
+        let grid = make_test_grid();
+        let area = Rect::new(0, 0, BENCH_COLS, BENCH_ROWS);
 
-    let mut group = c.benchmark_group("socket_backend");
-    group.throughput(criterion::Throughput::Elements(
-        u64::from(BENCH_COLS) * u64::from(BENCH_ROWS),
-    ));
+        let mut group = c.benchmark_group("socket_backend");
+        group.throughput(criterion::Throughput::Elements(
+            u64::from(BENCH_COLS) * u64::from(BENCH_ROWS),
+        ));
 
-    group.bench_function("custom_widget_full_diff", |b| {
-        let backend = SocketBackend::new(BENCH_COLS, BENCH_ROWS);
-        let mut terminal = Terminal::new(backend).unwrap();
-        b.iter(|| {
-            terminal
-                .draw(|frame| {
-                    frame.render_widget(CustomPaneBlit { grid: &grid }, area);
-                })
-                .unwrap();
-            // Drain output (simulates sending to attach socket)
-            let output = terminal.backend_mut().take_output();
-            criterion::black_box(output.len());
+        group.bench_function("custom_widget_full_diff", |b| {
+            let backend = SocketBackend::new(BENCH_COLS, BENCH_ROWS);
+            let mut terminal = Terminal::new(backend).unwrap();
+            b.iter(|| {
+                terminal
+                    .draw(|frame| {
+                        frame.render_widget(CustomPaneBlit { grid: &grid }, area);
+                    })
+                    .unwrap();
+                // Drain output (simulates sending to attach socket)
+                let output = terminal.backend_mut().take_output();
+                criterion::black_box(output.len());
+            });
         });
-    });
 
-    group.finish();
+        group.finish();
+    }
+
+    run_bench(c);
 }
 
 criterion_group!(benches, bench_pane_body, bench_socket_backend_output);

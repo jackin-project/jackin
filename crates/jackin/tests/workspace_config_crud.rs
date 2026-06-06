@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "integration test fixture setup should fail immediately with source location"
+)]
+
 use jackin::config::ConfigEditor;
 use jackin::paths::JackinPaths;
 use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved};

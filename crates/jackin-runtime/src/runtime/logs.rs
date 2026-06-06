@@ -9,6 +9,12 @@
 //! is bind-mounted into the container at `/jackin/state`, and the
 //! multiplexer writes `multiplexer.log` directly into it.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "log commands intentionally write command output to stdout/stderr"
+)]
+
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom, Write as _};
@@ -161,7 +167,10 @@ fn resolve(paths: &JackinPaths, selector: &str) -> Result<LogEntry> {
         0 => Err(anyhow!(
             "no container matched {selector:?}. Run `jackin logs` (no args) to list candidates."
         )),
-        1 => Ok(matches.into_iter().next().expect("len == 1")),
+        1 => matches
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("log match disappeared after length check")),
         n => {
             let names: Vec<String> = matches.iter().map(|e| e.container_base.clone()).collect();
             Err(anyhow!(

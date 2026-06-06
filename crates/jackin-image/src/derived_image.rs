@@ -49,7 +49,7 @@ USER agent
 ",
     );
     for entry in entries {
-        write!(
+        let _unused = write!(
             section,
             "\
 COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
@@ -57,8 +57,7 @@ RUN chmod +x /jackin/runtime/hooks/{dst}
 ",
             src = entry.path,
             dst = entry.filename,
-        )
-        .expect("writing to String is infallible");
+        );
     }
     if source_hook_declared {
         // `docker exec zsh` inherits the image ENV but none of PID 1's

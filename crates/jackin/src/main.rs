@@ -1,3 +1,9 @@
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "binary entrypoint renders clap help and top-level errors"
+)]
+
 use clap::{CommandFactory, Parser};
 use jackin::cli::Cli;
 use jackin::cli::dispatch::{self, Action};

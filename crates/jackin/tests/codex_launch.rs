@@ -1,3 +1,9 @@
+#![expect(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "integration test command capture and fixture parsing should fail immediately with source location"
+)]
+
 mod common;
 
 use common::{FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub};

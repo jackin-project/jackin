@@ -182,9 +182,10 @@ impl OpPickerState {
     /// inline `Item[subtitle]` annotation when the item shares its name
     /// with another item in the same vault.
     ///
-    /// # Panics
-    ///
-    /// Panics if vault or item are not selected.
+    #[expect(
+        clippy::expect_used,
+        reason = "op ref commit is reachable only after vault and item selections exist"
+    )]
     pub fn build_op_ref_on_commit(&self, field: &OpPickerField) -> jackin_core::OpRef {
         let vault = self
             .selected_vault

@@ -10,6 +10,7 @@ pub mod host_claude;
 pub mod op_cli;
 pub mod op_runner;
 pub mod op_struct;
+mod output;
 pub mod parse_helpers;
 pub mod picker;
 pub mod resolve;

@@ -489,7 +489,9 @@ impl ConfigEditor {
         }
 
         validate_workspace_file_stem(new)?;
-        let value = self.workspace_docs.remove(old).expect("checked above");
+        let Some(value) = self.workspace_docs.remove(old) else {
+            anyhow::bail!("workspace {old:?} not found");
+        };
         self.workspace_docs.insert(new.to_owned(), value);
         self.removed_workspaces.insert(old.to_owned());
         Ok(())
@@ -570,8 +572,7 @@ impl ConfigEditor {
     }
 
     fn workspace_doc_mut(&mut self, workspace: &str) -> &mut DocumentMut {
-        validate_workspace_file_stem(workspace)
-            .expect("workspace name must be valid for split config filename");
+        debug_assert!(validate_workspace_file_stem(workspace).is_ok());
         self.removed_workspaces.remove(workspace);
         self.workspace_docs.entry(workspace.to_owned()).or_default()
     }
@@ -811,6 +812,10 @@ fn prune_empty_trailing_tables(doc: &mut DocumentMut, path: &[String], max_prune
 }
 
 fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Table {
+    #[expect(
+        clippy::expect_used,
+        reason = "toml_edit table insertion above guarantees the just-created entry is a table"
+    )]
     fn walk<'a>(item: &'a mut Item, path: &[String]) -> &'a mut Table {
         let table = item.as_table_mut().expect("path segment is not a table");
         if path.is_empty() {

@@ -91,6 +91,10 @@ impl Dialog {
         pr_info: Option<&PullRequestInfo>,
         pr_loading: bool,
     ) -> DialogRatatuiSnapshot {
+        #[expect(
+            clippy::expect_used,
+            reason = "ContainerInfo match arm has already proven this dialog variant"
+        )]
         match self {
             Dialog::ConfirmAction { kind, selected_yes } => DialogRatatuiSnapshot::ConfirmAction {
                 title: kind.title().to_owned(),

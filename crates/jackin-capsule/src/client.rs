@@ -63,16 +63,16 @@ pub async fn run_status() -> Result<()> {
             anyhow::bail!("daemon replied with AgentRegistry for Status request")
         }
     };
-    println!("Sessions: {}", sessions.len());
+    crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
-        println!(
+        crate::output::stdout_line(format_args!(
             "  [{}] {} ({}) state={} active={}",
             s.id,
             s.label,
             s.agent.as_deref().unwrap_or("shell"),
             s.state.label(),
             s.active,
-        );
+        ));
     }
 
     Ok(())
@@ -120,7 +120,7 @@ pub async fn run_snapshot() -> Result<()> {
         "tabs": tabs,
         "active_tab": active_tab,
     });
-    println!("{}", serde_json::to_string_pretty(&payload)?);
+    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&payload)?));
     Ok(())
 }
 
@@ -178,19 +178,19 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     }
 
     if format == AgentsFormat::Json {
-        println!("{}", serde_json::to_string_pretty(&records)?);
+        crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&records)?));
         return Ok(());
     }
 
-    print!("{}", jackin_tui::ansi::BRAND_BANNER);
-    println!("agent registry");
+    crate::output::stdout_fragment(format_args!("{}", jackin_tui::ansi::BRAND_BANNER));
+    crate::output::stdout_line(format_args!("agent registry"));
     if let Some(r) = records.iter().find(|r| r.is_self) {
-        println!(
+        crate::output::stdout_line(format_args!(
             "\nYou are: {} ({} · {})",
             r.codename,
             r.agent.as_deref().unwrap_or("shell"),
             r.provider.as_deref().unwrap_or("—"),
-        );
+        ));
     }
 
     // Split active first, then exited — within each group sort by started_at.
@@ -199,16 +199,16 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     active.sort_by(|a, b| a.started_at.cmp(&b.started_at));
     exited.sort_by(|a, b| a.started_at.cmp(&b.started_at));
 
-    println!();
-    println!(
+    crate::output::stdout_empty_line();
+    crate::output::stdout_line(format_args!(
         "  {:<12} {:<10} {:<14} {:<20} {:<20} status",
         "codename", "agent", "provider", "started", "exited"
-    );
-    println!("  {}", "─".repeat(83));
+    ));
+    crate::output::stdout_line(format_args!("  {}", "─".repeat(83)));
 
     for r in active.iter().chain(exited.iter()) {
         let you = if r.is_self { "  ← you" } else { "" };
-        println!(
+        crate::output::stdout_line(format_args!(
             "  {:<12} {:<10} {:<14} {:<20} {:<20} {}{}",
             r.codename,
             r.agent.as_deref().unwrap_or("shell"),
@@ -222,7 +222,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
                 .replace('T', " "),
             r.status,
             you,
-        );
+        ));
     }
 
     Ok(())

@@ -16,6 +16,15 @@ fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
     owo_colors::Rgb(rgb.r, rgb.g, rgb.b)
 }
 
+fn stderr_fragment(args: std::fmt::Arguments<'_>) {
+    let mut stderr = io::stderr().lock();
+    drop(write!(stderr, "{args}"));
+}
+
+fn flush_stderr() {
+    drop(io::stderr().flush());
+}
+
 // ── Skippable sleep ─────────────────────────────────────────────────────
 
 /// Sleep for `duration`, but return `true` immediately if Enter or Esc is pressed.
@@ -156,20 +165,23 @@ fn draw_brand_pill_bottom() {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let row = rows.saturating_sub(2).max(1);
     let col = center_col(cols, BRAND_PILL.chars().count());
-    eprint!(
+    stderr_fragment(format_args!(
         "\x1b[{row};{col}H{}",
         BRAND_PILL
             .bold()
             .color(owo_rgb(crate::BLACK))
             .on_color(owo_rgb(PHOSPHOR_GREEN))
-    );
+    ));
 }
 
 fn draw_centered_phrase(text: &str, color: Rgb) {
     draw_brand_pill_bottom();
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
-    eprint!("\x1b[{row};{col}H{}", text.color(owo_rgb(color)));
+    stderr_fragment(format_args!(
+        "\x1b[{row};{col}H{}",
+        text.color(owo_rgb(color))
+    ));
 }
 
 fn type_centered(
@@ -183,10 +195,10 @@ fn type_centered(
     draw_brand_pill_bottom();
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
-    eprint!("\x1b[{row};{col}H");
+    stderr_fragment(format_args!("\x1b[{row};{col}H"));
     for ch in text.chars() {
-        eprint!("{}", ch.color(owo_rgb(color)));
-        drop(io::stderr().flush());
+        stderr_fragment(format_args!("{}", ch.color(owo_rgb(color))));
+        flush_stderr();
         if skippable_sleep(std::time::Duration::from_millis(char_ms), host_screen_owned) {
             return true;
         }
@@ -208,7 +220,7 @@ fn glitch_centered(text: &str, color: Rgb, hold_ms: u64, host_screen_owned: bool
     let (row, col) = (rows / 2, center_col(cols, chars.len()));
     let mut seed: u64 = 0xCAFE_BABE_1337;
     for _ in 0..5 {
-        eprint!("\x1b[{row};{col}H");
+        stderr_fragment(format_args!("\x1b[{row};{col}H"));
         for &ch in &chars {
             let s = xorshift(&mut seed);
             let display = if s.is_multiple_of(3) {
@@ -216,15 +228,18 @@ fn glitch_centered(text: &str, color: Rgb, hold_ms: u64, host_screen_owned: bool
             } else {
                 ch
             };
-            eprint!("{}", display.color(owo_rgb(color)));
+            stderr_fragment(format_args!("{}", display.color(owo_rgb(color))));
         }
-        drop(io::stderr().flush());
+        flush_stderr();
         if skippable_sleep(std::time::Duration::from_millis(70), host_screen_owned) {
             break;
         }
     }
-    eprint!("\x1b[{row};{col}H{}", text.color(owo_rgb(color)));
-    drop(io::stderr().flush());
+    stderr_fragment(format_args!(
+        "\x1b[{row};{col}H{}",
+        text.color(owo_rgb(color))
+    ));
+    flush_stderr();
     hold_resizable(
         std::time::Duration::from_millis(hold_ms),
         host_screen_owned,
@@ -300,11 +315,11 @@ pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned:
             if let Some(d) = elapsed {
                 let line = format!("in the Construct for {}", format_universe_duration(d));
                 let col = center_col(cols, line.chars().count());
-                eprint!(
+                stderr_fragment(format_args!(
                     "\x1b[{};{col}H{}",
                     mid.saturating_add(2),
                     line.color(owo_rgb(PHOSPHOR_DIM))
-                );
+                ));
             }
         },
     );
@@ -328,8 +343,8 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
     use std::fmt::Write as _;
 
     clear_screen();
-    eprint!("\x1b[?25l\x1b[?7l");
-    drop(io::stderr().flush());
+    stderr_fragment(format_args!("\x1b[?25l\x1b[?7l"));
+    flush_stderr();
 
     let (cols0, rows0) = {
         let (c, r) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -433,8 +448,8 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
                 }
             }
         }
-        eprint!("{out}");
-        drop(io::stderr().flush());
+        stderr_fragment(format_args!("{out}"));
+        flush_stderr();
         if skippable_sleep(
             std::time::Duration::from_millis(frame_ms),
             host_screen_owned,
@@ -444,8 +459,8 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
     }
 
     clear_screen();
-    eprint!("\x1b[H\x1b[?25h\x1b[?7h");
-    drop(io::stderr().flush());
+    stderr_fragment(format_args!("\x1b[H\x1b[?25h\x1b[?7h"));
+    flush_stderr();
 }
 
 fn warp_edge_radius(angle: f32, cx: f32, cy: f32) -> f32 {

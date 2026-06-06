@@ -255,7 +255,7 @@ pub mod ansi {
             (255, 255, 255) => "\x1b[38;2;255;255;255m",
             (0, 0, 0) => "\x1b[38;2;0;0;0m",
             (180, 255, 180) => "\x1b[38;2;180;255;180m", // ACTION_ACCENT
-            _ => panic!("unsupported RGB foreground token"),
+            _ => "",
         }
     }
 
@@ -266,18 +266,16 @@ pub mod ansi {
             (42, 42, 42) => "\x1b[48;2;42;42;42m",
             (255, 255, 255) => "\x1b[48;2;255;255;255m",
             (0, 0, 0) => "\x1b[48;2;0;0;0m",
-            _ => panic!("unsupported RGB background token"),
+            _ => "",
         }
     }
 
     /// Truecolor foreground SGR for an arbitrary RGB value.
     ///
     /// The `const` `rgb_fg` above returns a `&'static str` and so must match a
-    /// fixed allowlist — appropriate for compile-time `const` color tables,
-    /// where an unlisted token is a build error. Render code that picks a color
-    /// at runtime must use this instead: a `Color::Rgb` the allowlist happens
-    /// not to cover would otherwise panic the whole capsule on the frame that
-    /// first paints it (the debug run-id chip's `DANGER_RED` did exactly that).
+    /// fixed allowlist. Render code that picks a color at runtime must use this
+    /// instead: a `Color::Rgb` the allowlist happens not to cover would
+    /// otherwise lose color on the frame that first paints it.
     #[must_use]
     pub fn rgb_fg_dyn(rgb: Rgb) -> String {
         format!("\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b)

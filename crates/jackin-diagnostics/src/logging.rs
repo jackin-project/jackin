@@ -4,6 +4,7 @@ use std::sync::{
     Mutex, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
+use std::{fmt::Arguments, io::Write as _};
 
 pub(crate) static DEBUG_BUFFER_ACTIVE: AtomicBool = AtomicBool::new(false);
 static DEBUG_BUFFER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
@@ -25,6 +26,11 @@ fn debug_buffer() -> &'static Mutex<Vec<String>> {
     DEBUG_BUFFER.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+fn stderr_line(args: Arguments<'_>) {
+    let mut stderr = std::io::stderr().lock();
+    drop(writeln!(stderr, "{args}"));
+}
+
 pub(crate) fn drain_debug_buffer() -> Vec<String> {
     let mut guard = debug_buffer()
         .lock()
@@ -39,7 +45,7 @@ pub fn begin_debug_buffering() {
 pub fn end_debug_buffering() {
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
     for line in drain_debug_buffer() {
-        eprintln!("{line}");
+        stderr_line(format_args!("{line}"));
     }
 }
 
@@ -74,7 +80,7 @@ pub fn emit_debug_line(category: &str, message: &str) {
         }
         guard.push(line);
     } else {
-        eprintln!("{line}");
+        stderr_line(format_args!("{line}"));
     }
 }
 
@@ -87,7 +93,7 @@ pub fn emit_compact_line(kind: &str, line: &str) {
         run.compact(kind, line);
     }
     if !crate::terminal::rich_terminal_owned() {
-        eprintln!("{line}");
+        stderr_line(format_args!("{line}"));
     }
 }
 

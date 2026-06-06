@@ -433,6 +433,11 @@ pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
 /// cycles, and duplicate `from` values (which would silently fork the walker).
 /// Production registries call this from a `#[test]` so a registry mistake
 /// fails CI rather than surfacing on an operator's machine.
+#[expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "registry verifier is test-only assertion logic; invariant failures must fail the test with exact context"
+)]
 pub fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
     let mut seen_froms = std::collections::BTreeSet::new();
     for step in migrations {

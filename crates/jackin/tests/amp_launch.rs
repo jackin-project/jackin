@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    reason = "integration test command capture should fail immediately when expected Docker commands are absent"
+)]
+
 mod common;
 
 use common::{FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub};

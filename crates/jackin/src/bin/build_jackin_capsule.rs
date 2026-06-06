@@ -30,6 +30,13 @@
 //! RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
 //! ```
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::expect_used,
+    reason = "developer build helper emits shell snippets/progress and fails fast on workspace discovery invariants"
+)]
+
 use std::path::{Path, PathBuf};
 use std::process;
 

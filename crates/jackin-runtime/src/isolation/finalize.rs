@@ -8,6 +8,11 @@
 //! commits (`Unpushed`) is always preserved; auto-clean only runs on a clean,
 //! fully-pushed tree with a confirmed exit.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "isolation finalization emits operator-visible preservation and cleanup warnings"
+)]
+
 // All git invocations from this module are local-only:
 //   git status --porcelain
 //   git for-each-ref --format=... refs/heads/

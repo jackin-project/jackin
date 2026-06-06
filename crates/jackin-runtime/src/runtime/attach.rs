@@ -8,6 +8,11 @@
 //! transient state during the setup-once window; they must not surface it as
 //! a terminal error.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "attach flow emits intentional terminal spacing on stderr"
+)]
+
 use crate::instance::{InstanceManifest, InstanceStatus};
 use anyhow::Context as _;
 use jackin_core::{CommandRunner, RunOptions};

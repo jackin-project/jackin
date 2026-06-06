@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, protocol::attach::SpawnRequest, runtime_setup,
+    client, config, daemon, output, protocol::attach::SpawnRequest, runtime_setup,
     session::validate_agent_slug,
 };
 use std::path::Path;
@@ -32,11 +32,14 @@ async fn main() -> Result<()> {
         match subcommand {
             None => client::run_client(None, focus_session).await,
             Some("--version" | "-V") => {
-                println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
+                output::stdout_line(format_args!(
+                    "jackin-capsule {}",
+                    env!("JACKIN_CAPSULE_VERSION")
+                ));
                 Ok(())
             }
             Some("--help" | "-h") => {
-                println!(
+                output::stdout_line(format_args!(
                     "jackin-capsule {version}
 
 USAGE:
@@ -58,7 +61,7 @@ OPTIONS:
 When invoked as PID 1 the binary starts the multiplexer daemon instead of
 connecting as a client.",
                     version = env!("JACKIN_CAPSULE_VERSION")
-                );
+                ));
                 Ok(())
             }
             Some("status") => client::run_status().await,
@@ -95,9 +98,9 @@ connecting as a client.",
                                 match SpawnRequest::agent(slug) {
                                     Ok(req) => req,
                                     Err(reason) => {
-                                        eprintln!(
+                                        output::stderr_line(format_args!(
                                             "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
-                                        );
+                                        ));
                                         return client::run_client(None, focus_session).await;
                                     }
                                 }
@@ -105,9 +108,9 @@ connecting as a client.",
                             Some(req)
                         }
                         Err(reason) => {
-                            eprintln!(
+                            output::stderr_line(format_args!(
                                 "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
-                            );
+                            ));
                             None
                         }
                     },
@@ -170,7 +173,9 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
             return if let Ok(n) = value.parse::<u64>() {
                 Some(n)
             } else {
-                eprintln!("[jackin-capsule] ignoring --focus={value:?}: not a u64");
+                output::stderr_line(format_args!(
+                    "[jackin-capsule] ignoring --focus={value:?}: not a u64"
+                ));
                 None
             };
         }
@@ -179,7 +184,9 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
                 if let Ok(n) = raw.parse::<u64>() {
                     Some(n)
                 } else {
-                    eprintln!("[jackin-capsule] ignoring --focus {raw:?}: not a u64");
+                    output::stderr_line(format_args!(
+                        "[jackin-capsule] ignoring --focus {raw:?}: not a u64"
+                    ));
                     None
                 }
             });

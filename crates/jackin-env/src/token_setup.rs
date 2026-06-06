@@ -438,11 +438,11 @@ where
     if let (true, Some(workspace)) = (created, scope.workspace()) {
         let expiry = upstream_expiry_stamp();
         if let Err(e) = write_expiry_stamp(paths, workspace, &expiry) {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin] note: token stored, but expiry banner cache \
                  write failed: {e} — launch banner will not show 'expires in N days' \
                  for this workspace until the next setup."
-            );
+            ));
         }
     }
 
@@ -1043,11 +1043,11 @@ pub fn clear_expiry_stamp(paths: &JackinPaths, workspace: &str) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin] could not remove token-expiry cache {}: {e} \
                  (next launch may show a stale expiry banner — delete by hand if needed)",
                 path.display()
-            );
+            ));
         }
     }
 }

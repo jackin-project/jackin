@@ -44,6 +44,10 @@ pub(crate) fn inject_workspace_mise_env(
 
 /// Coerce `key` to a table, overwriting any non-table value — the trailing
 /// `as_table_mut` is infallible only because of this normalization.
+#[expect(
+    clippy::expect_used,
+    reason = "toml_edit item is normalized to a table immediately before borrowing it"
+)]
 fn ensure_table<'a>(table: &'a mut toml_edit::Table, key: &str) -> &'a mut toml_edit::Table {
     let item = table
         .entry(key)

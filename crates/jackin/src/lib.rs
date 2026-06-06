@@ -5,6 +5,16 @@
 //! and a library (via `lib.rs`); `pub mod` here is the library boundary.
 
 #![allow(clippy::redundant_pub_crate)]
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "primary CLI crate owns command output rendering until output helpers are factored"
+)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "primary CLI crate still carries state-machine invariants under the strict lint transition"
+)]
 
 pub mod agent;
 pub mod agent_binary;

@@ -10,6 +10,12 @@
 //! test covers, so a parse failure is the regression that would break their
 //! upgrade.
 
+#![expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "migration fixture tests include fixture names in fail-fast panic messages"
+)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

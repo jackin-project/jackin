@@ -134,6 +134,10 @@ impl ScreenSnapshot {
 // DamageGrid adapter (left model)
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::panic,
+    reason = "differential adapter must fail tests with the exact out-of-bounds grid cell"
+)]
 fn snapshot_damagegrid(grid: &DamageGrid) -> ScreenSnapshot {
     let (rows, cols) = grid.size();
     let (cursor_row, cursor_col) = grid.cursor_position();
@@ -174,6 +178,10 @@ fn snapshot_damagegrid(grid: &DamageGrid) -> ScreenSnapshot {
 // vt100 oracle adapter (right model)
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::panic,
+    reason = "differential adapter must fail tests with the exact out-of-bounds oracle cell"
+)]
 fn snapshot_vt100(parser: &vt100::Parser) -> ScreenSnapshot {
     let screen = parser.screen();
     let (rows, cols) = screen.size();
@@ -381,6 +389,10 @@ fn sanity_interleaved_sgr_and_movement() {
 // Fixture-based corpus tests
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::panic,
+    reason = "fixture corpus decoder must fail tests with the exact malformed fixture path"
+)]
 fn decode_vt_fixture(contents: &str, fixture_path: &Path) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut chars = contents.chars().peekable();
@@ -409,6 +421,10 @@ fn decode_vt_fixture(contents: &str, fixture_path: &Path) -> Vec<u8> {
     bytes
 }
 
+#[expect(
+    clippy::panic,
+    reason = "fixture corpus reader must fail tests with the exact unreadable fixture path"
+)]
 fn fixture_bytes(fixture_path: &Path) -> Vec<u8> {
     let raw = std::fs::read(fixture_path)
         .unwrap_or_else(|e| panic!("failed to read fixture {}: {e}", fixture_path.display()));

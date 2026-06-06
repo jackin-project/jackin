@@ -133,24 +133,19 @@ pub fn compute_sidebar_layout(area: Rect, metrics: SidebarLayoutMetrics) -> Side
         .constraints(constraints)
         .split(area);
     let mut iter = rows.iter().copied();
+    let mut next_row = || iter.next().unwrap_or(Rect::default());
 
     SidebarLayout {
-        instances: (metrics.instance_count > 0).then(|| iter.next().expect("instances slot")),
-        general: iter.next().expect("general slot"),
-        mounts: iter.next().expect("mounts slot"),
-        global: metrics
-            .global_mount_height
-            .is_some()
-            .then(|| iter.next().expect("global slot")),
+        instances: (metrics.instance_count > 0).then(&mut next_row),
+        general: next_row(),
+        mounts: next_row(),
+        global: metrics.global_mount_height.is_some().then(&mut next_row),
         role_global: metrics
             .role_global_mount_height
             .is_some()
-            .then(|| iter.next().expect("role-global slot")),
-        env: metrics
-            .env_height
-            .is_some()
-            .then(|| iter.next().expect("env slot")),
-        roles: metrics.show_roles.then(|| iter.next().expect("roles slot")),
+            .then(&mut next_row),
+        env: metrics.env_height.is_some().then(&mut next_row),
+        roles: metrics.show_roles.then(&mut next_row),
     }
 }
 

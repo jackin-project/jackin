@@ -73,11 +73,11 @@ pub fn init() {
     let file = match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(f) => Some(f),
         Err(e) => {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
                 path.display(),
                 e.raw_os_error()
-            );
+            ));
             None
         }
     };
@@ -119,7 +119,7 @@ pub fn init() {
 pub fn write_line(message: &str) {
     let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let stamped = format!("{ts} {message}");
-    eprintln!("{stamped}");
+    crate::output::stderr_line(format_args!("{stamped}"));
     let Some(mutex) = LOG_FILE.get() else {
         return;
     };

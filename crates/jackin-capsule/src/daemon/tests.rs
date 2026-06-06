@@ -1,6 +1,7 @@
 //! Unit tests for `jackin-capsule` daemon: input dispatch, session management,
 //! tab lifecycle, git context, status-bar rendering, and PTY session behavior.
 use super::*;
+use std::io;
 use std::sync::{Arc, Mutex};
 
 use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
@@ -11,7 +12,7 @@ use portable_pty::{ChildKiller, MasterPty, PtySize};
 struct NullChildKiller;
 
 impl ChildKiller for NullChildKiller {
-    fn kill(&mut self) -> std::io::Result<()> {
+    fn kill(&mut self) -> io::Result<()> {
         Ok(())
     }
 
@@ -36,12 +37,12 @@ impl MasterPty for NullMasterPty {
         })
     }
 
-    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
-        Ok(Box::new(std::io::empty()))
+    fn try_clone_reader(&self) -> Result<Box<dyn io::Read + Send>> {
+        Ok(Box::new(io::empty()))
     }
 
-    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
-        Ok(Box::new(std::io::sink()))
+    fn take_writer(&self) -> Result<Box<dyn io::Write + Send>> {
+        Ok(Box::new(io::sink()))
     }
 
     #[cfg(unix)]
@@ -90,6 +91,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             initial_provider: None,
         },
     )
+    .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
 }
 
 fn single_pane_tab_mux() -> Multiplexer {

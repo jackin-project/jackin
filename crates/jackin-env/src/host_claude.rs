@@ -139,10 +139,10 @@ impl Drop for RawModeGuard {
         // line editing until the operator runs `stty sane` or opens
         // a new shell. The error must not panic out of Drop.
         if let Err(e) = crossterm::terminal::disable_raw_mode() {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin] warning: failed to restore cooked terminal mode: {e} \
                  (run `stty sane` if your terminal misbehaves)"
-            );
+            ));
         }
     }
 }
@@ -261,10 +261,10 @@ pub fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::
                     // detach) silently terminates the pump. Without
                     // this notice, claude appears to hang while the
                     // operator's keystrokes are dropped on the floor.
-                    eprintln!(
+                    crate::output::stderr_line(format_args!(
                         "[jackin] warning: stdin pump terminated mid-flow: {e} \
                          (the OAuth prompt may now be unresponsive — Ctrl-C and retry)"
-                    );
+                    ));
                     break;
                 }
                 Ok(_) => {

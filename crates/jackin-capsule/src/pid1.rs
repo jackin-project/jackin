@@ -82,10 +82,12 @@ pub fn install_sigchld_reaper() {
     // not start with a half-installed handler.
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGCHLD);
-    mask.thread_block()
-        .expect("thread_block SIGCHLD on PID 1 main thread");
+    if let Err(error) = mask.thread_block() {
+        crate::clog!("failed to block SIGCHLD on PID 1 main thread: {error}");
+        return;
+    }
 
-    std::thread::Builder::new()
+    let reaper = std::thread::Builder::new()
         .name("zombie-reaper".into())
         .spawn(move || {
             let mut sigset = SigSet::empty();
@@ -109,8 +111,10 @@ pub fn install_sigchld_reaper() {
                     }
                 }
             }
-        })
-        .expect("failed to spawn zombie-reaper thread");
+        });
+    if let Err(error) = reaper {
+        crate::clog!("failed to spawn zombie-reaper thread: {error}");
+    }
 }
 
 pub(crate) fn reap_zombies() {

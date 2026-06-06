@@ -1,3 +1,8 @@
+#![expect(
+    clippy::panic,
+    reason = "integration test stub prompter must fail immediately if unexpectedly called"
+)]
+
 mod common;
 
 use jackin::docker::{CommandRunner, RunOptions};

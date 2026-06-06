@@ -5,6 +5,11 @@
 //! can investigate and re-run `jackin purge`. Not responsible for branch-name
 //! derivation (`branch.rs`) or record persistence schema (`state.rs`).
 
+#![expect(
+    clippy::print_stderr,
+    reason = "isolation cleanup emits operator-visible cleanup warnings"
+)]
+
 use crate::isolation::state::{IsolationRecord, remove_record};
 use jackin_core::CommandRunner;
 use jackin_diagnostics::debug_log;

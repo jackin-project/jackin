@@ -119,10 +119,10 @@ impl AgentState {
 /// Encode `msg` as a 4-byte big-endian length prefix + UTF-8 JSON body.
 ///
 /// `to_vec` cannot actually fail for `ClientMsg` or `ServerMsg` — their
-/// derived `Serialize` impls only emit JSON-representable variants — so
-/// the panic doubles as a contract: any future variant that breaks the
-/// invariant surfaces immediately in tests instead of silently shipping
-/// a 4-byte length=0 frame the peer interprets as an empty payload.
+/// derived `Serialize` impls only emit JSON-representable variants. If a
+/// future generic caller breaks that invariant, encode `Unknown` instead of
+/// panicking or shipping a 4-byte length=0 frame the peer interprets as an
+/// empty payload.
 ///
 /// `ServerMsg::Unknown` IS a legitimate reply (socket.rs returns it as
 /// the response to an unknown `ClientMsg` so the peer's `read_exact`
@@ -131,8 +131,7 @@ impl AgentState {
 /// Peers re-decode it as `Unknown` and the host CLI surfaces the
 /// mismatch as an operator-facing error.
 pub fn frame(msg: &impl Serialize) -> Vec<u8> {
-    let json =
-        serde_json::to_vec(msg).expect("control-channel message serialization is infallible");
+    let json = serde_json::to_vec(msg).unwrap_or_else(|_| b"{\"type\":\"unknown\"}".to_vec());
     let len = (json.len() as u32).to_be_bytes();
     let mut out = Vec::with_capacity(4 + json.len());
     out.extend_from_slice(&len);

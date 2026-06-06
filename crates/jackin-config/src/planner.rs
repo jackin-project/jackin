@@ -83,19 +83,26 @@ pub fn plan_edit(
 
     let plan = plan_collapse(&post_upsert, &new_indexes)?;
 
-    let (edit_driven, pre_existing): (Vec<_>, Vec<_>) = plan.removed.iter().partition(|r| {
-        let child_idx = post_upsert
-            .iter()
-            .position(|m| m == &r.child)
-            .expect("child must appear in post_upsert list");
+    let mut edit_driven = Vec::new();
+    let mut pre_existing = Vec::new();
+    for removal in &plan.removed {
+        let child_idx = post_upsert.iter().position(|m| m == &removal.child).ok_or(
+            CollapseError::PlannerInvariant {
+                message: "child must appear in post_upsert list",
+            },
+        )?;
         let parent_idx = post_upsert
             .iter()
-            .position(|m| m == &r.covered_by)
-            .expect("parent must appear in post_upsert list");
-        new_indexes.contains(&child_idx) || new_indexes.contains(&parent_idx)
-    });
-    let edit_driven: Vec<Removal> = edit_driven.into_iter().cloned().collect();
-    let pre_existing: Vec<Removal> = pre_existing.into_iter().cloned().collect();
+            .position(|m| m == &removal.covered_by)
+            .ok_or(CollapseError::PlannerInvariant {
+                message: "parent must appear in post_upsert list",
+            })?;
+        if new_indexes.contains(&child_idx) || new_indexes.contains(&parent_idx) {
+            edit_driven.push(removal.clone());
+        } else {
+            pre_existing.push(removal.clone());
+        }
+    }
 
     let mut effective_removals = remove_destinations.to_vec();
     for r in &plan.removed {
@@ -171,6 +178,8 @@ pub enum CollapseError {
         parent: MountConfig,
         child: MountConfig,
     },
+    #[error("workspace mount planner invariant failed: {message}")]
+    PlannerInvariant { message: &'static str },
 }
 
 /// Compute a [`CollapsePlan`] for `mounts`.

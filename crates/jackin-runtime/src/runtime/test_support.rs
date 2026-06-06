@@ -3,6 +3,12 @@
 //! Not responsible for: asserting test outcomes — callers inspect `FakeRunner::recorded`
 //! and `FakeRunner::run_options` directly after the call under test.
 
+#![expect(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test support fixture setup should fail immediately with source location"
+)]
+
 use jackin_core::{CommandRunner, RunOptions};
 use std::collections::VecDeque;
 

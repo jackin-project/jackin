@@ -638,8 +638,10 @@ pub async fn materialize_workspace(
     // Re-emit in original order — Docker mount-flag order is settled later.
     let mounts: Vec<MaterializedMount> = materialized
         .into_iter()
-        .map(|m| m.expect("every mount index populated by the loop above"))
-        .collect();
+        .collect::<Option<_>>()
+        .ok_or_else(|| {
+            anyhow::anyhow!("internal mount materialization error: missing mount slot")
+        })?;
     Ok(MaterializedWorkspace {
         workdir: resolved.workdir.clone(),
         mounts,

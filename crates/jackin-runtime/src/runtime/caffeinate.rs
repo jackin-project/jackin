@@ -167,6 +167,9 @@ async fn reconcile_inner(
             remove_pid_file_if_present(&pid_path)?;
         }
         (_, Liveness::Unknown) => {
+            let Some(pid) = current_pid else {
+                return Ok(());
+            };
             // `ps` couldn't tell us whether caffeinate is alive (binary
             // missing, EAGAIN under fork pressure, weird stdout). Don't
             // act on a guess: leaving the PID file in place lets a
@@ -177,8 +180,7 @@ async fn reconcile_inner(
             jackin_diagnostics::emit_compact_line(
                 "keep_awake",
                 &format!(
-                    "[jackin] keep_awake: ps liveness check inconclusive for recorded PID {} — leaving caffeinate state untouched, will retry on next reconcile",
-                    current_pid.expect("Liveness::Unknown implies a recorded PID")
+                    "[jackin] keep_awake: ps liveness check inconclusive for recorded PID {pid} — leaving caffeinate state untouched, will retry on next reconcile"
                 ),
             );
         }

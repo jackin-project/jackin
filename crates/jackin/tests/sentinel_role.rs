@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    reason = "integration test prompt fixtures should fail immediately when expected defaults are absent"
+)]
+
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

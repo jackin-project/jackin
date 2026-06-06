@@ -6,6 +6,12 @@
 
 #![cfg(feature = "e2e")]
 #![allow(clippy::disallowed_methods)]
+#![expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "Docker integration fixtures should fail immediately with source location and command context"
+)]
 
 use std::io::{Read, Write as _};
 use std::path::Path;

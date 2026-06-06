@@ -402,6 +402,10 @@ const SIGSTORE_REKOR_KEY_ID: &str = "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0
 /// propagated error. The `rekor_keys_decode_and_contain_expected_id` unit test
 /// is the regression guard; a malformed constant panics there at test time
 /// rather than silently at first production download.
+#[expect(
+    clippy::expect_used,
+    reason = "compile-time Sigstore root constant must fail fast if malformed"
+)]
 fn rekor_verification_keys()
 -> &'static std::collections::BTreeMap<String, sigstore::crypto::CosignVerificationKey> {
     use sigstore::crypto::CosignVerificationKey;

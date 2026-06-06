@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "integration test fixture setup should fail immediately with source location"
+)]
+
 use std::io::Write as _;
 use std::os::unix::fs::symlink;
 use std::process::{Command, Stdio};

@@ -23,6 +23,7 @@ use chrono::{DateTime, Utc};
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
+use std::io;
 #[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
@@ -391,7 +392,7 @@ const MAX_TABS: usize = 32;
 const MAX_SESSIONS: usize = 64;
 
 impl Multiplexer {
-    pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
+    pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = available_content_rows(rows);
@@ -433,7 +434,10 @@ impl Multiplexer {
         );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
 
-        Self {
+        let ratatui_terminal =
+            ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
+
+        Ok(Self {
             sessions: HashMap::new(),
             tabs: Vec::new(),
             active_tab: 0,
@@ -477,10 +481,7 @@ impl Multiplexer {
             zai_key,
             minimax_key,
             kimi_key,
-            ratatui_terminal: ratatui::Terminal::new(
-                crate::tui::socket_backend::SocketBackend::new(cols, rows),
-            )
-            .expect("SocketBackend::new never fails"),
+            ratatui_terminal,
             codename_live: HashSet::new(),
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),
@@ -490,7 +491,7 @@ impl Multiplexer {
                     .duration_since(UNIX_EPOCH)
                     .map_or(42, |d| d.subsec_nanos() as usize)
             },
-        }
+        })
     }
 
     fn send_to_client(&mut self, frame: ServerFrame) {
@@ -627,7 +628,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
     let initial_spawn =
         initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
-    let mut mux = Multiplexer::new(rows, cols, launch_config);
+    let mut mux = Multiplexer::new(rows, cols, launch_config)?;
     start_git_context_watcher(mux.workdir.clone(), mux.event_tx.clone());
     // Defer the first pane until the first attach Hello has supplied
     // real outer-terminal dimensions. Later panes already spawn after

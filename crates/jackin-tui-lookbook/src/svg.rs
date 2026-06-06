@@ -7,6 +7,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
+use std::{fmt::Arguments, io::Write as _};
 
 use jackin_tui::theme::PREVIEW_CARD;
 use ratatui::{
@@ -24,6 +25,16 @@ use crate::stories::{Story, stories};
 /// the interactive preview's 1-cell `Margin` so a component floats inside the
 /// `PREVIEW_CARD` surround instead of bleeding to the image edge.
 const STORY_PAD: u16 = 1;
+
+fn stdout_line(args: Arguments<'_>) {
+    let mut stdout = io::stdout().lock();
+    drop(writeln!(stdout, "{args}"));
+}
+
+fn stderr_line(args: Arguments<'_>) {
+    let mut stderr = io::stderr().lock();
+    drop(writeln!(stderr, "{args}"));
+}
 
 /// Render the story into a ratatui test buffer and return it.
 pub(crate) fn render_story_to_buffer(story: Story) -> Buffer {
@@ -115,11 +126,11 @@ pub(crate) fn check_svgs(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>>
     }
 
     if failures.is_empty() {
-        println!("tui lookbook previews are current");
+        stdout_line(format_args!("tui lookbook previews are current"));
         Ok(())
     } else {
         for failure in &failures {
-            eprintln!("{failure}");
+            stderr_line(format_args!("{failure}"));
         }
         Err(concat!(
             "tui lookbook previews are out of date; regenerate with ",

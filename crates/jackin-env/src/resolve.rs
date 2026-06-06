@@ -100,7 +100,9 @@ pub fn resolve_op_uri_to_ref(
     let (path_part, query) = input
         .find('?')
         .map_or((input, None), |i| (&input[..i], Some(&input[i..])));
-    let body = path_part.strip_prefix("op://").unwrap();
+    let Some(body) = path_part.strip_prefix("op://") else {
+        bail!("not an op:// reference: {input}");
+    };
     let segs: Vec<&str> = body.split('/').collect();
     let (vault_seg, item_seg, section_seg, field_seg) = match segs.as_slice() {
         [v, i, f] => (*v, *i, None::<&str>, *f),
@@ -182,7 +184,12 @@ pub fn resolve_op_uri_to_ref(
             lines = suggestions.join("\n")
         );
     }
-    let item = matches.pop().unwrap();
+    let Some(item) = matches.pop() else {
+        bail!(
+            "item {item_name:?} not found in vault {vault_name:?}",
+            vault_name = vault.name
+        );
+    };
 
     // Resolve field by label (case-insensitive) or UUID.
     let fields = op.item_get(&item.id, &vault.id, account)?;
@@ -409,17 +416,16 @@ pub fn print_launch_diagnostic(
     debug: bool,
 ) {
     let mut out = Vec::new();
-    write_launch_diagnostic(
+    let _unused = write_launch_diagnostic(
         &mut out,
         config,
         role_selector,
         workspace_name,
         resolved,
         debug,
-    )
-    .expect("writing to Vec<u8> is infallible");
+    );
     emit_launch_diagnostic(
-        std::str::from_utf8(&out).expect("diagnostic formatter emits UTF-8"),
+        std::str::from_utf8(&out).unwrap_or(""),
         debug,
         &mut std::io::stderr(),
     );

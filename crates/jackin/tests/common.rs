@@ -1,6 +1,11 @@
 //! Shared test helpers for launch integration tests.
 // pub items in a private test-helper module are intentionally unreachable
 // from outside this crate; they exist for code organisation, not export.
+
+#![expect(
+    clippy::expect_used,
+    reason = "integration test binary stub setup should fail immediately with source location"
+)]
 #![allow(unreachable_pub)]
 
 use jackin::docker::{CommandRunner, RunOptions};

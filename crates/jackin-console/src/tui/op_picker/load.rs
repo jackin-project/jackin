@@ -116,7 +116,11 @@ impl OpPickerState {
                     OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn));
             }
             AccountsLoadedPlan::SelectSingleAccount => {
-                let account = accounts.into_iter().next().expect("len == 1");
+                let Some(account) = accounts.into_iter().next() else {
+                    self.load_state =
+                        OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn));
+                    return;
+                };
                 let account_id = account.id.clone();
                 self.selected_account = Some(account);
                 self.start_vault_load(Some(account_id));

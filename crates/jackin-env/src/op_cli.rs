@@ -161,7 +161,10 @@ fn spawn_wait_thread(
     std::thread::spawn(move || {
         let poll = std::time::Duration::from_millis(20);
         loop {
-            let mut guard = child.lock().expect("child mutex poisoned");
+            let Ok(mut guard) = child.lock() else {
+                drop(tx.send(Err(std::io::Error::other("child mutex poisoned"))));
+                return;
+            };
             let Some(c) = guard.as_mut() else {
                 return;
             };
@@ -261,8 +264,14 @@ impl OpRunner for OpCli {
         // and the wait thread never holds the mutex across a blocking
         // wait — see spawn_wait_thread.
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut stdout = child.stdout.take().expect("piped stdout");
-        let stderr = child.stderr.take().expect("piped stderr");
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("1Password CLI stdout pipe missing"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("1Password CLI stderr pipe missing"))?;
         let timeout = self.timeout;
 
         let stdout_handle = std::thread::spawn(move || {
@@ -285,7 +294,10 @@ impl OpRunner for OpCli {
                 // and the take below (yielding Err(InvalidInput) on
                 // kill), which is not a real failure. Reap so pipes
                 // close and reader threads exit.
-                let killed = child.lock().expect("child mutex poisoned").take();
+                let killed = child
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("child mutex poisoned"))?
+                    .take();
                 if let Some(mut c) = killed {
                     drop(c.kill());
                     drop(c.wait());
@@ -366,8 +378,14 @@ fn run_op_with_timeout(
     .map_err(|error| op_spawn_error(binary, &error))?;
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("1Password CLI stdout pipe missing"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("1Password CLI stderr pipe missing"))?;
 
     let stdout_handle = std::thread::spawn(move || {
         let mut buf = Vec::new();
@@ -386,7 +404,10 @@ fn run_op_with_timeout(
             anyhow::bail!("1Password CLI wait failed for `{cmd_label}`: {e}");
         }
         Err(_) => {
-            let killed = child.lock().expect("child mutex poisoned").take();
+            let killed = child
+                .lock()
+                .map_err(|_| anyhow::anyhow!("child mutex poisoned"))?
+                .take();
             if let Some(mut c) = killed {
                 drop(c.kill());
                 drop(c.wait());

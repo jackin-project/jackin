@@ -20,6 +20,10 @@ use std::process::Command;
 /// to the caller because each crate uses a distinct rustc-env name
 /// (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`, ...).
 #[must_use]
+#[expect(
+    clippy::print_stdout,
+    reason = "build-script helper must emit Cargo directives on stdout"
+)]
 pub fn derive_version(git_dir_relative: &str) -> String {
     println!("cargo:rerun-if-env-changed=JACKIN_VERSION_OVERRIDE");
     println!("cargo:rerun-if-changed={git_dir_relative}/HEAD");
@@ -36,8 +40,8 @@ pub fn derive_version(git_dir_relative: &str) -> String {
         return override_version;
     }
 
-    let cargo_version = std::env::var("CARGO_PKG_VERSION")
-        .expect("CARGO_PKG_VERSION set by cargo for build script");
+    let cargo_version =
+        std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.6.0-dev".to_owned());
     #[expect(
         clippy::disallowed_methods,
         reason = "build metadata runs in Cargo build-script context, not on a render/runtime thread"

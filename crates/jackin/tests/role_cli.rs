@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "integration test fixture setup should fail immediately with source location"
+)]
+
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::process::Command;

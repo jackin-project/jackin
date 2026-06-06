@@ -206,9 +206,9 @@ pub(crate) fn apply_field_edit(
         if !item["sections"].is_array() {
             item["sections"] = serde_json::Value::Array(Vec::new());
         }
-        let sections = item["sections"]
-            .as_array_mut()
-            .expect("sections coerced to array above");
+        let Some(sections) = item["sections"].as_array_mut() else {
+            return Ok(());
+        };
         if !sections.iter().any(|s| s["id"].as_str() == Some(id)) {
             sections.push(serde_json::json!({ "id": id, "label": label }));
         }

@@ -499,6 +499,10 @@ impl OpPickerState {
     }
 
     fn handle_field_label_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
+        #[expect(
+            clippy::expect_used,
+            reason = "field-label commit is reachable only after a vault selection exists"
+        )]
         match self.field_label_input.handle_key(key) {
             ModalOutcome::Cancel => {
                 let plan = field_label_cancel_plan(self.field_label_origin);
@@ -548,6 +552,10 @@ impl OpPickerState {
     /// field by its exact id. The consumer matches on `field_id` and preserves
     /// the field's existing section, so `selected_section` rides along only
     /// for display, not placement.
+    #[expect(
+        clippy::expect_used,
+        reason = "existing-field commit is reachable only after vault and item selections exist"
+    )]
     fn commit_existing_field(&self, field: &OpPickerField) -> OpPickerSelection {
         let plan = existing_field_commit_plan(
             &self.mode,

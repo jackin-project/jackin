@@ -4,6 +4,11 @@
 //! Silences itself when the rich launch cockpit owns the terminal so the
 //! spinner never streams over the alternate screen.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "spinner redraws intentional terminal control sequences on stderr"
+)]
+
 use std::io::{self, Write as _};
 
 use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};

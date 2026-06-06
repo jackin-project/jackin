@@ -6,6 +6,11 @@
 //! updates — if an early deletion fails, already-deleted entries are still
 //! recorded so the index stays consistent with disk state.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "runtime cleanup and GC report operator-visible warnings and results"
+)]
+
 use crate::instance::{InstanceIndex, InstanceStatus};
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;

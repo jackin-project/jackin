@@ -1,3 +1,8 @@
+#![expect(
+    clippy::print_stderr,
+    reason = "standalone role helper renders top-level errors"
+)]
+
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
 

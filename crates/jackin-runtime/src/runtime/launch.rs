@@ -16,6 +16,11 @@
 //! * `render_exit` is called on both success and error exits from
 //!   `load_role_with`.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "launch flow emits operator-visible pull and spacing diagnostics"
+)]
+
 mod launch_dind;
 use launch_dind::run_dind_sidecar;
 
