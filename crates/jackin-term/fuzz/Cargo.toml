@@ -7,7 +7,10 @@ edition = "2021"
 [package.metadata]
 cargo-fuzz = true
 
+[workspace]
+
 [dependencies]
+jackin-term = { path = ".." }
 libfuzzer-sys = "0.4"
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 

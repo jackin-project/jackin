@@ -381,9 +381,48 @@ fn sanity_interleaved_sgr_and_movement() {
 // Fixture-based corpus tests
 // ---------------------------------------------------------------------------
 
-fn run_fixture(fixture_path: &Path) {
-    let bytes = std::fs::read(fixture_path)
+fn decode_vt_fixture(contents: &str, fixture_path: &Path) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut chars = contents.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek() == Some(&'x') {
+            let _ = chars.next();
+            let hi = chars
+                .next()
+                .unwrap_or_else(|| panic!("{} has incomplete \\x escape", fixture_path.display()));
+            let lo = chars
+                .next()
+                .unwrap_or_else(|| panic!("{} has incomplete \\x escape", fixture_path.display()));
+            let hex = format!("{hi}{lo}");
+            let byte = u8::from_str_radix(&hex, 16).unwrap_or_else(|e| {
+                panic!(
+                    "{} has invalid \\x{hex} escape: {e}",
+                    fixture_path.display()
+                )
+            });
+            bytes.push(byte);
+        } else {
+            let mut buf = [0u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+        }
+    }
+    bytes
+}
+
+fn fixture_bytes(fixture_path: &Path) -> Vec<u8> {
+    let raw = std::fs::read(fixture_path)
         .unwrap_or_else(|e| panic!("failed to read fixture {}: {e}", fixture_path.display()));
+    if fixture_path.extension().is_some_and(|e| e == "vt") {
+        let text = std::str::from_utf8(&raw)
+            .unwrap_or_else(|e| panic!("{} is not valid UTF-8: {e}", fixture_path.display()));
+        decode_vt_fixture(text, fixture_path)
+    } else {
+        raw
+    }
+}
+
+fn run_fixture(fixture_path: &Path) {
+    let bytes = fixture_bytes(fixture_path);
     let label = fixture_path.display().to_string();
     run_differential(24, 80, &bytes, &label);
 }
@@ -401,9 +440,8 @@ fn corpus_all_fixtures() {
             count += 1;
         }
     }
-    if count > 0 {
-        eprintln!("[differential] ran {count} corpus fixtures");
-    }
+    assert!(count > 0, "differential corpus must contain fixtures");
+    eprintln!("[differential] ran {count} corpus fixtures");
 }
 
 // ---------------------------------------------------------------------------
