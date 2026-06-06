@@ -70,6 +70,13 @@ impl SocketBackend {
         std::mem::take(&mut self.output)
     }
 
+    /// Drain the accumulated output into an existing buffer, preserving this
+    /// backend's allocation for the next frame.
+    pub fn drain_output_into(&mut self, target: &mut Vec<u8>) {
+        target.extend_from_slice(&self.output);
+        self.output.clear();
+    }
+
     /// Write the SGR sequence for `style` if it differs from the last one emitted.
     fn apply_style(&mut self, style: CellStyle) {
         if style == self.current_style {

@@ -2,6 +2,7 @@ use super::{
     Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, blank_row, make_blank_grid,
     reconstruct_csi,
 };
+use smallvec::SmallVec;
 // ── vte::Perform implementation ────────────────────────────────────────────
 
 impl vte::Perform for DamageGrid {
@@ -49,7 +50,7 @@ impl vte::Perform for DamageGrid {
         action: char,
     ) {
         // Collect param values (0 if absent/empty, as per VT semantics).
-        let p: Vec<u16> = params
+        let p: SmallVec<[u16; 8]> = params
             .iter()
             .map(|sub| sub.first().copied().unwrap_or(0))
             .collect();

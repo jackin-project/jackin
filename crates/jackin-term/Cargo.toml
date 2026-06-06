@@ -37,6 +37,7 @@ unicode-width = "0.2"
 # Eliminates the per-cell `String` alloc storm in the focused-pane render path.
 # canonical, actively maintained, >10M downloads. MIT/Apache-2.0.
 compact_str = "0.9"
+smallvec = "1.15"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
