@@ -68,6 +68,7 @@ pub struct DamageGrid {
     // Creating a new parser on each process() call would lose that state, causing
     // sequences split across PTY read() boundaries to be silently dropped.
     parser: vte::Parser,
+    pending_utf8: Vec<u8>,
 
     // ── Grid state ────────────────────────────────────────────────────────────
     rows: u16,
@@ -158,6 +159,7 @@ impl DamageGrid {
         let blank = make_blank_grid(rows, cols);
         Self {
             parser: vte::Parser::new(),
+            pending_utf8: Vec::new(),
             rows,
             cols,
             primary: blank.clone(),
@@ -193,6 +195,31 @@ impl DamageGrid {
     /// parser on each call would lose inter-call state and silently drop split
     /// sequences (bug caught by the conformance harness).
     pub fn process(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+
+        let mut combined = Vec::new();
+        let bytes = if self.pending_utf8.is_empty() {
+            bytes
+        } else {
+            combined.reserve(self.pending_utf8.len() + bytes.len());
+            combined.append(&mut self.pending_utf8);
+            combined.extend_from_slice(bytes);
+            &combined
+        };
+
+        let pending_len = incomplete_utf8_suffix_len(bytes);
+        let feed_len = bytes.len() - pending_len;
+        if feed_len > 0 {
+            self.advance_parser(&bytes[..feed_len]);
+        }
+        if pending_len > 0 {
+            self.pending_utf8.extend_from_slice(&bytes[feed_len..]);
+        }
+    }
+
+    fn advance_parser(&mut self, bytes: &[u8]) {
         // SAFETY: we need a mutable reference to both self.parser and self (which
         // implements vte::Perform). The parser only reads `bytes`; it calls self
         // through &mut dyn Perform. Rust's borrow rules prevent this directly,
@@ -1054,6 +1081,26 @@ fn resize_grid(grid: &[Vec<Cell>], rows: u16, cols: u16) -> Vec<Vec<Cell>> {
         }
     }
     new
+}
+
+fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
+    let Some(last) = bytes.last() else {
+        return 0;
+    };
+    if last.is_ascii() {
+        return 0;
+    }
+
+    let start = bytes
+        .iter()
+        .rposition(u8::is_ascii)
+        .map_or(0, |idx| idx + 1);
+    let suffix = &bytes[start..];
+    match std::str::from_utf8(suffix) {
+        Ok(_) => 0,
+        Err(err) if err.valid_up_to() > 0 => suffix.len() - err.valid_up_to(),
+        Err(_) => suffix.len(),
+    }
 }
 
 #[cfg(test)]
