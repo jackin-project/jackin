@@ -1,6 +1,7 @@
 //! Pure console product rules.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::PathBuf;
 
 use crate::agent::Agent;
 use crate::app::context::eligible_roles_for_workspace;
@@ -105,6 +106,11 @@ pub(super) fn set_role_auth_mode(
 }
 
 trait AuthLayerMut {
+    fn claude_auth(&self) -> Option<&AgentAuthConfig>;
+    fn codex_auth(&self) -> Option<&AgentAuthConfig>;
+    fn amp_auth(&self) -> Option<&AgentAuthConfig>;
+    fn kimi_auth(&self) -> Option<&AgentAuthConfig>;
+    fn opencode_auth(&self) -> Option<&AgentAuthConfig>;
     fn github_auth(&self) -> Option<&GithubAuthConfig>;
     fn set_claude_auth(&mut self, auth: Option<AgentAuthConfig>);
     fn set_codex_auth(&mut self, auth: Option<AgentAuthConfig>);
@@ -115,6 +121,26 @@ trait AuthLayerMut {
 }
 
 impl AuthLayerMut for WorkspaceConfig {
+    fn claude_auth(&self) -> Option<&AgentAuthConfig> {
+        self.claude.as_ref()
+    }
+
+    fn codex_auth(&self) -> Option<&AgentAuthConfig> {
+        self.codex.as_ref()
+    }
+
+    fn amp_auth(&self) -> Option<&AgentAuthConfig> {
+        self.amp.as_ref()
+    }
+
+    fn kimi_auth(&self) -> Option<&AgentAuthConfig> {
+        self.kimi.as_ref()
+    }
+
+    fn opencode_auth(&self) -> Option<&AgentAuthConfig> {
+        self.opencode.as_ref()
+    }
+
     fn github_auth(&self) -> Option<&GithubAuthConfig> {
         self.github.as_ref()
     }
@@ -145,6 +171,26 @@ impl AuthLayerMut for WorkspaceConfig {
 }
 
 impl AuthLayerMut for WorkspaceRoleOverride {
+    fn claude_auth(&self) -> Option<&AgentAuthConfig> {
+        self.claude.as_ref()
+    }
+
+    fn codex_auth(&self) -> Option<&AgentAuthConfig> {
+        self.codex.as_ref()
+    }
+
+    fn amp_auth(&self) -> Option<&AgentAuthConfig> {
+        self.amp.as_ref()
+    }
+
+    fn kimi_auth(&self) -> Option<&AgentAuthConfig> {
+        self.kimi.as_ref()
+    }
+
+    fn opencode_auth(&self) -> Option<&AgentAuthConfig> {
+        self.opencode.as_ref()
+    }
+
     fn github_auth(&self) -> Option<&GithubAuthConfig> {
         self.github.as_ref()
     }
@@ -177,49 +223,34 @@ impl AuthLayerMut for WorkspaceRoleOverride {
 fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<AuthMode>) {
     match kind {
         AuthKind::Claude => {
-            layer.set_claude_auth(
-                mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig {
-                        auth_forward,
-                        ..AgentAuthConfig::default()
-                    }),
-            );
+            layer.set_claude_auth(agent_auth_config_with_preserved_source(
+                mode,
+                layer.claude_auth(),
+            ));
         }
         AuthKind::Codex => {
-            layer.set_codex_auth(
-                mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig {
-                        auth_forward,
-                        ..AgentAuthConfig::default()
-                    }),
-            );
+            layer.set_codex_auth(agent_auth_config_with_preserved_source(
+                mode,
+                layer.codex_auth(),
+            ));
         }
         AuthKind::Amp => {
-            layer.set_amp_auth(
-                mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig {
-                        auth_forward,
-                        ..AgentAuthConfig::default()
-                    }),
-            );
+            layer.set_amp_auth(agent_auth_config_with_preserved_source(
+                mode,
+                layer.amp_auth(),
+            ));
         }
         AuthKind::Kimi => {
-            layer.set_kimi_auth(
-                mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig {
-                        auth_forward,
-                        ..AgentAuthConfig::default()
-                    }),
-            );
+            layer.set_kimi_auth(agent_auth_config_with_preserved_source(
+                mode,
+                layer.kimi_auth(),
+            ));
         }
         AuthKind::Opencode => {
-            layer.set_opencode_auth(
-                mode.and_then(auth_mode_to_auth_forward)
-                    .map(|auth_forward| AgentAuthConfig {
-                        auth_forward,
-                        ..AgentAuthConfig::default()
-                    }),
-            );
+            layer.set_opencode_auth(agent_auth_config_with_preserved_source(
+                mode,
+                layer.opencode_auth(),
+            ));
         }
         AuthKind::Github => {
             layer.set_github_auth(github_auth_config_with_preserved_env(
@@ -232,6 +263,73 @@ fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<Aut
             // no auth_forward config block to write here.
         }
     }
+}
+
+fn agent_auth_config_with_preserved_source(
+    mode: Option<AuthMode>,
+    existing: Option<&AgentAuthConfig>,
+) -> Option<AgentAuthConfig> {
+    mode.and_then(auth_mode_to_auth_forward)
+        .map(|auth_forward| AgentAuthConfig {
+            auth_forward,
+            sync_source_dir: existing.and_then(|cfg| cfg.sync_source_dir.clone()),
+        })
+}
+
+fn set_agent_sync_source_dir(
+    existing: Option<&AgentAuthConfig>,
+    source: Option<PathBuf>,
+) -> Option<AgentAuthConfig> {
+    let auth_forward = existing.map_or(AuthForwardMode::Sync, |cfg| cfg.auth_forward);
+    if source.is_none() && existing.is_none() {
+        return None;
+    }
+    let cfg = AgentAuthConfig {
+        auth_forward,
+        sync_source_dir: source,
+    };
+    if cfg == AgentAuthConfig::default() {
+        None
+    } else {
+        Some(cfg)
+    }
+}
+
+fn set_sync_source_dir(layer: &mut impl AuthLayerMut, kind: AuthKind, source: Option<PathBuf>) {
+    match kind {
+        AuthKind::Claude => {
+            layer.set_claude_auth(set_agent_sync_source_dir(layer.claude_auth(), source));
+        }
+        AuthKind::Codex => {
+            layer.set_codex_auth(set_agent_sync_source_dir(layer.codex_auth(), source));
+        }
+        AuthKind::Amp => {
+            layer.set_amp_auth(set_agent_sync_source_dir(layer.amp_auth(), source));
+        }
+        AuthKind::Kimi => {
+            layer.set_kimi_auth(set_agent_sync_source_dir(layer.kimi_auth(), source));
+        }
+        AuthKind::Opencode => {
+            layer.set_opencode_auth(set_agent_sync_source_dir(layer.opencode_auth(), source));
+        }
+        AuthKind::Github | AuthKind::Zai | AuthKind::Minimax => {}
+    }
+}
+
+pub(super) fn set_workspace_sync_source_dir(
+    ws: &mut WorkspaceConfig,
+    kind: AuthKind,
+    source: Option<PathBuf>,
+) {
+    set_sync_source_dir(ws, kind, source);
+}
+
+pub(super) fn set_role_sync_source_dir(
+    role: &mut WorkspaceRoleOverride,
+    kind: AuthKind,
+    source: Option<PathBuf>,
+) {
+    set_sync_source_dir(role, kind, source);
 }
 
 pub(super) fn apply_workspace_auth_commit(

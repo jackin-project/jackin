@@ -24,7 +24,6 @@ pub(in crate::console) fn from_home() -> anyhow::Result<FileBrowserState> {
 
 /// Open a file browser from `$HOME` with dotfile directories visible.
 /// Used for the auth source-folder picker (credential dirs are dotfiles).
-#[expect(dead_code, reason = "reserved for B.3 auth source-folder picker UI")]
 pub(in crate::console) fn from_home_with_hidden() -> anyhow::Result<FileBrowserState> {
     let mut state = FileBrowserState::from_listing(
         jackin_console::services::file_browser::listing_from_home_with_hidden()?,

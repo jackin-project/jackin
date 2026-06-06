@@ -232,6 +232,10 @@ pub(crate) fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &Settings
             let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput);
             jackin_tui::components::render_text_input(frame, area, state);
         }
+        SettingsAuthModal::SourceFolderPicker { state } => {
+            let area = modal_rects::modal_rect_for_mode(frame.area(), ModalRectMode::FileBrowser);
+            jackin_console::tui::components::file_browser::render(frame, area, state);
+        }
         SettingsAuthModal::OpPicker { state } => {
             let area = if state.naming_stage_input().is_some() {
                 modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput)

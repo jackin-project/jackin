@@ -72,10 +72,14 @@ pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
 
 #[must_use]
 pub const fn settings_auth_detail_row_count(kind: AuthKind, mode: AuthMode) -> usize {
-    if auth_mode_requires_credential(kind, mode) {
-        2
-    } else {
+    1 + if auth_mode_requires_credential(kind, mode) {
         1
+    } else {
+        0
+    } + if crate::tui::auth::auth_mode_supports_source_folder(kind, mode) {
+        1
+    } else {
+        0
     }
 }
 

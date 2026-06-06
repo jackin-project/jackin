@@ -550,6 +550,19 @@ pub fn set_secret_value<R, V>(
     }
 }
 
+pub struct AuthFlatRowPredicates<'a, K, R> {
+    pub role_override_present: &'a dyn Fn(&K, &R) -> bool,
+    pub effective_mode_needs_credential: &'a dyn Fn(&K, &str) -> bool,
+    pub effective_mode_supports_source_folder: &'a dyn Fn(&K, &str) -> bool,
+}
+
+impl<K, R> std::fmt::Debug for AuthFlatRowPredicates<'_, K, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthFlatRowPredicates")
+            .finish_non_exhaustive()
+    }
+}
+
 #[must_use]
 pub fn auth_flat_rows<K, R>(
     selected_kind: Option<K>,
@@ -557,8 +570,7 @@ pub fn auth_flat_rows<K, R>(
     roles: &BTreeMap<String, R>,
     allowed_role_count: usize,
     expanded_roles: &BTreeSet<String>,
-    role_override_present: impl Fn(&K, &R) -> bool,
-    effective_mode_needs_credential: impl Fn(&K, &str) -> bool,
+    predicates: &AuthFlatRowPredicates<'_, K, R>,
 ) -> Vec<AuthRow<K>>
 where
     K: Clone,
@@ -572,13 +584,16 @@ where
 
     let override_roles: Vec<String> = roles
         .iter()
-        .filter(|(_, role)| role_override_present(&kind, role))
+        .filter(|(_, role)| (predicates.role_override_present)(&kind, role))
         .map(|(name, _)| name.clone())
         .collect();
 
     let mut rows = vec![AuthRow::WorkspaceMode { kind: kind.clone() }];
-    if effective_mode_needs_credential(&kind, "") {
+    if (predicates.effective_mode_needs_credential)(&kind, "") {
         rows.push(AuthRow::WorkspaceSource { kind: kind.clone() });
+    }
+    if (predicates.effective_mode_supports_source_folder)(&kind, "") {
+        rows.push(AuthRow::WorkspaceSourceFolder { kind: kind.clone() });
     }
     rows.push(AuthRow::Spacer);
     for role in &override_roles {
@@ -592,8 +607,14 @@ where
                 role: role.clone(),
                 kind: kind.clone(),
             });
-            if effective_mode_needs_credential(&kind, role) {
+            if (predicates.effective_mode_needs_credential)(&kind, role) {
                 rows.push(AuthRow::RoleSource {
+                    role: role.clone(),
+                    kind: kind.clone(),
+                });
+            }
+            if (predicates.effective_mode_supports_source_folder)(&kind, role) {
+                rows.push(AuthRow::RoleSourceFolder {
                     role: role.clone(),
                     kind: kind.clone(),
                 });

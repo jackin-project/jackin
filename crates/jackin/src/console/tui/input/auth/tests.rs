@@ -90,7 +90,7 @@ fn build_state() -> (AppConfig, ManagerState<'static>) {
         },
     );
 
-    let cwd = std::path::PathBuf::from("/tmp");
+    let cwd = PathBuf::from("/tmp");
     let mut state = ManagerState::from_config(&cfg, &cwd);
     let ws = cfg.workspaces.get("proj").unwrap().clone();
     let mut editor = EditorState::new_edit("proj".into(), ws);
@@ -1129,7 +1129,7 @@ fn github_role_override_picker_filters_already_overridden_roles() {
             },
         );
     }
-    let cwd = std::path::PathBuf::from("/tmp");
+    let cwd = PathBuf::from("/tmp");
     let mut state = ManagerState::from_config(&cfg, &cwd);
     let mut editor = EditorState::new_edit("proj".into(), ws);
     editor.active_tab = crate::console::tui::state::EditorTab::Auth;

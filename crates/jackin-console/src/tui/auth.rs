@@ -119,6 +119,19 @@ pub const fn auth_mode_requires_credential(kind: AuthKind, mode: AuthMode) -> bo
 }
 
 #[must_use]
+pub const fn auth_mode_supports_source_folder(kind: AuthKind, mode: AuthMode) -> bool {
+    matches!(mode, AuthMode::Sync)
+        && matches!(
+            kind,
+            AuthKind::Claude
+                | AuthKind::Codex
+                | AuthKind::Amp
+                | AuthKind::Kimi
+                | AuthKind::Opencode
+        )
+}
+
+#[must_use]
 pub const fn can_generate_claude_oauth_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     matches!((kind, mode), (AuthKind::Claude, Some(AuthMode::OAuthToken)))
 }

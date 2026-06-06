@@ -365,14 +365,17 @@ struct RoleAuth {
 
 #[test]
 fn auth_flat_rows_root_view_lists_kinds() {
-    let rows = auth_flat_rows::<TestAuthKind, RoleAuth>(
+    let rows = auth_flat_rows(
         None,
         [TestAuthKind::Claude, TestAuthKind::Github],
-        &BTreeMap::new(),
+        &BTreeMap::<String, RoleAuth>::new(),
         0,
         &BTreeSet::new(),
-        |_, _| false,
-        |_, _| false,
+        &AuthFlatRowPredicates {
+            role_override_present: &|_, _| false,
+            effective_mode_needs_credential: &|_, _| false,
+            effective_mode_supports_source_folder: &|_, _| false,
+        },
     );
     assert_eq!(
         rows,
@@ -402,8 +405,13 @@ fn auth_flat_rows_detail_view_expands_role_source_rows() {
         &roles,
         3,
         &BTreeSet::from(["alpha".to_owned()]),
-        |_, role| role.override_present,
-        |_, role| role.is_empty() || roles[role].needs_source,
+        &AuthFlatRowPredicates {
+            role_override_present: &|_, role: &RoleAuth| role.override_present,
+            effective_mode_needs_credential: &|_, role: &str| {
+                role.is_empty() || roles[role].needs_source
+            },
+            effective_mode_supports_source_folder: &|_, _| false,
+        },
     );
     assert_eq!(
         rows,
@@ -431,4 +439,41 @@ fn auth_flat_rows_detail_view_expands_role_source_rows() {
             AuthRow::AddSentinel { eligible: 2 },
         ]
     );
+}
+
+#[test]
+fn auth_flat_rows_detail_view_adds_source_folder_rows() {
+    let roles = BTreeMap::from([(
+        "alpha".to_owned(),
+        RoleAuth {
+            override_present: true,
+            needs_source: false,
+        },
+    )]);
+    let rows = auth_flat_rows(
+        Some(TestAuthKind::Claude),
+        [TestAuthKind::Claude, TestAuthKind::Github],
+        &roles,
+        3,
+        &BTreeSet::from(["alpha".to_owned()]),
+        &AuthFlatRowPredicates {
+            role_override_present: &|_, role: &RoleAuth| role.override_present,
+            effective_mode_needs_credential: &|_, _| false,
+            effective_mode_supports_source_folder: &|_, _| true,
+        },
+    );
+
+    assert!(matches!(
+        rows.as_slice(),
+        [
+            AuthRow::WorkspaceMode { .. },
+            AuthRow::WorkspaceSourceFolder { .. },
+            AuthRow::Spacer,
+            AuthRow::RoleHeader { .. },
+            AuthRow::RoleMode { .. },
+            AuthRow::RoleSourceFolder { .. },
+            AuthRow::Spacer,
+            AuthRow::AddSentinel { .. },
+        ]
+    ));
 }

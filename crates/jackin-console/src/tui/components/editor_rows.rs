@@ -31,6 +31,20 @@ pub enum AuthSourceDisplay {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthSourceFolderKind {
+    Default,
+    Explicit,
+    Inherited,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthSourceFolderDisplay {
+    pub kind: AuthSourceFolderKind,
+    pub path: String,
+    pub env_var: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthSourceValue {
     Plain(String),
     OpRefPath(String),

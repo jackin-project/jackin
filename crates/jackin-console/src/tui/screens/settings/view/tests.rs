@@ -371,10 +371,12 @@ fn auth_content_height_lists_all_kinds_before_drill_in() {
         SettingsAuthRow {
             kind: Kind::Plain,
             mode: false,
+            sync_source_dir: None,
         },
         SettingsAuthRow {
             kind: Kind::Credential,
             mode: true,
+            sync_source_dir: None,
         },
     ];
 
@@ -389,6 +391,7 @@ fn auth_content_height_drill_in_tracks_credential_row_and_error() {
     let rows = vec![SettingsAuthRow {
         kind: Kind::Credential,
         mode: true,
+        sync_source_dir: None,
     }];
 
     assert_eq!(

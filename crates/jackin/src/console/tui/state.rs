@@ -370,8 +370,17 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
         &editor.pending.roles,
         editor.pending.allowed_roles.len(),
         &editor.auth_expanded,
-        |kind, role| role_override_present(*kind, role),
-        |kind, role| panel_mode_requires_credential(&synthesized, &ws_name, role, *kind),
+        &jackin_console::tui::screens::editor::update::AuthFlatRowPredicates {
+            role_override_present: &|kind, role| role_override_present(*kind, role),
+            effective_mode_needs_credential: &|kind, role| {
+                panel_mode_requires_credential(&synthesized, &ws_name, role, *kind)
+            },
+            effective_mode_supports_source_folder: &|kind, role| {
+                let mode =
+                    crate::console::domain::resolve_panel_mode(&synthesized, *kind, &ws_name, role);
+                jackin_console::tui::auth::auth_mode_supports_source_folder(*kind, mode)
+            },
+        },
     )
 }
 
@@ -485,6 +494,7 @@ pub type SettingsAuthModal<'a> = jackin_console::tui::screens::settings::model::
     TextInputState<'a>,
     SourcePickerState,
     OpPickerState,
+    FileBrowserState,
     AuthFormTarget,
     AuthForm,
     AuthFormFocus,
@@ -685,6 +695,8 @@ fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
         .map(|kind| SettingsAuthRow {
             kind,
             mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
+            sync_source_dir: crate::console::domain::auth_kind_agent(kind)
+                .and_then(|agent| config.sync_source_dir_for(agent)),
         })
         .collect::<Vec<_>>();
     SettingsAuthState {

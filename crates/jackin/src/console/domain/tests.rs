@@ -59,6 +59,63 @@ fn github_auth_config_preserves_env_on_mode_change() {
 }
 
 #[test]
+fn agent_auth_mode_change_preserves_sync_source_dir() {
+    let mut ws = WorkspaceConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(PathBuf::from("/host/claude")),
+        }),
+        ..Default::default()
+    };
+
+    set_auth_mode(&mut ws, AuthKind::Claude, Some(AuthMode::ApiKey));
+
+    let claude = ws.claude.expect("claude auth block");
+    assert_eq!(claude.auth_forward, AuthForwardMode::ApiKey);
+    assert_eq!(claude.sync_source_dir, Some(PathBuf::from("/host/claude")));
+}
+
+#[test]
+fn workspace_sync_source_dir_set_and_reset_keep_mode_rules() {
+    let mut ws = WorkspaceConfig::default();
+
+    set_workspace_sync_source_dir(
+        &mut ws,
+        AuthKind::Claude,
+        Some(PathBuf::from("/host/claude")),
+    );
+    let claude = ws.claude.as_ref().expect("claude source block");
+    assert_eq!(claude.auth_forward, AuthForwardMode::Sync);
+    assert_eq!(claude.sync_source_dir, Some(PathBuf::from("/host/claude")));
+
+    set_workspace_sync_source_dir(&mut ws, AuthKind::Claude, None);
+    assert!(ws.claude.is_none());
+}
+
+#[test]
+fn role_sync_source_dir_set_reset_and_github_noop() {
+    let mut role = WorkspaceRoleOverride::default();
+
+    set_role_sync_source_dir(
+        &mut role,
+        AuthKind::Claude,
+        Some(PathBuf::from("/host/claude")),
+    );
+    assert_eq!(
+        role.claude
+            .as_ref()
+            .and_then(|cfg| cfg.sync_source_dir.clone()),
+        Some(PathBuf::from("/host/claude"))
+    );
+
+    set_role_sync_source_dir(&mut role, AuthKind::Github, Some(PathBuf::from("/host/gh")));
+    assert!(role.github.is_none());
+
+    set_role_sync_source_dir(&mut role, AuthKind::Claude, None);
+    assert!(role.claude.is_none());
+}
+
+#[test]
 fn apply_workspace_auth_commit_updates_mode_and_env_layer() {
     let mut ws = WorkspaceConfig::default();
 

@@ -774,6 +774,30 @@ fn set_global_auth_forward_writes_per_agent_table() {
 }
 
 #[test]
+fn set_global_sync_source_dir_writes_and_removes_agent_field() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, "").unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.set_global_sync_source_dir(Agent::Claude, Some(Path::new("/host/claude")));
+    editor.save().unwrap();
+
+    let out = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(out.contains("[claude]"), "{out}");
+    assert!(out.contains(r#"sync_source_dir = "/host/claude""#), "{out}");
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.set_global_sync_source_dir(Agent::Claude, None);
+    editor.save().unwrap();
+
+    let out = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(!out.contains("sync_source_dir"), "{out}");
+    assert!(!out.contains("[claude]"), "{out}");
+}
+
+#[test]
 fn set_workspace_auth_forward_writes_workspace_agent_block() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

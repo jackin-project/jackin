@@ -153,3 +153,31 @@ fn credential_requirement_tracks_required_env_var() {
         AuthMode::Ignore,
     ));
 }
+
+#[test]
+fn source_folder_gate_is_sync_agent_only() {
+    for kind in [
+        AuthKind::Claude,
+        AuthKind::Codex,
+        AuthKind::Amp,
+        AuthKind::Kimi,
+        AuthKind::Opencode,
+    ] {
+        assert!(auth_mode_supports_source_folder(kind, AuthMode::Sync));
+        assert!(!auth_mode_supports_source_folder(kind, AuthMode::ApiKey));
+        assert!(!auth_mode_supports_source_folder(kind, AuthMode::Ignore));
+    }
+
+    assert!(!auth_mode_supports_source_folder(
+        AuthKind::Github,
+        AuthMode::Sync,
+    ));
+    assert!(!auth_mode_supports_source_folder(
+        AuthKind::Zai,
+        AuthMode::ApiKey,
+    ));
+    assert!(!auth_mode_supports_source_folder(
+        AuthKind::Minimax,
+        AuthMode::ApiKey,
+    ));
+}

@@ -434,7 +434,12 @@ fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            open_settings_auth_form(&mut settings.auth, &settings.env);
+            if !open_settings_auth_source_folder_picker(&mut settings.auth) {
+                open_settings_auth_form(&mut settings.auth, &settings.env);
+            }
+        }
+        KeyCode::Char('d' | 'D') => {
+            clear_settings_auth_source_folder(&mut settings.auth);
         }
         KeyCode::Char('s' | 'S') => {
             open_settings_save_preview(settings);
@@ -443,6 +448,46 @@ fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     }
     if return_to_list {
         dispatch_manager(state, ManagerMessage::ReturnToList);
+    }
+}
+
+fn settings_auth_source_folder_index(
+    kind: jackin_console::tui::auth::AuthKind,
+    mode: jackin_console::tui::auth::AuthMode,
+) -> Option<usize> {
+    jackin_console::tui::auth::auth_mode_supports_source_folder(kind, mode)
+        .then(|| 1 + usize::from(kind.required_env_var(mode).is_some()))
+}
+
+fn selected_settings_auth_source_folder_row(
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+) -> Option<&mut crate::console::tui::state::SettingsAuthRow> {
+    let kind = auth.selected_kind?;
+    let selected = auth.selected;
+    let row = auth.pending.iter_mut().find(|row| row.kind == kind)?;
+    (settings_auth_source_folder_index(kind, row.mode)? == selected).then_some(row)
+}
+
+fn open_settings_auth_source_folder_picker(
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+) -> bool {
+    if selected_settings_auth_source_folder_row(auth).is_none() {
+        return false;
+    }
+    match crate::console::services::file_browser::from_home_with_hidden() {
+        Ok(state) => {
+            auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state });
+        }
+        Err(error) => {
+            auth.error = Some(error.to_string());
+        }
+    }
+    true
+}
+
+fn clear_settings_auth_source_folder(auth: &mut crate::console::tui::state::SettingsAuthState) {
+    if let Some(row) = selected_settings_auth_source_folder_row(auth) {
+        row.sync_source_dir = None;
     }
 }
 
@@ -649,6 +694,29 @@ pub(super) fn handle_settings_auth_modal(
             ModalOutcome::Cancel => restore_settings_auth_form(auth),
             ModalOutcome::Continue => auth.modal = Some(modal),
         },
+        SettingsAuthModal::SourceFolderPicker { state } => {
+            let browser_outcome = state.handle_key(key);
+            let applied = crate::console::services::file_browser::apply_file_browser_outcome(
+                state,
+                browser_outcome,
+            );
+            match applied {
+                FileBrowserOutcome::Commit(path) => {
+                    if let Some(row) = selected_settings_auth_source_folder_row(auth) {
+                        row.sync_source_dir = Some(path);
+                    }
+                }
+                FileBrowserOutcome::Cancel => {}
+                FileBrowserOutcome::Continue
+                | FileBrowserOutcome::OpenGitUrl(_)
+                | FileBrowserOutcome::ResolveGitUrl(_)
+                | FileBrowserOutcome::NavigateTo(_)
+                | FileBrowserOutcome::NavigateUp
+                | FileBrowserOutcome::RequestCommit(_) => {
+                    auth.modal = Some(modal);
+                }
+            }
+        }
         SettingsAuthModal::OpPicker { state } => {
             let outcome = state.handle_key(key);
             // Token-generate wins over the browse/provide dispatch:

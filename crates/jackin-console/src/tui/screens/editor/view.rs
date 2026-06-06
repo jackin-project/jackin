@@ -3,8 +3,8 @@
 use super::model::{EditorMode, EditorTab, SecretsScopeTag};
 use super::update::forbidden_secret_keys;
 use crate::tui::components::editor_rows::{
-    AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
-    render_secret_key_line,
+    AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
+    action_row_style, disclosure_style, render_secret_key_line,
 };
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
@@ -28,9 +28,11 @@ pub enum EditorAuthLineRow {
     AuthKind { label: String },
     WorkspaceMode { mode_label: String, inherited: bool },
     WorkspaceSource { display: AuthSourceDisplay },
+    WorkspaceSourceFolder { display: AuthSourceFolderDisplay },
     RoleHeader { role: String, expanded: bool },
     RoleMode { mode_label: String },
     RoleSource { display: AuthSourceDisplay },
+    RoleSourceFolder { display: AuthSourceFolderDisplay },
     AddSentinel { eligible: usize },
     Spacer,
 }
@@ -708,6 +710,9 @@ pub fn editor_auth_line_width(row: &EditorAuthLineRow) -> usize {
         EditorAuthLineRow::WorkspaceSource { display } => {
             auth_source_line_width("Source", display, 0)
         }
+        EditorAuthLineRow::WorkspaceSourceFolder { display } => {
+            source_folder_line_width("Source folder", display, 0)
+        }
         EditorAuthLineRow::RoleHeader { role, .. } => {
             padded_width(&format!("\u{25bc} Role: {role}"))
         }
@@ -715,6 +720,9 @@ pub fn editor_auth_line_width(row: &EditorAuthLineRow) -> usize {
             padded_width(&format!("      {:<12}{mode_label}", "Mode"))
         }
         EditorAuthLineRow::RoleSource { display } => auth_source_line_width("Source", display, 6),
+        EditorAuthLineRow::RoleSourceFolder { display } => {
+            source_folder_line_width("Source folder", display, 6)
+        }
         EditorAuthLineRow::AddSentinel { .. } => padded_width("  + Override for a role"),
         EditorAuthLineRow::Spacer => 0,
     }
@@ -751,6 +759,9 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
         EditorAuthLineRow::WorkspaceSource { display } => {
             render_auth_source_line("Source", display, 0)
         }
+        EditorAuthLineRow::WorkspaceSourceFolder { display } => {
+            render_source_folder_line("Source folder", display, 0)
+        }
         EditorAuthLineRow::RoleHeader { role, expanded } => {
             let glyph = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
             Line::from(vec![
@@ -764,6 +775,9 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
             Span::styled(mode_label.clone(), phosphor),
         ]),
         EditorAuthLineRow::RoleSource { display } => render_auth_source_line("Source", display, 6),
+        EditorAuthLineRow::RoleSourceFolder { display } => {
+            render_source_folder_line("Source folder", display, 6)
+        }
         EditorAuthLineRow::AddSentinel { .. } => {
             let cursor_col = if selected { "\u{25b8} " } else { "  " };
             Line::from(vec![
@@ -773,6 +787,58 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
         }
         EditorAuthLineRow::Spacer => Line::from(""),
     }
+}
+
+fn source_folder_line_width(
+    label: &str,
+    display: &AuthSourceFolderDisplay,
+    indent: usize,
+) -> usize {
+    let label_width = if indent == 0 { 14 } else { 12 };
+    let prefix_width = indent + text_width(&format!("{label:<label_width$}"));
+    let status = match display.kind {
+        AuthSourceFolderKind::Default => "default",
+        AuthSourceFolderKind::Explicit => "explicit",
+        AuthSourceFolderKind::Inherited => "inherited",
+    };
+    let env = display
+        .env_var
+        .as_ref()
+        .map_or(String::new(), |env| format!(" ({env})"));
+    padded_width_cols(
+        prefix_width + text_width(&format!("{status}: {}{env}", display.path)),
+        indent,
+    )
+}
+
+fn render_source_folder_line(
+    label: &str,
+    display: &AuthSourceFolderDisplay,
+    indent: usize,
+) -> Line<'static> {
+    let label_width = if indent == 0 { 14 } else { 12 };
+    let status = match display.kind {
+        AuthSourceFolderKind::Default => "default",
+        AuthSourceFolderKind::Explicit => "explicit",
+        AuthSourceFolderKind::Inherited => "inherited",
+    };
+    let env = display
+        .env_var
+        .as_ref()
+        .map_or(String::new(), |env| format!(" ({env})"));
+    Line::from(vec![
+        Span::raw(" ".repeat(indent)),
+        Span::styled(
+            format!("{label:<label_width$}"),
+            Style::default()
+                .fg(jackin_tui::theme::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{status}: {}{env}", display.path),
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+        ),
+    ])
 }
 
 fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usize) -> usize {

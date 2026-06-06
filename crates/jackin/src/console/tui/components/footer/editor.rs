@@ -123,6 +123,9 @@ fn editor_context_footer_mode(
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
                     EditorContextFooterMode::AuthEditSource
                 }
+                Some(AuthRow::WorkspaceSourceFolder { .. } | AuthRow::RoleSourceFolder { .. }) => {
+                    EditorContextFooterMode::AuthEditSource
+                }
                 Some(AuthRow::Spacer) | None => EditorContextFooterMode::Empty,
             }
         }

@@ -312,6 +312,76 @@ fn filebrowser_commit_opens_mount_dst_choice_not_text_input() {
 }
 
 #[test]
+fn auth_workspace_source_folder_browser_commit_persists_pending_folder() {
+    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+    editor.modal = Some(Modal::FileBrowser {
+        target: FileBrowserTarget::AuthWorkspaceSourceFolder {
+            kind: jackin_console::tui::auth::AuthKind::Claude,
+        },
+        state: jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+            jackin_console::services::file_browser::listing_from_home().unwrap(),
+        ),
+    });
+
+    apply_file_browser_to_editor(
+        FileBrowserTarget::AuthWorkspaceSourceFolder {
+            kind: jackin_console::tui::auth::AuthKind::Claude,
+        },
+        &mut editor,
+        std::path::PathBuf::from("/host/claude-work"),
+    );
+
+    assert!(editor.modal.is_none());
+    assert_eq!(
+        editor
+            .pending
+            .claude
+            .as_ref()
+            .and_then(|auth| auth.sync_source_dir.clone()),
+        Some(std::path::PathBuf::from("/host/claude-work"))
+    );
+}
+
+#[test]
+fn auth_role_source_folder_browser_commit_persists_pending_folder() {
+    let mut workspace = WorkspaceConfig::default();
+    workspace.roles.insert(
+        "smith".into(),
+        crate::config::WorkspaceRoleOverride::default(),
+    );
+    let mut editor = EditorState::new_edit("ws".into(), workspace);
+    editor.modal = Some(Modal::FileBrowser {
+        target: FileBrowserTarget::AuthRoleSourceFolder {
+            role: "smith".into(),
+            kind: jackin_console::tui::auth::AuthKind::Claude,
+        },
+        state: jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+            jackin_console::services::file_browser::listing_from_home().unwrap(),
+        ),
+    });
+
+    apply_file_browser_to_editor(
+        FileBrowserTarget::AuthRoleSourceFolder {
+            role: "smith".into(),
+            kind: jackin_console::tui::auth::AuthKind::Claude,
+        },
+        &mut editor,
+        std::path::PathBuf::from("/host/claude-role"),
+    );
+
+    assert!(editor.modal.is_none());
+    assert_eq!(
+        editor
+            .pending
+            .roles
+            .get("smith")
+            .and_then(|role| role.claude.as_ref())
+            .and_then(|auth| auth.sync_source_dir.clone()),
+        Some(std::path::PathBuf::from("/host/claude-role"))
+    );
+}
+
+#[test]
 fn filebrowser_child_esc_restores_filebrowser_parent() {
     let mut editor = editor_with_file_browser_parent_committed("/host/path");
     assert!(matches!(editor.modal, Some(Modal::MountDstChoice { .. })));

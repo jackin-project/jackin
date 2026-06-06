@@ -125,6 +125,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
         SettingsAuthModal::SourcePicker { .. } => {
             shared_modal_footer_items(ModalFooterMode::SegmentedChoice)
         }
+        SettingsAuthModal::SourceFolderPicker { state } => state.footer_items(),
         SettingsAuthModal::OpPicker { state } => shared_modal_footer_items(
             op_picker_modal_footer_mode(state.stage, state.naming_stage_input().is_some(), false),
         ),

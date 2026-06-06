@@ -255,12 +255,16 @@ pub enum AuthRow<K> {
     WorkspaceMode { kind: K },
     /// Selected auth kind's workspace credential source row.
     WorkspaceSource { kind: K },
+    /// Selected auth kind's workspace sync source-folder row.
+    WorkspaceSourceFolder { kind: K },
     /// Collapsible role override block.
     RoleHeader { role: String, expanded: bool },
     /// Mode row inside an expanded `RoleHeader`.
     RoleMode { role: String, kind: K },
     /// Credential source row inside an expanded `RoleHeader`.
     RoleSource { role: String, kind: K },
+    /// Sync source-folder row inside an expanded `RoleHeader`.
+    RoleSourceFolder { role: String, kind: K },
     /// `+ Override for a role` sentinel.
     AddSentinel { eligible: usize },
     /// Visual spacer.
@@ -339,10 +343,17 @@ pub enum TextInputTarget {
     AuthCredential,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileBrowserTarget {
     CreateFirstMountSrc,
     EditAddMountSrc,
+    AuthWorkspaceSourceFolder {
+        kind: crate::tui::auth::AuthKind,
+    },
+    AuthRoleSourceFolder {
+        role: String,
+        kind: crate::tui::auth::AuthKind,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -99,6 +99,7 @@ impl<K> AuthFormTarget<K> {
 pub struct SettingsAuthRow<K, M> {
     pub kind: K,
     pub mode: M,
+    pub sync_source_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -465,6 +466,7 @@ pub enum SettingsAuthModal<
     TextInputState,
     SourcePickerState,
     OpPickerState,
+    FileBrowserState,
     AuthFormTarget,
     AuthForm,
     AuthFormFocus,
@@ -477,6 +479,9 @@ pub enum SettingsAuthModal<
     },
     OpPicker {
         state: Box<OpPickerState>,
+    },
+    SourceFolderPicker {
+        state: FileBrowserState,
     },
     AuthForm {
         target: AuthFormTarget,

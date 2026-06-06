@@ -279,7 +279,7 @@ fn execute_editor_file_browser_outcome(
             return false;
         };
         (
-            *target,
+            target.clone(),
             crate::console::services::file_browser::apply_file_browser_outcome(state, outcome),
         )
     };

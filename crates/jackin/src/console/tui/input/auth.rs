@@ -11,18 +11,19 @@
 //! Github writes `[workspaces.<ws>(.roles.<role>)?].github`).
 
 use crossterm::event::{KeyCode, KeyEvent};
+use std::path::PathBuf;
 
 use crate::config::AppConfig;
 use crate::console::domain::{
     apply_role_auth_commit, apply_workspace_auth_commit, clear_role_auth_layer,
     clear_workspace_auth_layer, role_auth_mode_and_credential, role_override_present,
-    workspace_auth_mode_and_credential,
+    set_role_sync_source_dir, set_workspace_sync_source_dir, workspace_auth_mode_and_credential,
 };
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
-    AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
-    auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
+    AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget, Modal,
+    TextInputTarget, auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
 };
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
@@ -59,6 +60,26 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppCon
         focus: AuthFormFocus::Mode,
         literal_buffer,
     });
+}
+
+pub(super) fn open_auth_source_folder_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = auth_flat_rows(editor, config);
+    let target = match rows.get(n).cloned() {
+        Some(AuthRow::WorkspaceSourceFolder { kind }) => {
+            FileBrowserTarget::AuthWorkspaceSourceFolder { kind }
+        }
+        Some(AuthRow::RoleSourceFolder { role, kind }) => {
+            FileBrowserTarget::AuthRoleSourceFolder { role, kind }
+        }
+        _ => return,
+    };
+    match crate::console::services::file_browser::from_home_with_hidden() {
+        Ok(state) => {
+            editor.modal = Some(Modal::FileBrowser { target, state });
+        }
+        Err(error) => crate::console::tui::state::open_editor_action_error(editor, &error),
+    }
 }
 
 /// Mount the Auth-tab role picker for the "+ Add per-role override"
@@ -132,10 +153,35 @@ pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppCon
         Some(AuthRow::RoleMode { role, kind } | AuthRow::RoleSource { role, kind }) => {
             clear_role_kind(editor, &role, kind);
         }
+        Some(AuthRow::RoleSourceFolder { role, kind }) => {
+            set_role_source_folder(editor, &role, kind, None);
+        }
         Some(AuthRow::WorkspaceMode { kind } | AuthRow::WorkspaceSource { kind }) => {
             clear_workspace_kind(&mut editor.pending, kind);
         }
+        Some(AuthRow::WorkspaceSourceFolder { kind }) => {
+            set_workspace_source_folder(editor, kind, None);
+        }
         _ => {}
+    }
+}
+
+pub(in crate::console) fn set_workspace_source_folder(
+    editor: &mut EditorState<'_>,
+    kind: AuthKind,
+    source: Option<PathBuf>,
+) {
+    set_workspace_sync_source_dir(&mut editor.pending, kind, source);
+}
+
+pub(in crate::console) fn set_role_source_folder(
+    editor: &mut EditorState<'_>,
+    role: &str,
+    kind: AuthKind,
+    source: Option<PathBuf>,
+) {
+    if let Some(role_override) = editor.pending.roles.get_mut(role) {
+        set_role_sync_source_dir(role_override, kind, source);
     }
 }
 

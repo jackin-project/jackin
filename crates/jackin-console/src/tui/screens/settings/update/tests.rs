@@ -46,6 +46,14 @@ fn settings_auth_detail_row_count_adds_source_row_only_when_needed() {
         settings_auth_detail_row_count(AuthKind::Github, AuthMode::Sync),
         1
     );
+    assert_eq!(
+        settings_auth_detail_row_count(AuthKind::Claude, AuthMode::Sync),
+        2
+    );
+    assert_eq!(
+        settings_auth_detail_row_count(AuthKind::Claude, AuthMode::ApiKey),
+        2
+    );
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

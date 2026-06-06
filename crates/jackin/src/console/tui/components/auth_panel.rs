@@ -2,7 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::console::domain::{
-    explicit_workspace_auth_mode, panel_auth_source_value, resolve_panel_mode,
+    auth_kind_agent, explicit_workspace_auth_mode, panel_auth_source_value, resolve_panel_mode,
 };
 use crate::console::tui::state::{
     AuthRow, EditorState, FieldFocus, SettingsState, auth_flat_rows, synthesize_appconfig_for_auth,
@@ -10,7 +10,8 @@ use crate::console::tui::state::{
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceValue, auth_source_display, auth_source_display_for_required_env,
+    AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, AuthSourceValue,
+    auth_source_display, auth_source_display_for_required_env,
 };
 use jackin_console::tui::screens::editor::view::EditorAuthLineRow;
 use jackin_console::tui::screens::editor::view::auth_lines as editor_auth_lines;
@@ -46,6 +47,9 @@ pub(crate) fn editor_auth_display_row(
         AuthRow::WorkspaceSource { kind } => EditorAuthLineRow::WorkspaceSource {
             display: editor_auth_source_display(synthesized, workspace_name, "", *kind),
         },
+        AuthRow::WorkspaceSourceFolder { kind } => EditorAuthLineRow::WorkspaceSourceFolder {
+            display: editor_source_folder_display(synthesized, workspace_name, "", *kind),
+        },
         AuthRow::RoleHeader { role, expanded } => EditorAuthLineRow::RoleHeader {
             role: role.clone(),
             expanded: *expanded,
@@ -58,6 +62,9 @@ pub(crate) fn editor_auth_display_row(
         }
         AuthRow::RoleSource { role, kind } => EditorAuthLineRow::RoleSource {
             display: editor_auth_source_display(synthesized, workspace_name, role, *kind),
+        },
+        AuthRow::RoleSourceFolder { role, kind } => EditorAuthLineRow::RoleSourceFolder {
+            display: editor_source_folder_display(synthesized, workspace_name, role, *kind),
         },
         AuthRow::AddSentinel { eligible } => EditorAuthLineRow::AddSentinel {
             eligible: *eligible,
@@ -114,6 +121,11 @@ pub(crate) fn settings_auth_lines_for_state(
             display: settings_auth_source_display(state, kind, row.mode, env_name),
         });
     }
+    if jackin_console::tui::auth::auth_mode_supports_source_folder(kind, row.mode) {
+        rows.push(SettingsAuthLineRow::SourceFolder {
+            display: settings_source_folder_display(row),
+        });
+    }
     rows.push(SettingsAuthLineRow::Spacer);
     settings_auth_lines(&rows, state.auth.selected, show_cursor)
 }
@@ -166,4 +178,173 @@ fn editor_auth_source_display(
         });
 
     auth_source_display_for_required_env(env_name, value, mode_str(mode))
+}
+
+fn settings_source_folder_display(
+    row: &crate::console::tui::state::SettingsAuthRow,
+) -> AuthSourceFolderDisplay {
+    let Some(agent) = auth_kind_agent(row.kind) else {
+        return AuthSourceFolderDisplay {
+            kind: AuthSourceFolderKind::Default,
+            path: String::new(),
+            env_var: None,
+        };
+    };
+    let paths = agent.runtime().state_paths();
+    AuthSourceFolderDisplay {
+        kind: row
+            .sync_source_dir
+            .as_ref()
+            .map_or(AuthSourceFolderKind::Default, |_| {
+                AuthSourceFolderKind::Explicit
+            }),
+        path: row.sync_source_dir.as_ref().map_or_else(
+            || format!("~/{}", paths.credential_dir),
+            |path| path.display().to_string(),
+        ),
+        env_var: paths.folder_env_var.map(str::to_owned),
+    }
+}
+
+fn editor_source_folder_display(
+    synthesized: &AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: jackin_console::tui::auth::AuthKind,
+) -> AuthSourceFolderDisplay {
+    let Some(agent) = auth_kind_agent(kind) else {
+        return AuthSourceFolderDisplay {
+            kind: AuthSourceFolderKind::Default,
+            path: String::new(),
+            env_var: None,
+        };
+    };
+    let paths = agent.runtime().state_paths();
+    let ws = synthesized.workspaces.get(workspace_name);
+    let role_value = if role.is_empty() {
+        None
+    } else {
+        ws.and_then(|ws| ws.roles.get(role))
+            .and_then(|role| role.sync_source_dir_for(agent))
+    };
+    let workspace_value = ws.and_then(|ws| ws.sync_source_dir_for(agent));
+    let global_value = synthesized.sync_source_dir_for(agent);
+    let (kind, path) = if let Some(path) = role_value {
+        (AuthSourceFolderKind::Explicit, path.display().to_string())
+    } else if role.is_empty() {
+        if let Some(path) = workspace_value {
+            (AuthSourceFolderKind::Explicit, path.display().to_string())
+        } else if let Some(path) = global_value {
+            (AuthSourceFolderKind::Inherited, path.display().to_string())
+        } else {
+            (
+                AuthSourceFolderKind::Default,
+                format!("~/{}", paths.credential_dir),
+            )
+        }
+    } else if let Some(path) = workspace_value.or(global_value) {
+        (AuthSourceFolderKind::Inherited, path.display().to_string())
+    } else {
+        (
+            AuthSourceFolderKind::Default,
+            format!("~/{}", paths.credential_dir),
+        )
+    };
+    AuthSourceFolderDisplay {
+        kind,
+        path,
+        env_var: paths.folder_env_var.map(str::to_owned),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::Agent;
+    use crate::config::{AgentAuthConfig, AuthForwardMode, WorkspaceRoleOverride};
+    use crate::workspace::WorkspaceConfig;
+    use std::path::PathBuf;
+
+    #[test]
+    fn editor_source_folder_display_marks_inherited_and_default_paths() {
+        let mut cfg = AppConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Sync,
+                sync_source_dir: Some(PathBuf::from("/global/claude")),
+            }),
+            ..Default::default()
+        };
+        cfg.workspaces.insert(
+            "proj".into(),
+            WorkspaceConfig {
+                roles: [("smith".into(), WorkspaceRoleOverride::default())].into(),
+                ..Default::default()
+            },
+        );
+
+        let workspace = editor_source_folder_display(
+            &cfg,
+            "proj",
+            "",
+            jackin_console::tui::auth::AuthKind::Claude,
+        );
+        assert_eq!(workspace.kind, AuthSourceFolderKind::Inherited);
+        assert_eq!(workspace.path, "/global/claude");
+        assert_eq!(workspace.env_var.as_deref(), Some("CLAUDE_CONFIG_DIR"));
+
+        let role = editor_source_folder_display(
+            &cfg,
+            "proj",
+            "smith",
+            jackin_console::tui::auth::AuthKind::Claude,
+        );
+        assert_eq!(role.kind, AuthSourceFolderKind::Inherited);
+        assert_eq!(role.path, "/global/claude");
+
+        cfg.claude = None;
+        let default = editor_source_folder_display(
+            &cfg,
+            "proj",
+            "",
+            jackin_console::tui::auth::AuthKind::Claude,
+        );
+        assert_eq!(default.kind, AuthSourceFolderKind::Default);
+        assert_eq!(
+            default.path,
+            format!("~/{}", Agent::Claude.runtime().state_paths().credential_dir)
+        );
+    }
+
+    #[test]
+    fn editor_source_folder_display_prefers_explicit_role_path() {
+        let mut cfg = AppConfig::default();
+        let mut workspace = WorkspaceConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Sync,
+                sync_source_dir: Some(PathBuf::from("/workspace/claude")),
+            }),
+            ..Default::default()
+        };
+        workspace.roles.insert(
+            "smith".into(),
+            WorkspaceRoleOverride {
+                claude: Some(AgentAuthConfig {
+                    auth_forward: AuthForwardMode::Sync,
+                    sync_source_dir: Some(PathBuf::from("/role/claude")),
+                }),
+                ..Default::default()
+            },
+        );
+        cfg.workspaces.insert("proj".into(), workspace);
+
+        let display = editor_source_folder_display(
+            &cfg,
+            "proj",
+            "smith",
+            jackin_console::tui::auth::AuthKind::Claude,
+        );
+
+        assert_eq!(display.kind, AuthSourceFolderKind::Explicit);
+        assert_eq!(display.path, "/role/claude");
+    }
 }

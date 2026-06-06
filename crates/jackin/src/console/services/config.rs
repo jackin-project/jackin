@@ -118,6 +118,7 @@ pub(crate) fn save_settings(
                     );
                 };
                 editor_doc.set_global_auth_forward(agent, mode);
+                editor_doc.set_global_sync_source_dir(agent, row.sync_source_dir.as_deref());
             }
             AuthKind::Github => {
                 let Some(mode) = auth_mode_to_github(row.mode) else {

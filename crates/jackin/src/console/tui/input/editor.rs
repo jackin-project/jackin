@@ -388,6 +388,11 @@ pub(super) fn handle_editor_key(
                     ) => {
                         super::auth::open_auth_form_modal(editor, config);
                     }
+                    Some(
+                        AuthRow::WorkspaceSourceFolder { .. } | AuthRow::RoleSourceFolder { .. },
+                    ) => {
+                        super::auth::open_auth_source_folder_picker(editor, config);
+                    }
                     _ => {}
                 }
             }
@@ -664,7 +669,7 @@ pub(super) fn handle_editor_modal(
             target,
             state: modal_state,
         } => {
-            let target = *target;
+            let target = target.clone();
             let src = modal_state.src.clone();
             let outcome = modal_state.handle_key(key);
             dispatch_editor_mount_dst_choice(editor, target, &src, &outcome);
@@ -1470,6 +1475,14 @@ pub(in crate::console) fn apply_file_browser_to_editor(
             // Only meaningful in prelude path — handled by
             // `handle_prelude_modal`.
             drop((editor, path));
+        }
+        FileBrowserTarget::AuthWorkspaceSourceFolder { kind } => {
+            super::auth::set_workspace_source_folder(editor, kind, Some(path));
+            editor.clear_modal_chain();
+        }
+        FileBrowserTarget::AuthRoleSourceFolder { role, kind } => {
+            super::auth::set_role_source_folder(editor, &role, kind, Some(path));
+            editor.clear_modal_chain();
         }
     }
 }

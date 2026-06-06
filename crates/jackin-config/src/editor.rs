@@ -6,7 +6,7 @@
 //! sections untouched by the mutation.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use jackin_core::{Agent, AuthForwardMode, EnvValue, JackinPaths};
@@ -272,6 +272,12 @@ impl ConfigEditor {
     pub fn set_global_auth_forward(&mut self, agent: Agent, mode: AuthForwardMode) {
         let table = table_path_mut(&mut self.doc, &[agent.slug().to_owned()]);
         table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
+    }
+
+    /// Write or clear `[<agent.slug>].sync_source_dir` at the global layer.
+    pub fn set_global_sync_source_dir(&mut self, agent: Agent, source: Option<&Path>) {
+        let agent_path = vec![agent.slug().to_owned()];
+        set_sync_source_dir_field(&mut self.doc, &agent_path, source);
     }
 
     /// Write `[github].auth_forward = <mode>` at the global layer.
@@ -730,6 +736,29 @@ fn clear_auth_forward_field(doc: &mut DocumentMut, kind_path: &[String]) {
     // Caller passes `max_prune = 1` to bound the walk so a workspace
     // or role identifier — even one literally named "github" /
     // "claude" / "codex" / "env" — is never reached.
+    prune_empty_trailing_tables(doc, kind_path, 1);
+}
+
+fn set_sync_source_dir_field(doc: &mut DocumentMut, kind_path: &[String], source: Option<&Path>) {
+    if let Some(source) = source {
+        let table = table_path_mut(doc, kind_path);
+        table.insert(
+            "sync_source_dir",
+            toml_edit::value(source.display().to_string()),
+        );
+        return;
+    }
+
+    let mut current: &mut Item = doc.as_item_mut();
+    for segment in kind_path {
+        match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
+            Some(next) => current = next,
+            None => return,
+        }
+    }
+    if let Some(table) = current.as_table_mut() {
+        table.remove("sync_source_dir");
+    }
     prune_empty_trailing_tables(doc, kind_path, 1);
 }
 

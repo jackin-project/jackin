@@ -17,8 +17,8 @@ use ratatui::{
 };
 
 use crate::tui::components::editor_rows::{
-    AuthSourceDisplay, SecretValueDisplay, action_row_style, disclosure_style,
-    render_secret_key_line,
+    AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
+    action_row_style, disclosure_style, render_secret_key_line,
 };
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
@@ -28,6 +28,7 @@ pub enum SettingsAuthLineRow {
     Kind { label: String },
     Mode { mode_label: String },
     Source { display: AuthSourceDisplay },
+    SourceFolder { display: AuthSourceFolderDisplay },
     Spacer,
 }
 
@@ -487,8 +488,43 @@ fn render_auth_line(row: &SettingsAuthLineRow, selected: bool) -> Line<'static> 
             ])
         }
         SettingsAuthLineRow::Source { display } => render_auth_source_line(display, selected),
+        SettingsAuthLineRow::SourceFolder { display } => {
+            render_auth_source_folder_line(display, selected)
+        }
         SettingsAuthLineRow::Spacer => Line::from(""),
     }
+}
+
+fn render_auth_source_folder_line(
+    display: &AuthSourceFolderDisplay,
+    selected: bool,
+) -> Line<'static> {
+    let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    let source_style = if selected {
+        dim.add_modifier(Modifier::BOLD)
+    } else {
+        dim
+    };
+    let cursor_col = if selected { "\u{25b8} " } else { "  " };
+    let status = match display.kind {
+        AuthSourceFolderKind::Default => "default",
+        AuthSourceFolderKind::Explicit => "explicit",
+        AuthSourceFolderKind::Inherited => "inherited",
+    };
+    let env = display
+        .env_var
+        .as_ref()
+        .map_or(String::new(), |env| format!(" ({env})"));
+    Line::from(vec![
+        Span::styled(cursor_col, source_style),
+        Span::styled(
+            format!("{:<14}", "Source folder"),
+            Style::default()
+                .fg(jackin_tui::theme::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!("{status}: {}{env}", display.path), source_style),
+    ])
 }
 
 fn render_auth_source_line(display: &AuthSourceDisplay, selected: bool) -> Line<'static> {
