@@ -2551,6 +2551,8 @@ dependencies = [
  "compact_str",
  "criterion",
  "dhat",
+ "jackin-core",
+ "jackin-diagnostics",
  "serde_json",
  "unicode-width",
  "vt100",

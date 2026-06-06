@@ -1,0 +1,236 @@
+//! Headless Defect 52 terminal performance experiment runner.
+//!
+//! This does not replace the Defect 54 live capsule smoke ledger. It captures
+//! machine-doable measurements against the `vt100` oracle and writes them to a
+//! normal diagnostics run JSONL so the checklist has a run id for the headless
+//! part of Experiments 1-4.
+
+use std::time::{Duration, Instant};
+
+use jackin_core::JackinPaths;
+use jackin_diagnostics::RunDiagnostics;
+use jackin_term::{DamageGrid, GridPatch};
+use serde_json::json;
+
+const ROWS: u16 = 40;
+const COLS: u16 = 120;
+const SCROLLBACK: usize = 10_000;
+
+#[derive(Debug)]
+struct Dataset {
+    name: &'static str,
+    frames: Vec<Vec<u8>>,
+}
+
+#[derive(Debug)]
+struct Measurement {
+    dataset: &'static str,
+    frames: usize,
+    jackin_dirty_p99_us: u128,
+    jackin_full_dump_p99_us: u128,
+    vt100_contents_p99_us: u128,
+    jackin_changed_cells_total: usize,
+    jackin_patch_bytes_estimate: usize,
+    vt100_contents_bytes_total: usize,
+}
+
+fn seq_dataset() -> Dataset {
+    let frames = (1..=400).map(|n| format!("{n}\r\n").into_bytes()).collect();
+    Dataset {
+        name: "seq_1_100000_window",
+        frames,
+    }
+}
+
+fn agent_dataset() -> Dataset {
+    let frames = (0..160)
+        .map(|n| {
+            format!(
+                "\x1b[2J\x1b[HClaude Code\r\nturn={n:03}\r\n\x1b[10;1Hresponse line {n:03}\x1b[0K"
+            )
+            .into_bytes()
+        })
+        .collect();
+    Dataset {
+        name: "agent_response_tall_pane",
+        frames,
+    }
+}
+
+fn redraw_storm_dataset() -> Dataset {
+    let frames = (0..120)
+        .map(|frame| {
+            let mut out = Vec::new();
+            out.extend_from_slice(b"\x1b[2J\x1b[H");
+            for row in 1..=ROWS {
+                out.extend_from_slice(
+                    format!("\x1b[{row};1Hframe={frame:03} row={row:02} status=running").as_bytes(),
+                );
+            }
+            out
+        })
+        .collect();
+    Dataset {
+        name: "full_screen_redraw_storm",
+        frames,
+    }
+}
+
+fn yes_dataset() -> Dataset {
+    let frames = (0..300).map(|_| b"y\r\n".to_vec()).collect();
+    Dataset {
+        name: "yes_5s_pathological_proxy",
+        frames,
+    }
+}
+
+fn patch_changed_cells(patch: &GridPatch) -> usize {
+    patch
+        .rows_changed
+        .iter()
+        .map(|(_, row)| row.iter().filter(|cell| cell.has_contents()).count())
+        .sum()
+}
+
+fn patch_bytes_estimate(patch: &GridPatch) -> usize {
+    patch
+        .rows_changed
+        .iter()
+        .map(|(row_idx, row)| {
+            let cursor_move = format!("\x1b[{};1H", row_idx + 1).len();
+            let row_bytes = row.iter().map(|cell| cell.text.len()).sum::<usize>();
+            cursor_move + row_bytes
+        })
+        .sum()
+}
+
+fn percentile_us(samples: &[Duration], percentile: usize) -> u128 {
+    let mut micros = samples.iter().map(Duration::as_micros).collect::<Vec<_>>();
+    micros.sort_unstable();
+    let Some(last) = micros.len().checked_sub(1) else {
+        return 0;
+    };
+    let idx = (last * percentile).div_ceil(100);
+    micros.get(idx).copied().unwrap_or(0)
+}
+
+fn measure_dataset(dataset: &Dataset) -> Measurement {
+    let mut grid = DamageGrid::new(ROWS, COLS, SCROLLBACK);
+    let mut parser = vt100::Parser::new(ROWS, COLS, SCROLLBACK);
+
+    let mut jackin_dirty = Vec::with_capacity(dataset.frames.len());
+    let mut jackin_full = Vec::with_capacity(dataset.frames.len());
+    let mut vt100_contents = Vec::with_capacity(dataset.frames.len());
+    let mut jackin_changed_cells_total = 0usize;
+    let mut jackin_patch_bytes_estimate = 0usize;
+    let mut vt100_contents_bytes_total = 0usize;
+
+    for frame in &dataset.frames {
+        let start = Instant::now();
+        grid.process(frame);
+        let patch = grid.dump_dirty_patch();
+        jackin_dirty.push(start.elapsed());
+        jackin_changed_cells_total += patch_changed_cells(&patch);
+        jackin_patch_bytes_estimate += patch_bytes_estimate(&patch);
+
+        let start = Instant::now();
+        let snapshot = grid.dump();
+        std::hint::black_box(snapshot);
+        jackin_full.push(start.elapsed());
+
+        let start = Instant::now();
+        parser.process(frame);
+        let contents = parser.screen().contents();
+        vt100_contents_bytes_total += contents.len();
+        std::hint::black_box(contents);
+        vt100_contents.push(start.elapsed());
+    }
+
+    Measurement {
+        dataset: dataset.name,
+        frames: dataset.frames.len(),
+        jackin_dirty_p99_us: percentile_us(&jackin_dirty, 99),
+        jackin_full_dump_p99_us: percentile_us(&jackin_full, 99),
+        vt100_contents_p99_us: percentile_us(&vt100_contents, 99),
+        jackin_changed_cells_total,
+        jackin_patch_bytes_estimate,
+        vt100_contents_bytes_total,
+    }
+}
+
+fn measure_multipane() -> serde_json::Value {
+    let pane_counts = [1usize, 4, 8, 16, 32];
+    let mut results = Vec::new();
+    for panes in pane_counts {
+        let mut grids = (0..panes)
+            .map(|_| DamageGrid::new(ROWS, COLS, SCROLLBACK))
+            .collect::<Vec<_>>();
+        let start = Instant::now();
+        for frame in 0..80 {
+            for (idx, grid) in grids.iter_mut().enumerate() {
+                grid.process(format!("pane={idx:02} frame={frame:03}\r\n").as_bytes());
+                std::hint::black_box(grid.dump_dirty_patch());
+            }
+        }
+        let elapsed = start.elapsed();
+        results.push(json!({
+            "panes": panes,
+            "frames_per_pane": 80,
+            "total_us": elapsed.as_micros(),
+            "per_frame_us": elapsed.as_micros() / ((panes * 80) as u128),
+            "model_cells": panes * ROWS as usize * COLS as usize,
+        }));
+    }
+    json!(results)
+}
+
+fn measurement_json(measurement: &Measurement) -> serde_json::Value {
+    json!({
+        "dataset": measurement.dataset,
+        "frames": measurement.frames,
+        "jackin_dirty_p99_us": measurement.jackin_dirty_p99_us,
+        "jackin_full_dump_p99_us": measurement.jackin_full_dump_p99_us,
+        "vt100_contents_p99_us": measurement.vt100_contents_p99_us,
+        "jackin_changed_cells_total": measurement.jackin_changed_cells_total,
+        "jackin_patch_bytes_estimate": measurement.jackin_patch_bytes_estimate,
+        "vt100_contents_bytes_total": measurement.vt100_contents_bytes_total,
+    })
+}
+
+#[expect(
+    clippy::print_stdout,
+    reason = "example runner must print the diagnostics run id for checklist evidence"
+)]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let root = std::env::current_dir()?.join("target/jackin-term-perf-runs");
+    let paths = JackinPaths::for_tests(&root);
+    let run = RunDiagnostics::start(&paths, false, "jackin-term-perf-experiments")?;
+    let _guard = run.activate();
+
+    let datasets = [
+        seq_dataset(),
+        agent_dataset(),
+        redraw_storm_dataset(),
+        yes_dataset(),
+    ];
+    let measurements = datasets.iter().map(measure_dataset).collect::<Vec<_>>();
+    for measurement in &measurements {
+        run.stage(
+            "terminal_perf_measurement",
+            measurement.dataset,
+            "headless terminal perf measurement",
+            Some(&measurement_json(measurement).to_string()),
+        );
+    }
+    run.stage(
+        "terminal_perf_measurement",
+        "multipane_scaling_headless",
+        "headless multipane scaling proxy",
+        Some(&measure_multipane().to_string()),
+    );
+    run.emit_run_summary();
+
+    println!("run_id={}", run.run_id());
+    println!("run_log={}", run.path().display());
+    Ok(())
+}
