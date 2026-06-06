@@ -2,7 +2,7 @@
 title: "Per-scope auth-sync source folder"
 ---
 
-**Status**: **Partially implemented** — All Phase B items complete (B.1–B.5). Schema v1alpha6 migration shipped. Console UX Source folder row with `show_hidden` shipped. Phase B.1 landed: `sync_source_dir: Option<PathBuf>` in `AgentAuthConfig`; `resolve_sync_source_dir()` in `jackin-config`. Folded into the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) epic. Executable checklist: [Defect 46, Phase B](/reference/roadmap/post-restructure-fixes/). This page is the design of record for the default/explicit/inherited semantics and the operator flow.
+**Status**: **Partially implemented** — Schema v1alpha6 migration, `sync_source_dir: Option<PathBuf>`, `resolve_sync_source_dir()`, and runtime provisioning are shipped. The console UX Source folder row is still open under Defect 59, so the picker, reset, inherited/default labels, and end-to-end B.5 smoke are not complete yet. Folded into the [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) epic. Executable checklist: [Defect 46, Phase B](/reference/roadmap/post-restructure-fixes/). This page is the design of record for the default/explicit/inherited semantics and the intended operator flow.
 
 ## Folder-only selection, with a per-agent env-var hint (operator-decided, June 2026)
 

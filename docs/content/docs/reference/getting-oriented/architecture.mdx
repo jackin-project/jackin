@@ -36,6 +36,30 @@ jackin' architecture is shaped by a few explicit decisions:
 4. **Operator-owned infrastructure, not black-box runtime.** The implementation should stay inspectable and patchable.
 5. **Container isolation is acceptable for the first target.** jackin' does not claim a microVM boundary today.
 
+## Async architecture
+
+The host runtime is intentionally a Tokio `current_thread` runtime. The operator CLI is an orchestrator, not a high-throughput server: keeping one async scheduler thread makes ordering easier to reason about, keeps render and progress state deterministic, and forces expensive work to declare itself instead of disappearing into incidental blocking calls.
+
+The rule is simple: render and progress tasks never block on synchronous I/O or CPU-heavy work. If a call can be async, it runs through the async abstraction; if it cannot be made async, the blocking boundary is explicit.
+
+| Call shape | Mechanism | Reason |
+|---|---|---|
+| Async subprocess / command capture | `ShellRunner` | Centralizes subprocess execution, diagnostics, cancellation shape, and test fakes instead of sprinkling `Command` calls through launch code. |
+| Docker lifecycle API calls | `DockerApi` / `BollardDockerClient` | Keeps Docker inspect/list/create/remove operations async and mockable; interactive `docker build`, `docker run -it`, and `docker exec -it` stay on the Docker CLI because their terminal behavior is the compatibility contract. |
+| Unavoidable synchronous filesystem, archive, or CPU work | `tokio::task::spawn_blocking` | Moves work that can stall the scheduler off the render/progress thread while keeping the boundary visible in review. |
+| Independent launch stages | `tokio::try_join!` or sibling futures | Runs unrelated setup concurrently while preserving fail-fast error propagation and one diagnostics timeline. |
+| TUI rendering / progress updates | Non-blocking state updates only | The render task reads state and paints; it does not perform filesystem, network, Docker, or subprocess work. |
+
+This is a cross-cutting TUI rule too: background I/O reports into typed state, and the render path consumes that state. A review that finds `std::thread::sleep`, blocking `std::fs`, or direct synchronous command capture in a render-thread crate should treat it as an architecture bug unless the call is already behind an explicit blocking boundary.
+
+## AgentRuntime and Provider registry
+
+The built-in agent set still has a typed identity enum, but runtime behavior now rides through a sealed adapter registry. `AgentRuntime` owns the questions that vary by agent: slug and label, install block, version parsing, auth capabilities, state-path layout, source-folder hints, manifest model access, and related runtime metadata. Adding a built-in runtime should mean adding one adapter plus the small number of centralized accessor rows that remain because the on-disk schemas still use named fields.
+
+Providers follow the same direction. The provider registry owns provider labels, availability, token selection, environment overrides, and generated provider-config fragments for Codex/OpenCode-style runtimes. A provider feature must extend the registry rather than adding closed matches at launch, capsule spawn, and console UI call sites.
+
+Some named-field accessors deliberately remain. `AppConfig`, `WorkspaceConfig`, `RoleConfig`, and `RoleManifest` keep `claude` / `codex` / `amp` / `kimi` / `opencode` fields because that is the versioned TOML surface operators and role authors already read. Collapsing those fields to a map would require a schema bump and migrations, and the current centralized accessors keep the dispatch local enough that a sixth runtime is still one adapter plus one row in each named-field accessor. The exception is acceptable only while the matches stay centralized and documented; new scattered `Agent::...` or `Provider::...` matches are regressions.
+
 ## Image layers
 
 <ImageLayers />

@@ -2,7 +2,16 @@
 title: "Agent runtime trait — replace the closed Agent enum with per-runtime modules"
 ---
 
-**Status**: **Partially implemented** — Phases 0–4 + A + B complete. Phase 2 dispatch arm retirement: ~17 arms remain in named accessor methods (keep-named-fields decision, see Phase 4 rationale); intent satisfied. Phase 4 map migration deferred to a future PR (schema bump cost exceeds benefit). Phase 5 (vt100 deletion) complete. Promoted from a deferred 4-PR design proposal to the organizing goal for a single large PR, by operator directive: *everything — absorbing `main`, the monolith→crates migration cleanup, the `#523` provider-catalog port, and this trait extraction — lands in **one** PR on this branch, not split across follow-ups.* The 4-small-PRs plan below is superseded by the one-epic phasing in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 46), which is the executable surface; this page is the design of record. Keep the two in lockstep.
+**Status**: **Partially implemented** — Phases 0–4 + A mostly complete; Phase B is not complete until the Source folder UI row lands. Phase 2 dispatch retirement reduced the 414-site fan-out to 58 verified production `Agent::Variant =>` / `Provider::Variant =>` arms across 6 files, concentrated in named-field accessors and a few documented-or-to-document runtime exceptions. Phase 4 map migration is deferred to a future PR because the schema bump cost exceeds the benefit while the named TOML fields remain the public shape. Phase 5 (vt100 deletion) complete. Promoted from a deferred 4-PR design proposal to the organizing goal for a single large PR, by operator directive: *everything — absorbing `main`, the monolith→crates migration cleanup, the `#523` provider-catalog port, and this trait extraction — lands in **one** PR on this branch, not split across follow-ups.* The 4-small-PRs plan below is superseded by the one-epic phasing in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 46), which is the executable surface; this page is the design of record. Keep the two in lockstep.
+
+| Remaining dispatch site | Arms | Why it remains |
+|---|---:|---|
+| <RepoFile path="crates/jackin-config/src/schema.rs" /> | 20 | Versioned config/workspace schema uses named agent fields; accessors centralize the match until a future map migration spends its own schema bump. |
+| <RepoFile path="crates/jackin-config/src/app_config.rs" /> | 10 | Same named-field accessor pattern for app config; documented in code. |
+| <RepoFile path="crates/jackin-core/src/manifest.rs" /> | 10 | Role manifests intentionally keep named runtime sections; adapter methods read through one accessor. |
+| <RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs" /> | 8 | Provider availability/token routing still has provider matches and must be reconciled under Defect 50 before the registry claim is complete. |
+| <RepoFile path="crates/jackin-runtime/src/instance.rs" /> | 5 | Per-agent auth provisioning still dispatches to different provisioning routines; keep only with an explicit exception or collapse under the runtime adapter. |
+| <RepoFile path="crates/jackin-image/src/agent_binary.rs" /> | 5 | Agent binary resolution has distinct upstream release mechanisms; accepted as a centralized resolver exception once documented at the call site. |
 
 ## This PR — what we have now, and what we are changing (the epic)
 
@@ -31,8 +40,8 @@ All of it in this one PR. The migration plan section is rewritten below to refle
 **Progress (live):**
 - Phase 0 close-out: complete — all `#523` ledger rows ported, 1104 tests green.
 - Phase 1 (`AgentRuntime` trait + adapters): complete — sealed trait, 5 zero-sized adapter structs, `Agent::runtime()` entry point, 6 snapshot tests pass byte-for-byte.
-- Phase 2 (retire `Agent::Variant =>` arms): in progress — `agent.runtime().label()`, `manifest.agent_model()`, `agent.runtime().parse_version()`, `agent.runtime().install_block()`, `stored_version()/store_version()` via `runtime().slug()`, and 3 more `extract_agent_version` dispatch sites collapsed. Remaining: `app_config.rs`/`schema.rs` auth-forward matches (need Phase 4 config-struct collapse), `instance.rs` AgentRuntimeState construction (Agent A active).
-- Phase A/B: active — Phase A.1 (`ProviderAdapter` registry) complete; Phase B.1 schema complete; Phase B.2 provisioning in progress.
+- Phase 2 (retire `Agent::Variant =>` arms): partially complete — `agent.runtime().label()`, `manifest.agent_model()`, `agent.runtime().parse_version()`, `agent.runtime().install_block()`, `stored_version()/store_version()` via `runtime().slug()`, `extract_agent_version`, capsule config model/label, and `AgentRuntimeState` construction collapsed. Remaining verified count: 58 production arms in the table above, not an estimated `~17`.
+- Phase A/B: active — Phase A.1 (`ProviderAdapter` registry) complete for the main provider catalog path; Phase B.1 schema and B.2 provisioning complete; B.3 Source folder UI row still open under Defect 59.
 
 Items tracked in [Defect 46](/reference/roadmap/post-restructure-fixes/).
 

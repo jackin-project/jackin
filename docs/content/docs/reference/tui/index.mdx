@@ -9,6 +9,8 @@ If a proposed implementation conflicts with a rule here, fix the implementation,
 
 Every PR review that touches a TUI surface must verify the diff against these pages before producing review output.
 
+Render paths never block: filesystem, Docker, network, sleeps, and subprocess capture report into typed state from background tasks or explicit `spawn_blocking` boundaries; views only read state and paint.
+
 ## Pages
 
 - **[Architecture](/reference/tui/architecture)** — Elm Architecture layers, source code locations, boundary rules, single/multi-screen layouts, and the typed effects flow between TUI and non-TUI code.
