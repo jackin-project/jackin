@@ -334,6 +334,19 @@ fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
     );
 }
 
+fn assert_frame_stays_within_geometry(frame: &[u8], rows: u16, cols: u16, context: &str) {
+    let (moves, max_row, max_col, screen_erases) = scan_emitted_frame(frame);
+    assert!(
+        screen_erases > 0,
+        "{context} resize repaint must clear the old geometry"
+    );
+    assert!(moves > 0, "{context} resize repaint must draw cells");
+    assert!(
+        max_row <= rows && max_col <= cols,
+        "{context} resize repaint moved outside {rows}x{cols}: max {max_row}x{max_col}"
+    );
+}
+
 fn assert_wheel_cursor_fallback_sent(
     input_rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
     expected_bytes: &[u8],
@@ -456,6 +469,36 @@ fn resize_then_full_frame_repaints_with_new_geometry() {
         !frame.is_empty(),
         "resize must produce a repaint for the attach client"
     );
+}
+
+#[test]
+fn resize_shrink_terminal_edge_frame_stays_inside_new_geometry() {
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b[1;1HLEFT-EDGE\x1b[1;70HOLD-RIGHT-EDGE\x1b[20;70HOLD-BOTTOM");
+    mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    mux.resize(10, 30);
+    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
+
+    assert_frame_stays_within_geometry(&frame, 10, 30, "terminal-edge shrink");
+}
+
+#[test]
+fn resize_shrink_split_frame_stays_inside_new_geometry() {
+    let mut mux = split_tab_mux();
+    for id in [1, 2] {
+        let (mut session, _rx) = test_session(20, 38);
+        session.feed_pty(format!("\x1b[1;1HPANE-{id}\x1b[20;30HOLD-SPLIT-{id}").as_bytes());
+        mux.sessions.insert(id, session);
+    }
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    mux.resize(10, 40);
+    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
+
+    assert_frame_stays_within_geometry(&frame, 10, 40, "interior split shrink");
 }
 
 #[test]
