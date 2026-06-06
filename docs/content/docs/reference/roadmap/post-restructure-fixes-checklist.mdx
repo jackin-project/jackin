@@ -1278,6 +1278,88 @@ A full re-analysis of the branch against this checklist's own acceptance criteri
 - [ ] `dind_e2e` suite on a Docker-capable machine (currently fails in Docker-less environments).
 - [ ] Each item: capture the run id in the closing note when marking done. An item without a run id stays `[ ]`.
 
+**Defect 54 command ledger (prepared 2026-06-06; do not mark boxes above until a real run id is pasted back).** Paste the common setup once from this repo, set the four operator-specific paths, then run each item that applies:
+
+```bash
+set -euo pipefail
+
+export JACKIN_SMOKE_ROLE="${JACKIN_SMOKE_ROLE:-the-architect}"
+export JACKIN_SMOKE_WORKDIR="${JACKIN_SMOKE_WORKDIR:-$PWD}"
+export JACKIN_SOURCE_WORKSPACE="${JACKIN_SOURCE_WORKSPACE:-$PWD}"
+export JACKIN_DEFAULT_WORKSPACE="${JACKIN_DEFAULT_WORKSPACE:-$PWD}"
+export JACKIN_WORK_CLAUDE_DIR="${JACKIN_WORK_CLAUDE_DIR:-$HOME/company/.claude}"
+
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
+
+latest_jackin_run() {
+  ls -t "${JACKIN_HOME:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1
+}
+
+capture_latest_jackin_run() {
+  RUN_JSONL="$(latest_jackin_run)"
+  RUN_ID="$(basename "$RUN_JSONL" .jsonl)"
+  CAPSULE_LOG="$(rg -o '"capsule_log":"[^"]+"' "$RUN_JSONL" | tail -n 1 | cut -d'"' -f4 || true)"
+  printf 'run_id=%s\nrun_jsonl=%s\ncapsule_log=%s\n' "$RUN_ID" "$RUN_JSONL" "$CAPSULE_LOG"
+}
+```
+
+Capsule smoke build + real multi-pane `--debug` session: run this, then in the capsule do a resize storm, open/close tabs and panes, split, zoom, and scrollback; observe zero ghosting/stale/duplicated cells.
+
+```bash
+cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
+capture_latest_jackin_run
+```
+
+Provider picker end-to-end: run the host console, launch a non-Claude agent with a provider key, verify the picker entries and spawned-session provider env/config, including Codex/OpenCode provider config files.
+
+```bash
+cargo run --bin jackin -- console --debug
+capture_latest_jackin_run
+```
+
+Auth source-folder override end-to-end: first use `cargo run --bin jackin -- console --debug`, edit `JACKIN_SOURCE_WORKSPACE` in the workspace Auth tab, set Claude Source folder to `JACKIN_WORK_CLAUDE_DIR`, save, then launch both workspaces and capture both run ids.
+
+```bash
+cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SOURCE_WORKSPACE" --agent claude
+capture_latest_jackin_run
+
+cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_DEFAULT_WORKSPACE" --agent claude
+capture_latest_jackin_run
+```
+
+Symbolicated debug-capsule build: build the debug capsule, run the real crash repro with `RUST_BACKTRACE=full`, then confirm the run JSONL's `capsule_log` path contains resolved `crates/jackin-capsule/...` frames instead of `<unknown>`. There is no committed daemon-side panic trigger; without a real capsule panic repro this item stays `[ ]`.
+
+```bash
+eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
+RUST_BACKTRACE=full cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
+capture_latest_jackin_run
+```
+
+Clean-exit / re-attach cycle: launch, detach without exiting, reattach with `hardline`, then use the capsule Exit command and confirm the role container exits 0, socket is reclaimed, and a second attach/new launch succeeds.
+
+```bash
+cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
+capture_latest_jackin_run
+
+cargo run --bin jackin -- hardline "$JACKIN_SMOKE_ROLE" --debug
+capture_latest_jackin_run
+```
+
+Host-console resize sweep: run the host console under `--debug`, shrink the terminal through very small sizes, expand it again, and verify no panic, overlap, or stale debug-chip/footer state.
+
+```bash
+cargo run --bin jackin -- console --debug
+capture_latest_jackin_run
+```
+
+Docker-capable `dind_e2e` suite: run on a machine with Docker-in-Docker support; paste the nextest run id/output plus failures if any.
+
+```bash
+cargo build -p jackin-capsule --bin jackin-capsule --locked
+JACKIN_CAPSULE_BIN="$PWD/target/debug/jackin-capsule" \
+  cargo nextest run -p jackin --test dind_e2e --all-features --locked --no-fail-fast
+```
+
 ## Defect 55 — capsule chrome ANSI→ratatui migration (the last "two implementations" surface)
 
 **Operator decision (2026-06-06): lands in this branch — not deferrable.**
