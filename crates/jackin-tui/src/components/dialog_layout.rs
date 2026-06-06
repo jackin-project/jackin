@@ -237,7 +237,11 @@ impl ScrollAxes {
 /// `block_area`'s border (the dialog's outer rect). Mirrors the scrollbar
 /// `is_scrollable` gate exactly.
 #[must_use]
-pub fn dialog_scroll_axes(content_width: usize, content_height: usize, block_area: Rect) -> ScrollAxes {
+pub fn dialog_scroll_axes(
+    content_width: usize,
+    content_height: usize,
+    block_area: Rect,
+) -> ScrollAxes {
     use crate::components::scrollable_panel::{is_scrollable, viewport_height, viewport_width};
     ScrollAxes {
         vertical: is_scrollable(content_height, viewport_height(block_area)),

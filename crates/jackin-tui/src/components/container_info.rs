@@ -85,7 +85,7 @@ impl ContainerInfoRow {
 /// knows the container id, role, agent, and target; the capsule additionally
 /// knows its own binary version. Each surface fills the fields it knows and
 /// calls [`DebugInfo::into_state`]; absent fields are simply omitted, so the
-/// row set grows as the operator moves console → launch → capsule while the
+/// row set grows as the operator moves console -> launch -> capsule while the
 /// ordering, labels, copy affordances, and styling stay identical.
 ///
 /// Version strings are passed in as data because the canonical values live in
@@ -94,7 +94,7 @@ impl ContainerInfoRow {
 /// / `jackin-capsule --version` print so the dialog never disagrees with the CLI.
 #[derive(Debug, Clone, Default)]
 pub struct DebugInfo {
-    /// `jackin --version` output. Shown as the `jackin` row.
+    /// `jackin --version` output. Shown as the `jackin version` row.
     pub jackin_version: Option<String>,
     /// `jackin-capsule --version` output. Shown as the `jackin-capsule` row
     /// (capsule surface only).
@@ -121,7 +121,7 @@ impl DebugInfo {
             rows.push(ContainerInfoRow::new("Container ID", container_id).copyable());
         }
         if let Some(version) = self.jackin_version {
-            rows.push(ContainerInfoRow::new("jackin", version));
+            rows.push(ContainerInfoRow::new("jackin version", version));
         }
         if let Some(version) = self.capsule_version {
             rows.push(ContainerInfoRow::new("jackin-capsule", version));
@@ -289,9 +289,7 @@ pub fn clamp_dialog_scroll(
 /// console + cockpit; copy is click-only there. The capsule, where Enter copies,
 /// composes its own hint with the extra copy key via its bottom chrome.)
 #[must_use]
-pub fn debug_info_hint_spans(
-    axes: crate::components::ScrollAxes,
-) -> Vec<crate::HintSpan<'static>> {
+pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::HintSpan<'static>> {
     let mut spans = crate::components::scroll_hint_spans(axes);
     if axes.any() {
         spans.push(crate::HintSpan::GroupSep);

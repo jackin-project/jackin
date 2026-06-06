@@ -114,7 +114,7 @@ fn long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail() {
 fn short_content_shows_no_horizontal_scrollbar() {
     let state = ContainerInfoState::new(
         "Debug info",
-        vec![ContainerInfoRow::new("jackin", "0.6.0-dev")],
+        vec![ContainerInfoRow::new("jackin version", "0.6.0-dev")],
     );
     let backend = TestBackend::new(60, 8);
     let mut terminal = Terminal::new(backend).unwrap();

@@ -704,7 +704,7 @@ pub(super) async fn launch_role_runtime(
     }
     // Always pass the host jackin version so the capsule ContainerInfo dialog
     // can surface which host binary launched the container.
-    let host_version_env = format!("JACKIN_HOST_VERSION={}", env!("CARGO_PKG_VERSION"));
+    let host_version_env = format!("JACKIN_HOST_VERSION={}", env!("JACKIN_VERSION"));
     run_args.extend_from_slice(&["-e", host_version_env.as_str()]);
 
     let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {

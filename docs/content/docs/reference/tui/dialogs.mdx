@@ -225,11 +225,10 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 The "Debug info" dialog is a single reusable component, not a per-surface reimplementation. Every surface that shows it — the console manager, the launch cockpit, and the in-container capsule — builds it from the shared `DebugInfo` model (<RepoFile path="crates/jackin-tui/src/components/container_info.rs" />) and renders it through `render_container_info`. The look, row order, labels, and copy affordances must be identical on every surface; a surface that hand-rolls its own rows or renderer is a violation.
 
-**The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin version, Run ID, diagnostics log path). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Container ID, jackin, jackin-capsule, Role, Agent, Target, Run ID, Diagnostics log.
+**The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin version, Run ID, diagnostics log path). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Container ID, jackin version, jackin-capsule, Role, Agent, Target, Run ID, Diagnostics log.
 
 **Run ID is always the bare `jk-run-xxxxxx` id**, never the log file path. The diagnostics log path is a separate row, copyable and `file://`-hyperlinked. Conflating the two (showing the path in the Run ID row) is a bug.
 
 **Version rows must match the CLI exactly.** The `jackin` row is the `jackin --version` string and the `jackin-capsule` row is the `jackin-capsule --version` string. Because those values come from build-time env vars (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`) that are only in scope in the binary crates, the model takes them as data — pass the exact CLI string, never the bare crate version.
 
 **Backdrop.** Like every modal, the Debug info dialog paints over an opaque black backdrop and draws nothing but the dialog.
-

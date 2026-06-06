@@ -187,9 +187,8 @@ impl Multiplexer {
         // overflows — the hint and the dialog scrollbar are measured the same
         // way and never disagree.
         let github_view_for_hint = self.github_context_view();
-        let dialog_hint_spans: Option<Vec<jackin_tui::HintSpan<'static>>> = dialog_snapshot
-            .as_ref()
-            .and_then(|(snapshot, rect)| {
+        let dialog_hint_spans: Option<Vec<jackin_tui::HintSpan<'static>>> =
+            dialog_snapshot.as_ref().and_then(|(snapshot, rect)| {
                 self.dialog_top().map(|dialog| {
                     let block = ratatui::layout::Rect {
                         x: rect.1,
@@ -197,7 +196,8 @@ impl Multiplexer {
                         width: rect.3,
                         height: rect.2,
                     };
-                    dialog.footer_hint_spans(Some(&github_view_for_hint), snapshot.scroll_axes(block))
+                    dialog
+                        .footer_hint_spans(Some(&github_view_for_hint), snapshot.scroll_axes(block))
                 })
             });
 
