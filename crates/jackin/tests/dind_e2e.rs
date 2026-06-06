@@ -988,7 +988,7 @@ echo "no_proxy=${{no_proxy:-}}"
 docker rm -f jackin-dind-e2e-docker-ps-smoke >/dev/null 2>&1 || true
 child_id="$(docker run -d --name jackin-dind-e2e-docker-ps-smoke alpine:3.20 sh -c 'sleep 30')"
 echo "DIND_DOCKER_RUN_CHILD=$child_id"
-docker inspect --format 'DIND_DOCKER_RUN_STATE={{.State.Status}}' "$child_id"
+docker inspect --format 'DIND_DOCKER_RUN_STATE={{{{.State.Status}}}}' "$child_id"
 docker ps --no-trunc --filter "id=$child_id"
 docker rm -f "$child_id" >/dev/null 2>&1 || true
 # Emit REPORT_END before the Maven smoke so the host's `output.stdout`
