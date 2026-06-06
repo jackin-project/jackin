@@ -1,7 +1,7 @@
 //! Tests for `op_cache`.
 use super::*;
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "test DTO mirrors op account payload fields")]
 #[derive(Clone)]
 struct Account {
     id: String,
@@ -9,14 +9,14 @@ struct Account {
     url: String,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "test DTO mirrors op vault payload fields")]
 #[derive(Clone)]
 struct Vault {
     id: String,
     name: String,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "test DTO mirrors op item payload fields")]
 #[derive(Clone)]
 struct Item {
     id: String,
@@ -24,7 +24,7 @@ struct Item {
     subtitle: String,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "test DTO mirrors op field payload fields")]
 #[derive(Clone)]
 struct Field {
     id: String,

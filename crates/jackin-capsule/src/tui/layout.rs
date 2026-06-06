@@ -598,7 +598,6 @@ mod border_at_tests {
 
     // Direction is only referenced via the test alias to keep this
     // module's `use` block tidy; no runtime assertion needs it.
-    #[allow(dead_code)]
     fn _direction_referenced(_: Direction) {}
 }
 

@@ -233,7 +233,10 @@ fn escape_xml(value: &str) -> String {
 
 /// Render a story's buffer to plain text (for debugging / snapshot tests).
 #[must_use]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "debug helper kept for snapshot triage outside normal lookbook flow"
+)]
 pub(crate) fn render_story_to_text(story: Story) -> String {
     let buffer = render_story_to_buffer(story);
     let mut out = String::new();

@@ -86,7 +86,10 @@ impl OpCli {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "test constructor is used by selected op-cli test builds"
+    )]
     pub(super) const fn with_binary_and_timeout(
         binary: String,
         timeout: std::time::Duration,

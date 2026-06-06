@@ -4,7 +4,6 @@
 //! and a human-readable hint for fixing failures. The `preflight` function
 //! runs a slice of check names, fails on any `Fail`, and returns `Ok(())`
 //! when all pass or warn.
-#[allow(unused_imports)]
 use crate::docker_client::DockerApi;
 use owo_colors::OwoColorize;
 use std::path::Path;
@@ -422,7 +421,6 @@ fn check_clock_skew() -> CheckResult {
 }
 
 async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckResult {
-    #[allow(unused_imports)]
     use crate::docker_client::{BollardDockerClient, DockerApi};
 
     // The managed label string; same value as runtime::naming::LABEL_MANAGED.

@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "fixture metadata is validated by deserialization")]
 struct FixtureMeta {
     from_version: String,
     target_version: String,

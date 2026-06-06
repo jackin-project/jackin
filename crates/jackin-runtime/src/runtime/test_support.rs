@@ -43,7 +43,10 @@ pub struct FakeRunner {
     pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
 }
 
-#[allow(dead_code)]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "test helper impl is consumed by test targets")
+)]
 impl FakeRunner {
     pub(super) fn with_capture_queue<const N: usize>(outputs: [String; N]) -> Self {
         Self {

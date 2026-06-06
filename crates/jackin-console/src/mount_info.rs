@@ -30,22 +30,12 @@ pub enum GitOrigin {
     /// `web_url` is the resolved branch/commit page on github.com.
     ///
     /// `remote_url` is preserved here for diagnostic and Debug output
-    /// even though no production reader currently destructures it; the
-    /// `dead_code` allow keeps the value carried in the variant so a
-    /// future caller (e.g. error chains showing the operator-typed URL)
-    /// doesn't have to plumb it back in separately.
-    Github {
-        #[allow(dead_code)]
-        remote_url: String,
-        web_url: String,
-    },
+    /// even when a caller only needs `web_url`.
+    Github { remote_url: String, web_url: String },
     /// Self-hosted gitea/forgejo, GitLab, Bitbucket, Azure DevOps, etc.
     /// We expose the raw remote URL but no web URL — we don't speak the
     /// branch-URL conventions of these hosts.
-    Other {
-        #[allow(dead_code)]
-        remote_url: String,
-    },
+    Other { remote_url: String },
 }
 
 impl GitOrigin {

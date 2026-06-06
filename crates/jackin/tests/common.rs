@@ -16,17 +16,18 @@ use std::path::Path;
 /// `cargo test` of the lib uses `cfg!(test)` for the same purpose;
 /// integration tests need to call this explicitly because `cfg(test)`
 /// only affects the lib when compiled for the lib's own test target.
-#[allow(dead_code)]
 pub fn install_capsule_binary_stub(paths: &JackinPaths) {
     jackin::capsule_binary::install_test_stub(paths).expect("install jackin-capsule test stub");
 }
 
-#[allow(dead_code)]
 pub fn install_agent_binary_stubs(paths: &JackinPaths) {
     for agent in jackin::agent::Agent::ALL {
         jackin::agent_binary::install_test_stub(paths, *agent).expect("install agent binary stub");
     }
 }
+
+const _: fn(&JackinPaths) = install_capsule_binary_stub;
+const _: fn(&JackinPaths) = install_agent_binary_stubs;
 
 /// Minimal no-op `DockerApi` stub. All operations return empty/success so
 /// `load_role` proceeds as if no containers exist.
@@ -94,13 +95,11 @@ impl DockerApi for NoOpDocker {
 /// Pre-fills 4 empty slots for the identity-lookup preamble (git config
 /// user.name/email, id -u/-g); GC calls now go through `DockerApi`, not `CommandRunner`.
 #[derive(Debug, Default)]
-#[allow(dead_code)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub capture_queue: VecDeque<String>,
 }
 
-#[allow(dead_code)]
 impl FakeRunner {
     pub fn for_load_agent(outputs: impl IntoIterator<Item = String>) -> Self {
         let mut capture_queue = VecDeque::new();
@@ -114,6 +113,12 @@ impl FakeRunner {
         }
     }
 }
+
+fn fake_runner_usage_marker() -> FakeRunner {
+    FakeRunner::for_load_agent(Vec::<String>::new())
+}
+
+const _: fn() -> FakeRunner = fake_runner_usage_marker;
 
 impl CommandRunner for FakeRunner {
     async fn run(
