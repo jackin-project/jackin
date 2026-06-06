@@ -77,7 +77,7 @@ Suppression discipline:
 Dead-code scanner layers:
 
 - `cargo shear` is PR-blocking in CI. It detects unused dependencies, misplaced dependencies, and unlinked Rust source files.
-- `cargo udeps` and `cargo workspace-unused-pub` are pinned in `mise.toml` for scheduled/manual hygiene sweeps.
+- `cargo udeps` and `cargo workspace-unused-pub` are pinned in `mise.toml` for scheduled/manual hygiene sweeps. The unused-`pub` scanner is intentionally niche: it covers the workspace-wide public-API dead-code class rustc cannot see. This is valid while jackin' is pre-release and no crate is published; if any crate becomes a public downstream API, unused public items stop being automatically dead and this layer needs a fresh policy decision.
 - Tools are installed through `mise`, not ad-hoc `cargo install` in workflows.
 
 ## Supply-chain and feature-matrix hygiene
