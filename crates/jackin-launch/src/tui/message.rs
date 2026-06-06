@@ -25,6 +25,11 @@ pub enum LaunchMessage {
         filled: usize,
         delta: isize,
     },
+    BuildLogScrollSetFromTop {
+        filled: usize,
+        top_offset: usize,
+    },
+    BuildLogScrollDragChanged(bool),
     RenderTick {
         advance_frame: bool,
         build_log_filled: Option<usize>,

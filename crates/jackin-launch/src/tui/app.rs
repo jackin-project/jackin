@@ -93,6 +93,8 @@ pub struct LaunchView {
     pub build_log_open: bool,
     /// Lines scrolled up from the tail of the build log (0 = follow newest).
     pub build_log_scroll: jackin_tui::scroll::TailScroll,
+    /// Pointer drag is currently bound to the build-log scrollbar track.
+    pub build_log_scroll_dragging: bool,
     /// Render-safe snapshot of retained docker-build output.
     pub build_log_lines: Vec<String>,
     /// Whether docker-build capture is currently active.

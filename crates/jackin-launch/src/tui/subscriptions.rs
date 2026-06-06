@@ -7,7 +7,10 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEve
 use jackin_tui::components::StatusFooterHover;
 use ratatui::layout::Rect;
 
-use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
+use crate::tui::components::build_log_dialog::{
+    build_log_scroll_filled_for_lines, build_log_scrollbar_top_offset_at,
+    build_log_scrollbar_top_offset_for_row,
+};
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
 };
@@ -48,6 +51,16 @@ fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
         LaunchMessage::BuildLogScrolled {
             filled: build_log_scroll_filled_for_lines(area, &view.build_log_lines),
             delta,
+        },
+    );
+}
+
+fn update_build_log_scroll_from_top_offset(view: &mut LaunchView, area: Rect, top_offset: usize) {
+    let _dirty = update_launch_view(
+        view,
+        LaunchMessage::BuildLogScrollSetFromTop {
+            filled: build_log_scroll_filled_for_lines(area, &view.build_log_lines),
+            top_offset,
         },
     );
 }
@@ -154,7 +167,14 @@ fn handle_cockpit_mouse_down(
             }
         }
     } else if v.build_log_open {
-        let _dirty = update_launch_view(v, LaunchMessage::BuildLogClosed);
+        if let Some(top_offset) =
+            build_log_scrollbar_top_offset_at(area, &v.build_log_lines, col, row)
+        {
+            let _dirty = update_launch_view(v, LaunchMessage::BuildLogScrollDragChanged(true));
+            update_build_log_scroll_from_top_offset(v, area, top_offset);
+        } else {
+            let _dirty = update_launch_view(v, LaunchMessage::BuildLogClosed);
+        }
     } else if hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode()) {
         let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoOpened);
         terminal.set_pointer_shape(false);
@@ -275,6 +295,21 @@ pub fn handle_cockpit_input(
                             m.row,
                             terminal,
                             jackin_version,
+                        );
+                    }
+                    MouseEventKind::Drag(MouseButton::Left)
+                        if v.build_log_open && v.build_log_scroll_dragging =>
+                    {
+                        if let Some(top_offset) =
+                            build_log_scrollbar_top_offset_for_row(area, &v.build_log_lines, m.row)
+                        {
+                            update_build_log_scroll_from_top_offset(&mut v, area, top_offset);
+                        }
+                    }
+                    MouseEventKind::Up(MouseButton::Left) if v.build_log_scroll_dragging => {
+                        let _dirty = update_launch_view(
+                            &mut v,
+                            LaunchMessage::BuildLogScrollDragChanged(false),
                         );
                     }
                     MouseEventKind::Moved => {

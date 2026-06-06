@@ -3,7 +3,7 @@
 use jackin_tui::HintSpan;
 use jackin_tui::components::{
     ScrollAxes, is_scrollable, render_hint_bar, render_scrollable_block, scroll_hint_spans,
-    viewport_height, viewport_width,
+    scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
 };
 use jackin_tui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
@@ -14,20 +14,85 @@ use ratatui::text::{Line, Span};
 use crate::LaunchView;
 use crate::tui::components::dialog::dialog_backdrop;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildLogScrollMetrics {
+    pub content_len: usize,
+    pub viewport_h: usize,
+    pub filled: usize,
+}
+
 #[must_use]
-pub fn build_log_scroll_filled_for_lines(area: Rect, raw: &[String]) -> usize {
-    let box_area = Rect {
+pub const fn build_log_box_area(area: Rect) -> Rect {
+    Rect {
         height: area.height.saturating_sub(1),
         ..area
-    };
+    }
+}
+
+#[must_use]
+pub fn build_log_scroll_metrics(area: Rect, raw: &[String]) -> BuildLogScrollMetrics {
+    let box_area = build_log_box_area(area);
     let viewport_w = viewport_width(box_area);
     let viewport_h = viewport_height(box_area);
-    let line_count = if raw.is_empty() {
+    let content_len = if raw.is_empty() {
         1
     } else {
         wrap_build_log_lines(raw.to_vec(), viewport_w).len()
     };
-    jackin_tui::scroll::max_offset(line_count, viewport_h)
+    BuildLogScrollMetrics {
+        content_len,
+        viewport_h,
+        filled: jackin_tui::scroll::max_offset(content_len, viewport_h),
+    }
+}
+
+#[must_use]
+pub fn build_log_scroll_filled_for_lines(area: Rect, raw: &[String]) -> usize {
+    build_log_scroll_metrics(area, raw).filled
+}
+
+#[must_use]
+pub fn build_log_scrollbar_top_offset_at(
+    area: Rect,
+    raw: &[String],
+    col: u16,
+    row: u16,
+) -> Option<usize> {
+    let box_area = build_log_box_area(area);
+    let scrollbar = vertical_scrollbar_area(box_area);
+    if col < scrollbar.x
+        || col >= scrollbar.x.saturating_add(scrollbar.width)
+        || row < scrollbar.y
+        || row >= scrollbar.y.saturating_add(scrollbar.height)
+    {
+        return None;
+    }
+    build_log_scrollbar_top_offset_for_row(area, raw, row)
+}
+
+#[must_use]
+pub fn build_log_scrollbar_top_offset_for_row(
+    area: Rect,
+    raw: &[String],
+    row: u16,
+) -> Option<usize> {
+    let metrics = build_log_scroll_metrics(area, raw);
+    if !is_scrollable(metrics.content_len, metrics.viewport_h) {
+        return None;
+    }
+    let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
+    let track_len = usize::from(scrollbar.height);
+    if track_len == 0 {
+        return None;
+    }
+    let max_position = scrollbar.height.saturating_sub(1);
+    let track_position = row.saturating_sub(scrollbar.y).min(max_position);
+    Some(usize::from(scrollbar_offset_for_track_position(
+        metrics.content_len,
+        metrics.viewport_h,
+        track_len,
+        usize::from(track_position),
+    )))
 }
 
 /// Footer-hint keys for the build-log overlay. The scroll + page keys appear
@@ -206,4 +271,56 @@ where
         spans.push(Span::styled(ch.to_string(), style));
     }
     spans
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scrollbar_hit_maps_track_to_top_offset() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 12,
+        };
+        let raw: Vec<String> = (0..20).map(|idx| format!("line {idx}")).collect();
+        let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
+
+        let top = build_log_scrollbar_top_offset_at(area, &raw, scrollbar.x, scrollbar.y)
+            .expect("top of scrollable track should hit");
+        let bottom = build_log_scrollbar_top_offset_at(
+            area,
+            &raw,
+            scrollbar.x,
+            scrollbar.y + scrollbar.height.saturating_sub(1),
+        )
+        .expect("bottom of scrollable track should hit");
+
+        assert_eq!(top, 0);
+        assert!(bottom > top);
+    }
+
+    #[test]
+    fn scrollbar_hit_ignores_non_track_columns() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 12,
+        };
+        let raw: Vec<String> = (0..20).map(|idx| format!("line {idx}")).collect();
+        let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
+
+        assert_eq!(
+            build_log_scrollbar_top_offset_at(
+                area,
+                &raw,
+                scrollbar.x.saturating_sub(1),
+                scrollbar.y
+            ),
+            None
+        );
+    }
 }

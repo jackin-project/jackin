@@ -120,6 +120,36 @@ fn build_log_scroll_message_updates_tail_offset() {
 }
 
 #[test]
+fn build_log_scroll_set_from_top_converts_to_tail_offset() {
+    let mut view = initial_view();
+
+    let _unused = update_launch_view(
+        &mut view,
+        LaunchMessage::BuildLogScrollSetFromTop {
+            filled: 12,
+            top_offset: 9,
+        },
+    );
+
+    assert_eq!(view.build_log_scroll.offset(), 3);
+}
+
+#[test]
+fn build_log_scroll_drag_state_resets_when_overlay_closes() {
+    let mut view = initial_view();
+
+    drop(update_launch_view(
+        &mut view,
+        LaunchMessage::BuildLogScrollDragChanged(true),
+    ));
+    assert!(view.build_log_scroll_dragging);
+
+    drop(update_launch_view(&mut view, LaunchMessage::BuildLogClosed));
+
+    assert!(!view.build_log_scroll_dragging);
+}
+
+#[test]
 fn render_tick_advances_frame_and_clamps_build_log_scroll() {
     let mut view = initial_view();
     view.build_log_scroll = jackin_tui::scroll::TailScroll::new(8);
