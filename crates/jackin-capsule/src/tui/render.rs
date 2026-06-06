@@ -39,29 +39,6 @@ pub enum PaneBodyDim {
     Inactive,
 }
 
-/// Pane-body validity cache for geometry and dimming state.
-///
-/// Ratatui owns the cell diff. This cache intentionally stores no cell
-/// contents; it only lets layout/resize code invalidate pane-body state until
-/// the remaining callers can render directly from `dirty_spans()`.
-#[derive(Debug, Default)]
-pub struct PaneBodyCache {
-    rows: u16,
-    cols: u16,
-    dim: PaneBodyDim,
-    valid: bool,
-}
-
-impl PaneBodyCache {
-    pub fn invalidate(&mut self) {
-        self.valid = false;
-    }
-
-    pub fn is_valid_for(&self, rect_rows: u16, rect_cols: u16, dim: PaneBodyDim) -> bool {
-        self.valid && self.rows == rect_rows && self.cols == rect_cols && self.dim == dim
-    }
-}
-
 /// Paint the scrollbar thumb onto the pane's right border column
 /// (`outer_col + outer_cols - 1`) on top of the box's `│` characters.
 /// Only thumb rows are emitted: non-thumb rows keep the box border

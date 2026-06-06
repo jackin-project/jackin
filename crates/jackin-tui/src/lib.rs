@@ -270,14 +270,6 @@ pub mod ansi {
         }
     }
 
-    /// Build a reset+background SGR for a shared RGB token.
-    pub const fn reset_rgb_bg(rgb: Rgb) -> &'static str {
-        match (rgb.r, rgb.g, rgb.b) {
-            (0, 0, 0) => "\x1b[0;48;2;0;0;0m",
-            _ => panic!("unsupported reset RGB background token"),
-        }
-    }
-
     /// Truecolor foreground SGR for an arbitrary RGB value.
     ///
     /// The `const` `rgb_fg` above returns a `&'static str` and so must match a

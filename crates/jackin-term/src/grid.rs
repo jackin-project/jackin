@@ -437,12 +437,6 @@ impl DamageGrid {
         self.kitty_kb_stack.last().copied().unwrap_or(0)
     }
 
-    /// Owned copy of the kitty-keyboard stack. The capsule mirrors this
-    /// for cheap focus-swap restore without re-borrowing the grid.
-    pub fn kitty_kb_stack_snapshot(&self) -> Vec<u32> {
-        self.kitty_kb_stack.clone()
-    }
-
     /// Clear the kitty-keyboard stack. Called by the capsule on
     /// alternate-screen exit so a full-screen program that pushed a
     /// kitty level cannot leave the following shell prompt in that mode.

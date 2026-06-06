@@ -732,19 +732,6 @@ impl Session {
         )
     }
 
-    /// Dump the shadow grid's current screen state and drain its dirty spans.
-    ///
-    /// Used by the compositor to emit only what changed since the last
-    /// compositor tick. Returns `(snapshot, dirty_spans)`. Call after
-    /// every PTY read batch.
-    pub fn take_damagegrid_frame(
-        &mut self,
-    ) -> (jackin_term::GridSnapshot, jackin_term::DirtySpans) {
-        let snap = self.shadow_grid.dump();
-        let spans = self.shadow_grid.dirty_spans();
-        (snap, spans)
-    }
-
     pub fn send_input(&self, data: &[u8]) {
         // Debug-only: log every byte chunk forwarded to a PTY. Pairs
         // with the `rx ClientFrame::Input` line on the receive side so

@@ -71,7 +71,6 @@ impl Multiplexer {
             if let Some(session) = self.sessions.remove(&id) {
                 session.terminate();
             }
-            self.pane_body_caches.remove(&id);
         }
         self.tabs.remove(self.active_tab);
         self.retire_codename(&closed_codename);
@@ -99,7 +98,6 @@ impl Multiplexer {
         self.tabs.clear();
         self.active_tab = 0;
         self.zoomed = None;
-        self.pane_body_caches.clear();
         self.dirty_panes.clear();
         self.dialog_copy_feedback_deadline = None;
         self.hover_target = None;
@@ -175,7 +173,6 @@ impl Multiplexer {
             }
         }
         self.sessions.remove(&session_id);
-        self.pane_body_caches.remove(&session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());

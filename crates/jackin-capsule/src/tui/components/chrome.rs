@@ -3,7 +3,7 @@
 //! These widgets replace the raw-ANSI rendering in `compose_full_frame` and
 //! `compose_partial_frame`. Together with `PaneBodyWidget` they make the
 //! capsule's full rendering path go through the Ratatui `Buffer` → `SocketBackend`
-//! pipeline, eliminating the hand-rolled ANSI diff in `PaneBodyCache`.
+//! pipeline, eliminating the old hand-rolled pane-body ANSI diff.
 
 use ratatui::{
     buffer::Buffer,

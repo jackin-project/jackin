@@ -2,9 +2,9 @@
 //!
 //! **Background for ADR-004:** The custom cell widget blits `DamageGrid` cells
 //! directly into the Ratatui `Buffer` with no per-cell allocation beyond what
-//! Ratatui's double-buffer diff already handles. The raw-ANSI baseline (the
-//! hand-rolled `PaneBodyCache` diff path) is benchmarked for comparison. The
-//! ADR records this evidence and chooses the custom widget path.
+//! Ratatui's double-buffer diff already handles. The raw-ANSI baseline is
+//! benchmarked for comparison. The ADR records this evidence and chooses the
+//! custom widget path.
 //!
 //! Run with:
 //! ```sh

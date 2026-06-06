@@ -100,7 +100,6 @@ use crate::tui::message::{
     palette_toggle_route, pane_button_motion_action, prefix_command_action,
     status_bar_click_action,
 };
-use crate::tui::render::PaneBodyCache;
 use crate::tui::selection::{
     SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,
     selection_was_dragged,
@@ -203,7 +202,6 @@ pub struct Multiplexer {
     selection: Option<SelectionState>,
     /// Last visible pane-body snapshot per session. PTY output can
     /// then repaint only rows whose grid cells changed.
-    pane_body_caches: HashMap<u64, PaneBodyCache>,
     /// Pane bodies dirtied by PTY output. The render ticker drains
     /// this at most once per frame, preserving the existing coalescing
     /// behavior while avoiding broad body redraws.
@@ -458,7 +456,6 @@ impl Multiplexer {
             last_tab_click: None,
             drag: None,
             selection: None,
-            pane_body_caches: HashMap::new(),
             dirty_panes: HashSet::new(),
             pending_full_redraw: None,
             pointer_shape: PointerShape::Default,

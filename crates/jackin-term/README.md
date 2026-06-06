@@ -53,10 +53,9 @@ truth is worse:
    when nothing changed. This is `vt100`'s representation choice: cells store graphemes as owned
    `String`s rather than interned or packed.
 
-4. **Two grids that drift.** Our `RowSnapshot`/`PaneBodyCache` is a hand-rolled damage tracker
-   that reconstructs damage from full re-read. It is effectively a second in-memory grid that
-   mirrors `vt100`'s, maintained manually. When they disagree (resize, reflow, filter — Defect 44),
-   stale cells appear on screen as ghost rows.
+4. **Two grids that drift.** The old `vt100` path paired a terminal snapshot with separate
+   render-side pane-body diff state. When they disagreed (resize, reflow, filter — Defect 44),
+   stale cells appeared on screen as ghost rows.
 
 5. **Upstream is effectively abandoned.** Last *substantive* PR merged: April 2023. As of June 2026:
    10 open PRs (oldest from January 2021), 8 of them opened Dec 2025–May 2026 — zero merged.

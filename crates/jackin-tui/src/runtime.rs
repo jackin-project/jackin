@@ -177,11 +177,6 @@ impl<E> UpdateResult<E> {
         &self.effects
     }
 
-    #[must_use]
-    pub fn into_effects(self) -> Vec<E> {
-        self.effects
-    }
-
     pub fn merge(mut self, other: Self) -> Self {
         self.dirty = self.dirty.merge(other.dirty);
         self.effects.extend(other.effects);

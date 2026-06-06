@@ -95,12 +95,6 @@ impl ConfirmState {
         self
     }
 
-    /// Returns true when the Yes button is focused.
-    #[must_use]
-    pub const fn is_focused_yes(&self) -> bool {
-        matches!(self.focus, ConfirmFocus::Yes)
-    }
-
     #[must_use]
     pub fn title(&self) -> &str {
         &self.title

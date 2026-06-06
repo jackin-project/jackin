@@ -141,7 +141,6 @@ impl Multiplexer {
         if let Some(session) = self.sessions.remove(&id) {
             session.terminate();
         }
-        self.pane_body_caches.remove(&id);
         // Drop the zoomed reference when the killed pane was the zoom
         // target so the next `compose_frame` does not paint a stale
         // zoom area until the operator manually unzooms.
@@ -198,8 +197,6 @@ impl Multiplexer {
         self.term_cols = cols;
         self.content_rows = available_content_rows(self.term_rows);
         self.resize_panes();
-        // Invalidate pane body caches — their geometry is now stale.
-        self.pane_body_caches.clear();
         self.dirty_panes.clear(); // pending_full_redraw will repaint everything
         self.ratatui_terminal.backend_mut().resize(cols, rows);
         // A size change invalidates Ratatui's previous-buffer geometry. Clear
@@ -215,7 +212,6 @@ impl Multiplexer {
             return false;
         }
         self.content_rows = next;
-        self.pane_body_caches.clear();
         self.resize_panes();
         true
     }
@@ -457,7 +453,6 @@ impl Multiplexer {
             && let Some(session) = self.sessions.get_mut(&id)
         {
             session.clear_scrollback_and_request_screen_clear();
-            self.pane_body_caches.remove(&id);
             self.dirty_panes.remove(&id);
         }
     }

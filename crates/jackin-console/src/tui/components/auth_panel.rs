@@ -209,10 +209,6 @@ impl<V: AuthCredential> AuthForm<V> {
         self.credential = CredentialInput::OpRef(value);
     }
 
-    pub fn clear_credential(&mut self) {
-        self.credential = CredentialInput::None;
-    }
-
     /// Whether the credential input block should be shown.
     pub const fn shows_credential_block(&self) -> bool {
         matches!(self.mode, Some(mode) if mode_requires_credential(self.kind, mode))

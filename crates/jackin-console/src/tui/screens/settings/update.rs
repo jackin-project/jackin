@@ -152,10 +152,6 @@ pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
     }
 }
 
-pub fn move_trust_selection(state: &mut SettingsTrustState, delta: isize) {
-    state.selected = crate::tui::focus::moved_selection(state.selected, state.pending.len(), delta);
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsSelectionScrollPlan {
     pub selected: usize,

@@ -7,9 +7,7 @@
 //! the attach socket via [`SocketBackend::take_output`].
 //!
 //! Chrome, dialogs, and pane bodies all render through this backend today.
-//! `PaneBodyCache` no longer owns a parallel cell diff; it only tracks
-//! pane-body geometry/dimming validity while the remaining render callers move
-//! toward direct `dirty_spans()` consumption.
+//! Ratatui's previous buffer is the only pane-body diff state.
 
 use std::io;
 
