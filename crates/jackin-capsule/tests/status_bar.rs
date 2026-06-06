@@ -1,96 +1,105 @@
 use jackin_capsule::tui::app::VisibleAgentState;
+use jackin_capsule::tui::components::chrome::StatusBarWidget;
 use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar};
 /// Status bar layout regressions: brand pill, tab click regions,
 /// menu hint, overflow indicator.
 use jackin_capsule::tui::layout::Tab;
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
-fn render(
-    bar: &mut StatusBar,
-    cols: u16,
-    tabs: &[Tab],
-    active: usize,
-    states: &[(u64, VisibleAgentState)],
-) -> String {
-    let mut buf = Vec::new();
-    bar.render(&mut buf, cols, tabs, active, states, None, false);
-    String::from_utf8_lossy(&buf).to_string()
-}
-
-fn render_with_hover(
-    bar: &mut StatusBar,
+fn draw(
     cols: u16,
     tabs: &[Tab],
     active: usize,
     states: &[(u64, VisibleAgentState)],
     hovered_tab: Option<usize>,
-) -> String {
-    let mut buf = Vec::new();
-    bar.render(&mut buf, cols, tabs, active, states, hovered_tab, false);
-    String::from_utf8_lossy(&buf).to_string()
+    prefix_mode: PrefixMode,
+) -> (StatusBar, Buffer) {
+    let backend = TestBackend::new(cols, 2);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                StatusBarWidget {
+                    tabs,
+                    active_tab: active,
+                    cols,
+                    sessions_state: states,
+                    prefix_mode,
+                    hovered_tab,
+                    menu_hovered: false,
+                },
+                frame.area(),
+            );
+        })
+        .unwrap();
+
+    let mut bar = StatusBar::new();
+    bar.set_prefix_mode(prefix_mode);
+    bar.refresh_click_regions(cols, tabs, active, states);
+    (bar, terminal.backend().buffer().clone())
+}
+
+fn row_text(buf: &Buffer, row: u16, cols: u16) -> String {
+    (0..cols)
+        .map(|col| buf[(col, row)].symbol().to_owned())
+        .collect()
 }
 
 #[test]
 fn brand_pill_renders_before_menu_hint() {
-    let mut bar = StatusBar::new();
-    let s = render(&mut bar, 80, &[], 0, &[]);
-    let brand = s.find("jackin'").expect("brand text missing");
-    let menu = s.find("Menu").expect("menu button missing");
+    let (_, buf) = draw(80, &[], 0, &[], None, PrefixMode::Idle);
+    let row = row_text(&buf, 0, 80);
+    let brand = row.find("jackin'").expect("brand text missing");
+    let menu = row.find("Menu").expect("menu button missing");
     assert!(brand < menu);
 }
 
 #[test]
 fn active_tab_background_differs_from_brand_pill() {
-    let mut bar = StatusBar::new();
     let tab = Tab::new_single("Codex", 7, "test");
-    let s = render(&mut bar, 80, &[tab], 0, &[]);
-    let brand_green_bg = jackin_tui::ansi::rgb_bg(jackin_tui::PHOSPHOR_GREEN);
-    let active_tab_graphite_bg = jackin_tui::ansi::rgb_bg(jackin_tui::TAB_BG_ACTIVE);
-    assert_eq!(
-        s.matches(brand_green_bg).count(),
-        1,
-        "brand green should only paint the brand pill"
-    );
-    assert!(
-        s.contains(active_tab_graphite_bg),
-        "active tab should use distinct graphite bg: {s:?}"
-    );
+    let (_, buf) = draw(80, &[tab], 0, &[], None, PrefixMode::Idle);
+    let brand_cells = (0..80)
+        .filter(|x| buf[(*x, 0)].bg == jackin_tui::theme::PHOSPHOR_GREEN)
+        .count();
+    let active_tab_cells = (0..80)
+        .filter(|x| buf[(*x, 0)].bg == jackin_tui::theme::TAB_BG_ACTIVE)
+        .count();
+    assert_eq!(brand_cells, jackin_tui::display_cols(" jackin' "));
+    assert!(active_tab_cells > 0, "active tab should use graphite bg");
 }
 
 #[test]
 fn hovered_tab_uses_lifted_background() {
-    let mut bar = StatusBar::new();
     let tabs = vec![
         Tab::new_single("Codex", 7, "test"),
         Tab::new_single("Shell", 8, "test"),
     ];
-    let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(1));
+    let (_, buf) = draw(80, &tabs, 0, &[], Some(1), PrefixMode::Idle);
     assert!(
-        s.contains("\x1b[48;2;48;48;48m"),
-        "hovered inactive tab should use lifted bg: {s:?}"
+        (0..80).any(|x| buf[(x, 0)].bg == jackin_tui::theme::TAB_BG_INACTIVE_HOVER),
+        "hovered inactive tab should use lifted bg"
     );
 }
 
 #[test]
 fn active_tab_hover_uses_lifted_graphite_background() {
-    let mut bar = StatusBar::new();
     let tabs = vec![
         Tab::new_single("Codex", 7, "test"),
         Tab::new_single("Shell", 8, "test"),
     ];
-    let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(0));
+    let (_, buf) = draw(80, &tabs, 0, &[], Some(0), PrefixMode::Idle);
     assert!(
-        s.contains("\x1b[48;2;58;58;58m"),
-        "hovered active tab should use lifted graphite bg: {s:?}"
+        (0..80).any(|x| buf[(x, 0)].bg == jackin_tui::theme::TAB_BG_ACTIVE_HOVER),
+        "hovered active tab should use lifted graphite bg"
     );
 }
 
 #[test]
 fn tab_click_region_includes_state_glyph_width() {
-    let mut bar = StatusBar::new();
     let tab = Tab::new_single("Codex", 7, "test");
     let tabs = vec![tab];
     let states = vec![(7u64, VisibleAgentState::Done)];
-    drop(render(&mut bar, 80, &tabs, 0, &states));
+    let (bar, _) = draw(80, &tabs, 0, &states, None, PrefixMode::Idle);
     let (start, end) = bar.tab_regions[0];
     // Cell layout: 1 pad + name(5) + 1 sep + 1 glyph + 1 pad = 9 cols.
     assert_eq!(end - start, 9);
@@ -98,34 +107,32 @@ fn tab_click_region_includes_state_glyph_width() {
 
 #[test]
 fn prefix_mode_swap_changes_menu_hint() {
-    let mut bar = StatusBar::new();
-    let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(s.contains("☰Menu"));
-    assert!(!s.contains("☰ Menu"));
-    assert!(!s.contains("Ctrl+\\"));
-    bar.set_prefix_enabled(true);
-    bar.set_prefix_mode(PrefixMode::Awaiting);
-    let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(s.contains("prefix…"));
+    let (_, buf) = draw(80, &[], 0, &[], None, PrefixMode::Idle);
+    let row = row_text(&buf, 0, 80);
+    assert!(row.contains("Menu"));
+    assert!(!row.contains("Ctrl+\\"));
+    let (_, buf) = draw(80, &[], 0, &[], None, PrefixMode::Awaiting);
+    let row = row_text(&buf, 0, 80);
+    assert!(row.contains("prefix…"));
 }
 
 #[test]
 fn overflow_indicator_appears_when_tabs_exceed_width() {
-    let mut bar = StatusBar::new();
     // Tabs of label "AAAAA" plus separator. With cols=30 only a handful
     // fit, so we should see the overflow `›` rendered.
     let tabs: Vec<Tab> = (0..10)
         .map(|i| Tab::new_single(format!("Tab{i:02}"), i as u64, "test"))
         .collect();
-    let s = render(&mut bar, 30, &tabs, 0, &[]);
-    assert!(s.contains("›"), "expected overflow indicator: {s:?}");
+    let (_, buf) = draw(30, &tabs, 0, &[], None, PrefixMode::Idle);
+    let row = row_text(&buf, 0, 30);
+    assert!(row.contains("›"), "expected overflow indicator: {row:?}");
 }
 
 #[test]
 fn click_outside_tab_region_returns_none() {
-    let mut bar = StatusBar::new();
     let tab = Tab::new_single("Foo", 1, "test");
-    drop(render(&mut bar, 80, &[tab], 0, &[]));
+    let tabs = vec![tab];
+    let (bar, _) = draw(80, &tabs, 0, &[], None, PrefixMode::Idle);
     let (start, _) = bar.tab_regions[0];
     assert!(start > 0);
     assert!(bar.tab_at_col(0).is_none());

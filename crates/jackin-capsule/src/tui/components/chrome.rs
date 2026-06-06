@@ -145,7 +145,7 @@ impl Widget for StatusBarWidget<'_> {
         }
 
         // Row 1: underline beneath the active tab cell only (blank elsewhere),
-        // matching the raw StatusBar::render focus signal.
+        // matching the shared capsule/console focus signal.
         if area.height > 1
             && let Some(active) = plan.cells.iter().find(|c| c.active)
         {
@@ -164,7 +164,7 @@ impl Widget for StatusBarWidget<'_> {
 
 // ── Pane border ───────────────────────────────────────────────────────────────
 
-/// Renders the border and title for one pane, consistent with `draw_pane_box`.
+/// Renders the border and title for one pane through the Ratatui buffer.
 #[derive(Debug)]
 pub struct PaneBorderWidget {
     pub title: String,
