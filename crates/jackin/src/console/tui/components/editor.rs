@@ -34,7 +34,7 @@ pub(crate) fn render_editor_tab_strip(
 pub(crate) fn render_general_tab(frame: &mut Frame<'_>, area: Rect, state: &EditorState<'_>) {
     let rows = editor_general_lines_for_state(state);
     let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -54,7 +54,7 @@ pub(crate) fn render_mounts_tab(frame: &mut Frame<'_>, area: Rect, state: &Edito
         lines,
         state.workspace_mounts_scroll_x,
         state.tab_scroll_y,
-        state.workspace_mounts_scroll_focused && state.modal.is_none(),
+        state.workspace_mounts_scroll_focused() && state.modal.is_none(),
         None,
     );
 }
@@ -67,7 +67,7 @@ pub(crate) fn render_roles_tab(
 ) {
     let lines = editor_role_lines_for_state(state, config);
     let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -87,7 +87,7 @@ pub(crate) fn render_secrets_tab(
 ) {
     let lines = editor_secret_lines_for_state(area, state, config);
     let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -110,7 +110,7 @@ pub(crate) fn render_auth_tab(
         .auth_selected_kind
         .map(|k| auth_panel_title(k.label()));
     let focused =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -125,7 +125,7 @@ pub(crate) fn render_auth_tab(
 pub(crate) fn editor_general_lines_for_state(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
 
     let name_value = match &state.mode {
         EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
@@ -145,8 +145,9 @@ pub(crate) fn editor_general_lines_for_state(state: &EditorState<'_>) -> Vec<Lin
 
 pub(crate) fn editor_mount_lines_for_state(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor =
-        !state.tab_bar_focused && state.workspace_mounts_scroll_focused && state.modal.is_none();
+    let show_cursor = !state.tab_bar_focused()
+        && state.workspace_mounts_scroll_focused()
+        && state.modal.is_none();
     let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
     editor_mount_lines(&rows, cursor, state.hovered_mount_row, show_cursor)
 }
@@ -157,7 +158,7 @@ pub(crate) fn editor_role_lines_for_state(
 ) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
 
     let is_all = jackin_console::workspace::allows_all_agents(&state.pending);
     let allowed_count = state.pending.allowed_roles.len();
@@ -184,7 +185,7 @@ pub(crate) fn editor_secret_lines_for_state(
 ) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
 
     let rows = secrets_flat_rows(state);
     editor_secret_lines(

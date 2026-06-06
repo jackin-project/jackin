@@ -94,7 +94,7 @@ fn editor_on_agents_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a>
     let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Roles;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(row);
     state.stage = ManagerStage::Editor(editor);
     state
@@ -104,7 +104,7 @@ fn editor_on_mounts_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a>
     let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Mounts;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(row);
     state.stage = ManagerStage::Editor(editor);
     state
@@ -148,7 +148,7 @@ fn pending_allowed(state: &ManagerState<'_>) -> Vec<String> {
 fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.active_tab = EditorTab::Mounts;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
     apply_file_browser_to_editor(
         FileBrowserTarget::EditAddMountSrc,
@@ -161,7 +161,7 @@ fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
 fn editor_with_file_browser_parent_committed(src: &str) -> EditorState<'static> {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.active_tab = EditorTab::Mounts;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
     editor.modal = Some(Modal::FileBrowser {
         target: FileBrowserTarget::EditAddMountSrc,
@@ -190,7 +190,7 @@ fn editor_state_on_tab(
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.active_tab = start_tab;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     state.stage = ManagerStage::Editor(editor);
     (state, config, paths, tmp)
 }
@@ -217,7 +217,7 @@ fn create_mode_enter_on_name_row_opens_rename_modal() {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut editor = EditorState::new_create();
     editor.pending_name = Some("typo-name".into());
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -273,7 +273,7 @@ fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
     let cwd = tmp.path();
     let mut state = ManagerState::from_config(&config, cwd);
     let mut editor = EditorState::new_edit("keep-me".into(), ws);
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -1459,30 +1459,30 @@ fn editor_tab_bar_follows_aria_key_pattern() {
 
     press(&mut state, &mut config, KeyCode::Right).unwrap();
     assert!(
-        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused && editor.active_tab == EditorTab::Mounts)
+        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused() && editor.active_tab == EditorTab::Mounts)
     );
 
     press(&mut state, &mut config, KeyCode::Left).unwrap();
     assert!(
-        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused && editor.active_tab == EditorTab::General)
+        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused() && editor.active_tab == EditorTab::General)
     );
 
     press(&mut state, &mut config, KeyCode::Down).unwrap();
     assert!(
-        matches!(&state.stage, ManagerStage::Editor(editor) if !editor.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Editor(editor) if !editor.tab_bar_focused()),
         "Down from focused tab bar must enter content",
     );
 
     press(&mut state, &mut config, KeyCode::BackTab).unwrap();
     assert!(
-        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused()),
         "ShiftTab from content must return to tab bar",
     );
 
     press(&mut state, &mut config, KeyCode::Down).unwrap();
     press(&mut state, &mut config, KeyCode::Esc).unwrap();
     assert!(
-        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused()),
         "Esc from content must return to tab bar",
     );
 }
@@ -1503,16 +1503,16 @@ fn tab_switch_via_tab_clears_content_scroll_focus() {
 
     // Enter content from tab bar.
     press(&mut state, &mut config, KeyCode::Down).unwrap();
-    let tab_bar_cleared = matches!(&state.stage, ManagerStage::Editor(e) if !e.tab_bar_focused);
+    let tab_bar_cleared = matches!(&state.stage, ManagerStage::Editor(e) if !e.tab_bar_focused());
     assert!(tab_bar_cleared, "Down must enter content");
 
     // Tab while content is focused cycles to the next tab AND returns focus to tab bar.
     press(&mut state, &mut config, KeyCode::Tab).unwrap();
     assert!(
         matches!(&state.stage, ManagerStage::Editor(e)
-            if e.tab_bar_focused
-                && !e.tab_content_scroll_focused
-                && !e.workspace_mounts_scroll_focused),
+            if e.tab_bar_focused()
+                && !e.tab_content_scroll_focused()
+                && !e.workspace_mounts_scroll_focused()),
         "Tab from content must return focus to tab bar and clear content scroll focus"
     );
 }
@@ -1824,7 +1824,7 @@ fn enter_on_op_workspace_key_row_is_noop() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0); // the only key row
     state.stage = ManagerStage::Editor(editor);
 
@@ -1881,7 +1881,7 @@ fn enter_on_op_agent_key_row_is_noop() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.secrets_expanded.insert("smith".into());
     // Rows: WorkspaceAddSentinel(0), SectionSpacer(1), AgentHeader(2),
     //       AgentKeyRow(3), AgentAddSentinel(4). Focus the key row.
@@ -1924,7 +1924,7 @@ fn secrets_tab_m_accepts_shift_modifier_for_caps_lock_parity() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0); // the only key row
     state.stage = ManagerStage::Editor(editor);
 
@@ -1963,7 +1963,7 @@ fn m_on_focused_workspace_key_unmasks_only_that_row() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     // Rows are alphabetically ordered: ALPHA(0), BETA(1), Sentinel(2).
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
@@ -2005,7 +2005,7 @@ fn m_on_already_unmasked_row_re_masks_it() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -2057,7 +2057,7 @@ fn m_on_op_reference_row_is_noop() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -2093,7 +2093,7 @@ fn tab_leave_resets_unmasked_rows() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -2167,7 +2167,7 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.secrets_expanded.insert("smith".into());
     let role_key_row = secrets_flat_rows(&editor)
         .iter()
@@ -2235,7 +2235,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     // Rows with no workspace env keys + one collapsed role section:
     //   0 WorkspaceAddSentinel
     //   1 SectionSpacer

@@ -157,7 +157,7 @@ readonly = false
         let mut state = ManagerState::from_config(config, cwd);
         let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
-        settings.tab_bar_focused = false;
+        settings.set_tab_bar_focused(false);
         settings.mounts.scroll_focused = true;
         settings.mounts.modal = Some(modal);
         state.stage = ManagerStage::Settings(settings);
@@ -172,7 +172,7 @@ readonly = false
         let mut state = ManagerState::from_config(config, cwd);
         let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
-        settings.tab_bar_focused = false;
+        settings.set_tab_bar_focused(false);
         settings.env.scroll_focused = true;
         settings.env.modal = Some(modal);
         state.stage = ManagerStage::Settings(settings);
@@ -187,7 +187,7 @@ readonly = false
         let mut state = ManagerState::from_config(config, cwd);
         let mut settings = settings_state_from_config(config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
-        settings.tab_bar_focused = false;
+        settings.set_tab_bar_focused(false);
         settings.auth.scroll_focused = true;
         settings.auth.modal = Some(modal);
         state.stage = ManagerStage::Settings(settings);
@@ -264,8 +264,8 @@ readonly = false
         let cwd = test_cwd();
         let mut state = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("my-workspace".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
-        editor.tab_content_scroll_focused = true;
+        editor.set_tab_bar_focused(false);
+        editor.set_tab_content_scroll_focused(true);
         state.stage = ManagerStage::Editor(editor);
 
         let rendered = render_manager_state(&mut state, &config, &cwd, 90, 20);
@@ -308,9 +308,9 @@ readonly = false
             let mut state = ManagerState::from_config(&config, &cwd);
             let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
             editor.active_tab = tab;
-            editor.tab_bar_focused = false;
-            editor.tab_content_scroll_focused = true;
-            editor.workspace_mounts_scroll_focused = tab == EditorTab::Mounts;
+            editor.set_tab_bar_focused(false);
+            editor.set_tab_content_scroll_focused(true);
+            editor.set_workspace_mounts_scroll_focused(tab == EditorTab::Mounts);
             state.stage = ManagerStage::Editor(editor);
             cases.push((name, state));
         }
@@ -319,7 +319,7 @@ readonly = false
             let mut state = ManagerState::from_config(&config, &cwd);
             let mut settings = settings_state_from_config(&config);
             settings.active_tab = tab;
-            settings.tab_bar_focused = false;
+            settings.set_tab_bar_focused(false);
             settings.mounts.scroll_focused = tab == crate::console::tui::state::SettingsTab::Mounts;
             settings.env.scroll_focused =
                 tab == crate::console::tui::state::SettingsTab::Environments;
@@ -570,8 +570,8 @@ readonly = false
 
         let mut editor_text = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
-        editor.tab_content_scroll_focused = true;
+        editor.set_tab_bar_focused(false);
+        editor.set_tab_content_scroll_focused(true);
         editor.modal = Some(Modal::TextInput {
             target: crate::console::tui::state::TextInputTarget::Name,
             state: jackin_tui::components::TextInputState::new("Name", "ws"),
@@ -581,7 +581,7 @@ readonly = false
 
         let mut editor_state = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
+        editor.set_tab_bar_focused(false);
         editor.modal = Some(Modal::ContainerInfo {
             state: jackin_tui::components::ContainerInfoState::new(
                 "Container",
@@ -595,7 +595,7 @@ readonly = false
 
         let mut editor_op_picker = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
+        editor.set_tab_bar_focused(false);
         editor.modal = Some(Modal::OpPicker {
             state: Box::new(crate::console::tui::op_picker::OpPickerState::new()),
         });
@@ -604,7 +604,7 @@ readonly = false
 
         let mut editor_role_override = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
+        editor.set_tab_bar_focused(false);
         editor.modal = Some(Modal::RoleOverridePicker {
             state: crate::selector::RolePickerState::new(vec![
                 crate::selector::RoleSelector::parse("chainargos/agent-smith")
@@ -616,7 +616,7 @@ readonly = false
 
         let mut editor_auth_role = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
+        editor.set_tab_bar_focused(false);
         editor.modal = Some(Modal::AuthRolePicker {
             state: crate::selector::RolePickerState::new(vec![
                 crate::selector::RoleSelector::parse("chainargos/agent-smith")
@@ -628,7 +628,7 @@ readonly = false
 
         let mut editor_auth_source = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
+        editor.set_tab_bar_focused(false);
         editor.modal = Some(Modal::AuthSourcePicker {
             state: jackin_console::tui::components::source_picker::SourcePickerState::new(
                 "CLAUDE_CODE_OAUTH_TOKEN".into(),
@@ -640,7 +640,7 @@ readonly = false
 
         let mut editor_auth_form = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.tab_bar_focused = false;
+        editor.set_tab_bar_focused(false);
         editor.modal = Some(auth_form_modal());
         editor_auth_form.stage = ManagerStage::Editor(editor);
         cases.push(("editor auth form", editor_auth_form));
@@ -648,7 +648,7 @@ readonly = false
         let mut settings_mounts_confirm = ManagerState::from_config(&config, &cwd);
         let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
-        settings.tab_bar_focused = false;
+        settings.set_tab_bar_focused(false);
         settings.mounts.scroll_focused = true;
         settings.mounts.modal = Some(GlobalMountModal::Confirm {
             action: GlobalMountConfirm::Remove,
@@ -742,7 +742,7 @@ readonly = false
         let mut settings_env_text = ManagerState::from_config(&config, &cwd);
         let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
-        settings.tab_bar_focused = false;
+        settings.set_tab_bar_focused(false);
         settings.env.scroll_focused = true;
         settings.env.modal = Some(SettingsEnvModal::Text {
             target: SettingsEnvTextTarget::EnvKey {
@@ -821,7 +821,7 @@ readonly = false
         let mut settings_auth_text = ManagerState::from_config(&config, &cwd);
         let mut settings = settings_state_from_config(&config);
         settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
-        settings.tab_bar_focused = false;
+        settings.set_tab_bar_focused(false);
         settings.auth.scroll_focused = true;
         settings.auth.modal = Some(crate::console::tui::state::SettingsAuthModal::TextInput {
             state: Box::new(jackin_tui::components::TextInputState::new(
@@ -903,8 +903,8 @@ readonly = false
         let mut state = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = EditorTab::Auth;
-        editor.tab_bar_focused = false;
-        editor.tab_content_scroll_focused = true;
+        editor.set_tab_bar_focused(false);
+        editor.set_tab_content_scroll_focused(true);
         state.stage = ManagerStage::Editor(editor);
         let rendered = render_manager_state(&mut state, &config, &cwd, 90, 20);
         insta::assert_snapshot!("editor_auth_tab_90x20", rendered);

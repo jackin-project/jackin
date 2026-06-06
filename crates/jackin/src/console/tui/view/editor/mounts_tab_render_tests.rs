@@ -19,7 +19,7 @@ fn readonly_mount_renders_ro_mode() {
     };
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Mounts;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(0);
 
     let config = AppConfig::default();

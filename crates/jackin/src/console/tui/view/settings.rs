@@ -31,7 +31,7 @@ pub(super) fn render_settings(
         frame,
         areas.tabs,
         state.active_tab,
-        state.tab_bar_focused,
+        state.tab_bar_focused(),
         state.hovered_tab,
     );
 

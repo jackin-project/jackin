@@ -4,6 +4,8 @@
 //! Not responsible for: event handling (see `update`) or rendering (see
 //! `view`).
 
+use jackin_tui::components::FocusOwner;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorTab {
     General,
@@ -34,6 +36,12 @@ impl EditorTab {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorFocusTarget {
+    WorkspaceMounts,
+    TabContent,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -56,9 +64,8 @@ pub struct EditorState<
 > {
     pub mode: EditorMode,
     pub active_tab: EditorTab,
-    /// W3C ARIA Tabs: when true, focus is on the tab list; when false, focus
-    /// is in the tab panel.
-    pub tab_bar_focused: bool,
+    /// W3C ARIA Tabs: focus is either on the tab list or exactly one content block.
+    pub focus_owner: FocusOwner<EditorFocusTarget>,
     /// Index of the tab cell under the pointer.
     pub hovered_tab: Option<usize>,
     pub active_field: FieldFocus,
@@ -80,11 +87,9 @@ pub struct EditorState<
     pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
     pub pending_picker_value: Option<EnvValue>,
     pub workspace_mounts_scroll_x: u16,
-    pub workspace_mounts_scroll_focused: bool,
     pub hovered_mount_row: Option<usize>,
     pub tab_scroll_x: u16,
     pub tab_scroll_y: u16,
-    pub tab_content_scroll_focused: bool,
     pub tab_content_width: usize,
     pub tab_content_height: usize,
     pub generating_token_target: Option<AuthFormTarget>,
@@ -132,7 +137,7 @@ impl<
         Self {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
-            tab_bar_focused: true,
+            focus_owner: FocusOwner::TabBar,
             hovered_tab: None,
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
@@ -150,11 +155,9 @@ impl<
             pending_picker_target: None,
             pending_picker_value: None,
             workspace_mounts_scroll_x: 0,
-            workspace_mounts_scroll_focused: false,
             hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
-            tab_content_scroll_focused: false,
             tab_content_width: 0,
             tab_content_height: 0,
             generating_token_target: None,
@@ -164,6 +167,60 @@ impl<
             pending_isolation_cleanup: None,
             pending_op_commit: None,
             cached_footer_h: 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn focus_owner(&self) -> FocusOwner<EditorFocusTarget> {
+        self.focus_owner
+    }
+
+    pub fn set_focus_owner(&mut self, owner: FocusOwner<EditorFocusTarget>) {
+        self.focus_owner = owner;
+    }
+
+    #[must_use]
+    pub const fn tab_bar_focused(&self) -> bool {
+        self.focus_owner.is_tab_bar()
+    }
+
+    pub fn set_tab_bar_focused(&mut self, focused: bool) {
+        self.focus_owner = if focused {
+            FocusOwner::TabBar
+        } else {
+            FocusOwner::Content(EditorFocusTarget::TabContent)
+        };
+    }
+
+    #[must_use]
+    pub const fn workspace_mounts_scroll_focused(&self) -> bool {
+        matches!(
+            self.focus_owner,
+            FocusOwner::Content(EditorFocusTarget::WorkspaceMounts)
+        )
+    }
+
+    pub fn set_workspace_mounts_scroll_focused(&mut self, focused: bool) {
+        if focused {
+            self.focus_owner = FocusOwner::Content(EditorFocusTarget::WorkspaceMounts);
+        } else if self.workspace_mounts_scroll_focused() {
+            self.focus_owner = FocusOwner::TabBar;
+        }
+    }
+
+    #[must_use]
+    pub const fn tab_content_scroll_focused(&self) -> bool {
+        matches!(
+            self.focus_owner,
+            FocusOwner::Content(EditorFocusTarget::TabContent)
+        )
+    }
+
+    pub fn set_tab_content_scroll_focused(&mut self, focused: bool) {
+        if focused {
+            self.focus_owner = FocusOwner::Content(EditorFocusTarget::TabContent);
+        } else if self.tab_content_scroll_focused() {
+            self.focus_owner = FocusOwner::TabBar;
         }
     }
 

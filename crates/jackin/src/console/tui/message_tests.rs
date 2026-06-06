@@ -75,13 +75,13 @@ fn tab_bar_focus_messages_update_editor_and_settings_focus() {
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("expected editor");
     };
-    assert!(editor.tab_bar_focused);
+    assert!(editor.tab_bar_focused());
 
     assert!(update_manager(&mut state, ManagerMessage::FocusEditorContent).is_dirty());
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("expected editor");
     };
-    assert!(!editor.tab_bar_focused);
+    assert!(!editor.tab_bar_focused());
 
     state.stage = ManagerStage::Settings(settings_state_from_config(
         &crate::config::AppConfig::default(),
@@ -90,13 +90,13 @@ fn tab_bar_focus_messages_update_editor_and_settings_focus() {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings");
     };
-    assert!(settings.tab_bar_focused);
+    assert!(settings.tab_bar_focused());
 
     assert!(update_manager(&mut state, ManagerMessage::FocusSettingsContent).is_dirty());
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings");
     };
-    assert!(!settings.tab_bar_focused);
+    assert!(!settings.tab_bar_focused());
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn mouse_selection_messages_update_tabs_and_rows() {
     };
     assert_eq!(editor.active_tab, EditorTab::Mounts);
     assert_eq!(editor.active_field, FieldFocus::Row(2));
-    assert!(editor.workspace_mounts_scroll_focused);
+    assert!(editor.workspace_mounts_scroll_focused());
     assert!(editor.secrets_expanded.is_empty());
     assert!(editor.unmasked_rows.is_empty());
 
@@ -187,7 +187,7 @@ fn move_editor_tab_resets_tab_local_view_state() {
         crate::workspace::WorkspaceConfig::default(),
     );
     editor.active_tab = EditorTab::Secrets;
-    editor.tab_bar_focused = false;
+    editor.set_tab_bar_focused(false);
     editor.active_field = FieldFocus::Row(7);
     editor.tab_scroll_x = 4;
     editor.tab_scroll_y = 5;
@@ -209,7 +209,7 @@ fn move_editor_tab_resets_tab_local_view_state() {
         panic!("expected editor stage");
     };
     assert_eq!(editor.active_tab, EditorTab::Auth);
-    assert!(editor.tab_bar_focused);
+    assert!(editor.tab_bar_focused());
     assert_eq!(editor.active_field, FieldFocus::Row(0));
     assert_eq!(editor.tab_scroll_x, 0);
     assert_eq!(editor.tab_scroll_y, 0);
@@ -379,7 +379,7 @@ fn move_settings_tab_cycles_and_sets_focus() {
     let mut state = state_with_saved_count(0);
     let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
     settings.active_tab = SettingsTab::Trust;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     assert!(
@@ -397,7 +397,7 @@ fn move_settings_tab_cycles_and_sets_focus() {
         panic!("expected settings stage");
     };
     assert_eq!(settings.active_tab, SettingsTab::General);
-    assert!(settings.tab_bar_focused);
+    assert!(settings.tab_bar_focused());
 }
 
 #[test]
@@ -649,7 +649,7 @@ fn scroll_editor_tab_marks_panel_focus_and_updates_offset() {
     let ManagerStage::Editor(editor) = state.stage else {
         panic!("expected editor stage");
     };
-    assert!(editor.tab_content_scroll_focused);
+    assert!(editor.tab_content_scroll_focused());
     assert_eq!(editor.tab_scroll_x, 8);
 }
 
@@ -676,7 +676,7 @@ fn scroll_editor_workspace_mounts_marks_mounts_focus_and_updates_offset() {
     let ManagerStage::Editor(editor) = state.stage else {
         panic!("expected editor stage");
     };
-    assert!(editor.workspace_mounts_scroll_focused);
+    assert!(editor.workspace_mounts_scroll_focused());
     assert_eq!(editor.workspace_mounts_scroll_x, 8);
 }
 

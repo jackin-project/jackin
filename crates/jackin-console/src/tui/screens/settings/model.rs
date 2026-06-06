@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use crate::tui::auth::{AuthKind, AuthMode};
+use jackin_tui::components::FocusOwner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -53,9 +54,8 @@ impl SettingsTab {
 #[derive(Debug)]
 pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
     pub active_tab: SettingsTab,
-    /// W3C ARIA Tabs: when true, focus is on the tab list; when false, focus
-    /// is in the tab panel.
-    pub tab_bar_focused: bool,
+    /// W3C ARIA Tabs: focus is either on the tab list or the active tab panel.
+    pub focus_owner: FocusOwner<SettingsTab>,
     /// Index of the tab cell under the pointer.
     pub hovered_tab: Option<usize>,
     pub general: SettingsGeneralState,
@@ -69,6 +69,32 @@ pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
     pub pending_token_generate: Option<PendingToken>,
     /// Cached footer height for mouse hit-testing.
     pub cached_footer_h: u16,
+}
+
+impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+    SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+{
+    #[must_use]
+    pub const fn focus_owner(&self) -> FocusOwner<SettingsTab> {
+        self.focus_owner
+    }
+
+    pub fn set_focus_owner(&mut self, owner: FocusOwner<SettingsTab>) {
+        self.focus_owner = owner;
+    }
+
+    #[must_use]
+    pub const fn tab_bar_focused(&self) -> bool {
+        self.focus_owner.is_tab_bar()
+    }
+
+    pub fn set_tab_bar_focused(&mut self, focused: bool) {
+        self.focus_owner = if focused {
+            FocusOwner::TabBar
+        } else {
+            FocusOwner::Content(self.active_tab)
+        };
+    }
 }
 
 /// Cursor position inside the auth-edit form modal.

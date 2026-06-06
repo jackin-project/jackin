@@ -584,7 +584,7 @@ fn settings_global_mounts_from_config(config: &AppConfig) -> GlobalMountsState<'
 pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'static> {
     SettingsState {
         active_tab: SettingsTab::General,
-        tab_bar_focused: true,
+        focus_owner: jackin_tui::components::FocusOwner::TabBar,
         hovered_tab: None,
         general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
         mounts: settings_global_mounts_from_config(config),

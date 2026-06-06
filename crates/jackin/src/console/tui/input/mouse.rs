@@ -708,8 +708,8 @@ fn try_drag_horizontal_scrollbar(
                     editor.active_tab == EditorTab::Mounts,
                     editor.active_tab != EditorTab::Mounts,
                 );
-                editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
-                editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+                editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+                editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
             }
             dragged
         }
@@ -819,14 +819,14 @@ fn update_scroll_focus(
                     in_tab_content,
                 )
             };
-            editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
-            editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+            editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+            editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
             // Clicking the content block transfers interaction focus into it —
             // same as Tab/↓ — so the green border and ▸ appear in the same frame.
             let clicked_content =
                 plan.workspace_mounts_scroll_focused || plan.tab_content_scroll_focused;
-            if clicked_content && editor.tab_bar_focused {
-                editor.tab_bar_focused = false;
+            if clicked_content && editor.tab_bar_focused() {
+                editor.set_tab_bar_focused(false);
             }
         }
         ManagerStage::Settings(settings) => {
@@ -843,8 +843,8 @@ fn update_scroll_focus(
             settings.trust.scroll_focused = plan.trust;
             // Clicking the content block transfers interaction focus into it —
             // same as Tab/↓ — so the green border and ▸ appear in the same frame.
-            if in_content && settings.tab_bar_focused {
-                settings.tab_bar_focused = false;
+            if in_content && settings.tab_bar_focused() {
+                settings.set_tab_bar_focused(false);
             }
         }
         ManagerStage::CreatePrelude(_)
@@ -1077,8 +1077,8 @@ fn scroll_active_panel(
                     false,
                     in_scrollable_content,
                 );
-                editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
-                editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+                editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+                editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
                 if plan.tab_content_scroll_focused {
                     apply_horizontal_scroll(
                         &mut editor.tab_scroll_x,
@@ -1094,8 +1094,8 @@ fn scroll_active_panel(
                 && is_horizontally_scrollable(area.area, area.content_width);
             let plan =
                 editor_scroll_focus_plan(editor.active_tab, false, in_scrollable_workspace, false);
-            editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
-            editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+            editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+            editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
             if plan.workspace_mounts_scroll_focused {
                 apply_horizontal_scroll(
                     &mut editor.workspace_mounts_scroll_x,

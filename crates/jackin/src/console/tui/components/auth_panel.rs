@@ -85,7 +85,7 @@ pub(crate) fn editor_auth_lines_for_state(
     let max_idx = rows.len().saturating_sub(1);
     let cursor_clamped = cursor.min(max_idx);
     let show_cursor =
-        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+        !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
 
     let display_rows: Vec<EditorAuthLineRow> = rows
         .iter()
@@ -98,7 +98,7 @@ pub(crate) fn settings_auth_lines_for_state(
     state: &SettingsState<'_>,
 ) -> Vec<ratatui::text::Line<'static>> {
     let show_cursor =
-        !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
+        !state.tab_bar_focused() && state.auth.scroll_focused && state.auth.modal.is_none();
     let Some(kind) = state.auth.selected_kind else {
         let rows: Vec<SettingsAuthLineRow> = state
             .auth

@@ -266,7 +266,7 @@ fn settings_tab_navigation_reaches_all_config_tabs() {
     state.stage = ManagerStage::Settings(settings_state_from_config(&config));
     // Settings opens with tab_bar_focused = true; Right cycles forward.
     assert!(
-        matches!(&state.stage, ManagerStage::Settings(s) if s.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Settings(s) if s.tab_bar_focused()),
         "must start on tab bar"
     );
 
@@ -302,25 +302,25 @@ fn settings_tab_bar_follows_aria_focus_pattern() {
 
     handle_settings_key(&mut state, key(KeyCode::Down));
     assert!(
-        matches!(&state.stage, ManagerStage::Settings(settings) if !settings.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Settings(settings) if !settings.tab_bar_focused()),
         "Down from focused tab bar must enter content",
     );
 
     handle_settings_key(&mut state, key(KeyCode::BackTab));
     assert!(
-        matches!(&state.stage, ManagerStage::Settings(settings) if settings.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Settings(settings) if settings.tab_bar_focused()),
         "ShiftTab from content must return to tab bar",
     );
 
     handle_settings_key(&mut state, key(KeyCode::Tab));
     assert!(
-        matches!(&state.stage, ManagerStage::Settings(settings) if !settings.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Settings(settings) if !settings.tab_bar_focused()),
         "Tab from focused tab bar must enter content",
     );
 
     handle_settings_key(&mut state, key(KeyCode::Esc));
     assert!(
-        matches!(&state.stage, ManagerStage::Settings(settings) if settings.tab_bar_focused),
+        matches!(&state.stage, ManagerStage::Settings(settings) if settings.tab_bar_focused()),
         "Esc from content must return to tab bar",
     );
 }
@@ -342,7 +342,7 @@ fn settings_focus_owner_exclusivity() {
             panic!("settings stage expected");
         };
         assert!(
-            !settings.tab_bar_focused,
+            !settings.tab_bar_focused(),
             "tab_bar must yield focus when content gains it"
         );
     }
@@ -355,7 +355,7 @@ fn settings_focus_owner_exclusivity() {
             panic!("settings stage expected");
         };
         assert!(
-            !settings.tab_bar_focused,
+            !settings.tab_bar_focused(),
             "tab bar must not be green while content is focused"
         );
         assert!(
@@ -368,7 +368,7 @@ fn settings_focus_owner_exclusivity() {
         let ManagerStage::Settings(settings) = &state.stage else {
             panic!("settings stage expected");
         };
-        assert!(settings.tab_bar_focused, "tab bar regains focus on Esc");
+        assert!(settings.tab_bar_focused(), "tab bar regains focus on Esc");
         // mounts.scroll_focused may stay true — rendering correctly handles
         // !tab_bar_focused && scroll_focused = false AND true = false.
     }
@@ -389,7 +389,7 @@ fn trust_tab_space_toggles_trusted_state() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Trust;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     let ManagerStage::Settings(settings) = &state.stage else {
@@ -417,7 +417,7 @@ fn general_tab_space_toggles_both_rows() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::General;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     // row 0 (coauthor_trailer) — default is false
@@ -475,7 +475,7 @@ fn general_tab_enter_does_not_toggle_rows() {
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut settings = settings_state_from_config(&config);
         settings.active_tab = SettingsTab::General;
-        settings.tab_bar_focused = false;
+        settings.set_tab_bar_focused(false);
         settings.general.selected = selected;
         state.stage = ManagerStage::Settings(settings);
 
@@ -510,7 +510,7 @@ fn trust_tab_enter_does_not_toggle_trusted_state() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Trust;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     handle_settings_key(&mut state, key(KeyCode::Enter));
@@ -531,7 +531,7 @@ fn auth_tab_mode_row_ignores_space_and_enter_opens_form() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Auth;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     handle_settings_key(&mut state, key(KeyCode::Enter));
@@ -569,7 +569,7 @@ fn settings_auth_generate_opens_source_picker_and_arms_flag() {
     let config = AppConfig::default();
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Auth;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Claude);
     open_settings_auth_form(&mut settings.auth, &settings.env);
     // Drive the mode to OAuthToken so the generate gate holds.
@@ -635,7 +635,7 @@ fn settings_auth_generate_op_mint_remounts_form_focus_save() {
     let config = AppConfig::default();
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Auth;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Claude);
     open_settings_auth_form(&mut settings.auth, &settings.env);
     let Some(SettingsAuthModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
@@ -699,7 +699,7 @@ fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
     let config = AppConfig::default();
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Auth;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Claude);
     open_settings_auth_form(&mut settings.auth, &settings.env);
     let Some(SettingsAuthModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
@@ -736,7 +736,7 @@ fn env_tab_add_flow_asks_scope_before_key() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Environments;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     handle_settings_key(&mut state, key(KeyCode::Enter));
@@ -771,7 +771,7 @@ fn env_tab_key_input_esc_closes_chain() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Environments;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     handle_settings_key(&mut state, key(KeyCode::Enter));
@@ -814,7 +814,7 @@ fn env_tab_source_picker_esc_returns_key_input() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Environments;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     handle_settings_key(&mut state, key(KeyCode::Enter));
@@ -869,7 +869,7 @@ fn env_tab_specific_scope_uses_workspace_role_picker() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut settings = settings_state_from_config(&config);
     settings.active_tab = SettingsTab::Environments;
-    settings.tab_bar_focused = false;
+    settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
     handle_settings_key(&mut state, key(KeyCode::Enter));

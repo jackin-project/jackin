@@ -28,7 +28,7 @@ pub(crate) fn editor_footer_items(
                 && crate::console::tui::input::auth::auth_form_can_generate_token(state),
         );
     }
-    if state.tab_bar_focused {
+    if state.tab_bar_focused() {
         return tab_bar_footer_items(
             editor_save_footer_label(),
             state.active_tab != EditorTab::General,

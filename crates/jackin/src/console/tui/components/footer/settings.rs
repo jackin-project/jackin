@@ -32,7 +32,7 @@ pub(crate) fn settings_footer_items(
 }
 
 fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
-    if state.tab_bar_focused {
+    if state.tab_bar_focused() {
         return tab_bar_footer_items(
             settings_save_footer_label(),
             true,

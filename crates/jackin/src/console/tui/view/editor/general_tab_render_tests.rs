@@ -17,7 +17,7 @@ fn general_tab_clamps_horizontal_scroll_with_shared_scrollable_block() {
     };
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_field = FieldFocus::Row(1);
-    editor.tab_content_scroll_focused = true;
+    editor.set_tab_content_scroll_focused(true);
     editor.tab_scroll_x = u16::MAX;
     let area = Rect::new(0, 0, 42, 8);
     prepare_editor_tab_for_area(area, &mut editor, &AppConfig::default());

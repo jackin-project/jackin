@@ -34,7 +34,7 @@ pub(crate) fn render_settings_tab_strip(
 }
 
 pub(crate) fn render_general_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
-    let focused = !state.tab_bar_focused && state.error_popup.is_none();
+    let focused = !state.tab_bar_focused() && state.error_popup.is_none();
     let lines = settings_general_lines(
         state.general.selected,
         state.general.pending_coauthor_trailer,
@@ -48,7 +48,7 @@ pub(crate) fn render_general_tab(frame: &mut Frame<'_>, state: &SettingsState<'_
 
 pub(crate) fn render_mounts_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let focused =
-        !state.tab_bar_focused && state.mounts.scroll_focused && state.mounts.modal.is_none();
+        !state.tab_bar_focused() && state.mounts.scroll_focused && state.mounts.modal.is_none();
     let selected = if focused {
         Some(state.mounts.selected)
     } else {
@@ -73,7 +73,7 @@ pub(crate) fn render_mounts_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>
 
 pub(crate) fn render_env_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let lines = settings_env_lines_for_state(state, area.width);
-    let focused = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
+    let focused = !state.tab_bar_focused() && state.env.scroll_focused && state.env.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -91,7 +91,8 @@ pub(crate) fn render_auth_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, 
         .selected_kind
         .map(|k| auth_panel_title(k.label()));
     let lines = settings_auth_lines_for_state(state);
-    let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
+    let focused =
+        !state.tab_bar_focused() && state.auth.scroll_focused && state.auth.modal.is_none();
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -105,7 +106,7 @@ pub(crate) fn render_auth_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, 
 
 pub(crate) fn render_trust_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let lines = settings_trust_lines_for_state(state);
-    let focused = !state.tab_bar_focused
+    let focused = !state.tab_bar_focused()
         && state.trust.scroll_focused
         && state.auth.modal.is_none()
         && state.env.modal.is_none()
@@ -253,7 +254,7 @@ pub(crate) fn settings_env_lines_for_state(
 ) -> Vec<Line<'static>> {
     let rows = settings_env_flat_rows(state);
     let show_cursor =
-        !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
+        !state.tab_bar_focused() && state.env.scroll_focused && state.env.modal.is_none();
     settings_env_lines(
         &rows,
         state.env.selected,
@@ -278,7 +279,7 @@ pub(crate) fn settings_env_lines_for_state(
 }
 
 pub(crate) fn settings_trust_lines_for_state(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    let show_cursor = !state.tab_bar_focused
+    let show_cursor = !state.tab_bar_focused()
         && state.trust.scroll_focused
         && state.auth.modal.is_none()
         && state.env.modal.is_none()

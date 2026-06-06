@@ -70,7 +70,7 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
 
     // W3C ARIA Tabs: when tab_bar_focused, Left/Right cycle tabs and Tab/↓
     // enters the content area.
-    if settings.tab_bar_focused {
+    if settings.tab_bar_focused() {
         match key.code {
             KeyCode::Left | KeyCode::BackTab => {
                 dispatch_manager(
@@ -116,7 +116,7 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
             dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
             return;
         }
-        KeyCode::Esc if !settings.tab_bar_focused => {
+        KeyCode::Esc if !settings.tab_bar_focused() => {
             if settings.auth.selected_kind.is_some() {
                 dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
             }

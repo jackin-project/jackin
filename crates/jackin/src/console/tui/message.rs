@@ -321,18 +321,18 @@ const fn apply_preview_focus_plan(state: &mut ManagerState<'_>, plan: PreviewFoc
     state.preview_focused = plan.focused;
 }
 
-const fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
+fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    editor.tab_bar_focused = editor_tab_bar_focus_plan(focused);
+    editor.set_tab_bar_focused(editor_tab_bar_focus_plan(focused));
 }
 
-const fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
+fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.tab_bar_focused = settings_tab_bar_focus_plan(focused);
+    settings.set_tab_bar_focused(settings_tab_bar_focus_plan(focused));
     // When entering content (focused = false), activate scroll focus for the
     // active tab so the ▸ cursor and focused border appear together.
     if !focused {
@@ -495,15 +495,15 @@ fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bo
     };
     let plan = editor_tab_move_plan(editor.active_tab, delta, focus_tab_bar);
     editor.active_tab = plan.active_tab;
-    editor.tab_bar_focused = plan.tab_bar_focused;
+    editor.set_tab_bar_focused(plan.tab_bar_focused);
     editor.active_field = FieldFocus::Row(plan.active_row);
     editor.tab_scroll_x = plan.tab_scroll_x;
     editor.tab_scroll_y = plan.tab_scroll_y;
     // Tab-switch returns focus to the tab bar; clear per-tab scroll focus so
     // the previously-focused content block does not show a stale green border.
     if focus_tab_bar {
-        editor.workspace_mounts_scroll_focused = false;
-        editor.tab_content_scroll_focused = false;
+        editor.set_workspace_mounts_scroll_focused(false);
+        editor.set_tab_content_scroll_focused(false);
     }
     if plan.clear_auth_kind {
         editor.auth_selected_kind = None;
@@ -539,13 +539,13 @@ fn move_editor_field_selection(
     editor.tab_scroll_y = plan.tab_scroll_y;
 }
 
-const fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
+fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     let plan = settings_tab_move_plan(settings.active_tab, delta, focus_tab_bar);
     settings.active_tab = plan.active_tab;
-    settings.tab_bar_focused = plan.tab_bar_focused;
+    settings.set_tab_bar_focused(plan.tab_bar_focused);
     // Tab-switch returns focus to the tab bar; clear per-tab scroll focus so
     // the previously-focused content block does not show a stale green border.
     if focus_tab_bar {
@@ -656,8 +656,8 @@ fn scroll_editor_tab_horizontal(
     let plan =
         editor_tab_horizontal_scroll_plan(editor.tab_scroll_x, delta, term_width, content_width);
     editor.tab_scroll_x = plan.scroll_x;
-    editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
-    editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+    editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
 }
 
 fn scroll_editor_workspace_mounts_horizontal(
@@ -676,8 +676,8 @@ fn scroll_editor_workspace_mounts_horizontal(
         content_width,
     );
     editor.workspace_mounts_scroll_x = plan.scroll_x;
-    editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
-    editor.tab_content_scroll_focused = plan.tab_content_scroll_focused;
+    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+    editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
 }
 
 fn scroll_settings_global_mounts_horizontal(
@@ -834,9 +834,9 @@ fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
     };
     let plan = editor_tab_select_plan(editor.active_tab, tab);
     editor.active_tab = plan.active_tab;
-    editor.tab_bar_focused = plan.tab_bar_focused;
+    editor.set_tab_bar_focused(plan.tab_bar_focused);
     editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
     if plan.clear_auth_kind {
         editor.auth_selected_kind = None;
     }
@@ -846,22 +846,22 @@ fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
     }
 }
 
-const fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
+fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
     let plan = editor_mount_row_select_plan(row);
     editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.workspace_mounts_scroll_focused = plan.workspace_mounts_scroll_focused;
+    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
 }
 
-const fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
+fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     let plan = settings_tab_select_plan(tab);
     settings.active_tab = plan.active_tab;
-    settings.tab_bar_focused = plan.tab_bar_focused;
+    settings.set_tab_bar_focused(plan.tab_bar_focused);
 }
 
 #[allow(clippy::missing_const_for_fn)]

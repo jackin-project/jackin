@@ -72,7 +72,7 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Esc => {
             if let ManagerStage::Editor(editor) = &state.stage {
-                if !editor.tab_bar_focused {
+                if !editor.tab_bar_focused() {
                     if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() {
                         dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
                     }
@@ -117,7 +117,7 @@ pub(super) fn handle_editor_key(
 
     if let ManagerStage::Editor(editor) = &state.stage {
         match key.code {
-            KeyCode::Left | KeyCode::BackTab if editor.tab_bar_focused => {
+            KeyCode::Left | KeyCode::BackTab if editor.tab_bar_focused() => {
                 dispatch_manager(
                     state,
                     ManagerMessage::MoveEditorTab {
@@ -127,7 +127,7 @@ pub(super) fn handle_editor_key(
                 );
                 return Ok(InputOutcome::Continue);
             }
-            KeyCode::Right if editor.tab_bar_focused => {
+            KeyCode::Right if editor.tab_bar_focused() => {
                 dispatch_manager(
                     state,
                     ManagerMessage::MoveEditorTab {
@@ -137,7 +137,7 @@ pub(super) fn handle_editor_key(
                 );
                 return Ok(InputOutcome::Continue);
             }
-            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if editor.tab_bar_focused => {
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if editor.tab_bar_focused() => {
                 dispatch_manager(state, ManagerMessage::FocusEditorContent);
                 return Ok(InputOutcome::Continue);
             }

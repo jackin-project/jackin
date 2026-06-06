@@ -1035,7 +1035,7 @@ fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         panic!("editor stage expected");
     };
-    assert!(editor.workspace_mounts_scroll_focused);
+    assert!(editor.workspace_mounts_scroll_focused());
     assert_eq!(
         editor.workspace_mounts_scroll_x,
         MOUSE_HORIZONTAL_SCROLL_STEP
@@ -1051,7 +1051,7 @@ fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("editor stage expected");
     };
-    assert!(!editor.workspace_mounts_scroll_focused);
+    assert!(!editor.workspace_mounts_scroll_focused());
     assert_eq!(
         editor.workspace_mounts_scroll_x,
         MOUSE_HORIZONTAL_SCROLL_STEP
@@ -1072,7 +1072,7 @@ fn editor_non_mounts_tab_click_focuses_horizontal_scroll_block() {
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("editor stage expected");
     };
-    assert!(editor.tab_content_scroll_focused);
+    assert!(editor.tab_content_scroll_focused());
 
     handle_mouse_with_config(
         &mut state,
@@ -1085,7 +1085,7 @@ fn editor_non_mounts_tab_click_focuses_horizontal_scroll_block() {
         panic!("editor stage expected");
     };
     assert_eq!(editor.tab_scroll_x, MOUSE_HORIZONTAL_SCROLL_STEP);
-    assert!(editor.tab_content_scroll_focused);
+    assert!(editor.tab_content_scroll_focused());
 }
 
 #[test]
@@ -1286,7 +1286,7 @@ fn editor_mounts_tab_click_full_row_width_selects_mount_and_focuses_block() {
         panic!("editor stage expected");
     };
     assert!(matches!(editor.active_field, FieldFocus::Row(1)));
-    assert!(editor.workspace_mounts_scroll_focused);
+    assert!(editor.workspace_mounts_scroll_focused());
 }
 
 #[test]
@@ -1314,7 +1314,7 @@ fn editor_mounts_tab_click_host_source_continuation_selects_parent_and_focuses_b
         panic!("editor stage expected");
     };
     assert!(matches!(editor.active_field, FieldFocus::Row(0)));
-    assert!(editor.workspace_mounts_scroll_focused);
+    assert!(editor.workspace_mounts_scroll_focused());
 }
 
 #[test]
@@ -1340,7 +1340,7 @@ fn clicking_editor_content_area_clears_tab_bar_focus() {
     // into it — same end state as Tab/↓ — regardless of whether it overflows.
     let mut state = list_state();
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.tab_bar_focused = true; // tab bar owns focus before the click
+    editor.set_tab_bar_focused(true); // tab bar owns focus before the click
     editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 10;
     state.stage = ManagerStage::Editor(editor);
@@ -1354,11 +1354,11 @@ fn clicking_editor_content_area_clears_tab_bar_focus() {
     };
     // After clicking the content block, tab_bar_focused must be false.
     assert!(
-        !editor.tab_bar_focused,
+        !editor.tab_bar_focused(),
         "clicking content must clear tab_bar_focused (Defect 17)"
     );
     assert!(
-        editor.tab_content_scroll_focused,
+        editor.tab_content_scroll_focused(),
         "clicking content must set tab_content_scroll_focused"
     );
 }
