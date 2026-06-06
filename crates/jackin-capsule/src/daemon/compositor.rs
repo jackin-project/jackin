@@ -445,26 +445,24 @@ impl Multiplexer {
             let mut showed = false;
             if let (Some(fid), Some(rect)) = (focused_id, focused_pane_rect)
                 && let Some(session) = self.sessions.get(&fid)
-            {
-                let snap = session.shadow_grid.dump();
-                if cursor_visible_for_state(CursorVisibilityState {
+                && cursor_visible_for_state(CursorVisibilityState {
                     dialog_open: self.dialog_open(),
                     focused_pane_available: true,
                     focused_session_received_output: session.received_output,
                     scrollback_active: session.scrollback_offset != 0,
                     agent_cursor_hidden: session.shadow_grid.hide_cursor(),
-                }) {
-                    let (vt_row, vt_col) = snap.cursor;
-                    use std::io::Write as _;
-                    let _unused = write!(
-                        buf,
-                        "\x1b[{};{}H",
-                        rect.row + vt_row + 1,
-                        rect.col + vt_col + 1
-                    );
-                    buf.extend_from_slice(b"\x1b[?25h");
-                    showed = true;
-                }
+                })
+            {
+                let (vt_row, vt_col) = session.shadow_grid.cursor_position();
+                use std::io::Write as _;
+                let _unused = write!(
+                    buf,
+                    "\x1b[{};{}H",
+                    rect.row + vt_row + 1,
+                    rect.col + vt_col + 1
+                );
+                buf.extend_from_slice(b"\x1b[?25h");
+                showed = true;
             }
             if !showed {
                 buf.extend_from_slice(b"\x1b[?25l");
