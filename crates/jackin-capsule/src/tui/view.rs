@@ -9,6 +9,7 @@ use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBar
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::Tab;
+use jackin_tui::components::FocusOwner;
 use ratatui::{Frame, layout::Rect as RatatuiRect};
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
@@ -142,7 +143,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) term_rows: u16,
     pub(crate) panes: &'a [VisiblePane],
     pub(crate) pane_titles: &'a [(u64, String)],
-    pub(crate) focused_id: Option<u64>,
+    pub(crate) focus_owner: FocusOwner<u64>,
     pub(crate) zoomed: bool,
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
@@ -279,7 +280,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             .find(|(id, _)| *id == pane.id)
             .map_or("", |(_, t)| t.as_str());
 
-        let focused = Some(pane.id) == view.focused_id;
+        let focused = view.focus_owner.show_cursor_for(&pane.id);
         let border_area = RatatuiRect {
             x: pane.outer.col,
             y: pane.outer.row,
@@ -325,7 +326,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             && filled > 0
             && offset > 0
         {
-            let focused = Some(pane.id) == view.focused_id;
+            let focused = view.focus_owner.show_cursor_for(&pane.id);
             apply_pane_scrollbar(frame.buffer_mut(), pane, offset, filled, focused);
         }
     }

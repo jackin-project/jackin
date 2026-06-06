@@ -119,6 +119,10 @@ impl Multiplexer {
         let tabs = &self.tabs;
         let panes = self.visible_panes();
         let focused_id = self.active_focused_id();
+        let focus_owner = focused_id.map_or(
+            jackin_tui::components::FocusOwner::TabBar,
+            jackin_tui::components::FocusOwner::Content,
+        );
         let zoomed = self.active_zoomed_id().is_some();
         let dialog_open = self.dialog_open();
         // Status-bar inputs snapshotted before the draw closure borrows self.
@@ -244,7 +248,7 @@ impl Multiplexer {
                     term_rows,
                     panes: &panes,
                     pane_titles: &pane_titles,
-                    focused_id,
+                    focus_owner,
                     zoomed,
                     dialog_open,
                     dialog_snapshot: dialog_snapshot.as_ref(),
