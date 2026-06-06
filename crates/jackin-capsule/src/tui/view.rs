@@ -176,7 +176,7 @@ fn apply_pane_scrollbar(
     let color = if focused {
         jackin_tui::theme::PHOSPHOR_GREEN
     } else {
-        ratatui::style::Color::Rgb(160, 160, 160)
+        jackin_tui::theme::BORDER_GRAY_LIGHT
     };
     let track_start_row = pane.outer.row + 1;
     for r in 0..thumb.len {

@@ -751,7 +751,7 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
                 b'B' => ArrowDir::Down,
                 b'C' => ArrowDir::Right,
                 b'D' => ArrowDir::Left,
-                _ => unreachable!(),
+                _ => unreachable!("kitty arrow parser only calls resize mapping for arrow bytes"),
             };
             return Some(Some(InputEvent::ResizePane(dir)));
         }

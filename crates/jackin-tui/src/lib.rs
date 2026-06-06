@@ -156,11 +156,29 @@ pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
 /// across surfaces and stays out of the way of focused, brand-green content.
 pub const BORDER_GRAY: Rgb = Rgb::new(80, 80, 80);
 
+/// Lighter neutral gray used for unfocused scroll thumbs on pane borders.
+pub const BORDER_GRAY_LIGHT: Rgb = Rgb::new(160, 160, 160);
+
 /// Error/danger accent — failed launch stages, error-popup borders, invalid
 /// input fields, and danger labels. Shared across every TUI surface so the
 /// "something went wrong" colour never drifts between the console widgets and
 /// the launch cockpit.
 pub const DANGER_RED: Rgb = Rgb::new(255, 94, 122);
+
+/// Status-tab blocked glyph: saturated red reserved for "waiting for operator".
+pub const STATUS_BLOCKED_RED: Rgb = Rgb::new(255, 60, 60);
+
+/// Capsule menu button background, idle state.
+pub const CAPSULE_MENU_IDLE_BG: Rgb = Rgb::new(18, 70, 130);
+
+/// Capsule menu button background while pointer-hovered.
+pub const CAPSULE_MENU_IDLE_HOVER_BG: Rgb = Rgb::new(32, 92, 158);
+
+/// Capsule menu button background while the prefix key is awaiting a command.
+pub const CAPSULE_MENU_AWAITING_BG: Rgb = Rgb::new(96, 180, 255);
+
+/// Capsule menu button background for hovered awaiting state.
+pub const CAPSULE_MENU_AWAITING_HOVER_BG: Rgb = Rgb::new(132, 202, 255);
 
 /// Live / active state indicator (cyan). Shared between the editor's
 /// running-instance status badge and any other "this is live" cue.

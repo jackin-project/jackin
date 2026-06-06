@@ -22,13 +22,6 @@ use jackin_tui::components::FocusPalette;
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
 const BRAND_TEXT: &str = " jackin' ";
-// Menu button colours (mirror BUTTON_BG_* in status_bar.rs). Kept as literal
-// Rgb here because they are button-only and not part of the shared theme set.
-const BUTTON_BG_IDLE: Color = Color::Rgb(18, 70, 130);
-const BUTTON_BG_IDLE_HOVER: Color = Color::Rgb(32, 92, 158);
-const BUTTON_BG_AWAITING: Color = Color::Rgb(96, 180, 255);
-const BUTTON_BG_AWAITING_HOVER: Color = Color::Rgb(132, 202, 255);
-const GLYPH_BLOCKED: Color = Color::Rgb(255, 60, 60);
 
 /// Brand pill + tab cells (row 0) and the active-tab underline (row 1),
 /// painted into the Ratatui `Buffer` so the `SocketBackend` diff tracks every
@@ -78,7 +71,7 @@ impl StatusBarWidget<'_> {
                 "●",
                 Style::default()
                     .bg(bg)
-                    .fg(GLYPH_BLOCKED)
+                    .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
                     .add_modifier(Modifier::BOLD),
             );
         }
@@ -117,10 +110,21 @@ impl Widget for StatusBarWidget<'_> {
         // Row 0: right-side menu button.
         if let Some(start_1based) = plan.hint_start {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
-                (PrefixMode::Idle, false) => (BUTTON_BG_IDLE, jackin_tui::theme::WHITE),
-                (PrefixMode::Idle, true) => (BUTTON_BG_IDLE_HOVER, jackin_tui::theme::WHITE),
-                (PrefixMode::Awaiting, false) => (BUTTON_BG_AWAITING, Color::Black),
-                (PrefixMode::Awaiting, true) => (BUTTON_BG_AWAITING_HOVER, Color::Black),
+                (PrefixMode::Idle, false) => (
+                    jackin_tui::theme::CAPSULE_MENU_IDLE_BG,
+                    jackin_tui::theme::WHITE,
+                ),
+                (PrefixMode::Idle, true) => (
+                    jackin_tui::theme::CAPSULE_MENU_IDLE_HOVER_BG,
+                    jackin_tui::theme::WHITE,
+                ),
+                (PrefixMode::Awaiting, false) => {
+                    (jackin_tui::theme::CAPSULE_MENU_AWAITING_BG, Color::Black)
+                }
+                (PrefixMode::Awaiting, true) => (
+                    jackin_tui::theme::CAPSULE_MENU_AWAITING_HOVER_BG,
+                    Color::Black,
+                ),
             };
             buf.set_string(
                 area.x.saturating_add(start_1based.saturating_sub(1)),

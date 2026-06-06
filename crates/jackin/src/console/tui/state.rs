@@ -1388,7 +1388,7 @@ impl ManagerState<'_> {
             ))),
         };
         let ManagerStage::Editor(editor) = &mut self.stage else {
-            unreachable!()
+            unreachable!("stage cannot change while polling drift check")
         };
         let check = editor.pending_drift_check.take().expect("polled above");
         result.map(|r| (check, r))
@@ -1409,7 +1409,7 @@ impl ManagerState<'_> {
             ))),
         };
         let ManagerStage::Editor(editor) = &mut self.stage else {
-            unreachable!()
+            unreachable!("stage cannot change while polling isolation cleanup")
         };
         let cleanup = editor
             .pending_isolation_cleanup
@@ -1433,7 +1433,7 @@ impl ManagerState<'_> {
             )),
         };
         let ManagerStage::Editor(editor) = &mut self.stage else {
-            unreachable!()
+            unreachable!("stage cannot change while polling role load")
         };
         let load = editor.pending_role_load.take().expect("polled above");
         Some((load, result))
@@ -1462,7 +1462,7 @@ impl ManagerState<'_> {
                 };
                 if result.is_some() {
                     let ManagerStage::Editor(editor) = &mut self.stage else {
-                        unreachable!()
+                        unreachable!("stage cannot change while polling editor op commit")
                     };
                     let pending = editor.pending_op_commit.take().expect("polled above");
                     return result.map(|r| (pending.op_ref, r, false));
@@ -1481,7 +1481,7 @@ impl ManagerState<'_> {
                 };
                 if result.is_some() {
                     let ManagerStage::Settings(settings) = &mut self.stage else {
-                        unreachable!()
+                        unreachable!("stage cannot change while polling settings op commit")
                     };
                     let pending = settings
                         .auth
