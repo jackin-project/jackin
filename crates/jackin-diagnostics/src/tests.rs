@@ -16,10 +16,14 @@ use crate::terminal::{
 };
 use crate::{
     begin_debug_buffering, emit_compact_line, emit_debug_line, end_debug_buffering,
-    format_debug_line, is_debug_mode,
+    format_debug_line, init_tracing, is_debug_mode,
 };
 
 static DEBUG_BUFFER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn init_test_tracing() {
+    drop(init_tracing(false));
+}
 
 // ── run.rs tests ─────────────────────────────────────────────────────────────
 
@@ -32,6 +36,7 @@ fn run_id_has_operator_handle_shape() {
 
 #[test]
 fn writes_jsonl_events() {
+    init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
@@ -45,7 +50,84 @@ fn writes_jsonl_events() {
 }
 
 #[test]
+fn jsonl_events_include_current_span_id() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    let span = tracing::info_span!("load_stage", stage = "build");
+    let _entered = span.enter();
+    run.compact("breadcrumb", "inside span");
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let event = contents
+        .lines()
+        .find(|line| line.contains("inside span"))
+        .unwrap();
+    assert!(event.contains("\"span_id\""), "{event}");
+}
+
+#[test]
+fn run_summary_includes_metrics_surface() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.stage("stage_started", "build", "building", None);
+    run.compact("agent_binary_cache_hit", "metadata cache hit");
+    run.stage("stage_done", "build", "built", None);
+    run.emit_run_summary();
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let summary = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .unwrap();
+    assert!(
+        summary.contains("stage_duration_histograms_ms"),
+        "{summary}"
+    );
+    assert!(summary.contains("event_counts"), "{summary}");
+    assert!(summary.contains("cache_hits"), "{summary}");
+    assert!(summary.contains(":1"), "{summary}");
+}
+
+#[test]
+fn stage_events_reuse_one_stage_span_id() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.stage("stage_started", "derived image", "building", None);
+    run.stage("stage_progress", "derived image", "still building", None);
+    run.stage("stage_done", "derived image", "built", None);
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let span_ids = contents
+        .lines()
+        .filter(|line| line.contains("\"stage\":\"derived image\""))
+        .map(serde_json::from_str::<serde_json::Value>)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .into_iter()
+        .map(|event| {
+            event
+                .get("span_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .unwrap()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(span_ids.len(), 1, "stage events must share one span id");
+}
+
+#[test]
 fn debug_is_not_consumed_when_capture_is_disabled() {
+    init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, false, "load").unwrap();
@@ -259,6 +341,7 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
 
 #[test]
 fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
+    init_test_tracing();
     let _lock = DEBUG_BUFFER_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -282,6 +365,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
 
 #[test]
 fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
+    init_test_tracing();
     let _lock = DEBUG_BUFFER_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
