@@ -183,7 +183,7 @@ impl DamageGrid {
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
             kitty_kb_stack: Vec::new(),
-            dirty: DirtyTracker::default(),
+            dirty: DirtyTracker::new(rows),
             passthrough: PassthroughBuffer::default(),
         }
     }
@@ -264,7 +264,7 @@ impl DamageGrid {
             }
             DirtySpans::Rows(rows) => {
                 rows_changed.reserve(rows.len());
-                for row_idx in rows {
+                for row_idx in rows.iter() {
                     if let Some(row) = screen.get(row_idx as usize) {
                         rows_changed.push((
                             row_idx,
@@ -424,7 +424,7 @@ impl DamageGrid {
         self.cursor_col = self.cursor_col.min(cols.saturating_sub(1));
         self.scroll_top = 0;
         self.scroll_bottom = rows.saturating_sub(1);
-        self.dirty.mark_all();
+        self.dirty.resize(rows);
     }
 
     /// Get a cell reference. Returns `None` if out of bounds.
