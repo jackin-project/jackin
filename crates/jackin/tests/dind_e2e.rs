@@ -451,8 +451,8 @@ fn run_in_pty_until_file(
     let done = Arc::new(AtomicBool::new(false));
     let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
     let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
-    let stdout_for_writer = stdout_buf.clone();
-    let done_for_writer = done.clone();
+    let stdout_for_writer = Arc::clone(&stdout_buf);
+    let done_for_writer = Arc::clone(&done);
     let script = script.to_vec();
     let stdin_writer = std::thread::spawn(move || {
         for step in script {
@@ -588,7 +588,7 @@ where
     R: Read + Send + 'static,
 {
     let buffer = Arc::new(Mutex::new(Vec::new()));
-    let thread_buffer = buffer.clone();
+    let thread_buffer = Arc::clone(&buffer);
     let handle = std::thread::spawn(move || {
         let mut chunk = [0_u8; 8192];
         loop {

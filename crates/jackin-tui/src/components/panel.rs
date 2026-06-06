@@ -23,7 +23,7 @@ impl PanelFocus {
         }
     }
 
-    fn border_style_with_palette(self, palette: &FocusPalette) -> Style {
+    fn border_style_with_palette(self, palette: FocusPalette) -> Style {
         match self {
             Self::Focused | Self::FocusedScrollable => Style::new().fg(palette.focused),
             Self::Unfocused => Style::new().fg(palette.unfocused),
@@ -110,7 +110,7 @@ impl<'a> Panel<'a> {
     pub fn block(self) -> Block<'a> {
         let mut block = Block::default()
             .borders(Borders::ALL)
-            .border_style(self.focus.border_style_with_palette(&self.palette));
+            .border_style(self.focus.border_style_with_palette(self.palette));
         if let Some(title) = self.title {
             // Normalize to " Title " so callers never need to add padding manually.
             let padded = format!(" {} ", title.trim());

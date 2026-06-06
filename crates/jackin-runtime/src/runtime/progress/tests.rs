@@ -1,12 +1,13 @@
 //! Tests for `progress`.
 use super::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use jackin_diagnostics::RunDiagnostics;
 use jackin_tui::components::StatusFooterHover;
 use ratatui::backend::TestBackend;
 
-fn test_diagnostics() -> std::sync::Arc<RunDiagnostics> {
+fn test_diagnostics() -> Arc<RunDiagnostics> {
     let tmp = tempfile::tempdir().unwrap();
     let paths = jackin_core::paths::JackinPaths::for_tests(tmp.path());
     RunDiagnostics::start(&paths, false, "load").unwrap()
@@ -44,7 +45,8 @@ async fn stage_failed_writes_full_detail_to_diagnostics() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = jackin_core::paths::JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, false, "load").unwrap();
-    let mut progress = LaunchProgress::for_test(run.clone());
+    let diagnostics: Arc<RunDiagnostics> = Arc::clone(&run);
+    let mut progress = LaunchProgress::for_test(diagnostics);
 
     progress
             .stage_failed(LaunchFailure {

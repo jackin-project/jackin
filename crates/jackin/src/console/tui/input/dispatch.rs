@@ -1,5 +1,7 @@
 //! Key dispatch for the workspace manager.
 
+use std::rc::Rc;
+
 use crossterm::event::KeyEvent;
 
 use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
@@ -59,7 +61,7 @@ pub fn handle_key(
     // and the SourcePicker → OpPicker transition can construct a
     // cache-sharing picker.
     let op_available = state.op_available;
-    let op_cache = state.op_cache.clone();
+    let op_cache = Rc::clone(&state.op_cache);
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {

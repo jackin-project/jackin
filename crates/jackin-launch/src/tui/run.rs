@@ -71,8 +71,8 @@ impl RichDriver {
         let renderer = std::sync::Arc::new(std::sync::Mutex::new(renderer));
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let handle = {
-            let renderer = renderer.clone();
-            let stop = stop.clone();
+            let renderer = std::sync::Arc::clone(&renderer);
+            let stop = std::sync::Arc::clone(&stop);
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

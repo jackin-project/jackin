@@ -751,7 +751,7 @@ fn env_tab_add_flow_asks_scope_before_key() {
     handle_settings_env_modal(
         &mut settings.env,
         key(KeyCode::Enter),
-        state.op_cache.clone(),
+        std::rc::Rc::clone(&state.op_cache),
     );
     assert!(matches!(
         settings.env.modal,
@@ -781,7 +781,7 @@ fn env_tab_key_input_esc_closes_chain() {
     handle_settings_env_modal(
         &mut settings.env,
         key(KeyCode::Enter),
-        state.op_cache.clone(),
+        std::rc::Rc::clone(&state.op_cache),
     );
     assert!(matches!(
         settings.env.modal,
@@ -791,7 +791,11 @@ fn env_tab_key_input_esc_closes_chain() {
         })
     ));
 
-    handle_settings_env_modal(&mut settings.env, key(KeyCode::Esc), state.op_cache.clone());
+    handle_settings_env_modal(
+        &mut settings.env,
+        key(KeyCode::Esc),
+        std::rc::Rc::clone(&state.op_cache),
+    );
 
     // The ScopePicker was committed before the EnvKey input opened,
     // so Esc on the input must close the chain instead of restoring
@@ -820,7 +824,7 @@ fn env_tab_source_picker_esc_returns_key_input() {
     handle_settings_env_modal(
         &mut settings.env,
         key(KeyCode::Enter),
-        state.op_cache.clone(),
+        std::rc::Rc::clone(&state.op_cache),
     );
     let target = SettingsEnvTextTarget::EnvKey {
         scope: SettingsEnvScope::Global,
@@ -831,7 +835,11 @@ fn env_tab_source_picker_esc_returns_key_input() {
         Some(SettingsEnvModal::SourcePicker { .. })
     ));
 
-    handle_settings_env_modal(&mut settings.env, key(KeyCode::Esc), state.op_cache.clone());
+    handle_settings_env_modal(
+        &mut settings.env,
+        key(KeyCode::Esc),
+        std::rc::Rc::clone(&state.op_cache),
+    );
 
     assert!(
         matches!(
@@ -875,7 +883,7 @@ fn env_tab_specific_scope_uses_workspace_role_picker() {
     handle_settings_env_modal(
         &mut settings.env,
         key(KeyCode::Enter),
-        state.op_cache.clone(),
+        std::rc::Rc::clone(&state.op_cache),
     );
     assert!(matches!(
         settings.env.modal,
@@ -885,7 +893,7 @@ fn env_tab_specific_scope_uses_workspace_role_picker() {
     handle_settings_env_modal(
         &mut settings.env,
         key(KeyCode::Enter),
-        state.op_cache.clone(),
+        std::rc::Rc::clone(&state.op_cache),
     );
     assert!(matches!(
         &settings.env.modal,

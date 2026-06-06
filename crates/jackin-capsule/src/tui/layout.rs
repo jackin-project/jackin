@@ -62,6 +62,7 @@ impl Rect {
     /// zero-area rect when the inset would invert the dimensions —
     /// callers downstream check `rows == 0 || cols == 0` and skip
     /// rendering in that case, so a zero rect is safer than a panic.
+    #[must_use]
     pub const fn shrink(&self, n: u16) -> Self {
         let two_n = n.saturating_mul(2);
         let rows = self.rows.saturating_sub(two_n);

@@ -306,7 +306,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    let op_cache = state.op_cache.clone();
+    let op_cache = std::rc::Rc::clone(&state.op_cache);
     let op_available = state.op_available;
     let term_size = state.cached_term_size;
     let ManagerStage::Settings(settings) = &state.stage else {

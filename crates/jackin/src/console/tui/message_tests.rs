@@ -520,7 +520,7 @@ fn reload_from_config_preserves_session_cache_and_rebuilds_rows() {
     state.stage = ManagerStage::Settings(settings_state_from_config(
         &crate::config::AppConfig::default(),
     ));
-    let cache = state.op_cache.clone();
+    let cache = std::rc::Rc::clone(&state.op_cache);
     let mut config = crate::config::AppConfig::default();
     config.workspaces.insert(
         "reloaded".into(),

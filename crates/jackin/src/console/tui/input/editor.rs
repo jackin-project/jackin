@@ -110,7 +110,7 @@ pub(super) fn handle_editor_key(
     }
 
     // Capture before the editor borrow (separate fields, but explicit is cleaner).
-    let op_cache = state.op_cache.clone();
+    let op_cache = std::rc::Rc::clone(&state.op_cache);
     let op_available = state.op_available;
     let term_width = state.cached_term_size.width;
     let term_size = state.cached_term_size;

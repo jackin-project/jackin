@@ -398,7 +398,7 @@ fn enter_create_editor(
 }
 
 fn reload_from_config(state: &mut ManagerState<'_>, config: &AppConfig, cwd: &std::path::Path) {
-    let cache = state.op_cache.clone();
+    let cache = std::rc::Rc::clone(&state.op_cache);
     let op_available = state.op_available;
     *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
 }

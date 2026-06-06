@@ -136,7 +136,7 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // peers cannot starve the legitimate operator's
                     // attach. Once a task finishes, its OwnedSemaphorePermit
                     // drops and a fresh accept proceeds.
-                    let permit = if let Ok(p) = limiter.clone().try_acquire_owned() {
+                    let permit = if let Ok(p) = Arc::clone(&limiter).try_acquire_owned() {
                         if at_cap_logged {
                             crate::clog!(
                                 "socket: capacity recovered below cap {MAX_CONCURRENT_CLIENTS}"

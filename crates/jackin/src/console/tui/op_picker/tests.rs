@@ -1050,9 +1050,9 @@ fn op_cache_hit_skips_account_list_subprocess() {
     let mut s1 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
-            counter: counter1.clone(),
+            counter: Arc::clone(&counter1),
         }),
-        cache.clone(),
+        Rc::clone(&cache),
     );
     drain_initial_account_load(&mut s1);
     assert_eq!(
@@ -1065,7 +1065,7 @@ fn op_cache_hit_skips_account_list_subprocess() {
     let mut s2 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
-            counter: counter2.clone(),
+            counter: Arc::clone(&counter2),
         }),
         cache,
     );
@@ -1088,9 +1088,9 @@ fn op_cache_miss_calls_runner_and_stores() {
     let mut s1 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
-            counter: counter.clone(),
+            counter: Arc::clone(&counter),
         }),
-        cache.clone(),
+        Rc::clone(&cache),
     );
     drain_initial_account_load(&mut s1);
     assert_eq!(*counter.lock().unwrap(), 1, "first picker must miss");
@@ -1102,7 +1102,7 @@ fn op_cache_miss_calls_runner_and_stores() {
     let mut s2 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
-            counter: counter.clone(),
+            counter: Arc::clone(&counter),
         }),
         cache,
     );
@@ -1127,7 +1127,7 @@ fn op_cache_refresh_re_fires_subprocess() {
             account("acct1", "a@example.com", "alpha.1password.com"),
             account("acct2", "b@example.com", "beta.1password.com"),
         ],
-        counter: counter.clone(),
+        counter: Arc::clone(&counter),
     });
     let mut s = new_picker_with_runner_and_cache(r, cache);
     drain_initial_account_load(&mut s);

@@ -39,7 +39,7 @@ pub fn new_console_state_with_op_available(
     let manager = crate::console::tui::ManagerState::from_config_with_cache_and_op(
         config,
         cwd,
-        op_cache.clone(),
+        Rc::clone(&op_cache),
         op_available,
     );
     Ok(ConsoleState::new(

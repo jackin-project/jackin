@@ -47,7 +47,7 @@ impl LaunchProgress {
         let rich = RichRenderer::enter(no_motion, host, jackin_version)?;
         let renderer = Renderer::Rich(RichDriver::spawn(
             rich,
-            view.clone(),
+            Arc::clone(&view),
             diagnostics.run_id().to_owned(),
             diagnostics.path().display().to_string(),
             host,
