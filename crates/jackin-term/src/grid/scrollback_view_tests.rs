@@ -41,17 +41,18 @@ fn dump_dirty_patch_drains_changed_rows_only() {
 
     g.process(b"\x1b[2;1Hgamma");
     let patch = g.dump_dirty_patch();
+    let changed_rows = patch.changed_rows().collect::<Vec<_>>();
 
-    assert_eq!(patch.rows_changed.len(), 1);
-    assert_eq!(patch.rows_changed[0].0, 1);
-    let text: String = patch.rows_changed[0]
+    assert_eq!(changed_rows.len(), 1);
+    assert_eq!(changed_rows[0].0, 1);
+    let text: String = changed_rows[0]
         .1
         .iter()
         .map(|cell| {
-            if cell.text.is_empty() {
+            if cell.contents().is_empty() {
                 " ".to_owned()
             } else {
-                cell.text.clone()
+                cell.contents().to_owned()
             }
         })
         .collect();

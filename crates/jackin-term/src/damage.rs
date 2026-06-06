@@ -140,8 +140,16 @@ impl DirtyRows {
         self.len
     }
 
+    pub fn contains(&self, row: u16) -> bool {
+        self.rows[..self.len].binary_search(&row).is_ok()
+    }
+
+    pub fn as_slice(&self) -> &[u16] {
+        &self.rows[..self.len]
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = u16> + '_ {
-        self.rows[..self.len].iter().copied()
+        self.as_slice().iter().copied()
     }
 }
 

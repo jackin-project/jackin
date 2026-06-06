@@ -12,7 +12,12 @@
 //! The `dump()` / snapshot-for-observation pattern: avt (MIT), Marcin Kulik /
 //! asciinema project.
 
-use crate::cell::{Attrs, Cell, Color};
+use std::slice;
+
+use crate::{
+    cell::{Attrs, Cell, Color},
+    damage::DirtySpans,
+};
 
 /// A snapshot of a single cell at dump time.
 ///
@@ -98,9 +103,9 @@ pub struct GridSnapshot {
     pub cells: Vec<Vec<SnapCell>>,
 }
 
-/// Snapshot of rows changed since the last dirty-span drain.
-#[derive(Debug, Clone)]
-pub struct GridPatch {
+/// Borrowed view of rows changed since the last dirty-span drain.
+#[derive(Debug)]
+pub struct GridPatch<'a> {
     /// Number of rows in the full grid.
     pub rows: u16,
     /// Number of columns in the full grid.
@@ -109,24 +114,96 @@ pub struct GridPatch {
     pub cursor: (u16, u16),
     /// Whether the alternate screen was active at snapshot time.
     pub alternate_screen: bool,
-    /// Changed rows in display order as `(row_index, cells)`.
-    pub rows_changed: Vec<(u16, Vec<SnapCell>)>,
+    /// The active screen at patch creation time.
+    screen: &'a [Vec<Cell>],
+    /// Changed rows in display order.
+    dirty: DirtySpans,
 }
 
-impl GridPatch {
+impl<'a> GridPatch<'a> {
+    pub(crate) const fn new(
+        rows: u16,
+        cols: u16,
+        cursor: (u16, u16),
+        alternate_screen: bool,
+        screen: &'a [Vec<Cell>],
+        dirty: DirtySpans,
+    ) -> Self {
+        Self {
+            rows,
+            cols,
+            cursor,
+            alternate_screen,
+            screen,
+            dirty,
+        }
+    }
+
     /// True when no rows changed.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.rows_changed.is_empty()
+        match &self.dirty {
+            DirtySpans::All => self.screen.is_empty(),
+            DirtySpans::Rows(rows) => rows.is_empty(),
+        }
     }
 
     /// Return the changed row at `row`, or `None` when that row is unchanged.
     #[must_use]
-    pub fn row(&self, row: u16) -> Option<&[SnapCell]> {
-        self.rows_changed
-            .iter()
-            .find(|(idx, _)| *idx == row)
-            .map(|(_, cells)| cells.as_slice())
+    pub fn row(&self, row: u16) -> Option<&'a [Cell]> {
+        match &self.dirty {
+            DirtySpans::All => self.screen.get(row as usize).map(Vec::as_slice),
+            DirtySpans::Rows(rows) => rows
+                .contains(row)
+                .then(|| self.screen.get(row as usize).map(Vec::as_slice))
+                .flatten(),
+        }
+    }
+
+    /// Iterate changed rows in display order without allocating row snapshots.
+    pub fn changed_rows(&self) -> ChangedRows<'a, '_> {
+        match &self.dirty {
+            DirtySpans::All => ChangedRows {
+                screen: self.screen,
+                state: ChangedRowsState::All(self.screen.iter().enumerate()),
+            },
+            DirtySpans::Rows(rows) => ChangedRows {
+                screen: self.screen,
+                state: ChangedRowsState::Rows(rows.as_slice().iter()),
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ChangedRows<'a, 'dirty> {
+    screen: &'a [Vec<Cell>],
+    state: ChangedRowsState<'a, 'dirty>,
+}
+
+#[derive(Debug)]
+enum ChangedRowsState<'a, 'dirty> {
+    All(std::iter::Enumerate<slice::Iter<'a, Vec<Cell>>>),
+    Rows(slice::Iter<'dirty, u16>),
+}
+
+impl<'a> Iterator for ChangedRows<'a, '_> {
+    type Item = (u16, &'a [Cell]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.state {
+            ChangedRowsState::All(rows) => {
+                rows.next().map(|(idx, row)| (idx as u16, row.as_slice()))
+            }
+            ChangedRowsState::Rows(rows) => {
+                for row_idx in rows.by_ref() {
+                    if let Some(row) = self.screen.get(*row_idx as usize) {
+                        return Some((*row_idx, row.as_slice()));
+                    }
+                }
+                None
+            }
+        }
     }
 }
 

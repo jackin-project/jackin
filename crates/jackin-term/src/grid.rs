@@ -244,43 +244,26 @@ impl DamageGrid {
     }
 
     /// Drain dirty spans and snapshot only the rows that changed.
-    pub fn dump_dirty_patch(&mut self) -> crate::snapshot::GridPatch {
+    pub fn dump_dirty_patch(&mut self) -> crate::snapshot::GridPatch<'_> {
         let dirty = self.dirty_spans();
+        self.dirty_patch_from(dirty)
+    }
+
+    /// Build a borrowed dirty patch from a previously drained dirty-span set.
+    pub fn dirty_patch_from(&self, dirty: DirtySpans) -> crate::snapshot::GridPatch<'_> {
         let screen = if self.alt_screen {
             &self.alternate
         } else {
             &self.primary
         };
-        let mut rows_changed = Vec::new();
-        match dirty {
-            DirtySpans::All => {
-                rows_changed.reserve(screen.len());
-                for (row_idx, row) in screen.iter().enumerate() {
-                    rows_changed.push((
-                        row_idx as u16,
-                        row.iter().map(crate::snapshot::SnapCell::from).collect(),
-                    ));
-                }
-            }
-            DirtySpans::Rows(rows) => {
-                rows_changed.reserve(rows.len());
-                for row_idx in rows.iter() {
-                    if let Some(row) = screen.get(row_idx as usize) {
-                        rows_changed.push((
-                            row_idx,
-                            row.iter().map(crate::snapshot::SnapCell::from).collect(),
-                        ));
-                    }
-                }
-            }
-        }
-        crate::snapshot::GridPatch {
-            rows: self.rows,
-            cols: self.cols,
-            cursor: (self.cursor_row, self.cursor_col),
-            alternate_screen: self.alt_screen,
-            rows_changed,
-        }
+        crate::snapshot::GridPatch::new(
+            self.rows,
+            self.cols,
+            (self.cursor_row, self.cursor_col),
+            self.alt_screen,
+            screen,
+            dirty,
+        )
     }
 
     /// Dump the current screen state as a `GridSnapshot`.

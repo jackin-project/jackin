@@ -22,6 +22,11 @@ enum FrameDamage {
     Dirty(HashSet<u64>),
 }
 
+enum PaneScreenSeed {
+    Full(jackin_term::GridSnapshot),
+    Dirty(jackin_term::DirtySpans),
+}
+
 impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
         let backend_size = self
@@ -163,9 +168,10 @@ impl Multiplexer {
             })
             .collect();
         // Pane bodies. Full redraws and scrollback views render complete
-        // snapshots; live partial frames consume `dirty_spans()` and render
-        // only changed rows so unchanged pane bodies do not get re-snapshotted.
-        let pane_screens: Vec<(u64, PaneScreen)> = match &damage {
+        // snapshots; live partial frames drain `dirty_spans()` now, then borrow
+        // dirty rows only at the final draw boundary so unchanged pane bodies do
+        // not get re-snapshotted.
+        let pane_screen_seeds: Vec<(u64, PaneScreenSeed)> = match &damage {
             FrameDamage::Full => panes
                 .iter()
                 .filter_map(|pane| {
@@ -174,7 +180,7 @@ impl Multiplexer {
                             .shadow_grid
                             .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
                         drop(s.shadow_grid.dirty_spans());
-                        (pane.id, PaneScreen::Full(snap))
+                        (pane.id, PaneScreenSeed::Full(snap))
                     })
                 })
                 .collect(),
@@ -186,13 +192,13 @@ impl Multiplexer {
                     }
                     self.sessions.get_mut(&pane.id).map(|s| {
                         if s.scrollback_offset == 0 {
-                            (pane.id, PaneScreen::Patch(s.shadow_grid.dump_dirty_patch()))
+                            (pane.id, PaneScreenSeed::Dirty(s.shadow_grid.dirty_spans()))
                         } else {
                             let snap = s
                                 .shadow_grid
                                 .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
                             drop(s.shadow_grid.dirty_spans());
-                            (pane.id, PaneScreen::Full(snap))
+                            (pane.id, PaneScreenSeed::Full(snap))
                         }
                     })
                 })
@@ -237,6 +243,20 @@ impl Multiplexer {
         let scrollback_active = focused_id
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
+
+        let pane_screens: Vec<(u64, PaneScreen<'_>)> = pane_screen_seeds
+            .into_iter()
+            .filter_map(|(pane_id, seed)| match seed {
+                PaneScreenSeed::Full(snap) => Some((pane_id, PaneScreen::Full(snap))),
+                PaneScreenSeed::Dirty(dirty) => {
+                    let session = self.sessions.get(&pane_id)?;
+                    Some((
+                        pane_id,
+                        PaneScreen::Patch(session.shadow_grid.dirty_patch_from(dirty)),
+                    ))
+                }
+            })
+            .collect();
 
         let result = self.ratatui_terminal.draw(|frame| {
             render_capsule_ratatui_frame(

@@ -131,9 +131,9 @@ pub(crate) fn render_capsule_dialog_bottom_chrome(
 pub(crate) type DialogFrameSnapshot = (DialogRatatuiSnapshot, (u16, u16, u16, u16));
 
 #[derive(Debug)]
-pub(crate) enum PaneScreen {
+pub(crate) enum PaneScreen<'a> {
     Full(jackin_term::GridSnapshot),
-    Patch(jackin_term::GridPatch),
+    Patch(jackin_term::GridPatch<'a>),
 }
 
 pub(crate) struct CapsuleRatatuiFrame<'a> {
@@ -147,7 +147,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) zoomed: bool,
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
-    pub(crate) pane_screens: &'a [(u64, PaneScreen)],
+    pub(crate) pane_screens: &'a [(u64, PaneScreen<'a>)],
     pub(crate) sessions_state: &'a [(u64, VisibleAgentState)],
     pub(crate) prefix_mode: crate::tui::components::status_bar::PrefixMode,
     pub(crate) hovered_tab: Option<usize>,

@@ -3,7 +3,7 @@
 //! Blits `DamageGrid` cells directly into the Ratatui Buffer so the existing
 //! `SocketBackend` diff mechanism handles terminal output.
 
-use jackin_term::{Color as TermColor, GridPatch, GridSnapshot, SnapCell};
+use jackin_term::{Cell as TermCell, Color as TermColor, GridPatch, GridSnapshot, SnapCell};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -14,7 +14,7 @@ use ratatui::{
 #[derive(Debug)]
 pub(crate) enum PaneBodyContent<'a> {
     Full(&'a GridSnapshot),
-    Patch(&'a GridPatch),
+    Patch(&'a GridPatch<'a>),
 }
 
 /// A Ratatui widget that renders terminal body cells into the given area.
@@ -32,7 +32,7 @@ impl<'a> PaneBodyWidget<'a> {
     }
 
     #[must_use]
-    pub const fn from_patch(patch: &'a GridPatch) -> Self {
+    pub const fn from_patch(patch: &'a GridPatch<'a>) -> Self {
         Self {
             content: PaneBodyContent::Patch(patch),
         }
@@ -66,7 +66,7 @@ fn render_full(snapshot: &GridSnapshot, area: Rect, buf: &mut Buffer) {
     }
 }
 
-fn render_patch(patch: &GridPatch, area: Rect, buf: &mut Buffer) {
+fn render_patch(patch: &GridPatch<'_>, area: Rect, buf: &mut Buffer) {
     for row in 0..area.height {
         let Some(cells) = patch.row(row) else {
             continue;
@@ -87,35 +87,123 @@ fn render_patch(patch: &GridPatch, area: Rect, buf: &mut Buffer) {
     }
 }
 
-fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &SnapCell) {
-    if cell.is_wide_continuation {
+trait PaneCell {
+    fn text(&self) -> &str;
+    fn is_wide_continuation(&self) -> bool;
+    fn fg(&self) -> TermColor;
+    fn bg(&self) -> TermColor;
+    fn bold(&self) -> bool;
+    fn italic(&self) -> bool;
+    fn underline(&self) -> bool;
+    fn inverse(&self) -> bool;
+    fn dim(&self) -> bool;
+}
+
+impl PaneCell for SnapCell {
+    fn text(&self) -> &str {
+        &self.text
+    }
+
+    fn is_wide_continuation(&self) -> bool {
+        self.is_wide_continuation
+    }
+
+    fn fg(&self) -> TermColor {
+        self.fg
+    }
+
+    fn bg(&self) -> TermColor {
+        self.bg
+    }
+
+    fn bold(&self) -> bool {
+        self.bold
+    }
+
+    fn italic(&self) -> bool {
+        self.italic
+    }
+
+    fn underline(&self) -> bool {
+        self.underline
+    }
+
+    fn inverse(&self) -> bool {
+        self.inverse
+    }
+
+    fn dim(&self) -> bool {
+        self.dim
+    }
+}
+
+impl PaneCell for TermCell {
+    fn text(&self) -> &str {
+        self.contents()
+    }
+
+    fn is_wide_continuation(&self) -> bool {
+        self.is_wide_continuation
+    }
+
+    fn fg(&self) -> TermColor {
+        self.fgcolor()
+    }
+
+    fn bg(&self) -> TermColor {
+        self.bgcolor()
+    }
+
+    fn bold(&self) -> bool {
+        self.bold()
+    }
+
+    fn italic(&self) -> bool {
+        self.italic()
+    }
+
+    fn underline(&self) -> bool {
+        self.underline()
+    }
+
+    fn inverse(&self) -> bool {
+        self.inverse()
+    }
+
+    fn dim(&self) -> bool {
+        self.dim()
+    }
+}
+
+fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
+    if cell.is_wide_continuation() {
         buf_cell.reset();
         return;
     }
 
-    if cell.text.is_empty() {
+    if cell.text().is_empty() {
         buf_cell.set_char(' ');
     } else {
-        buf_cell.set_symbol(&cell.text);
+        buf_cell.set_symbol(cell.text());
     }
 
-    buf_cell.set_fg(term_color(cell.fg));
-    buf_cell.set_bg(term_color(cell.bg));
+    buf_cell.set_fg(term_color(cell.fg()));
+    buf_cell.set_bg(term_color(cell.bg()));
 
     let mut modifier = Modifier::empty();
-    if cell.bold {
+    if cell.bold() {
         modifier |= Modifier::BOLD;
     }
-    if cell.italic {
+    if cell.italic() {
         modifier |= Modifier::ITALIC;
     }
-    if cell.underline {
+    if cell.underline() {
         modifier |= Modifier::UNDERLINED;
     }
-    if cell.inverse {
+    if cell.inverse() {
         modifier |= Modifier::REVERSED;
     }
-    if cell.dim {
+    if cell.dim() {
         modifier |= Modifier::DIM;
     }
     buf_cell.modifier = modifier;
