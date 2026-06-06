@@ -21,7 +21,8 @@
 //! - `alt_screen/`: alternate screen enter/exit
 //! - `pathological/`: high-volume stress sequences (`yes`, `seq 1 100000`, redraw storms)
 
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use jackin_term::{Cell, Color, DamageGrid};
 
@@ -432,9 +433,60 @@ fn fixture_bytes(fixture_path: &Path) -> Vec<u8> {
         let text = std::str::from_utf8(&raw)
             .unwrap_or_else(|e| panic!("{} is not valid UTF-8: {e}", fixture_path.display()));
         decode_vt_fixture(text, fixture_path)
+    } else if fixture_path.extension().is_some_and(|e| e == "cast") {
+        cast_output_bytes(&raw, fixture_path)
     } else {
         raw
     }
+}
+
+#[expect(
+    clippy::panic,
+    reason = "asciinema corpus decoder must fail tests with the exact malformed fixture path"
+)]
+fn cast_output_bytes(raw: &[u8], fixture_path: &Path) -> Vec<u8> {
+    let text = std::str::from_utf8(raw)
+        .unwrap_or_else(|e| panic!("{} is not valid UTF-8: {e}", fixture_path.display()));
+    let mut lines = text.lines();
+    let header = lines
+        .next()
+        .unwrap_or_else(|| panic!("{} is missing asciinema header", fixture_path.display()));
+    let header: serde_json::Value = serde_json::from_str(header).unwrap_or_else(|e| {
+        panic!(
+            "{} has invalid asciinema header: {e}",
+            fixture_path.display()
+        )
+    });
+    assert_eq!(
+        header.get("version").and_then(serde_json::Value::as_u64),
+        Some(2),
+        "{} must be asciinema v2",
+        fixture_path.display()
+    );
+
+    let mut bytes = Vec::new();
+    for line in lines {
+        let event: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|e| {
+            panic!(
+                "{} has invalid asciinema event `{line}`: {e}",
+                fixture_path.display()
+            )
+        });
+        let event = event
+            .as_array()
+            .unwrap_or_else(|| panic!("{} event is not an array", fixture_path.display()));
+        if event.len() < 3 || event[1].as_str() != Some("o") {
+            continue;
+        }
+        let payload = event[2].as_str().unwrap_or_else(|| {
+            panic!(
+                "{} output event payload is not a string",
+                fixture_path.display()
+            )
+        });
+        bytes.extend_from_slice(payload.as_bytes());
+    }
+    bytes
 }
 
 fn run_fixture(fixture_path: &Path) {
@@ -451,13 +503,63 @@ fn corpus_all_fixtures() {
     }
     let mut count = 0usize;
     for entry in walkdir(&fixture_dir) {
-        if entry.extension().is_some_and(|e| e == "bin" || e == "vt") {
+        if entry
+            .extension()
+            .is_some_and(|e| e == "bin" || e == "vt" || e == "cast")
+        {
             run_fixture(&entry);
             count += 1;
         }
     }
     assert!(count > 0, "differential corpus must contain fixtures");
     eprintln!("[differential] ran {count} corpus fixtures");
+}
+
+#[test]
+fn corpus_contains_required_fixture_classes() {
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut categories = BTreeSet::new();
+    let mut filenames = BTreeSet::new();
+    for entry in walkdir(&fixture_dir) {
+        if !entry
+            .extension()
+            .is_some_and(|e| e == "bin" || e == "vt" || e == "cast")
+        {
+            continue;
+        }
+        let relative = entry.strip_prefix(&fixture_dir).unwrap_or_else(|e| {
+            panic!(
+                "fixture {} is outside fixture root {}: {e}",
+                entry.display(),
+                fixture_dir.display()
+            )
+        });
+        if let Some(category) = relative.components().next() {
+            categories.insert(category.as_os_str().to_string_lossy().into_owned());
+        }
+        filenames.insert(relative.display().to_string());
+    }
+
+    for required in [
+        "vttest",
+        "esctest",
+        "real",
+        "asciinema",
+        "pathological",
+        "wide_chars",
+    ] {
+        assert!(
+            categories.contains(required),
+            "missing required corpus category `{required}`"
+        );
+    }
+
+    for required_name in ["claude", "codex", "vim", "htop", "tmux"] {
+        assert!(
+            filenames.iter().any(|name| name.contains(required_name)),
+            "missing required real/tool fixture containing `{required_name}`"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -698,7 +800,7 @@ fn vt_sequence_split_across_process_calls() {
 }
 
 /// Minimal recursive directory walker that avoids pulling in `walkdir` as a dev dep.
-fn walkdir(dir: &Path) -> Vec<std::path::PathBuf> {
+fn walkdir(dir: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {

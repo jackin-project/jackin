@@ -44,6 +44,7 @@ compact_str = "0.9"
 vt100 = { version = "0.16.2", git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 criterion = { version = "0.5", features = ["html_reports"] }
 dhat = "0.3.3"
+serde_json = "1.0"
 
 [[bench]]
 name = "present_frame"

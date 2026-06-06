@@ -2551,6 +2551,7 @@ dependencies = [
  "compact_str",
  "criterion",
  "dhat",
+ "serde_json",
  "unicode-width",
  "vt100",
  "vte",

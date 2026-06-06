@@ -9,6 +9,7 @@ implementations and asserts identical final grids (cells, attrs, cursor, alt-scr
 - `.bin` — raw bytes (binary PTY capture)
 - `.vt` — VT/ANSI escape sequences in a text-safe encoding (LF-delimited hex `\xNN` for
   non-printable bytes, printable ASCII/UTF-8 inline)
+- `.cast` — asciinema v2 JSONL; the harness replays every output (`"o"`) event
 
 ## Corpus categories
 
@@ -19,7 +20,12 @@ implementations and asserts identical final grids (cells, attrs, cursor, alt-scr
 | `resize/` | Content under resize (Defect 44 regression class) |
 | `scrollback/` | Scrollback fill, clear-scrollback (`CSI 3J`), alternate screen |
 | `alt_screen/` | Alternate screen enter/exit, content in both screens |
-| `pathological/` | High-volume: `seq 1 100000` output, `yes` flood, full-screen redraw storms |
+| `vttest/` | Representative VT conformance sequences derived from vttest classes |
+| `esctest/` | Representative CSI/DEC/SGR sequences derived from esctest classes |
+| `real/` | Real CLI PTY-output captures that are geometry-safe at 24x80 |
+| `asciinema/` | Asciinema v2 `.cast` files; output events are replayed through the harness |
+| `tool_archetypes/` | Tool-shaped fixtures for binaries unavailable in this environment |
+| `pathological/` | High-volume: `seq 1 100000` tail windows, `yes` flood, full-screen redraw storms |
 
 ## Adding fixtures
 
@@ -40,6 +46,6 @@ and commit it to the appropriate subdirectory.
 
 ## vttest / esctest sequences
 
-The `basic/` and `wide_chars/` directories should eventually include the machine-generated
-sequences from [vttest](https://github.com/ThomasDickey/vttest) and
-[esctest](https://github.com/nfvmit/esctest) — VT-conformance test suites.
+The `vttest/` and `esctest/` directories hold committed representative sequences from those
+conformance families. When importing larger upstream slices, keep each fixture geometry-safe at
+24x80 or add a dedicated test with the required geometry.
